@@ -819,6 +819,8 @@ export interface AppSettings {
   time_format: 'system' | '12h' | '24h';
   // Filament tracking
   disable_filament_warnings: boolean;  // Disable filament warnings (print insufficiency and assignment mismatch)
+  // Developer mode warning
+  disable_developer_mode_warning: boolean;  // Disable the developer LAN mode warning banner
   // Default printer
   default_printer_id: number | null;
   // Dark mode theme settings

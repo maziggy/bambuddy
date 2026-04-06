@@ -1406,6 +1406,8 @@ export default {
     // Updates
     checkForUpdatesLabel: 'Vérifier les mises à jour',
     checkPrinterFirmware: 'Vérifier le firmware imprimante',
+    disableDeveloperModeWarning: 'Désactiver l\'avertissement du mode développeur',
+    disableDeveloperModeWarningDesc: 'Masquer la bannière d\'avertissement pour les imprimantes sans le mode développeur LAN activé',
     includeBetaUpdates: 'Inclure les versions bêta',
     includeBetaUpdatesDesc: 'Notifier des versions bêta et préliminaires lors de la vérification des mises à jour',
     // Queue

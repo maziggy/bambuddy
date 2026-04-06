@@ -1406,6 +1406,8 @@ export default {
     // Updates
     checkForUpdatesLabel: 'Check for updates',
     checkPrinterFirmware: 'Check printer firmware',
+    disableDeveloperModeWarning: 'Disable developer mode warning',
+    disableDeveloperModeWarningDesc: 'Hide the banner warning about printers without LAN developer mode enabled',
     includeBetaUpdates: 'Include beta versions',
     includeBetaUpdatesDesc: 'Notify about beta and prerelease versions when checking for updates',
     // Queue

@@ -186,6 +186,11 @@ class AppSettings(BaseModel):
         description="Enable user email notifications for print job events (requires Advanced Authentication)",
     )
 
+    # Developer mode warning banner
+    disable_developer_mode_warning: bool = Field(
+        default=False, description="Disable the developer LAN mode warning banner"
+    )
+
     # Default sidebar order (admin-set for all users)
     default_sidebar_order: str = Field(
         default="",
@@ -260,6 +265,7 @@ class AppSettingsUpdate(BaseModel):
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
     user_notifications_enabled: bool | None = None
+    disable_developer_mode_warning: bool | None = None
     default_sidebar_order: str | None = None
 
     @field_validator("default_sidebar_order")

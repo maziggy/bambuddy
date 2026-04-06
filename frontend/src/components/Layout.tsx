@@ -897,8 +897,8 @@ export function Layout() {
             </div>
           </div>
         )}
-        {devModeWarnings && devModeWarnings.length > 0 && (
-          <div className="bg-orange-500/20 border-b border-orange-500/30 px-4 py-2 flex items-center justify-between">
+        {devModeWarnings && devModeWarnings.length > 0 && !settings?.disable_developer_mode_warning && (
+          <div className="bg-orange-500/20 border-b border-orange-500/30 px-4 py-2">
             <div className="flex items-center gap-2 text-sm">
               <ShieldAlert className="w-4 h-4 text-orange-500" />
               <span className="text-orange-200">

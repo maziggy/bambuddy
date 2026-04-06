@@ -69,6 +69,7 @@ export interface ScheduleOptions {
   scheduledTime: string;
   requirePreviousSuccess: boolean;
   autoOffAfter: boolean;
+  gcodeInjection: boolean;
   staggerEnabled: boolean;
   staggerGroupSize: number;
   staggerIntervalMinutes: number;
@@ -82,6 +83,7 @@ export const DEFAULT_SCHEDULE_OPTIONS: ScheduleOptions = {
   scheduledTime: '',
   requirePreviousSuccess: false,
   autoOffAfter: false,
+  gcodeInjection: false,
   staggerEnabled: false,
   staggerGroupSize: 2,
   staggerIntervalMinutes: 5,
@@ -214,4 +216,6 @@ export interface ScheduleOptionsProps {
   showStagger?: boolean;
   /** Number of selected printers (for stagger preview) */
   printerCount?: number;
+  /** Whether G-code snippets are configured in settings */
+  hasGcodeSnippets?: boolean;
 }

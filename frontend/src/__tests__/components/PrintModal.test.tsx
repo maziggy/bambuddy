@@ -30,6 +30,7 @@ const createMockQueueItem = (overrides: Partial<PrintQueueItem> = {}): PrintQueu
   scheduled_time: null,
   require_previous_success: false,
   auto_off_after: false,
+  gcode_injection: false,
   manual_start: false,
   ams_mapping: null,
   plate_id: null,

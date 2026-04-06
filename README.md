@@ -120,6 +120,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Shortest Job First scheduling (SJF toggle on queue page — scheduler picks shorter prints first, with starvation guard)
 - Queue Only mode (stage without auto-start)
 - Clear plate confirmation between queued prints (can be disabled in settings for farm workflows)
+- Auto-print G-code injection (per-model start/end snippets for Farmloop, SwapMod, AutoClear, Printflow 3D — toggle per queue item)
 - Smart plug integration (Tasmota, Home Assistant, MQTT, REST/Webhook)
 - REST smart plugs: Control any device with an HTTP API (openHAB, ioBroker, FHEM, Node-RED) with separate power/energy URLs and unit multipliers
 - MQTT smart plugs: Subscribe to Zigbee2MQTT, Shelly, or any MQTT topic for energy monitoring

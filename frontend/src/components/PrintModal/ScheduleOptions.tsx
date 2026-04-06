@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Calendar, Clock, Hand, Power, Layers } from 'lucide-react';
+import { Calendar, Clock, Hand, Power, Layers, Code } from 'lucide-react';
 import type { ScheduleOptionsProps, ScheduleType } from './types';
 import {
   formatDateInput,
@@ -27,6 +27,7 @@ export function ScheduleOptionsPanel({
   canControlPrinter = true,
   showStagger = false,
   printerCount = 0,
+  hasGcodeSnippets = false,
 }: ScheduleOptionsProps) {
   const { t } = useTranslation();
   const [dateValue, setDateValue] = useState('');
@@ -250,6 +251,23 @@ export function ScheduleOptionsPanel({
           Power off printer when done
         </label>
       </div>
+
+      {/* G-code injection */}
+      {hasGcodeSnippets && (
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="gcodeInjection"
+            checked={options.gcodeInjection}
+            onChange={(e) => onChange({ ...options, gcodeInjection: e.target.checked })}
+            className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+          />
+          <label htmlFor="gcodeInjection" className="text-sm flex items-center gap-1 text-bambu-gray">
+            <Code className="w-3.5 h-3.5" />
+            {t('printModal.gcodeInjection', 'Inject auto-print G-code')}
+          </label>
+        </div>
+      )}
 
       {/* Stagger start */}
       {showStagger && options.scheduleType !== 'manual' && (

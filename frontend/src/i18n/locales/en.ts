@@ -919,6 +919,7 @@ export default {
       staged: 'Staged',
       requiresPrevious: 'Requires previous success',
       autoPowerOff: 'Auto power off',
+      gcodeInjection: 'G-code',
     },
     // Empty state
     empty: {
@@ -1613,6 +1614,13 @@ export default {
     plateClear: 'Plate-Clear Confirmation',
     requirePlateClear: 'Require plate-clear confirmation',
     requirePlateClearDescription: 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disable for farm workflows where plates are verified physically.',
+    gcodeInjection: 'G-code Injection',
+    gcodeInjectionDescription: 'Configure custom G-code to inject at the start and/or end of prints for auto-print systems like Farmloop, SwapMod, AutoClear, and Printflow 3D. Snippets are configured per printer model and applied when "Inject G-code" is enabled on a queue item.',
+    gcodeInjectionNoPrinters: 'No printers found. Add printers to configure G-code snippets.',
+    gcodeStartLabel: 'Start G-code',
+    gcodeEndLabel: 'End G-code',
+    gcodeStartPlaceholder: 'G-code prepended before the print starts...',
+    gcodeEndPlaceholder: 'G-code appended after the print ends...',
     staggerGroupSize: 'Group size',
     staggerGroupSizeHelp: 'Printers to start simultaneously per group',
     staggerInterval: 'Interval (minutes)',
@@ -3224,6 +3232,7 @@ export default {
     staggerLastGroup: 'last group: {{count}}',
     staggerTotal: 'total: {{minutes}} min',
     staggerToPrinters: 'Stagger to {{count}} printers',
+    gcodeInjection: 'Inject auto-print G-code',
   },
 
   // Backup

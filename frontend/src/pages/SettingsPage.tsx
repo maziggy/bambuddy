@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -662,6 +662,7 @@ export function SettingsPage() {
 
   // Ref for debounce timeout
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingGcodeSnippetsRef = useRef<string | null>(null);
   const isSavingRef = useRef(false);
   const isInitialLoadRef = useRef(true);
 
@@ -3471,6 +3472,96 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* G-code Injection (#422) */}
+          <Card>
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Code className="w-4 h-4 text-bambu-green" />
+                {t('settings.gcodeInjection', 'G-code Injection')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.gcodeInjectionDescription', 'Configure custom G-code to inject at the start and/or end of prints for auto-print systems like Farmloop, SwapMod, AutoClear, and Printflow 3D. Snippets are configured per printer model and applied when "Inject G-code" is enabled on a queue item.')}
+              </p>
+              {(() => {
+                const gcodeSnippets: Record<string, { start_gcode: string; end_gcode: string }> = (() => {
+                  try {
+                    return localSettings.gcode_snippets ? JSON.parse(localSettings.gcode_snippets) : {};
+                  } catch {
+                    return {};
+                  }
+                })();
+                const printerModels = [...new Set((printers || []).filter((p) => p.model).map((p) => p.model as string))].sort();
+
+                const updateSnippet = (model: string, field: 'start_gcode' | 'end_gcode', value: string) => {
+                  const updated = { ...gcodeSnippets };
+                  if (!updated[model]) {
+                    updated[model] = { start_gcode: '', end_gcode: '' };
+                  }
+                  updated[model][field] = value;
+                  // Remove model entry if both fields are empty
+                  if (!updated[model].start_gcode && !updated[model].end_gcode) {
+                    delete updated[model];
+                  }
+                  const newValue = Object.keys(updated).length > 0 ? JSON.stringify(updated) : '';
+                  // Update local state for immediate UI feedback, save on blur
+                  setLocalSettings(prev => prev ? { ...prev, gcode_snippets: newValue } : null);
+                  pendingGcodeSnippetsRef.current = newValue;
+                };
+
+                const saveGcodeSnippets = () => {
+                  if (pendingGcodeSnippetsRef.current !== null) {
+                    updateMutation.mutate({ gcode_snippets: pendingGcodeSnippetsRef.current });
+                    pendingGcodeSnippetsRef.current = null;
+                  }
+                };
+
+                if (printerModels.length === 0) {
+                  return (
+                    <p className="text-sm text-bambu-gray italic">
+                      {t('settings.gcodeInjectionNoPrinters', 'No printers found. Add printers to configure G-code snippets.')}
+                    </p>
+                  );
+                }
+
+                return printerModels.map((model) => {
+                  const snippet = gcodeSnippets[model] || { start_gcode: '', end_gcode: '' };
+                  return (
+                    <div key={model} className="space-y-2">
+                      <h4 className="text-sm font-medium text-white">{model}</h4>
+                      <div>
+                        <label className="block text-xs text-bambu-gray mb-1">
+                          {t('settings.gcodeStartLabel', 'Start G-code')}
+                        </label>
+                        <textarea
+                          value={snippet.start_gcode}
+                          onChange={(e) => updateSnippet(model, 'start_gcode', e.target.value)}
+                          onBlur={saveGcodeSnippets}
+                          placeholder={t('settings.gcodeStartPlaceholder', 'G-code prepended before the print starts...')}
+                          rows={3}
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-bambu-gray mb-1">
+                          {t('settings.gcodeEndLabel', 'End G-code')}
+                        </label>
+                        <textarea
+                          value={snippet.end_gcode}
+                          onChange={(e) => updateSnippet(model, 'end_gcode', e.target.value)}
+                          onBlur={saveGcodeSnippets}
+                          placeholder={t('settings.gcodeEndPlaceholder', 'G-code appended after the print ends...')}
+                          rows={3}
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
+                        />
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </CardContent>
+          </Card>
 
           </div>
           {/* Right Column */}

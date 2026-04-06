@@ -40,6 +40,8 @@ class PrintQueueItemCreate(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
+    # Auto-print G-code injection
+    gcode_injection: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
     quantity: int = 1
 
@@ -63,6 +65,8 @@ class PrintQueueItemUpdate(BaseModel):
     layer_inspect: bool | None = None
     timelapse: bool | None = None
     use_ams: bool | None = None
+    # Auto-print G-code injection
+    gcode_injection: bool | None = None
 
 
 class PrintQueueItemResponse(BaseModel):
@@ -120,6 +124,9 @@ class PrintQueueItemResponse(BaseModel):
     # Shortest-job-first scheduling
     been_jumped: bool = False
 
+    # Auto-print G-code injection
+    gcode_injection: bool = False
+
     class Config:
         from_attributes = True
 
@@ -150,6 +157,8 @@ class PrintQueueBulkUpdate(BaseModel):
     layer_inspect: bool | None = None
     timelapse: bool | None = None
     use_ams: bool | None = None
+    # Auto-print G-code injection
+    gcode_injection: bool | None = None
 
 
 class PrintQueueBulkUpdateResponse(BaseModel):

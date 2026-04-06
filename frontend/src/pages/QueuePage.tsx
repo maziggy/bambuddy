@@ -52,6 +52,7 @@ import {
   ChevronRight,
   List,
   GanttChart,
+  Code,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
@@ -545,6 +546,12 @@ function SortableQueueItem({
               <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full border border-blue-500/20 flex items-center gap-1">
                 <Power className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t('queue.badges.autoPowerOff')}
+              </span>
+            )}
+            {item.gcode_injection && (
+              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                <Code className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                {t('queue.badges.gcodeInjection')}
               </span>
             )}
           </div>

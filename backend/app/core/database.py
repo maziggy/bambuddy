@@ -1288,6 +1288,9 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN print_time_seconds INTEGER")
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN been_jumped BOOLEAN DEFAULT FALSE NOT NULL")
 
+    # Migration: Auto-print G-code injection (#422)
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN gcode_injection BOOLEAN DEFAULT FALSE NOT NULL")
+
     # Migration: Add backup_spools and backup_archives columns to github_backup_config
     await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN backup_spools BOOLEAN DEFAULT 0")
     await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN backup_archives BOOLEAN DEFAULT 0")

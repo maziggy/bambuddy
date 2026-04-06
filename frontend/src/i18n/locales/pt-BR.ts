@@ -919,6 +919,7 @@ export default {
       staged: 'Preparado (início manual)',
       requiresPrevious: 'Requer sucesso anterior',
       autoPowerOff: 'Desligamento automático',
+      gcodeInjection: 'G-code',
     },
     // Empty state
     empty: {
@@ -1612,6 +1613,13 @@ export default {
     plateClear: 'Confirmação de placa livre',
     requirePlateClear: 'Exigir confirmação de placa livre',
     requirePlateClearDescription: 'Quando ativado, o agendador aguarda a confirmação de placa livre por impressora antes de iniciar impressões na fila em impressoras com trabalhos concluídos. Desative para fluxos de trabalho de fazenda onde as placas são verificadas fisicamente.',
+    gcodeInjection: 'Injeção de G-code',
+    gcodeInjectionDescription: 'Configure G-code personalizado para injetar no início e/ou no final das impressões para sistemas de impressão automática como Farmloop, SwapMod, AutoClear e Printflow 3D. Os snippets são configurados por modelo de impressora e aplicados quando "Injetar G-code" está ativado em um item da fila.',
+    gcodeInjectionNoPrinters: 'Nenhuma impressora encontrada. Adicione impressoras para configurar snippets de G-code.',
+    gcodeStartLabel: 'G-code inicial',
+    gcodeEndLabel: 'G-code final',
+    gcodeStartPlaceholder: 'G-code inserido antes do início da impressão...',
+    gcodeEndPlaceholder: 'G-code adicionado após o término da impressão...',
     staggerGroupSize: 'Group size',
     staggerGroupSizeHelp: 'Printers to start simultaneously per group',
     staggerInterval: 'Interval (minutes)',
@@ -3208,6 +3216,7 @@ export default {
     staggerLastGroup: 'last group: {{count}}',
     staggerTotal: 'total: {{minutes}} min',
     staggerToPrinters: 'Escalonar para {{count}} impressoras',
+    gcodeInjection: 'Injetar G-code de auto-impressão',
   },
 
   // Backup

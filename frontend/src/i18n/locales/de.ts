@@ -919,6 +919,7 @@ export default {
       staged: 'Bereitgestellt',
       requiresPrevious: 'Erfordert vorherigen Erfolg',
       autoPowerOff: 'Automatisch ausschalten',
+      gcodeInjection: 'G-code',
     },
     // Empty state
     empty: {
@@ -1612,6 +1613,13 @@ export default {
     plateClear: 'Druckplatte-Bestätigung',
     requirePlateClear: 'Druckplatte-Bestätigung erforderlich',
     requirePlateClearDescription: 'Wenn aktiviert, wartet der Scheduler auf eine Druckplatte-Bestätigung pro Drucker, bevor geplante Drucke auf Druckern mit abgeschlossenen Aufträgen gestartet werden. Deaktivieren Sie dies für Farm-Workflows, bei denen die Platten physisch überprüft werden.',
+    gcodeInjection: 'G-code Injection',
+    gcodeInjectionDescription: 'Konfigurieren Sie benutzerdefinierten G-code, der am Anfang und/oder Ende von Drucken für Auto-Print-Systeme wie Farmloop, SwapMod, AutoClear und Printflow 3D eingefügt wird. Snippets werden pro Druckermodell konfiguriert und angewendet, wenn "G-code einfügen" bei einem Warteschlangen-Element aktiviert ist.',
+    gcodeInjectionNoPrinters: 'Keine Drucker gefunden. Fügen Sie Drucker hinzu, um G-code-Snippets zu konfigurieren.',
+    gcodeStartLabel: 'Start G-code',
+    gcodeEndLabel: 'End G-code',
+    gcodeStartPlaceholder: 'G-code, der vor dem Druckstart eingefügt wird...',
+    gcodeEndPlaceholder: 'G-code, der nach dem Druckende angefügt wird...',
     staggerGroupSize: 'Group size',
     staggerGroupSizeHelp: 'Printers to start simultaneously per group',
     staggerInterval: 'Interval (minutes)',
@@ -3218,6 +3226,7 @@ export default {
     staggerLastGroup: 'last group: {{count}}',
     staggerTotal: 'total: {{minutes}} min',
     staggerToPrinters: 'Gestaffelt an {{count}} Drucker senden',
+    gcodeInjection: 'Auto-Print G-code einfügen',
   },
 
   // Backup

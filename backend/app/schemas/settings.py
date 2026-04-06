@@ -84,6 +84,12 @@ class AppSettings(BaseModel):
         description="JSON blob of drying presets per filament type (empty = use built-in defaults)",
     )
 
+    # Auto-print G-code injection (#422)
+    gcode_snippets: str = Field(
+        default="",
+        description="JSON: per-model G-code injection snippets {model: {start_gcode, end_gcode}}",
+    )
+
     # Print modal settings
     per_printer_mapping_expanded: bool = Field(
         default=False, description="Expand custom filament mapping by default in print modal"
@@ -303,7 +309,21 @@ class AppSettingsUpdate(BaseModel):
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
+    gcode_snippets: str | None = None
     default_sidebar_order: str | None = None
+
+    @field_validator("gcode_snippets")
+    @classmethod
+    def validate_gcode_snippets(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError:
+            raise ValueError("gcode_snippets must be valid JSON or empty")
+        if not isinstance(parsed, dict):
+            raise ValueError("gcode_snippets must be a JSON object keyed by printer model")
+        return v
 
     @field_validator("default_sidebar_order")
     @classmethod

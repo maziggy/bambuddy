@@ -919,6 +919,7 @@ export default {
       staged: '已暂存',
       requiresPrevious: '需要前一个成功',
       autoPowerOff: '自动关机',
+      gcodeInjection: 'G-code',
     },
     // Empty state
     empty: {
@@ -1612,6 +1613,13 @@ export default {
     plateClear: '热床清空确认',
     requirePlateClear: '需要热床清空确认',
     requirePlateClearDescription: '启用后，调度器会在已完成打印的打印机上启动排队打印之前，等待每台打印机的热床清空确认。对于物理验证热床的农场工作流，请禁用此选项。',
+    gcodeInjection: 'G-code注入',
+    gcodeInjectionDescription: '为Farmloop、SwapMod、AutoClear和Printflow 3D等自动打印系统配置自定义G-code，在打印开始和/或结束时注入。代码片段按打印机型号配置，在队列项目上启用"注入G-code"时应用。',
+    gcodeInjectionNoPrinters: '未找到打印机。添加打印机以配置G-code代码片段。',
+    gcodeStartLabel: '开始G-code',
+    gcodeEndLabel: '结束G-code',
+    gcodeStartPlaceholder: '在打印开始前插入的G-code...',
+    gcodeEndPlaceholder: '在打印结束后追加的G-code...',
     staggerGroupSize: 'Group size',
     staggerGroupSizeHelp: 'Printers to start simultaneously per group',
     staggerInterval: 'Interval (minutes)',
@@ -3208,6 +3216,7 @@ export default {
     staggerLastGroup: 'last group: {{count}}',
     staggerTotal: 'total: {{minutes}} min',
     staggerToPrinters: '分批发送到 {{count}} 台打印机',
+    gcodeInjection: '注入自动打印G-code',
   },
 
   // Backup

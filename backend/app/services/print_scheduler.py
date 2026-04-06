@@ -1120,6 +1120,12 @@ class PrintScheduler:
             )
         return idle
 
+    async def _get_setting(self, db: AsyncSession, key: str) -> str | None:
+        """Read a setting value from the database."""
+        result = await db.execute(select(Settings).where(Settings.key == key))
+        setting = result.scalar_one_or_none()
+        return setting.value if setting else None
+
     async def _get_bool_setting(self, db: AsyncSession, key: str, default: bool = False) -> bool:
         """Read a boolean setting from the database."""
         result = await db.execute(select(Settings).where(Settings.key == key))
@@ -1644,6 +1650,32 @@ class PrintScheduler:
             await self._power_off_if_needed(db, item)
             return
 
+        # G-code injection for auto-print systems (#422)
+        injected_path = None
+        if item.gcode_injection:
+            try:
+                snippets_raw = await self._get_setting(db, "gcode_snippets")
+                if snippets_raw:
+                    snippets = json.loads(snippets_raw)
+                    model_snippets = snippets.get(printer.model, {})
+                    start_gc = (model_snippets.get("start_gcode") or "").strip()
+                    end_gc = (model_snippets.get("end_gcode") or "").strip()
+                    if start_gc or end_gc:
+                        from backend.app.utils.threemf_tools import inject_gcode_into_3mf
+
+                        injected_path = inject_gcode_into_3mf(
+                            file_path, item.plate_id or 1, start_gc or None, end_gc or None
+                        )
+                        if injected_path:
+                            file_path = injected_path
+                            logger.info("Queue item %s: G-code injected for model %s", item.id, printer.model)
+                        else:
+                            logger.warning(
+                                "Queue item %s: G-code injection returned no result, using original", item.id
+                            )
+            except Exception as e:
+                logger.warning("Queue item %s: G-code injection failed, using original: %s", item.id, e)
+
         # Upload file to printer via FTP
         # Use a clean filename to avoid issues with double extensions like .gcode.3mf
         base_name = filename
@@ -1707,6 +1739,10 @@ class PrintScheduler:
         except Exception as e:
             uploaded = False
             logger.error("Queue item %s: FTP error: %s (type: %s)", item.id, e, type(e).__name__)
+
+        # Clean up injected temp file after upload attempt
+        if injected_path and injected_path.exists():
+            injected_path.unlink(missing_ok=True)
 
         if not uploaded:
             error_msg = (

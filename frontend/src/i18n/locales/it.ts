@@ -919,6 +919,7 @@ export default {
       staged: 'In staging',
       requiresPrevious: 'Richiede successo precedente',
       autoPowerOff: 'Spegnimento automatico',
+      gcodeInjection: 'G-code',
     },
     // Empty state
     empty: {
@@ -1612,6 +1613,13 @@ export default {
     plateClear: 'Conferma piatto libero',
     requirePlateClear: 'Richiedi conferma piatto libero',
     requirePlateClearDescription: 'Quando abilitato, lo scheduler attende la conferma per stampante che il piatto è libero prima di avviare le stampe in coda su stampanti con lavori completati. Disabilitare per flussi di lavoro in farm dove i piatti vengono verificati fisicamente.',
+    gcodeInjection: 'Iniezione G-code',
+    gcodeInjectionDescription: 'Configura G-code personalizzato da iniettare all\'inizio e/o alla fine delle stampe per sistemi di stampa automatica come Farmloop, SwapMod, AutoClear e Printflow 3D. Gli snippet sono configurati per modello di stampante e applicati quando "Inietta G-code" è abilitato su un elemento della coda.',
+    gcodeInjectionNoPrinters: 'Nessuna stampante trovata. Aggiungi stampanti per configurare gli snippet G-code.',
+    gcodeStartLabel: 'G-code iniziale',
+    gcodeEndLabel: 'G-code finale',
+    gcodeStartPlaceholder: 'G-code inserito prima dell\'inizio della stampa...',
+    gcodeEndPlaceholder: 'G-code aggiunto dopo la fine della stampa...',
     staggerGroupSize: 'Group size',
     staggerGroupSizeHelp: 'Printers to start simultaneously per group',
     staggerInterval: 'Interval (minutes)',
@@ -3209,6 +3217,7 @@ export default {
     staggerLastGroup: 'last group: {{count}}',
     staggerTotal: 'total: {{minutes}} min',
     staggerToPrinters: 'Scagliona a {{count}} stampanti',
+    gcodeInjection: 'Inietta G-code auto-stampa',
   },
 
   // Backup

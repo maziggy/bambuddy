@@ -440,3 +440,74 @@ def extract_filament_usage_from_3mf(file_path: Path, plate_id: int | None = None
         pass  # Return whatever usage data was collected before the error
 
     return filament_usage
+
+
+def inject_gcode_into_3mf(
+    source_path: Path,
+    plate_id: int,
+    start_gcode: str | None,
+    end_gcode: str | None,
+):
+    """Create a temp copy of a 3MF with G-code injected at start/end.
+
+    Args:
+        source_path: Path to the original 3MF file.
+        plate_id: Plate number (1-indexed) to inject into.
+        start_gcode: G-code to prepend, or None.
+        end_gcode: G-code to append, or None.
+
+    Returns:
+        Path to temp file with injected G-code, or None if injection failed.
+        Caller is responsible for cleaning up the temp file.
+    """
+    import tempfile
+
+    if not start_gcode and not end_gcode:
+        return None
+
+    try:
+        # Find the target gcode file inside the 3MF
+        with zipfile.ZipFile(source_path, "r") as zf:
+            all_gcode = [f for f in zf.namelist() if f.endswith(".gcode")]
+            if not all_gcode:
+                return None
+
+            # Try plate-specific gcode file first
+            target_gcode = None
+            plate_pattern = f"plate_{plate_id}.gcode"
+            for f in all_gcode:
+                if f.endswith(plate_pattern):
+                    target_gcode = f
+                    break
+
+            # Fall back to first gcode file
+            if target_gcode is None:
+                target_gcode = all_gcode[0]
+
+            # Read and modify gcode content
+            gcode_content = zf.read(target_gcode).decode("utf-8", errors="ignore")
+
+            if start_gcode:
+                gcode_content = start_gcode + "\n" + gcode_content
+            if end_gcode:
+                gcode_content = gcode_content.rstrip("\n") + "\n" + end_gcode + "\n"
+
+            # Write modified 3MF to temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".3mf") as tmp:
+                tmp_path = Path(tmp.name)
+
+            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf_write:
+                for item in zf.namelist():
+                    info = zf.getinfo(item)
+                    if item == target_gcode:
+                        zf_write.writestr(info, gcode_content.encode("utf-8"))
+                    else:
+                        zf_write.writestr(info, zf.read(item))
+
+        return tmp_path
+
+    except Exception:
+        # Clean up temp file on error
+        if "tmp_path" in locals() and tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        return None

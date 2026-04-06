@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Calendar, Layers, Loader2, Pencil, Printer, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Calendar, Code, Layers, Loader2, Pencil, Printer, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
@@ -124,6 +124,7 @@ export function PrintModal({
         scheduledTime,
         requirePreviousSuccess: queueItem.require_previous_success,
         autoOffAfter: queueItem.auto_off_after,
+        gcodeInjection: queueItem.gcode_injection ?? false,
         staggerEnabled: false,
         staggerGroupSize: DEFAULT_SCHEDULE_OPTIONS.staggerGroupSize,
         staggerIntervalMinutes: DEFAULT_SCHEDULE_OPTIONS.staggerIntervalMinutes,
@@ -645,6 +646,7 @@ export function PrintModal({
       library_file_id: isLibraryFile ? libraryFileId : undefined,
       require_previous_success: scheduleOptions.requirePreviousSuccess,
       auto_off_after: scheduleOptions.autoOffAfter,
+      gcode_injection: scheduleOptions.gcodeInjection,
       manual_start: scheduleOptions.scheduleType === 'manual',
       ams_mapping: printerId ? getMappingForPrinter(printerId) : undefined,
       plate_id: plateOverride !== undefined ? plateOverride : selectedPlate,
@@ -678,6 +680,7 @@ export function PrintModal({
               filament_overrides: filamentOverridesArray || null,
               require_previous_success: scheduleOptions.requirePreviousSuccess,
               auto_off_after: scheduleOptions.autoOffAfter,
+              gcode_injection: scheduleOptions.gcodeInjection,
               manual_start: scheduleOptions.scheduleType === 'manual',
               ams_mapping: undefined,
               plate_id: plateId,
@@ -755,6 +758,7 @@ export function PrintModal({
                 target_location: null,
                 require_previous_success: scheduleOptions.requirePreviousSuccess,
                 auto_off_after: scheduleOptions.autoOffAfter,
+                gcode_injection: scheduleOptions.gcodeInjection,
                 manual_start: scheduleOptions.scheduleType === 'manual',
                 ams_mapping: printerMapping,
                 plate_id: plateId,
@@ -1130,7 +1134,25 @@ export function PrintModal({
                 canControlPrinter={hasPermission('printers:control')}
                 showStagger={mode === 'add-to-queue' && assignmentMode === 'printer' && selectedPrinters.length > 1}
                 printerCount={selectedPrinters.length}
+                hasGcodeSnippets={!!settings?.gcode_snippets}
               />
+            )}
+
+            {/* G-code injection for reprint mode (only shown when quantity > 1 — applies to queued copies) */}
+            {mode === 'reprint' && !!settings?.gcode_snippets && effectiveQuantity > 1 && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="gcodeInjectionReprint"
+                  checked={scheduleOptions.gcodeInjection}
+                  onChange={(e) => setScheduleOptions({ ...scheduleOptions, gcodeInjection: e.target.checked })}
+                  className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+                />
+                <label htmlFor="gcodeInjectionReprint" className="text-sm flex items-center gap-1 text-bambu-gray">
+                  <Code className="w-3.5 h-3.5" />
+                  {t('printModal.gcodeInjection', 'Inject auto-print G-code')}
+                </label>
+              </div>
             )}
 
             {/* Error message */}

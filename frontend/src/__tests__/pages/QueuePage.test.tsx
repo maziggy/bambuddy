@@ -415,4 +415,31 @@ describe('QueuePage', () => {
       });
     });
   });
+
+  describe('gcode injection badge', () => {
+    it('shows G-code badge when gcode_injection is true', async () => {
+      const itemsWithGcode = mockQueueItems.map((item, i) =>
+        i === 0 ? { ...item, gcode_injection: true } : item
+      );
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json(itemsWithGcode)),
+      );
+
+      render(<QueuePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('G-code')).toBeInTheDocument();
+      });
+    });
+
+    it('does not show G-code badge when gcode_injection is false', async () => {
+      render(<QueuePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Print 1')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText('G-code')).not.toBeInTheDocument();
+    });
+  });
 });

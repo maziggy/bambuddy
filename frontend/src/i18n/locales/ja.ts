@@ -918,6 +918,7 @@ export default {
       staged: 'ステージ済み',
       requiresPrevious: '前の成功が必要',
       autoPowerOff: '自動電源オフ',
+      gcodeInjection: 'G-code',
     },
     // Empty state
     empty: {
@@ -1611,6 +1612,13 @@ export default {
     plateClear: 'プレートクリア確認',
     requirePlateClear: 'プレートクリア確認を必須にする',
     requirePlateClearDescription: '有効にすると、スケジューラーは完了したプリンターでキューの印刷を開始する前に、プリンターごとのプレートクリア確認を待ちます。プレートを物理的に確認するファームワークフローでは無効にしてください。',
+    gcodeInjection: 'G-codeインジェクション',
+    gcodeInjectionDescription: 'Farmloop、SwapMod、AutoClear、Printflow 3Dなどの自動印刷システム用に、印刷の開始と終了時にカスタムG-codeを挿入します。スニペットはプリンターモデルごとに設定し、キューアイテム��「G-codeを挿入」を有効にすると適用されます。',
+    gcodeInjectionNoPrinters: 'プリンターが見つかりません。G-codeスニペットを設定するにはプリンターを追加してください。',
+    gcodeStartLabel: '開始G-code',
+    gcodeEndLabel: '終了G-code',
+    gcodeStartPlaceholder: '印刷開始前に挿入されるG-code...',
+    gcodeEndPlaceholder: '印刷終了後に追加されるG-code...',
     staggerGroupSize: 'Group size',
     staggerGroupSizeHelp: 'Printers to start simultaneously per group',
     staggerInterval: 'Interval (minutes)',
@@ -3222,6 +3230,7 @@ export default {
     staggerLastGroup: 'last group: {{count}}',
     staggerTotal: 'total: {{minutes}} min',
     staggerToPrinters: '{{count}}台のプリンターに段階的に送信',
+    gcodeInjection: '自動印刷G-codeを挿入',
   },
 
   // Backup

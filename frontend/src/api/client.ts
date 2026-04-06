@@ -831,6 +831,7 @@ export interface AppSettings {
   queue_drying_block: boolean;  // Block queue until drying completes
   ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
   drying_presets: string;  // JSON blob of drying presets per filament type
+  gcode_snippets: string;  // JSON: per-model G-code injection snippets
   // Print modal settings
   per_printer_mapping_expanded: boolean;  // Whether custom mapping is expanded by default in print modal
   // Date/time format settings
@@ -1384,6 +1385,8 @@ export interface PrintQueueItem {
   batch_name?: string | null;
   // Shortest-job-first scheduling
   been_jumped?: boolean;
+  // Auto-print G-code injection
+  gcode_injection?: boolean;
 }
 
 export interface PrintBatch {
@@ -1423,6 +1426,8 @@ export interface PrintQueueItemCreate {
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
+  // Auto-print G-code injection
+  gcode_injection?: boolean;
   // Batch: create multiple copies (creates a batch if > 1)
   quantity?: number;
 }
@@ -1446,6 +1451,8 @@ export interface PrintQueueItemUpdate {
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
+  // Auto-print G-code injection
+  gcode_injection?: boolean;
 }
 
 export interface PrintQueueBulkUpdate {
@@ -1462,6 +1469,8 @@ export interface PrintQueueBulkUpdate {
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
+  // Auto-print G-code injection
+  gcode_injection?: boolean;
 }
 
 export interface PrintQueueBulkUpdateResponse {

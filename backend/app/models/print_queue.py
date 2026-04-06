@@ -62,6 +62,9 @@ class PrintQueueItem(Base):
     print_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Cached from archive/library
     been_jumped: Mapped[bool] = mapped_column(Boolean, default=False)  # Starvation guard for SJF
 
+    # Auto-print G-code injection (#422)
+    gcode_injection: Mapped[bool] = mapped_column(Boolean, default=False)
+
     # Print options
     bed_levelling: Mapped[bool] = mapped_column(Boolean, default=True)
     flow_cali: Mapped[bool] = mapped_column(Boolean, default=False)

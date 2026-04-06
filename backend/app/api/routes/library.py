@@ -641,6 +641,7 @@ async def delete_folder(
 
     # Delete folder (cascade will handle files and subfolders)
     await db.delete(folder)
+    await db.commit()
 
     return {"status": "success", "message": "Folder deleted"}
 
@@ -780,18 +781,105 @@ async def scan_external_folder(
     if not ext_path.exists() or not ext_path.is_dir():
         raise HTTPException(status_code=400, detail=f"External path is not accessible: {folder.external_path}")
 
-    # Get existing DB files for this folder
+    # Collect all existing child external subfolder IDs (single query)
+    all_folder_ids = [folder_id]
+    child_result = await db.execute(
+        select(LibraryFolder).where(
+            LibraryFolder.is_external.is_(True),
+            LibraryFolder.parent_id.isnot(None),
+        )
+    )
+    all_child_folders = child_result.scalars().all()
+
+    # Walk the parent chain to find all descendants of folder_id
+    parent_to_children: dict[int, list] = {}
+    for cf in all_child_folders:
+        parent_to_children.setdefault(cf.parent_id, []).append(cf)
+
+    queue = [folder_id]
+    while queue:
+        pid = queue.pop()
+        for child in parent_to_children.get(pid, []):
+            all_folder_ids.append(child.id)
+            queue.append(child.id)
+
+    # Get existing DB files across root and all subfolders
     existing_result = await db.execute(
-        select(LibraryFile).where(LibraryFile.folder_id == folder_id, LibraryFile.is_external.is_(True))
+        select(LibraryFile).where(
+            LibraryFile.folder_id.in_(all_folder_ids),
+            LibraryFile.is_external.is_(True),
+        )
     )
     existing_files = {f.file_path: f for f in existing_result.scalars().all()}
+
+    # Build folder cache: relative path -> folder_id (for resolving subfolders)
+    # Pre-populate with existing child folders keyed by their external_path
+    folder_cache: dict[str, int] = {"": folder_id}
+    for fid in all_folder_ids:
+        if fid == folder_id:
+            continue
+        # Find the child folder object
+        for cf in all_child_folders:
+            if cf.id == fid and cf.external_path:
+                try:
+                    rel = str(Path(cf.external_path).relative_to(ext_path))
+                    if rel != ".":
+                        folder_cache[rel] = cf.id
+                except ValueError:
+                    pass
 
     # Scan the directory
     added = 0
     removed = 0
-    found_paths = set()
+    found_paths: set[str] = set()
+    seen_rel_dirs: set[str] = set()
 
-    for dirpath, _dirnames, filenames in os.walk(ext_path):
+    for dirpath, dirnames, filenames in os.walk(ext_path):
+        # Filter hidden directories unless configured
+        if not folder.external_show_hidden:
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+
+        rel_dir = str(Path(dirpath).relative_to(ext_path))
+        if rel_dir == ".":
+            rel_dir = ""
+        seen_rel_dirs.add(rel_dir)
+
+        # Resolve or create subfolder chain for this directory
+        if rel_dir and rel_dir not in folder_cache:
+            parts = Path(rel_dir).parts
+            current_path = ""
+            current_parent = folder_id
+            for part in parts:
+                current_path = f"{current_path}/{part}".lstrip("/")
+                if current_path in folder_cache:
+                    current_parent = folder_cache[current_path]
+                else:
+                    existing_sub = await db.execute(
+                        select(LibraryFolder).where(
+                            LibraryFolder.name == part,
+                            LibraryFolder.parent_id == current_parent,
+                            LibraryFolder.is_external.is_(True),
+                        )
+                    )
+                    existing_folder = existing_sub.scalar_one_or_none()
+                    if existing_folder:
+                        current_parent = existing_folder.id
+                    else:
+                        new_folder = LibraryFolder(
+                            name=part,
+                            parent_id=current_parent,
+                            is_external=True,
+                            external_path=str(ext_path / current_path),
+                            external_readonly=folder.external_readonly,
+                            external_show_hidden=folder.external_show_hidden,
+                        )
+                        db.add(new_folder)
+                        await db.flush()
+                        current_parent = new_folder.id
+                    folder_cache[current_path] = current_parent
+
+        target_folder_id = folder_cache.get(rel_dir, folder_id)
+
         for filename in filenames:
             # Skip hidden files unless configured
             if not folder.external_show_hidden and filename.startswith("."):
@@ -896,7 +984,7 @@ async def scan_external_folder(
                     thumbnail_path = to_relative_path(Path(thumbnail_path_str))
 
             db_file = LibraryFile(
-                folder_id=folder_id,
+                folder_id=target_folder_id,
                 is_external=True,
                 filename=filename,
                 file_path=file_path_str,
@@ -922,6 +1010,26 @@ async def scan_external_folder(
                     pass
             await db.delete(db_file)
             removed += 1
+
+    # Remove empty subfolders whose directories no longer exist on disk
+    # Process deepest-first by sorting on path depth (descending)
+    subfolder_entries = [(rel, fid) for rel, fid in folder_cache.items() if rel and fid != folder_id]
+    subfolder_entries.sort(key=lambda x: x[0].count("/"), reverse=True)
+    for rel_path, sub_fid in subfolder_entries:
+        if rel_path in seen_rel_dirs:
+            continue  # Directory still exists on disk
+        # Check if subfolder has any remaining files
+        file_count_result = await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == sub_fid))
+        if (file_count_result.scalar() or 0) == 0:
+            # Check if it has any remaining child folders
+            child_count_result = await db.execute(
+                select(func.count(LibraryFolder.id)).where(LibraryFolder.parent_id == sub_fid)
+            )
+            if (child_count_result.scalar() or 0) == 0:
+                sub_folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == sub_fid))
+                sub_folder_obj = sub_folder_result.scalar_one_or_none()
+                if sub_folder_obj:
+                    await db.delete(sub_folder_obj)
 
     await db.commit()
 
@@ -2328,6 +2436,7 @@ async def delete_file(
         logger.warning("Failed to delete file from disk: %s", e)
 
     await db.delete(file)
+    await db.commit()
 
     return {"status": "success", "message": "File deleted"}
 
@@ -2593,6 +2702,8 @@ async def bulk_delete(
             deleted_files += file_count_result.scalar() or 0
             await db.delete(folder)
             deleted_folders += 1
+
+    await db.commit()
 
     return BulkDeleteResponse(deleted_files=deleted_files, deleted_folders=deleted_folders)
 

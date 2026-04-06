@@ -1788,6 +1788,16 @@ async def on_print_start(printer_id: int, data: dict):
                 else:
                     print_name = "Unknown Print"
 
+                # Recover estimated print time from MQTT (best-effort for notifications)
+                fallback_print_time = None
+                mqtt_remaining = data.get("remaining_time")
+                if mqtt_remaining and isinstance(mqtt_remaining, (int, float)) and mqtt_remaining > 0:
+                    fallback_print_time = int(mqtt_remaining)
+                if fallback_print_time is None:
+                    mc_remaining = (data.get("raw_data") or {}).get("mc_remaining_time")
+                    if mc_remaining and isinstance(mc_remaining, (int, float)) and mc_remaining > 0:
+                        fallback_print_time = int(mc_remaining * 60)
+
                 # Create minimal archive entry
                 fallback_archive = PrintArchive(
                     printer_id=printer_id,
@@ -1795,6 +1805,7 @@ async def on_print_start(printer_id: int, data: dict):
                     file_path="",  # Empty - no 3MF file available
                     file_size=0,
                     print_name=print_name,
+                    print_time_seconds=fallback_print_time,
                     status="printing",
                     started_at=datetime.now(timezone.utc),
                     extra_data={"no_3mf_available": True, "original_subtask": subtask_name, "_print_data": data},
@@ -2691,6 +2702,21 @@ async def on_print_complete(printer_id: int, data: dict):
                             "[NOTIFY-BG] Could not look up queue item for no-archive notification: %s", lookup_err
                         )
 
+                    # Enrich with usage tracker results (captured in enclosing scope)
+                    if usage_results:
+                        if no_archive_data is None:
+                            no_archive_data = {}
+                        total_from_usage = sum(r.get("weight_used", 0) for r in usage_results)
+                        if total_from_usage > 0:
+                            no_archive_data["actual_filament_grams"] = round(total_from_usage, 1)
+                        no_archive_data["usage_results"] = usage_results
+
+                    # Try MQTT remaining_time for print duration when no queue/library data
+                    if no_archive_data and not no_archive_data.get("print_time_seconds"):
+                        mqtt_remaining = data.get("remaining_time")
+                        if mqtt_remaining and isinstance(mqtt_remaining, (int, float)) and mqtt_remaining > 0:
+                            no_archive_data["print_time_seconds"] = int(mqtt_remaining)
+
                     ps = data.get("status", "completed")
                     logger.info(
                         "[NOTIFY-BG] Sending notification without archive: printer=%s, status=%s", printer_id, ps
@@ -3013,6 +3039,12 @@ async def on_print_complete(printer_id: int, data: dict):
                                 scale = max(0.0, min((data.get("progress") or 0) / 100.0, 1.0))
                                 slots = [{**s, "used_g": round(s["used_g"] * scale, 1)} for s in slots]
                             archive_data["filament_slots"] = slots
+
+                        # Enrich filament_grams from usage_results when archive has no 3MF data
+                        if not archive_data.get("actual_filament_grams") and usage_results:
+                            total_from_usage = sum(r.get("weight_used", 0) for r in usage_results)
+                            if total_from_usage > 0:
+                                archive_data["actual_filament_grams"] = round(total_from_usage, 1)
 
                         # Pass usage tracker results for AMS slot info in notifications
                         if usage_results:

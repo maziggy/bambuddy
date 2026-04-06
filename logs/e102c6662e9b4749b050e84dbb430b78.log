@@ -1,0 +1,200 @@
+2026-04-06 15:25:01,803 WARNING [backend.app.services.bambu_ftp] Failed to delete /Cube.gcode: 550 
+2026-04-06 15:25:02,803 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:02,906 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Cube.gcode.3mf: 550 
+2026-04-06 15:25:02,955 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf attempt 3/11 returned failure
+2026-04-06 15:25:02,955 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:03,443 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 157288 bytes
+2026-04-06 15:25:03,887 INFO [backend.app.services.notification_service] Sent notification via Telegram
+2026-04-06 15:25:03,887 INFO [backend.app.main] [HMS] Sent notification for 1 error(s) on printer 1
+2026-04-06 15:25:04,884 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:04,941 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Cube.gcode.3mf: 550 
+2026-04-06 15:25:04,954 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf attempt 5/11 returned failure
+2026-04-06 15:25:04,954 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:04,969 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:04,982 WARNING [backend.app.services.bambu_ftp] Failed to delete /Cube.gcode: 550 
+2026-04-06 15:25:07,807 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:07,820 WARNING [backend.app.services.bambu_ftp] Failed to delete /Cube.gcode: 550 
+2026-04-06 15:25:07,831 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /Cube.gcode (file may linger on SD card)
+2026-04-06 15:25:07,831 INFO [backend.app.main] [TIMING] SD card cleanup: 13.607s elapsed
+2026-04-06 15:25:07,837 INFO [backend.app.main] [TIMING] Queue item update: 13.613s elapsed
+2026-04-06 15:25:07,890 INFO [backend.app.services.usage_tracker] [UsageTracker] on_print_complete: printer=1, archive=None, session=yes, ams_mapping=None
+2026-04-06 15:25:07,890 INFO [backend.app.services.usage_tracker] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=255, last_loaded_tray=2
+2026-04-06 15:25:07,902 INFO [backend.app.main] [TIMING] Filament usage tracking: 13.678s elapsed
+2026-04-06 15:25:07,902 WARNING [backend.app.main] Could not find archive for print complete: filename=Cube.gcode.3mf, subtask=Cube
+2026-04-06 15:25:07,934 INFO [backend.app.main] [NOTIFY-BG] Sending notification without archive: printer=1, status=failed
+2026-04-06 15:25:07,934 INFO [backend.app.services.notification_service] on_print_complete called for printer 1 (A1), status=failed
+2026-04-06 15:25:07,956 INFO [backend.app.services.notification_service] Found 1 providers for on_print_failed: ['Telegram']
+2026-04-06 15:25:08,067 INFO [backend.app.services.notification_service] Sent notification via Telegram
+2026-04-06 15:25:08,067 INFO [backend.app.main] [NOTIFY-BG] Completed (no-archive path)
+2026-04-06 15:25:13,747 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:13,778 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Cube.gcode.3mf: 550 
+2026-04-06 15:25:13,789 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf attempt 4/11 returned failure
+2026-04-06 15:25:13,790 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:15,733 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:15,787 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Cube.gcode.3mf: 550 
+2026-04-06 15:25:15,799 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf attempt 6/11 returned failure
+2026-04-06 15:25:15,799 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:18,763 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'A1'
+2026-04-06 15:25:21,397 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'A1'
+2026-04-06 15:25:21,574 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'A1'
+2026-04-06 15:25:21,801 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'A1'
+2026-04-06 15:25:22,003 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'A1'
+2026-04-06 15:25:23,728 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'Filter'
+2026-04-06 15:25:23,908 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'Filter'
+2026-04-06 15:25:24,083 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'Filter'
+2026-04-06 15:25:24,244 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'Filter'
+2026-04-06 15:25:24,570 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:24,601 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Cube.gcode.3mf: 550 
+2026-04-06 15:25:24,612 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf attempt 5/11 returned failure
+2026-04-06 15:25:24,613 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:26,576 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:26,629 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Cube.gcode.3mf: 550 
+2026-04-06 15:25:26,639 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf attempt 7/11 returned failure
+2026-04-06 15:25:26,639 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:35,395 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:35,426 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Cube.gcode.3mf: 550 
+2026-04-06 15:25:35,439 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf attempt 6/11 returned failure
+2026-04-06 15:25:35,439 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:37,419 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:37,473 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Cube.gcode.3mf: 550 
+2026-04-06 15:25:37,485 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf attempt 8/11 returned failure
+2026-04-06 15:25:37,486 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:44,797 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'Filter'
+2026-04-06 15:25:46,221 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:46,251 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Cube.gcode.3mf: 550 
+2026-04-06 15:25:46,264 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf attempt 7/11 returned failure
+2026-04-06 15:25:46,264 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:48,269 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:48,320 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Cube.gcode.3mf: 550 
+2026-04-06 15:25:48,332 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf attempt 9/11 returned failure
+2026-04-06 15:25:48,332 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:53,246 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'Filter'
+2026-04-06 15:25:57,049 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:57,080 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Cube.gcode.3mf: 550 
+2026-04-06 15:25:57,091 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf attempt 8/11 returned failure
+2026-04-06 15:25:57,092 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:25:59,121 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:25:59,175 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Cube.gcode.3mf: 550 
+2026-04-06 15:25:59,189 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf attempt 10/11 returned failure
+2026-04-06 15:25:59,189 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:26:03,402 INFO [backend.app.api.routes.smart_plugs] Updated smart plug 'Filter'
+2026-04-06 15:26:07,893 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:07,924 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Cube.gcode.3mf: 550 
+2026-04-06 15:26:07,934 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf attempt 9/11 returned failure
+2026-04-06 15:26:07,934 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:26:09,977 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:10,031 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Cube.gcode.3mf: 550 
+2026-04-06 15:26:10,043 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf attempt 11/11 returned failure
+2026-04-06 15:26:10,043 ERROR [backend.app.services.bambu_ftp] Download 3MF from /cache/Cube.gcode.3mf failed after 11 attempts
+2026-04-06 15:26:10,837 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:10,867 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:26:10,878 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:26:18,726 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:18,753 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Cube.gcode.3mf: 550 
+2026-04-06 15:26:18,764 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf attempt 10/11 returned failure
+2026-04-06 15:26:18,764 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:26:21,678 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:21,711 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:26:21,722 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 2/11 returned failure
+2026-04-06 15:26:21,722 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:26:29,542 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:29,583 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Cube.gcode.3mf: 550 
+2026-04-06 15:26:29,593 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf attempt 11/11 returned failure
+2026-04-06 15:26:29,594 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Cube.gcode.3mf failed after 11 attempts
+2026-04-06 15:26:30,379 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:30,639 INFO [backend.app.services.bambu_ftp] Successfully downloaded /Cube.gcode.3mf to /app/data/archive/temp/Cube.gcode.3mf (44450 bytes)
+2026-04-06 15:26:30,640 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-06 15:26:30,649 INFO [backend.app.main] Downloaded: /Cube.gcode.3mf
+2026-04-06 15:26:30,673 INFO [backend.app.main] Created archive 194 for Cube.gcode.3mf
+2026-04-06 15:26:30,675 WARNING [backend.app.main] Failed to record starting energy: Multiple rows were found when one or none was required
+2026-04-06 15:26:30,678 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-06 15:26:30,678 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-06 15:26:32,514 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:32,576 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:26:32,626 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 3/11 returned failure
+2026-04-06 15:26:32,627 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:26:33,194 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 148717 bytes
+2026-04-06 15:26:33,195 INFO [backend.app.services.notification_service] on_print_start called for printer 1 (A1)
+2026-04-06 15:26:33,198 INFO [backend.app.services.notification_service] No notification providers configured for print_start event on printer 1
+2026-04-06 15:26:34,001 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:34,097 INFO [backend.app.main] [TIMELAPSE] Baseline at print start: 2 video files for printer 1
+2026-04-06 15:26:43,404 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:43,429 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:26:43,439 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 4/11 returned failure
+2026-04-06 15:26:43,440 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:26:54,219 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:26:54,247 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:26:54,259 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 5/11 returned failure
+2026-04-06 15:26:54,259 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:27:05,048 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:27:05,077 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:27:05,089 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 6/11 returned failure
+2026-04-06 15:27:05,089 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:27:13,620 INFO [backend.app.services.homeassistant] Turned OFF HA entity 'Filter' (switch.filtro_enchufe_1)
+2026-04-06 15:27:13,620 INFO [backend.app.services.printer_manager] Marking printer 1 as offline (smart plug power off)
+2026-04-06 15:27:15,885 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:27:15,914 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:27:15,925 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 7/11 returned failure
+2026-04-06 15:27:15,926 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:27:26,711 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:27:26,753 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:27:26,762 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 8/11 returned failure
+2026-04-06 15:27:26,764 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:27:37,539 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:27:37,571 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:27:37,583 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 9/11 returned failure
+2026-04-06 15:27:37,584 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:27:44,998 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client [IP]:33592 disconnected
+2026-04-06 15:27:44,998 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: disconnected: [IP]:33592
+2026-04-06 15:27:48,362 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:27:48,389 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:27:48,413 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 10/11 returned failure
+2026-04-06 15:27:48,413 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:27:57,805 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:59854
+2026-04-06 15:27:57,805 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:59854
+2026-04-06 15:27:59,142 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: connected to printer [IP]:8883
+2026-04-06 15:27:59,152 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy IP rewrite active: [IP] → [IP]
+2026-04-06 15:27:59,221 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:27:59,266 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Cube.gcode.3mf: 550 
+2026-04-06 15:27:59,287 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf attempt 11/11 returned failure
+2026-04-06 15:27:59,287 ERROR [backend.app.services.bambu_ftp] Download 3MF from /model/Cube.gcode.3mf failed after 11 attempts
+2026-04-06 15:28:00,075 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:28:00,103 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Cube.gcode.3mf: 550 
+2026-04-06 15:28:00,114 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:28:01,047 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] State is FAILED but completion NOT triggered: prev=unknown, was_running=False, already_triggered=True, has_callback=True
+2026-04-06 15:28:10,892 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:28:10,922 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Cube.gcode.3mf: 550 
+2026-04-06 15:28:10,932 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf attempt 2/11 returned failure
+2026-04-06 15:28:10,932 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:28:20,263 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client [IP]:59854 disconnected
+2026-04-06 15:28:20,263 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: disconnected: [IP]:59854
+2026-04-06 15:28:21,721 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:28:21,757 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Cube.gcode.3mf: 550 
+2026-04-06 15:28:21,770 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf attempt 3/11 returned failure
+2026-04-06 15:28:21,770 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:28:31,383 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:36032
+2026-04-06 15:28:31,383 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:36032
+2026-04-06 15:28:32,720 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: connected to printer [IP]:8883
+2026-04-06 15:28:32,723 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy IP rewrite active: [IP] → [IP]
+2026-04-06 15:28:32,734 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:28:32,769 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Cube.gcode.3mf: 550 
+2026-04-06 15:28:32,776 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf attempt 4/11 returned failure
+2026-04-06 15:28:32,776 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:28:43,551 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:28:43,581 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Cube.gcode.3mf: 550 
+2026-04-06 15:28:43,593 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf attempt 5/11 returned failure
+2026-04-06 15:28:43,593 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:28:54,377 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:28:54,408 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Cube.gcode.3mf: 550 
+2026-04-06 15:28:54,418 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf attempt 6/11 returned failure
+2026-04-06 15:28:54,418 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:28:59,307 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client [IP]:36032 disconnected
+2026-04-06 15:28:59,307 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: disconnected: [IP]:36032
+2026-04-06 15:29:05,197 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:29:05,233 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Cube.gcode.3mf: 550 
+2026-04-06 15:29:05,242 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf attempt 7/11 returned failure
+2026-04-06 15:29:05,242 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf will retry in 10.0s...
+2026-04-06 15:29:16,033 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:29:16,063 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Cube.gcode.3mf: 550 
+2026-04-06 15:29:16,075 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf attempt 8/11 returned failure
+2026-04-06 15:29:16,075 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Cube.gcode.3mf will retry in 10.0s...

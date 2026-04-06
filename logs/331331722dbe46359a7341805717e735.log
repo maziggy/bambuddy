@@ -1,0 +1,200 @@
+2026-04-06 15:38:57,787 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:38:58,514 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Disc.gcode.3mf: 550 
+2026-04-06 15:38:58,526 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Disc.gcode.3mf attempt 8/11 returned failure
+2026-04-06 15:38:58,527 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Disc.gcode.3mf will retry in 10.0s...
+2026-04-06 15:38:58,530 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-06 15:38:58,547 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-06 15:38:58,564 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-06 15:38:58,564 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:38:58,984 INFO [backend.app.services.bambu_ftp] Successfully downloaded /Disc.gcode.3mf to /app/data/archive/temp/Disc.gcode.3mf (40734 bytes)
+2026-04-06 15:38:58,985 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-06 15:38:58,995 INFO [backend.app.main] Downloaded: /Disc.gcode.3mf
+2026-04-06 15:38:59,008 DEBUG [backend.app.services.archive] Auto-detected 1 parts from 3MF printable objects
+2026-04-06 15:38:59,015 INFO [backend.app.main] Created archive 196 for Disc.gcode.3mf
+2026-04-06 15:38:59,017 WARNING [backend.app.main] Failed to record starting energy: Multiple rows were found when one or none was required
+2026-04-06 15:38:59,021 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-06 15:38:59,022 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-06 15:39:00,423 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:02,068 DEBUG [backend.app.services.camera] Chamber image: received 125533 bytes
+2026-04-06 15:39:02,074 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 125533 bytes
+2026-04-06 15:39:02,075 INFO [backend.app.services.notification_service] on_print_start called for printer 1 (A1)
+2026-04-06 15:39:02,077 INFO [backend.app.services.notification_service] No notification providers configured for print_start event on printer 1
+2026-04-06 15:39:02,079 INFO [backend.app.main] Loaded 1 printable objects for printer 1
+2026-04-06 15:39:02,081 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30s, model=A1, prot_c=False)
+2026-04-06 15:39:02,846 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-06 15:39:02,861 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-06 15:39:02,877 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-06 15:39:02,877 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:39:03,007 DEBUG [backend.app.services.bambu_ftp] Listed 3 files in /timelapse
+2026-04-06 15:39:03,017 INFO [backend.app.main] [TIMELAPSE] Baseline at print start: 2 video files for printer 1
+2026-04-06 15:39:03,280 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:04,491 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-04-06 15:39:04,492 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Virtual
+DevSignal.bambu.com: -39
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-04-06 15:39:04,492 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-04-06 15:39:04,593 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-04-06 15:39:04,594 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Virtual
+DevSignal.bambu.com: -39
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-04-06 15:39:04,595 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-04-06 15:39:05,198 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Virtual
+DevSignal.bambu.com: -39
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-04-06 15:39:05,199 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-04-06 15:39:07,331 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:08,529 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=300.0s, model=A1, prot_c=False)
+2026-04-06 15:39:09,299 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-06 15:39:09,312 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-06 15:39:09,329 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-06 15:39:09,329 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:39:09,374 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Disc.gcode.3mf: 550 
+2026-04-06 15:39:09,385 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Disc.gcode.3mf attempt 9/11 returned failure
+2026-04-06 15:39:09,386 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Disc.gcode.3mf will retry in 10.0s...
+2026-04-06 15:39:10,127 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:14,167 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:15,361 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-04-06 15:39:15,362 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Virtual
+DevSignal.bambu.com: -39
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-04-06 15:39:15,362 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-04-06 15:39:15,463 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-04-06 15:39:15,463 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Virtual
+DevSignal.bambu.com: -39
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-04-06 15:39:15,464 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-04-06 15:39:16,208 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:18,232 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:18,232 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -38dBm
+2026-04-06 15:39:19,387 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=300.0s, model=A1, prot_c=False)
+2026-04-06 15:39:20,135 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-06 15:39:20,153 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-06 15:39:20,170 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-06 15:39:20,170 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-06 15:39:20,202 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Disc.gcode.3mf: 550 
+2026-04-06 15:39:20,213 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Disc.gcode.3mf attempt 10/11 returned failure
+2026-04-06 15:39:20,213 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Disc.gcode.3mf will retry in 10.0s...
+2026-04-06 15:39:20,985 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:20,986 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] mc_print_sub_stage changed: 2 -> 1
+2026-04-06 15:39:20,986 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] stg_cur changed: 14 -> 13 (Homing toolhead)
+2026-04-06 15:39:23,023 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:23,024 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-04-06 15:39:25,061 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-06 15:39:25,062 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -40dBm
+2026-04-06 15:39:25,065 DEBUG [backend.app.main] [A1] Runtime tracking: added 30s, total=1190315s (330.64h)
+2026-04-06 15:39:25,067 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-06 15:39:26,233 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-04-06 15:39:26,234 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Virtual
+DevSignal.bambu.com: -41
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-04-06 15:39:26,234 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-04-06 15:39:26,335 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-04-06 15:39:26,335 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Virtual
+DevSignal.bambu.com: -41
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-04-06 15:39:26,335 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])

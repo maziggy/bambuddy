@@ -3007,6 +3007,7 @@ export default {
     assigned: 'Assigné',
     assigning: 'Assignation...',
     searchSpools: 'Chercher bobines...',
+    showAllSpools: 'Afficher toutes les bobines',
     allMaterials: 'Tous Matériaux',
     filterByBrand: 'Filtrer par marque...',
     showArchived: 'Afficher archivées',

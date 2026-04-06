@@ -3006,6 +3006,7 @@ export default {
     assigned: 'Atribuído',
     assigning: 'Atribuindo...',
     searchSpools: 'Pesquisar carretéis...',
+    showAllSpools: 'Mostrar todos os carretéis',
     allMaterials: 'Todos os Materiais',
     filterByBrand: 'Filtrar por marca...',
     showArchived: 'Mostrar arquivados',

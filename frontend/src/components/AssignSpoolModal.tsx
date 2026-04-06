@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Package, Search } from 'lucide-react';
@@ -39,6 +39,12 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     spoolProfile?: string;
     trayProfile?: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setDisableFiltering(false);
+    }
+  }, [isOpen]);
 
   const { data: spools, isLoading } = useQuery({
     queryKey: ['inventory-spools'],
@@ -133,9 +139,9 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   let filteredSpools = manualSpools;
   if (!disableFiltering) {
     if (trayInfo?.profile || trayInfo?.type) {
-      const trayProfile = (trayInfo.profile || trayInfo.type || '').trim().toUpperCase();
+      const trayProfile = normalizeValue(trayInfo.profile || trayInfo.type);
       filteredSpools = filteredSpools?.filter((spool: InventorySpool) => {
-        const spoolProfile = (spool.slicer_filament_name || spool.slicer_filament || '').trim().toUpperCase();
+        const spoolProfile = normalizeValue(spool.slicer_filament_name || spool.slicer_filament);
         return trayProfile && spoolProfile && spoolProfile === trayProfile;
       });
     }

@@ -3019,6 +3019,7 @@ export default {
     assigned: '割り当て済み',
     assigning: '割り当て中...',
     searchSpools: 'スプールを検索...',
+    showAllSpools: 'すべてのスプールを表示',
     allMaterials: 'すべての素材',
     filterByBrand: 'ブランドで絞り込み...',
     showArchived: 'アーカイブ済みを表示',

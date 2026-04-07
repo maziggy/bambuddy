@@ -2466,10 +2466,16 @@ async def on_print_complete(printer_id: int, data: dict):
 
     # Update queue item status early — must run before the archive_id early-return
     # so queue items don't get stuck in "printing" when archive lookup fails.
+    # Uses run_with_retry to handle SQLite "database is locked" errors (#897).
+    queue_item_id = None
+    queue_status = None
+    queue_auto_off = False
     try:
-        async with async_session() as db:
-            from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.core.database import run_with_retry
+        from backend.app.models.print_queue import PrintQueueItem
 
+        async def _update_queue_status(db):
+            nonlocal queue_item_id, queue_status, queue_auto_off
             result = await db.execute(
                 select(PrintQueueItem)
                 .where(PrintQueueItem.printer_id == printer_id)
@@ -2482,35 +2488,43 @@ async def on_print_complete(printer_id: int, data: dict):
                     printer_id,
                     [(i.id, i.archive_id, i.library_file_id) for i in printing_items],
                 )
-            queue_item = printing_items[0] if printing_items else None
-            if queue_item:
+            item = printing_items[0] if printing_items else None
+            if item:
                 queue_status = data.get("status", "completed")
                 # MQTT sends "aborted" for cancelled prints; normalise to
                 # "cancelled" so it matches the queue schema Literal.
                 if queue_status == "aborted":
                     queue_status = "cancelled"
-                queue_item.status = queue_status
-                queue_item.completed_at = datetime.now(timezone.utc)
+                item.status = queue_status
+                item.completed_at = datetime.now(timezone.utc)
                 await db.commit()
-                logger.info("Updated queue item %s status to %s", queue_item.id, queue_status)
+                queue_item_id = item.id
+                queue_auto_off = item.auto_off_after
+                logger.info("Updated queue item %s status to %s", item.id, queue_status)
 
-                # MQTT relay - publish queue job completed
-                try:
-                    printer_info = printer_manager.get_printer(printer_id)
-                    await mqtt_relay.on_queue_job_completed(
-                        job_id=queue_item.id,
-                        filename=filename or subtask_name,
-                        printer_id=printer_id,
-                        printer_name=printer_info.name if printer_info else "Unknown",
-                        status=queue_status,
-                    )
-                except Exception:
-                    pass  # Don't fail if MQTT fails
+        await run_with_retry(_update_queue_status, label="queue status update")
 
-                # Check if queue is now empty and send notification
-                try:
-                    from sqlalchemy import func as sa_func
+        # Post-commit side effects (notifications, MQTT relay, auto-off) use
+        # their own sessions and have their own error handling — no retry needed.
+        if queue_item_id is not None:
+            # MQTT relay - publish queue job completed
+            try:
+                printer_info = printer_manager.get_printer(printer_id)
+                await mqtt_relay.on_queue_job_completed(
+                    job_id=queue_item_id,
+                    filename=filename or subtask_name,
+                    printer_id=printer_id,
+                    printer_name=printer_info.name if printer_info else "Unknown",
+                    status=queue_status,
+                )
+            except Exception:
+                pass  # Don't fail if MQTT fails
 
+            # Check if queue is now empty and send notification
+            try:
+                from sqlalchemy import func as sa_func
+
+                async with async_session() as db:
                     count_result = await db.execute(
                         select(sa_func.count(PrintQueueItem.id)).where(PrintQueueItem.status == "pending")
                     )
@@ -2530,31 +2544,38 @@ async def on_print_complete(printer_id: int, data: dict):
                             completed_count=completed_count,
                             db=db,
                         )
-                except Exception:
-                    pass  # Don't fail if notification fails
+            except Exception:
+                pass  # Don't fail if notification fails
 
-                # Handle auto_off_after - power off printer if requested (after cooldown)
-                if queue_item.auto_off_after:
+            # Handle auto_off_after - power off printer if requested (after cooldown)
+            if queue_auto_off:
+                async with async_session() as db:
                     result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-                    plug = result.scalar_one_or_none()
-                    if plug and plug.enabled:
-                        logger.info("Auto-off requested for printer %s, waiting for cooldown...", printer_id)
+                    plugs = list(result.scalars().all())
+                enabled_plugs = [p for p in plugs if p.enabled]
+                if enabled_plugs:
+                    logger.info("Auto-off requested for printer %s, waiting for cooldown...", printer_id)
 
-                        async def cooldown_and_poweroff(pid: int, plug_id: int):
-                            # Wait for nozzle to cool down
-                            await printer_manager.wait_for_cooldown(pid, target_temp=50.0, timeout=600)
-                            # Re-fetch plug in new session
-                            async with async_session() as new_db:
-                                result = await new_db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
-                                p = result.scalar_one_or_none()
-                                if p and p.enabled:
-                                    success = await tasmota_service.turn_off(p)
-                                    if success:
-                                        logger.info("Powered off printer %s via smart plug '%s'", pid, p.name)
-                                    else:
-                                        logger.warning("Failed to power off printer %s via smart plug", pid)
+                    async def cooldown_and_poweroff(pid: int, plug_ids: list[int]):
+                        # Wait for nozzle to cool down
+                        await printer_manager.wait_for_cooldown(pid, target_temp=50.0, timeout=600)
+                        # Re-fetch plugs in new session and turn off each one
+                        async with async_session() as new_db:
+                            for plug_id in plug_ids:
+                                try:
+                                    result = await new_db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
+                                    p = result.scalar_one_or_none()
+                                    if p and p.enabled:
+                                        service = await smart_plug_manager.get_service_for_plug(p, new_db)
+                                        success = await service.turn_off(p)
+                                        if success:
+                                            logger.info("Powered off printer %s via smart plug '%s'", pid, p.name)
+                                        else:
+                                            logger.warning("Failed to power off plug '%s' for printer %s", p.name, pid)
+                                except Exception as e:
+                                    logger.warning("Failed to power off plug %s for printer %s: %s", plug_id, pid, e)
 
-                        asyncio.create_task(cooldown_and_poweroff(printer_id, plug.id))
+                    asyncio.create_task(cooldown_and_poweroff(printer_id, [p.id for p in enabled_plugs]))
     except Exception as e:
         logging.getLogger(__name__).warning(f"Queue item update failed: {e}")
 
@@ -3451,61 +3472,70 @@ async def track_printer_runtime():
         try:
             from backend.app.models.printer import Printer
 
+            # Fetch printer IDs in a short-lived read-only session
             async with async_session() as db:
-                # Get all active printers
-                result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
-                printers = result.scalars().all()
+                result = await db.execute(
+                    select(Printer.id, Printer.name, Printer.runtime_seconds, Printer.last_runtime_update).where(
+                        Printer.is_active.is_(True)
+                    )
+                )
+                printer_rows = result.all()
 
-                now = datetime.now(timezone.utc)
-                updated_count = 0
+            now = datetime.now(timezone.utc)
+            updated_count = 0
+
+            # Update each printer in its own short session to minimise write-lock
+            # hold time and avoid blocking critical commits like queue status
+            # updates (#897).
+            for pid, pname, runtime_secs, last_update in printer_rows:
+                state = printer_manager.get_status(pid)
+                if not state:
+                    logger.debug("[%s] Runtime tracking: no state available", pname)
+                    continue
+                if not state.connected:
+                    logger.debug("[%s] Runtime tracking: not connected", pname)
+                    continue
 
                 needs_commit = False
+                new_runtime = runtime_secs
+                new_last_update = last_update
 
-                for printer in printers:
-                    # Get current state from printer manager
-                    state = printer_manager.get_status(printer.id)
-                    if not state:
-                        logger.debug("[%s] Runtime tracking: no state available", printer.name)
-                        continue
-                    if not state.connected:
-                        logger.debug("[%s] Runtime tracking: not connected", printer.name)
-                        continue
-
-                    # Check if printer is in an active state (RUNNING or PAUSE)
-                    if state.state in ("RUNNING", "PAUSE"):
-                        # Calculate time since last update
-                        if printer.last_runtime_update:
-                            last_update = printer.last_runtime_update
-                            if last_update.tzinfo is None:
-                                last_update = last_update.replace(tzinfo=timezone.utc)
-                            elapsed = (now - last_update).total_seconds()
-                            if elapsed > 0:
-                                printer.runtime_seconds += int(elapsed)
-                                updated_count += 1
-                                needs_commit = True
-                                logger.debug(
-                                    f"[{printer.name}] Runtime tracking: added {int(elapsed)}s, "
-                                    f"total={printer.runtime_seconds}s ({printer.runtime_seconds / 3600:.2f}h)"
-                                )
-                        else:
-                            # First time seeing printer active - need to commit to save timestamp
+                if state.state in ("RUNNING", "PAUSE"):
+                    if last_update:
+                        lu = last_update if last_update.tzinfo else last_update.replace(tzinfo=timezone.utc)
+                        elapsed = (now - lu).total_seconds()
+                        if elapsed > 0:
+                            new_runtime = runtime_secs + int(elapsed)
+                            updated_count += 1
                             needs_commit = True
-                            logger.debug("[%s] Runtime tracking: first active detection", printer.name)
-
-                        printer.last_runtime_update = now
-                    else:
-                        # Printer is idle/offline - clear last_runtime_update
-                        if printer.last_runtime_update is not None:
                             logger.debug(
-                                f"[{printer.name}] Runtime tracking: state={state.state}, clearing last_runtime_update"
+                                f"[{pname}] Runtime tracking: added {int(elapsed)}s, "
+                                f"total={new_runtime}s ({new_runtime / 3600:.2f}h)"
                             )
-                            printer.last_runtime_update = None
-                            needs_commit = True
+                    else:
+                        needs_commit = True
+                        logger.debug("[%s] Runtime tracking: first active detection", pname)
+                    new_last_update = now
+                else:
+                    if last_update is not None:
+                        logger.debug(f"[{pname}] Runtime tracking: state={state.state}, clearing last_runtime_update")
+                        new_last_update = None
+                        needs_commit = True
 
                 if needs_commit:
-                    await db.commit()
-                    if updated_count > 0:
-                        logger.debug("Updated runtime for %s printer(s)", updated_count)
+                    try:
+                        async with async_session() as db:
+                            result = await db.execute(select(Printer).where(Printer.id == pid))
+                            printer = result.scalar_one_or_none()
+                            if printer:
+                                printer.runtime_seconds = new_runtime
+                                printer.last_runtime_update = new_last_update
+                                await db.commit()
+                    except Exception as e:
+                        logger.warning("[%s] Runtime tracking commit failed: %s", pname, e)
+
+            if updated_count > 0:
+                logger.debug("Updated runtime for %s printer(s)", updated_count)
 
         except asyncio.CancelledError:
             logger.info("Runtime tracking cancelled")

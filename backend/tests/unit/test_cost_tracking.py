@@ -401,8 +401,9 @@ class TestCostCalculation:
             last_loaded_tray=-1,
         )
 
-        # db returns assignment then spool (no archive, AMS fallback path)
-        db = _mock_db_sequential([assignment, spool])
+        # Pad 2 Nones for _find_3mf_by_filename DB queries (library + archive search),
+        # then assignment and spool for the AMS fallback path
+        db = _mock_db_sequential([None, None, assignment, spool])
 
         with patch("backend.app.api.routes.settings.get_setting", return_value="15.0"):
             results = await on_print_complete(
@@ -751,7 +752,9 @@ class TestCostAggregation:
             tray_now=0,
         )
 
-        db = _mock_db_sequential([assignment_old, spool_old])
+        # Pad 2 Nones for _find_3mf_by_filename DB queries (library + archive search),
+        # then assignment and spool for the AMS fallback path
+        db = _mock_db_sequential([None, None, assignment_old, spool_old])
 
         with (
             patch("backend.app.core.config.settings") as mock_settings,

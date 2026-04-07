@@ -158,6 +158,8 @@ class PrintSession:
     # Snapshot of spool assignments at print start: {(ams_id, tray_id): spool_id}
     # Prevents usage loss when on_ams_change unlinks a spool mid-print
     spool_assignments: dict[tuple[int, int], int] = field(default_factory=dict)
+    # AMS mapping from print command (captured at start, needed when auto-archive is off)
+    ams_mapping: list[int] | None = None
 
 
 # Module-level storage, keyed by printer_id
@@ -333,6 +335,7 @@ async def on_print_start(printer_id: int, data: dict, printer_manager, db: Async
         tray_remain_start=tray_remain_start,
         tray_now_at_start=tray_now_at_start,
         spool_assignments=spool_assignments,
+        ams_mapping=data.get("ams_mapping"),
     )
     _active_sessions[printer_id] = session
 
@@ -377,6 +380,11 @@ async def on_print_complete(
     default_cost_str = await get_setting(db, "default_filament_cost")
     default_filament_cost = float(default_cost_str) if default_cost_str else 0.0
 
+    # Fall back to ams_mapping captured at print start (needed when auto-archive is off
+    # and the caller can't retrieve the mapping from _print_ams_mappings without archive_id)
+    if not ams_mapping and session and session.ams_mapping:
+        ams_mapping = session.ams_mapping
+
     logger.info(
         "[UsageTracker] on_print_complete: printer=%d, archive=%s, session=%s, ams_mapping=%s",
         printer_id,
@@ -397,10 +405,21 @@ async def on_print_complete(
         )
 
     # --- Path 1 (PRIMARY): 3MF per-filament estimates ---
-    if archive_id:
-        print_name = (
-            (session.print_name if session else None) or data.get("subtask_name", "") or data.get("filename", "unknown")
-        )
+    print_name = (
+        (session.print_name if session else None) or data.get("subtask_name", "") or data.get("filename", "unknown")
+    )
+
+    # When auto-archive is disabled (archive_id=None), try to find a 3MF by filename
+    # from the library or previous archives so we can still track filament usage.
+    threemf_path = None
+    if not archive_id:
+        from backend.app.core.config import settings as app_settings
+
+        search_filename = data.get("filename") or data.get("subtask_name") or (session.print_name if session else "")
+        if search_filename:
+            threemf_path = await _find_3mf_by_filename(printer_id, search_filename, db, app_settings.base_dir)
+
+    if archive_id or threemf_path:
         threemf_results = await _track_from_3mf(
             printer_id,
             archive_id,
@@ -416,6 +435,7 @@ async def on_print_complete(
             default_filament_cost=default_filament_cost,
             spool_assignments=session.spool_assignments if session else None,
             print_started_at=session.started_at if session else None,
+            threemf_path=threemf_path,
         )
         results.extend(threemf_results)
 
@@ -635,9 +655,76 @@ async def _resolve_3mf_fallback(archive, db: AsyncSession, base_dir):
     return None
 
 
+async def _find_3mf_by_filename(
+    printer_id: int,
+    filename: str,
+    db: AsyncSession,
+    base_dir,
+):
+    """Find a 3MF file by filename from library or previous archives.
+
+    Used when auto-archive is disabled and there's no archive_id, but we still
+    need the 3MF slicer data for filament usage tracking.
+    """
+    from pathlib import Path
+
+    from backend.app.models.archive import PrintArchive
+    from backend.app.models.library import LibraryFile
+
+    search_name = filename.split("/")[-1] if "/" in filename else filename
+    search_base = search_name.replace(".gcode.3mf", "").replace(".gcode", "").replace(".3mf", "")
+    if not search_base:
+        return None
+
+    # 1. Try library files matching the name
+    try:
+        lib_result = await db.execute(
+            select(LibraryFile)
+            .where(LibraryFile.file_path.ilike(f"%/{search_base}.%") | LibraryFile.file_path.ilike(f"{search_base}.%"))
+            .where(LibraryFile.file_path.ilike("%.3mf"))
+            .order_by(LibraryFile.created_at.desc())
+            .limit(3)
+        )
+        for lib_file in lib_result.scalars().all():
+            lib_path = Path(lib_file.file_path)
+            candidate = lib_path if lib_path.is_absolute() else base_dir / lib_file.file_path
+            if candidate.exists() and candidate.suffix == ".3mf":
+                logger.info("[UsageTracker] 3MF (no-archive): found library file %s for '%s'", candidate, filename)
+                return candidate
+    except Exception as e:
+        logger.debug("[UsageTracker] 3MF (no-archive): library lookup failed: %s", e)
+
+    # 2. Try previous archives with a valid 3MF file_path
+    try:
+        prev_result = await db.execute(
+            select(PrintArchive)
+            .where(PrintArchive.printer_id == printer_id)
+            .where(PrintArchive.file_path != "")
+            .where(PrintArchive.file_path.isnot(None))
+            .where(
+                PrintArchive.filename.ilike(f"%{search_base}.%") | PrintArchive.filename.ilike(f"{search_base}.%"),
+            )
+            .order_by(PrintArchive.created_at.desc())
+            .limit(3)
+        )
+        for prev_archive in prev_result.scalars().all():
+            candidate = base_dir / prev_archive.file_path
+            if candidate.exists() and candidate.suffix == ".3mf":
+                logger.info(
+                    "[UsageTracker] 3MF (no-archive): found previous archive %s file for '%s'",
+                    prev_archive.id,
+                    filename,
+                )
+                return candidate
+    except Exception as e:
+        logger.debug("[UsageTracker] 3MF (no-archive): previous archive lookup failed: %s", e)
+
+    return None
+
+
 async def _track_from_3mf(
     printer_id: int,
-    archive_id: int,
+    archive_id: int | None,
     status: str,
     print_name: str,
     handled_trays: set[tuple[int, int]],
@@ -650,12 +737,16 @@ async def _track_from_3mf(
     default_filament_cost: float = 0.0,
     spool_assignments: dict[tuple[int, int], int] | None = None,
     print_started_at: datetime | None = None,
+    threemf_path=None,
 ) -> list[dict]:
     """Track usage from 3MF per-filament slicer data (primary path).
 
     Uses slicer-estimated filament weight for all spools (BL and non-BL).
     For partial prints (failed/aborted), tries per-layer gcode data first,
     then falls back to linear scaling by progress.
+
+    When archive_id is None (auto-archive disabled), a pre-resolved threemf_path
+    can be provided to still track filament usage from slicer data.
 
     Slot-to-tray mapping priority:
     1. Stored ams_mapping from print command (reprints/direct prints)
@@ -672,23 +763,24 @@ async def _track_from_3mf(
     from backend.app.models.print_queue import PrintQueueItem
     from backend.app.utils.threemf_tools import extract_filament_usage_from_3mf
 
-    result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        logger.info("[UsageTracker] 3MF: archive %s not found, skipping", archive_id)
-        return []
+    file_path: Path | None = threemf_path
 
-    file_path: Path | None = None
+    if file_path is None and archive_id:
+        result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+        archive = result.scalar_one_or_none()
+        if not archive:
+            logger.info("[UsageTracker] 3MF: archive %s not found, skipping", archive_id)
+            return []
 
-    # Try archive's own file_path first
-    if archive.file_path:
-        candidate = app_settings.base_dir / archive.file_path
-        if candidate.exists():
-            file_path = candidate
+        # Try archive's own file_path first
+        if archive.file_path:
+            candidate = app_settings.base_dir / archive.file_path
+            if candidate.exists():
+                file_path = candidate
 
-    # Fallback: find 3MF from library or a previous archive with the same filename
-    if file_path is None:
-        file_path = await _resolve_3mf_fallback(archive, db, app_settings.base_dir)
+        # Fallback: find 3MF from library or a previous archive with the same filename
+        if file_path is None:
+            file_path = await _resolve_3mf_fallback(archive, db, app_settings.base_dir)
 
     if file_path is None:
         logger.info("[UsageTracker] 3MF: no file available for archive %s, skipping", archive_id)
@@ -721,7 +813,7 @@ async def _track_from_3mf(
                 mapping_source = "mqtt"
 
     # 3. Try queue item ams_mapping (queue-initiated prints store the exact mapping)
-    if not slot_to_tray:
+    if not slot_to_tray and archive_id:
         queue_result = await db.execute(
             select(PrintQueueItem)
             .where(PrintQueueItem.archive_id == archive_id)

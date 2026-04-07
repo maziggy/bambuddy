@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -6,13 +9,15 @@ from sqlalchemy.orm import DeclarativeBase
 from backend.app.core.config import settings
 from backend.app.core.db_dialect import is_sqlite
 
+logger = logging.getLogger(__name__)
+
 
 def _set_sqlite_pragmas(dbapi_conn, connection_record):
     """Set SQLite pragmas on each new connection for concurrency and performance."""
     cursor = dbapi_conn.cursor()
     # WAL mode allows concurrent readers + one writer (vs default DELETE mode which locks entirely)
     cursor.execute("PRAGMA journal_mode = WAL")
-    # Wait up to 5 seconds when the database is locked instead of failing immediately
+    # Wait up to 15 seconds when the database is locked instead of failing immediately
     cursor.execute("PRAGMA busy_timeout = 15000")
     cursor.execute("PRAGMA synchronous = NORMAL")
     cursor.close()
@@ -72,6 +77,42 @@ async_session = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+async def run_with_retry(fn, *, max_attempts: int = 3, label: str = ""):
+    """Run an async DB operation with retry for SQLite 'database is locked' errors.
+
+    ``fn`` is an async callable that receives an ``AsyncSession`` and performs
+    the full query-mutate-commit cycle.  On each retry a fresh session is used
+    so there are no stale-object / expired-attribute issues after rollback.
+
+    On PostgreSQL this calls ``fn`` once with no retry (Postgres uses row-level
+    locking and doesn't suffer from single-writer contention).
+    """
+    if not is_sqlite():
+        async with async_session() as db:
+            return await fn(db)
+
+    last_exc: OperationalError | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with async_session() as db:
+                return await fn(db)
+        except OperationalError as exc:
+            last_exc = exc
+            if "database is locked" not in str(exc) or attempt == max_attempts:
+                raise
+            delay = 0.5 * attempt  # 0.5s, 1.0s
+            logger.warning(
+                "SQLite locked%s (attempt %d/%d), retrying in %.1fs: %s",
+                f" ({label})" if label else "",
+                attempt,
+                max_attempts,
+                delay,
+                exc,
+            )
+            await asyncio.sleep(delay)
+    raise last_exc  # unreachable, but keeps type checkers happy
 
 
 async def close_all_connections():

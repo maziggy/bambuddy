@@ -353,9 +353,11 @@ class BambuMQTTClient:
         # we probe by sending an ams_filament_setting and checking the response.
         # "mqtt message verify failed" → dev mode OFF, success → dev mode ON.
         self._dev_mode_probed: bool = False
+        self._dev_mode_needs_probe: bool = False  # True after seeing a pushall without "fun"
         self._dev_mode_probe_seq: str | None = None
         self._dev_mode_probe_time: float = 0.0  # monotonic timestamp when probe was sent
         self._dev_mode_probe_failures: int = 0  # consecutive unanswered probes
+        self._connect_time: float = 0.0  # monotonic timestamp of last _on_connect
 
         # Set when check_staleness() force-closes the socket to trigger reconnect.
         # Prevents _on_disconnect from redundantly broadcasting state (already done).
@@ -425,12 +427,18 @@ class BambuMQTTClient:
             self._stale_reconnecting = False  # Clear stale-reconnect flag on successful connect
             # Reset per-connection warning state so warnings fire once per (re)connection
             self._ams_version_warned = set()
-            # Reset developer mode detection so we re-check on each connection
-            self.state.developer_mode = None
+            # Preserve cached developer_mode across auto-reconnects to avoid
+            # re-probing on every reconnect.  The probe (ams_filament_setting to
+            # ext slot) can destabilize some firmware MQTT brokers, causing a
+            # reconnect → probe → disconnect feedback loop (#887).  Only probe
+            # once when developer_mode is truly unknown (first connect).
+            # Reset probe tracking so stale timeout state doesn't carry over.
             self._dev_mode_probed = False
+            self._dev_mode_needs_probe = False
             self._dev_mode_probe_seq = None
             self._dev_mode_probe_time = 0.0
             self._dev_mode_probe_failures = 0
+            self._connect_time = time.monotonic()
             client.subscribe(self.topic_subscribe)
             # Subscribe to request topic for ams_mapping capture (if supported by broker)
             if self._request_topic_supported:
@@ -2440,11 +2448,23 @@ class BambuMQTTClient:
                 self.state.developer_mode = (fun_int & 0x20000000) == 0
             except (ValueError, TypeError):
                 pass
-        elif self.state.developer_mode is None and not self._dev_mode_probed and len(data) > 30:
-            # No "fun" field in this full status message (A1/P1 series never send it).
-            # Only probe after a full pushall response (30+ keys) to avoid firing on
-            # partial incremental updates that arrive before the pushall with "fun".
-            self._probe_developer_mode()
+        elif self.state.developer_mode is None and not self._dev_mode_probed:
+            # No "fun" field — A1/P1 series never send it, so we need to probe.
+            # Two gates: (1) wait for a full pushall (30+ keys) so we don't probe
+            # before a pushall that might contain "fun" arrives, and (2) delay 5s
+            # after connect to let the MQTT session stabilize — probing too early
+            # can destabilize some firmware MQTT brokers (#887).
+            if not self._dev_mode_needs_probe and len(data) > 30:
+                # First full status without "fun" — mark that probe is needed
+                self._dev_mode_needs_probe = True
+            if self._dev_mode_needs_probe and time.monotonic() - self._connect_time >= 5.0:
+                self._probe_developer_mode()
+            elif self._dev_mode_needs_probe:
+                logger.debug(
+                    "[%s] Deferring developer mode probe (%.1fs since connect, need 5s)",
+                    self.serial_number,
+                    time.monotonic() - self._connect_time,
+                )
         elif self._dev_mode_probed and self._dev_mode_probe_seq is not None:
             # Probe was sent but no response yet — check for timeout.
             # A half-broken MQTT session (e.g. after keep-alive timeout reconnect)

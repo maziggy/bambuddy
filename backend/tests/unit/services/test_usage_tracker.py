@@ -143,9 +143,12 @@ class TestOnPrintCompleteAMSDelta:
         assignment = _make_assignment()
 
         db = AsyncMock()
-        # First execute → assignment, second → spool
+        # First 2 executes → _find_3mf_by_filename (library + archive search, uses scalars().all()),
+        # then assignment, then spool for the AMS fallback path
         db.execute = AsyncMock(
             side_effect=[
+                MagicMock(),  # _find_3mf_by_filename: library search
+                MagicMock(),  # _find_3mf_by_filename: archive search
                 MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
             ]
@@ -571,11 +574,14 @@ class TestSpoolAssignmentSnapshot:
         ams_data = [{"id": 0, "tray": [{"id": 0, "remain": 70}]}]
         pm = _make_printer_manager(_make_printer_state(ams_data))
 
-        # db returns no live assignment, then spool from snapshot spool_id
+        # First 2 executes → _find_3mf_by_filename (library + archive search),
+        # then live assignment check (returns None), then spool lookup by snapshot spool_id
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+                MagicMock(),  # _find_3mf_by_filename: library search
+                MagicMock(),  # _find_3mf_by_filename: archive search
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),  # live assignment
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
             ]
         )
@@ -609,10 +615,13 @@ class TestSpoolAssignmentSnapshot:
         ams_data = [{"id": 0, "tray": [{"id": 0, "remain": 70}]}]
         pm = _make_printer_manager(_make_printer_state(ams_data))
 
-        # db returns assignment then spool
+        # First 2 executes → _find_3mf_by_filename (library + archive search),
+        # then assignment and spool for the AMS fallback path
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
+                MagicMock(),  # _find_3mf_by_filename: library search
+                MagicMock(),  # _find_3mf_by_filename: archive search
                 MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
             ]

@@ -58,10 +58,10 @@ class TestSmartPlugManager:
     async def test_on_print_start_turns_on_plug(self, manager, mock_plug, mock_db):
         """Verify plug is turned ON when print starts with auto_on enabled."""
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch("backend.app.services.smart_plug_manager.tasmota_service") as mock_tasmota,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
             mock_tasmota.turn_on = AsyncMock(return_value=True)
 
             await manager.on_print_start(printer_id=1, db=mock_db)
@@ -74,10 +74,10 @@ class TestSmartPlugManager:
         mock_plug.auto_on = False
 
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch("backend.app.services.smart_plug_manager.tasmota_service") as mock_tasmota,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
             mock_tasmota.turn_on = AsyncMock()
 
             await manager.on_print_start(printer_id=1, db=mock_db)
@@ -90,10 +90,10 @@ class TestSmartPlugManager:
         mock_plug.enabled = False
 
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch("backend.app.services.smart_plug_manager.tasmota_service") as mock_tasmota,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
             mock_tasmota.turn_on = AsyncMock()
 
             await manager.on_print_start(printer_id=1, db=mock_db)
@@ -104,10 +104,10 @@ class TestSmartPlugManager:
     async def test_on_print_start_skipped_when_no_plug_found(self, manager, mock_db):
         """Verify graceful handling when no plug is linked to printer."""
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch("backend.app.services.smart_plug_manager.tasmota_service") as mock_tasmota,
         ):
-            mock_get_plug.return_value = None
+            mock_get_plug.return_value = []
             mock_tasmota.turn_on = AsyncMock()
 
             # Should not raise any exception
@@ -123,11 +123,11 @@ class TestSmartPlugManager:
         manager._pending_off[mock_plug.id] = mock_task
 
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch.object(manager, "_mark_auto_off_pending", new_callable=AsyncMock),
             patch("backend.app.services.smart_plug_manager.tasmota_service") as mock_tasmota,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
             mock_tasmota.turn_on = AsyncMock(return_value=True)
 
             await manager.on_print_start(printer_id=1, db=mock_db)
@@ -141,10 +141,10 @@ class TestSmartPlugManager:
         mock_plug.auto_off_executed = True
 
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch("backend.app.services.smart_plug_manager.tasmota_service") as mock_tasmota,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
             mock_tasmota.turn_on = AsyncMock(return_value=True)
 
             await manager.on_print_start(printer_id=1, db=mock_db)
@@ -162,10 +162,10 @@ class TestSmartPlugManager:
         mock_plug.off_delay_minutes = 5
 
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch.object(manager, "_schedule_delayed_off") as mock_schedule,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
 
             await manager.on_print_complete(printer_id=1, status="completed", db=mock_db)
 
@@ -178,10 +178,10 @@ class TestSmartPlugManager:
         mock_plug.off_temp_threshold = 70
 
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch.object(manager, "_schedule_temp_based_off") as mock_schedule,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
 
             await manager.on_print_complete(printer_id=1, status="completed", db=mock_db)
 
@@ -196,11 +196,11 @@ class TestSmartPlugManager:
         mock_plug.auto_off = False
 
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch.object(manager, "_schedule_delayed_off") as mock_schedule,
             patch.object(manager, "_schedule_temp_based_off") as mock_temp,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
 
             await manager.on_print_complete(printer_id=1, status="completed", db=mock_db)
 
@@ -213,10 +213,10 @@ class TestSmartPlugManager:
         mock_plug.enabled = False
 
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch.object(manager, "_schedule_delayed_off") as mock_schedule,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
 
             await manager.on_print_complete(printer_id=1, status="completed", db=mock_db)
 
@@ -226,10 +226,10 @@ class TestSmartPlugManager:
     async def test_on_print_complete_skipped_on_failed_print(self, manager, mock_plug, mock_db):
         """Verify auto-off does NOT trigger on failed prints for investigation."""
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch.object(manager, "_schedule_delayed_off") as mock_schedule,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
 
             await manager.on_print_complete(printer_id=1, status="failed", db=mock_db)
 
@@ -239,10 +239,10 @@ class TestSmartPlugManager:
     async def test_on_print_complete_skipped_on_aborted_print(self, manager, mock_plug, mock_db):
         """Verify auto-off does NOT trigger on aborted prints."""
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
             patch.object(manager, "_schedule_delayed_off") as mock_schedule,
         ):
-            mock_get_plug.return_value = mock_plug
+            mock_get_plug.return_value = [mock_plug]
 
             await manager.on_print_complete(printer_id=1, status="aborted", db=mock_db)
 
@@ -325,96 +325,56 @@ class TestSmartPlugManager:
             mock_loop.assert_not_called()  # Should not call _schedule_loop
 
 
-class TestGetPlugForPrinter:
-    """Tests for _get_plug_for_printer with multiple plugs per printer."""
+class TestGetPlugsForPrinter:
+    """Tests for _get_plugs_for_printer — returns all plugs for a printer (#903)."""
 
     @pytest.fixture
     def manager(self):
         return SmartPlugManager()
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_plugs(self, manager):
-        """Verify None is returned when no plugs are linked to printer."""
+    async def test_returns_empty_list_when_no_plugs(self, manager):
+        """Verify empty list is returned when no plugs are linked to printer."""
         mock_db = AsyncMock()
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        result = await manager._get_plug_for_printer(1, mock_db)
-        assert result is None
+        result = await manager._get_plugs_for_printer(1, mock_db)
+        assert result == []
 
     @pytest.mark.asyncio
-    async def test_returns_single_plug(self, manager):
-        """Verify single plug is returned directly."""
+    async def test_returns_single_plug_as_list(self, manager):
+        """Verify single plug is returned in a list."""
         plug = MagicMock()
         plug.plug_type = "tasmota"
-        plug.ha_entity_id = None
 
         mock_db = AsyncMock()
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [plug]
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        result = await manager._get_plug_for_printer(1, mock_db)
-        assert result is plug
+        result = await manager._get_plugs_for_printer(1, mock_db)
+        assert result == [plug]
 
     @pytest.mark.asyncio
-    async def test_prefers_main_plug_over_script(self, manager):
-        """Verify main power plug is returned when both main and script exist."""
-        script_plug = MagicMock()
-        script_plug.plug_type = "homeassistant"
-        script_plug.ha_entity_id = "script.pre_print"
+    async def test_returns_all_plugs(self, manager):
+        """Verify all plugs are returned when multiple exist (#903)."""
+        plug1 = MagicMock()
+        plug1.plug_type = "homeassistant"
+        plug1.ha_entity_id = "switch.printer"
 
-        main_plug = MagicMock()
-        main_plug.plug_type = "tasmota"
-        main_plug.ha_entity_id = None
+        plug2 = MagicMock()
+        plug2.plug_type = "homeassistant"
+        plug2.ha_entity_id = "switch.filter"
 
         mock_db = AsyncMock()
         mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [script_plug, main_plug]
+        mock_result.scalars.return_value.all.return_value = [plug1, plug2]
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        result = await manager._get_plug_for_printer(1, mock_db)
-        assert result is main_plug
-
-    @pytest.mark.asyncio
-    async def test_handles_multiple_non_script_plugs(self, manager):
-        """Verify no crash when multiple non-script plugs exist (e.g., Tasmota + HA switch)."""
-        tasmota_plug = MagicMock()
-        tasmota_plug.plug_type = "tasmota"
-        tasmota_plug.ha_entity_id = None
-
-        ha_switch = MagicMock()
-        ha_switch.plug_type = "homeassistant"
-        ha_switch.ha_entity_id = "switch.bathroom"
-
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [tasmota_plug, ha_switch]
-        mock_db.execute = AsyncMock(return_value=mock_result)
-
-        result = await manager._get_plug_for_printer(1, mock_db)
-        # Should return first non-script plug (tasmota), not crash
-        assert result is tasmota_plug
-
-    @pytest.mark.asyncio
-    async def test_returns_first_script_when_all_are_scripts(self, manager):
-        """Verify first script is returned when only scripts are linked."""
-        script1 = MagicMock()
-        script1.plug_type = "homeassistant"
-        script1.ha_entity_id = "script.heat_chamber"
-
-        script2 = MagicMock()
-        script2.plug_type = "homeassistant"
-        script2.ha_entity_id = "script.exhaust_fan"
-
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [script1, script2]
-        mock_db.execute = AsyncMock(return_value=mock_result)
-
-        result = await manager._get_plug_for_printer(1, mock_db)
-        assert result is script1
+        result = await manager._get_plugs_for_printer(1, mock_db)
+        assert result == [plug1, plug2]
 
 
 class TestAutoOffPersistent:
@@ -517,10 +477,10 @@ class TestAutoOffPersistent:
 
         # Step 1: Print starts — plug turns on
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get,
             patch.object(manager, "get_service_for_plug", new_callable=AsyncMock) as mock_svc,
         ):
-            mock_get.return_value = mock_plug
+            mock_get.return_value = [mock_plug]
             mock_service = AsyncMock()
             mock_service.turn_on = AsyncMock(return_value=True)
             mock_svc.return_value = mock_service
@@ -532,10 +492,10 @@ class TestAutoOffPersistent:
 
         # Step 2: Print completes — auto-off is scheduled
         with (
-            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get,
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get,
             patch.object(manager, "_schedule_delayed_off") as mock_schedule,
         ):
-            mock_get.return_value = mock_plug
+            mock_get.return_value = [mock_plug]
 
             await manager.on_print_complete(printer_id=1, status="completed", db=mock_db)
 

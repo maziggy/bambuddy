@@ -1293,6 +1293,7 @@ class TestAbortedStatusNormalisation:
 
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
+            patch("backend.app.core.database.async_session", return_value=mock_session),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.mqtt_relay") as mock_relay,
             patch("backend.app.main.notification_service") as mock_notif,
@@ -1388,6 +1389,7 @@ class TestAbortedStatusNormalisation:
 
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
+            patch("backend.app.core.database.async_session", return_value=mock_session),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.mqtt_relay") as mock_relay,
             patch("backend.app.main.notification_service") as mock_notif,

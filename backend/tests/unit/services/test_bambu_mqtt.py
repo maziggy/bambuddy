@@ -2798,6 +2798,7 @@ class TestDeveloperModeProbeTimeout:
 
     @pytest.fixture
     def mqtt_client(self):
+        import time
         from unittest.mock import MagicMock
 
         from backend.app.services.bambu_mqtt import BambuMQTTClient
@@ -2812,6 +2813,8 @@ class TestDeveloperModeProbeTimeout:
         mock_paho = MagicMock()
         mock_paho.socket.return_value = MagicMock()
         client._client = mock_paho
+        # Set connect time in the past so the 5s probe delay is satisfied
+        client._connect_time = time.monotonic() - 10.0
         return client
 
     def _make_pushall_data(self):
@@ -2908,8 +2911,8 @@ class TestDeveloperModeProbeTimeout:
         mqtt_client._update_state(data)
         assert mqtt_client._dev_mode_probe_failures == 0
 
-    def test_on_connect_resets_probe_state(self, mqtt_client):
-        """_on_connect resets all probe-related state for fresh detection."""
+    def test_on_connect_resets_probe_state_but_preserves_developer_mode(self, mqtt_client):
+        """_on_connect resets probe tracking but preserves cached developer_mode."""
         import time
 
         mqtt_client._dev_mode_probed = True
@@ -2922,11 +2925,88 @@ class TestDeveloperModeProbeTimeout:
         mqtt_client._client.subscribe.return_value = (0, 1)
         mqtt_client._on_connect(mqtt_client._client, None, None, 0)
 
-        assert mqtt_client.state.developer_mode is None
+        # developer_mode is preserved across reconnects (#887)
+        assert mqtt_client.state.developer_mode is True
         assert mqtt_client._dev_mode_probed is False
         assert mqtt_client._dev_mode_probe_seq is None
         assert mqtt_client._dev_mode_probe_time == 0.0
         assert mqtt_client._dev_mode_probe_failures == 0
+        assert mqtt_client._connect_time > 0
+
+    def test_probe_deferred_when_connect_too_recent(self, mqtt_client):
+        """Probe is deferred if less than 5s have passed since _on_connect."""
+        import time
+
+        data = self._make_pushall_data()
+
+        # Set connect time to 1 second ago — too recent for probe
+        mqtt_client._connect_time = time.monotonic() - 1.0
+
+        mqtt_client._update_state(data)
+        # Pushall seen, so needs_probe is set, but probe NOT fired yet
+        assert mqtt_client._dev_mode_needs_probe is True
+        assert mqtt_client._dev_mode_probed is False
+        assert mqtt_client._dev_mode_probe_seq is None
+
+    def test_probe_fires_after_delay(self, mqtt_client):
+        """Probe fires once 5s have passed since _on_connect."""
+        import time
+
+        data = self._make_pushall_data()
+
+        # Set connect time to 6 seconds ago — delay satisfied
+        mqtt_client._connect_time = time.monotonic() - 6.0
+
+        mqtt_client._update_state(data)
+        # Probe should have fired
+        assert mqtt_client._dev_mode_needs_probe is True
+        assert mqtt_client._dev_mode_probed is True
+        assert mqtt_client._dev_mode_probe_seq is not None
+
+    def test_probe_fires_on_incremental_after_delay(self, mqtt_client):
+        """After seeing a pushall within 5s, probe fires on later incremental message."""
+        import time
+
+        pushall_data = self._make_pushall_data()
+        incremental_data = {"gcode_state": "IDLE", "mc_percent": 0}  # < 30 keys
+
+        # Pushall arrives 1s after connect — too early for probe
+        mqtt_client._connect_time = time.monotonic() - 1.0
+        mqtt_client._update_state(pushall_data)
+        assert mqtt_client._dev_mode_needs_probe is True
+        assert mqtt_client._dev_mode_probed is False
+
+        # 5s later, an incremental update arrives — probe fires now
+        mqtt_client._connect_time = time.monotonic() - 6.0
+        mqtt_client._update_state(incremental_data)
+        assert mqtt_client._dev_mode_probed is True
+        assert mqtt_client._dev_mode_probe_seq is not None
+
+    def test_no_reprobe_when_developer_mode_cached(self, mqtt_client):
+        """Auto-reconnect preserves developer_mode, skipping reprobe."""
+        import time
+
+        data = self._make_pushall_data()
+
+        # Simulate known developer_mode from previous connection
+        mqtt_client.state.developer_mode = True
+        mqtt_client._connect_time = time.monotonic() - 10.0
+
+        mqtt_client._update_state(data)
+        # Should NOT probe — developer_mode is already known
+        assert mqtt_client._dev_mode_needs_probe is False
+        assert mqtt_client._dev_mode_probed is False
+        assert mqtt_client._dev_mode_probe_seq is None
+        assert mqtt_client.state.developer_mode is True
+
+    def test_on_connect_resets_needs_probe(self, mqtt_client):
+        """_on_connect resets _dev_mode_needs_probe for a clean start."""
+        mqtt_client._dev_mode_needs_probe = True
+
+        mqtt_client._client.subscribe.return_value = (0, 1)
+        mqtt_client._on_connect(mqtt_client._client, None, None, 0)
+
+        assert mqtt_client._dev_mode_needs_probe is False
 
 
 class TestVtTrayNormalization:

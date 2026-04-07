@@ -111,6 +111,9 @@ async def init_db():
         spoolbuddy_device,
         user,
         user_email_pref,
+        user_otp_code,
+        user_totp,
+        oidc_provider,
         virtual_printer,
     )
 

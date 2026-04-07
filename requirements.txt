@@ -46,6 +46,10 @@ psutil>=6.0.0
 # Authentication
 PyJWT>=2.12.0
 passlib[bcrypt]>=1.7.4
+pyotp>=2.9.0
+
+# HTTP client (used for OIDC token exchange)
+httpx>=0.26.0
 
 # Plate Detection (optional - enables build plate empty detection)
 opencv-python-headless>=4.8.0

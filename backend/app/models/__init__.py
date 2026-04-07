@@ -12,6 +12,7 @@ from backend.app.models.local_preset import LocalPreset
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
 from backend.app.models.notification import NotificationLog
 from backend.app.models.notification_template import NotificationTemplate
+from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
 from backend.app.models.orca_base_cache import OrcaBaseProfile
 from backend.app.models.pending_upload import PendingUpload
 from backend.app.models.print_batch import PrintBatch
@@ -27,6 +28,8 @@ from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
 from backend.app.models.user import User
 from backend.app.models.user_email_pref import UserEmailPreference
+from backend.app.models.user_otp_code import UserOTPCode
+from backend.app.models.user_totp import UserTOTP
 
 __all__ = [
     "Printer",
@@ -54,6 +57,8 @@ __all__ = [
     "GitHubBackupConfig",
     "GitHubBackupLog",
     "LocalPreset",
+    "OIDCProvider",
+    "UserOIDCLink",
     "OrcaBaseProfile",
     "Spool",
     "SpoolKProfile",
@@ -63,4 +68,6 @@ __all__ = [
     "ColorCatalogEntry",
     "SpoolBuddyDevice",
     "UserEmailPreference",
+    "UserOTPCode",
+    "UserTOTP",
 ]

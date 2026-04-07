@@ -2273,9 +2273,13 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  access_token: string;
-  token_type: string;
-  user: UserResponse;
+  access_token?: string;
+  token_type?: string;
+  user?: UserResponse;
+  /** Set when 2FA verification is required before a full token is issued. */
+  requires_2fa?: boolean;
+  pre_auth_token?: string;
+  two_fa_methods?: string[];
 }
 
 export interface UserResponse {
@@ -2339,6 +2343,66 @@ export interface SMTPSettings {
   smtp_auth_enabled: boolean;
   smtp_from_email: string;
   smtp_from_name: string;
+}
+
+// 2FA / MFA interfaces
+export interface TwoFAStatus {
+  totp_enabled: boolean;
+  email_otp_enabled: boolean;
+  backup_codes_remaining: number;
+}
+
+export interface TOTPSetupResponse {
+  secret: string;
+  qr_code_b64: string;
+  issuer: string;
+}
+
+export interface TOTPEnableResponse {
+  message: string;
+  backup_codes: string[];
+}
+
+export interface BackupCodesResponse {
+  backup_codes: string[];
+  message: string;
+}
+
+export interface TwoFAVerifyRequest {
+  pre_auth_token: string;
+  code: string;
+  method: 'totp' | 'email' | 'backup';
+}
+
+// OIDC interfaces
+export interface OIDCProvider {
+  id: number;
+  name: string;
+  issuer_url: string;
+  client_id: string;
+  scopes: string;
+  is_enabled: boolean;
+  auto_create_users: boolean;
+  icon_url?: string | null;
+}
+
+export interface OIDCProviderCreate {
+  name: string;
+  issuer_url: string;
+  client_id: string;
+  client_secret: string;
+  scopes?: string;
+  is_enabled?: boolean;
+  auto_create_users?: boolean;
+  icon_url?: string | null;
+}
+
+export interface OIDCLink {
+  id: number;
+  provider_id: number;
+  provider_name: string;
+  provider_email?: string | null;
+  created_at: string;
 }
 
 export interface TestSMTPRequest {
@@ -2436,6 +2500,83 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  // 2FA - status
+  get2FAStatus: () => request<TwoFAStatus>('/auth/2fa/status'),
+
+  // 2FA - TOTP
+  setupTOTP: () => request<TOTPSetupResponse>('/auth/2fa/totp/setup', { method: 'POST' }),
+  enableTOTP: (code: string) =>
+    request<TOTPEnableResponse>('/auth/2fa/totp/enable', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  disableTOTP: (code: string) =>
+    request<{ message: string }>('/auth/2fa/totp/disable', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  regenerateBackupCodes: (code: string) =>
+    request<BackupCodesResponse>('/auth/2fa/totp/regenerate-backup-codes', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+
+  // 2FA - Email OTP
+  enableEmailOTP: () =>
+    request<{ message: string }>('/auth/2fa/email/enable', { method: 'POST' }),
+  disableEmailOTP: () =>
+    request<{ message: string }>('/auth/2fa/email/disable', { method: 'POST' }),
+  sendEmailOTP: (preAuthToken: string) =>
+    request<{ message: string; pre_auth_token?: string }>('/auth/2fa/email/send', {
+      method: 'POST',
+      body: JSON.stringify({ pre_auth_token: preAuthToken }),
+    }),
+
+  // 2FA - verify (completes login)
+  verify2FA: (data: TwoFAVerifyRequest) =>
+    request<LoginResponse>('/auth/2fa/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // 2FA - admin
+  admin2FADisable: (userId: number) =>
+    request<{ message: string }>(`/auth/2fa/admin/${userId}`, { method: 'DELETE' }),
+
+  // OIDC providers (public list)
+  getOIDCProviders: () => request<OIDCProvider[]>('/auth/oidc/providers'),
+
+  // OIDC providers (admin)
+  getOIDCProvidersAll: () => request<OIDCProvider[]>('/auth/oidc/providers/all'),
+  createOIDCProvider: (data: OIDCProviderCreate) =>
+    request<OIDCProvider>('/auth/oidc/providers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateOIDCProvider: (id: number, data: Partial<OIDCProviderCreate>) =>
+    request<OIDCProvider>(`/auth/oidc/providers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteOIDCProvider: (id: number) =>
+    request<{ message: string }>(`/auth/oidc/providers/${id}`, { method: 'DELETE' }),
+
+  // OIDC authorize URL
+  getOIDCAuthorizeUrl: (providerId: number) =>
+    request<{ auth_url: string }>(`/auth/oidc/authorize/${providerId}`),
+
+  // OIDC exchange token for JWT
+  exchangeOIDCToken: (oidcToken: string) =>
+    request<LoginResponse>('/auth/oidc/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ oidc_token: oidcToken }),
+    }),
+
+  // OIDC links for current user
+  getOIDCLinks: () => request<OIDCLink[]>('/auth/oidc/links'),
+  deleteOIDCLink: (providerId: number) =>
+    request<{ message: string }>(`/auth/oidc/links/${providerId}`, { method: 'DELETE' }),
 
   // Users
   getUsers: () => request<UserResponse[]>('/users/'),

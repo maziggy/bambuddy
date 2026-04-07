@@ -1,5 +1,5 @@
 % Statistics for maziggy/bambuddy
-% Generated for [maziggy/bambuddy](https://github.com/maziggy/bambuddy) with [jgehrcke/github-repo-stats](https://github.com/jgehrcke/github-repo-stats) at 2026-04-07 14:13 UTC.
+% Generated for [maziggy/bambuddy](https://github.com/maziggy/bambuddy) with [jgehrcke/github-repo-stats](https://github.com/jgehrcke/github-repo-stats) at 2026-04-07 15:18 UTC.
 
 
 ## Views
@@ -79,7 +79,7 @@ respond slowly to change (narrow peaks are smoothed out).
 
 <div id="chart_referrers_top_n_alltime" class="full-width-chart"></div>
 
-Top 15 referrers: 01: `Google`, 02: `bambuddy.cool`, 03: `github.com`, 04: `wiki.bambuddy.cool`, 05: `reddit.com`, 06: `DuckDuckGo`, 07: `search.brave.com`, 08: `Bing`, 09: `m.facebook.com`, 10: `forum.bambulab.com`
+Top 15 referrers: 01: `Google`, 02: `bambuddy.cool`, 03: `github.com`, 04: `wiki.bambuddy.cool`, 05: `reddit.com`, 06: `DuckDuckGo`, 07: `search.brave.com`, 08: `m.facebook.com`, 09: `Bing`, 10: `forum.bambulab.com`
 
 
 

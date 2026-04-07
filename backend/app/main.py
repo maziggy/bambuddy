@@ -2551,25 +2551,31 @@ async def on_print_complete(printer_id: int, data: dict):
             if queue_auto_off:
                 async with async_session() as db:
                     result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-                    plug = result.scalar_one_or_none()
-                if plug and plug.enabled:
+                    plugs = list(result.scalars().all())
+                enabled_plugs = [p for p in plugs if p.enabled]
+                if enabled_plugs:
                     logger.info("Auto-off requested for printer %s, waiting for cooldown...", printer_id)
 
-                    async def cooldown_and_poweroff(pid: int, plug_id: int):
+                    async def cooldown_and_poweroff(pid: int, plug_ids: list[int]):
                         # Wait for nozzle to cool down
                         await printer_manager.wait_for_cooldown(pid, target_temp=50.0, timeout=600)
-                        # Re-fetch plug in new session
+                        # Re-fetch plugs in new session and turn off each one
                         async with async_session() as new_db:
-                            result = await new_db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
-                            p = result.scalar_one_or_none()
-                            if p and p.enabled:
-                                success = await tasmota_service.turn_off(p)
-                                if success:
-                                    logger.info("Powered off printer %s via smart plug '%s'", pid, p.name)
-                                else:
-                                    logger.warning("Failed to power off printer %s via smart plug", pid)
+                            for plug_id in plug_ids:
+                                try:
+                                    result = await new_db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
+                                    p = result.scalar_one_or_none()
+                                    if p and p.enabled:
+                                        service = await smart_plug_manager.get_service_for_plug(p, new_db)
+                                        success = await service.turn_off(p)
+                                        if success:
+                                            logger.info("Powered off printer %s via smart plug '%s'", pid, p.name)
+                                        else:
+                                            logger.warning("Failed to power off plug '%s' for printer %s", p.name, pid)
+                                except Exception as e:
+                                    logger.warning("Failed to power off plug %s for printer %s: %s", plug_id, pid, e)
 
-                    asyncio.create_task(cooldown_and_poweroff(printer_id, plug.id))
+                    asyncio.create_task(cooldown_and_poweroff(printer_id, [p.id for p in enabled_plugs]))
     except Exception as e:
         logging.getLogger(__name__).warning(f"Queue item update failed: {e}")
 

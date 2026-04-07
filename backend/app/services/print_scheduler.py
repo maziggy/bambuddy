@@ -166,11 +166,23 @@ class PrintScheduler:
 
                     # If printer not connected, try to power on via smart plug
                     if not printer_connected:
-                        plug = await self._get_smart_plug(db, item.printer_id)
-                        if plug and plug.auto_on and plug.enabled:
-                            logger.info("Printer %s offline, attempting to power on via smart plug", item.printer_id)
-                            powered_on = await self._power_on_and_wait(plug, item.printer_id, db)
+                        plugs = await self._get_smart_plugs(db, item.printer_id)
+                        auto_on_plugs = [p for p in plugs if p.auto_on and p.enabled]
+                        if auto_on_plugs:
+                            logger.info("Printer %s offline, attempting to power on via smart plug(s)", item.printer_id)
+                            # Power on using the first auto_on plug (the printer power plug)
+                            powered_on = await self._power_on_and_wait(auto_on_plugs[0], item.printer_id, db)
                             if powered_on:
+                                # Also turn on any remaining auto_on plugs (e.g., filter)
+                                for extra_plug in auto_on_plugs[1:]:
+                                    try:
+                                        service = await smart_plug_manager.get_service_for_plug(extra_plug, db)
+                                        await service.turn_on(extra_plug)
+                                        logger.info(
+                                            "Also powered on plug '%s' for printer %s", extra_plug.name, item.printer_id
+                                        )
+                                    except Exception as e:
+                                        logger.warning("Failed to power on extra plug '%s': %s", extra_plug.name, e)
                                 printer_connected = True
                                 printer_idle = self._is_printer_idle(item.printer_id, require_plate_clear)
                             else:
@@ -1425,10 +1437,10 @@ class PrintScheduler:
                 printer_manager.send_drying_command(printer_id, ams_id, 0, 0, mode=0)
         self._drying_in_progress.pop(printer_id, None)
 
-    async def _get_smart_plug(self, db: AsyncSession, printer_id: int) -> SmartPlug | None:
-        """Get the smart plug associated with a printer."""
+    async def _get_smart_plugs(self, db: AsyncSession, printer_id: int) -> list[SmartPlug]:
+        """Get all smart plugs associated with a printer."""
         result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-        return result.scalar_one_or_none()
+        return list(result.scalars().all())
 
     async def _power_on_and_wait(self, plug: SmartPlug, printer_id: int, db: AsyncSession) -> bool:
         """Turn on smart plug and wait for printer to connect.
@@ -1509,14 +1521,26 @@ class PrintScheduler:
         if not item.auto_off_after:
             return
 
-        plug = await self._get_smart_plug(db, item.printer_id)
-        if plug and plug.enabled:
+        plugs = await self._get_smart_plugs(db, item.printer_id)
+        plug_ids = [p.id for p in plugs if p.enabled]
+        if plug_ids:
             logger.info("Auto-off: Waiting for printer %s to cool down before power off...", item.printer_id)
             # Wait for cooldown (up to 10 minutes)
             await printer_manager.wait_for_cooldown(item.printer_id, target_temp=50.0, timeout=600)
-            logger.info("Auto-off: Powering off printer %s", item.printer_id)
-            service = await smart_plug_manager.get_service_for_plug(plug, db)
-            await service.turn_off(plug)
+            # Re-fetch plugs in a fresh session after the long cooldown wait
+            async with async_session() as new_db:
+                for plug_id in plug_ids:
+                    try:
+                        result = await new_db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
+                        plug = result.scalar_one_or_none()
+                        if plug and plug.enabled:
+                            logger.info("Auto-off: Powering off plug '%s' for printer %s", plug.name, item.printer_id)
+                            service = await smart_plug_manager.get_service_for_plug(plug, new_db)
+                            await service.turn_off(plug)
+                    except Exception as e:
+                        logger.warning(
+                            "Auto-off: Failed to power off plug %s for printer %s: %s", plug_id, item.printer_id, e
+                        )
 
     async def _get_job_name(self, db: AsyncSession, item: PrintQueueItem) -> str:
         """Get a human-readable name for a queue item."""

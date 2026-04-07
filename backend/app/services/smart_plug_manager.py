@@ -134,102 +134,91 @@ class SmartPlugManager:
 
             await db.commit()
 
-    async def _get_plug_for_printer(self, printer_id: int, db: AsyncSession) -> "SmartPlug | None":
-        """Get the main (non-script) smart plug linked to a printer.
-
-        When multiple plugs are assigned (e.g., a power plug + secondary HA switch),
-        returns the main power plug for automation control.
-        """
+    async def _get_plugs_for_printer(self, printer_id: int, db: AsyncSession) -> list["SmartPlug"]:
+        """Get all smart plugs linked to a printer for automation control."""
         from backend.app.models.smart_plug import SmartPlug
 
         result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-        plugs = result.scalars().all()
-
-        if not plugs:
-            return None
-
-        # Prefer non-script, non-secondary plugs (main power plug)
-        for plug in plugs:
-            is_script = (
-                plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script.")
-            )
-            if not is_script:
-                return plug
-
-        # All are scripts, return the first one
-        return plugs[0]
+        return list(result.scalars().all())
 
     async def on_print_start(self, printer_id: int, db: AsyncSession):
-        """Called when a print starts - turn on plug if configured."""
-        plug = await self._get_plug_for_printer(printer_id, db)
+        """Called when a print starts - turn on all plugs linked to this printer."""
+        plugs = await self._get_plugs_for_printer(printer_id, db)
 
-        if not plug:
+        if not plugs:
             return
 
-        if not plug.enabled:
-            logger.debug("Smart plug '%s' is disabled, skipping auto-on", plug.name)
-            return
+        for plug in plugs:
+            if not plug.enabled:
+                logger.debug("Smart plug '%s' is disabled, skipping auto-on", plug.name)
+                continue
 
-        if not plug.auto_on:
-            logger.debug("Smart plug '%s' auto_on is disabled", plug.name)
-            return
+            if not plug.auto_on:
+                logger.debug("Smart plug '%s' auto_on is disabled", plug.name)
+                continue
 
-        # Cancel any pending off task
-        self._cancel_pending_off(plug.id)
+            # Cancel any pending off task
+            self._cancel_pending_off(plug.id)
 
-        # Turn on the plug
-        logger.info("Print started on printer %s, turning on plug '%s'", printer_id, plug.name)
-        service = await self.get_service_for_plug(plug, db)
-        success = await service.turn_on(plug)
+            # Turn on the plug
+            logger.info("Print started on printer %s, turning on plug '%s'", printer_id, plug.name)
+            try:
+                service = await self.get_service_for_plug(plug, db)
+                success = await service.turn_on(plug)
 
-        if success:
-            # Update last state and reset auto_off_executed
-            plug.last_state = "ON"
-            plug.last_checked = datetime.now(timezone.utc)
-            plug.auto_off_executed = False  # Reset flag when turning on
-            await db.commit()
+                if success:
+                    plug.last_state = "ON"
+                    plug.last_checked = datetime.now(timezone.utc)
+                    plug.auto_off_executed = False  # Reset flag when turning on
+            except Exception as e:
+                logger.warning("Failed to turn on plug '%s' for printer %s: %s", plug.name, printer_id, e)
+
+        await db.commit()
 
     async def on_print_complete(self, printer_id: int, status: str, db: AsyncSession):
-        """Called when a print completes - schedule turn off if configured.
+        """Called when a print completes - schedule turn off for all plugs linked to this printer.
 
         Only triggers auto-off on successful completion (status='completed').
         Failed prints keep the printer powered on for user investigation.
         """
-        plug = await self._get_plug_for_printer(printer_id, db)
-
-        if not plug:
-            return
-
-        if not plug.enabled:
-            logger.debug("Smart plug '%s' is disabled, skipping auto-off", plug.name)
-            return
-
-        if not plug.auto_off:
-            logger.debug("Smart plug '%s' auto_off is disabled", plug.name)
-            return
-
-        # Skip auto-off for HA script entities (scripts can only be triggered, not turned off)
-        if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
-            logger.debug("Smart plug '%s' is a HA script entity, skipping auto-off", plug.name)
-            return
-
         # Only auto-off on successful completion, not on failures
-        # This allows the user to investigate errors before power-off
         if status != "completed":
             logger.info(
-                f"Print on printer {printer_id} ended with status '{status}', "
-                f"skipping auto-off for plug '{plug.name}' to allow investigation"
+                "Print on printer %s ended with status '%s', skipping auto-off to allow investigation",
+                printer_id,
+                status,
             )
             return
 
-        logger.info(
-            "Print completed successfully on printer %s, scheduling turn-off for plug '%s'", printer_id, plug.name
-        )
+        plugs = await self._get_plugs_for_printer(printer_id, db)
 
-        if plug.off_delay_mode == "time":
-            self._schedule_delayed_off(plug, printer_id, plug.off_delay_minutes * 60)
-        elif plug.off_delay_mode == "temperature":
-            self._schedule_temp_based_off(plug, printer_id, plug.off_temp_threshold)
+        if not plugs:
+            return
+
+        for plug in plugs:
+            if not plug.enabled:
+                logger.debug("Smart plug '%s' is disabled, skipping auto-off", plug.name)
+                continue
+
+            if not plug.auto_off:
+                logger.debug("Smart plug '%s' auto_off is disabled", plug.name)
+                continue
+
+            # Skip auto-off for HA script entities (scripts can only be triggered, not turned off)
+            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
+                logger.debug("Smart plug '%s' is a HA script entity, skipping auto-off", plug.name)
+                continue
+
+            logger.info(
+                "Print completed successfully on printer %s, scheduling turn-off for plug '%s'",
+                printer_id,
+                plug.name,
+            )
+
+            if plug.off_delay_mode == "time":
+                self._schedule_delayed_off(plug, printer_id, plug.off_delay_minutes * 60)
+            elif plug.off_delay_mode == "temperature":
+                self._schedule_temp_based_off(plug, printer_id, plug.off_temp_threshold)
 
     def _schedule_delayed_off(self, plug: "SmartPlug", printer_id: int, delay_seconds: int):
         """Schedule turn-off after delay."""

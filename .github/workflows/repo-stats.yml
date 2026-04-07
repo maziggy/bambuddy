@@ -15,3 +15,4 @@ jobs:
         with:
           repository: maziggy/bambuddy
           ghtoken: ${{ secrets.GHRS_GITHUB_API_TOKEN }}
+          ghpagesprefix: https://maziggy.github.io/bambuddy

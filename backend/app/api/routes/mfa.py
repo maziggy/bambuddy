@@ -17,10 +17,14 @@ Security model
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import logging
+import os
+import re
 import secrets
 import string
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -39,6 +43,7 @@ from backend.app.core.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
     get_current_active_user,
+    get_password_hash,
     get_user_by_username,
     is_auth_enabled,
 )
@@ -810,9 +815,6 @@ async def oidc_authorize(
     nonce = secrets.token_urlsafe(32)
 
     # PKCE (S256) – required by PocketID and recommended for all OIDC flows
-    import hashlib
-    import urllib.parse
-
     code_verifier = secrets.token_urlsafe(48)  # 64-char URL-safe string
     code_challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
@@ -1019,10 +1021,6 @@ async def oidc_callback(
             return RedirectResponse(url=f"{frontend_error_url}missing_sub_claim", status_code=302)
 
         # ── Step 4: Resolve / create user ────────────────────────────────────
-        import re
-
-        from backend.app.core.auth import get_password_hash
-
         try:
             # 1. Look up existing OIDC link
             link_result = await db.execute(
@@ -1243,8 +1241,6 @@ async def remove_oidc_link(
 # ---------------------------------------------------------------------------
 async def _get_base_external_url(db: AsyncSession) -> str:
     """Return the base external URL (no trailing slash, no /login suffix)."""
-    import os
-
     external_url = await get_setting(db, "external_url")
     if external_url:
         return external_url.rstrip("/")

@@ -1910,6 +1910,7 @@ export default {
       totpDisabled: 'Authenticator app disabled.',
       emailOtpEnabled: 'Email OTP enabled.',
       emailOtpDisabled: 'Email OTP disabled.',
+      smtpRequired: 'Please configure and test SMTP settings first.',
       invalidCode: 'Invalid code. Please try again.',
       backupCodesTitle: 'Save your backup codes',
       backupCodesWarning: 'Save these codes somewhere safe. Each code can only be used once and they will not be shown again.',

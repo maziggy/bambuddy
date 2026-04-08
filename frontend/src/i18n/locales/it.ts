@@ -1896,6 +1896,7 @@ export default {
       totpDisabled: 'App Authenticator disabilitata.',
       emailOtpEnabled: 'OTP via e-mail abilitato.',
       emailOtpDisabled: 'OTP via e-mail disabilitato.',
+      smtpRequired: 'Configura e testa prima le impostazioni SMTP.',
       invalidCode: 'Codice non valido. Riprova.',
       backupCodesTitle: 'Salva i tuoi codici di backup',
       backupCodesWarning: 'Conserva questi codici in un posto sicuro. Ogni codice può essere usato una sola volta.',

@@ -1909,6 +1909,7 @@ export default {
       totpDisabled: '認証アプリが無効化されました。',
       emailOtpEnabled: 'メールOTPが有効化されました。',
       emailOtpDisabled: 'メールOTPが無効化されました。',
+      smtpRequired: '先にSMTP設定を構成してテストしてください。',
       invalidCode: '無効なコードです。もう一度お試しください。',
       backupCodesTitle: 'バックアップコードを保存',
       backupCodesWarning: 'これらのコードを安全な場所に保存してください。各コードは一度しか使用できません。',

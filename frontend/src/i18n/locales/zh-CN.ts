@@ -1896,6 +1896,7 @@ export default {
       totpDisabled: '身份验证器应用已停用。',
       emailOtpEnabled: '邮件 OTP 已启用。',
       emailOtpDisabled: '邮件 OTP 已停用。',
+      smtpRequired: '请先配置并测试SMTP设置。',
       invalidCode: '无效验证码，请重试。',
       backupCodesTitle: '保存备用码',
       backupCodesWarning: '请将这些码保存在安全的地方。每个码只能使用一次，且不会再次显示。',

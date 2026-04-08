@@ -83,9 +83,12 @@ _pre_auth_tokens: dict[str, tuple[str, datetime]] = {}  # token -> (username, ex
 _oidc_states: dict[str, tuple[int, str, datetime]] = {}  # state -> (provider_id, nonce, expiry)
 _oidc_exchange_tokens: dict[str, tuple[str, datetime]] = {}  # token -> (username, expiry)
 _failed_2fa_attempts: dict[str, list[datetime]] = {}  # username -> [timestamps]
+_email_otp_send_times: dict[str, list[datetime]] = {}  # username -> [send timestamps]
 
 MAX_2FA_ATTEMPTS = 5
 LOCKOUT_WINDOW = timedelta(minutes=15)
+MAX_EMAIL_OTP_SENDS = 3
+EMAIL_OTP_SEND_WINDOW = timedelta(minutes=10)
 PRE_AUTH_TOKEN_TTL = timedelta(minutes=5)
 OIDC_STATE_TTL = timedelta(minutes=10)
 OIDC_EXCHANGE_TTL = timedelta(minutes=2)
@@ -200,6 +203,20 @@ def record_failed_attempt(username: str) -> None:
 def clear_failed_attempts(username: str) -> None:
     """Clear all failed 2FA attempts for a user on successful verification."""
     _failed_2fa_attempts.pop(username, None)
+
+
+def check_email_otp_send_rate(username: str) -> None:
+    """Raise HTTP 429 if the user has requested too many OTP emails recently."""
+    now = datetime.now(timezone.utc)
+    times = _email_otp_send_times.get(username, [])
+    recent = [t for t in times if now - t < EMAIL_OTP_SEND_WINDOW]
+    _email_otp_send_times[username] = recent
+    if len(recent) >= MAX_EMAIL_OTP_SENDS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many OTP email requests. Please wait {EMAIL_OTP_SEND_WINDOW.seconds // 60} minutes.",
+        )
+    _email_otp_send_times[username] = recent + [now]
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +416,9 @@ async def send_email_otp(
     username = consume_pre_auth_token(body.pre_auth_token)
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
+
+    # Enforce rate limit BEFORE re-issuing fresh token to prevent OTP email flooding
+    check_email_otp_send_rate(username)
 
     # Re-issue a fresh pre-auth token so the same session can proceed to verify
     fresh_token = create_pre_auth_token(username)
@@ -743,9 +763,15 @@ async def oidc_authorize(
     external_url = await _get_base_external_url(db)
     redirect_uri = f"{external_url}/api/v1/auth/oidc/callback"
 
+    # Clean up expired states before adding a new one (prevent memory growth)
+    now = datetime.now(timezone.utc)
+    expired_states = [s for s, (_, _, exp) in _oidc_states.items() if exp < now]
+    for s in expired_states:
+        del _oidc_states[s]
+
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
-    _oidc_states[state] = (provider_id, nonce, datetime.now(timezone.utc) + OIDC_STATE_TTL)
+    _oidc_states[state] = (provider_id, nonce, now + OIDC_STATE_TTL)
 
     import urllib.parse
 
@@ -868,11 +894,16 @@ async def oidc_callback(
             )
             user = user_result.scalar_one_or_none()
         elif provider.auto_create_users:
-            # Derive a username from email or sub
+            # Derive a safe username from email local-part or subject claim.
+            # Strip characters that are invalid in usernames (allow only
+            # alphanumeric, underscores, hyphens, dots) and cap at 30 chars.
+            import re
+
             if provider_email:
-                candidate = provider_email.split("@")[0]
+                raw = provider_email.split("@")[0]
             else:
-                candidate = provider_sub[:30]
+                raw = provider_sub[:30]
+            candidate = re.sub(r"[^a-zA-Z0-9._-]", "", raw)[:30] or "oidcuser"
 
             # Ensure uniqueness
             username = candidate

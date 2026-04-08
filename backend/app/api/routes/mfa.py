@@ -816,11 +816,7 @@ async def oidc_authorize(
 
     # PKCE (S256) – required by PocketID and recommended for all OIDC flows
     code_verifier = secrets.token_urlsafe(48)  # 64-char URL-safe string
-    code_challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
-        .rstrip(b"=")
-        .decode()
-    )
+    code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
 
     db.add(
         AuthEphemeralToken(
@@ -852,9 +848,9 @@ async def oidc_authorize(
 
 @router.get("/oidc/callback")
 async def oidc_callback(
-    code: str | None = Query(default=None),
-    state: str | None = Query(default=None),
-    error: str | None = Query(default=None),
+    code: str | None = Query(default=None, max_length=512),
+    state: str | None = Query(default=None, max_length=512),
+    error: str | None = Query(default=None, max_length=256),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
     """Handle the OIDC authorization code callback from the identity provider."""
@@ -955,8 +951,10 @@ async def oidc_callback(
                 oidc_err,
                 oidc_desc,
             )
-            # Encode the OIDC error code into the redirect so the user sees it in the toast
-            safe_err = oidc_err.replace(" ", "_")[:40] if oidc_err else str(token_resp.status_code)
+            # Encode the OIDC error code into the redirect so the user sees it in the toast.
+            # URL-encode the value to prevent query-parameter injection from provider responses.
+            raw_err = oidc_err[:40] if oidc_err else str(token_resp.status_code)
+            safe_err = urllib.parse.quote(raw_err, safe="")
             return RedirectResponse(
                 url=f"{frontend_error_url}token_exchange_{safe_err}",
                 status_code=302,
@@ -974,6 +972,10 @@ async def oidc_callback(
             return RedirectResponse(url=f"{frontend_error_url}no_id_token", status_code=302)
 
         # ── Step 3: Fetch JWKS and validate ID token ─────────────────────────
+        # Use the issuer declared in the discovery document as the canonical value —
+        # it must match the `iss` claim in the JWT exactly (OIDC Core §3.1.3.7).
+        # This is safer than verify_iss=False + manual comparison.
+        discovery_issuer: str = discovery.get("issuer", provider.issuer_url)
         try:
             async with httpx.AsyncClient(timeout=10) as jwks_http:
                 jwks_resp = await jwks_http.get(jwks_uri)
@@ -984,28 +986,16 @@ async def oidc_callback(
             jwks_client.fetch_data = lambda: jwks_data  # type: ignore[method-assign]
             signing_key = jwks_client.get_signing_key_from_jwt(id_token)
 
-            # Normalise issuer URL: some providers include a trailing slash in
-            # the `iss` claim even when the configured URL has none (vice versa).
             claims = jwt.decode(
                 id_token,
                 signing_key.key,
                 algorithms=["RS256", "ES256", "RS384", "ES384", "RS512"],
                 audience=provider.client_id,
-                options={"verify_iss": False},
+                issuer=discovery_issuer,
             )
         except Exception as exc:
             logger.error("OIDC JWT validation failed for provider %d: %s", provider_id, exc, exc_info=True)
             return RedirectResponse(url=f"{frontend_error_url}token_validation_failed", status_code=302)
-
-        token_iss: str = claims.get("iss", "").rstrip("/")
-        if token_iss != provider.issuer_url.rstrip("/"):
-            logger.warning(
-                "OIDC issuer mismatch for provider %d: token iss=%r, expected=%r",
-                provider_id,
-                claims.get("iss"),
-                provider.issuer_url,
-            )
-            return RedirectResponse(url=f"{frontend_error_url}issuer_mismatch", status_code=302)
 
         # Verify nonce — skip check when the provider did not echo it back
         # (some providers omit nonce; we still sent it, so CSRF is partially covered by state).
@@ -1015,10 +1005,24 @@ async def oidc_callback(
             return RedirectResponse(url=f"{frontend_error_url}nonce_mismatch", status_code=302)
 
         provider_sub: str = claims.get("sub", "")
-        provider_email: str | None = claims.get("email")
-
         if not provider_sub:
             return RedirectResponse(url=f"{frontend_error_url}missing_sub_claim", status_code=302)
+
+        # Only trust the email claim when the provider explicitly marks it as verified.
+        # If email_verified is absent we allow it (many compliant providers omit it but
+        # only return verified addresses); if it is explicitly False we drop the email
+        # to prevent account-takeover via unverified email matching.
+        raw_email: str | None = claims.get("email")
+        email_verified = claims.get("email_verified")
+        if email_verified is False:
+            logger.warning(
+                "OIDC provider %d returned email_verified=false for sub=%r – ignoring email for linking",
+                provider_id,
+                provider_sub,
+            )
+            provider_email: str | None = None
+        else:
+            provider_email = raw_email
 
         # ── Step 4: Resolve / create user ────────────────────────────────────
         try:
@@ -1043,9 +1047,7 @@ async def oidc_callback(
                 email_user: User | None = None
                 if provider_email:
                     eu_result = await db.execute(
-                        select(User)
-                        .where(User.email == provider_email)
-                        .options(selectinload(User.groups))
+                        select(User).where(User.email == provider_email).options(selectinload(User.groups))
                     )
                     email_user = eu_result.scalar_one_or_none()
 

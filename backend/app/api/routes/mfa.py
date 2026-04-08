@@ -954,10 +954,11 @@ async def oidc_callback(
             return RedirectResponse(url=f"{frontend_error_url}no_id_token", status_code=302)
 
         # ── Step 3: Fetch JWKS and validate ID token ─────────────────────────
-        # Use the issuer declared in the discovery document as the canonical value —
-        # it must match the `iss` claim in the JWT exactly (OIDC Core §3.1.3.7).
-        # This is safer than verify_iss=False + manual comparison.
-        discovery_issuer: str = discovery.get("issuer", provider.issuer_url)
+        # Use the issuer from the discovery document as the canonical value (OIDC Core
+        # §3.1.3.7 requires iss == discovery issuer exactly).  We strip trailing slashes
+        # from both sides because some providers (e.g. older PocketID versions) are
+        # inconsistent between the discovery issuer and the JWT iss claim.
+        discovery_issuer: str = discovery.get("issuer", provider.issuer_url).rstrip("/")
         try:
             async with httpx.AsyncClient(timeout=10) as jwks_http:
                 jwks_resp = await jwks_http.get(jwks_uri)
@@ -968,16 +969,29 @@ async def oidc_callback(
             jwks_client.fetch_data = lambda: jwks_data  # type: ignore[method-assign]
             signing_key = jwks_client.get_signing_key_from_jwt(id_token)
 
+            # Decode without PyJWT issuer check; we validate manually below with
+            # trailing-slash normalisation so both strict and lenient providers work.
             claims = jwt.decode(
                 id_token,
                 signing_key.key,
                 algorithms=["RS256", "ES256", "RS384", "ES384", "RS512"],
                 audience=provider.client_id,
-                issuer=discovery_issuer,
+                options={"verify_iss": False},
             )
         except Exception as exc:
             logger.error("OIDC JWT validation failed for provider %d: %s", provider_id, exc, exc_info=True)
             return RedirectResponse(url=f"{frontend_error_url}token_validation_failed", status_code=302)
+
+        # Validate issuer with trailing-slash normalisation
+        token_iss: str = claims.get("iss", "").rstrip("/")
+        if token_iss != discovery_issuer:
+            logger.warning(
+                "OIDC issuer mismatch for provider %d: jwt iss=%r, discovery issuer=%r",
+                provider_id,
+                claims.get("iss"),
+                discovery_issuer,
+            )
+            return RedirectResponse(url=f"{frontend_error_url}issuer_mismatch", status_code=302)
 
         # Verify nonce — skip check when the provider did not echo it back
         # (some providers omit nonce; we still sent it, so CSRF is partially covered by state).

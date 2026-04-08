@@ -1567,6 +1567,12 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add PKCE code_verifier column to auth_ephemeral_tokens
+    try:
+        await conn.execute(text("ALTER TABLE auth_ephemeral_tokens ADD COLUMN code_verifier VARCHAR(128)"))
+    except OperationalError:
+        pass  # Already applied
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

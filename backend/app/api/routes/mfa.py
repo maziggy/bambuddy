@@ -790,18 +790,29 @@ async def oidc_authorize(
     )
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
+
+    # PKCE (S256) – required by PocketID and recommended for all OIDC flows
+    import hashlib
+    import urllib.parse
+
+    code_verifier = secrets.token_urlsafe(48)  # 64-char URL-safe string
+    code_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+
     db.add(
         AuthEphemeralToken(
             token=state,
             token_type="oidc_state",
             provider_id=provider_id,
             nonce=nonce,
+            code_verifier=code_verifier,
             expires_at=now + OIDC_STATE_TTL,
         )
     )
     await db.commit()
-
-    import urllib.parse
 
     params = urllib.parse.urlencode(
         {
@@ -811,6 +822,8 @@ async def oidc_authorize(
             "scope": provider.scopes,
             "state": state,
             "nonce": nonce,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
         }
     )
     auth_url = f"{authorization_endpoint}?{params}"
@@ -855,6 +868,7 @@ async def oidc_callback(
 
         provider_id = state_record.provider_id
         nonce = state_record.nonce
+        code_verifier = state_record.code_verifier
         await db.delete(state_record)
         await db.commit()
 
@@ -883,17 +897,22 @@ async def oidc_callback(
             return RedirectResponse(url=f"{frontend_error_url}invalid_discovery_document", status_code=302)
 
         # ── Step 2: Exchange authorization code for tokens ───────────────────
+        token_form: dict[str, str] = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": provider.client_id,
+        }
+        if provider.client_secret:
+            token_form["client_secret"] = provider.client_secret
+        if code_verifier:
+            token_form["code_verifier"] = code_verifier
+
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 token_resp = await client.post(
                     token_endpoint,
-                    data={
-                        "grant_type": "authorization_code",
-                        "code": code,
-                        "redirect_uri": redirect_uri,
-                        "client_id": provider.client_id,
-                        "client_secret": provider.client_secret,
-                    },
+                    data=token_form,
                     headers={"Accept": "application/json"},
                 )
         except Exception as exc:

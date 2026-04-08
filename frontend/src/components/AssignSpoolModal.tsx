@@ -28,6 +28,9 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [disableFiltering, setDisableFiltering] = useState(false);
+  useEffect(() => {
+    setSelectedSpoolId(null);
+  }, [disableFiltering]);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [pendingAssignId, setPendingAssignId] = useState<number | null>(null);

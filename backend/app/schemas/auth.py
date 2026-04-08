@@ -189,6 +189,15 @@ class EmailOTPSendRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _validate_issuer_url(v: str | None) -> str | None:
+    """Reject non-HTTP(S) issuer URLs to prevent SSRF via internal scheme abuse."""
+    if v is None:
+        return v
+    if not v.startswith(("https://", "http://")):
+        raise ValueError("issuer_url must start with https:// or http://")
+    return v
+
+
 class OIDCProviderCreate(BaseModel):
     name: str
     issuer_url: str
@@ -199,10 +208,23 @@ class OIDCProviderCreate(BaseModel):
     auto_create_users: bool = False
     icon_url: str | None = None
 
+    @field_validator("issuer_url")
+    @classmethod
+    def validate_issuer_url(cls, v: str) -> str:
+        result = _validate_issuer_url(v)
+        assert result is not None
+        return result
+
 
 class OIDCProviderUpdate(BaseModel):
     name: str | None = None
     issuer_url: str | None = None
+
+    @field_validator("issuer_url")
+    @classmethod
+    def validate_issuer_url(cls, v: str | None) -> str | None:
+        return _validate_issuer_url(v)
+
     client_id: str | None = None
     client_secret: str | None = None
     scopes: str | None = None

@@ -175,6 +175,10 @@ export default {
     noPrintersConfigured: 'Noch keine Drucker konfiguriert',
     search: 'Drucker suchen...',
     noSearchResults: 'Kein Drucker gefunden für "{{search}}"',
+    filter: {
+      allStatuses: 'Alle Status',
+      allLocations: 'Alle Standorte',
+    },
     // Printer card
     readyToPrint: 'Druckbereit',
     external: 'Extern',

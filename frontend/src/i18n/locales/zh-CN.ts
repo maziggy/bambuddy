@@ -175,6 +175,10 @@ export default {
     noPrintersConfigured: '尚未配置打印机',
     search: '搜索打印机...',
     noSearchResults: '没有找到与 "{{search}}" 匹配的打印机',
+    filter: {
+      allStatuses: '所有状态',
+      allLocations: '所有位置',
+    },
     // Printer card
     readyToPrint: '准备打印',
     external: '外部',

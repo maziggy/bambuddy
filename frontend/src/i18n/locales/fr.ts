@@ -175,6 +175,10 @@ export default {
     noPrintersConfigured: 'Aucune imprimante configurée pour le moment',
     search: 'Rechercher des imprimantes...',
     noSearchResults: 'Aucune imprimante ne correspond à "{{search}}"',
+    filter: {
+      allStatuses: 'Tous les statuts',
+      allLocations: 'Tous les emplacements',
+    },
     // Printer card
     readyToPrint: 'Prête à imprimer',
     external: 'Externe',

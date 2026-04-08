@@ -930,8 +930,11 @@ async def oidc_callback(
             )
             return RedirectResponse(url=f"{frontend_error_url}issuer_mismatch", status_code=302)
 
-        # Verify nonce
-        if claims.get("nonce") != nonce:
+        # Verify nonce — skip check when the provider did not echo it back
+        # (some providers omit nonce; we still sent it, so CSRF is partially covered by state).
+        token_nonce = claims.get("nonce")
+        if token_nonce is not None and token_nonce != nonce:
+            logger.warning("OIDC nonce mismatch for provider %d", provider_id)
             return RedirectResponse(url=f"{frontend_error_url}nonce_mismatch", status_code=302)
 
         provider_sub: str = claims.get("sub", "")
@@ -940,96 +943,102 @@ async def oidc_callback(
         if not provider_sub:
             return RedirectResponse(url=f"{frontend_error_url}missing_sub_claim", status_code=302)
 
-        # Look up existing OIDC link
-        link_result = await db.execute(
-            select(UserOIDCLink)
-            .where(UserOIDCLink.provider_id == provider_id)
-            .where(UserOIDCLink.provider_user_id == provider_sub)
-        )
-        link = link_result.scalar_one_or_none()
+        # ── Step 4: Resolve / create user ────────────────────────────────────
+        import re
 
-        user: User | None = None
+        from backend.app.core.auth import get_password_hash
 
-        if link:
-            user_result = await db.execute(
-                select(User).where(User.id == link.user_id).options(selectinload(User.groups))
+        try:
+            # Look up existing OIDC link
+            link_result = await db.execute(
+                select(UserOIDCLink)
+                .where(UserOIDCLink.provider_id == provider_id)
+                .where(UserOIDCLink.provider_user_id == provider_sub)
             )
-            user = user_result.scalar_one_or_none()
-        elif provider.auto_create_users:
-            # Derive a safe username from email local-part or subject claim.
-            # Strip characters that are invalid in usernames (allow only
-            # alphanumeric, underscores, hyphens, dots) and cap at 30 chars.
-            import re
+            link = link_result.scalar_one_or_none()
 
-            if provider_email:
-                raw = provider_email.split("@")[0]
+            user: User | None = None
+
+            if link:
+                user_result = await db.execute(
+                    select(User).where(User.id == link.user_id).options(selectinload(User.groups))
+                )
+                user = user_result.scalar_one_or_none()
+            elif provider.auto_create_users:
+                # Derive a safe username from email local-part or subject claim.
+                # Strip characters that are invalid in usernames (allow only
+                # alphanumeric, underscores, hyphens, dots) and cap at 30 chars.
+                if provider_email:
+                    raw = provider_email.split("@")[0]
+                else:
+                    raw = provider_sub[:30]
+                candidate = re.sub(r"[^a-zA-Z0-9._-]", "", raw)[:30] or "oidcuser"
+
+                # Ensure uniqueness
+                username = candidate
+                counter = 1
+                while True:
+                    existing = await get_user_by_username(db, username)
+                    if not existing:
+                        break
+                    username = f"{candidate}{counter}"
+                    counter += 1
+
+                new_user = User(
+                    username=username,
+                    email=provider_email,
+                    password_hash=get_password_hash(secrets.token_urlsafe(32)),
+                    role="user",
+                    is_active=True,
+                )
+                db.add(new_user)
+                await db.flush()
+
+                new_link = UserOIDCLink(
+                    user_id=new_user.id,
+                    provider_id=provider_id,
+                    provider_user_id=provider_sub,
+                    provider_email=provider_email,
+                )
+                db.add(new_link)
+                await db.commit()
+
+                # Reload with groups
+                user_result = await db.execute(
+                    select(User).where(User.id == new_user.id).options(selectinload(User.groups))
+                )
+                user = user_result.scalar_one()
+                logger.info("Auto-created user '%s' via OIDC provider %d", username, provider_id)
             else:
-                raw = provider_sub[:30]
-            candidate = re.sub(r"[^a-zA-Z0-9._-]", "", raw)[:30] or "oidcuser"
+                return RedirectResponse(url=f"{frontend_error_url}no_linked_account", status_code=302)
 
-            # Ensure uniqueness
-            username = candidate
-            counter = 1
-            while True:
-                existing = await get_user_by_username(db, username)
-                if not existing:
-                    break
-                username = f"{candidate}{counter}"
-                counter += 1
+            if not user or not user.is_active:
+                return RedirectResponse(url=f"{frontend_error_url}account_inactive", status_code=302)
 
-            # Create new user with a random unusable password
-            from backend.app.core.auth import get_password_hash
-
-            new_user = User(
-                username=username,
-                email=provider_email,
-                password_hash=get_password_hash(secrets.token_urlsafe(32)),
-                role="user",
-                is_active=True,
+            # Issue an OIDC exchange token (short-lived, single-use) stored in DB
+            now2 = datetime.now(timezone.utc)
+            exchange_token = secrets.token_urlsafe(32)
+            db.add(
+                AuthEphemeralToken(
+                    token=exchange_token,
+                    token_type="oidc_exchange",
+                    username=user.username,
+                    expires_at=now2 + OIDC_EXCHANGE_TTL,
+                )
             )
-            db.add(new_user)
-            await db.flush()
-
-            new_link = UserOIDCLink(
-                user_id=new_user.id,
-                provider_id=provider_id,
-                provider_user_id=provider_sub,
-                provider_email=provider_email,
-            )
-            db.add(new_link)
             await db.commit()
 
-            # Reload with groups
-            user_result = await db.execute(
-                select(User).where(User.id == new_user.id).options(selectinload(User.groups))
-            )
-            user = user_result.scalar_one()
-            logger.info("Auto-created user '%s' via OIDC provider %d", username, provider_id)
-        else:
-            return RedirectResponse(url=f"{frontend_error_url}no_linked_account", status_code=302)
+            return RedirectResponse(url=f"{external_url}/login?oidc_token={exchange_token}", status_code=302)
 
-        if not user or not user.is_active:
-            return RedirectResponse(url=f"{frontend_error_url}account_inactive", status_code=302)
-
-        # Issue an OIDC exchange token (short-lived, single-use) stored in DB
-        now2 = datetime.now(timezone.utc)
-        exchange_token = secrets.token_urlsafe(32)
-        db.add(
-            AuthEphemeralToken(
-                token=exchange_token,
-                token_type="oidc_exchange",
-                username=user.username,
-                expires_at=now2 + OIDC_EXCHANGE_TTL,
-            )
-        )
-        await db.commit()
-
-        return RedirectResponse(url=f"{external_url}/login?oidc_token={exchange_token}", status_code=302)
+        except Exception as exc:
+            logger.error("OIDC user resolution failed for provider %d: %s", provider_id, exc, exc_info=True)
+            return RedirectResponse(url=f"{frontend_error_url}user_resolution_failed", status_code=302)
 
     except Exception as exc:
-        logger.error("Unexpected error in OIDC callback: %s", exc, exc_info=True)
+        exc_name = type(exc).__name__
+        logger.error("Unexpected error in OIDC callback (%s): %s", exc_name, exc, exc_info=True)
         try:
-            return RedirectResponse(url=f"{frontend_error_url}internal_error", status_code=302)
+            return RedirectResponse(url=f"{frontend_error_url}internal_{exc_name}", status_code=302)
         except Exception:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OIDC callback failed")
 

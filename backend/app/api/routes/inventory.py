@@ -522,6 +522,7 @@ async def create_spool(
     await db.commit()
     await db.refresh(spool)
     result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool.id))
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
 
 
@@ -540,6 +541,7 @@ async def bulk_create_spools(
     await db.commit()
     ids = [s.id for s in spools]
     result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id.in_(ids)))
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return list(result.scalars().all())
 
 
@@ -566,6 +568,7 @@ async def update_spool(
 
     await db.commit()
     result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
 
 
@@ -583,6 +586,7 @@ async def delete_spool(
 
     await db.delete(spool)
     await db.commit()
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return {"status": "deleted"}
 
 
@@ -603,6 +607,7 @@ async def archive_spool(
     spool.archived_at = datetime.now(timezone.utc)
     await db.commit()
     result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
 
 
@@ -621,6 +626,7 @@ async def restore_spool(
     spool.archived_at = None
     await db.commit()
     result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
 
 

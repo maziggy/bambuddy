@@ -1383,43 +1383,53 @@ async def on_print_start(printer_id: int, data: dict):
                 # Don't block print on plate detection errors
                 logger.warning("[PLATE CHECK] Plate detection failed for printer %s: %s", printer_id, plate_err)
 
-        if not printer or not printer.auto_archive:
-            # Send notification without archive data (auto-archive disabled)
-            logger.info(
-                f"[CALLBACK] Skipping archive - printer: {printer is not None}, auto_archive: {printer.auto_archive if printer else 'N/A'}"
-            )
+        if not printer:
+            logger.info("[CALLBACK] Skipping archive - printer not found in database")
             if not notification_sent:
-                # Even with auto-archive disabled, try to recover created_by_id from
-                # a registered expected print (e.g. a library-file queue item) so the
-                # user start email can still be sent.
-                _fn = data.get("filename", "")
-                _sn = data.get("subtask_name", "")
-                _no_archive_creator_keys: list[tuple[int, str]] = []
-                if _sn:
-                    _no_archive_creator_keys += [
-                        (printer_id, _sn),
-                        (printer_id, f"{_sn}.3mf"),
-                        (printer_id, f"{_sn}.gcode.3mf"),
-                    ]
-                if _fn:
-                    _base_fn = _fn.split("/")[-1] if "/" in _fn else _fn
-                    _no_archive_creator_keys.append((printer_id, _base_fn))
-                    _no_archive_base = _base_fn.replace(".gcode", "").replace(".3mf", "")
-                    _no_archive_creator_keys += [
-                        (printer_id, _no_archive_base),
-                        (printer_id, f"{_no_archive_base}.3mf"),
-                    ]
-                _no_archive_creator: int | None = None
-                for _key in _no_archive_creator_keys:
-                    # Clean up all dicts for every key to avoid memory leaks
-                    _expected_prints.pop(_key, None)
-                    _expected_print_registered_at.pop(_key, None)
-                    popped_creator = _expected_print_creators.pop(_key, None)
-                    if _no_archive_creator is None:
-                        _no_archive_creator = popped_creator
-                _creator_data = {"created_by_id": _no_archive_creator} if _no_archive_creator else None
-                await _send_print_start_notification(printer_id, data, _creator_data, logger)
+                await _send_print_start_notification(printer_id, data, logger=logger)
             return
+
+        if not printer.auto_archive:
+            # auto-archive disabled — check if there's an expected print (dispatched
+            # by BamBuddy via queue/reprint) that already has an archive to promote.
+            # If so, fall through to the expected-print handling below so the archive
+            # is tracked in _active_prints and usage tracking works at completion.
+            _fn = data.get("filename", "")
+            _sn = data.get("subtask_name", "")
+            _check_keys: list[tuple[int, str]] = []
+            if _sn:
+                _check_keys += [
+                    (printer_id, _sn),
+                    (printer_id, f"{_sn}.3mf"),
+                    (printer_id, f"{_sn}.gcode.3mf"),
+                ]
+            if _fn:
+                _base_fn = _fn.split("/")[-1] if "/" in _fn else _fn
+                _check_keys.append((printer_id, _base_fn))
+                _no_archive_base = _base_fn.replace(".gcode", "").replace(".3mf", "")
+                _check_keys += [
+                    (printer_id, _no_archive_base),
+                    (printer_id, f"{_no_archive_base}.3mf"),
+                ]
+
+            _has_expected = any(k in _expected_prints for k in _check_keys)
+
+            if not _has_expected:
+                # No expected print — truly external print (started from slicer/touchscreen)
+                logger.info("[CALLBACK] Skipping archive - auto_archive: False, no expected print")
+                if not notification_sent:
+                    _no_archive_creator: int | None = None
+                    for _key in _check_keys:
+                        _expected_prints.pop(_key, None)
+                        _expected_print_registered_at.pop(_key, None)
+                        popped_creator = _expected_print_creators.pop(_key, None)
+                        if _no_archive_creator is None:
+                            _no_archive_creator = popped_creator
+                    _creator_data = {"created_by_id": _no_archive_creator} if _no_archive_creator else None
+                    await _send_print_start_notification(printer_id, data, _creator_data, logger)
+                return
+            else:
+                logger.info("[CALLBACK] auto_archive disabled but expected print found — promoting archive")
 
         # Get the filename and subtask_name
         filename = data.get("filename", "")
@@ -1486,6 +1496,21 @@ async def on_print_start(printer_id: int, data: dict):
                 _active_prints[(printer_id, archive.filename)] = archive.id
                 if subtask_name:
                     _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
+
+                # Inject ams_mapping into usage tracker session — the session was created
+                # before expected-print promotion, so it may have ams_mapping=None when
+                # the MQTT request topic subscription failed (common on P1S/A1).
+                _stored_map = _print_ams_mappings.get(expected_archive_id)
+                if _stored_map:
+                    try:
+                        from backend.app.services.usage_tracker import _active_sessions
+
+                        _ut_session = _active_sessions.get(printer_id)
+                        if _ut_session and not _ut_session.ams_mapping:
+                            _ut_session.ams_mapping = _stored_map
+                            logger.info("[CALLBACK] Injected ams_mapping into usage tracker session: %s", _stored_map)
+                    except Exception:
+                        pass
 
                 # Set up energy tracking
                 try:

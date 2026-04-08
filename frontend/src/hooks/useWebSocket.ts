@@ -263,6 +263,11 @@ export function useWebSocket() {
         }));
         break;
 
+      case 'inventory_changed':
+        // Spool created/updated/deleted/archived/restored - refresh inventory across all tabs
+        debouncedInvalidate('inventory-spools');
+        break;
+
       case 'spool_assignment_changed':
         // Spool assigned/unassigned - refresh assignment data across all tabs
         debouncedInvalidate('spool-assignments');

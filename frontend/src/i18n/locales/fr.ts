@@ -4726,6 +4726,10 @@ export default {
       confirmRestartDaemon: 'Redémarrer le daemon SpoolBuddy ? Le NFC et la balance seront temporairement indisponibles.',
       confirmRestartBrowser: 'Redémarrer le navigateur kiosque ? L\'écran sera brièvement noir.',
       confirm: 'Confirmer',
+      confirmPlugOn: 'Allumer {{name}} ?',
+      confirmPlugOff: 'Éteindre {{name}} ?',
+      turnOn: 'Allumer',
+      turnOff: 'Éteindre',
     },
   },
 

@@ -4738,6 +4738,10 @@ export default {
       confirmRestartDaemon: 'SpoolBuddyデーモンを再起動しますか？NFCとスケールが一時的に使用できなくなります。',
       confirmRestartBrowser: 'キオスクブラウザを再起動しますか？画面が一時的に暗くなります。',
       confirm: '確認',
+      confirmPlugOn: '{{name}}をオンにしますか？',
+      confirmPlugOff: '{{name}}をオフにしますか？',
+      turnOn: 'オン',
+      turnOff: 'オフ',
     },
   },
 

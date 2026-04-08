@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Power, PowerOff, RotateCw, Monitor, ChevronDown, Loader2 } from 'lucide-react';
+import { PowerOff, RotateCw, Monitor, ChevronDown, Loader2 } from 'lucide-react';
 import { api, spoolbuddyApi, type Printer, type SmartPlug, type SmartPlugStatus } from '../../api/client';
 
 interface SpoolBuddyQuickMenuProps {
@@ -13,6 +13,10 @@ interface SpoolBuddyQuickMenuProps {
 
 type SystemCommand = 'reboot' | 'shutdown' | 'restart_daemon' | 'restart_browser';
 
+type PendingConfirm =
+  | { type: 'system'; command: SystemCommand }
+  | { type: 'plug'; plug: SmartPlug; printer: Printer; currentState: string | null };
+
 interface PlugState {
   plug: SmartPlug;
   printer: Printer;
@@ -22,7 +26,7 @@ interface PlugState {
 
 export function SpoolBuddyQuickMenu({ isOpen, onClose, deviceId, deviceOnline }: SpoolBuddyQuickMenuProps) {
   const { t } = useTranslation();
-  const [confirmAction, setConfirmAction] = useState<SystemCommand | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [commandBusy, setCommandBusy] = useState(false);
   const [plugStates, setPlugStates] = useState<Map<number, { loading: boolean; state: string | null }>>(new Map());
 
@@ -85,7 +89,7 @@ export function SpoolBuddyQuickMenu({ isOpen, onClose, deviceId, deviceOnline }:
   // Clear state when menu closes
   useEffect(() => {
     if (!isOpen) {
-      setConfirmAction(null);
+      setPendingConfirm(null);
       setCommandBusy(false);
     }
   }, [isOpen]);
@@ -129,11 +133,14 @@ export function SpoolBuddyQuickMenu({ isOpen, onClose, deviceId, deviceOnline }:
   }, [deviceId, onClose]);
 
   const executeConfirmed = useCallback(() => {
-    if (confirmAction) {
-      handleSystemCommand(confirmAction);
-      setConfirmAction(null);
+    if (!pendingConfirm) return;
+    if (pendingConfirm.type === 'system') {
+      handleSystemCommand(pendingConfirm.command);
+    } else {
+      handleTogglePlug(pendingConfirm.plug);
     }
-  }, [confirmAction, handleSystemCommand]);
+    setPendingConfirm(null);
+  }, [pendingConfirm, handleSystemCommand, handleTogglePlug]);
 
   if (!isOpen) return null;
 
@@ -158,37 +165,23 @@ export function SpoolBuddyQuickMenu({ isOpen, onClose, deviceId, deviceOnline }:
               <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">
                 {t('spoolbuddy.quickMenu.printerPower', 'Printer Power')}
               </h3>
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {printerPlugs.map(({ plug, printer, loading }) => {
                   const state = plugStates.get(plug.id);
                   const on = isPlugOn(state?.state ?? null);
                   return (
                     <button
                       key={plug.id}
-                      onClick={() => handleTogglePlug(plug)}
+                      onClick={() => setPendingConfirm({ type: 'plug', plug, printer, currentState: state?.state ?? null })}
                       disabled={loading}
-                      className="w-full flex items-center gap-3 p-3 rounded-xl bg-zinc-800/60 hover:bg-zinc-700/60 transition-colors min-h-[48px]"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-800/60 hover:bg-zinc-700/60 transition-colors min-h-[36px]"
                     >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                        on ? 'bg-green-500/20 text-green-400' : 'bg-zinc-700 text-zinc-500'
-                      }`}>
-                        {loading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : on ? (
-                          <Power className="w-4 h-4" />
-                        ) : (
-                          <PowerOff className="w-4 h-4" />
-                        )}
-                      </div>
-                      <div className="flex-1 text-left">
-                        <div className="text-sm font-medium text-zinc-200">{printer.name}</div>
-                        <div className="text-xs text-zinc-500">{plug.name}</div>
-                      </div>
-                      <div className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        on ? 'bg-green-500/20 text-green-400' : 'bg-zinc-700 text-zinc-500'
-                      }`}>
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${on ? 'bg-green-500' : 'bg-zinc-600'}`} />
+                      {loading && <Loader2 className="w-3 h-3 animate-spin text-zinc-400 shrink-0" />}
+                      <span className="flex-1 text-sm text-zinc-200 text-left truncate">{printer.name}</span>
+                      <span className={`text-xs font-medium ${on ? 'text-green-400' : 'text-zinc-500'}`}>
                         {state?.state ?? '—'}
-                      </div>
+                      </span>
                     </button>
                   );
                 })}
@@ -205,26 +198,26 @@ export function SpoolBuddyQuickMenu({ isOpen, onClose, deviceId, deviceOnline }:
               <SystemButton
                 icon={<RotateCw className="w-4 h-4" />}
                 label={t('spoolbuddy.quickMenu.restartDaemon', 'Restart Daemon')}
-                onClick={() => setConfirmAction('restart_daemon')}
+                onClick={() => setPendingConfirm({ type: 'system', command: 'restart_daemon' })}
                 disabled={!deviceId || !deviceOnline || commandBusy}
               />
               <SystemButton
                 icon={<Monitor className="w-4 h-4" />}
                 label={t('spoolbuddy.quickMenu.restartBrowser', 'Restart Browser')}
-                onClick={() => setConfirmAction('restart_browser')}
+                onClick={() => setPendingConfirm({ type: 'system', command: 'restart_browser' })}
                 disabled={!deviceId || !deviceOnline || commandBusy}
               />
               <SystemButton
                 icon={<RotateCw className="w-4 h-4" />}
                 label={t('spoolbuddy.quickMenu.reboot', 'Reboot')}
-                onClick={() => setConfirmAction('reboot')}
+                onClick={() => setPendingConfirm({ type: 'system', command: 'reboot' })}
                 disabled={!deviceId || !deviceOnline || commandBusy}
                 variant="warning"
               />
               <SystemButton
                 icon={<PowerOff className="w-4 h-4" />}
                 label={t('spoolbuddy.quickMenu.shutdown', 'Shutdown')}
-                onClick={() => setConfirmAction('shutdown')}
+                onClick={() => setPendingConfirm({ type: 'system', command: 'shutdown' })}
                 disabled={!deviceId || !deviceOnline || commandBusy}
                 variant="danger"
               />
@@ -242,24 +235,28 @@ export function SpoolBuddyQuickMenu({ isOpen, onClose, deviceId, deviceOnline }:
       </div>
 
       {/* Confirmation Dialog */}
-      {confirmAction && (
+      {pendingConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
           <div className="bg-zinc-800 rounded-2xl p-5 mx-4 max-w-sm w-full border border-zinc-700">
             <h3 className="text-lg font-semibold text-zinc-100 mb-2">
               {t('spoolbuddy.quickMenu.confirmTitle', 'Confirm')}
             </h3>
             <p className="text-sm text-zinc-400 mb-5">
-              {confirmAction === 'shutdown'
-                ? t('spoolbuddy.quickMenu.confirmShutdown', 'Are you sure you want to shut down the SpoolBuddy? You will need physical access to turn it back on.')
-                : confirmAction === 'reboot'
-                  ? t('spoolbuddy.quickMenu.confirmReboot', 'Are you sure you want to reboot the SpoolBuddy?')
-                  : confirmAction === 'restart_daemon'
-                    ? t('spoolbuddy.quickMenu.confirmRestartDaemon', 'Restart the SpoolBuddy daemon? NFC and scale will be temporarily unavailable.')
-                    : t('spoolbuddy.quickMenu.confirmRestartBrowser', 'Restart the kiosk browser? The display will briefly go blank.')}
+              {pendingConfirm.type === 'plug'
+                ? (isPlugOn(pendingConfirm.currentState)
+                    ? t('spoolbuddy.quickMenu.confirmPlugOff', 'Turn off {{name}}?', { name: pendingConfirm.printer.name })
+                    : t('spoolbuddy.quickMenu.confirmPlugOn', 'Turn on {{name}}?', { name: pendingConfirm.printer.name }))
+                : pendingConfirm.command === 'shutdown'
+                  ? t('spoolbuddy.quickMenu.confirmShutdown', 'Are you sure you want to shut down the SpoolBuddy? You will need physical access to turn it back on.')
+                  : pendingConfirm.command === 'reboot'
+                    ? t('spoolbuddy.quickMenu.confirmReboot', 'Are you sure you want to reboot the SpoolBuddy?')
+                    : pendingConfirm.command === 'restart_daemon'
+                      ? t('spoolbuddy.quickMenu.confirmRestartDaemon', 'Restart the SpoolBuddy daemon? NFC and scale will be temporarily unavailable.')
+                      : t('spoolbuddy.quickMenu.confirmRestartBrowser', 'Restart the kiosk browser? The display will briefly go blank.')}
             </p>
             <div className="flex gap-3">
               <button
-                onClick={() => setConfirmAction(null)}
+                onClick={() => setPendingConfirm(null)}
                 className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors min-h-[44px]"
               >
                 {t('common.cancel', 'Cancel')}
@@ -268,13 +265,19 @@ export function SpoolBuddyQuickMenu({ isOpen, onClose, deviceId, deviceOnline }:
                 onClick={executeConfirmed}
                 disabled={commandBusy}
                 className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-colors min-h-[44px] ${
-                  confirmAction === 'shutdown' ? 'bg-red-600 hover:bg-red-700' :
-                  confirmAction === 'reboot' ? 'bg-amber-600 hover:bg-amber-700' :
-                  'bg-blue-600 hover:bg-blue-700'
+                  pendingConfirm.type === 'plug'
+                    ? (isPlugOn(pendingConfirm.currentState) ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')
+                    : pendingConfirm.command === 'shutdown' ? 'bg-red-600 hover:bg-red-700'
+                    : pendingConfirm.command === 'reboot' ? 'bg-amber-600 hover:bg-amber-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
                 } disabled:opacity-50`}
               >
                 {commandBusy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> :
-                  t('spoolbuddy.quickMenu.confirm', 'Confirm')}
+                  pendingConfirm.type === 'plug'
+                    ? (isPlugOn(pendingConfirm.currentState)
+                        ? t('spoolbuddy.quickMenu.turnOff', 'Turn Off')
+                        : t('spoolbuddy.quickMenu.turnOn', 'Turn On'))
+                    : t('spoolbuddy.quickMenu.confirm', 'Confirm')}
               </button>
             </div>
           </div>

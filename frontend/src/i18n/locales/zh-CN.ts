@@ -4724,6 +4724,10 @@ export default {
       confirmRestartDaemon: '重启SpoolBuddy守护进程？NFC和秤将暂时不可用。',
       confirmRestartBrowser: '重启kiosk浏览器？屏幕将短暂变黑。',
       confirm: '确认',
+      confirmPlugOn: '开启 {{name}}？',
+      confirmPlugOff: '关闭 {{name}}？',
+      turnOn: '开启',
+      turnOff: '关闭',
     },
   },
 

@@ -4754,6 +4754,10 @@ export default {
       confirmRestartDaemon: 'Restart the SpoolBuddy daemon? NFC and scale will be temporarily unavailable.',
       confirmRestartBrowser: 'Restart the kiosk browser? The display will briefly go blank.',
       confirm: 'Confirm',
+      confirmPlugOn: 'Turn on {{name}}?',
+      confirmPlugOff: 'Turn off {{name}}?',
+      turnOn: 'Turn On',
+      turnOff: 'Turn Off',
     },
   },
 

@@ -212,6 +212,46 @@ describe('SpoolBuddyQuickMenu', () => {
     });
   });
 
+  it('shows confirmation when toggling printer plug', async () => {
+    (api.getPrinters as ReturnType<typeof vi.fn>).mockResolvedValue([mockPrinter]);
+    (api.getSmartPlugs as ReturnType<typeof vi.fn>).mockResolvedValue([mockSmartPlug]);
+
+    render(<SpoolBuddyQuickMenu {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Test P1S')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Test P1S'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Turn on Test P1S/)).toBeInTheDocument();
+    });
+  });
+
+  it('toggles plug after confirming', async () => {
+    (api.getPrinters as ReturnType<typeof vi.fn>).mockResolvedValue([mockPrinter]);
+    (api.getSmartPlugs as ReturnType<typeof vi.fn>).mockResolvedValue([mockSmartPlug]);
+
+    render(<SpoolBuddyQuickMenu {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Test P1S')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Test P1S'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Turn On' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn On' }));
+
+    await waitFor(() => {
+      expect(api.controlSmartPlug).toHaveBeenCalledWith(10, 'toggle');
+    });
+  });
+
   it('disables system buttons when device offline', () => {
     render(<SpoolBuddyQuickMenu {...defaultProps} deviceOnline={false} />);
 

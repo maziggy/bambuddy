@@ -4747,6 +4747,10 @@ export default {
       confirmRestartDaemon: 'SpoolBuddy-Daemon neustarten? NFC und Waage sind vorübergehend nicht verfügbar.',
       confirmRestartBrowser: 'Kiosk-Browser neustarten? Das Display wird kurz schwarz.',
       confirm: 'Bestätigen',
+      confirmPlugOn: '{{name}} einschalten?',
+      confirmPlugOff: '{{name}} ausschalten?',
+      turnOn: 'Einschalten',
+      turnOff: 'Ausschalten',
     },
   },
 

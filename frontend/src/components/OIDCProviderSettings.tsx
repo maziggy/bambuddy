@@ -73,11 +73,11 @@ function ProviderForm({
 
       <div className="flex flex-wrap gap-6 pt-2">
         <label className="flex items-center gap-3 cursor-pointer">
-          <Toggle checked={form.is_enabled} onChange={(v) => set('is_enabled', v)} />
+          <Toggle checked={form.is_enabled ?? true} onChange={(v) => set('is_enabled', v)} />
           <span className="text-white text-sm">{t('settings.oidc.form.enabled')}</span>
         </label>
         <label className="flex items-center gap-3 cursor-pointer">
-          <Toggle checked={form.auto_create_users} onChange={(v) => set('auto_create_users', v)} />
+          <Toggle checked={form.auto_create_users ?? false} onChange={(v) => set('auto_create_users', v)} />
           <div>
             <p className="text-white text-sm">{t('settings.oidc.form.autoCreate')}</p>
             <p className="text-bambu-gray text-xs">{t('settings.oidc.form.autoCreateDesc')}</p>
@@ -308,7 +308,7 @@ export function OIDCProviderSettings() {
         <ConfirmModal
           title={t('settings.oidc.deleteTitle')}
           message={t('settings.oidc.deleteMessage', { name: deleteTarget.name })}
-          confirmLabel={t('common.delete')}
+          confirmText={t('common.delete')}
           variant="danger"
           onConfirm={() => deleteMutation.mutate(deleteTarget.id)}
           onCancel={() => setDeleteTarget(null)}

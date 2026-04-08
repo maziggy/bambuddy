@@ -24,23 +24,34 @@ const EMPTY_FORM: OIDCProviderCreate = {
 // ─── Provider form (create / edit) ───────────────────────────────────────────
 function ProviderForm({
   initial,
+  isEdit = false,
   onSave,
   onCancel,
   isPending,
 }: {
   initial: OIDCProviderCreate;
+  isEdit?: boolean;
   onSave: (data: OIDCProviderCreate) => void;
   onCancel: () => void;
   isPending: boolean;
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<OIDCProviderCreate>(initial);
+  const [secretChanged, setSecretChanged] = useState(false);
   const set = (key: keyof OIDCProviderCreate, value: unknown) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
   const inputCls =
     'w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors text-sm';
   const labelCls = 'block text-sm font-medium text-white mb-1';
+
+  const handleSave = () => {
+    const payload = { ...form };
+    if (isEdit && !secretChanged) {
+      delete (payload as Partial<OIDCProviderCreate>).client_secret;
+    }
+    onSave(payload);
+  };
 
   return (
     <div className="space-y-4">
@@ -58,8 +69,21 @@ function ProviderForm({
           <input className={inputCls} value={form.client_id} onChange={(e) => set('client_id', e.target.value)} placeholder="your-client-id" />
         </div>
         <div>
-          <label className={labelCls}>{t('settings.oidc.form.clientSecret')} <span className="text-red-400">*</span></label>
-          <input className={inputCls} type="password" value={form.client_secret} onChange={(e) => set('client_secret', e.target.value)} placeholder="••••••••" />
+          <label className={labelCls}>
+            {t('settings.oidc.form.clientSecret')}
+            {!isEdit && <span className="text-red-400"> *</span>}
+            {isEdit && <span className="text-bambu-gray text-xs ml-1">({t('settings.oidc.form.secretHint')})</span>}
+          </label>
+          <input
+            className={inputCls}
+            type="password"
+            value={secretChanged ? form.client_secret : ''}
+            placeholder={isEdit && !secretChanged ? '••••••••' : t('settings.oidc.form.secretPlaceholder')}
+            onChange={(e) => {
+              setSecretChanged(true);
+              set('client_secret', e.target.value);
+            }}
+          />
         </div>
         <div>
           <label className={labelCls}>{t('settings.oidc.form.scopes')}</label>
@@ -92,8 +116,8 @@ function ProviderForm({
         <Button
           variant="primary"
           className="flex-1"
-          disabled={!form.name || !form.issuer_url || !form.client_id || !form.client_secret || isPending}
-          onClick={() => onSave(form)}
+          disabled={!form.name || !form.issuer_url || !form.client_id || (!isEdit && !form.client_secret) || (isEdit && secretChanged && !form.client_secret) || isPending}
+          onClick={handleSave}
         >
           {isPending ? t('common.saving') : t('common.save')}
         </Button>
@@ -262,6 +286,7 @@ export function OIDCProviderSettings() {
             <CardContent>
               <div className="border-t border-bambu-dark-tertiary pt-4">
                 <ProviderForm
+                  isEdit={true}
                   initial={{
                     name: provider.name,
                     issuer_url: provider.issuer_url,

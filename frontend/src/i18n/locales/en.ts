@@ -2090,6 +2090,8 @@ export default {
         enabled: 'Enabled',
         autoCreate: 'Auto-create users',
         autoCreateDesc: 'Automatically create a local account on first login.',
+        secretHint: 'leave blank to keep current',
+        secretPlaceholder: 'new secret',
       },
     },
 

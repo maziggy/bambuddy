@@ -72,6 +72,17 @@ from backend.app.services.email_service import get_smtp_settings, send_email
 
 logger = logging.getLogger(__name__)
 
+
+def _as_utc(dt: datetime) -> datetime:
+    """Return *dt* with UTC timezone attached.
+
+    SQLite/aiosqlite strips timezone info when reading DateTime(timezone=True)
+    columns back – the stored value is always UTC, so we just re-attach the
+    info when doing Python-level comparisons.
+    """
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # Passlib context (same scheme as auth.py)
 # ---------------------------------------------------------------------------
@@ -855,7 +866,7 @@ async def oidc_callback(
         if not state_record:
             return RedirectResponse(url=f"{frontend_error_url}invalid_state", status_code=302)
 
-        if now > state_record.expires_at:
+        if now > _as_utc(state_record.expires_at):
             await db.delete(state_record)
             await db.commit()
             return RedirectResponse(url=f"{frontend_error_url}state_expired", status_code=302)
@@ -1078,7 +1089,7 @@ async def oidc_exchange(
     if not record:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired OIDC exchange token")
 
-    if now > record.expires_at:
+    if now > _as_utc(record.expires_at):
         await db.delete(record)
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OIDC exchange token has expired")

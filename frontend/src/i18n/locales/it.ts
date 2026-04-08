@@ -173,6 +173,8 @@ export default {
     powerOn: 'Accendi',
     offlinePrintersWithPlugs: 'Stampanti offline con smart plug',
     noPrintersConfigured: 'Nessuna stampante configurata',
+    search: 'Cerca stampanti...',
+    noSearchResults: 'Nessuna stampante corrisponde a "{{search}}"',
     // Printer card
     readyToPrint: 'Pronta a stampare',
     external: 'Esterna',

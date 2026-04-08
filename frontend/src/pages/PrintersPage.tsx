@@ -5762,6 +5762,7 @@ export function PrintersPage() {
   });
   // Derive viewMode from cardSize: S=compact, M/L/XL=expanded
   const viewMode: ViewMode = cardSize === 1 ? 'compact' : 'expanded';
+  const [search, setSearch] = useState('');
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
@@ -6064,10 +6065,22 @@ export function PrintersPage() {
 
   const cardSizeLabels = ['S', 'M', 'L', 'XL'];
 
+  // Drucker nach Suchbegriff filtern
+  const filteredPrinters = useMemo(() => {
+    if (!printers) return [];
+    if (!search.trim()) return printers;
+    const q = search.toLowerCase();
+    return printers.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      (p.model || '').toLowerCase().includes(q) ||
+      (p.location || '').toLowerCase().includes(q) ||
+      (p.serial_number || '').toLowerCase().includes(q)
+    );
+  }, [printers, search]);
+
   // Sort printers based on selected option
   const sortedPrinters = useMemo(() => {
-    if (!printers) return [];
-    const sorted = [...printers];
+    const sorted = [...filteredPrinters];
 
     switch (sortBy) {
       case 'name':
@@ -6111,7 +6124,7 @@ export function PrintersPage() {
     }
 
     return sorted;
-  }, [printers, sortBy, sortAsc, queryClient]);
+  }, [filteredPrinters, sortBy, sortAsc, queryClient]);
 
   const selectAll = useCallback(() => {
     setSelectedPrinterIds(new Set(sortedPrinters.map(p => p.id)));
@@ -6166,6 +6179,25 @@ export function PrintersPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">{t('printers.title')}</h1>
           <StatusSummaryBar printers={printers} />
+          {/* Suchleiste */}
+          <div className="relative w-full sm:max-w-sm mt-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('printers.search')}
+              className="w-full pl-10 pr-8 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Sort dropdown */}
@@ -6319,6 +6351,12 @@ export function PrintersPage() {
               <Plus className="w-4 h-4" />
               {t('printers.addPrinter')}
             </Button>
+          </CardContent>
+        </Card>
+      ) : sortedPrinters.length === 0 && search.trim() ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <p className="text-bambu-gray">{t('printers.noSearchResults', { search })}</p>
           </CardContent>
         </Card>
       ) : groupedPrinters ? (

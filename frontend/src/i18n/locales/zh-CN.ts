@@ -173,6 +173,8 @@ export default {
     powerOn: '开机',
     offlinePrintersWithPlugs: '带智能插座的离线打印机',
     noPrintersConfigured: '尚未配置打印机',
+    search: '搜索打印机...',
+    noSearchResults: '没有找到与 "{{search}}" 匹配的打印机',
     // Printer card
     readyToPrint: '准备打印',
     external: '外部',

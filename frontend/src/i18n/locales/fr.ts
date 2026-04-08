@@ -173,6 +173,8 @@ export default {
     powerOn: 'Allumer',
     offlinePrintersWithPlugs: 'Imprimantes hors ligne avec prises connectées',
     noPrintersConfigured: 'Aucune imprimante configurée pour le moment',
+    search: 'Rechercher des imprimantes...',
+    noSearchResults: 'Aucune imprimante ne correspond à "{{search}}"',
     // Printer card
     readyToPrint: 'Prête à imprimer',
     external: 'Externe',

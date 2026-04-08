@@ -173,6 +173,8 @@ export default {
     powerOn: 'Einschalten',
     offlinePrintersWithPlugs: 'Offline-Drucker mit Smart-Plugs',
     noPrintersConfigured: 'Noch keine Drucker konfiguriert',
+    search: 'Drucker suchen...',
+    noSearchResults: 'Kein Drucker gefunden für "{{search}}"',
     // Printer card
     readyToPrint: 'Druckbereit',
     external: 'Extern',

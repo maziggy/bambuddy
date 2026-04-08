@@ -173,6 +173,8 @@ export default {
     powerOn: 'Ligar',
     offlinePrintersWithPlugs: 'Impressoras offline com tomadas inteligentes',
     noPrintersConfigured: 'Nenhuma impressora configurada ainda',
+    search: 'Pesquisar impressoras...',
+    noSearchResults: 'Nenhuma impressora corresponde a "{{search}}"',
     // Printer card
     readyToPrint: 'Pronto para imprimir',
     external: 'Externo',

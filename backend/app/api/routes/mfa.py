@@ -896,11 +896,28 @@ async def oidc_callback(
                     },
                     headers={"Accept": "application/json"},
                 )
-                token_resp.raise_for_status()
-                token_data = token_resp.json()
         except Exception as exc:
-            logger.error("OIDC token exchange failed for provider %d: %s", provider_id, exc)
-            return RedirectResponse(url=f"{frontend_error_url}token_exchange_failed", status_code=302)
+            logger.error("OIDC token exchange request failed for provider %d: %s", provider_id, exc)
+            return RedirectResponse(url=f"{frontend_error_url}token_exchange_network_error", status_code=302)
+
+        if not token_resp.is_success:
+            logger.error(
+                "OIDC token exchange HTTP %d for provider %d. redirect_uri=%r body=%s",
+                token_resp.status_code,
+                provider_id,
+                redirect_uri,
+                token_resp.text[:500],
+            )
+            return RedirectResponse(
+                url=f"{frontend_error_url}token_exchange_{token_resp.status_code}",
+                status_code=302,
+            )
+
+        try:
+            token_data = token_resp.json()
+        except Exception as exc:
+            logger.error("OIDC token exchange non-JSON response for provider %d: %s", provider_id, exc)
+            return RedirectResponse(url=f"{frontend_error_url}token_exchange_bad_response", status_code=302)
 
         id_token = token_data.get("id_token")
         if not id_token:

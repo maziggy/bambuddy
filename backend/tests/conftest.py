@@ -78,6 +78,7 @@ async def test_engine():
         maintenance,
         notification,
         notification_template,
+        oidc_provider,
         print_queue,
         printer,
         project,
@@ -89,6 +90,8 @@ async def test_engine():
         spool_usage_history,
         user,
         user_email_pref,
+        user_otp_code,
+        user_totp,
         virtual_printer,
     )
 

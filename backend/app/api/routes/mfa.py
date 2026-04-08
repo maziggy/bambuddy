@@ -22,21 +22,19 @@ import logging
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
 
 import httpx
+import jwt
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from jwt import PyJWKClient
-from jwt.exceptions import PyJWTError
-import jwt
 from passlib.context import CryptContext
-from sqlalchemy import func, select, delete
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.core.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
@@ -44,9 +42,8 @@ from backend.app.core.auth import (
     get_user_by_username,
     is_auth_enabled,
 )
-from backend.app.core.database import async_session, get_db
+from backend.app.core.database import get_db
 from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
-from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
@@ -71,7 +68,6 @@ from backend.app.schemas.auth import (
     UserResponse,
 )
 from backend.app.services.email_service import get_smtp_settings, send_email
-from backend.app.api.routes.settings import get_external_login_url, get_setting, set_setting
 
 logger = logging.getLogger(__name__)
 
@@ -253,9 +249,7 @@ async def setup_totp(
     Creates (or replaces) a pending UserTOTP record with is_enabled=False.
     The caller must confirm with POST /auth/2fa/totp/enable.
     """
-    async with async_session() as session:
-        auth_ok = await is_auth_enabled(session)
-    if not auth_ok:
+    if not await is_auth_enabled(db):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Authentication is not enabled")
 
     secret = pyotp.random_base32()
@@ -264,9 +258,7 @@ async def setup_totp(
     qr_b64 = _generate_totp_qr_b64(provisioning_uri)
 
     # Upsert a pending TOTP record (is_enabled=False)
-    existing = (
-        await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))
-    ).scalar_one_or_none()
+    existing = (await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))).scalar_one_or_none()
 
     if existing:
         existing.secret = secret
@@ -294,7 +286,9 @@ async def enable_totp(
     totp_record = result.scalar_one_or_none()
 
     if not totp_record:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP setup not initiated. Call /auth/2fa/totp/setup first.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP setup not initiated. Call /auth/2fa/totp/setup first."
+        )
 
     if not pyotp.TOTP(totp_record.secret).verify(body.code, valid_window=1):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
@@ -508,13 +502,17 @@ async def verify_2fa(
         otp_record = result.scalar_one_or_none()
         if not otp_record:
             record_failed_attempt(username)
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No valid OTP code found. Request a new one.")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="No valid OTP code found. Request a new one."
+            )
 
         if otp_record.attempts >= UserOTPCode.MAX_ATTEMPTS:
             otp_record.used = True
             await db.commit()
             record_failed_attempt(username)
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP code has been invalidated after too many attempts")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP code has been invalidated after too many attempts"
+            )
 
         if not pwd_context.verify(body.code, otp_record.code_hash):
             otp_record.attempts += 1
@@ -549,7 +547,9 @@ async def verify_2fa(
         await db.commit()
 
     else:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid 2FA method. Use 'totp', 'email', or 'backup'.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid 2FA method. Use 'totp', 'email', or 'backup'."
+        )
 
     # Verification succeeded — clear rate limit and issue full JWT
     clear_failed_attempts(username)
@@ -736,7 +736,9 @@ async def oidc_authorize(
 
     authorization_endpoint = discovery.get("authorization_endpoint")
     if not authorization_endpoint:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="OIDC discovery document missing authorization_endpoint")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="OIDC discovery document missing authorization_endpoint"
+        )
 
     external_url = await _get_base_external_url(db)
     redirect_uri = f"{external_url}/api/v1/auth/oidc/callback"
@@ -746,14 +748,17 @@ async def oidc_authorize(
     _oidc_states[state] = (provider_id, nonce, datetime.now(timezone.utc) + OIDC_STATE_TTL)
 
     import urllib.parse
-    params = urllib.parse.urlencode({
-        "response_type": "code",
-        "client_id": provider.client_id,
-        "redirect_uri": redirect_uri,
-        "scope": provider.scopes,
-        "state": state,
-        "nonce": nonce,
-    })
+
+    params = urllib.parse.urlencode(
+        {
+            "response_type": "code",
+            "client_id": provider.client_id,
+            "redirect_uri": redirect_uri,
+            "scope": provider.scopes,
+            "state": state,
+            "nonce": nonce,
+        }
+    )
     auth_url = f"{authorization_endpoint}?{params}"
     return OIDCAuthorizeResponse(auth_url=auth_url)
 
@@ -881,6 +886,7 @@ async def oidc_callback(
 
             # Create new user with a random unusable password
             from backend.app.core.auth import get_password_hash
+
             new_user = User(
                 username=username,
                 email=provider_email,
@@ -972,9 +978,7 @@ async def list_oidc_links(
 ) -> list[OIDCLinkResponse]:
     """List all OIDC provider links for the current user."""
     result = await db.execute(
-        select(UserOIDCLink)
-        .where(UserOIDCLink.user_id == current_user.id)
-        .options(selectinload(UserOIDCLink.provider))
+        select(UserOIDCLink).where(UserOIDCLink.user_id == current_user.id).options(selectinload(UserOIDCLink.provider))
     )
     links = result.scalars().all()
     return [
@@ -1016,6 +1020,7 @@ async def remove_oidc_link(
 async def _get_base_external_url(db: AsyncSession) -> str:
     """Return the base external URL (no trailing slash, no /login suffix)."""
     import os
+
     external_url = await get_setting(db, "external_url")
     if external_url:
         return external_url.rstrip("/")

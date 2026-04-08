@@ -3905,6 +3905,13 @@ PUBLIC_API_ROUTES = {
     # Advanced auth status needed for login page
     "/api/v1/auth/advanced-auth/status",
     "/api/v1/auth/forgot-password",  # Password reset for advanced auth
+    # 2FA routes that are called BEFORE a JWT is issued (pre-auth flow)
+    "/api/v1/auth/2fa/verify",  # Exchange pre_auth_token + 2FA code for JWT
+    "/api/v1/auth/2fa/email/send",  # Send OTP email (pre_auth_token based)
+    # OIDC routes that must be reachable without a JWT
+    "/api/v1/auth/oidc/providers",  # Public list of enabled providers
+    "/api/v1/auth/oidc/callback",  # Redirect target from OIDC provider
+    "/api/v1/auth/oidc/exchange",  # Exchange short-lived OIDC token for JWT
     # Version check for updates (no sensitive data)
     "/api/v1/updates/version",
     # Metrics endpoint handles its own prometheus_token authentication
@@ -3915,6 +3922,8 @@ PUBLIC_API_ROUTES = {
 PUBLIC_API_PREFIXES = [
     # WebSocket connections handle their own auth
     "/api/v1/ws",
+    # OIDC authorize redirects — include provider_id in path
+    "/api/v1/auth/oidc/authorize/",
 ]
 
 # Route patterns that are public (read-only display data)

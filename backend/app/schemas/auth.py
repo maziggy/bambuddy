@@ -116,6 +116,7 @@ class TestSMTPResponse(BaseModel):
 # 2FA / MFA schemas
 # ---------------------------------------------------------------------------
 
+
 class TwoFAStatusResponse(BaseModel):
     totp_enabled: bool
     email_otp_enabled: bool
@@ -126,13 +127,14 @@ class TOTPSetupResponse(BaseModel):
     """Returned when a user initiates TOTP setup.  The frontend should display
     the QR code image (base64 PNG) and ask the user to scan it, then call
     /auth/2fa/totp/enable with a valid code to confirm."""
-    secret: str          # base32 secret (shown as fallback text)
-    qr_code_b64: str     # base64-encoded PNG of the QR code
+
+    secret: str  # base32 secret (shown as fallback text)
+    qr_code_b64: str  # base64-encoded PNG of the QR code
     issuer: str
 
 
 class TOTPEnableRequest(BaseModel):
-    code: str            # 6-digit TOTP code from the authenticator app
+    code: str  # 6-digit TOTP code from the authenticator app
 
     @field_validator("code")
     @classmethod
@@ -145,11 +147,12 @@ class TOTPEnableRequest(BaseModel):
 
 class TOTPEnableResponse(BaseModel):
     message: str
-    backup_codes: list[str]   # plain-text codes shown once; user must save them
+    backup_codes: list[str]  # plain-text codes shown once; user must save them
 
 
 class TOTPDisableRequest(BaseModel):
     """Requires a valid TOTP code OR a backup code to disable TOTP."""
+
     code: str
 
 
@@ -160,13 +163,14 @@ class BackupCodesResponse(BaseModel):
 
 class EmailOTPEnableRequest(BaseModel):
     """No body required — email is taken from the authenticated user's profile."""
+
     pass
 
 
 class TwoFAVerifyRequest(BaseModel):
     pre_auth_token: str
     code: str
-    method: str = "totp"   # "totp" | "email" | "backup"
+    method: str = "totp"  # "totp" | "email" | "backup"
 
 
 class TwoFAVerifyResponse(BaseModel):
@@ -182,6 +186,7 @@ class EmailOTPSendRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # OIDC schemas
 # ---------------------------------------------------------------------------
+
 
 class OIDCProviderCreate(BaseModel):
     name: str

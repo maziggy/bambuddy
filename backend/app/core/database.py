@@ -81,6 +81,7 @@ async def init_db():
         ams_label,
         api_key,
         archive,
+        auth_ephemeral,
         bug_report,
         color_catalog,
         external_link,
@@ -93,6 +94,7 @@ async def init_db():
         maintenance,
         notification,
         notification_template,
+        oidc_provider,
         orca_base_cache,
         pending_upload,
         print_log,
@@ -113,8 +115,6 @@ async def init_db():
         user_email_pref,
         user_otp_code,
         user_totp,
-        oidc_provider,
-        auth_ephemeral,
         virtual_printer,
     )
 

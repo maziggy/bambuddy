@@ -2,7 +2,7 @@
 
 Security model
 --------------
-* Pre-auth tokens  : secrets.token_urlsafe(32) stored in-memory with a 5-minute TTL.
+* Pre-auth tokens  : secrets.token_urlsafe(32) stored in the DB with a 5-minute TTL.
   They are single-use and do NOT grant access to any protected resource.
 * TOTP codes       : verified with pyotp (30-second window, ±1 step tolerance).
 * Email OTP codes  : 6-digit numeric, hashed with pbkdf2_sha256, 10-minute TTL,
@@ -37,12 +37,14 @@ from sqlalchemy.orm import selectinload
 from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.core.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
+    RequirePermissionIfAuthEnabled,
     create_access_token,
     get_current_active_user,
     get_user_by_username,
     is_auth_enabled,
 )
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
 from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
 from backend.app.models.user import User
@@ -617,16 +619,10 @@ async def verify_2fa(
 @router.delete("/2fa/admin/{user_id}")
 async def admin_disable_2fa(
     user_id: int,
-    current_user: User = Depends(get_current_active_user),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Admin endpoint: disable all 2FA for a given user."""
-    # Reload current user with groups for is_admin check
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     # Delete TOTP record
     await db.execute(delete(UserTOTP).where(UserTOTP.user_id == user_id))
 
@@ -641,7 +637,7 @@ async def admin_disable_2fa(
     )
 
     await db.commit()
-    logger.info("Admin %s disabled all 2FA for user_id=%d", admin.username, user_id)
+    logger.info("Admin disabled all 2FA for user_id=%d", user_id)
     return {"message": "2FA disabled for user"}
 
 
@@ -662,32 +658,22 @@ async def list_oidc_providers(
 
 @router.get("/oidc/providers/all", response_model=list[OIDCProviderResponse])
 async def list_all_oidc_providers(
-    current_user: User = Depends(get_current_active_user),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
     db: AsyncSession = Depends(get_db),
 ) -> list[OIDCProviderResponse]:
     """List ALL OIDC providers including disabled ones (admin only)."""
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
-    result2 = await db.execute(select(OIDCProvider))
-    providers = result2.scalars().all()
+    result = await db.execute(select(OIDCProvider))
+    providers = result.scalars().all()
     return [OIDCProviderResponse.model_validate(p) for p in providers]
 
 
 @router.post("/oidc/providers", response_model=OIDCProviderResponse, status_code=status.HTTP_201_CREATED)
 async def create_oidc_provider(
     body: OIDCProviderCreate,
-    current_user: User = Depends(get_current_active_user),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ) -> OIDCProviderResponse:
     """Create a new OIDC provider (admin only)."""
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     provider = OIDCProvider(
         name=body.name,
         issuer_url=body.issuer_url.rstrip("/"),
@@ -708,15 +694,10 @@ async def create_oidc_provider(
 async def update_oidc_provider(
     provider_id: int,
     body: OIDCProviderUpdate,
-    current_user: User = Depends(get_current_active_user),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ) -> OIDCProviderResponse:
     """Update an existing OIDC provider (admin only)."""
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     result2 = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
     provider = result2.scalar_one_or_none()
     if not provider:
@@ -735,15 +716,10 @@ async def update_oidc_provider(
 @router.delete("/oidc/providers/{provider_id}")
 async def delete_oidc_provider(
     provider_id: int,
-    current_user: User = Depends(get_current_active_user),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Delete an OIDC provider and all its user links (admin only)."""
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     result2 = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
     provider = result2.scalar_one_or_none()
     if not provider:

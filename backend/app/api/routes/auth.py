@@ -331,30 +331,25 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     # --- 2FA check ---
     # Determine which 2FA methods are active for this user.
-    import jwt as _jwt
 
-    from backend.app.models.user_totp import UserTOTP
     from backend.app.models.settings import Settings as _Settings
+    from backend.app.models.user_totp import UserTOTP
 
     totp_result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == user.id))
     user_totp = totp_result.scalar_one_or_none()
     totp_enabled = user_totp is not None and user_totp.is_enabled
 
-    email_2fa_result = await db.execute(
-        select(_Settings).where(_Settings.key == f"user_{user.id}_email_2fa_enabled")
-    )
+    email_2fa_result = await db.execute(select(_Settings).where(_Settings.key == f"user_{user.id}_email_2fa_enabled"))
     email_2fa_setting = email_2fa_result.scalar_one_or_none()
     email_otp_enabled = (
-        email_2fa_setting is not None
-        and email_2fa_setting.value.lower() == "true"
-        and user.email is not None
+        email_2fa_setting is not None and email_2fa_setting.value.lower() == "true" and user.email is not None
     )
 
     if totp_enabled or email_otp_enabled:
         # Import here to avoid circular imports
         from backend.app.api.routes.mfa import create_pre_auth_token
 
-        pre_auth_token = create_pre_auth_token(user.username)
+        pre_auth_token = await create_pre_auth_token(db, user.username)
         methods: list[str] = []
         if totp_enabled:
             methods.append("totp")

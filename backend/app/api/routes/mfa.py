@@ -43,6 +43,7 @@ from backend.app.core.auth import (
     is_auth_enabled,
 )
 from backend.app.core.database import get_db
+from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
 from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
 from backend.app.models.user import User
 from backend.app.models.user_otp_code import UserOTPCode
@@ -77,14 +78,8 @@ logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 # ---------------------------------------------------------------------------
-# In-memory stores
+# TTL / rate-limit constants
 # ---------------------------------------------------------------------------
-_pre_auth_tokens: dict[str, tuple[str, datetime]] = {}  # token -> (username, expiry)
-_oidc_states: dict[str, tuple[int, str, datetime]] = {}  # state -> (provider_id, nonce, expiry)
-_oidc_exchange_tokens: dict[str, tuple[str, datetime]] = {}  # token -> (username, expiry)
-_failed_2fa_attempts: dict[str, list[datetime]] = {}  # username -> [timestamps]
-_email_otp_send_times: dict[str, list[datetime]] = {}  # username -> [send timestamps]
-
 MAX_2FA_ATTEMPTS = 5
 LOCKOUT_WINDOW = timedelta(minutes=15)
 MAX_EMAIL_OTP_SENDS = 3
@@ -144,79 +139,108 @@ def _generate_backup_codes() -> tuple[list[str], list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Pre-auth token helpers
+# DB-backed pre-auth token helpers
 # ---------------------------------------------------------------------------
-def _cleanup_pre_auth_tokens() -> None:
+async def create_pre_auth_token(db: AsyncSession, username: str) -> str:
+    """Create a single-use pre-auth token stored in the DB."""
     now = datetime.now(timezone.utc)
-    expired = [t for t, (_, exp) in _pre_auth_tokens.items() if exp < now]
-    for t in expired:
-        del _pre_auth_tokens[t]
-
-
-def create_pre_auth_token(username: str) -> str:
-    """Create a single-use pre-auth token for the given username."""
-    _cleanup_pre_auth_tokens()
+    # Prune expired tokens opportunistically (keep table small)
+    await db.execute(
+        delete(AuthEphemeralToken).where(
+            AuthEphemeralToken.token_type == "pre_auth",
+            AuthEphemeralToken.expires_at < now,
+        )
+    )
     token = secrets.token_urlsafe(32)
-    _pre_auth_tokens[token] = (username, datetime.now(timezone.utc) + PRE_AUTH_TOKEN_TTL)
+    db.add(
+        AuthEphemeralToken(
+            token=token,
+            token_type="pre_auth",
+            username=username,
+            expires_at=now + PRE_AUTH_TOKEN_TTL,
+        )
+    )
+    await db.commit()
     return token
 
 
-def consume_pre_auth_token(token: str) -> str | None:
-    """Validate and consume a pre-auth token, returning the username or None."""
-    _cleanup_pre_auth_tokens()
-    entry = _pre_auth_tokens.get(token)
-    if entry is None:
+async def consume_pre_auth_token(db: AsyncSession, token: str) -> str | None:
+    """Validate and consume a pre-auth token. Returns username or None."""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(AuthEphemeralToken).where(
+            AuthEphemeralToken.token == token,
+            AuthEphemeralToken.token_type == "pre_auth",
+            AuthEphemeralToken.expires_at > now,
+        )
+    )
+    record = result.scalar_one_or_none()
+    if record is None:
         return None
-    username, expiry = entry
-    if datetime.now(timezone.utc) > expiry:
-        del _pre_auth_tokens[token]
-        return None
-    del _pre_auth_tokens[token]
+    username = record.username
+    await db.delete(record)
+    await db.commit()
     return username
 
 
 # ---------------------------------------------------------------------------
-# Rate-limiting helpers
+# DB-backed rate-limiting helpers
 # ---------------------------------------------------------------------------
-def check_rate_limit(username: str) -> None:
+async def check_rate_limit(db: AsyncSession, username: str) -> None:
     """Raise HTTP 429 if the user has exceeded the failed 2FA attempt limit."""
     now = datetime.now(timezone.utc)
-    attempts = _failed_2fa_attempts.get(username, [])
-    # Keep only recent attempts within the lockout window
-    recent = [t for t in attempts if now - t < LOCKOUT_WINDOW]
-    _failed_2fa_attempts[username] = recent
-    if len(recent) >= MAX_2FA_ATTEMPTS:
+    cutoff = now - LOCKOUT_WINDOW
+    result = await db.execute(
+        select(AuthRateLimitEvent).where(
+            AuthRateLimitEvent.username == username,
+            AuthRateLimitEvent.event_type == "2fa_attempt",
+            AuthRateLimitEvent.occurred_at > cutoff,
+        )
+    )
+    recent_count = len(result.scalars().all())
+    if recent_count >= MAX_2FA_ATTEMPTS:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many failed 2FA attempts. Please try again later.",
         )
 
 
-def record_failed_attempt(username: str) -> None:
+async def record_failed_attempt(db: AsyncSession, username: str) -> None:
     """Record a failed 2FA attempt for rate-limiting purposes."""
-    now = datetime.now(timezone.utc)
-    attempts = _failed_2fa_attempts.get(username, [])
-    attempts.append(now)
-    _failed_2fa_attempts[username] = attempts
+    db.add(AuthRateLimitEvent(username=username, event_type="2fa_attempt"))
+    await db.commit()
 
 
-def clear_failed_attempts(username: str) -> None:
-    """Clear all failed 2FA attempts for a user on successful verification."""
-    _failed_2fa_attempts.pop(username, None)
+async def clear_failed_attempts(db: AsyncSession, username: str) -> None:
+    """Delete all recorded 2FA attempts for a user on successful verification."""
+    await db.execute(
+        delete(AuthRateLimitEvent).where(
+            AuthRateLimitEvent.username == username,
+            AuthRateLimitEvent.event_type == "2fa_attempt",
+        )
+    )
+    await db.commit()
 
 
-def check_email_otp_send_rate(username: str) -> None:
+async def check_email_otp_send_rate(db: AsyncSession, username: str) -> None:
     """Raise HTTP 429 if the user has requested too many OTP emails recently."""
     now = datetime.now(timezone.utc)
-    times = _email_otp_send_times.get(username, [])
-    recent = [t for t in times if now - t < EMAIL_OTP_SEND_WINDOW]
-    _email_otp_send_times[username] = recent
-    if len(recent) >= MAX_EMAIL_OTP_SENDS:
+    cutoff = now - EMAIL_OTP_SEND_WINDOW
+    result = await db.execute(
+        select(AuthRateLimitEvent).where(
+            AuthRateLimitEvent.username == username,
+            AuthRateLimitEvent.event_type == "email_send",
+            AuthRateLimitEvent.occurred_at > cutoff,
+        )
+    )
+    recent_count = len(result.scalars().all())
+    if recent_count >= MAX_EMAIL_OTP_SENDS:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many OTP email requests. Please wait {EMAIL_OTP_SEND_WINDOW.seconds // 60} minutes.",
         )
-    _email_otp_send_times[username] = recent + [now]
+    db.add(AuthRateLimitEvent(username=username, event_type="email_send"))
+    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -413,15 +437,15 @@ async def send_email_otp(
 
     Requires a valid pre_auth_token obtained during the login flow.
     """
-    username = consume_pre_auth_token(body.pre_auth_token)
+    username = await consume_pre_auth_token(db, body.pre_auth_token)
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
 
     # Enforce rate limit BEFORE re-issuing fresh token to prevent OTP email flooding
-    check_email_otp_send_rate(username)
+    await check_email_otp_send_rate(db, username)
 
     # Re-issue a fresh pre-auth token so the same session can proceed to verify
-    fresh_token = create_pre_auth_token(username)
+    fresh_token = await create_pre_auth_token(db, username)
 
     user = await get_user_by_username(db, username)
     if not user or not user.is_active:
@@ -488,11 +512,11 @@ async def verify_2fa(
 
     Accepted methods: ``totp``, ``email``, ``backup``.
     """
-    username = consume_pre_auth_token(body.pre_auth_token)
+    username = await consume_pre_auth_token(db, body.pre_auth_token)
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
 
-    check_rate_limit(username)
+    await check_rate_limit(db, username)
 
     user = await get_user_by_username(db, username)
     if not user or not user.is_active:
@@ -504,10 +528,10 @@ async def verify_2fa(
         result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == user.id))
         totp_record = result.scalar_one_or_none()
         if not totp_record or not totp_record.is_enabled:
-            record_failed_attempt(username)
+            await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP is not enabled for this user")
         if not pyotp.TOTP(totp_record.secret).verify(body.code, valid_window=1):
-            record_failed_attempt(username)
+            await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
 
     elif method == "email":
@@ -521,7 +545,7 @@ async def verify_2fa(
         )
         otp_record = result.scalar_one_or_none()
         if not otp_record:
-            record_failed_attempt(username)
+            await record_failed_attempt(db, username)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="No valid OTP code found. Request a new one."
             )
@@ -529,7 +553,7 @@ async def verify_2fa(
         if otp_record.attempts >= UserOTPCode.MAX_ATTEMPTS:
             otp_record.used = True
             await db.commit()
-            record_failed_attempt(username)
+            await record_failed_attempt(db, username)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP code has been invalidated after too many attempts"
             )
@@ -537,7 +561,7 @@ async def verify_2fa(
         if not pwd_context.verify(body.code, otp_record.code_hash):
             otp_record.attempts += 1
             await db.commit()
-            record_failed_attempt(username)
+            await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid OTP code")
 
         # Mark as used
@@ -548,7 +572,7 @@ async def verify_2fa(
         result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == user.id))
         totp_record = result.scalar_one_or_none()
         if not totp_record or not totp_record.is_enabled:
-            record_failed_attempt(username)
+            await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP is not enabled for this user")
 
         matched_index: int | None = None
@@ -558,7 +582,7 @@ async def verify_2fa(
                 break
 
         if matched_index is None:
-            record_failed_attempt(username)
+            await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid backup code")
 
         # Remove the used backup code
@@ -572,7 +596,7 @@ async def verify_2fa(
         )
 
     # Verification succeeded — clear rate limit and issue full JWT
-    clear_failed_attempts(username)
+    await clear_failed_attempts(db, username)
 
     access_token = create_access_token(
         data={"sub": user.username},
@@ -763,15 +787,26 @@ async def oidc_authorize(
     external_url = await _get_base_external_url(db)
     redirect_uri = f"{external_url}/api/v1/auth/oidc/callback"
 
-    # Clean up expired states before adding a new one (prevent memory growth)
     now = datetime.now(timezone.utc)
-    expired_states = [s for s, (_, _, exp) in _oidc_states.items() if exp < now]
-    for s in expired_states:
-        del _oidc_states[s]
-
+    # Prune expired OIDC states from the DB
+    await db.execute(
+        delete(AuthEphemeralToken).where(
+            AuthEphemeralToken.token_type == "oidc_state",
+            AuthEphemeralToken.expires_at < now,
+        )
+    )
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
-    _oidc_states[state] = (provider_id, nonce, now + OIDC_STATE_TTL)
+    db.add(
+        AuthEphemeralToken(
+            token=state,
+            token_type="oidc_state",
+            provider_id=provider_id,
+            nonce=nonce,
+            expires_at=now + OIDC_STATE_TTL,
+        )
+    )
+    await db.commit()
 
     import urllib.parse
 
@@ -808,14 +843,27 @@ async def oidc_callback(
         if not code or not state:
             return RedirectResponse(url=f"{frontend_error_url}missing_parameters", status_code=302)
 
-        # Validate state
-        state_entry = _oidc_states.pop(state, None)
-        if not state_entry:
+        # Validate and consume OIDC state from DB
+        now = datetime.now(timezone.utc)
+        state_result = await db.execute(
+            select(AuthEphemeralToken).where(
+                AuthEphemeralToken.token == state,
+                AuthEphemeralToken.token_type == "oidc_state",
+            )
+        )
+        state_record = state_result.scalar_one_or_none()
+        if not state_record:
             return RedirectResponse(url=f"{frontend_error_url}invalid_state", status_code=302)
 
-        provider_id, nonce, state_expiry = state_entry
-        if datetime.now(timezone.utc) > state_expiry:
+        if now > state_record.expires_at:
+            await db.delete(state_record)
+            await db.commit()
             return RedirectResponse(url=f"{frontend_error_url}state_expired", status_code=302)
+
+        provider_id = state_record.provider_id
+        nonce = state_record.nonce
+        await db.delete(state_record)
+        await db.commit()
 
         # Load provider
         result = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
@@ -949,12 +997,18 @@ async def oidc_callback(
         if not user or not user.is_active:
             return RedirectResponse(url=f"{frontend_error_url}account_inactive", status_code=302)
 
-        # Issue an OIDC exchange token (short-lived, single-use)
+        # Issue an OIDC exchange token (short-lived, single-use) stored in DB
+        now2 = datetime.now(timezone.utc)
         exchange_token = secrets.token_urlsafe(32)
-        _oidc_exchange_tokens[exchange_token] = (
-            user.username,
-            datetime.now(timezone.utc) + OIDC_EXCHANGE_TTL,
+        db.add(
+            AuthEphemeralToken(
+                token=exchange_token,
+                token_type="oidc_exchange",
+                username=user.username,
+                expires_at=now2 + OIDC_EXCHANGE_TTL,
+            )
         )
+        await db.commit()
 
         return RedirectResponse(url=f"{external_url}/?oidc_token={exchange_token}", status_code=302)
 
@@ -973,13 +1027,24 @@ async def oidc_exchange(
 ) -> LoginResponse:
     """Exchange an OIDC exchange token (from the callback redirect) for a full JWT."""
     now = datetime.now(timezone.utc)
-    entry = _oidc_exchange_tokens.pop(body.oidc_token, None)
-    if not entry:
+    result = await db.execute(
+        select(AuthEphemeralToken).where(
+            AuthEphemeralToken.token == body.oidc_token,
+            AuthEphemeralToken.token_type == "oidc_exchange",
+        )
+    )
+    record = result.scalar_one_or_none()
+    if not record:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired OIDC exchange token")
 
-    username, expiry = entry
-    if now > expiry:
+    if now > record.expires_at:
+        await db.delete(record)
+        await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OIDC exchange token has expired")
+
+    username = record.username
+    await db.delete(record)
+    await db.commit()
 
     user = await get_user_by_username(db, username)
     if not user or not user.is_active:

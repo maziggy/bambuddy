@@ -44,6 +44,16 @@ async def _setup_and_login(client: AsyncClient, username: str, password: str) ->
     return resp.json()["access_token"]
 
 
+async def _login_get_pre_auth_token(client: AsyncClient, username: str, password: str) -> str:
+    """Login a user who has 2FA enabled; return the pre_auth_token from the response."""
+    resp = await client.post(LOGIN_URL, json={"username": username, "password": password})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["requires_2fa"] is True, f"Expected requires_2fa=True, got {data}"
+    assert data["pre_auth_token"] is not None
+    return data["pre_auth_token"]
+
+
 def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
@@ -275,9 +285,7 @@ class TestTwoFAVerifyTOTP:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_verify_totp_issues_jwt(self, async_client: AsyncClient):
-        """Full flow: setup → enable TOTP → get pre_auth_token → verify → receive JWT."""
-        from backend.app.api.routes.mfa import create_pre_auth_token
-
+        """Full flow: setup → enable TOTP → login → pre_auth_token → verify → JWT."""
         token = await _setup_and_login(async_client, "verifytotpok", "verifytotpok1")
         setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
         secret = setup_resp.json()["secret"]
@@ -288,8 +296,8 @@ class TestTwoFAVerifyTOTP:
             headers=_auth_header(token),
         )
 
-        # Simulate what login does: issue a pre-auth token for this user
-        pre_auth_token = create_pre_auth_token("verifytotpok")
+        # Login now returns requires_2fa=True + pre_auth_token
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "verifytotpok", "verifytotpok1")
 
         verify_resp = await async_client.post(
             "/api/v1/auth/2fa/verify",
@@ -308,8 +316,6 @@ class TestTwoFAVerifyTOTP:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_verify_totp_invalid_code(self, async_client: AsyncClient):
-        from backend.app.api.routes.mfa import create_pre_auth_token
-
         token = await _setup_and_login(async_client, "verifybadcode", "verifybadcode1")
         setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
         secret = setup_resp.json()["secret"]
@@ -320,7 +326,7 @@ class TestTwoFAVerifyTOTP:
             headers=_auth_header(token),
         )
 
-        pre_auth_token = create_pre_auth_token("verifybadcode")
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "verifybadcode", "verifybadcode1")
         verify_resp = await async_client.post(
             "/api/v1/auth/2fa/verify",
             json={"pre_auth_token": pre_auth_token, "method": "totp", "code": "000000"},
@@ -330,10 +336,17 @@ class TestTwoFAVerifyTOTP:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_verify_invalid_method(self, async_client: AsyncClient):
-        from backend.app.api.routes.mfa import create_pre_auth_token
-
-        await _setup_and_login(async_client, "invalidmethod", "invalidmethod1")
-        pre_auth_token = create_pre_auth_token("invalidmethod")
+        """An invalid 2FA method should return 400 even with a valid pre_auth_token."""
+        token = await _setup_and_login(async_client, "invalidmethod", "invalidmethod1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        valid_code = pyotp.TOTP(secret).now()
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "invalidmethod", "invalidmethod1")
         response = await async_client.post(
             "/api/v1/auth/2fa/verify",
             json={"pre_auth_token": pre_auth_token, "method": "sms", "code": "123456"},
@@ -352,8 +365,6 @@ class TestTwoFAVerifyBackup:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_verify_with_backup_code(self, async_client: AsyncClient):
-        from backend.app.api.routes.mfa import create_pre_auth_token
-
         token = await _setup_and_login(async_client, "backupcodeok", "backupcodeok1")
         setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
         secret = setup_resp.json()["secret"]
@@ -365,7 +376,7 @@ class TestTwoFAVerifyBackup:
         )
         backup_code = enable_resp.json()["backup_codes"][0]
 
-        pre_auth_token = create_pre_auth_token("backupcodeok")
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "backupcodeok", "backupcodeok1")
         verify_resp = await async_client.post(
             "/api/v1/auth/2fa/verify",
             json={"pre_auth_token": pre_auth_token, "method": "backup", "code": backup_code},
@@ -376,8 +387,6 @@ class TestTwoFAVerifyBackup:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_backup_code_is_single_use(self, async_client: AsyncClient):
-        from backend.app.api.routes.mfa import create_pre_auth_token
-
         token = await _setup_and_login(async_client, "backupsingle", "backupsingle1")
         setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
         secret = setup_resp.json()["secret"]
@@ -390,15 +399,15 @@ class TestTwoFAVerifyBackup:
         backup_code = enable_resp.json()["backup_codes"][0]
 
         # First use — should succeed
-        pre_auth_token = create_pre_auth_token("backupsingle")
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "backupsingle", "backupsingle1")
         first_resp = await async_client.post(
             "/api/v1/auth/2fa/verify",
             json={"pre_auth_token": pre_auth_token, "method": "backup", "code": backup_code},
         )
         assert first_resp.status_code == 200
 
-        # Second use of the same code — must fail (token consumed above, need a new one)
-        pre_auth_token2 = create_pre_auth_token("backupsingle")
+        # Second use of the same code — must fail (need new pre_auth_token + same backup code)
+        pre_auth_token2 = await _login_get_pre_auth_token(async_client, "backupsingle", "backupsingle1")
         second_resp = await async_client.post(
             "/api/v1/auth/2fa/verify",
             json={"pre_auth_token": pre_auth_token2, "method": "backup", "code": backup_code},
@@ -408,8 +417,6 @@ class TestTwoFAVerifyBackup:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_backup_code_count_decrements(self, async_client: AsyncClient):
-        from backend.app.api.routes.mfa import create_pre_auth_token
-
         token = await _setup_and_login(async_client, "backupcount", "backupcount1")
         setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
         secret = setup_resp.json()["secret"]
@@ -421,16 +428,13 @@ class TestTwoFAVerifyBackup:
         )
         backup_code = enable_resp.json()["backup_codes"][0]
 
-        pre_auth_token = create_pre_auth_token("backupcount")
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "backupcount", "backupcount1")
         await async_client.post(
             "/api/v1/auth/2fa/verify",
             json={"pre_auth_token": pre_auth_token, "method": "backup", "code": backup_code},
         )
 
-        # Re-login to get a fresh full token
-        await async_client.post(LOGIN_URL, json={"username": "backupcount", "password": "backupcount1"})
-        # After 2FA is enabled login would return requires_2fa; but we can still
-        # query status with the original full token
+        # Status is readable with the original full token (still valid)
         status_resp = await async_client.get("/api/v1/auth/2fa/status", headers=_auth_header(token))
         assert status_resp.json()["backup_codes_remaining"] == 9
 
@@ -446,23 +450,27 @@ class TestRateLimiting:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_rate_limit_lockout(self, async_client: AsyncClient):
-        from backend.app.api.routes.mfa import _failed_2fa_attempts, create_pre_auth_token
+        """After 5 failed TOTP attempts the 6th must return 429."""
+        token = await _setup_and_login(async_client, "ratelimituser", "ratelimituser1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        valid_code = pyotp.TOTP(secret).now()
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
 
-        await _setup_and_login(async_client, "ratelimituser", "ratelimituser1")
-
-        # Clear any previous state
-        _failed_2fa_attempts.pop("ratelimituser", None)
-
-        # Make 5 failed attempts (invalid pre_auth_token → 401 each time)
+        # 5 failed attempts via the login → pre_auth_token → verify flow
         for _ in range(5):
-            pre_auth_token = create_pre_auth_token("ratelimituser")
+            pre_auth_token = await _login_get_pre_auth_token(async_client, "ratelimituser", "ratelimituser1")
             await async_client.post(
                 "/api/v1/auth/2fa/verify",
                 json={"pre_auth_token": pre_auth_token, "method": "totp", "code": "000000"},
             )
 
         # 6th attempt should hit the rate limit
-        pre_auth_token = create_pre_auth_token("ratelimituser")
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "ratelimituser", "ratelimituser1")
         response = await async_client.post(
             "/api/v1/auth/2fa/verify",
             json={"pre_auth_token": pre_auth_token, "method": "totp", "code": "000000"},

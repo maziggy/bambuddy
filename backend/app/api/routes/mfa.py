@@ -1006,7 +1006,7 @@ async def oidc_callback(
         from backend.app.core.auth import get_password_hash
 
         try:
-            # Look up existing OIDC link
+            # 1. Look up existing OIDC link
             link_result = await db.execute(
                 select(UserOIDCLink)
                 .where(UserOIDCLink.provider_id == provider_id)
@@ -1017,57 +1017,83 @@ async def oidc_callback(
             user: User | None = None
 
             if link:
+                # Existing link → load the linked user
                 user_result = await db.execute(
                     select(User).where(User.id == link.user_id).options(selectinload(User.groups))
                 )
                 user = user_result.scalar_one_or_none()
-            elif provider.auto_create_users:
-                # Derive a safe username from email local-part or subject claim.
-                # Strip characters that are invalid in usernames (allow only
-                # alphanumeric, underscores, hyphens, dots) and cap at 30 chars.
-                if provider_email:
-                    raw = provider_email.split("@")[0]
-                else:
-                    raw = provider_sub[:30]
-                candidate = re.sub(r"[^a-zA-Z0-9._-]", "", raw)[:30] or "oidcuser"
-
-                # Ensure uniqueness
-                username = candidate
-                counter = 1
-                while True:
-                    existing = await get_user_by_username(db, username)
-                    if not existing:
-                        break
-                    username = f"{candidate}{counter}"
-                    counter += 1
-
-                new_user = User(
-                    username=username,
-                    email=provider_email,
-                    password_hash=get_password_hash(secrets.token_urlsafe(32)),
-                    role="user",
-                    is_active=True,
-                )
-                db.add(new_user)
-                await db.flush()
-
-                new_link = UserOIDCLink(
-                    user_id=new_user.id,
-                    provider_id=provider_id,
-                    provider_user_id=provider_sub,
-                    provider_email=provider_email,
-                )
-                db.add(new_link)
-                await db.commit()
-
-                # Reload with groups
-                user_result = await db.execute(
-                    select(User).where(User.id == new_user.id).options(selectinload(User.groups))
-                )
-                user = user_result.scalar_one()
-                logger.info("Auto-created user '%s' via OIDC provider %d", username, provider_id)
             else:
-                return RedirectResponse(url=f"{frontend_error_url}no_linked_account", status_code=302)
+                # 2. No OIDC link yet — check for an existing user with the same email
+                email_user: User | None = None
+                if provider_email:
+                    eu_result = await db.execute(
+                        select(User)
+                        .where(User.email == provider_email)
+                        .options(selectinload(User.groups))
+                    )
+                    email_user = eu_result.scalar_one_or_none()
+
+                if email_user:
+                    # Auto-link the existing account (works regardless of auto_create_users)
+                    db.add(
+                        UserOIDCLink(
+                            user_id=email_user.id,
+                            provider_id=provider_id,
+                            provider_user_id=provider_sub,
+                            provider_email=provider_email,
+                        )
+                    )
+                    await db.commit()
+                    user = email_user
+                    logger.info(
+                        "Auto-linked existing user '%s' to OIDC provider %d via email match",
+                        email_user.username,
+                        provider_id,
+                    )
+                elif provider.auto_create_users:
+                    # 3. No existing user — create one
+                    if provider_email:
+                        raw = provider_email.split("@")[0]
+                    else:
+                        raw = provider_sub[:30]
+                    candidate = re.sub(r"[^a-zA-Z0-9._-]", "", raw)[:30] or "oidcuser"
+
+                    username = candidate
+                    counter = 1
+                    while True:
+                        existing = await get_user_by_username(db, username)
+                        if not existing:
+                            break
+                        username = f"{candidate}{counter}"
+                        counter += 1
+
+                    new_user = User(
+                        username=username,
+                        email=provider_email,
+                        password_hash=get_password_hash(secrets.token_urlsafe(32)),
+                        role="user",
+                        is_active=True,
+                    )
+                    db.add(new_user)
+                    await db.flush()
+
+                    db.add(
+                        UserOIDCLink(
+                            user_id=new_user.id,
+                            provider_id=provider_id,
+                            provider_user_id=provider_sub,
+                            provider_email=provider_email,
+                        )
+                    )
+                    await db.commit()
+
+                    user_result = await db.execute(
+                        select(User).where(User.id == new_user.id).options(selectinload(User.groups))
+                    )
+                    user = user_result.scalar_one()
+                    logger.info("Auto-created user '%s' via OIDC provider %d", username, provider_id)
+                else:
+                    return RedirectResponse(url=f"{frontend_error_url}no_linked_account", status_code=302)
 
             if not user or not user.is_active:
                 return RedirectResponse(url=f"{frontend_error_url}account_inactive", status_code=302)
@@ -1089,6 +1115,10 @@ async def oidc_callback(
 
         except Exception as exc:
             logger.error("OIDC user resolution failed for provider %d: %s", provider_id, exc, exc_info=True)
+            try:
+                await db.rollback()
+            except Exception:
+                pass
             return RedirectResponse(url=f"{frontend_error_url}user_resolution_failed", status_code=302)
 
     except Exception as exc:

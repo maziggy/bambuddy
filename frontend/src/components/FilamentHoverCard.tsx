@@ -157,7 +157,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
         <div
           ref={cardRef}
           className={`
-            absolute left-1/2 -translate-x-1/2 z-50
+            absolute left-1/2 -translate-x-1/2 z-[60]
             ${position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}
             animate-in fade-in-0 zoom-in-95 duration-150
           `}

@@ -16,6 +16,7 @@ from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
+from backend.app.services.virtual_printer.tailscale import tailscale_service
 from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
 
 logger = logging.getLogger(__name__)
@@ -145,6 +146,9 @@ class VirtualPrinterInstance:
             serial=self.serial,
             shared_ca_dir=shared_ca_dir,
         )
+
+        # Tailscale FQDN used for this instance (set at start_server/start_proxy time)
+        self.tailscale_fqdn: str | None = None
 
         # Pending files for MQTT correlation
         self._pending_files: dict[str, Path] = {}
@@ -366,11 +370,35 @@ class VirtualPrinterInstance:
 
     # -- Service lifecycle --
 
+    async def _resolve_cert_and_advertise(self) -> tuple[Path, Path, str]:
+        """Return (cert_path, key_path, advertise_address) for TLS services.
+
+        When Tailscale is available, provisions a LE cert and returns the
+        Tailscale FQDN as the advertise address so SSDP broadcasts the hostname
+        that matches the trusted cert.
+
+        Falls back to the self-signed cert and IP-based advertising when
+        Tailscale is absent or provisioning fails.
+        """
+        ts_status = await tailscale_service.get_status()
+        if ts_status.available:
+            ts_result = await self._cert_service.use_tailscale_cert(ts_status.fqdn, tailscale_service)
+            if ts_result:
+                self.tailscale_fqdn = ts_status.fqdn
+                logger.info("[VP %s] Using Tailscale cert for %s", self.name, ts_status.fqdn)
+                return ts_result[0], ts_result[1], ts_status.fqdn
+
+        self.tailscale_fqdn = None
+        logger.info("[VP %s] Tailscale unavailable, using self-signed cert", self.name)
+        cert_path, key_path = self.generate_certificates()
+        advertise = self.remote_interface_ip or self.bind_ip or ""
+        return cert_path, key_path, advertise
+
     async def start_server(self) -> None:
         """Start server-mode services (FTP, MQTT, SSDP, Bind) on this VP's bind_ip."""
         logger.info("[VP %s] Starting server-mode services on %s", self.name, self.bind_ip)
 
-        cert_path, key_path = self.generate_certificates()
+        cert_path, key_path, advertise_addr = await self._resolve_cert_and_advertise()
         bind_addr = self.bind_ip or "0.0.0.0"  # nosec B104
 
         async def run_with_logging(coro, svc_name):
@@ -432,12 +460,13 @@ class VirtualPrinterInstance:
             )
         )
 
-        # SSDP server
+        # SSDP server — advertise_addr is the Tailscale FQDN when available,
+        # otherwise the bind/remote IP (existing behaviour)
         self._ssdp = VirtualPrinterSSDPServer(
             name=self.name,
             serial=self.serial,
             model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
-            advertise_ip=self.remote_interface_ip or self.bind_ip or "",
+            advertise_ip=advertise_addr,
             bind_ip=bind_addr,
         )
         self._tasks.append(
@@ -469,7 +498,7 @@ class VirtualPrinterInstance:
         """Start proxy mode services for this instance."""
         logger.info("[VP %s] Starting proxy mode to %s", self.name, self.target_printer_ip)
 
-        cert_path, key_path = self.generate_certificates()
+        cert_path, key_path, _ = await self._resolve_cert_and_advertise()
 
         self._proxy = SlicerProxyManager(
             target_host=self.target_printer_ip,
@@ -570,6 +599,8 @@ class VirtualPrinterInstance:
             "running": self.is_running,
             "pending_files": len(self._pending_files),
         }
+        if self.tailscale_fqdn:
+            status["tailscale_fqdn"] = self.tailscale_fqdn
         if self.is_proxy and self._proxy:
             status["proxy"] = self._proxy.get_status()
         return status

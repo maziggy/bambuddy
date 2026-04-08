@@ -215,6 +215,28 @@ async def create_virtual_printer(
     return _vp_to_dict(vp)
 
 
+@router.get("/tailscale-status")
+async def get_tailscale_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+) -> dict:
+    """Return current Tailscale availability and machine identity.
+
+    Used by the frontend to indicate whether virtual printer TLS is backed
+    by a trusted Let's Encrypt certificate or a self-signed CA.
+    """
+    from backend.app.services.virtual_printer.tailscale import tailscale_service
+
+    status = await tailscale_service.get_status()
+    return {
+        "available": status.available,
+        "fqdn": status.fqdn,
+        "hostname": status.hostname,
+        "tailnet_name": status.tailnet_name,
+        "tailscale_ips": status.tailscale_ips,
+        "error": status.error,
+    }
+
+
 @router.get("/{vp_id}")
 async def get_virtual_printer(
     vp_id: int,

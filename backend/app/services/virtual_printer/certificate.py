@@ -324,6 +324,33 @@ class CertificateService:
         logger.info("  Printer: CN=%s", self.serial)
         return self.cert_path, self.key_path
 
+    # -- Tailscale cert support --
+
+    @property
+    def ts_cert_path(self) -> Path:
+        """Path for Tailscale-provisioned cert (separate from self-signed)."""
+        return self.cert_dir / "virtual_printer_ts.crt"
+
+    @property
+    def ts_key_path(self) -> Path:
+        """Path for Tailscale-provisioned private key."""
+        return self.cert_dir / "virtual_printer_ts.key"
+
+    async def use_tailscale_cert(
+        self,
+        fqdn: str,
+        tailscale_svc: object,
+    ) -> tuple[Path, Path] | None:
+        """Attempt to provision a Tailscale LE cert for fqdn.
+
+        Delegates to tailscale_svc.ensure_cert(). Returns (cert_path, key_path)
+        on success, None if Tailscale provisioning fails.
+        """
+        ok = await tailscale_svc.ensure_cert(fqdn, self.ts_cert_path, self.ts_key_path)
+        if ok:
+            return self.ts_cert_path, self.ts_key_path
+        return None
+
     def delete_printer_certificate(self) -> None:
         """Delete only the printer certificate (preserves CA)."""
         for path in [self.cert_path, self.key_path]:

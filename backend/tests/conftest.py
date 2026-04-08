@@ -70,6 +70,7 @@ async def test_engine():
         ams_label,
         api_key,
         archive,
+        auth_ephemeral,
         color_catalog,
         external_link,
         filament,

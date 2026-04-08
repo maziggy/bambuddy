@@ -190,6 +190,7 @@ async def init_db():
         user_otp_code,
         user_totp,
         oidc_provider,
+        auth_ephemeral,
         virtual_printer,
     )
 

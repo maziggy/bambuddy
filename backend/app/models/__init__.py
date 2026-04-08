@@ -12,6 +12,7 @@ from backend.app.models.local_preset import LocalPreset
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
 from backend.app.models.notification import NotificationLog
 from backend.app.models.notification_template import NotificationTemplate
+from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
 from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
 from backend.app.models.orca_base_cache import OrcaBaseProfile
 from backend.app.models.pending_upload import PendingUpload
@@ -70,4 +71,6 @@ __all__ = [
     "UserEmailPreference",
     "UserOTPCode",
     "UserTOTP",
+    "AuthEphemeralToken",
+    "AuthRateLimitEvent",
 ]

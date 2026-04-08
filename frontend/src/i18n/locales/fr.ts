@@ -1222,6 +1222,8 @@ export default {
       users: 'Authentification',
       backup: 'Sauvegarde',
       emailAuth: 'Authentification Email',
+      twoFa: 'Authentification 2FA',
+      oidc: 'SSO / OIDC',
     },
     // Email settings
     email: {
@@ -2039,6 +2041,64 @@ export default {
       signInWith: 'Se connecter avec {{provider}}',
     },
   },
+  // Paramètres 2FA
+  twoFa: {
+    totpTitle: 'Application Authenticator (TOTP)',
+    totpDesc: 'Utilisez une application comme Google Authenticator, Aegis ou Authy.',
+    emailOtpTitle: 'OTP par e-mail',
+    emailOtpDesc: 'Envoyez un code à usage unique à {{email}} lors de la connexion.',
+    emailOtpNoEmail: 'Ajoutez une adresse e-mail à votre compte pour activer cette méthode.',
+    addEmailFirst: 'Votre compte n\'a pas d\'adresse e-mail. Demandez à un administrateur d\'en ajouter une.',
+    setupTotp: 'Configurer l\'application Authenticator',
+    setupAuthApp: 'Configurer l\'application Authenticator',
+    setupInstructions: 'Scannez le QR code avec votre application authenticator, puis confirmez avec un code.',
+    manualEntry: 'Impossible de scanner ? Entrez ce secret manuellement :',
+    scannedContinue: 'Code scanné — continuer',
+    enterCodeToConfirm: 'Entrez le code à 6 chiffres de votre application authenticator pour confirmer.',
+    activate: 'Activer',
+    disableTotp: 'Désactiver l\'Authenticator',
+    disableConfirmHint: 'Entrez un code TOTP valide ou un code de secours pour désactiver l\'authenticator.',
+    totpDisabled: 'Application Authenticator désactivée.',
+    emailOtpEnabled: 'OTP par e-mail activé.',
+    emailOtpDisabled: 'OTP par e-mail désactivé.',
+    invalidCode: 'Code invalide. Veuillez réessayer.',
+    backupCodesTitle: 'Sauvegardez vos codes de secours',
+    backupCodesWarning: 'Conservez ces codes en lieu sûr. Chaque code ne peut être utilisé qu\'une seule fois et ne sera plus affiché.',
+    backupCodesRemaining: '{{count}} codes de secours restants',
+    savedCodes: 'Codes sauvegardés',
+    regenBackup: 'Régénérer les codes de secours',
+    regenBackupHint: 'Entrez votre code TOTP actuel pour générer 10 nouveaux codes de secours. Tous les codes existants seront invalidés.',
+    newBackupCodes: 'Nouveaux codes de secours',
+    linkedAccounts: 'Comptes SSO liés',
+    linkedAccountsDesc: 'Ces fournisseurs d\'identité externes sont liés à votre compte.',
+    oidcUnlinked: 'Compte dissocié.',
+  },
+
+  oidc: {
+    title: 'Fournisseurs SSO / OIDC',
+    desc: 'Configurez des fournisseurs OpenID Connect pour l\'authentification unique.',
+    addProvider: 'Ajouter un fournisseur',
+    newProvider: 'Nouveau fournisseur',
+    empty: 'Aucun fournisseur OIDC configuré.',
+    created: 'Fournisseur créé.',
+    updated: 'Fournisseur mis à jour.',
+    deleted: 'Fournisseur supprimé.',
+    deleteTitle: 'Supprimer le fournisseur',
+    deleteMessage: 'Supprimer "{{name}}" ? Tous les comptes liés seront déconnectés.',
+    form: {
+      name: 'Nom d\'affichage',
+      issuerUrl: 'URL de l\'émetteur',
+      clientId: 'ID client',
+      clientSecret: 'Secret client',
+      scopes: 'Scopes',
+      iconUrl: 'URL de l\'icône (optionnel)',
+      enabled: 'Activé',
+      autoCreate: 'Créer les utilisateurs automatiquement',
+      autoCreateDesc: 'Crée automatiquement un compte local lors de la première connexion.',
+    },
+  },
+
+
 
   // Setup page
   setup: {

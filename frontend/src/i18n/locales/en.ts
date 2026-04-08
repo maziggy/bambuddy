@@ -112,6 +112,9 @@ export default {
     duplicate: 'Duplicate',
     left: 'Left',
     right: 'Right',
+    copy: 'Copy',
+    back: 'Back',
+    copied: 'Copied!',
   },
 
   // Printers page

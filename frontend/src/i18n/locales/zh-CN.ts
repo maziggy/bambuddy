@@ -112,6 +112,9 @@ export default {
     duplicate: '复制',
     left: '左',
     right: '右',
+    copy: '复制',
+    back: '返回',
+    copied: '已复制！',
   },
 
   // Printers page

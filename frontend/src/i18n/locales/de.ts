@@ -112,6 +112,9 @@ export default {
     duplicate: 'Duplizieren',
     left: 'Links',
     right: 'Rechts',
+    copy: 'Kopieren',
+    back: 'Zurück',
+    copied: 'Kopiert!',
   },
 
   // Printers page

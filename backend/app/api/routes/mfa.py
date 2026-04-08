@@ -414,6 +414,12 @@ async def enable_email_otp(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You must have an email address configured to enable email OTP 2FA",
         )
+    smtp_settings = await get_smtp_settings(db)
+    if not smtp_settings:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email OTP requires SMTP to be configured. Please configure and test SMTP settings first.",
+        )
     await _set_email_2fa_enabled(db, current_user.id, True)
     await db.commit()
     return {"message": "Email OTP 2FA enabled"}
@@ -809,7 +815,7 @@ async def oidc_callback(
 ) -> RedirectResponse:
     """Handle the OIDC authorization code callback from the identity provider."""
     external_url = await _get_base_external_url(db)
-    frontend_error_url = f"{external_url}/?oidc_error="
+    frontend_error_url = f"{external_url}/login?oidc_error="
 
     try:
         if error:
@@ -986,7 +992,7 @@ async def oidc_callback(
         )
         await db.commit()
 
-        return RedirectResponse(url=f"{external_url}/?oidc_token={exchange_token}", status_code=302)
+        return RedirectResponse(url=f"{external_url}/login?oidc_token={exchange_token}", status_code=302)
 
     except Exception as exc:
         logger.error("Unexpected error in OIDC callback: %s", exc, exc_info=True)

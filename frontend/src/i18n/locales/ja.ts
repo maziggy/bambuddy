@@ -112,6 +112,9 @@ export default {
     duplicate: '複製',
     left: '左',
     right: '右',
+    copy: 'コピー',
+    back: '戻る',
+    copied: 'コピーしました！',
   },
   // Printers page
   printers: {

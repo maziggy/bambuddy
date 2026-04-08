@@ -1932,6 +1932,8 @@ export default {
         enabled: 'Abilitato',
         autoCreate: 'Crea utenti automaticamente',
         autoCreateDesc: 'Crea automaticamente un account locale al primo accesso.',
+        secretHint: 'lascia vuoto per mantenere',
+        secretPlaceholder: 'nuovo segreto',
       },
     },
 

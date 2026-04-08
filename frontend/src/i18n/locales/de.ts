@@ -1946,6 +1946,8 @@ export default {
         enabled: 'Aktiviert',
         autoCreate: 'Benutzer automatisch anlegen',
         autoCreateDesc: 'Erstellt beim ersten Login automatisch ein lokales Konto.',
+        secretHint: 'leer lassen zum Beibehalten',
+        secretPlaceholder: 'neues Secret',
       },
     },
 

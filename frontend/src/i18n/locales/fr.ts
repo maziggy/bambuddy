@@ -1933,6 +1933,8 @@ export default {
         enabled: 'Activé',
         autoCreate: 'Créer les utilisateurs automatiquement',
         autoCreateDesc: 'Crée automatiquement un compte local lors de la première connexion.',
+        secretHint: 'laisser vide pour conserver',
+        secretPlaceholder: 'nouveau secret',
       },
     },
 

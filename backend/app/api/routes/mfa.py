@@ -855,63 +855,76 @@ async def oidc_callback(
 
         redirect_uri = f"{external_url}/api/v1/auth/oidc/callback"
 
-        # Fetch discovery document
+        # ── Step 1: Fetch discovery document ────────────────────────────────
         discovery_url = f"{provider.issuer_url}/.well-known/openid-configuration"
-        async with httpx.AsyncClient(timeout=10) as client:
-            disc_resp = await client.get(discovery_url)
-            disc_resp.raise_for_status()
-            discovery = disc_resp.json()
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                disc_resp = await client.get(discovery_url)
+                disc_resp.raise_for_status()
+                discovery = disc_resp.json()
+        except Exception as exc:
+            logger.error("OIDC discovery fetch failed for provider %d: %s", provider_id, exc)
+            return RedirectResponse(url=f"{frontend_error_url}discovery_failed", status_code=302)
 
         token_endpoint = discovery.get("token_endpoint")
         jwks_uri = discovery.get("jwks_uri")
         if not token_endpoint or not jwks_uri:
             return RedirectResponse(url=f"{frontend_error_url}invalid_discovery_document", status_code=302)
 
-        # Exchange authorization code for tokens
-        async with httpx.AsyncClient(timeout=15) as client:
-            token_resp = await client.post(
-                token_endpoint,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "client_id": provider.client_id,
-                    "client_secret": provider.client_secret,
-                },
-                headers={"Accept": "application/json"},
-            )
-            token_resp.raise_for_status()
-            token_data = token_resp.json()
+        # ── Step 2: Exchange authorization code for tokens ───────────────────
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                token_resp = await client.post(
+                    token_endpoint,
+                    data={
+                        "grant_type": "authorization_code",
+                        "code": code,
+                        "redirect_uri": redirect_uri,
+                        "client_id": provider.client_id,
+                        "client_secret": provider.client_secret,
+                    },
+                    headers={"Accept": "application/json"},
+                )
+                token_resp.raise_for_status()
+                token_data = token_resp.json()
+        except Exception as exc:
+            logger.error("OIDC token exchange failed for provider %d: %s", provider_id, exc)
+            return RedirectResponse(url=f"{frontend_error_url}token_exchange_failed", status_code=302)
 
         id_token = token_data.get("id_token")
         if not id_token:
+            logger.error("OIDC token response missing id_token for provider %d: %s", provider_id, token_data)
             return RedirectResponse(url=f"{frontend_error_url}no_id_token", status_code=302)
 
-        # Validate ID token using JWKS.
-        # Fetch JWKS asynchronously to avoid blocking the event loop.
-        async with httpx.AsyncClient(timeout=10) as jwks_http:
-            jwks_resp = await jwks_http.get(jwks_uri)
-            jwks_resp.raise_for_status()
-            jwks_data = jwks_resp.json()
+        # ── Step 3: Fetch JWKS and validate ID token ─────────────────────────
+        try:
+            async with httpx.AsyncClient(timeout=10) as jwks_http:
+                jwks_resp = await jwks_http.get(jwks_uri)
+                jwks_resp.raise_for_status()
+                jwks_data = jwks_resp.json()
 
-        jwks_client = PyJWKClient(jwks_uri)
-        jwks_client.fetch_data = lambda: jwks_data  # type: ignore[method-assign]
-        signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+            jwks_client = PyJWKClient(jwks_uri)
+            jwks_client.fetch_data = lambda: jwks_data  # type: ignore[method-assign]
+            signing_key = jwks_client.get_signing_key_from_jwt(id_token)
 
-        # Normalise issuer URL: some providers include a trailing slash in the
-        # `iss` claim even when the configured URL has none (and vice versa).
-        # We disable PyJWT's built-in issuer check and do it ourselves.
-        claims = jwt.decode(
-            id_token,
-            signing_key.key,
-            algorithms=["RS256", "ES256", "RS384", "ES384", "RS512"],
-            audience=provider.client_id,
-            options={"verify_iss": False},
-        )
+            # Normalise issuer URL: some providers include a trailing slash in
+            # the `iss` claim even when the configured URL has none (vice versa).
+            claims = jwt.decode(
+                id_token,
+                signing_key.key,
+                algorithms=["RS256", "ES256", "RS384", "ES384", "RS512"],
+                audience=provider.client_id,
+                options={"verify_iss": False},
+            )
+        except Exception as exc:
+            logger.error("OIDC JWT validation failed for provider %d: %s", provider_id, exc, exc_info=True)
+            return RedirectResponse(url=f"{frontend_error_url}token_validation_failed", status_code=302)
+
         token_iss: str = claims.get("iss", "").rstrip("/")
         if token_iss != provider.issuer_url.rstrip("/"):
             logger.warning(
-                "OIDC issuer mismatch: token iss=%r, expected=%r",
+                "OIDC issuer mismatch for provider %d: token iss=%r, expected=%r",
+                provider_id,
                 claims.get("iss"),
                 provider.issuer_url,
             )

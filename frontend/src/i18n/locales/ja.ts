@@ -1945,6 +1945,8 @@ export default {
         enabled: '有効',
         autoCreate: 'ユーザーを自動作成',
         autoCreateDesc: '初回ログイン時にローカルアカウントを自動的に作成します。',
+        secretHint: '空白のままで現在のものを維持',
+        secretPlaceholder: '新しいシークレット',
       },
     },
 

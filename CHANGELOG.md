@@ -2,7 +2,9 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.3b2] - Unreleased
+## [0.2.3b3] - Unreleased
+
+## [0.2.3b2] - 2026-04-08
 
 ### New Features
 - **Optional PostgreSQL Database Support** — Bambuddy can now use an external PostgreSQL database instead of the built-in SQLite. Set the `DATABASE_URL` environment variable (e.g., `postgresql+asyncpg://user:pass@host:5432/bambuddy`) to connect to Postgres. SQLite remains the default when no `DATABASE_URL` is set. All features work with both backends including full-text archive search (FTS5 on SQLite, tsvector+GIN on PostgreSQL), backup/restore (file copy vs pg_dump/pg_restore), health diagnostics, and cross-database restore (import a SQLite backup into PostgreSQL with automatic type conversion and FK handling).

@@ -38,6 +38,7 @@ def _user_to_response(user: User) -> UserResponse:
         role=user.role,
         is_active=user.is_active,
         is_admin=user.is_admin,
+        auth_source=getattr(user, "auth_source", "local"),
         groups=[GroupBrief(id=g.id, name=g.name) for g in user.groups],
         permissions=sorted(user.get_permissions()),
         created_at=user.created_at.isoformat(),
@@ -253,6 +254,11 @@ async def update_user(
         user.email = user_data.email
 
     if user_data.password is not None:
+        if getattr(user, "auth_source", "local") == "ldap":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot set password for LDAP users",
+            )
         user.password_hash = get_password_hash(user_data.password)
 
     if user_data.role is not None:
@@ -402,7 +408,19 @@ async def change_own_password(
             detail="Authentication required to change password",
         )
 
+    # Block password change for LDAP users
+    if getattr(current_user, "auth_source", "local") == "ldap":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change password for LDAP users — passwords are managed by the LDAP server",
+        )
+
     # Verify current password
+    if not current_user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account has no local password set",
+        )
     if not verify_password(password_data.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

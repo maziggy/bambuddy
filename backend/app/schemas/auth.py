@@ -46,6 +46,7 @@ class UserResponse(BaseModel):
     role: str  # Deprecated, kept for backward compatibility
     is_active: bool
     is_admin: bool  # Computed from role and group membership
+    auth_source: str = "local"  # "local" or "ldap"
     groups: list[GroupBrief] = []
     permissions: list[str] = []  # All permissions from groups
     created_at: str

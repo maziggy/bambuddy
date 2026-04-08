@@ -106,6 +106,8 @@ async def get_settings(
                 "default_vibration_cali",
                 "default_layer_inspect",
                 "default_timelapse",
+                "ldap_enabled",
+                "ldap_auto_provision",
             ]:
                 settings_dict[setting.key] = setting.value.lower() == "true"
             elif setting.key in [
@@ -138,6 +140,9 @@ async def get_settings(
     # Get Home Assistant settings (with environment variable overrides)
     ha_settings = await get_homeassistant_settings(db)
     settings_dict.update(ha_settings)
+
+    # Never return LDAP bind password in API responses
+    settings_dict["ldap_bind_password"] = ""
 
     return AppSettings(**settings_dict)
 

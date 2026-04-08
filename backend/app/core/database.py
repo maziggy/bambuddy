@@ -1367,6 +1367,13 @@ async def run_migrations(conn):
     # Previously both None and [] meant "all printers"; now [] means "no printers"
     await _safe_execute(conn, "UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'")
 
+    # Migration: Add auth_source column to users for LDAP support (#794)
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local' NOT NULL")
+
+    # Migration: Make password_hash nullable for LDAP users (#794)
+    if not is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

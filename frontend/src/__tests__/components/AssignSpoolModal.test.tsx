@@ -34,6 +34,7 @@ const manualSpool = {
   weight_used: 0,
   tag_uid: null,
   tray_uuid: null,
+  slicer_filament_name: 'PLA',
 };
 
 const blSpool = {
@@ -47,11 +48,12 @@ const blSpool = {
   weight_used: 50,
   tag_uid: '05CC1E0F00000100',
   tray_uuid: 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4',
+  slicer_filament_name: 'PLA',
 };
 
 const anotherManualSpool = {
   id: 3,
-  material: 'PETG',
+  material: 'PLA',
   subtype: 'HF',
   brand: 'Overture',
   color_name: 'Black',
@@ -60,6 +62,7 @@ const anotherManualSpool = {
   weight_used: 200,
   tag_uid: null,
   tray_uuid: null,
+  slicer_filament_name: 'PLA',
 };
 
 describe('AssignSpoolModal', () => {

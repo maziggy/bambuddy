@@ -220,7 +220,9 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> U
     user = await get_user_by_username(db, username)
     if not user:
         return None
-    if not verify_password(password, user.password_hash):
+    if getattr(user, "auth_source", "local") == "ldap":
+        return None  # LDAP users authenticate via LDAP, not local password
+    if not user.password_hash or not verify_password(password, user.password_hash):
         return None
     if not user.is_active:
         return None
@@ -235,7 +237,9 @@ async def authenticate_user_by_email(db: AsyncSession, email: str, password: str
     user = await get_user_by_email(db, email)
     if not user:
         return None
-    if not verify_password(password, user.password_hash):
+    if getattr(user, "auth_source", "local") == "ldap":
+        return None
+    if not user.password_hash or not verify_password(password, user.password_hash):
         return None
     if not user.is_active:
         return None

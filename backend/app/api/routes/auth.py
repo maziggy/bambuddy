@@ -62,6 +62,7 @@ def _user_to_response(user: User) -> UserResponse:
         role=user.role,
         is_active=user.is_active,
         is_admin=user.is_admin,
+        auth_source=getattr(user, "auth_source", "local"),
         groups=[GroupBrief(id=g.id, name=g.name) for g in user.groups],
         permissions=sorted(user.get_permissions()),
         created_at=user.created_at.isoformat(),
@@ -289,11 +290,49 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             detail="Authentication is not enabled",
         )
 
-    # Try username-based authentication first
-    user = await authenticate_user(db, request.username, request.password)
+    # Check if LDAP is enabled
+    ldap_user = None
+    ldap_settings = await _get_ldap_settings(db)
+    if ldap_settings:
+        try:
+            from backend.app.services.ldap_service import (
+                authenticate_ldap_user,
+                parse_ldap_config,
+            )
+
+            ldap_config = parse_ldap_config(ldap_settings)
+            if ldap_config:
+                ldap_user = authenticate_ldap_user(ldap_config, request.username, request.password)
+                if ldap_user:
+                    # LDAP auth succeeded — find or create local user
+                    user = await get_user_by_username(db, ldap_user.username)
+                    if user and user.auth_source != "ldap":
+                        # Username exists as local user — don't override
+                        user = None
+                        ldap_user = None
+                    elif not user:
+                        if not ldap_config.auto_provision:
+                            # User doesn't exist and auto-provision is off
+                            ldap_user = None
+                        else:
+                            # Auto-provision LDAP user
+                            user = await _provision_ldap_user(db, ldap_user, ldap_config)
+
+                    if user and ldap_user:
+                        # Update email and group mappings on each login
+                        await _sync_ldap_user(db, user, ldap_user, ldap_config)
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).warning("LDAP authentication error, falling back to local: %s", e)
+            ldap_user = None
+
+    # Try username-based authentication (skip if already authenticated via LDAP)
+    if not ldap_user:
+        user = await authenticate_user(db, request.username, request.password)
 
     # If username auth failed and advanced auth is enabled, try email-based authentication
-    if not user:
+    if not user and not ldap_user:
         advanced_auth = await is_advanced_auth_enabled(db)
         if advanced_auth:
             user = await authenticate_user_by_email(db, request.username, request.password)
@@ -587,8 +626,8 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
     user = await get_user_by_email(db, request.email)
 
     # Always return success message to prevent email enumeration
-    # but only send email if user exists
-    if user and user.is_active:
+    # but only send email if user exists and is not an LDAP user
+    if user and user.is_active and user.auth_source != "ldap":
         try:
             # Generate new password
             new_password = generate_secure_password()
@@ -659,6 +698,12 @@ async def reset_user_password(
             detail="User not found",
         )
 
+    if user.auth_source == "ldap":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot reset password for LDAP users — passwords are managed by the LDAP server",
+        )
+
     if not user.email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -688,3 +733,146 @@ async def reset_user_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reset password: {str(e)}",
         )
+
+
+# LDAP Authentication Helpers
+
+
+async def _get_ldap_settings(db: AsyncSession) -> dict[str, str] | None:
+    """Get LDAP settings from the database. Returns None if LDAP is not enabled."""
+    ldap_keys = [
+        "ldap_enabled",
+        "ldap_server_url",
+        "ldap_bind_dn",
+        "ldap_bind_password",
+        "ldap_search_base",
+        "ldap_user_filter",
+        "ldap_security",
+        "ldap_group_mapping",
+        "ldap_auto_provision",
+        "ldap_ca_cert_path",
+    ]
+    result = await db.execute(select(Settings).where(Settings.key.in_(ldap_keys)))
+    settings = {s.key: s.value for s in result.scalars().all()}
+    if settings.get("ldap_enabled", "false").lower() != "true":
+        return None
+    return settings
+
+
+async def _provision_ldap_user(db: AsyncSession, ldap_user, ldap_config) -> User:
+    """Create a new local user from LDAP authentication."""
+    import logging
+
+    from backend.app.services.ldap_service import resolve_group_mapping
+
+    logger = logging.getLogger(__name__)
+
+    new_user = User(
+        username=ldap_user.username,
+        email=ldap_user.email,
+        password_hash=None,
+        role="user",
+        auth_source="ldap",
+        is_active=True,
+    )
+
+    # Map LDAP groups to BamBuddy groups
+    mapped_group_names = resolve_group_mapping(ldap_user.groups, ldap_config.group_mapping)
+    if mapped_group_names:
+        groups_result = await db.execute(select(Group).where(Group.name.in_(mapped_group_names)))
+        new_user.groups = list(groups_result.scalars().all())
+
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    logger.info("Auto-provisioned LDAP user: %s (groups: %s)", new_user.username, mapped_group_names)
+    return new_user
+
+
+async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) -> None:
+    """Sync LDAP user attributes (email, groups) on each login."""
+    import logging
+
+    from backend.app.services.ldap_service import resolve_group_mapping
+
+    logger = logging.getLogger(__name__)
+
+    changed = False
+
+    # Update email if changed
+    if ldap_user.email and ldap_user.email != user.email:
+        user.email = ldap_user.email
+        changed = True
+
+    # Sync group mappings — always update to match LDAP state (including revocation)
+    mapped_group_names = resolve_group_mapping(ldap_user.groups, ldap_config.group_mapping)
+    if mapped_group_names:
+        groups_result = await db.execute(select(Group).where(Group.name.in_(mapped_group_names)))
+        new_groups = list(groups_result.scalars().all())
+    else:
+        new_groups = []
+    current_group_ids = {g.id for g in user.groups}
+    new_group_ids = {g.id for g in new_groups}
+    if current_group_ids != new_group_ids:
+        user.groups = new_groups
+        changed = True
+
+    if changed:
+        await db.commit()
+        logger.info("Synced LDAP user attributes: %s", user.username)
+
+
+@router.post("/ldap/test")
+async def test_ldap(
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Test LDAP connection using saved settings (admin only when auth enabled)."""
+    import logging
+
+    from backend.app.services.ldap_service import parse_ldap_config, test_ldap_connection
+
+    logger = logging.getLogger(__name__)
+
+    ldap_settings = await _get_ldap_settings(db)
+    if not ldap_settings:
+        # LDAP might not be enabled yet but settings might still exist — read all keys
+        ldap_keys = [
+            "ldap_enabled",
+            "ldap_server_url",
+            "ldap_bind_dn",
+            "ldap_bind_password",
+            "ldap_search_base",
+            "ldap_user_filter",
+            "ldap_security",
+            "ldap_group_mapping",
+            "ldap_auto_provision",
+        ]
+        result = await db.execute(select(Settings).where(Settings.key.in_(ldap_keys)))
+        ldap_settings = {s.key: s.value for s in result.scalars().all()}
+        # Force enabled for test
+        ldap_settings["ldap_enabled"] = "true"
+
+    config = parse_ldap_config(ldap_settings)
+    if not config:
+        return {"success": False, "message": "LDAP server URL is not configured"}
+
+    success, message = test_ldap_connection(config)
+    if success:
+        logger.info("LDAP connection test successful")
+    else:
+        logger.warning("LDAP connection test failed: %s", message)
+    return {"success": success, "message": message}
+
+
+@router.get("/ldap/status")
+async def get_ldap_status(db: AsyncSession = Depends(get_db)):
+    """Get LDAP authentication status."""
+    # Only fetch the minimum keys needed — never load secrets
+    ldap_keys = ["ldap_enabled", "ldap_server_url"]
+    result = await db.execute(select(Settings).where(Settings.key.in_(ldap_keys)))
+    settings = {s.key: s.value for s in result.scalars().all()}
+    return {
+        "ldap_enabled": settings.get("ldap_enabled", "false").lower() == "true",
+        "ldap_configured": bool(settings.get("ldap_server_url")),
+    }

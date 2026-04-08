@@ -200,7 +200,14 @@ export function TwoFactorSettings() {
       queryClient.invalidateQueries({ queryKey: ['2fa-status'] });
       showToast(t('settings.twoFa.emailOtpEnabled'), 'success');
     },
-    onError: (e: Error) => showToast(e.message, 'error'),
+    onError: (e: Error) => {
+      const msg = e.message ?? '';
+      if (msg.toLowerCase().includes('smtp')) {
+        showToast(t('settings.twoFa.smtpRequired'), 'error');
+      } else {
+        showToast(msg, 'error');
+      }
+    },
   });
 
   const disableEmailMutation = useMutation({

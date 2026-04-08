@@ -905,16 +905,35 @@ async def oidc_callback(
         if not id_token:
             return RedirectResponse(url=f"{frontend_error_url}no_id_token", status_code=302)
 
-        # Validate ID token using JWKS
+        # Validate ID token using JWKS.
+        # Fetch JWKS asynchronously to avoid blocking the event loop.
+        async with httpx.AsyncClient(timeout=10) as jwks_http:
+            jwks_resp = await jwks_http.get(jwks_uri)
+            jwks_resp.raise_for_status()
+            jwks_data = jwks_resp.json()
+
         jwks_client = PyJWKClient(jwks_uri)
+        jwks_client.fetch_data = lambda: jwks_data  # type: ignore[method-assign]
         signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+
+        # Normalise issuer URL: some providers include a trailing slash in the
+        # `iss` claim even when the configured URL has none (and vice versa).
+        # We disable PyJWT's built-in issuer check and do it ourselves.
         claims = jwt.decode(
             id_token,
             signing_key.key,
             algorithms=["RS256", "ES256", "RS384", "ES384", "RS512"],
             audience=provider.client_id,
-            issuer=provider.issuer_url,
+            options={"verify_iss": False},
         )
+        token_iss: str = claims.get("iss", "").rstrip("/")
+        if token_iss != provider.issuer_url.rstrip("/"):
+            logger.warning(
+                "OIDC issuer mismatch: token iss=%r, expected=%r",
+                claims.get("iss"),
+                provider.issuer_url,
+            )
+            return RedirectResponse(url=f"{frontend_error_url}issuer_mismatch", status_code=302)
 
         # Verify nonce
         if claims.get("nonce") != nonce:

@@ -901,15 +901,25 @@ async def oidc_callback(
             return RedirectResponse(url=f"{frontend_error_url}token_exchange_network_error", status_code=302)
 
         if not token_resp.is_success:
+            try:
+                err_body = token_resp.json()
+                oidc_err = err_body.get("error", "")
+                oidc_desc = err_body.get("error_description", "")
+            except Exception:
+                oidc_err = ""
+                oidc_desc = token_resp.text[:200]
             logger.error(
-                "OIDC token exchange HTTP %d for provider %d. redirect_uri=%r body=%s",
+                "OIDC token exchange HTTP %d for provider %d. redirect_uri=%r error=%r desc=%r",
                 token_resp.status_code,
                 provider_id,
                 redirect_uri,
-                token_resp.text[:500],
+                oidc_err,
+                oidc_desc,
             )
+            # Encode the OIDC error code into the redirect so the user sees it in the toast
+            safe_err = oidc_err.replace(" ", "_")[:40] if oidc_err else str(token_resp.status_code)
             return RedirectResponse(
-                url=f"{frontend_error_url}token_exchange_{token_resp.status_code}",
+                url=f"{frontend_error_url}token_exchange_{safe_err}",
                 status_code=302,
             )
 

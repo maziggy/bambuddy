@@ -4,6 +4,9 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.2.3b3] - Unreleased
 
+### Fixed
+- **"Build Plate Cleared" Button Unclickable After Second Print** ([#912](https://github.com/maziggy/bambuddy/issues/912)) — After completing the first queued print and confirming the plate was cleared, the "Build plate cleared — ready for next print" button became unresponsive after the second print finished. The React Query mutation's `isSuccess` state persisted from the first plate-clear confirmation, causing the component to render the static "Plate Ready" confirmation instead of the clickable button. The mutation state is now reset when the printer leaves the FINISH/FAILED state, so the button works correctly on every print cycle.
+
 ## [0.2.3b2] - 2026-04-08
 
 ### New Features

@@ -4,6 +4,9 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.2.3b3] - Unreleased
 
+### Improved
+- **AMS Drying Support for P2S** — Remote AMS drying and queue auto-drying now work on P2S printers with firmware 01.02.00.00 or later. Previously P2S was hard-blocked from the drying feature.
+
 ### New Features
 - **LDAP Default Fallback Group** — Settings → Authentication → LDAP → Advanced now has a "Default group" selector. When an LDAP user authenticates but is not listed in any mapped LDAP group, they are automatically assigned to this fallback group instead of being left without permissions. Previously such users could log in successfully but landed on empty pages because every permission check failed. Leave the setting empty to preserve the old behavior. A warning is logged each time the fallback is applied so administrators can spot missing group assignments.
 

@@ -208,6 +208,8 @@ class FilePrintRequest(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
+    # Project to associate the resulting archive with
+    project_id: int | None = None
 
 
 class FileUploadResponse(BaseModel):

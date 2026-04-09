@@ -2225,6 +2225,7 @@ async def print_library_file(
             printer_id=printer_id,
             printer_name=printer.name,
             options=body.model_dump(exclude_none=True),
+            project_id=body.project_id,
             requested_by_user_id=None,
             requested_by_username=None,
         )

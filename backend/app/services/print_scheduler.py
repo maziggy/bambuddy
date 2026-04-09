@@ -1641,6 +1641,7 @@ class PrintScheduler:
                     source_file=file_path,
                     original_filename=filename,
                     created_by_id=item.created_by_id,
+                    project_id=item.project_id,
                 )
                 if archive:
                     item.archive_id = archive.id

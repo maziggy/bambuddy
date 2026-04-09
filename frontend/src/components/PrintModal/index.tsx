@@ -48,6 +48,7 @@ export function PrintModal({
   initialSelectedPrinterIds,
   onClose,
   onSuccess,
+  projectId,
 }: PrintModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -654,6 +655,7 @@ export function PrintModal({
         ? new Date(scheduleOptions.scheduledTime).toISOString()
         : undefined,
       ...printOptions,
+      project_id: projectId ?? undefined,
     });
 
     // Model-based assignment
@@ -734,6 +736,7 @@ export function PrintModal({
                   plate_name: selectedPlateName,
                   ams_mapping: printerMapping,
                   ...printOptions,
+                  project_id: projectId,
                 });
               } else {
                 await api.reprintArchive(archiveId!, printerId, {

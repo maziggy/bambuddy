@@ -1441,6 +1441,8 @@ export interface PrintQueueItemCreate {
   gcode_injection?: boolean;
   // Batch: create multiple copies (creates a batch if > 1)
   quantity?: number;
+  // Project to associate the resulting archive with
+  project_id?: number;
 }
 
 export interface PrintQueueItemUpdate {
@@ -4379,6 +4381,7 @@ export const api = {
       layer_inspect?: boolean;
       timelapse?: boolean;
       use_ams?: boolean;
+      project_id?: number;
     }
   ) =>
     request<BackgroundDispatchResponse>(

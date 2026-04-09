@@ -44,6 +44,8 @@ class PrintQueueItemCreate(BaseModel):
     gcode_injection: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
     quantity: int = 1
+    # Project to associate the resulting archive with
+    project_id: int | None = None
 
 
 class PrintQueueItemUpdate(BaseModel):

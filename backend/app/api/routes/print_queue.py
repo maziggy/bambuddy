@@ -508,6 +508,7 @@ async def add_to_queue(
             timelapse=data.timelapse,
             use_ams=data.use_ams,
             gcode_injection=data.gcode_injection,
+            project_id=data.project_id,
             position=max_pos + 1 + i,
             status="pending",
             created_by_id=current_user.id if current_user else None,

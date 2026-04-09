@@ -32,6 +32,8 @@ export interface PrintModalProps {
   onClose: () => void;
   /** Handler for successful operation */
   onSuccess?: () => void;
+  /** Project ID to associate the resulting archive with (only when triggered from project view) */
+  projectId?: number;
 }
 
 /**

@@ -854,6 +854,7 @@ class ArchiveService:
         print_data: dict | None = None,
         created_by_id: int | None = None,
         original_filename: str | None = None,
+        project_id: int | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -864,6 +865,8 @@ class ArchiveService:
             created_by_id: User ID who created this archive (optional, for user tracking)
             original_filename: Original human-readable filename (optional, for library files
                 stored with UUID names)
+            project_id: Project to associate this archive with (optional, set when triggered
+                from the project view)
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -974,6 +977,7 @@ class ArchiveService:
             quantity=quantity,
             extra_data=metadata,
             created_by_id=created_by_id,
+            project_id=project_id,
         )
 
         self.db.add(archive)

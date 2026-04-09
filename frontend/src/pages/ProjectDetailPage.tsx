@@ -1420,6 +1420,7 @@ export function ProjectDetailPage() {
           mode="reprint"
           libraryFileId={printFile.id}
           archiveName={printFile.print_name || printFile.filename}
+          projectId={projectId}
           onClose={() => setPrintFile(null)}
           onSuccess={() => {
             setPrintFile(null);
@@ -1434,6 +1435,7 @@ export function ProjectDetailPage() {
           mode="add-to-queue"
           libraryFileId={scheduleFile.id}
           archiveName={scheduleFile.print_name || scheduleFile.filename}
+          projectId={projectId}
           onClose={() => setScheduleFile(null)}
           onSuccess={() => {
             setScheduleFile(null);

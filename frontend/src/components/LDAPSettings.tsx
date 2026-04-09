@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import type { AppSettings } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
+import { Collapsible } from './Collapsible';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -165,10 +166,10 @@ export function LDAPSettings() {
   }
 
   const ldapEnabled = ldapStatus?.ldap_enabled ?? false;
-  const inputClasses = "w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors";
+  const inputClasses = "w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* LDAP Toggle */}
       <Card>
         <CardHeader>
@@ -241,148 +242,158 @@ export function LDAPSettings() {
           </h2>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {/* Server URL */}
-            <div>
-              <label className="block text-sm font-medium text-bambu-gray mb-2">
-                {t('settings.ldap.serverUrl') || 'Server URL'}
-              </label>
-              <input
-                type="text"
-                className={inputClasses}
-                placeholder="ldaps://ldap.example.com:636"
-                value={form.ldap_server_url}
-                onChange={e => setForm({ ...form, ldap_server_url: e.target.value })}
-              />
-              <p className="text-xs text-bambu-gray mt-1">
-                {t('settings.ldap.serverUrlHint') || 'Use ldaps:// for SSL or ldap:// with StartTLS'}
-              </p>
-            </div>
-
-            {/* Security */}
-            <div>
-              <label className="block text-sm font-medium text-bambu-gray mb-2">
-                {t('settings.ldap.security') || 'Security'}
-              </label>
-              <div className="flex gap-2">
-                {(['starttls', 'ldaps'] as const).map(sec => (
-                  <button
-                    key={sec}
-                    onClick={() => setForm({ ...form, ldap_security: sec })}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      form.ldap_security === sec
-                        ? 'bg-bambu-green text-black'
-                        : 'bg-bambu-dark-secondary text-bambu-gray hover:text-white border border-bambu-dark-tertiary'
-                    }`}
-                  >
-                    {sec === 'starttls' ? 'StartTLS' : 'LDAPS (SSL)'}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-bambu-gray mt-1">
-                {t('settings.ldap.securityHint') || `Default port: ${SECURITY_PORT_MAP[form.ldap_security]}`}
-              </p>
-            </div>
-
-            {/* Bind DN */}
-            <div>
-              <label className="block text-sm font-medium text-bambu-gray mb-2">
-                {t('settings.ldap.bindDn') || 'Bind DN (Service Account)'}
-              </label>
-              <input
-                type="text"
-                className={inputClasses}
-                placeholder="cn=service-account,ou=service,dc=example,dc=com"
-                value={form.ldap_bind_dn}
-                onChange={e => setForm({ ...form, ldap_bind_dn: e.target.value })}
-              />
-            </div>
-
-            {/* Bind Password */}
-            <div>
-              <label className="block text-sm font-medium text-bambu-gray mb-2">
-                {t('settings.ldap.bindPassword') || 'Bind Password'}
-              </label>
-              <input
-                type="password"
-                className={inputClasses}
-                placeholder={settings?.ldap_bind_dn ? '••••••••' : ''}
-                value={form.ldap_bind_password}
-                onChange={e => setForm({ ...form, ldap_bind_password: e.target.value })}
-              />
-            </div>
-
-            {/* Search Base */}
-            <div>
-              <label className="block text-sm font-medium text-bambu-gray mb-2">
-                {t('settings.ldap.searchBase') || 'Search Base DN'}
-              </label>
-              <input
-                type="text"
-                className={inputClasses}
-                placeholder="ou=users,dc=example,dc=com"
-                value={form.ldap_search_base}
-                onChange={e => setForm({ ...form, ldap_search_base: e.target.value })}
-              />
-            </div>
-
-            {/* User Filter */}
-            <div>
-              <label className="block text-sm font-medium text-bambu-gray mb-2">
-                {t('settings.ldap.userFilter') || 'User Search Filter'}
-              </label>
-              <input
-                type="text"
-                className={inputClasses}
-                placeholder="(sAMAccountName={username})"
-                value={form.ldap_user_filter}
-                onChange={e => setForm({ ...form, ldap_user_filter: e.target.value })}
-              />
-              <p className="text-xs text-bambu-gray mt-1">
-                {t('settings.ldap.userFilterHint') || '{username} is replaced with the login username. Use (uid={username}) for OpenLDAP.'}
-              </p>
-            </div>
-
-            {/* Auto Provision */}
-            <div className="flex items-center justify-between py-2">
-              <div>
-                <label className="block text-sm font-medium text-white">
-                  {t('settings.ldap.autoProvision') || 'Auto-provision users'}
+          <div className="space-y-3">
+            {/* Server URL + Security (side by side) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-bambu-gray mb-1">
+                  {t('settings.ldap.serverUrl') || 'Server URL'}
                 </label>
-                <p className="text-xs text-bambu-gray mt-0.5">
-                  {t('settings.ldap.autoProvisionHint') || 'Automatically create a BamBuddy account on first LDAP login'}
+                <input
+                  type="text"
+                  className={inputClasses}
+                  placeholder="ldaps://ldap.example.com:636"
+                  value={form.ldap_server_url}
+                  onChange={e => setForm({ ...form, ldap_server_url: e.target.value })}
+                />
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.ldap.serverUrlHint') || 'Use ldaps:// for SSL or ldap:// with StartTLS'}
                 </p>
               </div>
-              <button
-                onClick={() => setForm({ ...form, ldap_auto_provision: !form.ldap_auto_provision })}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  form.ldap_auto_provision ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    form.ldap_auto_provision ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
+              <div>
+                <label className="block text-sm font-medium text-bambu-gray mb-1">
+                  {t('settings.ldap.security') || 'Security'}
+                </label>
+                <div className="flex gap-2">
+                  {(['starttls', 'ldaps'] as const).map(sec => (
+                    <button
+                      key={sec}
+                      onClick={() => setForm({ ...form, ldap_security: sec })}
+                      className={`flex-1 px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        form.ldap_security === sec
+                          ? 'bg-bambu-green text-black'
+                          : 'bg-bambu-dark-secondary text-bambu-gray hover:text-white border border-bambu-dark-tertiary'
+                      }`}
+                    >
+                      {sec === 'starttls' ? 'StartTLS' : 'LDAPS'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.ldap.securityHint') || `Default port: ${SECURITY_PORT_MAP[form.ldap_security]}`}
+                </p>
+              </div>
             </div>
 
-            {/* Group Mapping */}
-            <div>
-              <label className="block text-sm font-medium text-bambu-gray mb-2">
-                {t('settings.ldap.groupMapping') || 'Group Mapping (JSON)'}
-              </label>
-              <textarea
-                className={`${inputClasses} font-mono text-sm`}
-                rows={4}
-                placeholder={'{\n  "CN=PrintFarm_Admins,OU=Groups,DC=example,DC=com": "Administrators",\n  "CN=PrintFarm_Users,OU=Groups,DC=example,DC=com": "Operators"\n}'}
-                value={form.ldap_group_mapping}
-                onChange={e => setForm({ ...form, ldap_group_mapping: e.target.value })}
-              />
-              <p className="text-xs text-bambu-gray mt-1">
-                {t('settings.ldap.groupMappingHint') || 'Map LDAP group DNs to BamBuddy groups. Available groups: '}{groups.map(g => g.name).join(', ')}
-              </p>
+            {/* Bind DN + Password (side by side) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-bambu-gray mb-1">
+                  {t('settings.ldap.bindDn') || 'Bind DN (Service Account)'}
+                </label>
+                <input
+                  type="text"
+                  className={inputClasses}
+                  placeholder="cn=service-account,ou=service,dc=example,dc=com"
+                  value={form.ldap_bind_dn}
+                  onChange={e => setForm({ ...form, ldap_bind_dn: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-bambu-gray mb-1">
+                  {t('settings.ldap.bindPassword') || 'Bind Password'}
+                </label>
+                <input
+                  type="password"
+                  className={inputClasses}
+                  placeholder={settings?.ldap_bind_dn ? '••••••••' : ''}
+                  value={form.ldap_bind_password}
+                  onChange={e => setForm({ ...form, ldap_bind_password: e.target.value })}
+                />
+              </div>
             </div>
+
+            {/* Search Base + User Filter (side by side) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-bambu-gray mb-1">
+                  {t('settings.ldap.searchBase') || 'Search Base DN'}
+                </label>
+                <input
+                  type="text"
+                  className={inputClasses}
+                  placeholder="ou=users,dc=example,dc=com"
+                  value={form.ldap_search_base}
+                  onChange={e => setForm({ ...form, ldap_search_base: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-bambu-gray mb-1">
+                  {t('settings.ldap.userFilter') || 'User Search Filter'}
+                </label>
+                <input
+                  type="text"
+                  className={inputClasses}
+                  placeholder="(sAMAccountName={username})"
+                  value={form.ldap_user_filter}
+                  onChange={e => setForm({ ...form, ldap_user_filter: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* Advanced (collapsed by default) */}
+            <Collapsible
+              summary={
+                <span className="text-sm font-medium text-bambu-gray">
+                  {t('settings.ldap.advanced') || 'Advanced'}
+                </span>
+              }
+              className="border-t border-bambu-dark-tertiary pt-3"
+              summaryClassName="py-1"
+            >
+              <div className="space-y-3">
+                {/* Auto Provision */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm font-medium text-white">
+                      {t('settings.ldap.autoProvision') || 'Auto-provision users'}
+                    </label>
+                    <p className="text-xs text-bambu-gray mt-0.5">
+                      {t('settings.ldap.autoProvisionHint') || 'Automatically create a BamBuddy account on first LDAP login'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setForm({ ...form, ldap_auto_provision: !form.ldap_auto_provision })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                      form.ldap_auto_provision ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        form.ldap_auto_provision ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Group Mapping */}
+                <div>
+                  <label className="block text-sm font-medium text-bambu-gray mb-1">
+                    {t('settings.ldap.groupMapping') || 'Group Mapping (JSON)'}
+                  </label>
+                  <textarea
+                    className={`${inputClasses} font-mono text-sm`}
+                    rows={4}
+                    placeholder={'{\n  "CN=PrintFarm_Admins,OU=Groups,DC=example,DC=com": "Administrators",\n  "CN=PrintFarm_Users,OU=Groups,DC=example,DC=com": "Operators"\n}'}
+                    value={form.ldap_group_mapping}
+                    onChange={e => setForm({ ...form, ldap_group_mapping: e.target.value })}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.ldap.groupMappingHint') || 'Map LDAP group DNs to BamBuddy groups. Available groups: '}{groups.map(g => g.name).join(', ')}
+                  </p>
+                </div>
+              </div>
+            </Collapsible>
 
             {/* Action Buttons */}
             <div className="flex gap-3 pt-2">

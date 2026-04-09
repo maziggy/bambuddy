@@ -7,7 +7,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
-import { Card, CardContent, CardHeader } from '../components/Card';
+import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
+import { Collapsible } from '../components/Collapsible';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
 import { AddSmartPlugModal } from '../components/AddSmartPlugModal';
@@ -964,14 +965,15 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="p-4 md:p-8">
-      <div className="mb-8">
+    <CardDensityProvider density="dense">
+    <div className="p-4 md:p-6">
+      <div className="mb-4 flex items-baseline gap-3">
         <h1 className="text-2xl font-bold text-white">{t('settings.title')}</h1>
-        <p className="text-bambu-gray">{t('settings.configureBambuddy')}</p>
+        <p className="text-sm text-bambu-gray hidden sm:block">{t('settings.configureBambuddy')}</p>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex flex-wrap gap-1 mb-6 border-b border-bambu-dark-tertiary">
+      <div className="flex flex-wrap gap-1 mb-4 border-b border-bambu-dark-tertiary">
         <button
           onClick={() => handleTabChange('general')}
           className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
@@ -1104,14 +1106,14 @@ export function SettingsPage() {
         </button>
       </div>
       {activeTab === 'general' && (
-      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* Left Column - General Settings */}
-        <div className="space-y-6 flex-1 lg:max-w-xl">
+        <div className="space-y-3 flex-1 lg:max-w-xl">
           <Card>
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">{t('settings.general')}</h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
                   <Globe className="w-4 h-4 inline mr-1" />
@@ -1275,7 +1277,7 @@ export function SettingsPage() {
                 {t('settings.appearance')}
               </h2>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-3">
               {/* Dark Mode Settings */}
               <div className={`space-y-3 p-4 rounded-lg border ${mode === 'dark' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
                 <h3 className="text-sm font-medium text-white flex items-center gap-2">
@@ -1387,7 +1389,7 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">{t('settings.archiveSettings')}</h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-white">{t('settings.autoArchivePrints')}</p>
@@ -1456,7 +1458,7 @@ export function SettingsPage() {
         </div>
 
         {/* Second Column - Camera, Cost, AMS & Spoolman */}
-        <div className="space-y-6 flex-1 lg:max-w-md">
+        <div className="space-y-3 flex-1 lg:max-w-md">
           {/* Camera Settings */}
           <Card>
             <CardHeader>
@@ -1465,7 +1467,7 @@ export function SettingsPage() {
                 {t('settings.camera')}
               </h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
                   {t('settings.cameraViewMode')}
@@ -1587,7 +1589,7 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">{t('settings.costTracking')}</h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">{t('settings.currency')}</label>
                 <select
@@ -1671,7 +1673,7 @@ export function SettingsPage() {
                 {t('settings.fileManager')}
               </h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               {/* Archive Mode */}
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
@@ -1717,7 +1719,7 @@ export function SettingsPage() {
         </div>
 
         {/* Third Column - Sidebar Links & Updates */}
-        <div className="space-y-6 flex-1 lg:max-w-sm">
+        <div className="space-y-3 flex-1 lg:max-w-sm">
           {/* Sidebar Links */}
           <ExternalLinksSettings />
 
@@ -1725,7 +1727,7 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">{t('settings.updates')}</h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">{t('settings.printerFirmware')}</p>
               <div className="flex items-center justify-between">
                 <div>
@@ -1900,7 +1902,7 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">{t('settings.dataManagement')}</h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-white">{t('settings.clearNotificationLogs')}</p>
@@ -2060,7 +2062,7 @@ export function SettingsPage() {
       {activeTab === 'network' && localSettings && (
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left Column - External URL & FTP Retry */}
-        <div className="flex-1 lg:max-w-xl space-y-4">
+        <div className="flex-1 lg:max-w-xl space-y-3">
           {/* External URL */}
           <Card>
             <CardHeader>
@@ -2069,7 +2071,7 @@ export function SettingsPage() {
                 {t('settings.externalUrl')}
               </h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-sm text-bambu-gray">
                 {t('settings.externalUrlDescription')}
               </p>
@@ -2098,7 +2100,7 @@ export function SettingsPage() {
                 {t('settings.ftpRetry')}
               </h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-sm text-bambu-gray">
                 {t('settings.ftpRetryDescription')}
               </p>
@@ -2122,7 +2124,7 @@ export function SettingsPage() {
               </div>
 
               {localSettings.ftp_retry_enabled && (
-                <div className="space-y-4 pt-2 border-t border-bambu-dark-tertiary">
+                <div className="space-y-3 pt-2 border-t border-bambu-dark-tertiary">
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
                       {t('settings.retryAttempts')}
@@ -2186,7 +2188,7 @@ export function SettingsPage() {
         </div>
 
         {/* Right Column - Home Assistant & MQTT Publishing */}
-        <div className="flex-1 lg:max-w-xl space-y-4">
+        <div className="flex-1 lg:max-w-xl space-y-3">
           {/* Home Assistant Integration */}
           <Card>
             <CardHeader>
@@ -2205,7 +2207,7 @@ export function SettingsPage() {
                 )}
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-sm text-bambu-gray">
                 {t('settings.homeAssistantFullDescription')}
               </p>
@@ -2352,7 +2354,7 @@ export function SettingsPage() {
                 )}
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-sm text-bambu-gray">
                 {t('settings.mqttDescription')}
               </p>
@@ -2376,7 +2378,7 @@ export function SettingsPage() {
               </div>
 
               {localSettings.mqtt_enabled && (
-                <div className="space-y-4 pt-2 border-t border-bambu-dark-tertiary">
+                <div className="space-y-3 pt-2 border-t border-bambu-dark-tertiary">
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
                       {t('settings.brokerHostname')}
@@ -2492,7 +2494,7 @@ export function SettingsPage() {
         </div>
 
         {/* Third Column - Prometheus Metrics */}
-        <div className="flex-1 lg:max-w-md space-y-4">
+        <div className="flex-1 lg:max-w-md space-y-3">
           <Card>
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -2500,7 +2502,7 @@ export function SettingsPage() {
                 {t('settings.prometheusMetrics')}
               </h2>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-sm text-bambu-gray">
                 {t('settings.prometheusEndpointDescription')}
               </p>
@@ -2522,7 +2524,7 @@ export function SettingsPage() {
               </div>
 
               {localSettings.prometheus_enabled && (
-                <div className="space-y-4 pt-2 border-t border-bambu-dark-tertiary">
+                <div className="space-y-3 pt-2 border-t border-bambu-dark-tertiary">
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
                       {t('settings.bearerTokenOptional')}
@@ -2592,7 +2594,7 @@ export function SettingsPage() {
 
       {/* Smart Plugs Tab */}
       {activeTab === 'plugs' && (
-        <div className="max-w-4xl">
+        <div>
           <div className="flex items-start justify-between mb-6">
             <div>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -2746,7 +2748,7 @@ export function SettingsPage() {
               <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
             </div>
           ) : smartPlugs && smartPlugs.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {smartPlugs.map((plug) => (
                 <SmartPlugCard
                   key={plug.id}
@@ -2783,7 +2785,7 @@ export function SettingsPage() {
 
       {/* Notifications Tab */}
       {activeTab === 'notifications' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Left Column: Providers */}
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -3042,7 +3044,7 @@ export function SettingsPage() {
 
       {/* API Keys Tab */}
       {activeTab === 'apikeys' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {/* Left Column - API Keys Management */}
           <div>
             <div className="flex items-start justify-between gap-4 mb-6">
@@ -3133,7 +3135,7 @@ export function SettingsPage() {
                 <CardHeader>
                   <h3 className="text-base font-semibold text-white">{t('settings.createNewApiKey')}</h3>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-3">
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">{t('settings.keyName')}</label>
                     <input
@@ -3357,9 +3359,9 @@ export function SettingsPage() {
       {/* Filament Tab */}
       {/* Queue Tab */}
       {activeTab === 'queue' && localSettings && (
-        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+        <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
           {/* Left Column */}
-          <div className="lg:w-1/2 space-y-6">
+          <div className="lg:w-1/2 space-y-3">
           {/* Default Print Options */}
           <Card>
             <CardHeader>
@@ -3368,7 +3370,7 @@ export function SettingsPage() {
                 {t('settings.defaultPrintOptions', 'Default Print Options')}
               </h3>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-xs text-bambu-gray">
                 {t('settings.defaultPrintOptionsDescription', 'Set default values for print options when starting new prints. These can be overridden per print in the print dialog.')}
               </p>
@@ -3406,7 +3408,7 @@ export function SettingsPage() {
                 {t('settings.staggeredStart', 'Staggered Start')}
               </h3>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-xs text-bambu-gray">
                 {t('settings.staggeredStartDescription', 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.')}
               </p>
@@ -3455,7 +3457,7 @@ export function SettingsPage() {
                 {t('settings.plateClear', 'Plate-Clear Confirmation')}
               </h3>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex-1 mr-4">
                   <p className="text-sm text-white">
@@ -3486,7 +3488,7 @@ export function SettingsPage() {
                 {t('settings.gcodeInjection', 'G-code Injection')}
               </h3>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-xs text-bambu-gray">
                 {t('settings.gcodeInjectionDescription', 'Configure custom G-code to inject at the start and/or end of prints for auto-print systems like Farmloop, SwapMod, AutoClear, and Printflow 3D. Snippets are configured per printer model and applied when "Inject G-code" is enabled on a queue item.')}
               </p>
@@ -3533,36 +3535,52 @@ export function SettingsPage() {
 
                 return printerModels.map((model) => {
                   const snippet = gcodeSnippets[model] || { start_gcode: '', end_gcode: '' };
+                  const hasContent = !!(snippet.start_gcode || snippet.end_gcode);
                   return (
-                    <div key={model} className="space-y-2">
-                      <h4 className="text-sm font-medium text-white">{model}</h4>
-                      <div>
-                        <label className="block text-xs text-bambu-gray mb-1">
-                          {t('settings.gcodeStartLabel', 'Start G-code')}
-                        </label>
-                        <textarea
-                          value={snippet.start_gcode}
-                          onChange={(e) => updateSnippet(model, 'start_gcode', e.target.value)}
-                          onBlur={saveGcodeSnippets}
-                          placeholder={t('settings.gcodeStartPlaceholder', 'G-code prepended before the print starts...')}
-                          rows={3}
-                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
-                        />
+                    <Collapsible
+                      key={model}
+                      defaultOpen={hasContent}
+                      className="border border-bambu-dark-tertiary rounded-lg px-3 py-2"
+                      summary={
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-medium text-white">{model}</h4>
+                          {hasContent && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-bambu-green/20 text-bambu-green">
+                              {t('settings.gcodeConfigured', 'Configured')}
+                            </span>
+                          )}
+                        </div>
+                      }
+                    >
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-xs text-bambu-gray mb-1">
+                            {t('settings.gcodeStartLabel', 'Start G-code')}
+                          </label>
+                          <textarea
+                            value={snippet.start_gcode}
+                            onChange={(e) => updateSnippet(model, 'start_gcode', e.target.value)}
+                            onBlur={saveGcodeSnippets}
+                            placeholder={t('settings.gcodeStartPlaceholder', 'G-code prepended before the print starts...')}
+                            rows={3}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-bambu-gray mb-1">
+                            {t('settings.gcodeEndLabel', 'End G-code')}
+                          </label>
+                          <textarea
+                            value={snippet.end_gcode}
+                            onChange={(e) => updateSnippet(model, 'end_gcode', e.target.value)}
+                            onBlur={saveGcodeSnippets}
+                            placeholder={t('settings.gcodeEndPlaceholder', 'G-code appended after the print ends...')}
+                            rows={3}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-xs text-bambu-gray mb-1">
-                          {t('settings.gcodeEndLabel', 'End G-code')}
-                        </label>
-                        <textarea
-                          value={snippet.end_gcode}
-                          onChange={(e) => updateSnippet(model, 'end_gcode', e.target.value)}
-                          onBlur={saveGcodeSnippets}
-                          placeholder={t('settings.gcodeEndPlaceholder', 'G-code appended after the print ends...')}
-                          rows={3}
-                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
-                        />
-                      </div>
-                    </div>
+                    </Collapsible>
                   );
                 });
               })()}
@@ -3571,7 +3589,7 @@ export function SettingsPage() {
 
           </div>
           {/* Right Column */}
-          <div className="lg:w-1/2 space-y-6">
+          <div className="lg:w-1/2 space-y-3">
           {/* Auto-Drying */}
           <Card>
             <CardHeader>
@@ -3580,7 +3598,7 @@ export function SettingsPage() {
                 {t('settings.queueDrying')}
               </h3>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-xs text-bambu-gray">
                 {t('settings.queueDryingDescription')}
               </p>
@@ -3737,16 +3755,16 @@ export function SettingsPage() {
 
       {activeTab === 'filament' && localSettings && (
         <>
-        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+        <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
           {/* Left Column (1/3) - Mode Selector + AMS Thresholds */}
-          <div className="lg:w-1/3 space-y-6">
+          <div className="lg:w-1/3 space-y-3">
             <SpoolmanSettings />
 
             <Card>
               <CardHeader>
                 <h2 className="text-lg font-semibold text-white">{t('settings.filamentChecks')}</h2>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-white">{t('settings.disableFilamentWarnings')}</p>
@@ -3789,7 +3807,7 @@ export function SettingsPage() {
               <CardHeader>
                 <h2 className="text-lg font-semibold text-white">{t('settings.printModal')}</h2>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-white">{t('settings.expandCustomMapping')}</p>
@@ -3814,7 +3832,7 @@ export function SettingsPage() {
               <CardHeader>
                 <h2 className="text-lg font-semibold text-white">{t('settings.amsDisplayThresholds')}</h2>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 <p className="text-sm text-bambu-gray">
                   {t('settings.amsThresholdsDescription')}
                 </p>
@@ -3946,7 +3964,7 @@ export function SettingsPage() {
           </div>
 
           {/* Right Column (2/3) - Spool Catalog + Color Catalog */}
-          <div className="lg:w-2/3 space-y-6">
+          <div className="lg:w-2/3 space-y-3">
             <SpoolCatalogSettings />
             <ColorCatalogSettings />
           </div>
@@ -4114,7 +4132,7 @@ export function SettingsPage() {
 
       {/* Users Tab */}
       {activeTab === 'users' && (
-        <div className="space-y-6">
+        <div className="space-y-3">
           {/* Sub-tab Navigation */}
           <div className="flex gap-1 border-b border-bambu-dark-tertiary">
             <button
@@ -4219,7 +4237,7 @@ export function SettingsPage() {
           {authEnabled && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               {/* Left Column: Current User + User List */}
-              <div className="space-y-6">
+              <div className="space-y-3">
                 {/* Current User Card */}
                 {user && (
                   <Card>
@@ -4472,13 +4490,13 @@ export function SettingsPage() {
 
           {/* Email Auth Sub-tab */}
           {usersSubTab === 'email' && (
-            <div className="max-w-2xl">
+            <div className="max-w-5xl">
               <EmailSettings />
             </div>
           )}
 
           {usersSubTab === 'ldap' && (
-            <div className="max-w-2xl">
+            <div className="max-w-5xl">
               <LDAPSettings />
             </div>
           )}
@@ -4517,7 +4535,7 @@ export function SettingsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">{t('settings.username')}</label>
                   <input
@@ -4668,7 +4686,7 @@ export function SettingsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {/* Username Field */}
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
@@ -4849,7 +4867,7 @@ export function SettingsPage() {
                 <h3 className="text-lg font-semibold">{t('settings.deleteUserTitle')}</h3>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               {deleteUserLoading ? (
                 <div className="flex items-center justify-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-2 border-bambu-green border-t-transparent" />
@@ -5005,7 +5023,7 @@ export function SettingsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
                     Current Password
@@ -5108,5 +5126,6 @@ export function SettingsPage() {
         </div>
       )}
     </div>
+    </CardDensityProvider>
   );
 }

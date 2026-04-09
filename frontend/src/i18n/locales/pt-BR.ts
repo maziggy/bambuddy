@@ -2882,6 +2882,9 @@ export default {
       forQuickAccess: 'a este projeto para acesso rápido.',
       fileCount: '{{count}} arquivo(s)',
       empty: 'Nenhuma pasta vinculada. Vá para o Gerenciador de Arquivos e vincule uma pasta a este projeto.',
+      noFiles: 'Nenhum arquivo nesta pasta.',
+      print: 'Imprimir agora',
+      addToQueue: 'Adicionar à fila',
     },
     bom: {
       title: 'Lista de Materiais',

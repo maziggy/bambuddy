@@ -2896,6 +2896,9 @@ export default {
       forQuickAccess: 'für schnellen Zugriff auf dieses Projekt.',
       fileCount: '{{count}} Datei(en)',
       empty: 'Keine Ordner verknüpft. Gehen Sie zum Dateimanager und verknüpfen Sie einen Ordner mit diesem Projekt.',
+      noFiles: 'Keine Dateien in diesem Ordner.',
+      print: 'Jetzt drucken',
+      addToQueue: 'Zur Warteschlange',
     },
     bom: {
       title: 'Stückliste',

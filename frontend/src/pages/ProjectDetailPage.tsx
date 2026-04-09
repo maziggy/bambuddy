@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import DOMPurify from 'dompurify';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
@@ -31,20 +31,30 @@ import {
   FolderOpen,
   Download,
   Pencil,
+  Play,
+  CalendarPlus,
+  FileBox,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { parseUTCDate, formatDateOnly, formatDateTime, formatDurationFromHours, type TimeFormat } from '../utils/date';
-import type { Archive, ProjectUpdate, BOMItem, BOMItemCreate, BOMItemUpdate } from '../api/client';
+import type { Archive, ProjectUpdate, BOMItem, BOMItemCreate, BOMItemUpdate, LibraryFileListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { RichTextEditor } from '../components/RichTextEditor';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { PrintModal } from '../components/PrintModal';
 
 // Project edit modal (reused from ProjectsPage)
 import { ProjectModal } from './ProjectsPage';
 import { getCurrencySymbol } from '../utils/currency';
+
+// Returns true for sliced (printable) files: .gcode and .gcode.3mf
+function isSlicedFilename(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return lower.endsWith('.gcode') || lower.includes('.gcode.');
+}
 
 function formatFilament(grams: number): string {
   if (grams >= 1000) {
@@ -201,6 +211,8 @@ export function ProjectDetailPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesContent, setNotesContent] = useState('');
+  const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
+  const [scheduleFile, setScheduleFile] = useState<LibraryFileListItem | null>(null);
 
   const projectId = parseInt(id || '0', 10);
 
@@ -237,6 +249,14 @@ export function ProjectDetailPage() {
     queryKey: ['project-folders', projectId],
     queryFn: () => api.getLibraryFoldersByProject(projectId),
     enabled: projectId > 0,
+  });
+
+  const folderFileQueries = useQueries({
+    queries: (linkedFolders ?? []).map((folder) => ({
+      queryKey: ['folder-files', folder.id],
+      queryFn: () => api.getLibraryFiles(folder.id),
+      enabled: !!linkedFolders,
+    })),
   });
 
   const currency = getCurrencySymbol(settings?.currency || 'USD');
@@ -473,7 +493,7 @@ export function ProjectDetailPage() {
           </button>
           <div className="flex items-center gap-3">
             <div
-              className="w-4 h-4 rounded-full flex-shrink-0"
+              className="w-4 h-4 rounded-full shrink-0"
               style={{ backgroundColor: project.color || '#6b7280' }}
             />
             <div>
@@ -837,7 +857,7 @@ export function ProjectDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Files section - linked folders from File Manager */}
+      {/* Files section - linked folders from File Manager with printable files */}
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center justify-between mb-3">
@@ -855,27 +875,103 @@ export function ProjectDetailPage() {
           </p>
 
           {linkedFolders && linkedFolders.length > 0 ? (
-            <div className="space-y-2">
-              {linkedFolders.map((folder) => (
-                <Link
-                  key={folder.id}
-                  to={`/files?folder=${folder.id}`}
-                  className="flex items-center justify-between p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FolderOpen className="w-5 h-5 text-bambu-green flex-shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm text-white truncate">
-                        {folder.name}
+            <div className="space-y-4">
+              {linkedFolders.map((folder, idx) => {
+                const query = folderFileQueries[idx];
+                const files = query?.data ?? [];
+                const isLoading = query?.isLoading ?? true;
+
+                return (
+                  <div key={folder.id}>
+                    {/* Folder header — links to File Manager */}
+                    <Link
+                      to={`/files?folder=${folder.id}`}
+                      className="flex items-center justify-between p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors mb-2"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FolderOpen className="w-5 h-5 text-bambu-green shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-white truncate">{folder.name}</p>
+                          <p className="text-xs text-bambu-gray">
+                            {t('projectDetail.files.fileCount', { count: folder.file_count })}
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-bambu-gray shrink-0" />
+                    </Link>
+
+                    {/* File list within the folder */}
+                    {isLoading ? (
+                      <div className="flex items-center gap-2 px-3 py-2 text-bambu-gray text-sm">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      </div>
+                    ) : files.length === 0 ? (
+                      <p className="text-bambu-gray/60 text-xs italic px-3">
+                        {t('projectDetail.files.noFiles')}
                       </p>
-                      <p className="text-xs text-bambu-gray">
-                        {t('projectDetail.files.fileCount', { count: folder.file_count })}
-                      </p>
-                    </div>
+                    ) : (
+                      <div className="space-y-1 pl-3">
+                        {files.map((file) => {
+                          const printable = isSlicedFilename(file.filename);
+                          return (
+                            <div
+                              key={file.id}
+                              className="flex items-center gap-3 p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+                            >
+                              {/* Thumbnail */}
+                              <div className="w-10 h-10 shrink-0 rounded bg-bambu-dark overflow-hidden flex items-center justify-center">
+                                {file.thumbnail_path ? (
+                                  <img
+                                    src={api.getLibraryFileThumbnailUrl(file.id)}
+                                    alt={file.print_name || file.filename}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <FileBox className="w-5 h-5 text-bambu-gray/40" />
+                                )}
+                              </div>
+
+                              {/* Name + type badge */}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-white truncate" title={file.print_name || file.filename}>
+                                  {file.print_name || file.filename}
+                                </p>
+                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                                  file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
+                                  : file.file_type === 'gcode' ? 'bg-blue-500/20 text-blue-400'
+                                  : 'bg-bambu-gray/20 text-bambu-gray'
+                                }`}>
+                                  {file.file_type.toUpperCase()}
+                                </span>
+                              </div>
+
+                              {/* Print actions for sliced files */}
+                              {printable && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    onClick={() => setPrintFile(file)}
+                                    title={t('projectDetail.files.print')}
+                                    className="p-1.5 rounded hover:bg-bambu-green/20 text-bambu-green transition-colors"
+                                  >
+                                    <Play className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setScheduleFile(file)}
+                                    title={t('projectDetail.files.addToQueue')}
+                                    className="p-1.5 rounded hover:bg-blue-500/20 text-blue-400 transition-colors"
+                                  >
+                                    <CalendarPlus className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <ChevronRight className="w-4 h-4 text-bambu-gray flex-shrink-0" />
-                </Link>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
@@ -1066,7 +1162,7 @@ export function ProjectDetailPage() {
                         onClick={() => hasPermission('projects:update') && handleToggleAcquired(item)}
                         disabled={updateBomMutation.isPending || !hasPermission('projects:update')}
                         title={!hasPermission('projects:update') ? t('projectDetail.bom.noUpdatePermission') : undefined}
-                        className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0 ${
+                        className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
                           item.is_complete
                             ? 'bg-status-ok border-status-ok text-white'
                             : hasPermission('projects:update')
@@ -1095,7 +1191,7 @@ export function ProjectDetailPage() {
                             <button
                               onClick={() => hasPermission('projects:update') && handleEditBomItem(item)}
                               disabled={!hasPermission('projects:update')}
-                              className={`p-1 rounded transition-colors flex-shrink-0 ${
+                              className={`p-1 rounded transition-colors shrink-0 ${
                                 hasPermission('projects:update')
                                   ? 'hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white'
                                   : 'text-bambu-gray/50 cursor-not-allowed'
@@ -1107,7 +1203,7 @@ export function ProjectDetailPage() {
                             <button
                               onClick={() => hasPermission('projects:update') && handleDeleteBomItem(item.id, item.name)}
                               disabled={!hasPermission('projects:update')}
-                              className={`p-1 rounded transition-colors flex-shrink-0 ${
+                              className={`p-1 rounded transition-colors shrink-0 ${
                                 hasPermission('projects:update')
                                   ? 'hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-red-400'
                                   : 'text-bambu-gray/50 cursor-not-allowed'
@@ -1127,7 +1223,7 @@ export function ProjectDetailPage() {
                             className="flex items-center gap-1 mt-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                            <ExternalLink className="w-3 h-3 shrink-0" />
                             <span className="truncate">
                               {(() => {
                                 try {
@@ -1186,7 +1282,7 @@ export function ProjectDetailPage() {
             <div className="space-y-3">
               {timeline.slice(0, 10).map((event, index) => (
                 <div key={index} className="flex gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                     event.event_type === 'print_completed' ? 'bg-status-ok/20 text-status-ok' :
                     event.event_type === 'print_failed' ? 'bg-status-error/20 text-status-error' :
                     event.event_type === 'print_started' ? 'bg-yellow-500/20 text-yellow-400' :
@@ -1315,6 +1411,34 @@ export function ProjectDetailPage() {
           variant="danger"
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        />
+      )}
+
+      {/* Print directly from project — reprint mode */}
+      {printFile && (
+        <PrintModal
+          mode="reprint"
+          libraryFileId={printFile.id}
+          archiveName={printFile.print_name || printFile.filename}
+          onClose={() => setPrintFile(null)}
+          onSuccess={() => {
+            setPrintFile(null);
+            queryClient.invalidateQueries({ queryKey: ['archives'] });
+          }}
+        />
+      )}
+
+      {/* Add to queue from project */}
+      {scheduleFile && (
+        <PrintModal
+          mode="add-to-queue"
+          libraryFileId={scheduleFile.id}
+          archiveName={scheduleFile.print_name || scheduleFile.filename}
+          onClose={() => setScheduleFile(null)}
+          onSuccess={() => {
+            setScheduleFile(null);
+            queryClient.invalidateQueries({ queryKey: ['queue'] });
+          }}
         />
       )}
     </div>

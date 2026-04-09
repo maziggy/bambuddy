@@ -2895,6 +2895,9 @@ export default {
       forQuickAccess: 'してクイックアクセスできるようにします。',
       fileCount: '{{count}}ファイル',
       empty: '<空>',
+      noFiles: 'このフォルダにファイルはありません。',
+      print: '今すぐ印刷',
+      addToQueue: 'キューに追加',
     },
     bom: {
       title: '部品表',

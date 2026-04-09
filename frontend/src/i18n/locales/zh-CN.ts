@@ -2882,6 +2882,9 @@ export default {
       forQuickAccess: '到此项目以便快速访问。',
       fileCount: '{{count}} 个文件',
       empty: '未链接文件夹。前往文件管理器将文件夹链接到此项目。',
+      noFiles: '此文件夹中没有文件。',
+      print: '立即打印',
+      addToQueue: '加入队列',
     },
     bom: {
       title: '材料清单',

@@ -2898,6 +2898,9 @@ export default {
       forQuickAccess: 'to this project for quick access.',
       fileCount: '{{count}} file(s)',
       empty: 'No folders linked. Go to File Manager and link a folder to this project.',
+      noFiles: 'No files in this folder.',
+      print: 'Print Now',
+      addToQueue: 'Add to Queue',
     },
     bom: {
       title: 'Bill of Materials',

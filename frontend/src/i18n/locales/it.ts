@@ -2882,6 +2882,9 @@ export default {
       forQuickAccess: 'a questo progetto per accesso rapido.',
       fileCount: '{{count}} file',
       empty: 'Nessuna cartella collegata. Vai a Gestore file e collega una cartella a questo progetto.',
+      noFiles: 'Nessun file in questa cartella.',
+      print: 'Stampa ora',
+      addToQueue: 'Aggiungi alla coda',
     },
     bom: {
       title: 'Distinta materiali',

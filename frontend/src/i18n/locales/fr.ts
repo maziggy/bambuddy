@@ -2883,6 +2883,9 @@ export default {
       forQuickAccess: 'pour un accès rapide.',
       fileCount: '{{count}} fichier(s)',
       empty: 'Aucun dossier lié.',
+      noFiles: 'Aucun fichier dans ce dossier.',
+      print: 'Imprimer maintenant',
+      addToQueue: 'Ajouter à la file',
     },
     bom: {
       title: 'BOM (Liste matériel)',

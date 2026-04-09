@@ -90,6 +90,12 @@ class AppSettings(BaseModel):
         description="JSON: per-model G-code injection snippets {model: {start_gcode, end_gcode}}",
     )
 
+    # Farm post-process script
+    post_process_script: str = Field(
+        default="",
+        description="Path to executable on the server. Receives 3MF path as sole argument, modifies in-place, exits 0 on success.",
+    )
+
     # Print modal settings
     per_printer_mapping_expanded: bool = Field(
         default=False, description="Expand custom filament mapping by default in print modal"
@@ -330,6 +336,7 @@ class AppSettingsUpdate(BaseModel):
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
     gcode_snippets: str | None = None
+    post_process_script: str | None = None
     ldap_enabled: bool | None = None
     ldap_server_url: str | None = None
     ldap_bind_dn: str | None = None

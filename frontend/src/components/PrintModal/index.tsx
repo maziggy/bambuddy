@@ -125,6 +125,7 @@ export function PrintModal({
         requirePreviousSuccess: queueItem.require_previous_success,
         autoOffAfter: queueItem.auto_off_after,
         gcodeInjection: queueItem.gcode_injection ?? false,
+        scriptProcessing: queueItem.script_processing ?? false,
         staggerEnabled: false,
         staggerGroupSize: DEFAULT_SCHEDULE_OPTIONS.staggerGroupSize,
         staggerIntervalMinutes: DEFAULT_SCHEDULE_OPTIONS.staggerIntervalMinutes,
@@ -647,6 +648,7 @@ export function PrintModal({
       require_previous_success: scheduleOptions.requirePreviousSuccess,
       auto_off_after: scheduleOptions.autoOffAfter,
       gcode_injection: scheduleOptions.gcodeInjection,
+      script_processing: scheduleOptions.scriptProcessing,
       manual_start: scheduleOptions.scheduleType === 'manual',
       ams_mapping: printerId ? getMappingForPrinter(printerId) : undefined,
       plate_id: plateOverride !== undefined ? plateOverride : selectedPlate,
@@ -681,6 +683,7 @@ export function PrintModal({
               require_previous_success: scheduleOptions.requirePreviousSuccess,
               auto_off_after: scheduleOptions.autoOffAfter,
               gcode_injection: scheduleOptions.gcodeInjection,
+      script_processing: scheduleOptions.scriptProcessing,
               manual_start: scheduleOptions.scheduleType === 'manual',
               ams_mapping: undefined,
               plate_id: plateId,
@@ -759,6 +762,7 @@ export function PrintModal({
                 require_previous_success: scheduleOptions.requirePreviousSuccess,
                 auto_off_after: scheduleOptions.autoOffAfter,
                 gcode_injection: scheduleOptions.gcodeInjection,
+      script_processing: scheduleOptions.scriptProcessing,
                 manual_start: scheduleOptions.scheduleType === 'manual',
                 ams_mapping: printerMapping,
                 plate_id: plateId,
@@ -1135,6 +1139,7 @@ export function PrintModal({
                 showStagger={mode === 'add-to-queue' && assignmentMode === 'printer' && selectedPrinters.length > 1}
                 printerCount={selectedPrinters.length}
                 hasGcodeSnippets={!!settings?.gcode_snippets}
+                hasPostProcessScript={!!settings?.post_process_script}
               />
             )}
 

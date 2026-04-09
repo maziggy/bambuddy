@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Calendar, Clock, Hand, Power, Layers, Code } from 'lucide-react';
+import { Calendar, Clock, Hand, Power, Layers, Code, Terminal } from 'lucide-react';
 import type { ScheduleOptionsProps, ScheduleType } from './types';
 import {
   formatDateInput,
@@ -28,6 +28,7 @@ export function ScheduleOptionsPanel({
   showStagger = false,
   printerCount = 0,
   hasGcodeSnippets = false,
+  hasPostProcessScript = false,
 }: ScheduleOptionsProps) {
   const { t } = useTranslation();
   const [dateValue, setDateValue] = useState('');
@@ -265,6 +266,23 @@ export function ScheduleOptionsPanel({
           <label htmlFor="gcodeInjection" className="text-sm flex items-center gap-1 text-bambu-gray">
             <Code className="w-3.5 h-3.5" />
             {t('printModal.gcodeInjection', 'Inject auto-print G-code')}
+          </label>
+        </div>
+      )}
+
+      {/* Farm post-process script */}
+      {hasPostProcessScript && (
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="scriptProcessing"
+            checked={options.scriptProcessing}
+            onChange={(e) => onChange({ ...options, scriptProcessing: e.target.checked })}
+            className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+          />
+          <label htmlFor="scriptProcessing" className="text-sm flex items-center gap-1 text-bambu-gray">
+            <Terminal className="w-3.5 h-3.5" />
+            {t('printModal.scriptProcessing', 'Run farm post-processor')}
           </label>
         </div>
       )}

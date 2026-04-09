@@ -42,6 +42,8 @@ class PrintQueueItemCreate(BaseModel):
     use_ams: bool = True
     # Auto-print G-code injection
     gcode_injection: bool = False
+    # Farm post-process script
+    script_processing: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
     quantity: int = 1
 
@@ -67,6 +69,8 @@ class PrintQueueItemUpdate(BaseModel):
     use_ams: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
+    # Farm post-process script
+    script_processing: bool | None = None
 
 
 class PrintQueueItemResponse(BaseModel):
@@ -126,6 +130,8 @@ class PrintQueueItemResponse(BaseModel):
 
     # Auto-print G-code injection
     gcode_injection: bool = False
+    # Farm post-process script
+    script_processing: bool = False
 
     class Config:
         from_attributes = True
@@ -159,6 +165,8 @@ class PrintQueueBulkUpdate(BaseModel):
     use_ams: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
+    # Farm post-process script
+    script_processing: bool | None = None
 
 
 class PrintQueueBulkUpdateResponse(BaseModel):

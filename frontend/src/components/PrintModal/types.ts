@@ -70,6 +70,7 @@ export interface ScheduleOptions {
   requirePreviousSuccess: boolean;
   autoOffAfter: boolean;
   gcodeInjection: boolean;
+  scriptProcessing: boolean;
   staggerEnabled: boolean;
   staggerGroupSize: number;
   staggerIntervalMinutes: number;
@@ -84,6 +85,7 @@ export const DEFAULT_SCHEDULE_OPTIONS: ScheduleOptions = {
   requirePreviousSuccess: false,
   autoOffAfter: false,
   gcodeInjection: false,
+  scriptProcessing: false,
   staggerEnabled: false,
   staggerGroupSize: 2,
   staggerIntervalMinutes: 5,
@@ -218,4 +220,6 @@ export interface ScheduleOptionsProps {
   printerCount?: number;
   /** Whether G-code snippets are configured in settings */
   hasGcodeSnippets?: boolean;
+  /** Whether a farm post-process script is configured in settings */
+  hasPostProcessScript?: boolean;
 }

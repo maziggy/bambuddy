@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -3566,6 +3566,34 @@ export function SettingsPage() {
                   );
                 });
               })()}
+            </CardContent>
+          </Card>
+
+          {/* Farm Post-Process Script */}
+          <Card>
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-bambu-green" />
+                {t('settings.postProcessScript', 'Farm Post-Processor Script')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.postProcessScriptDescription', 'Path to an executable script on the server. When "Run farm post-processor" is enabled on a queue item, the script receives the 3MF file path as its only argument, modifies it in-place, and exits 0 on success. The original file is never modified.')}
+              </p>
+              <div>
+                <label className="block text-xs text-bambu-gray mb-1">
+                  {t('settings.postProcessScriptPath', 'Script path')}
+                </label>
+                <input
+                  type="text"
+                  value={localSettings?.post_process_script ?? ''}
+                  onChange={(e) => setLocalSettings(prev => prev ? { ...prev, post_process_script: e.target.value } : null)}
+                  onBlur={() => localSettings && updateMutation.mutate({ post_process_script: localSettings.post_process_script ?? '' })}
+                  placeholder="/home/airtho/scripts/farm_process.py"
+                  className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-bambu-text placeholder-bambu-gray-dark focus:outline-none focus:border-bambu-green"
+                />
+              </div>
             </CardContent>
           </Card>
 

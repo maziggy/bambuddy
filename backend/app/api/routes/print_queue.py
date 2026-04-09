@@ -218,6 +218,8 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "been_jumped": item.been_jumped,
         # Auto-print G-code injection
         "gcode_injection": item.gcode_injection,
+        # Farm post-process script
+        "script_processing": item.script_processing,
     }
     response = PrintQueueItemResponse(**item_dict)
     if item.archive:
@@ -508,6 +510,7 @@ async def add_to_queue(
             timelapse=data.timelapse,
             use_ams=data.use_ams,
             gcode_injection=data.gcode_injection,
+            script_processing=data.script_processing,
             position=max_pos + 1 + i,
             status="pending",
             created_by_id=current_user.id if current_user else None,

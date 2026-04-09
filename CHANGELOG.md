@@ -6,6 +6,7 @@ All notable changes to Bambuddy will be documented in this file.
 
 ### Fixed
 - **"Build Plate Cleared" Button Unclickable After Second Print** ([#912](https://github.com/maziggy/bambuddy/issues/912)) — After completing the first queued print and confirming the plate was cleared, the "Build plate cleared — ready for next print" button became unresponsive after the second print finished. The React Query mutation's `isSuccess` state persisted from the first plate-clear confirmation, causing the component to render the static "Plate Ready" confirmation instead of the clickable button. The mutation state is now reset when the printer leaves the FINISH/FAILED state, so the button works correctly on every print cycle.
+- **Spoolman Location Not Cleared When Spool Removed from AMS** ([#921](https://github.com/maziggy/bambuddy/issues/921)) — When Spoolman auto-sync was enabled and a spool was removed from an AMS slot, its location in Spoolman was never cleared, causing "double-booked" slots where multiple spools shared the same location. The auto-sync callback set locations for newly inserted spools but skipped the cleanup step that clears stale locations. The location clearing logic now runs after every auto-sync cycle. Also fixed the single-printer manual sync endpoint which didn't track synced spool IDs, risking incorrect location clearing for location-matched (non-RFID) spools.
 
 ## [0.2.3b2] - 2026-04-08
 

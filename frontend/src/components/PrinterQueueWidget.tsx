@@ -48,7 +48,7 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
     if (printerState !== 'FINISH' && printerState !== 'FAILED') {
       clearPlateMutation.reset();
     }
-  }, [printerState]);
+  }, [printerState, clearPlateMutation]);
 
   // Filter queue to items this printer can actually print (filament type + color check)
   const compatibleQueue = queue ? filterCompatibleQueueItems(queue, loadedFilamentTypes, loadedFilaments) : undefined;

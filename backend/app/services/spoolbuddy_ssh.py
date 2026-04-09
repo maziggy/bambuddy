@@ -11,6 +11,9 @@ import os
 import shutil
 from pathlib import Path
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
+
 from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -28,7 +31,14 @@ def _get_ssh_key_dir() -> Path:
 
 
 async def get_or_create_keypair() -> tuple[Path, Path]:
-    """Return (private_key_path, public_key_path), generating if missing."""
+    """Return (private_key_path, public_key_path), generating if missing.
+
+    Uses the in-process `cryptography` library instead of shelling out to
+    `ssh-keygen`. The subprocess approach fails inside Docker containers when
+    the image runs under an arbitrary UID (e.g. PUID=1001) that is not listed
+    in /etc/passwd — `ssh-keygen` calls `getpwuid()` for the current user's
+    home directory and aborts with "no user exists for uid <N>".
+    """
     key_dir = _get_ssh_key_dir()
     private_key = key_dir / "id_ed25519"
     public_key = key_dir / "id_ed25519.pub"
@@ -37,24 +47,26 @@ async def get_or_create_keypair() -> tuple[Path, Path]:
         return private_key, public_key
 
     logger.info("Generating SSH keypair for SpoolBuddy updates")
-    proc = await asyncio.create_subprocess_exec(
-        "ssh-keygen",
-        "-t",
-        "ed25519",
-        "-f",
-        str(private_key),
-        "-N",
-        "",  # no passphrase
-        "-C",
-        "bambuddy-spoolbuddy",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        raise RuntimeError(f"ssh-keygen failed: {stderr.decode()[:200]}")
+    priv_obj = ed25519.Ed25519PrivateKey.generate()
+    pub_obj = priv_obj.public_key()
 
+    private_bytes = priv_obj.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.OpenSSH,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_bytes = pub_obj.public_bytes(
+        encoding=serialization.Encoding.OpenSSH,
+        format=serialization.PublicFormat.OpenSSH,
+    )
+    # OpenSSH public format has no comment field by default; append one to match
+    # the previous ssh-keygen output so the authorized_keys line is identifiable.
+    public_line = public_bytes + b" bambuddy-spoolbuddy\n"
+
+    private_key.write_bytes(private_bytes)
     private_key.chmod(0o600)
+    public_key.write_bytes(public_line)
+
     logger.info("SSH keypair generated at %s", key_dir)
     return private_key, public_key
 

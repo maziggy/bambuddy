@@ -697,7 +697,7 @@ export function CameraPage() {
                 <WifiOff className="w-10 h-10 text-orange-400 mx-auto mb-3" />
                 <p className="text-white mb-2">{t('camera.connectionLost')}</p>
                 <p className="text-sm text-bambu-gray mb-3">
-                  {t('camera.reconnecting', { countdown: reconnectCountdown, attempt: reconnectAttempts + 1, max: MAX_RECONNECT_ATTEMPTS })}
+                  {t('camera.reconnecting', { countdown: reconnectCountdown, attempt: Math.min(reconnectAttempts + 1, MAX_RECONNECT_ATTEMPTS), max: MAX_RECONNECT_ATTEMPTS })}
                 </p>
                 <button
                   onClick={refresh}

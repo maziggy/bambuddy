@@ -581,6 +581,7 @@ async def _collect_support_info() -> dict:
             "url",
             "path",  # Filesystem paths may contain usernames
             "config",  # URLs may contain IPs, configs may have embedded secrets
+            "_ip",  # IP address fields (e.g. virtual_printer_remote_interface_ip)
         }
         for s in all_settings:
             # Skip sensitive settings

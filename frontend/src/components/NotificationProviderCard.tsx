@@ -67,9 +67,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
   return (
     <>
       <Card className="relative">
-        <CardContent className="p-4">
+        <CardContent className="p-3">
           {/* Header Row */}
-          <div className="flex items-start justify-between mb-3">
+          <div className={`flex items-start justify-between ${provider.enabled ? 'mb-3' : 'mb-0'}`}>
             <div className="flex items-center gap-3">
               <div className={`p-2 rounded-lg ${provider.enabled ? 'bg-bambu-green/20' : 'bg-bambu-dark'}`}>
                 <Bell className={`w-5 h-5 ${provider.enabled ? 'text-bambu-green' : 'text-bambu-gray'}`} />
@@ -98,6 +98,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             </div>
           </div>
 
+          {provider.enabled && (<>
           {/* Linked Printer */}
           {linkedPrinter && (
             <div className="mb-3 px-2 py-1.5 bg-bambu-dark rounded-lg">
@@ -215,10 +216,11 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             </div>
           )}
 
+          </>)}
           {/* Toggle Settings Panel */}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="w-full flex items-center justify-between py-2 text-sm text-bambu-gray hover:text-white transition-colors border-t border-bambu-dark-tertiary"
+            className={`w-full flex items-center justify-between py-2 text-sm text-bambu-gray hover:text-white transition-colors ${provider.enabled ? 'border-t border-bambu-dark-tertiary' : 'mt-2 border-t border-bambu-dark-tertiary'}`}
           >
             <span className="flex items-center gap-2">
               <Settings2 className="w-4 h-4" />

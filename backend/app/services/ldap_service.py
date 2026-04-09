@@ -41,6 +41,7 @@ class LDAPConfig:
     group_mapping: dict[str, str]  # LDAP group DN -> BamBuddy group name
     auto_provision: bool
     ca_cert_path: str  # Path to CA certificate file (empty = skip verification)
+    default_group: str  # Fallback BamBuddy group assigned when user has no mapped groups (empty = no fallback)
 
 
 def parse_ldap_config(settings: dict[str, str]) -> LDAPConfig | None:
@@ -68,6 +69,7 @@ def parse_ldap_config(settings: dict[str, str]) -> LDAPConfig | None:
         group_mapping=group_mapping if isinstance(group_mapping, dict) else {},
         auto_provision=settings.get("ldap_auto_provision", "false").lower() == "true",
         ca_cert_path=settings.get("ldap_ca_cert_path", "").strip(),
+        default_group=settings.get("ldap_default_group", "").strip(),
     )
 
 
@@ -168,7 +170,7 @@ def authenticate_ldap_user(config: LDAPConfig, username: str, password: str) -> 
             [str(g) for g in user_entry.memberOf] if hasattr(user_entry, "memberOf") and user_entry.memberOf else []
         )
 
-        # Also search for Posix groups (memberUid-based) using the service account
+        # Also search for POSIX groups (memberUid-based) using the service account
         canonical_username = username
         if hasattr(user_entry, "sAMAccountName") and user_entry.sAMAccountName:
             canonical_username = str(user_entry.sAMAccountName)
@@ -184,6 +186,32 @@ def authenticate_ldap_user(config: LDAPConfig, username: str, password: str) -> 
         )
         for entry in service_conn.entries:
             groups.append(str(entry.entry_dn))
+
+        # POSIX primary group: user's gidNumber matches a posixGroup's gidNumber.
+        # Standard Unix semantics treat this as full group membership, so we need
+        # to resolve it to a group DN alongside the memberUid results.
+        if hasattr(user_entry, "gidNumber") and user_entry.gidNumber:
+            primary_gid = str(user_entry.gidNumber)
+            primary_filter = f"(&(objectClass=posixGroup)(gidNumber={_ldap_escape(primary_gid)}))"
+            service_conn.search(
+                search_base=config.search_base,
+                search_filter=primary_filter,
+                search_scope=SUBTREE,
+                attributes=["cn"],
+            )
+            for entry in service_conn.entries:
+                groups.append(str(entry.entry_dn))
+
+        # Dedupe group DNs (user may be in a group via both memberUid and primary gidNumber).
+        # Case-insensitive comparison — LDAP DNs are case-insensitive by spec.
+        seen_lower: set[str] = set()
+        deduped_groups: list[str] = []
+        for g in groups:
+            key = g.lower()
+            if key not in seen_lower:
+                seen_lower.add(key)
+                deduped_groups.append(g)
+        groups = deduped_groups
 
         logger.info(
             "LDAP authentication successful for user: %s (DN: %s, groups: %d)", canonical_username, user_dn, len(groups)

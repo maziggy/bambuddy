@@ -751,6 +751,7 @@ async def _get_ldap_settings(db: AsyncSession) -> dict[str, str] | None:
         "ldap_group_mapping",
         "ldap_auto_provision",
         "ldap_ca_cert_path",
+        "ldap_default_group",
     ]
     result = await db.execute(select(Settings).where(Settings.key.in_(ldap_keys)))
     settings = {s.key: s.value for s in result.scalars().all()}
@@ -776,8 +777,16 @@ async def _provision_ldap_user(db: AsyncSession, ldap_user, ldap_config) -> User
         is_active=True,
     )
 
-    # Map LDAP groups to BamBuddy groups
+    # Map LDAP groups to BamBuddy groups, falling back to the configured default group
+    # when the user is authenticated but has no matching group mapping (#921-follow-up).
     mapped_group_names = resolve_group_mapping(ldap_user.groups, ldap_config.group_mapping)
+    if not mapped_group_names and ldap_config.default_group:
+        mapped_group_names = [ldap_config.default_group]
+        logger.warning(
+            "LDAP user %s has no mapped groups — assigning configured default group '%s'",
+            ldap_user.username,
+            ldap_config.default_group,
+        )
     if mapped_group_names:
         groups_result = await db.execute(select(Group).where(Group.name.in_(mapped_group_names)))
         new_user.groups = list(groups_result.scalars().all())
@@ -804,8 +813,17 @@ async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) 
         user.email = ldap_user.email
         changed = True
 
-    # Sync group mappings — always update to match LDAP state (including revocation)
+    # Sync group mappings — always update to match LDAP state (including revocation).
+    # Fall back to the configured default group when the user has no mapped groups,
+    # so authenticated LDAP users are never left permission-less.
     mapped_group_names = resolve_group_mapping(ldap_user.groups, ldap_config.group_mapping)
+    if not mapped_group_names and ldap_config.default_group:
+        mapped_group_names = [ldap_config.default_group]
+        logger.warning(
+            "LDAP user %s has no mapped groups — assigning configured default group '%s'",
+            user.username,
+            ldap_config.default_group,
+        )
     if mapped_group_names:
         groups_result = await db.execute(select(Group).where(Group.name.in_(mapped_group_names)))
         new_groups = list(groups_result.scalars().all())

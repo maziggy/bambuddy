@@ -53,45 +53,45 @@ async def test_get_or_create_keypair_returns_existing(tmp_path):
 
 @pytest.mark.asyncio
 async def test_get_or_create_keypair_generates_new(tmp_path):
+    """Key generation runs in-process via `cryptography` — no ssh-keygen subprocess.
+
+    This matters in Docker: when the container runs under an arbitrary PUID
+    that isn't in /etc/passwd, `ssh-keygen` aborts with "no user exists for uid
+    <N>". Generating the keypair in-process avoids the getpwuid() lookup.
+    """
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
     with patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings:
         mock_settings.base_dir = tmp_path
 
-        ssh_dir = tmp_path / "spoolbuddy" / "ssh"
+        priv, pub = await get_or_create_keypair()
 
-        async def fake_keygen(*args, **kwargs):
-            # Simulate ssh-keygen creating the files
-            ssh_dir.mkdir(parents=True, exist_ok=True)
-            (ssh_dir / "id_ed25519").write_text("PRIVATE")
-            (ssh_dir / "id_ed25519.pub").write_text("PUBLIC")
-            mock_proc = AsyncMock()
-            mock_proc.communicate = AsyncMock(return_value=(b"", b""))
-            mock_proc.returncode = 0
-            return mock_proc
+        assert priv.exists()
+        assert pub.exists()
+        # Private key permissions — no world/group access
+        assert (priv.stat().st_mode & 0o077) == 0
 
-        with patch("asyncio.create_subprocess_exec", side_effect=fake_keygen) as mock_exec:
-            priv, pub = await get_or_create_keypair()
+        # Public key is a valid OpenSSH ed25519 key with our comment
+        pub_text = pub.read_text()
+        assert pub_text.startswith("ssh-ed25519 ")
+        assert pub_text.rstrip().endswith("bambuddy-spoolbuddy")
 
-            mock_exec.assert_called_once()
-            args = mock_exec.call_args[0]
-            assert "ssh-keygen" in args
-            assert "-t" in args
-            assert "ed25519" in args
+        # Private key is a valid OpenSSH-format ed25519 key we can load back
+        loaded = serialization.load_ssh_private_key(priv.read_bytes(), password=None)
+        assert isinstance(loaded, ed25519.Ed25519PrivateKey)
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_keypair_raises_on_failure(tmp_path):
-    with patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings:
+async def test_get_or_create_keypair_does_not_shell_out(tmp_path):
+    """Regression guard: must not invoke any subprocess (fixes Docker PUID bug)."""
+    with (
+        patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings,
+        patch("asyncio.create_subprocess_exec") as mock_exec,
+    ):
         mock_settings.base_dir = tmp_path
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"", b"keygen error"))
-        mock_proc.returncode = 1
-
-        with (
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-            pytest.raises(RuntimeError, match="ssh-keygen failed"),
-        ):
-            await get_or_create_keypair()
+        await get_or_create_keypair()
+        mock_exec.assert_not_called()
 
 
 # -- get_public_key ------------------------------------------------------------

@@ -1,0 +1,200 @@
+2026-04-08 16:56:12,960 INFO [backend.app.main] Camera stream cleanup started
+2026-04-08 16:56:12,960 INFO [backend.app.main] Expected prints cleanup started
+2026-04-08 16:56:13,039 INFO [root] Virtual printer manager synced from database
+2026-04-08 16:56:16,363 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 16:56:16,363 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 16:56:16,366 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 16:59:58,334 INFO [backend.app.services.camera] Found ffmpeg at: /usr/bin/ffmpeg
+2026-04-08 18:35:26,562 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 18:35:26,563 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 18:35:26,567 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 18:36:35,835 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 18:55:24,890 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 18:55:24,891 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 18:55:24,894 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 18:55:57,710 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy device re-registered: sb-e45f01722ca2 (spoolbuddy)
+2026-04-08 18:55:57,724 INFO [backend.app.services.spoolbuddy_ssh] Generating SSH keypair for SpoolBuddy updates
+2026-04-08 18:56:11,535 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 18:56:11,536 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 18:56:11,539 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 18:56:33,546 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 18:56:33,641 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 18:56:33,642 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 18:56:33,646 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 18:59:50,062 INFO [backend.app.services.spoolbuddy_ssh] Generating SSH keypair for SpoolBuddy updates
+2026-04-08 18:59:51,124 INFO [backend.app.services.spoolbuddy_ssh] Generating SSH keypair for SpoolBuddy updates
+2026-04-08 19:02:30,925 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 19:03:01,221 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy device offline: sb-e45f01722ca2
+2026-04-08 19:03:22,768 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy device re-registered: sb-e45f01722ca2 (spoolbuddy)
+2026-04-08 19:03:37,612 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 19:03:37,613 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 19:03:37,614 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 19:04:04,464 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy sb-e45f01722ca2: SSH update triggered (ip=[IP])
+2026-04-08 19:07:17,076 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 19:07:17,087 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 19:07:17,088 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 19:07:17,090 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 19:07:57,167 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy sb-e45f01722ca2: SSH update triggered (ip=[IP])
+2026-04-08 19:08:50,600 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 19:08:50,692 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 19:08:50,693 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 19:08:50,695 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 19:15:40,797 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy sb-e45f01722ca2: SSH update triggered (ip=[IP])
+2026-04-08 19:20:08,360 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 19:20:08,563 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 19:20:08,565 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 19:20:08,569 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 19:20:21,482 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy sb-e45f01722ca2: SSH update triggered (ip=[IP])
+2026-04-08 19:23:27,795 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 19:23:28,027 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 19:23:28,027 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 19:23:28,031 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 19:31:25,215 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 19:31:25,287 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 19:31:25,288 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 19:31:25,293 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 19:40:26,759 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy device re-registered: sb-e45f01722ca2 (spoolbuddy)
+2026-04-08 19:40:32,414 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 19:40:41,881 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 19:40:41,882 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 19:40:41,885 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 19:43:59,783 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 19:44:32,332 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy device offline: sb-e45f01722ca2
+2026-04-08 19:46:24,254 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 19:46:24,258 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 21:13:06,200 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 21:13:06,201 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 21:13:06,210 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 21:14:25,577 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-08 21:15:40,376 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-08 21:15:40,377 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-08 21:15:40,381 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-08 21:15:45,124 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 07:01:04,890 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 07:01:04,892 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 07:01:04,896 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 07:01:05,177 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 07:01:05,178 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 07:01:05,183 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 07:01:08,208 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 07:01:08,209 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 07:01:08,218 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 07:01:09,410 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:27:37,832 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:47:35,261 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:47:39,266 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 08:47:39,266 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 08:47:39,268 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 08:48:25,899 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:48:29,746 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 08:48:29,748 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 08:48:29,752 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 08:49:39,756 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:50:26,329 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 08:50:26,330 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 08:50:26,332 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 08:51:36,337 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:52:04,950 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 08:52:04,951 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 08:52:04,953 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 08:53:14,960 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:53:33,546 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 08:53:33,550 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 08:53:33,552 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 08:54:43,559 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:55:11,069 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 08:55:11,071 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 08:55:11,074 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 08:56:21,081 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:56:39,488 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 08:56:39,489 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 08:56:39,491 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 08:57:49,500 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:58:11,151 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 08:58:11,153 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 08:58:11,157 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 08:59:21,164 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 08:59:41,769 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 08:59:41,769 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 08:59:41,771 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 09:00:51,777 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 09:01:19,379 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 09:01:19,380 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 09:01:19,382 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 09:02:29,389 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 09:02:48,057 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 09:02:48,059 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 09:02:48,062 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 09:03:58,067 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 09:04:19,710 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 09:04:19,711 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 09:04:19,712 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 09:34:46,828 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 09:34:50,698 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 09:34:50,699 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 09:34:50,701 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 09:52:42,340 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:14:53,877 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:14:53,878 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:14:53,884 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:16:10,607 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:16:10,608 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:16:10,612 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:16:43,723 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:16:43,816 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:16:43,818 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:16:43,824 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:16:44,964 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:16:45,050 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:16:45,051 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:16:45,053 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:16:46,079 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:16:46,170 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:16:46,171 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:16:46,174 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:16:46,708 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:16:46,782 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:16:46,783 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:16:46,785 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:16:55,782 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:16:55,879 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:16:55,881 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:16:55,889 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:16:56,568 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:16:56,661 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:16:56,662 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:16:56,664 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:16:57,294 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:16:57,386 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:16:57,387 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:16:57,389 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:16:57,961 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:16:58,053 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:16:58,054 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:16:58,056 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:17:16,878 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy device re-registered: sb-e45f01722ca2 (spoolbuddy)
+2026-04-09 10:17:27,619 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:17:27,712 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:17:27,713 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:17:27,715 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:17:31,436 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:17:31,437 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:17:31,440 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:17:42,039 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:17:42,129 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:17:42,130 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:17:42,132 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:17:43,282 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:17:43,379 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-09 10:17:43,380 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-09 10:17:43,383 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-09 10:17:45,257 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-09 10:18:09,204 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-09 10:18:09,205 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-09 10:18:09,205 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-09 10:18:11,445 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-09 10:18:11,890 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-09 10:18:11,890 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-09 10:18:21,493 INFO [backend.app.api.routes.spoolbuddy] SpoolBuddy sb-e45f01722ca2: SSH update triggered (ip=[IP])
+2026-04-09 10:18:21,952 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-09 10:18:21,952 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255

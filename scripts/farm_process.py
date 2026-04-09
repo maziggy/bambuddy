@@ -1,3 +1,4 @@
+#!/opt/bambuddy/venv/bin/python3
 """
 farm_loop.py  --  Bambu P1S farm loop GCODE post-processor
 ===========================================================

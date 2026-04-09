@@ -174,7 +174,7 @@ export default {
     offlinePrintersWithPlugs: 'Imprimantes hors ligne avec prises connectées',
     noPrintersConfigured: 'Aucune imprimante configurée pour le moment',
     search: 'Rechercher des imprimantes...',
-    noSearchResults: 'Aucune imprimante ne correspond à "{{search}}"',
+    noSearchResults: 'Aucune imprimante ne correspond à votre recherche ou à vos filtres',
     filter: {
       allStatuses: 'Tous les statuts',
       allLocations: 'Tous les emplacements',

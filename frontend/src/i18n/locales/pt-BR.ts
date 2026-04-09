@@ -174,7 +174,7 @@ export default {
     offlinePrintersWithPlugs: 'Impressoras offline com tomadas inteligentes',
     noPrintersConfigured: 'Nenhuma impressora configurada ainda',
     search: 'Pesquisar impressoras...',
-    noSearchResults: 'Nenhuma impressora corresponde a "{{search}}"',
+    noSearchResults: 'Nenhuma impressora corresponde à sua pesquisa ou filtros',
     filter: {
       allStatuses: 'Todos os status',
       allLocations: 'Todos os locais',

@@ -174,7 +174,7 @@ export default {
     offlinePrintersWithPlugs: 'Stampanti offline con smart plug',
     noPrintersConfigured: 'Nessuna stampante configurata',
     search: 'Cerca stampanti...',
-    noSearchResults: 'Nessuna stampante corrisponde a "{{search}}"',
+    noSearchResults: 'Nessuna stampante corrisponde alla tua ricerca o ai tuoi filtri',
     filter: {
       allStatuses: 'Tutti gli stati',
       allLocations: 'Tutti i luoghi',

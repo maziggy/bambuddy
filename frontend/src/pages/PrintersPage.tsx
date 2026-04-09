@@ -6224,6 +6224,7 @@ export function PrintersPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('printers.search')}
+                aria-label={t('printers.search')}
                 className="w-full pl-10 pr-8 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
               />
               {search && (
@@ -6422,10 +6423,10 @@ export function PrintersPage() {
             </Button>
           </CardContent>
         </Card>
-      ) : sortedPrinters.length === 0 && search.trim() ? (
+      ) : sortedPrinters.length === 0 && (search.trim() || statusFilter !== 'all' || locationFilter !== 'all') ? (
         <Card>
           <CardContent className="text-center py-12">
-            <p className="text-bambu-gray">{t('printers.noSearchResults', { search })}</p>
+            <p className="text-bambu-gray">{t('printers.noSearchResults')}</p>
           </CardContent>
         </Card>
       ) : groupedPrinters ? (

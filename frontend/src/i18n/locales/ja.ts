@@ -173,7 +173,7 @@ export default {
     offlinePrintersWithPlugs: 'スマートプラグ付きオフラインプリンター',
     noPrintersConfigured: 'プリンターが設定されていません',
     search: 'プリンターを検索...',
-    noSearchResults: '"{{search}}" に一致するプリンターがありません',
+    noSearchResults: '検索またはフィルターに一致するプリンターがありません',
     filter: {
       allStatuses: 'すべてのステータス',
       allLocations: 'すべての場所',

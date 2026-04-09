@@ -174,7 +174,7 @@ export default {
     offlinePrintersWithPlugs: '带智能插座的离线打印机',
     noPrintersConfigured: '尚未配置打印机',
     search: '搜索打印机...',
-    noSearchResults: '没有找到与 "{{search}}" 匹配的打印机',
+    noSearchResults: '没有打印机符合您的搜索或筛选条件',
     filter: {
       allStatuses: '所有状态',
       allLocations: '所有位置',

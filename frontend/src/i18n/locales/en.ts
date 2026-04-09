@@ -174,7 +174,7 @@ export default {
     offlinePrintersWithPlugs: 'Offline printers with smart plugs',
     noPrintersConfigured: 'No printers configured yet',
     search: 'Search printers...',
-    noSearchResults: 'No printers match "{{search}}"',
+    noSearchResults: 'No printers match your search or filters',
     filter: {
       allStatuses: 'All statuses',
       allLocations: 'All locations',

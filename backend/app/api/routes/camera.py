@@ -201,13 +201,46 @@ async def _terminate_ffmpeg(process: asyncio.subprocess.Process, stream_id: str 
     _spawned_ffmpeg_pids.pop(process.pid, None)
 
 
+def _summarize_ffmpeg_stderr(text: str | None) -> str:
+    """Strip ffmpeg's boilerplate banner and keep only actionable lines.
+
+    ffmpeg prints ~20 lines of version/build/configuration/lib headers before
+    any actual error message. Logging the full banner on every retry floods
+    the log (hundreds of lines per failed stream). This filter drops the
+    banner and caps output at the last 10 meaningful lines.
+    """
+    if not text:
+        return ""
+    banner_prefixes = (
+        "ffmpeg version ",
+        "  built with ",
+        "  configuration:",
+        "  libavutil ",
+        "  libavcodec ",
+        "  libavformat ",
+        "  libavdevice ",
+        "  libavfilter ",
+        "  libswscale ",
+        "  libswresample ",
+        "  libpostproc ",
+    )
+    meaningful = [ln for ln in text.splitlines() if ln.strip() and not ln.startswith(banner_prefixes)]
+    return "\n".join(meaningful[-10:])
+
+
 async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None:
-    """Read ffmpeg stderr for diagnostics (best-effort, non-blocking)."""
+    """Read ffmpeg stderr for diagnostics (best-effort, non-blocking).
+
+    Returns the stderr content with ffmpeg's boilerplate banner stripped,
+    so log output stays focused on the actual error.
+    """
     if not process or not process.stderr:
         return None
     try:
         data = await asyncio.wait_for(process.stderr.read(), timeout=2.0)
-        return data.decode(errors="replace") if data else None
+        if not data:
+            return None
+        return _summarize_ffmpeg_stderr(data.decode(errors="replace")) or None
     except (TimeoutError, Exception):
         return None
 
@@ -338,7 +371,7 @@ async def generate_rtsp_mjpeg_stream(
             await asyncio.sleep(0.1)
             if process.returncode is not None:
                 stderr = await process.stderr.read()
-                stderr_text = stderr.decode(errors="replace")
+                stderr_text = _summarize_ffmpeg_stderr(stderr.decode(errors="replace"))
                 logger.error("ffmpeg failed immediately (attempt %d): %s", reconnect_count + 1, stderr_text)
                 _spawned_ffmpeg_pids.pop(process.pid, None)
                 if not got_any_frames and reconnect_count == 0:

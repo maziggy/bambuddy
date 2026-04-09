@@ -14,10 +14,15 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
   onClick?: (e: MouseEvent) => void;
   onContextMenu?: (e: MouseEvent) => void;
+}
+
+interface CardSectionProps {
+  children: ReactNode;
+  className?: string;
   dense?: boolean;
 }
 
-export function Card({ children, className = '', onClick, onContextMenu, dense: _dense, ...rest }: CardProps) {
+export function Card({ children, className = '', onClick, onContextMenu, ...rest }: CardProps) {
   return (
     <div
       className={`bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary card-shadow ${className}`}
@@ -30,7 +35,7 @@ export function Card({ children, className = '', onClick, onContextMenu, dense: 
   );
 }
 
-export function CardHeader({ children, className = '', dense }: CardProps) {
+export function CardHeader({ children, className = '', dense }: CardSectionProps) {
   const ctxDense = useContext(CardDensityContext) === 'dense';
   const isDense = dense ?? ctxDense;
   const padding = isDense ? 'px-4 py-2.5' : 'px-6 py-4';
@@ -41,7 +46,7 @@ export function CardHeader({ children, className = '', dense }: CardProps) {
   );
 }
 
-export function CardContent({ children, className = '', dense }: CardProps) {
+export function CardContent({ children, className = '', dense }: CardSectionProps) {
   const ctxDense = useContext(CardDensityContext) === 'dense';
   const isDense = dense ?? ctxDense;
   const padding = isDense ? 'p-4' : 'p-6';

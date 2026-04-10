@@ -476,7 +476,7 @@ export function ProjectDetailPage() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-bambu-gray">
         <Link to="/projects" className="hover:text-white transition-colors">
-          {t('navigation.projects')}
+          {t('nav.projects')}
         </Link>
         <ChevronRight className="w-4 h-4" />
         <span className="text-white">{project.name}</span>

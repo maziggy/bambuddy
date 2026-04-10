@@ -316,6 +316,12 @@ export default {
       connected: 'Connecté',
       offline: 'Hors ligne',
     },
+    plateStatus: {
+      markCleared: 'Marquer le plateau comme dégagé',
+      cleared: 'Plateau dégagé',
+      notCleared: 'Plateau non dégagé',
+      inUse: 'Plateau en cours d\'utilisation',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} impression en file',
@@ -1687,7 +1693,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Confirmation de plateau libre',
     requirePlateClear: 'Exiger la confirmation de plateau libre',
-    requirePlateClearDescription: 'Lorsque activé, le planificateur attend la confirmation de plateau libre par imprimante avant de lancer les impressions en file d\'attente sur les imprimantes ayant terminé. Désactivez pour les workflows de ferme où les plateaux sont vérifiés physiquement.',
+    requirePlateClearDescription: 'Lorsque cette option est activée, le planificateur attend une confirmation de plateau libre par imprimante avant de lancer les impressions en file d\'attente sur les imprimantes ayant terminé. La désactiver masque également le badge d\'état du plateau et le bouton « Marquer le plateau comme dégagé » sur les cartes d\'imprimante.',
     gcodeInjection: 'Injection de G-code',
     gcodeInjectionDescription: 'Configurez du G-code personnalisé à injecter au début et/ou à la fin des impressions pour les systèmes d\'auto-impression comme Farmloop, SwapMod, AutoClear et Printflow 3D. Les snippets sont configurés par modèle d\'imprimante et appliqués lorsque « Injecter le G-code » est activé sur un élément de file d\'attente.',
     gcodeInjectionNoPrinters: 'Aucune imprimante trouvée. Ajoutez des imprimantes pour configurer les snippets G-code.',

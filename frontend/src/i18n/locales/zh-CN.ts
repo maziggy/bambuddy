@@ -316,6 +316,12 @@ export default {
       connected: '已连接',
       offline: '离线',
     },
+    plateStatus: {
+      markCleared: '将打印板标记为已清理',
+      cleared: '打印板已清理',
+      notCleared: '打印板未清理',
+      inUse: '打印板使用中',
+    },
     // Queue info
     queue: {
       inQueue: '队列中有 {{count}} 个打印任务',
@@ -1739,7 +1745,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: '热床清空确认',
     requirePlateClear: '需要热床清空确认',
-    requirePlateClearDescription: '启用后，调度器会在已完成打印的打印机上启动排队打印之前，等待每台打印机的热床清空确认。对于物理验证热床的农场工作流，请禁用此选项。',
+    requirePlateClearDescription: '启用后，调度器会在已完成打印的打印机上启动排队打印之前，等待每台打印机的热床清空确认。禁用后，也会隐藏打印机卡片上的打印板状态标记和“将打印板标记为已清理”按钮。',
     gcodeInjection: 'G-code注入',
     gcodeInjectionDescription: '为Farmloop、SwapMod、AutoClear和Printflow 3D等自动打印系统配置自定义G-code，在打印开始和/或结束时注入。代码片段按打印机型号配置，在队列项目上启用"注入G-code"时应用。',
     gcodeInjectionNoPrinters: '未找到打印机。添加打印机以配置G-code代码片段。',

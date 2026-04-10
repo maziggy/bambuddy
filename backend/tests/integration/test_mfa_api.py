@@ -1212,3 +1212,448 @@ class TestRateLimitingDisableRegenerate:
             headers=_auth_header(token),
         )
         assert resp.status_code == 429
+
+
+# ===========================================================================
+# Email OTP send → verify end-to-end (coverage gap C3)
+# ===========================================================================
+
+
+class TestEmailOTPSendVerify:
+    """Full email OTP login: send code → verify code → JWT."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_otp_send_and_verify(self, async_client: AsyncClient, db_session: AsyncSession):
+        """login → POST /2fa/email/send (patched SMTP) → POST /2fa/verify → JWT."""
+        import re
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from sqlalchemy import select as sa_select
+
+        token = await _setup_and_login(async_client, "emailsendok", "emailsendok1")
+
+        # Give the user an email address
+        result = await db_session.execute(sa_select(User).where(User.username == "emailsendok"))
+        user = result.scalar_one()
+        user.email = "emailsendok@example.com"
+        await db_session.commit()
+
+        # Enable email OTP via DB injection
+        setup_code = "444444"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="emailsendok",
+                nonce=_pwd_context.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(token),
+        )
+
+        # Login now requires 2FA — get pre_auth_token (cookie set automatically)
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "emailsendok", "emailsendok1")
+
+        # Mock SMTP and capture the sent OTP code
+        captured: dict[str, str] = {}
+        smtp_settings_mock = MagicMock()
+
+        def _capture_email(smtp_settings, to_email, subject, body_text, body_html):
+            m = re.search(r"login code is: (\d{6})", body_text)
+            if m:
+                captured["otp"] = m.group(1)
+
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_settings_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_capture_email),
+        ):
+            send_resp = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+
+        assert send_resp.status_code == 200, send_resp.text
+        fresh_token = send_resp.json()["pre_auth_token"]
+        assert "otp" in captured, "send_email was not called or code not found in body"
+
+        # Verify with the captured OTP code — cookie still in the async_client jar
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": fresh_token, "method": "email", "code": captured["otp"]},
+        )
+        assert verify_resp.status_code == 200
+        data = verify_resp.json()
+        assert "access_token" in data
+        assert data["user"]["username"] == "emailsendok"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_otp_wrong_code_rejected(self, async_client: AsyncClient, db_session: AsyncSession):
+        """A wrong email OTP code must return 401 without burning the pre_auth_token."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from sqlalchemy import select as sa_select
+
+        token = await _setup_and_login(async_client, "emailwrongcode", "emailwrongcode1")
+
+        result = await db_session.execute(sa_select(User).where(User.username == "emailwrongcode"))
+        user = result.scalar_one()
+        user.email = "emailwrongcode@example.com"
+        await db_session.commit()
+
+        setup_code = "555555"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="emailwrongcode",
+                nonce=_pwd_context.hash(setup_code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": setup_code},
+            headers=_auth_header(token),
+        )
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "emailwrongcode", "emailwrongcode1")
+
+        captured: dict[str, str] = {}
+        smtp_mock = MagicMock()
+
+        def _capture(smtp_settings, to_email, subject, body_text, body_html):
+            import re
+
+            m = re.search(r"login code is: (\d{6})", body_text)
+            if m:
+                captured["otp"] = m.group(1)
+
+        with (
+            patch("backend.app.api.routes.mfa.get_smtp_settings", new=AsyncMock(return_value=smtp_mock)),
+            patch("backend.app.api.routes.mfa.send_email", side_effect=_capture),
+        ):
+            send_resp = await async_client.post(
+                "/api/v1/auth/2fa/email/send",
+                json={"pre_auth_token": pre_auth_token},
+            )
+        assert send_resp.status_code == 200
+        fresh_token = send_resp.json()["pre_auth_token"]
+
+        # Wrong code → 401
+        bad = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": fresh_token, "method": "email", "code": "000000"},
+        )
+        assert bad.status_code == 401
+
+        # Correct code still works (token not burned by wrong attempt)
+        good = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": fresh_token, "method": "email", "code": captured["otp"]},
+        )
+        assert good.status_code == 200
+
+
+# ===========================================================================
+# OIDC end-to-end (coverage gap C4)
+# ===========================================================================
+
+
+def _make_test_rsa_key():
+    """Generate a throwaway RSA key pair and a matching JWK set for tests."""
+    import base64
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    )
+    pub_numbers = private_key.public_key().public_numbers()
+
+    def _b64url(n: int, length: int) -> str:
+        return base64.urlsafe_b64encode(n.to_bytes(length, "big")).rstrip(b"=").decode()
+
+    jwks = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "use": "sig",
+                "alg": "RS256",
+                "kid": "test-kid-1",
+                "n": _b64url(pub_numbers.n, 256),
+                "e": _b64url(pub_numbers.e, 3),
+            }
+        ]
+    }
+    return private_pem, jwks
+
+
+class TestOIDCEndToEnd:
+    """Full OIDC auth-code flow: state → callback (mocked IdP) → exchange → JWT."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_oidc_callback_creates_user_and_issues_jwt(self, async_client: AsyncClient, db_session: AsyncSession):
+        """callback validates the mocked ID token, creates a user, and redirects
+        with an oidc_exchange token; exchanging that token returns a full JWT."""
+        import time
+        from unittest.mock import patch
+
+        import jwt as pyjwt
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://idp.test.example.com"
+        client_id = "oidc-test-client"
+        nonce = secrets.token_urlsafe(16)
+
+        now = int(time.time())
+        id_token = pyjwt.encode(
+            {
+                "sub": "oidc-sub-e2e",
+                "iss": issuer,
+                "aud": client_id,
+                "nonce": nonce,
+                "email": "oidce2e@example.com",
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+
+        # Create OIDC provider
+        admin_token = await _setup_and_login(async_client, "oidce2eadm", "oidce2eadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "E2E-IdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "test-secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        # Simulate the authorize step: insert an oidc_state token directly
+        state = secrets.token_urlsafe(32)
+        code_verifier = secrets.token_urlsafe(48)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=nonce,
+                code_verifier=code_verifier,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        # Mock httpx calls made inside oidc_callback
+        discovery_doc = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        token_response = {
+            "access_token": "mock-access",
+            "token_type": "Bearer",
+            "id_token": id_token,
+        }
+
+        class _MockResp:
+            def __init__(self, data):
+                self._data = data
+                self.status_code = 200
+                self.is_success = True
+                self.text = str(data)
+
+            def json(self):
+                return self._data
+
+            def raise_for_status(self):
+                pass
+
+        class _MockHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, url, **kwargs):
+                if "jwks" in url:
+                    return _MockResp(jwks_data)
+                return _MockResp(discovery_doc)
+
+            async def post(self, url, **kwargs):
+                return _MockResp(token_response)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=test-auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_token=" in location, f"Expected oidc_token in redirect, got: {location}"
+
+        # Extract and exchange the oidc_exchange token
+        oidc_exchange_token = location.split("oidc_token=")[1].split("&")[0]
+        exchange_resp = await async_client.post(
+            "/api/v1/auth/oidc/exchange",
+            json={"oidc_token": oidc_exchange_token},
+        )
+        assert exchange_resp.status_code == 200
+        data = exchange_resp.json()
+        assert "access_token" in data
+        assert data["user"]["username"] is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_oidc_callback_invalid_state_redirects_error(self, async_client: AsyncClient):
+        """An unknown state token must redirect to /?oidc_error=invalid_state."""
+        resp = await async_client.get(
+            "/api/v1/auth/oidc/callback?code=x&state=totally-bogus-state",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "invalid_state" in resp.headers.get("location", "")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_oidc_state_is_single_use(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Replaying the same state token must fail on the second callback."""
+        import time
+        from unittest.mock import patch
+
+        import jwt as pyjwt
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://idp2.test.example.com"
+        client_id = "oidc-client-2"
+        nonce = secrets.token_urlsafe(16)
+        now = int(time.time())
+        id_token = pyjwt.encode(
+            {
+                "sub": "sub-single-use",
+                "iss": issuer,
+                "aud": client_id,
+                "nonce": nonce,
+                "email": "su@example.com",
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+
+        admin_token = await _setup_and_login(async_client, "oidcsuadm", "oidcsuadm1")
+        cr = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "SU-IdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "s",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(admin_token),
+        )
+        provider_id = cr.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=nonce,
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        discovery_doc = {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/auth",
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        token_response = {"access_token": "a", "token_type": "Bearer", "id_token": id_token}
+
+        class _MockResp:
+            def __init__(self, data):
+                self._data = data
+                self.status_code = 200
+                self.is_success = True
+                self.text = str(data)
+
+            def json(self):
+                return self._data
+
+            def raise_for_status(self):
+                pass
+
+        class _MockHttpxClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            async def get(self, url, **kw):
+                return _MockResp(jwks_data if "jwks" in url else discovery_doc)
+
+            async def post(self, url, **kw):
+                return _MockResp(token_response)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            first = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=c&state={state}",
+                follow_redirects=False,
+            )
+            assert first.status_code == 302
+            assert "oidc_token=" in first.headers.get("location", "")
+
+            # Replay: second callback with the same state must fail
+            second = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=c&state={state}",
+                follow_redirects=False,
+            )
+            assert second.status_code == 302
+            assert "invalid_state" in second.headers.get("location", "")

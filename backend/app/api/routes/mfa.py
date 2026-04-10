@@ -215,9 +215,7 @@ async def consume_pre_auth_token(db: AsyncSession, token: str) -> str | None:
     return row[0]
 
 
-async def peek_pre_auth_token(
-    db: AsyncSession, token: str, challenge_id: str | None = None
-) -> str | None:
+async def peek_pre_auth_token(db: AsyncSession, token: str, challenge_id: str | None = None) -> str | None:
     """Validate a pre-auth token and return the username WITHOUT consuming it.
 
     When the stored token has a ``challenge_id`` (client-binding cookie), the
@@ -662,8 +660,9 @@ async def send_email_otp(
         # Raced with another request or token just expired — treat as invalid.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
 
-    # Re-issue a fresh pre-auth token so the same session can proceed to verify
-    fresh_token = await create_pre_auth_token(db, username)
+    # Re-issue a fresh pre-auth token bound to the same cookie so the binding
+    # carries forward through the email → verify step.
+    fresh_token = await create_pre_auth_token(db, username, challenge_id=challenge_id)
 
     user = await get_user_by_username(db, username)
     if not user or not user.is_active:
@@ -1329,22 +1328,24 @@ async def oidc_callback(
                         username = f"{candidate}{counter}"
                         counter += 1
 
+                    # I9: Assign new OIDC users to the default "Viewers" group so they
+                    # have read-only access rather than starting with no permissions.
+                    # Fetch the group BEFORE creating the user so we can set the
+                    # relationship before flush — accessing new_user.groups after a
+                    # flush triggers a lazy-load which fails in async context.
+                    viewers_result = await db.execute(select(Group).where(Group.name == "Viewers"))
+                    viewers_group = viewers_result.scalar_one_or_none()
+
                     new_user = User(
                         username=username,
                         email=provider_email,
                         password_hash=get_password_hash(secrets.token_urlsafe(32)),
                         role="user",
                         is_active=True,
+                        groups=[viewers_group] if viewers_group else [],
                     )
                     db.add(new_user)
                     await db.flush()
-
-                    # I9: Assign new OIDC users to the default "Viewers" group so they
-                    # have read-only access rather than starting with no permissions.
-                    viewers_result = await db.execute(select(Group).where(Group.name == "Viewers"))
-                    viewers_group = viewers_result.scalar_one_or_none()
-                    if viewers_group:
-                        new_user.groups.append(viewers_group)
 
                     db.add(
                         UserOIDCLink(

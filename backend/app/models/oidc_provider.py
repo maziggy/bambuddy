@@ -39,6 +39,7 @@ class OIDCProvider(Base):
     @client_secret.setter
     def client_secret(self, value: str) -> None:
         self._client_secret_enc = mfa_encrypt(value)
+
     # Space-separated scopes; must include "openid"
     scopes: Mapped[str] = mapped_column(String(500), default="openid email profile")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)

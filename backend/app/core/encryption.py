@@ -38,7 +38,7 @@ def _get_fernet():
         logger.warning(
             "MFA_ENCRYPTION_KEY is not set — TOTP secrets and OIDC client_secrets are "
             "stored in plaintext. Generate a key with: "
-            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         )
         _warn_shown = True
     return None
@@ -65,7 +65,6 @@ def mfa_decrypt(value: str) -> str:
     f = _get_fernet()
     if f is None:
         raise RuntimeError(
-            "MFA_ENCRYPTION_KEY must be set to decrypt MFA secrets that were "
-            "stored with encryption enabled."
+            "MFA_ENCRYPTION_KEY must be set to decrypt MFA secrets that were stored with encryption enabled."
         )
-    return f.decrypt(value[len(_FERNET_PREFIX):].encode()).decode()
+    return f.decrypt(value[len(_FERNET_PREFIX) :].encode()).decode()

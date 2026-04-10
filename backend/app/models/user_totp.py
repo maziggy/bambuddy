@@ -59,4 +59,3 @@ class UserTOTP(Base):
 
     def __repr__(self) -> str:
         return f"<UserTOTP user_id={self.user_id} enabled={self.is_enabled}>"
-

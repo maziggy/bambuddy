@@ -268,9 +268,7 @@ class TestEmailOTP:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_confirm_enable_email_otp_happy_path(
-        self, async_client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_confirm_enable_email_otp_happy_path(self, async_client: AsyncClient, db_session: AsyncSession):
         """Confirm step activates email OTP when setup_token + code are valid (C5)."""
         token = await _setup_and_login(async_client, "confirmenable", "confirmenable1")
 
@@ -309,9 +307,7 @@ class TestEmailOTP:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_confirm_enable_email_otp_wrong_code(
-        self, async_client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_confirm_enable_email_otp_wrong_code(self, async_client: AsyncClient, db_session: AsyncSession):
         """Wrong code on confirm step returns 400 and does not enable email OTP."""
         token = await _setup_and_login(async_client, "confirmwrong", "confirmwrong1")
 
@@ -386,9 +382,7 @@ class TestEmailOTP:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_disable_email_otp_when_enabled(
-        self, async_client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_disable_email_otp_when_enabled(self, async_client: AsyncClient, db_session: AsyncSession):
         """Disabling email OTP when enabled turns it off and status reflects that."""
         token = await _setup_and_login(async_client, "disemailpw", "disemailpw1")
 
@@ -1074,3 +1068,147 @@ class TestVerifyMethodValidation:
             json={"pre_auth_token": "x" * 200, "code": "123456", "method": "totp"},
         )
         assert resp.status_code == 422
+
+
+# ===========================================================================
+# Login response shape for 2FA users
+# ===========================================================================
+
+
+class TestLoginResponseShape:
+    """Login for a 2FA-enabled user must return requires_2fa+pre_auth_token
+    and must NOT include access_token (which would bypass the 2FA gate)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_login_2fa_user_omits_access_token(self, async_client: AsyncClient):
+        """A user with TOTP enabled must not receive an access_token on /auth/login."""
+        token = await _setup_and_login(async_client, "loginshape", "loginshape1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": pyotp.TOTP(secret).now()},
+            headers=_auth_header(token),
+        )
+
+        login_resp = await async_client.post(LOGIN_URL, json={"username": "loginshape", "password": "loginshape1"})
+        assert login_resp.status_code == 200
+        data = login_resp.json()
+        assert data.get("requires_2fa") is True
+        assert data.get("pre_auth_token") is not None
+        # access_token must NOT be present — it would bypass the 2FA gate
+        assert "access_token" not in data or data["access_token"] is None
+
+
+# ===========================================================================
+# TOTP replay protection
+# ===========================================================================
+
+
+async def _setup_totp_user(client: AsyncClient, username: str, password: str) -> tuple[str, str]:
+    """Create user, set up and enable TOTP; return (bearer_token, totp_secret)."""
+    token = await _setup_and_login(client, username, password)
+    setup_resp = await client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+    secret = setup_resp.json()["secret"]
+    await client.post(
+        "/api/v1/auth/2fa/totp/enable",
+        json={"code": pyotp.TOTP(secret).now()},
+        headers=_auth_header(token),
+    )
+    return token, secret
+
+
+class TestTOTPReplay:
+    """The same TOTP code must not be accepted twice within one 30-second window."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_totp_replay_rejected_on_verify(self, async_client: AsyncClient):
+        """Replaying the same code on /2fa/verify must return 400."""
+        _token, secret = await _setup_totp_user(async_client, "replayverify", "replayverify1")
+        code = pyotp.TOTP(secret).now()
+
+        pre_auth = await _login_get_pre_auth_token(async_client, "replayverify", "replayverify1")
+        first = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth, "method": "totp", "code": code},
+        )
+        assert first.status_code == 200
+
+        # Second login to get a fresh pre_auth_token (first was consumed)
+        pre_auth2 = await _login_get_pre_auth_token(async_client, "replayverify", "replayverify1")
+        second = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth2, "method": "totp", "code": code},
+        )
+        assert second.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_totp_replay_rejected_on_disable(self, async_client: AsyncClient):
+        """A code already used in verify_2fa must be rejected on /2fa/totp/disable."""
+        _setup_token, secret = await _setup_totp_user(async_client, "replaydisable", "replaydisable1")
+        code = pyotp.TOTP(secret).now()
+
+        # Use the code in verify_2fa — this sets last_totp_counter in DB
+        pre_auth = await _login_get_pre_auth_token(async_client, "replaydisable", "replaydisable1")
+        verify_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth, "method": "totp", "code": code},
+        )
+        assert verify_resp.status_code == 200
+        authed_token = verify_resp.json()["access_token"]
+
+        # Replay the same code on disable — must be rejected (same 30-second window)
+        disable_resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/disable",
+            json={"code": code},
+            headers=_auth_header(authed_token),
+        )
+        assert disable_resp.status_code == 400
+
+
+# ===========================================================================
+# Rate limiting on disable_totp and regenerate_backup_codes (I10)
+# ===========================================================================
+
+
+class TestRateLimitingDisableRegenerate:
+    """disable_totp and regenerate_backup_codes must enforce rate limiting (I10)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_totp_rate_limited_after_failures(self, async_client: AsyncClient):
+        """Repeated wrong codes on /2fa/totp/disable trigger 429."""
+        token, _secret = await _setup_totp_user(async_client, "rldisable", "rldisable1")
+        for _ in range(5):
+            await async_client.post(
+                "/api/v1/auth/2fa/totp/disable",
+                json={"code": "000000"},
+                headers=_auth_header(token),
+            )
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/disable",
+            json={"code": "000000"},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 429
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_regenerate_backup_codes_rate_limited_after_failures(self, async_client: AsyncClient):
+        """Repeated wrong codes on /2fa/totp/regenerate-backup-codes trigger 429."""
+        token, _secret = await _setup_totp_user(async_client, "rlregen", "rlregen1")
+        for _ in range(5):
+            await async_client.post(
+                "/api/v1/auth/2fa/totp/regenerate-backup-codes",
+                json={"code": "000000"},
+                headers=_auth_header(token),
+            )
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/regenerate-backup-codes",
+            json={"code": "000000"},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 429

@@ -293,6 +293,25 @@ async def check_email_otp_send_rate(db: AsyncSession, username: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# TOTP replay-protection helper
+# ---------------------------------------------------------------------------
+def _assert_totp_not_replayed(totp_obj: pyotp.TOTP, totp_record: UserTOTP) -> None:
+    """Raise HTTP 400 if the current time-step code was already consumed.
+
+    pyotp.verify() does not track used codes; this helper stores the 30-second
+    counter of the last accepted code so the same 6-digit code cannot be used
+    twice within one 30-second window (replay attack).
+    """
+    counter = totp_obj.timecode(datetime.now(timezone.utc))
+    if totp_record.last_totp_counter is not None and totp_record.last_totp_counter == counter:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This TOTP code has already been used. Please wait for the next code.",
+        )
+    totp_record.last_totp_counter = counter
+
+
+# ---------------------------------------------------------------------------
 # Settings helpers (email 2FA flag)
 # ---------------------------------------------------------------------------
 async def _get_email_2fa_enabled(db: AsyncSession, user_id: int) -> bool:
@@ -400,7 +419,12 @@ async def disable_totp(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Disable TOTP by verifying a valid TOTP code or a backup code."""
+    """Disable TOTP by verifying a valid TOTP code or a backup code.
+
+    I10: Rate-limited to prevent backup-code brute-forcing from a hijacked session.
+    """
+    await check_rate_limit(db, current_user.username)
+
     result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))
     totp_record = result.scalar_one_or_none()
 
@@ -408,8 +432,11 @@ async def disable_totp(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP is not enabled")
 
     # Accept either a valid TOTP code or a valid backup code
-    code_valid = pyotp.TOTP(totp_record.secret).verify(body.code, valid_window=1)
-    if not code_valid:
+    totp_obj = pyotp.TOTP(totp_record.secret)
+    code_valid = totp_obj.verify(body.code, valid_window=1)
+    if code_valid:
+        _assert_totp_not_replayed(totp_obj, totp_record)
+    else:
         # Check backup codes
         for hashed in totp_record.backup_codes:
             if pwd_context.verify(body.code, hashed):
@@ -417,6 +444,7 @@ async def disable_totp(
                 break
 
     if not code_valid:
+        await record_failed_attempt(db, current_user.username)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid code")
 
     await db.execute(delete(UserTOTP).where(UserTOTP.user_id == current_user.id))
@@ -430,15 +458,23 @@ async def regenerate_backup_codes(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> BackupCodesResponse:
-    """Generate 10 new backup codes. Requires a valid TOTP code."""
+    """Generate 10 new backup codes. Requires a valid TOTP code.
+
+    I10: Rate-limited to prevent brute-forcing from a hijacked session.
+    """
+    await check_rate_limit(db, current_user.username)
+
     result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))
     totp_record = result.scalar_one_or_none()
 
     if not totp_record or not totp_record.is_enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP is not enabled")
 
-    if not pyotp.TOTP(totp_record.secret).verify(body.code, valid_window=1):
+    totp_obj = pyotp.TOTP(totp_record.secret)
+    if not totp_obj.verify(body.code, valid_window=1):
+        await record_failed_attempt(db, current_user.username)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
+    _assert_totp_not_replayed(totp_obj, totp_record)
 
     plain_codes, hashed_codes = _generate_backup_codes()
     totp_record.backup_codes = hashed_codes
@@ -699,9 +735,11 @@ async def verify_2fa(
         if not totp_record or not totp_record.is_enabled:
             await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP is not enabled for this user")
-        if not pyotp.TOTP(totp_record.secret).verify(body.code, valid_window=1):
+        totp_obj = pyotp.TOTP(totp_record.secret)
+        if not totp_obj.verify(body.code, valid_window=1):
             await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+        _assert_totp_not_replayed(totp_obj, totp_record)
 
     elif method == "email":
         now = datetime.now(timezone.utc)

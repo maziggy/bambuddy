@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -27,6 +27,9 @@ class UserTOTP(Base):
     # Hashed backup codes stored as JSON array of strings
     # Each entry is a hashed one-time-use recovery code
     backup_codes_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # TOTP replay protection: stores the 30-second time-step counter of the last
+    # accepted code so the same code cannot be used twice within one window.
+    last_totp_counter: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

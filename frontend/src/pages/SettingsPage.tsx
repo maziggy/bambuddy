@@ -27,6 +27,8 @@ import { SpoolBuddySettings } from '../components/SpoolBuddySettings';
 import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
+import { TwoFactorSettings } from '../components/TwoFactorSettings';
+import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
 import { APIBrowser } from '../components/APIBrowser';
 import { Toggle } from '../components/Toggle';
 import { virtualPrinterApi, spoolbuddyApi } from '../api/client';
@@ -39,7 +41,7 @@ import { Palette } from 'lucide-react';
 
 const validTabs = ['general', 'plugs', 'notifications', 'queue', 'filament', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
-type UsersSubTab = 'users' | 'email' | 'ldap';
+type UsersSubTab = 'users' | 'email' | 'ldap' | 'twofa' | 'oidc';
 
 const STORAGE_CATEGORY_COLORS: Record<string, string> = {
   database: 'bg-blue-600',
@@ -79,7 +81,7 @@ export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { t, i18n } = useTranslation();
   const { showToast } = useToast();
-  const { authEnabled, user, refreshAuth, hasPermission } = useAuth();
+  const { authEnabled, user, isAdmin, refreshAuth, hasPermission } = useAuth();
   const {
     mode,
     darkStyle, darkBackground, darkAccent,
@@ -4382,6 +4384,30 @@ export function SettingsPage() {
                 <span className="w-2 h-2 rounded-full bg-green-400" />
               )}
             </button>
+            <button
+              onClick={() => setUsersSubTab('twofa')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+                usersSubTab === 'twofa'
+                  ? 'text-bambu-green border-bambu-green'
+                  : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+              }`}
+            >
+              <Shield className="w-4 h-4" />
+              {t('settings.tabs.twoFa')}
+            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setUsersSubTab('oidc')}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+                  usersSubTab === 'oidc'
+                    ? 'text-bambu-green border-bambu-green'
+                    : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+                }`}
+              >
+                <Globe className="w-4 h-4" />
+                {t('settings.tabs.oidc')}
+              </button>
+            )}
           </div>
 
           {/* Users Sub-tab */}
@@ -4706,6 +4732,18 @@ export function SettingsPage() {
           {usersSubTab === 'ldap' && (
             <div className="max-w-5xl" id="card-ldap">
               <LDAPSettings />
+            </div>
+          )}
+
+          {usersSubTab === 'twofa' && (
+            <div className="max-w-2xl">
+              <TwoFactorSettings />
+            </div>
+          )}
+
+          {usersSubTab === 'oidc' && isAdmin && (
+            <div className="max-w-3xl">
+              <OIDCProviderSettings />
             </div>
           )}
         </div>

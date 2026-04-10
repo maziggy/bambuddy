@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, getAuthToken, setAuthToken } from '../api/client';
-import type { Permission, UserResponse } from '../api/client';
+import type { LoginResponse, Permission, UserResponse } from '../api/client';
 
 interface AuthContextType {
   user: UserResponse | null;
@@ -8,7 +8,10 @@ interface AuthContextType {
   requiresSetup: boolean;
   loading: boolean;
   isAdmin: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  /** Login with username/password. Returns LoginResponse (may include requires_2fa). */
+  login: (username: string, password: string) => Promise<LoginResponse>;
+  /** Finalise login after 2FA or OIDC — store token and set user directly. */
+  loginWithToken: (token: string, user: UserResponse) => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
   refreshAuth: () => Promise<void>;
@@ -106,10 +109,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loading, requiresSetup, authEnabled]);
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string): Promise<LoginResponse> => {
     const response = await api.login({ username, password });
-    setAuthToken(response.access_token);
-    await checkAuthStatus();
+    if (!response.requires_2fa && response.access_token) {
+      setAuthToken(response.access_token);
+      await checkAuthStatus();
+    }
+    return response;
+  };
+
+  const loginWithToken = (token: string, userObj: UserResponse) => {
+    setAuthToken(token);
+    setUser(userObj);
+    setAuthEnabled(true);
   };
 
   const logout = () => {
@@ -205,6 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         isAdmin,
         login,
+        loginWithToken,
         logout,
         refreshUser,
         refreshAuth,

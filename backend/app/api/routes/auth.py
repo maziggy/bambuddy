@@ -281,6 +281,11 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Login and get access token.
 
     Supports username or email-based login. Username lookup is case-insensitive.
+
+    When 2FA is enabled for the user the response contains ``requires_2fa=True``
+    and a short-lived ``pre_auth_token`` instead of the final JWT.  The client
+    must then call ``POST /auth/2fa/verify`` (or first ``POST /auth/2fa/email/send``
+    to trigger an email OTP) to obtain the real access token.
     """
     # Check if auth is enabled
     auth_enabled = await is_auth_enabled(db)
@@ -348,6 +353,43 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
     user = result.scalar_one()
 
+    # --- 2FA check ---
+    # Determine which 2FA methods are active for this user.
+
+    from backend.app.models.settings import Settings as _Settings
+    from backend.app.models.user_totp import UserTOTP
+
+    totp_result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == user.id))
+    user_totp = totp_result.scalar_one_or_none()
+    totp_enabled = user_totp is not None and user_totp.is_enabled
+
+    email_2fa_result = await db.execute(select(_Settings).where(_Settings.key == f"user_{user.id}_email_2fa_enabled"))
+    email_2fa_setting = email_2fa_result.scalar_one_or_none()
+    email_otp_enabled = (
+        email_2fa_setting is not None and email_2fa_setting.value.lower() == "true" and user.email is not None
+    )
+
+    if totp_enabled or email_otp_enabled:
+        # Import here to avoid circular imports
+        from backend.app.api.routes.mfa import create_pre_auth_token
+
+        pre_auth_token = await create_pre_auth_token(db, user.username)
+        methods: list[str] = []
+        if totp_enabled:
+            methods.append("totp")
+        if email_otp_enabled:
+            methods.append("email")
+        # Backup codes are always available when TOTP is set up
+        if totp_enabled:
+            methods.append("backup")
+
+        return LoginResponse(
+            requires_2fa=True,
+            pre_auth_token=pre_auth_token,
+            two_fa_methods=methods,
+        )
+
+    # No 2FA — issue full token immediately
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
 

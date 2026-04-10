@@ -156,6 +156,7 @@ async def init_db():
         ams_label,
         api_key,
         archive,
+        auth_ephemeral,
         bug_report,
         color_catalog,
         external_link,
@@ -168,6 +169,7 @@ async def init_db():
         maintenance,
         notification,
         notification_template,
+        oidc_provider,
         orca_base_cache,
         pending_upload,
         print_batch,
@@ -188,6 +190,8 @@ async def init_db():
         spoolbuddy_device,
         user,
         user_email_pref,
+        user_otp_code,
+        user_totp,
         virtual_printer,
     )
 
@@ -1435,6 +1439,12 @@ async def run_migrations(conn):
         "CREATE INDEX IF NOT EXISTS ix_plug_energy_snapshots_plug_time "
         "ON smart_plug_energy_snapshots(plug_id, recorded_at)",
     )
+
+    # Migration: Add PKCE code_verifier column to auth_ephemeral_tokens
+    try:
+        await conn.execute(text("ALTER TABLE auth_ephemeral_tokens ADD COLUMN code_verifier VARCHAR(128)"))
+    except OperationalError:
+        pass  # Already applied
 
     # Seed default settings keys that must exist on fresh install
     default_settings = [

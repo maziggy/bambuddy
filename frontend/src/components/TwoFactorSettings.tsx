@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
-import { Toggle } from './Toggle';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 

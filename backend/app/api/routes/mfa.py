@@ -847,12 +847,6 @@ async def admin_disable_2fa(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Admin endpoint: disable all 2FA for a given user."""
-    # Reload current user with groups for is_admin check
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     # Delete TOTP record
     await db.execute(delete(UserTOTP).where(UserTOTP.user_id == user_id))
 
@@ -867,7 +861,7 @@ async def admin_disable_2fa(
     )
 
     await db.commit()
-    logger.info("Admin %s disabled all 2FA for user_id=%d", admin.username, user_id)
+    logger.info("Admin %s disabled all 2FA for user_id=%d", current_user.username, user_id)
     return {"message": "2FA disabled for user"}
 
 
@@ -889,15 +883,9 @@ async def list_oidc_providers(
 @router.get("/oidc/providers/all", response_model=list[OIDCProviderResponse])
 async def list_all_oidc_providers(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[OIDCProviderResponse]:
     """List ALL OIDC providers including disabled ones (admin only)."""
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     result2 = await db.execute(select(OIDCProvider))
     providers = result2.scalars().all()
     return [OIDCProviderResponse.model_validate(p) for p in providers]
@@ -907,15 +895,9 @@ async def list_all_oidc_providers(
 async def create_oidc_provider(
     body: OIDCProviderCreate,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> OIDCProviderResponse:
     """Create a new OIDC provider (admin only)."""
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     provider = OIDCProvider(
         name=body.name,
         issuer_url=body.issuer_url.rstrip("/"),
@@ -937,15 +919,9 @@ async def update_oidc_provider(
     provider_id: int,
     body: OIDCProviderUpdate,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> OIDCProviderResponse:
     """Update an existing OIDC provider (admin only)."""
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     result2 = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
     provider = result2.scalar_one_or_none()
     if not provider:
@@ -965,15 +941,9 @@ async def update_oidc_provider(
 async def delete_oidc_provider(
     provider_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Delete an OIDC provider and all its user links (admin only)."""
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    admin = result.scalar_one()
-    if not admin.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
     result2 = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
     provider = result2.scalar_one_or_none()
     if not provider:

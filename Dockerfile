@@ -53,6 +53,17 @@ ENV PYTHONUNBUFFERED=1
 ENV DATA_DIR=/app/data
 ENV LOG_DIR=/app/logs
 ENV PORT=8000
+# Provide a local username + home for tools that call getpass.getuser() /
+# os.path.expanduser() under arbitrary PUIDs. With `user: "1001:1001"` the
+# stock python:3.13-slim image has no /etc/passwd entry for that UID, so
+# pwd.getpwuid() raises and breaks libraries that do host-level user lookups
+# (notably asyncssh, which uses the local username for ~/.ssh/config host
+# matching during the SpoolBuddy remote-update flow). Setting LOGNAME/USER
+# makes getpass.getuser() resolve via env vars instead of the passwd db;
+# HOME=/app gives a writable home that is guaranteed to exist.
+ENV HOME=/app
+ENV USER=bambuddy
+ENV LOGNAME=bambuddy
 
 EXPOSE 322
 EXPOSE 990

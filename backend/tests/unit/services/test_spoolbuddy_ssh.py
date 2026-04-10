@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.services.spoolbuddy_ssh import (
-    _ensure_local_username_env,
     _get_ssh_key_dir,
     _run_ssh_command,
     detect_current_branch,
@@ -178,49 +177,6 @@ def test_detect_branch_default_main(tmp_path):
         # Remove GIT_BRANCH if present
         os.environ.pop("GIT_BRANCH", None)
         assert detect_current_branch() == "main"
-
-
-# -- _ensure_local_username_env ------------------------------------------------
-
-
-def test_ensure_local_username_env_noop_when_getuser_works():
-    """When getpass.getuser() succeeds, the env must not be mutated."""
-    # Stash the current values so we can detect mutation.
-    before = {k: os.environ.get(k) for k in ("LOGNAME", "USER", "LNAME", "USERNAME")}
-    with patch("backend.app.services.spoolbuddy_ssh.getpass.getuser", return_value="realuser"):
-        _ensure_local_username_env()
-    after = {k: os.environ.get(k) for k in ("LOGNAME", "USER", "LNAME", "USERNAME")}
-    assert before == after
-
-
-def test_ensure_local_username_env_sets_logname_when_getuser_fails(monkeypatch):
-    """When getpass.getuser() raises KeyError AND no USER/LOGNAME/etc is set,
-    LOGNAME must be populated so asyncssh.connect() can proceed.
-
-    Regression guard for the Docker/PUID failure mode: asyncssh's connect()
-    calls getpass.getuser() unconditionally for ~/.ssh/config host matching,
-    and raises 'Unknown local username: set one of LOGNAME, USER, LNAME, or
-    USERNAME in the environment' when pwd.getpwuid() fails under an
-    arbitrary PUID not listed in /etc/passwd.
-    """
-    for key in ("LOGNAME", "USER", "LNAME", "USERNAME"):
-        monkeypatch.delenv(key, raising=False)
-    with patch("backend.app.services.spoolbuddy_ssh.getpass.getuser", side_effect=KeyError("no passwd entry")):
-        _ensure_local_username_env()
-    assert os.environ.get("LOGNAME") == "bambuddy"
-
-
-def test_ensure_local_username_env_respects_existing_env(monkeypatch):
-    """If the operator has set USER (or any of the fallback vars) but the
-    passwd lookup still fails, we must leave their value alone."""
-    monkeypatch.delenv("LOGNAME", raising=False)
-    monkeypatch.delenv("LNAME", raising=False)
-    monkeypatch.delenv("USERNAME", raising=False)
-    monkeypatch.setenv("USER", "operator")
-    with patch("backend.app.services.spoolbuddy_ssh.getpass.getuser", side_effect=KeyError):
-        _ensure_local_username_env()
-    assert os.environ.get("USER") == "operator"
-    assert os.environ.get("LOGNAME") is None
 
 
 # -- _run_ssh_command ----------------------------------------------------------

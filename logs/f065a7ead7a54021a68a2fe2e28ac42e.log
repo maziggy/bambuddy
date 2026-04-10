@@ -1,0 +1,200 @@
+2026-04-10 13:33:02,586 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:33:02,596 WARNING [backend.app.services.bambu_ftp] Failed to delete /Adjustable_monitor_shelf_MK2_-_fits_any_display_.3mf: 550 
+2026-04-10 13:33:02,604 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /Adjustable_monitor_shelf_MK2_-_fits_any_display_.3mf (file may linger on SD card)
+2026-04-10 13:33:03,365 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:33:03,374 WARNING [backend.app.services.bambu_ftp] Failed to delete /Adjustable_monitor_shelf_MK2_-_fits_any_display_.gcode: 550 
+2026-04-10 13:33:06,145 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:33:06,153 WARNING [backend.app.services.bambu_ftp] Failed to delete /Adjustable_monitor_shelf_MK2_-_fits_any_display_.gcode: 550 
+2026-04-10 13:33:08,932 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:33:08,941 WARNING [backend.app.services.bambu_ftp] Failed to delete /Adjustable_monitor_shelf_MK2_-_fits_any_display_.gcode: 550 
+2026-04-10 13:33:08,953 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /Adjustable_monitor_shelf_MK2_-_fits_any_display_.gcode (file may linger on SD card)
+2026-04-10 13:33:08,953 INFO [backend.app.main] [TIMING] SD card cleanup: 12.767s elapsed
+2026-04-10 13:33:08,955 INFO [backend.app.main] [TIMING] Queue item update: 12.768s elapsed
+2026-04-10 13:33:08,958 INFO [backend.app.services.usage_tracker] [UsageTracker] on_print_complete: printer=1, archive=2, session=yes, ams_mapping=None
+2026-04-10 13:33:08,958 INFO [backend.app.services.usage_tracker] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=255, last_loaded_tray=1
+2026-04-10 13:33:08,959 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: archive 2, filament_usage=[{'slot_id': 2, 'used_g': 45.95, 'type': 'PLA', 'color': '#3617E8'}]
+2026-04-10 13:33:08,959 INFO [backend.app.services.usage_tracker] [UsageTracker] Color-matched slot_to_tray: [-1, 1]
+2026-04-10 13:33:08,960 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_to_tray=[-1, 1] (source: color_match)
+2026-04-10 13:33:08,960 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=2 -> global_tray=1 -> AMS0-T1 (used_g=46.0, tray_now_override=None)
+2026-04-10 13:33:08,961 INFO [backend.app.services.usage_tracker] [UsageTracker] Spool 20 consumed 46.0g (3MF, color_match_map) on printer 1 AMS0-T1 (completed)
+2026-04-10 13:33:08,963 INFO [backend.app.main] [TIMING] Usage tracker: 12.776s elapsed
+2026-04-10 13:33:08,963 INFO [backend.app.services.spoolman_tracking] [SPOOLMAN] No tracking data for print (printer=1, archive=2)
+2026-04-10 13:33:08,964 INFO [backend.app.main] [TIMING] Spoolman usage report: 12.777s elapsed
+2026-04-10 13:33:08,964 INFO [backend.app.main] [TIMING] Filament usage tracking: 12.777s elapsed
+2026-04-10 13:33:08,964 INFO [backend.app.main] [TIMING] Archive lookup: 12.777s elapsed
+2026-04-10 13:33:08,964 INFO [backend.app.main] [ARCHIVE] Updating archive 2 status...
+2026-04-10 13:33:08,965 INFO [backend.app.main] [ARCHIVE] Archive 2 status updated to completed, failure_reason=None
+2026-04-10 13:33:08,966 INFO [backend.app.main] [ARCHIVE] WebSocket notification sent for archive 2
+2026-04-10 13:33:08,966 INFO [backend.app.main] [TIMING] Archive status update: 12.779s elapsed
+2026-04-10 13:33:08,967 INFO [backend.app.main] [PRINT_LOG] Log entry written for archive 2
+2026-04-10 13:33:08,967 INFO [backend.app.main] [TIMING] Print log entry: 12.781s elapsed
+2026-04-10 13:33:08,967 INFO [backend.app.main] [TIMING] Background tasks scheduled (energy, photo): 12.781s elapsed
+2026-04-10 13:33:08,967 INFO [backend.app.main] [TIMING] All background tasks scheduled: 12.781s elapsed
+2026-04-10 13:33:08,967 INFO [backend.app.main] [CALLBACK] on_print_complete finished for printer 1, archive 2
+2026-04-10 13:33:08,968 INFO [backend.app.main] [ENERGY-BG] Starting energy calculation for archive 2
+2026-04-10 13:33:08,968 INFO [backend.app.main] [PHOTO-BG] Starting finish photo capture for archive 2
+2026-04-10 13:33:08,968 INFO [backend.app.main] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-04-10 13:33:08,968 INFO [backend.app.main] [MAINT-BG] Starting maintenance check for printer 1
+2026-04-10 13:33:08,969 INFO [backend.app.main] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-04-10 13:33:08,970 INFO [backend.app.main] [AUTO-OFF-BG] Completed
+2026-04-10 13:33:08,972 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-04-10 13:33:08,984 INFO [backend.app.main] [ENERGY-BG] Energy response: {'power': 1.0, 'voltage': None, 'current': None, 'today': None, 'total': None, 'yesterday': None, 'factor': None, 'apparent_power': None, 'reactive_power': None}
+2026-04-10 13:33:08,987 INFO [backend.app.services.notification_service] No notification providers configured for maintenance_due event on printer 1
+2026-04-10 13:33:08,987 INFO [backend.app.main] [MAINT-BG] Sent notification: 2 items need attention
+2026-04-10 13:33:11,861 INFO [backend.app.services.camera] Saved camera frame to: /opt/[user]/archive/1/20260410_111023_Adjustable_monitor_shelf_MK2_-_fits_any_display!.gcode/photos/finish_20260410_133308_2ec07ae5.jpg
+2026-04-10 13:33:11,861 INFO [backend.app.services.camera] Finish photo saved: finish_20260410_133308_2ec07ae5.jpg
+2026-04-10 13:33:11,863 INFO [backend.app.main] [PHOTO-BG] Saved: finish_20260410_133308_2ec07ae5.jpg
+2026-04-10 13:33:11,863 INFO [backend.app.main] [PHOTO-NOTIFY] Photo task returned: finish_20260410_133308_2ec07ae5.jpg
+2026-04-10 13:33:11,863 INFO [backend.app.main] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260410_133308_2ec07ae5.jpg
+2026-04-10 13:33:11,865 INFO [backend.app.main] [NOTIFY-BG] Loaded finish photo bytes: 231296 bytes
+2026-04-10 13:33:11,865 INFO [backend.app.services.notification_service] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-04-10 13:33:11,866 INFO [backend.app.services.notification_service] No notification providers configured for on_print_complete event on printer 1
+2026-04-10 13:33:11,866 INFO [backend.app.main] [NOTIFY-BG] Completed
+2026-04-10 13:33:27,416 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 13:35:59,498 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-10 13:35:59,498 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-10 13:35:59,499 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-10 13:35:59,696 INFO [backend.app.api.routes.cloud] get_filament_info called with 4 IDs: ['GFG99', 'GFL96', 'GFA15', 'GFSNL03']
+2026-04-10 13:36:00,085 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFL96 (API ID: GFSL96): Failed to get setting detail: 400
+2026-04-10 13:36:00,258 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFA15 (API ID: GFSA15): Failed to get setting detail: 400
+2026-04-10 13:36:00,429 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFSNL03 (API ID: GFSNL03): Failed to get setting detail: 400
+2026-04-10 13:36:37,866 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-04-10 13:36:42,866 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 1/3
+2026-04-10 13:36:43,366 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 2/3)
+2026-04-10 13:36:48,366 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 2/3
+2026-04-10 13:36:48,866 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 3/3)
+2026-04-10 13:36:53,867 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 3/3
+2026-04-10 13:36:53,867 ERROR [backend.app.services.bambu_mqtt] [[SERIAL]] Failed to get K-profiles after 3 attempts
+2026-04-10 13:36:56,210 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-04-10 13:37:01,211 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 1/3
+2026-04-10 13:37:01,712 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 2/3)
+2026-04-10 13:37:06,713 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 2/3
+2026-04-10 13:37:07,215 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 3/3)
+2026-04-10 13:37:12,215 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 3/3
+2026-04-10 13:37:12,215 ERROR [backend.app.services.bambu_mqtt] [[SERIAL]] Failed to get K-profiles after 3 attempts
+2026-04-10 13:38:27,420 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 13:39:07,438 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-10 13:39:08,034 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-10 13:39:08,034 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-10 13:39:08,036 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-10 13:39:21,505 INFO [backend.app.api.routes.archives] Dispatched reprint archive 1 for printer 1 (dispatch_job_id=1, dispatch_position=1)
+2026-04-10 13:39:22,276 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:39:22,846 WARNING [backend.app.services.bambu_ftp] Failed to delete /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf: 550 
+2026-04-10 13:39:22,853 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=A1 Mini, mode=prot_p, socket_timeout=60.0s)...
+2026-04-10 13:39:23,632 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:39:23,632 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-10 13:39:23,632 INFO [backend.app.services.bambu_ftp] FTP uploading /opt/[user]/archive/1/20260408_161146_Adjustable_monitor_shelf_MK2_-_fits_any_display!.gcode/Adjustable_monitor_shelf_MK2_-_fits_any_display!.gcode.3mf (231751 bytes) to /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf
+2026-04-10 13:39:23,703 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-04-10 13:39:24,802 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf: 226
+2026-04-10 13:39:24,802 INFO [backend.app.services.bambu_ftp] FTP upload complete: /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf (231751 bytes in 1.2s, 193 KB/s)
+2026-04-10 13:39:24,802 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-10 13:39:24,815 INFO [backend.app.main] Registered expected print: printer=1, file=Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf, archive=1, ams_mapping=[-1, 3]
+2026-04-10 13:39:24,823 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf, caller=background_dispatch.py:529:_process_job
+2026-04-10 13:39:24,823 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_2.gcode", "url": "ftp://Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf", "file": "Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": false, "auto_bed_leveling": 0, "flow_cali": true, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "Adjustable_monitor_shelf_MK2_-_fits_any_display!", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [-1, 3], "ams_mapping2": [{"ams_id": 255, "slot_id": 255}, {"ams_id": 0, "slot_id": 3}]}}
+2026-04-10 13:39:39,824 WARNING [backend.app.services.background_dispatch] Printer [PRINTER] (1) did not respond to print command within 15s (state still FINISH) — printer may need restart
+2026-04-10 13:43:27,424 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 13:44:21,530 INFO [backend.app.api.routes.print_queue] Added archive 1 to queue for 1
+2026-04-10 13:44:48,534 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:44:48,534 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:45:18,536 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:45:18,537 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:45:48,539 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:45:48,540 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:46:18,543 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:46:18,543 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:46:48,547 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:46:48,547 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:47:18,550 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:47:18,550 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:47:48,554 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:47:48,555 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:48:18,558 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:48:18,558 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:48:27,427 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 13:48:48,561 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:48:48,561 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:49:18,564 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:49:18,564 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:49:48,567 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:49:48,567 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:50:18,570 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:50:18,570 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:50:48,574 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-04-10 13:50:48,574 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-10 13:51:02,917 INFO [backend.app.api.routes.print_queue] Cancelled queue item 1
+2026-04-10 13:51:04,160 INFO [backend.app.api.routes.cloud] get_filament_info called with 4 IDs: ['GFG99', 'GFL96', 'GFA15', 'GFSNL03']
+2026-04-10 13:51:04,547 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFL96 (API ID: GFSL96): Failed to get setting detail: 400
+2026-04-10 13:51:04,718 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFA15 (API ID: GFSA15): Failed to get setting detail: 400
+2026-04-10 13:51:04,884 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFSNL03 (API ID: GFSNL03): Failed to get setting detail: 400
+2026-04-10 13:51:05,795 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: XTbacaNvjHQ6P8g2A9Mdp
+2026-04-10 13:51:17,473 INFO [backend.app.api.routes.archives] Dispatched reprint archive 1 for printer 1 (dispatch_job_id=2, dispatch_position=1)
+2026-04-10 13:51:18,343 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:51:18,382 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=A1 Mini, mode=prot_p, socket_timeout=60.0s)...
+2026-04-10 13:51:19,155 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:51:19,155 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-10 13:51:19,155 INFO [backend.app.services.bambu_ftp] FTP uploading /opt/[user]/archive/1/20260408_161146_Adjustable_monitor_shelf_MK2_-_fits_any_display!.gcode/Adjustable_monitor_shelf_MK2_-_fits_any_display!.gcode.3mf (231751 bytes) to /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf
+2026-04-10 13:51:19,205 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.0s (PASV + TLS handshake)
+2026-04-10 13:51:20,292 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf: 226
+2026-04-10 13:51:20,292 INFO [backend.app.services.bambu_ftp] FTP upload complete: /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf (231751 bytes in 1.1s, 199 KB/s)
+2026-04-10 13:51:20,292 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-10 13:51:20,307 INFO [backend.app.main] Registered expected print: printer=1, file=Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf, archive=1, ams_mapping=[-1, 3]
+2026-04-10 13:51:20,307 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf, caller=background_dispatch.py:529:_process_job
+2026-04-10 13:51:20,307 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_2.gcode", "url": "ftp://Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf", "file": "Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": false, "auto_bed_leveling": 0, "flow_cali": true, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "Adjustable_monitor_shelf_MK2_-_fits_any_display!", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [-1, 3], "ams_mapping2": [{"ams_id": 255, "slot_id": 255}, {"ams_id": 0, "slot_id": 3}]}}
+2026-04-10 13:51:35,307 WARNING [backend.app.services.background_dispatch] Printer [PRINTER] (1) did not respond to print command within 15s (state still FINISH) — printer may need restart
+2026-04-10 13:51:47,493 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-10 13:51:47,493 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-10 13:51:47,493 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-10 13:51:47,909 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-04-10 13:51:47,909 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-10 13:51:47,909 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: Adjustable_monitor_shelf_MK2_-_fits_any_display_
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 26, 'insert_flag': True, 'power_on_flag': False}
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -41dBm
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-04-10 13:51:47,910 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: Adjustable_monitor_shelf_MK2_-_fits_any_display_
+2026-04-10 13:51:49,918 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-10 13:51:49,918 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -40dBm
+2026-04-10 13:51:50,228 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-10 13:51:50,228 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-10 13:51:54,156 INFO [backend.app.api.routes.archives] Dispatched reprint archive 1 for printer 1 (dispatch_job_id=3, dispatch_position=1)
+2026-04-10 13:51:54,162 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=60.0s, model=A1 Mini, prot_c=False)
+2026-04-10 13:51:54,905 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-10 13:51:54,920 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-10 13:51:54,936 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-10 13:51:54,936 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:51:54,978 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=A1 Mini, mode=prot_p, socket_timeout=60.0s)...
+2026-04-10 13:51:54,978 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=60.0s, model=A1 Mini, prot_c=False)
+2026-04-10 13:51:55,727 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-10 13:51:55,758 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-10 13:51:55,794 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-10 13:51:55,794 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-04-10 13:51:55,794 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-10 13:51:55,795 INFO [backend.app.services.bambu_ftp] FTP uploading /opt/[user]/archive/1/20260408_161146_Adjustable_monitor_shelf_MK2_-_fits_any_display!.gcode/Adjustable_monitor_shelf_MK2_-_fits_any_display!.gcode.3mf (231751 bytes) to /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf
+2026-04-10 13:51:55,795 DEBUG [backend.app.services.bambu_ftp] FTP STOR command starting for /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf
+2026-04-10 13:51:55,876 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-04-10 13:51:55,886 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 65536/231751 bytes
+2026-04-10 13:51:55,970 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 131072/231751 bytes
+2026-04-10 13:51:55,970 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 196608/231751 bytes
+2026-04-10 13:51:56,097 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 231751/231751 bytes
+2026-04-10 13:51:56,097 DEBUG [backend.app.services.bambu_ftp] FTP upload: final chunk reached
+2026-04-10 13:51:56,952 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf: 226
+2026-04-10 13:51:56,952 INFO [backend.app.services.bambu_ftp] FTP upload complete: /Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf (231751 bytes in 1.2s, 196 KB/s)
+2026-04-10 13:51:56,952 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-10 13:51:56,967 INFO [backend.app.main] Registered expected print: printer=1, file=Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf, archive=1, ams_mapping=[-1, 3]
+2026-04-10 13:51:56,967 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf, caller=background_dispatch.py:529:_process_job
+2026-04-10 13:51:56,968 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_2.gcode", "url": "ftp://Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf", "file": "Adjustable_monitor_shelf_MK2_-_fits_any_display!.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": false, "auto_bed_leveling": 0, "flow_cali": true, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "Adjustable_monitor_shelf_MK2_-_fits_any_display!", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [-1, 3], "ams_mapping2": [{"ams_id": 255, "slot_id": 255}, {"ams_id": 0, "slot_id": 3}]}}
+2026-04-10 13:51:58,493 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-10 13:51:58,493 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -35dBm
+2026-04-10 13:52:00,513 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-10 13:52:00,513 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -34dBm

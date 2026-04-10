@@ -172,6 +172,12 @@ export default {
     powerOn: '電源オン',
     offlinePrintersWithPlugs: 'スマートプラグ付きオフラインプリンター',
     noPrintersConfigured: 'プリンターが設定されていません',
+    search: 'プリンターを検索...',
+    noSearchResults: '検索またはフィルターに一致するプリンターがありません',
+    filter: {
+      allStatuses: 'すべてのステータス',
+      allLocations: 'すべての場所',
+    },
     // Printer card
     readyToPrint: '印刷可能',
     external: '外部',

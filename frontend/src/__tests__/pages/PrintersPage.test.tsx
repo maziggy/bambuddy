@@ -476,4 +476,208 @@ describe('PrintersPage', () => {
       });
     });
   });
+
+  describe('search and filter', () => {
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json(mockPrinterStatus)),
+        http.get('/api/v1/queue/', () => HttpResponse.json([]))
+      );
+    });
+
+    it('filters by name (case-insensitive)', async () => {
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: 'x1 carbon' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+        expect(screen.queryByText('P1S Backup')).not.toBeInTheDocument();
+      });
+    });
+
+    it('trims leading and trailing whitespace from search', async () => {
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      // " X1 Carbon " with surrounding spaces must still match
+      fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: '  X1 Carbon  ' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+        expect(screen.queryByText('P1S Backup')).not.toBeInTheDocument();
+      });
+    });
+
+    it('filters by model', async () => {
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: 'P1S' } });
+
+      await waitFor(() => {
+        expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
+        expect(screen.getByText('P1S Backup')).toBeInTheDocument();
+      });
+    });
+
+    it('filters by serial number', async () => {
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: '00M09A' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+        expect(screen.queryByText('P1S Backup')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows empty state when no printers match search', async () => {
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: 'ZZZ_NO_MATCH' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('No printers match your search or filters')).toBeInTheDocument();
+      });
+    });
+
+    it('clear button resets search and shows all printers', async () => {
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: 'X1 Carbon' } });
+
+      await waitFor(() => expect(screen.queryByText('P1S Backup')).not.toBeInTheDocument());
+
+      // Click the accessible clear button
+      fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+        expect(screen.getByText('P1S Backup')).toBeInTheDocument();
+      });
+    });
+
+    it('filters by status (offline) via dropdown', async () => {
+      // Override: printer 1 online, printer 2 offline
+      server.use(
+        http.get('/api/v1/printers/:id/status', ({ params }) => {
+          if (Number(params.id) === 2) {
+            return HttpResponse.json({ ...mockPrinterStatus, connected: false });
+          }
+          return HttpResponse.json(mockPrinterStatus);
+        })
+      );
+
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      // Select "Offline" from the status filter dropdown
+      const statusSelect = screen.getByDisplayValue('All statuses');
+      fireEvent.change(statusSelect, { target: { value: 'offline' } });
+
+      await waitFor(() => {
+        expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
+        expect(screen.getByText('P1S Backup')).toBeInTheDocument();
+      });
+    });
+
+    it('shows empty state when status filter matches nothing', async () => {
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      // Both printers are IDLE; filtering by "printing" should yield no results
+      const statusSelect = screen.getByDisplayValue('All statuses');
+      fireEvent.change(statusSelect, { target: { value: 'printing' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('No printers match your search or filters')).toBeInTheDocument();
+      });
+    });
+
+    it('combines search and status filter', async () => {
+      // Printer 1 = RUNNING (printing), printer 2 = IDLE
+      server.use(
+        http.get('/api/v1/printers/:id/status', ({ params }) => {
+          if (Number(params.id) === 1) {
+            return HttpResponse.json({ ...mockPrinterStatus, state: 'RUNNING' });
+          }
+          return HttpResponse.json(mockPrinterStatus);
+        })
+      );
+
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      // Filter to only "printing" printers
+      fireEvent.change(screen.getByDisplayValue('All statuses'), { target: { value: 'printing' } });
+
+      // Then also search for a term that only matches printer 1
+      fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: 'X1' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+        expect(screen.queryByText('P1S Backup')).not.toBeInTheDocument();
+      });
+    });
+
+    it('filters by location via dropdown', async () => {
+      // Override: give printer 2 its own location so the dropdown has two options
+      // and we can verify the filter picks the right one. Printer 1 stays at 'Workshop'.
+      server.use(
+        http.get('/api/v1/printers/', () =>
+          HttpResponse.json([
+            mockPrinters[0],
+            { ...mockPrinters[1], location: 'Office' },
+          ])
+        )
+      );
+
+      render(<PrintersPage />);
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+        expect(screen.getByText('P1S Backup')).toBeInTheDocument();
+      });
+
+      // Select "Workshop" from the location filter dropdown
+      fireEvent.change(screen.getByDisplayValue('All locations'), { target: { value: 'Workshop' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+        expect(screen.queryByText('P1S Backup')).not.toBeInTheDocument();
+      });
+
+      // Switch to "Office" — the other printer should now be the only one visible
+      fireEvent.change(screen.getByDisplayValue('Workshop'), { target: { value: 'Office' } });
+
+      await waitFor(() => {
+        expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
+        expect(screen.getByText('P1S Backup')).toBeInTheDocument();
+      });
+    });
+
+    it('hides location filter when no printers have a location', async () => {
+      // Both printers have null location — dropdown should not render at all
+      server.use(
+        http.get('/api/v1/printers/', () =>
+          HttpResponse.json([
+            { ...mockPrinters[0], location: null },
+            { ...mockPrinters[1], location: null },
+          ])
+        )
+      );
+
+      render(<PrintersPage />);
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      // Status filter is still there, but the location filter should be absent.
+      expect(screen.getByDisplayValue('All statuses')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue('All locations')).not.toBeInTheDocument();
+    });
+  });
 });

@@ -5762,6 +5762,10 @@ export function PrintersPage() {
   });
   // Derive viewMode from cardSize: S=compact, M/L/XL=expanded
   const viewMode: ViewMode = cardSize === 1 ? 'compact' : 'expanded';
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [locationFilter, setLocationFilter] = useState<string>('all');
+  const [statusCacheVersion, setStatusCacheVersion] = useState(0);
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
@@ -6064,10 +6068,73 @@ export function PrintersPage() {
 
   const cardSizeLabels = ['S', 'M', 'L', 'XL'];
 
+  // Increment version counter whenever a printer status cache entry is updated so
+  // filteredPrinters re-computes reactively on WebSocket-driven status changes.
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event.type === 'updated' &&
+        Array.isArray(event.query.queryKey) &&
+        event.query.queryKey[0] === 'printerStatus'
+      ) {
+        setStatusCacheVersion(v => v + 1);
+      }
+    });
+    return unsubscribe;
+  }, [queryClient]);
+
+  // Filter printers by search term, status, and location
+  const filteredPrinters = useMemo(() => {
+    if (!printers) return [];
+    let result = printers;
+
+    // Text search
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        (p.model || '').toLowerCase().includes(q) ||
+        (p.location || '').toLowerCase().includes(q) ||
+        (p.serial_number || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Location filter
+    if (locationFilter !== 'all') {
+      result = result.filter(p => (p.location || '') === locationFilter);
+    }
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      result = result.filter(p => {
+        const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', p.id]);
+        if (!status?.connected) return statusFilter === 'offline';
+        const hmsErrors = status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
+        switch (statusFilter) {
+          case 'printing': return status.state === 'RUNNING';
+          case 'paused':   return status.state === 'PAUSE';
+          case 'finished': return status.state === 'FINISH';
+          case 'error':    return status.state === 'FAILED' || hmsErrors.length > 0;
+          case 'idle':     return status.state !== 'RUNNING' && status.state !== 'PAUSE' && status.state !== 'FINISH' && status.state !== 'FAILED' && hmsErrors.length === 0;
+          case 'offline':  return false; // Connected printers are never offline
+          default:         return true;
+        }
+      });
+    }
+
+    return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- statusCacheVersion is intentional: it forces recompute when WebSocket updates printer status cache
+  }, [printers, search, statusFilter, locationFilter, queryClient, statusCacheVersion]);
+
+  // Derive unique locations for the location filter dropdown
+  const availableLocations = useMemo(() => {
+    if (!printers) return [];
+    return [...new Set(printers.map(p => p.location || '').filter(Boolean))].sort();
+  }, [printers]);
+
   // Sort printers based on selected option
   const sortedPrinters = useMemo(() => {
-    if (!printers) return [];
-    const sorted = [...printers];
+    const sorted = [...filteredPrinters];
 
     switch (sortBy) {
       case 'name':
@@ -6111,7 +6178,7 @@ export function PrintersPage() {
     }
 
     return sorted;
-  }, [printers, sortBy, sortAsc, queryClient]);
+  }, [filteredPrinters, sortBy, sortAsc, queryClient]);
 
   const selectAll = useCallback(() => {
     setSelectedPrinterIds(new Set(sortedPrinters.map(p => p.id)));
@@ -6166,6 +6233,30 @@ export function PrintersPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">{t('printers.title')}</h1>
           <StatusSummaryBar printers={printers} />
+          {/* Only show search bar when printers exist */}
+          {printers && printers.length > 0 && (
+            <div className="relative w-full sm:max-w-sm mt-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('printers.search')}
+                aria-label={t('printers.search')}
+                className="w-full pl-10 pr-8 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+              />
+              {search && (
+                <button
+                  type="button"
+                  aria-label={t('common.clear')}
+                  onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Sort dropdown */}
@@ -6192,6 +6283,37 @@ export function PrintersPage() {
               )}
             </button>
           </div>
+
+          {/* Status filter */}
+          {printers && printers.length > 0 && (
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1.5 text-white focus:border-bambu-green focus:outline-none"
+            >
+              <option value="all">{t('printers.filter.allStatuses')}</option>
+              <option value="printing">{t('printers.status.printing')}</option>
+              <option value="paused">{t('printers.status.paused')}</option>
+              <option value="idle">{t('printers.status.idle')}</option>
+              <option value="finished">{t('printers.status.finished')}</option>
+              <option value="error">{t('printers.status.error')}</option>
+              <option value="offline">{t('printers.status.offline')}</option>
+            </select>
+          )}
+
+          {/* Location filter — only shown when at least one printer has a location */}
+          {printers && printers.length > 0 && availableLocations.length > 0 && (
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1.5 text-white focus:border-bambu-green focus:outline-none"
+            >
+              <option value="all">{t('printers.filter.allLocations')}</option>
+              {availableLocations.map(loc => (
+                <option key={loc} value={loc}>{loc}</option>
+              ))}
+            </select>
+          )}
 
           {/* Card size selector */}
           <div className="flex items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
@@ -6319,6 +6441,12 @@ export function PrintersPage() {
               <Plus className="w-4 h-4" />
               {t('printers.addPrinter')}
             </Button>
+          </CardContent>
+        </Card>
+      ) : sortedPrinters.length === 0 && (search.trim() || statusFilter !== 'all' || locationFilter !== 'all') ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <p className="text-bambu-gray">{t('printers.noSearchResults')}</p>
           </CardContent>
         </Card>
       ) : groupedPrinters ? (

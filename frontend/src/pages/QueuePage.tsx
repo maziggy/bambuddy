@@ -1157,9 +1157,9 @@ export function QueuePage() {
         )}
       </div>
 
-      {/* View Mode Toggle */}
-      <div className="hidden sm:flex items-center gap-3 mb-6">
-        <div className="flex items-center border border-bambu-dark-tertiary rounded-lg overflow-hidden">
+      {/* View Mode Toggle + SJF */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className="hidden sm:flex items-center border border-bambu-dark-tertiary rounded-lg overflow-hidden">
           <button
             className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-bambu-green text-white' : 'bg-bambu-dark text-bambu-gray hover:text-white'}`}
             onClick={() => setViewMode('list')}
@@ -1175,6 +1175,22 @@ export function QueuePage() {
             <GanttChart className="w-4 h-4" />
           </button>
         </div>
+        <button
+          onClick={() => {
+            const newValue = !(settings?.queue_shortest_first ?? false);
+            sjfMutation.mutate(newValue);
+          }}
+          className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${
+            settings?.queue_shortest_first
+              ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
+              : 'bg-bambu-dark-secondary border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
+          }`}
+          title={t('queue.sjf.tooltip', 'Shortest Job First — scheduler prioritizes shorter prints')}
+        >
+          <Timer className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">{t('queue.sjf.label', 'SJF')}</span>
+          <span className={`w-1.5 h-1.5 rounded-full ${settings?.queue_shortest_first ? 'bg-bambu-green' : 'bg-bambu-gray'}`} />
+        </button>
       </div>
 
       {isLoading ? (
@@ -1248,22 +1264,6 @@ export function QueuePage() {
                   </span>
                 </h2>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const newValue = !(settings?.queue_shortest_first ?? false);
-                      sjfMutation.mutate(newValue);
-                    }}
-                    className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${
-                      settings?.queue_shortest_first
-                        ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
-                        : 'bg-bambu-dark-secondary border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
-                    }`}
-                    title={t('queue.sjf.tooltip', 'Shortest Job First — scheduler prioritizes shorter prints')}
-                  >
-                    <Timer className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">{t('queue.sjf.label', 'SJF')}</span>
-                    <span className={`w-1.5 h-1.5 rounded-full ${settings?.queue_shortest_first ? 'bg-bambu-green' : 'bg-bambu-gray'}`} />
-                  </button>
                   <select
                     className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     value={pendingSortBy}

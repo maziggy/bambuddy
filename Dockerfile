@@ -41,6 +41,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Copy backend
 COPY backend/ ./backend/
 
+# Capture the current git branch at build time. `.git/HEAD` is the only
+# .git metadata the build context lets through (see .dockerignore); it
+# contains `ref: refs/heads/<branch>`, which the SpoolBuddy remote-update
+# flow reads at runtime via detect_current_branch() in spoolbuddy_ssh.py.
+# Without this, the production image has no git metadata at all and would
+# always pull `main` on the remote device regardless of which branch
+# Bambuddy itself was built from.
+COPY .git/HEAD ./.git/HEAD
+
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/static ./static
 
@@ -53,6 +62,17 @@ ENV PYTHONUNBUFFERED=1
 ENV DATA_DIR=/app/data
 ENV LOG_DIR=/app/logs
 ENV PORT=8000
+# Provide a local username + home for tools that call getpass.getuser() /
+# os.path.expanduser() under arbitrary PUIDs. With `user: "1001:1001"` the
+# stock python:3.13-slim image has no /etc/passwd entry for that UID, so
+# pwd.getpwuid() raises and breaks libraries that do host-level user lookups
+# (notably asyncssh, which uses the local username for ~/.ssh/config host
+# matching during the SpoolBuddy remote-update flow). Setting LOGNAME/USER
+# makes getpass.getuser() resolve via env vars instead of the passwd db;
+# HOME=/app gives a writable home that is guaranteed to exist.
+ENV HOME=/app
+ENV USER=bambuddy
+ENV LOGNAME=bambuddy
 
 EXPOSE 322
 EXPOSE 990

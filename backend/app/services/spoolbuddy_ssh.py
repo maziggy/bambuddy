@@ -3,14 +3,21 @@
 Instead of the daemon updating itself (fragile: permission issues, self-modifying
 code, hardcoded branch), Bambuddy SSHes into the SpoolBuddy Pi and drives the
 update remotely: git fetch/checkout, pip install, systemctl restart.
+
+Uses `asyncssh` (pure-Python async SSH client) rather than shelling out to the
+OpenSSH `ssh` binary. The subprocess approach fails in Docker: both `ssh` and
+`ssh-keygen` call `getpwuid(getuid())` during startup and abort with
+"No user exists for uid <N>" when the container runs under a UID that is not
+listed in /etc/passwd (e.g. PUID=1000 on python:3.13-slim, which only has
+entries for root). asyncssh does all of its work in-process.
 """
 
 import asyncio
 import logging
 import os
-import shutil
 from pathlib import Path
 
+import asyncssh
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
@@ -20,6 +27,19 @@ logger = logging.getLogger(__name__)
 
 SSH_USER = "spoolbuddy"
 DEFAULT_INSTALL_PATH = "/opt/bambuddy"
+
+# Project root — where the `.git` directory lives for native installs and for
+# Docker containers that bind-mount the repo. This is intentionally distinct
+# from `settings.base_dir`, which points at the persistent *data* directory
+# (e.g. `DATA_DIR=/app/data` in Docker) and therefore never contains `.git`.
+# `backend/app/services/spoolbuddy_ssh.py` → parents[3] = project root.
+_APP_DIR = Path(__file__).resolve().parents[3]
+
+# Note for Docker: asyncssh.connect() internally calls getpass.getuser() to
+# resolve the *local* username for ~/.ssh/config host matching. Under an
+# arbitrary PUID with no /etc/passwd entry this would raise OSError. The
+# Dockerfile sets LOGNAME/USER/HOME so getpass.getuser() succeeds via env-var
+# lookup before ever touching the passwd database.
 
 
 def _get_ssh_key_dir() -> Path:
@@ -80,26 +100,37 @@ async def get_public_key() -> str:
 def detect_current_branch() -> str:
     """Detect the git branch Bambuddy is running on.
 
-    For native installs, reads from the .git directory.
-    For Docker (no .git), falls back to GIT_BRANCH env var, then "main".
-    """
-    git_dir = settings.base_dir / ".git"
-    if git_dir.exists():
-        git_path = shutil.which("git") or "/usr/bin/git"
-        try:
-            import subprocess
+    Reads `.git/HEAD` directly from the application root (``_APP_DIR``) rather
+    than shelling out to `git`. The application root is deliberately distinct
+    from ``settings.base_dir``: in Docker, ``base_dir`` points at the data
+    volume (``/app/data``) which never contains ``.git``, while the repo is
+    bind-mounted (or COPYd) to ``/app``. This works for native installs,
+    bare Docker containers (no ``.git`` — fall through to the env var), and
+    Docker containers that bind-mount the repo (``.git`` is present, no
+    ``git`` binary required, and no ``getpwuid()`` call that could fail under
+    an arbitrary PUID).
 
-            result = subprocess.run(
-                [git_path, "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=str(settings.base_dir),
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except Exception:
-            pass
+    Fallback order: ``.git/HEAD`` → ``GIT_BRANCH`` env var → ``"main"``.
+    """
+    git_path = _APP_DIR / ".git"
+    try:
+        if git_path.exists():
+            # Git worktrees use a file containing `gitdir: <path>` instead of
+            # a directory — follow the pointer.
+            if git_path.is_file():
+                content = git_path.read_text(encoding="utf-8").strip()
+                if content.startswith("gitdir:"):
+                    git_path = (_APP_DIR / content.removeprefix("gitdir:").strip()).resolve()
+
+            head_file = git_path / "HEAD"
+            if head_file.is_file():
+                head = head_file.read_text(encoding="utf-8").strip()
+                # Normal case: `ref: refs/heads/<branch>`.
+                # Detached HEAD stores a raw commit hash — fall through to env var.
+                if head.startswith("ref: refs/heads/"):
+                    return head.removeprefix("ref: refs/heads/").strip()
+    except OSError as exc:
+        logger.debug("Could not read .git/HEAD, falling back: %s", exc)
 
     return os.environ.get("GIT_BRANCH", "main")
 
@@ -112,36 +143,34 @@ async def _run_ssh_command(
 ) -> tuple[int, str, str]:
     """Execute a command on a SpoolBuddy device via SSH.
 
-    Returns (returncode, stdout, stderr).
-    """
-    ssh_path = shutil.which("ssh") or "/usr/bin/ssh"
-    proc = await asyncio.create_subprocess_exec(
-        ssh_path,
-        "-i",
-        str(private_key),
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-        "-o",
-        "ConnectTimeout=10",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "LogLevel=ERROR",
-        f"{SSH_USER}@{ip}",
-        command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except TimeoutError:
-        proc.kill()
-        await proc.communicate()
-        return -1, "", "SSH command timed out"
+    Uses asyncssh rather than the OpenSSH `ssh` binary — see module docstring
+    for the Docker/PUID rationale.
 
-    return proc.returncode, stdout.decode(), stderr.decode()
+    Returns (returncode, stdout, stderr). On connection failure the return
+    code is 255 (matching `ssh`'s own convention) and stderr carries the
+    asyncssh error message. On timeout the return code is -1.
+    """
+    try:
+        async with asyncio.timeout(timeout):
+            async with asyncssh.connect(
+                host=ip,
+                username=SSH_USER,
+                client_keys=[str(private_key)],
+                known_hosts=None,  # equivalent to StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null
+                config=[],  # do not load ~/.ssh/config — HOME may not resolve under arbitrary Docker PUIDs
+                connect_timeout=10,
+            ) as conn:
+                result = await conn.run(command, check=False)
+    except TimeoutError:
+        return -1, "", "SSH command timed out"
+    except (asyncssh.Error, OSError) as exc:
+        return 255, "", str(exc)
+
+    stdout = result.stdout if isinstance(result.stdout, str) else (result.stdout or b"").decode(errors="replace")
+    stderr = result.stderr if isinstance(result.stderr, str) else (result.stderr or b"").decode(errors="replace")
+    # asyncssh's exit_status is None when the remote closed without setting one
+    returncode = result.exit_status if result.exit_status is not None else 0
+    return returncode, stdout, stderr
 
 
 async def perform_ssh_update(device_id: str, ip_address: str, install_path: str | None = None) -> None:

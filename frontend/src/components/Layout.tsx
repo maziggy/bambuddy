@@ -561,7 +561,7 @@ export function Layout() {
                         )}
                         {link.custom_icon ? (
                           <img
-                            src={`/api/v1/external-links/${link.id}/icon`}
+                            src={api.getExternalLinkIconUrl(link.id)}
                             alt=""
                             className="w-5 h-5 flex-shrink-0"
                           />
@@ -587,7 +587,7 @@ export function Layout() {
                         )}
                         {link.custom_icon ? (
                           <img
-                            src={`/api/v1/external-links/${link.id}/icon`}
+                            src={api.getExternalLinkIconUrl(link.id)}
                             alt=""
                             className="w-5 h-5 flex-shrink-0"
                           />

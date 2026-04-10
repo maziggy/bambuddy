@@ -17,9 +17,19 @@ Tests the full request/response cycle for:
 
 from __future__ import annotations
 
+import secrets
+from datetime import datetime, timedelta, timezone
+
 import pyotp
 import pytest
 from httpx import AsyncClient
+from passlib.context import CryptContext
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.app.models.auth_ephemeral import AuthEphemeralToken
+from backend.app.models.user import User
+
+_pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -245,7 +255,7 @@ class TestTOTPDisable:
 
 
 class TestEmailOTP:
-    """Tests for POST /api/v1/auth/2fa/email/enable and /disable."""
+    """Tests for POST /api/v1/auth/2fa/email/enable, /enable/confirm and /disable."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -255,6 +265,111 @@ class TestEmailOTP:
         response = await async_client.post("/api/v1/auth/2fa/email/enable", headers=_auth_header(token))
         assert response.status_code == 400
         assert "email" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_confirm_enable_email_otp_happy_path(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Confirm step activates email OTP when setup_token + code are valid (C5)."""
+        token = await _setup_and_login(async_client, "confirmenable", "confirmenable1")
+
+        # Give user an email address directly (SMTP not available in tests)
+        from sqlalchemy import select as sa_select
+
+        result = await db_session.execute(sa_select(User).where(User.username == "confirmenable"))
+        user = result.scalar_one()
+        user.email = "confirmenable@example.com"
+        await db_session.commit()
+
+        # Inject a known setup token directly into the DB (bypasses SMTP)
+        code = "123456"
+        code_hash = _pwd_context.hash(code)
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="confirmenable",
+                nonce=code_hash,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": code},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 200
+
+        status_resp = await async_client.get("/api/v1/auth/2fa/status", headers=_auth_header(token))
+        assert status_resp.json()["email_otp_enabled"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_confirm_enable_email_otp_wrong_code(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Wrong code on confirm step returns 400 and does not enable email OTP."""
+        token = await _setup_and_login(async_client, "confirmwrong", "confirmwrong1")
+
+        code_hash = _pwd_context.hash("654321")
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="confirmwrong",
+                nonce=code_hash,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": "000000"},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_confirm_enable_email_otp_setup_token_is_single_use(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Setup token is consumed on first use; replay returns 400."""
+        token = await _setup_and_login(async_client, "confirmonce", "confirmonce1")
+
+        code = "111111"
+        code_hash = _pwd_context.hash(code)
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="confirmonce",
+                nonce=code_hash,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+
+        first = await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": code},
+            headers=_auth_header(token),
+        )
+        assert first.status_code == 200
+
+        second = await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": code},
+            headers=_auth_header(token),
+        )
+        assert second.status_code == 400
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -271,15 +386,41 @@ class TestEmailOTP:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_disable_email_otp_correct_password(self, async_client: AsyncClient):
-        """Disabling email OTP with correct password should succeed."""
+    async def test_disable_email_otp_when_enabled(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Disabling email OTP when enabled turns it off and status reflects that."""
         token = await _setup_and_login(async_client, "disemailpw", "disemailpw1")
+
+        # Enable email OTP via direct DB injection (no SMTP)
+        code = "222222"
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="disemailpw",
+                nonce=_pwd_context.hash(code),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+        await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": code},
+            headers=_auth_header(token),
+        )
+
+        # Now disable
         response = await async_client.post(
             "/api/v1/auth/2fa/email/disable",
             json={"password": "disemailpw1"},
             headers=_auth_header(token),
         )
         assert response.status_code == 200
+
+        status_resp = await async_client.get("/api/v1/auth/2fa/status", headers=_auth_header(token))
+        assert status_resp.json()["email_otp_enabled"] is False
 
 
 # ===========================================================================

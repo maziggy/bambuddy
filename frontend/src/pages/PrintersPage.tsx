@@ -5765,6 +5765,7 @@ export function PrintersPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [locationFilter, setLocationFilter] = useState<string>('all');
+  const [statusCacheVersion, setStatusCacheVersion] = useState(0);
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
@@ -6067,6 +6068,21 @@ export function PrintersPage() {
 
   const cardSizeLabels = ['S', 'M', 'L', 'XL'];
 
+  // Increment version counter whenever a printer status cache entry is updated so
+  // filteredPrinters re-computes reactively on WebSocket-driven status changes.
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event.type === 'updated' &&
+        Array.isArray(event.query.queryKey) &&
+        event.query.queryKey[0] === 'printerStatus'
+      ) {
+        setStatusCacheVersion(v => v + 1);
+      }
+    });
+    return unsubscribe;
+  }, [queryClient]);
+
   // Filter printers by search term, status, and location
   const filteredPrinters = useMemo(() => {
     if (!printers) return [];
@@ -6074,7 +6090,7 @@ export function PrintersPage() {
 
     // Text search
     if (search.trim()) {
-      const q = search.toLowerCase();
+      const q = search.trim().toLowerCase();
       result = result.filter(p =>
         p.name.toLowerCase().includes(q) ||
         (p.model || '').toLowerCase().includes(q) ||
@@ -6100,13 +6116,15 @@ export function PrintersPage() {
           case 'finished': return status.state === 'FINISH';
           case 'error':    return status.state === 'FAILED' || hmsErrors.length > 0;
           case 'idle':     return status.state !== 'RUNNING' && status.state !== 'PAUSE' && status.state !== 'FINISH' && status.state !== 'FAILED' && hmsErrors.length === 0;
+          case 'offline':  return false; // Connected printers are never offline
           default:         return true;
         }
       });
     }
 
     return result;
-  }, [printers, search, statusFilter, locationFilter, queryClient]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- statusCacheVersion is intentional: it forces recompute when WebSocket updates printer status cache
+  }, [printers, search, statusFilter, locationFilter, queryClient, statusCacheVersion]);
 
   // Derive unique locations for the location filter dropdown
   const availableLocations = useMemo(() => {
@@ -6229,6 +6247,8 @@ export function PrintersPage() {
               />
               {search && (
                 <button
+                  type="button"
+                  aria-label={t('common.clear')}
                   onClick={() => setSearch('')}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white"
                 >

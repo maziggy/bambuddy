@@ -1441,9 +1441,12 @@ async def run_migrations(conn):
     )
 
     # Migration: Add PKCE code_verifier column to auth_ephemeral_tokens
+    # Catch both OperationalError (SQLite: column already exists) and
+    # ProgrammingError (PostgreSQL: column already exists) to avoid poisoning
+    # the outer transaction on Postgres when the migration was already applied.
     try:
         await conn.execute(text("ALTER TABLE auth_ephemeral_tokens ADD COLUMN code_verifier VARCHAR(128)"))
-    except OperationalError:
+    except (OperationalError, ProgrammingError):
         pass  # Already applied
 
     # Seed default settings keys that must exist on fresh install

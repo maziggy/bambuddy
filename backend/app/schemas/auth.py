@@ -1,4 +1,6 @@
-from pydantic import BaseModel, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class GroupBrief(BaseModel):
@@ -154,7 +156,7 @@ class TOTPEnableResponse(BaseModel):
 class TOTPDisableRequest(BaseModel):
     """Requires a valid TOTP code OR a backup code to disable TOTP."""
 
-    code: str
+    code: str = Field(..., max_length=128)
 
 
 class BackupCodesResponse(BaseModel):
@@ -169,9 +171,9 @@ class EmailOTPEnableRequest(BaseModel):
 
 
 class TwoFAVerifyRequest(BaseModel):
-    pre_auth_token: str
-    code: str
-    method: str = "totp"  # "totp" | "email" | "backup"
+    pre_auth_token: str = Field(..., max_length=128)
+    code: str = Field(..., max_length=128)
+    method: Literal["totp", "email", "backup"] = "totp"
 
 
 class TwoFAVerifyResponse(BaseModel):
@@ -181,7 +183,20 @@ class TwoFAVerifyResponse(BaseModel):
 
 
 class EmailOTPSendRequest(BaseModel):
-    pre_auth_token: str
+    pre_auth_token: str = Field(..., max_length=128)
+
+
+class EmailOTPEnableConfirmRequest(BaseModel):
+    """Body for the second step of email OTP enable: verify the proof-of-possession code."""
+
+    setup_token: str = Field(..., max_length=128)
+    code: str = Field(..., max_length=8, min_length=6)
+
+
+class EmailOTPDisableRequest(BaseModel):
+    """Requires the account password to disable email OTP."""
+
+    password: str = Field(..., max_length=256)
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +267,7 @@ class OIDCAuthorizeResponse(BaseModel):
 
 
 class OIDCExchangeRequest(BaseModel):
-    oidc_token: str
+    oidc_token: str = Field(..., max_length=128)
 
 
 class OIDCLinkResponse(BaseModel):

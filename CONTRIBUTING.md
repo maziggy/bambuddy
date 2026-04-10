@@ -6,6 +6,7 @@ Thank you for your interest in contributing to Bambuddy! This document provides 
 
 - [Code of Conduct](#code-of-conduct)
 - [Before You Start](#before-you-start)
+- [Documentation Requirements](#documentation-requirements)
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
 - [Making Changes](#making-changes)
@@ -34,6 +35,44 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to keep our com
 **No assigned issue = no PR.** Pull requests without a corresponding assigned issue will be closed.
 
 This keeps everyone on the same page, avoids wasted effort on changes that may not fit the project's direction, and prevents multiple contributors from working on the same thing.
+
+## Documentation Requirements
+
+Features and user-visible behavior changes **must** include matching documentation updates in the docs repos:
+
+- **[bambuddy-wiki](https://github.com/maziggy/bambuddy-wiki)** — end-user guide (installation, configuration, feature walkthroughs, reference)
+- **[bambuddy-website](https://github.com/maziggy/bambuddy-website)** — marketing site (updated only when the change affects public claims or feature lists)
+
+### When docs updates are required
+
+| Change | Needs wiki? | Needs website? |
+|---|---|---|
+| New feature | ✅ | Maybe (if in the feature list) |
+| New config key / setting | ✅ | ❌ |
+| New port, URL, API endpoint | ✅ | ❌ |
+| Installation or upgrade steps change | ✅ | ✅ |
+| UI change that affects screenshots | ✅ | ❌ |
+| Bug fix with no observable behavior change | ❌ | ❌ |
+| Internal refactor | ❌ | ❌ |
+| Test-only change | ❌ | ❌ |
+
+### Workflow
+
+1. Open your code PR here in `bambuddy`
+2. Open companion PR(s) in `bambuddy-wiki` and/or `bambuddy-website`
+3. **Link the companion PR(s) in the code PR description** (the PR template has a dedicated section)
+4. Review the Cloudflare Pages **preview URLs** (posted as comments on the docs PRs) before merging
+5. Merge the PRs together — usually code first, then docs, unless the docs reference new things that don't exist yet
+
+If your change truly doesn't need docs (internal refactor, silent bug fix), say so in the PR description and give a one-line reason.
+
+### Editing docs without a local clone
+
+Both docs repos can be edited directly in the browser, no `git clone` required:
+
+- **GitHub web editor** — click the pencil icon on any file in the repo
+- **github.dev** — press `.` (period) on any repo page to open VS Code in your browser, with multi-file editing and syntax highlighting
+- **Cloudflare Pages previews** — every PR gets a live preview URL auto-posted to the PR as a comment; click it to see your changes rendered on the real site
 
 ## Getting Started
 

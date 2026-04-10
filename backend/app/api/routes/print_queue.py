@@ -22,6 +22,7 @@ from backend.app.models.print_batch import PrintBatch
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
+from backend.app.models.project import Project
 from backend.app.schemas.print_queue import (
     PrintBatchResponse,
     PrintQueueBulkUpdate,
@@ -335,6 +336,12 @@ async def list_queue(
 
 @router.post("/", response_model=PrintQueueItemResponse)
 async def add_to_queue(
+    # Validate project exists before insert so a bogus ID yields 404, not an FK-constraint 500
+    if data.project_id is not None:
+        project_result = await db.execute(select(Project).where(Project.id == data.project_id))
+            if not project_result.scalar_one_or_none():
+                raise HTTPException(status_code=404, detail="Project not found")
+                
     data: PrintQueueItemCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),

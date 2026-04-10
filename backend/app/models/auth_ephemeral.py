@@ -49,6 +49,10 @@ class AuthEphemeralToken(Base):
     # oidc_state: PKCE code verifier (S256 method)
     code_verifier: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
+    # pre_auth: HttpOnly cookie value bound to this token to prevent token theft
+    # (XSS can read JS memory but cannot read HttpOnly cookies).
+    challenge_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

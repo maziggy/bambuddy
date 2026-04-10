@@ -66,6 +66,7 @@ async function request<T>(
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     cache: 'no-store', // Prevent browser caching of API responses
+    credentials: 'include', // Required for HttpOnly cookies (e.g. 2fa_challenge)
     headers,
   });
 

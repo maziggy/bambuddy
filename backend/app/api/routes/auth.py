@@ -1,7 +1,8 @@
+import secrets
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -277,7 +278,7 @@ async def disable_auth(
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(request: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Login and get access token.
 
     Supports username or email-based login. Username lookup is case-insensitive.
@@ -373,7 +374,18 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
         # Import here to avoid circular imports
         from backend.app.api.routes.mfa import create_pre_auth_token
 
-        pre_auth_token = await create_pre_auth_token(db, user.username)
+        # Bind the pre_auth_token to an HttpOnly cookie so XSS cannot steal the
+        # token from JS memory and complete 2FA from a different client.
+        challenge_id = secrets.token_urlsafe(32)
+        pre_auth_token = await create_pre_auth_token(db, user.username, challenge_id=challenge_id)
+        response.set_cookie(
+            key="2fa_challenge",
+            value=challenge_id,
+            httponly=True,
+            samesite="lax",
+            max_age=300,
+            path="/api/v1/auth/2fa",
+        )
         methods: list[str] = []
         if totp_enabled:
             methods.append("totp")

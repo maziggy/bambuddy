@@ -1446,6 +1446,9 @@ async def run_migrations(conn):
     # Migration: Add TOTP replay-protection counter to user_totp
     await _safe_execute(conn, "ALTER TABLE user_totp ADD COLUMN last_totp_counter BIGINT")
 
+    # Migration: Add challenge_id for pre-auth token client binding (HttpOnly cookie)
+    await _safe_execute(conn, "ALTER TABLE auth_ephemeral_tokens ADD COLUMN challenge_id VARCHAR(128)")
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

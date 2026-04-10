@@ -7,6 +7,7 @@ from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Strin
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
+from backend.app.core.encryption import mfa_decrypt, mfa_encrypt
 
 
 class UserTOTP(Base):
@@ -21,8 +22,9 @@ class UserTOTP(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
-    # Base32-encoded TOTP secret (30-byte random, standard for authenticator apps)
-    secret: Mapped[str] = mapped_column(String(64))
+    # TOTP secret — encrypted at rest when MFA_ENCRYPTION_KEY is set.
+    # Use .secret / .set_secret() rather than accessing _secret_enc directly.
+    _secret_enc: Mapped[str] = mapped_column("secret", String(512))
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # Hashed backup codes stored as JSON array of strings
     # Each entry is a hashed one-time-use recovery code
@@ -32,6 +34,16 @@ class UserTOTP(Base):
     last_totp_counter: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    @property
+    def secret(self) -> str:
+        """Return the decrypted TOTP secret."""
+        return mfa_decrypt(self._secret_enc)
+
+    @secret.setter
+    def secret(self, value: str) -> None:
+        """Store the TOTP secret, encrypting it when MFA_ENCRYPTION_KEY is set."""
+        self._secret_enc = mfa_encrypt(value)
 
     @property
     def backup_codes(self) -> list[str]:
@@ -47,3 +59,4 @@ class UserTOTP(Base):
 
     def __repr__(self) -> str:
         return f"<UserTOTP user_id={self.user_id} enabled={self.is_enabled}>"
+

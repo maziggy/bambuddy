@@ -6,6 +6,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
+from backend.app.core.encryption import mfa_decrypt, mfa_encrypt
 
 
 class OIDCProvider(Base):
@@ -27,8 +28,17 @@ class OIDCProvider(Base):
     # Full OIDC issuer URL (e.g. "https://id.example.com")
     issuer_url: Mapped[str] = mapped_column(String(500))
     client_id: Mapped[str] = mapped_column(String(255))
-    # Stored in plaintext — same threat model as SMTP passwords in this app
-    client_secret: Mapped[str] = mapped_column(String(500))
+    # Encrypted at rest when MFA_ENCRYPTION_KEY is set.
+    # Use .client_secret / .client_secret setter rather than _client_secret_enc directly.
+    _client_secret_enc: Mapped[str] = mapped_column("client_secret", String(512))
+
+    @property
+    def client_secret(self) -> str:
+        return mfa_decrypt(self._client_secret_enc)
+
+    @client_secret.setter
+    def client_secret(self, value: str) -> None:
+        self._client_secret_enc = mfa_encrypt(value)
     # Space-separated scopes; must include "openid"
     scopes: Mapped[str] = mapped_column(String(500), default="openid email profile")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)

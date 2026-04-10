@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import jwt
 import pyotp
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from jwt import PyJWKClient
 from passlib.context import CryptContext
@@ -163,8 +163,13 @@ def _generate_backup_codes() -> tuple[list[str], list[str]]:
 # ---------------------------------------------------------------------------
 # DB-backed pre-auth token helpers
 # ---------------------------------------------------------------------------
-async def create_pre_auth_token(db: AsyncSession, username: str) -> str:
-    """Create a single-use pre-auth token stored in the DB."""
+async def create_pre_auth_token(db: AsyncSession, username: str, challenge_id: str | None = None) -> str:
+    """Create a single-use pre-auth token stored in the DB.
+
+    Pass ``challenge_id`` (from the HttpOnly 2fa_challenge cookie) to bind the
+    token to the originating browser session.  The same value must be present as
+    a cookie on every subsequent call that consumes this token.
+    """
     now = datetime.now(timezone.utc)
     # Prune expired tokens opportunistically (keep table small)
     await db.execute(
@@ -179,6 +184,7 @@ async def create_pre_auth_token(db: AsyncSession, username: str) -> str:
             token=token,
             token_type="pre_auth",
             username=username,
+            challenge_id=challenge_id,
             expires_at=now + PRE_AUTH_TOKEN_TTL,
         )
     )
@@ -209,21 +215,31 @@ async def consume_pre_auth_token(db: AsyncSession, token: str) -> str | None:
     return row[0]
 
 
-async def peek_pre_auth_token(db: AsyncSession, token: str) -> str | None:
+async def peek_pre_auth_token(
+    db: AsyncSession, token: str, challenge_id: str | None = None
+) -> str | None:
     """Validate a pre-auth token and return the username WITHOUT consuming it.
 
-    Used to check the token (e.g. for rate-limiting) before deciding to consume it.
+    When the stored token has a ``challenge_id`` (client-binding cookie), the
+    caller must supply the matching value.  A mismatch is treated as an invalid
+    token — no information leakage about whether the token itself exists.
     """
     now = datetime.now(timezone.utc)
     result = await db.execute(
-        select(AuthEphemeralToken.username).where(
+        select(AuthEphemeralToken).where(
             AuthEphemeralToken.token == token,
             AuthEphemeralToken.token_type == "pre_auth",
             AuthEphemeralToken.expires_at > now,
         )
     )
-    row = result.one_or_none()
-    return row[0] if row is not None else None
+    eph = result.scalar_one_or_none()
+    if eph is None:
+        return None
+    # Enforce client binding: if the token was issued with a challenge_id the
+    # cookie must match.  Treat a mismatch as if the token doesn't exist.
+    if eph.challenge_id is not None and eph.challenge_id != challenge_id:
+        return None
+    return eph.username
 
 
 # ---------------------------------------------------------------------------
@@ -622,6 +638,7 @@ async def disable_email_otp(
 
 @router.post("/2fa/email/send")
 async def send_email_otp(
+    request: Request,
     body: EmailOTPSendRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -631,7 +648,8 @@ async def send_email_otp(
     """
     # Peek (validate without consuming) first so a rate-limit rejection does not
     # permanently burn the caller's pre-auth token.
-    username = await peek_pre_auth_token(db, body.pre_auth_token)
+    challenge_id = request.cookies.get("2fa_challenge")
+    username = await peek_pre_auth_token(db, body.pre_auth_token, challenge_id=challenge_id)
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
 
@@ -705,6 +723,7 @@ async def send_email_otp(
 
 @router.post("/2fa/verify", response_model=TwoFAVerifyResponse)
 async def verify_2fa(
+    request: Request,
     body: TwoFAVerifyRequest,
     db: AsyncSession = Depends(get_db),
 ) -> TwoFAVerifyResponse:
@@ -717,7 +736,9 @@ async def verify_2fa(
     verification succeeds, preventing token replay after success.
     """
     # Peek without consuming — bad codes must not burn the session token.
-    username = await peek_pre_auth_token(db, body.pre_auth_token)
+    # Pass the HttpOnly challenge cookie so the binding check is enforced.
+    challenge_id = request.cookies.get("2fa_challenge")
+    username = await peek_pre_auth_token(db, body.pre_auth_token, challenge_id=challenge_id)
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
 

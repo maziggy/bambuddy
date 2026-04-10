@@ -251,6 +251,8 @@ Translations live in `frontend/src/i18n/locales/`:
 | `fr.ts` | French |
 | `ja.ts` | Japanese |
 | `pt-BR.ts` | Brazilian Portuguese |
+[...]
+check for possibly more files!!!
 
 ### Adding New Strings
 

@@ -258,10 +258,27 @@ class TestEmailOTP:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_disable_email_otp_returns_200(self, async_client: AsyncClient):
-        """Disabling email OTP (even when it wasn't enabled) should succeed."""
+    async def test_disable_email_otp_requires_password(self, async_client: AsyncClient):
+        """Disabling email OTP requires the account password (C6: re-auth)."""
         token = await _setup_and_login(async_client, "disemailotp", "disemailotp1")
-        response = await async_client.post("/api/v1/auth/2fa/email/disable", headers=_auth_header(token))
+        # Wrong password → 401
+        response = await async_client.post(
+            "/api/v1/auth/2fa/email/disable",
+            json={"password": "wrongpassword"},
+            headers=_auth_header(token),
+        )
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_email_otp_correct_password(self, async_client: AsyncClient):
+        """Disabling email OTP with correct password should succeed."""
+        token = await _setup_and_login(async_client, "disemailpw", "disemailpw1")
+        response = await async_client.post(
+            "/api/v1/auth/2fa/email/disable",
+            json={"password": "disemailpw1"},
+            headers=_auth_header(token),
+        )
         assert response.status_code == 200
 
 
@@ -351,7 +368,7 @@ class TestTwoFAVerifyTOTP:
             "/api/v1/auth/2fa/verify",
             json={"pre_auth_token": pre_auth_token, "method": "sms", "code": "123456"},
         )
-        assert response.status_code == 400
+        assert response.status_code == 422  # Pydantic Literal validation
 
 
 # ===========================================================================
@@ -674,3 +691,245 @@ class TestOIDCProviders:
             headers=_auth_header(token),
         )
         assert response.status_code == 404
+
+
+# ===========================================================================
+# Security: pre-auth token single-use
+# ===========================================================================
+
+
+class TestPreAuthTokenSingleUse:
+    """pre_auth_token must be consumed on successful 2FA and cannot be reused."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_pre_auth_token_is_single_use(self, async_client: AsyncClient):
+        """A pre_auth_token that was successfully used cannot be reused."""
+        token = await _setup_and_login(async_client, "singleusepat", "singleusepat1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        valid_code = pyotp.TOTP(secret).now()
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "singleusepat", "singleusepat1")
+
+        # First use — succeeds
+        first = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "totp", "code": pyotp.TOTP(secret).now()},
+        )
+        assert first.status_code == 200
+
+        # Second use of the same token — must fail (token already consumed on success)
+        second = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "totp", "code": pyotp.TOTP(secret).now()},
+        )
+        assert second.status_code == 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_pre_auth_token_survives_wrong_code(self, async_client: AsyncClient):
+        """A wrong 2FA code must NOT burn the pre_auth_token (user can retry)."""
+        token = await _setup_and_login(async_client, "survivepatuser", "survivepatuser1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        valid_code = pyotp.TOTP(secret).now()
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
+
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "survivepatuser", "survivepatuser1")
+
+        # Wrong code — should fail but not burn the token
+        bad = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "totp", "code": "000000"},
+        )
+        assert bad.status_code == 401
+
+        # Same token, correct code — should succeed (token still valid)
+        good = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "totp", "code": pyotp.TOTP(secret).now()},
+        )
+        assert good.status_code == 200
+
+
+# ===========================================================================
+# Security: cross-user token isolation
+# ===========================================================================
+
+
+class TestCrossUserTokenIsolation:
+    """A pre_auth_token issued for user A cannot authenticate as user B."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_cannot_be_used_for_different_user(self, async_client: AsyncClient):
+        """pre_auth_token is bound to the issuing user; using it to verify a different
+        user's TOTP code must fail."""
+        # Set up two users with TOTP
+        token_a = await _setup_and_login(async_client, "crossusera", "crossusera1")
+        setup_a = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token_a))
+        secret_a = setup_a.json()["secret"]
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": pyotp.TOTP(secret_a).now()},
+            headers=_auth_header(token_a),
+        )
+
+        # Get pre_auth_token for user A
+        pre_auth_a = await _login_get_pre_auth_token(async_client, "crossusera", "crossusera1")
+
+        # Try to use user A's token but supply a clearly invalid code — must fail
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_a, "method": "totp", "code": "000000"},
+        )
+        assert resp.status_code == 401
+
+
+# ===========================================================================
+# Security: admin disable non-admin rejection
+# ===========================================================================
+
+
+class TestAdminDisableNonAdminRejection:
+    """Non-admin users must be rejected from the admin disable endpoint."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_admin_cannot_disable_2fa(self, async_client: AsyncClient):
+        """A regular (non-admin) user must receive 403 from DELETE /auth/2fa/admin/{id}."""
+        # Set up admin, then create a regular user
+        admin_token = await _setup_and_login(async_client, "adminusr2fa", "adminusr2fa1")
+
+        # Create a regular user via user management
+        create_resp = await async_client.post(
+            "/api/v1/users",
+            json={"username": "regularusr2fa", "password": "regularusr2fa1"},
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+
+        # Login as regular user
+        login_resp = await async_client.post(
+            LOGIN_URL,
+            json={"username": "regularusr2fa", "password": "regularusr2fa1"},
+        )
+        regular_token = login_resp.json()["access_token"]
+
+        # Try to call admin endpoint with the regular user's token
+        resp = await async_client.delete(
+            f"/api/v1/auth/2fa/admin/{create_resp.json()['id']}",
+            headers=_auth_header(regular_token),
+        )
+        assert resp.status_code == 403
+
+
+# ===========================================================================
+# Regenerate backup codes
+# ===========================================================================
+
+
+class TestRegenerateBackupCodes:
+    """Tests for POST /api/v1/auth/2fa/totp/regenerate-backup-codes."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_regenerate_requires_totp_enabled(self, async_client: AsyncClient):
+        token = await _setup_and_login(async_client, "regennototp", "regennototp1")
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/regenerate-backup-codes",
+            json={"code": "123456"},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_regenerate_invalidates_old_codes(self, async_client: AsyncClient):
+        """After regenerating, old backup codes must no longer work."""
+        token = await _setup_and_login(async_client, "regeninval", "regeninval1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        enable_resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": pyotp.TOTP(secret).now()},
+            headers=_auth_header(token),
+        )
+        old_backup = enable_resp.json()["backup_codes"][0]
+
+        # Regenerate backup codes
+        regen_resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/regenerate-backup-codes",
+            json={"code": pyotp.TOTP(secret).now()},
+            headers=_auth_header(token),
+        )
+        assert regen_resp.status_code == 200
+        new_codes = regen_resp.json()["backup_codes"]
+        assert len(new_codes) == 10
+        assert old_backup not in new_codes
+
+        # Old backup code must now fail
+        pre_auth_token = await _login_get_pre_auth_token(async_client, "regeninval", "regeninval1")
+        fail_resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth_token, "method": "backup", "code": old_backup},
+        )
+        assert fail_resp.status_code == 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_regenerate_with_invalid_code_fails(self, async_client: AsyncClient):
+        token = await _setup_and_login(async_client, "regeninvcode", "regeninvcode1")
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": pyotp.TOTP(secret).now()},
+            headers=_auth_header(token),
+        )
+
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/regenerate-backup-codes",
+            json={"code": "000000"},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 400
+
+
+# ===========================================================================
+# Security: method field validation
+# ===========================================================================
+
+
+class TestVerifyMethodValidation:
+    """The method field must be one of totp/email/backup (Pydantic Literal)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_invalid_method_rejected_by_schema(self, async_client: AsyncClient):
+        """Pydantic should reject unknown method values with 422."""
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": "anytoken", "code": "123456", "method": "sms"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_oversized_pre_auth_token_rejected(self, async_client: AsyncClient):
+        """pre_auth_token exceeding max_length=128 should be rejected with 422."""
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": "x" * 200, "code": "123456", "method": "totp"},
+        )
+        assert resp.status_code == 422

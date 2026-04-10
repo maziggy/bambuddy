@@ -60,13 +60,24 @@ export function LoginPage() {
 
     if (oidcToken) {
       api.exchangeOIDCToken(oidcToken).then((resp: LoginResponse) => {
-        if (resp.access_token && resp.user) {
+        if (resp.requires_2fa && resp.pre_auth_token) {
+          // OIDC user has 2FA enabled — redirect to 2FA step
+          setPreAuthToken(resp.pre_auth_token);
+          const methods = resp.two_fa_methods ?? [];
+          setTwoFAMethods(methods);
+          if (methods.includes('totp')) setTwoFAMethod('totp');
+          else if (methods.includes('email')) setTwoFAMethod('email');
+          else setTwoFAMethod('backup');
+          setStep('2fa');
+          // Remove oidc_token from URL so page refresh doesn't re-trigger exchange
+          navigate('/login', { replace: true });
+        } else if (resp.access_token && resp.user) {
           loginWithToken(resp.access_token, resp.user);
           showToast(t('login.loginSuccess'));
           navigate('/', { replace: true });
         }
       }).catch((err: Error) => {
-        showToast(err.message || 'OIDC login failed', 'error');
+        showToast(err.message || t('login.oidcLoginFailed'), 'error');
         navigate('/', { replace: true });
       });
     }
@@ -118,7 +129,7 @@ export function LoginPage() {
       showToast(data.message, 'success');
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to send code', 'error');
+      showToast(error.message || t('login.twoFA.sendCodeFailed'), 'error');
     },
   });
 
@@ -133,7 +144,7 @@ export function LoginPage() {
       }
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Invalid code', 'error');
+      showToast(error.message || t('login.twoFA.invalidCode'), 'error');
       setTwoFACode('');
     },
   });
@@ -145,7 +156,7 @@ export function LoginPage() {
       window.location.href = data.auth_url;
     },
     onError: (error: Error) => {
-      showToast(error.message || 'OIDC login failed', 'error');
+      showToast(error.message || t('login.oidcLoginFailed'), 'error');
     },
   });
 
@@ -161,7 +172,7 @@ export function LoginPage() {
   const handle2FASubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!twoFACode.trim()) {
-      showToast('Please enter the verification code', 'error');
+      showToast(t('login.twoFA.enterCode'), 'error');
       return;
     }
     verify2FAMutation.mutate();
@@ -170,7 +181,7 @@ export function LoginPage() {
   const handleForgotPassword = (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotEmail) {
-      showToast('Please enter your email address', 'error');
+      showToast(t('login.enterEmail'), 'error');
       return;
     }
     forgotPasswordMutation.mutate(forgotEmail);
@@ -411,17 +422,15 @@ export function LoginPage() {
             </button>
           </div>
 
-          {advancedAuthStatus?.advanced_auth_enabled && (
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => setShowForgotPassword(true)}
-                className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
-              >
-                {t('login.forgotPassword')}
-              </button>
-            </div>
-          )}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => setShowForgotPassword(true)}
+              className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
+            >
+              {t('login.forgotPassword')}
+            </button>
+          </div>
         </form>
 
         {/* OIDC provider buttons */}

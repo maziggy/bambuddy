@@ -2530,10 +2530,21 @@ export const api = {
     }),
 
   // 2FA - Email OTP
+  // Step 1: send a verification code to the user's email (proof of possession)
   enableEmailOTP: () =>
-    request<{ message: string }>('/auth/2fa/email/enable', { method: 'POST' }),
-  disableEmailOTP: () =>
-    request<{ message: string }>('/auth/2fa/email/disable', { method: 'POST' }),
+    request<{ message: string; setup_token: string }>('/auth/2fa/email/enable', { method: 'POST' }),
+  // Step 2: confirm with the code received by email
+  confirmEnableEmailOTP: (setup_token: string, code: string) =>
+    request<{ message: string }>('/auth/2fa/email/enable/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ setup_token, code }),
+    }),
+  // Disable requires account password for re-auth
+  disableEmailOTP: (password: string) =>
+    request<{ message: string }>('/auth/2fa/email/disable', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
   sendEmailOTP: (preAuthToken: string) =>
     request<{ message: string; pre_auth_token?: string }>('/auth/2fa/email/send', {
       method: 'POST',

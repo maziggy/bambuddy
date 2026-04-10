@@ -184,6 +184,15 @@ export function TwoFactorSettings() {
   const [regenCode, setRegenCode] = useState('');
   const [newBackupCodes, setNewBackupCodes] = useState<string[] | null>(null);
 
+  // Email OTP enable: two-step proof-of-possession flow
+  const [emailSetupToken, setEmailSetupToken] = useState<string | null>(null);
+  const [emailSetupCode, setEmailSetupCode] = useState('');
+
+  // Email OTP disable: requires account password
+  const [showDisableEmail, setShowDisableEmail] = useState(false);
+  const [emailDisablePassword, setEmailDisablePassword] = useState('');
+  const [showEmailDisablePassword, setShowEmailDisablePassword] = useState(false);
+
   const { data: status, isLoading } = useQuery({
     queryKey: ['2fa-status'],
     queryFn: () => api.get2FAStatus(),
@@ -194,11 +203,12 @@ export function TwoFactorSettings() {
     queryFn: () => api.getOIDCLinks(),
   });
 
-  const enableEmailMutation = useMutation({
+  // Step 1: request verification code (proof of possession)
+  const enableEmailRequestMutation = useMutation({
     mutationFn: () => api.enableEmailOTP(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['2fa-status'] });
-      showToast(t('settings.twoFa.emailOtpEnabled'), 'success');
+    onSuccess: (data: { message: string; setup_token: string }) => {
+      setEmailSetupToken(data.setup_token);
+      showToast(data.message, 'success');
     },
     onError: (e: Error) => {
       const msg = e.message ?? '';
@@ -210,10 +220,24 @@ export function TwoFactorSettings() {
     },
   });
 
-  const disableEmailMutation = useMutation({
-    mutationFn: () => api.disableEmailOTP(),
+  // Step 2: confirm with the code received by email
+  const enableEmailConfirmMutation = useMutation({
+    mutationFn: () => api.confirmEnableEmailOTP(emailSetupToken!, emailSetupCode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['2fa-status'] });
+      setEmailSetupToken(null);
+      setEmailSetupCode('');
+      showToast(t('settings.twoFa.emailOtpEnabled'), 'success');
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
+  const disableEmailMutation = useMutation({
+    mutationFn: (password: string) => api.disableEmailOTP(password),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['2fa-status'] });
+      setShowDisableEmail(false);
+      setEmailDisablePassword('');
       showToast(t('settings.twoFa.emailOtpDisabled'), 'success');
     },
     onError: (e: Error) => showToast(e.message, 'error'),
@@ -382,18 +406,110 @@ export function TwoFactorSettings() {
                   : t('settings.twoFa.emailOtpNoEmail')}
               </p>
             </div>
-            <Toggle
-              checked={!!status?.email_otp_enabled}
-              onChange={(v) => v ? enableEmailMutation.mutate() : disableEmailMutation.mutate()}
-              disabled={!hasEmail || enableEmailMutation.isPending || disableEmailMutation.isPending}
-            />
+            {/* Show status badge; enable/disable handled in CardContent */}
+            <div className="ml-auto">
+              {status?.email_otp_enabled ? (
+                <span className="flex items-center gap-1 text-green-400 text-sm font-medium">
+                  <ShieldCheck className="w-4 h-4" /> {t('common.enabled')}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-bambu-gray text-sm">
+                  <ShieldOff className="w-4 h-4" /> {t('common.disabled')}
+                </span>
+              )}
+            </div>
           </div>
         </CardHeader>
-        {!hasEmail && (
-          <CardContent>
+        <CardContent>
+          {!hasEmail ? (
             <p className="text-amber-400 text-sm">{t('settings.twoFa.addEmailFirst')}</p>
-          </CardContent>
-        )}
+          ) : emailSetupToken ? (
+            /* Step 2: enter the code that was sent to the email */
+            <div className="space-y-4">
+              <p className="text-bambu-gray-light text-sm">{t('settings.twoFa.emailSetupEnterCode')}</p>
+              <CodeInput value={emailSetupCode} onChange={setEmailSetupCode} placeholder="000000" />
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => { setEmailSetupToken(null); setEmailSetupCode(''); }}
+                  className="flex-1"
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  disabled={emailSetupCode.length !== 6 || enableEmailConfirmMutation.isPending}
+                  onClick={() => enableEmailConfirmMutation.mutate()}
+                >
+                  {enableEmailConfirmMutation.isPending ? t('common.saving') : t('settings.twoFa.verifyAndEnable')}
+                </Button>
+              </div>
+            </div>
+          ) : showDisableEmail ? (
+            /* Disable: require account password for re-auth */
+            <div className="space-y-4">
+              <p className="text-bambu-gray-light text-sm">{t('settings.twoFa.emailDisablePasswordHint')}</p>
+              <div className="relative">
+                <input
+                  type={showEmailDisablePassword ? 'text' : 'password'}
+                  value={emailDisablePassword}
+                  onChange={(e) => setEmailDisablePassword(e.target.value)}
+                  placeholder={t('settings.twoFa.passwordPlaceholder')}
+                  className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowEmailDisablePassword(!showEmailDisablePassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white"
+                >
+                  {showEmailDisablePassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => { setShowDisableEmail(false); setEmailDisablePassword(''); }}
+                  className="flex-1"
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  variant="danger"
+                  className="flex-1"
+                  disabled={!emailDisablePassword || disableEmailMutation.isPending}
+                  onClick={() => disableEmailMutation.mutate(emailDisablePassword)}
+                >
+                  {disableEmailMutation.isPending ? t('common.saving') : t('settings.twoFa.disableEmailOtp')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              {!status?.email_otp_enabled ? (
+                <Button
+                  variant="primary"
+                  disabled={!hasEmail || enableEmailRequestMutation.isPending}
+                  onClick={() => enableEmailRequestMutation.mutate()}
+                  className="flex items-center gap-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  {enableEmailRequestMutation.isPending ? t('common.saving') : t('settings.twoFa.enableEmailOtp')}
+                </Button>
+              ) : (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => setShowDisableEmail(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {t('settings.twoFa.disableEmailOtp')}
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       {/* ── Linked SSO accounts ───────────────────────────────────────────── */}

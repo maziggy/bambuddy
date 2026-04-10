@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
@@ -53,7 +53,7 @@ import { getCurrencySymbol } from '../utils/currency';
 // Returns true for sliced (printable) files: .gcode and .gcode.3mf
 function isSlicedFilename(filename: string): boolean {
   const lower = filename.toLowerCase();
-  return lower.endsWith('.gcode') || lower.includes('.gcode.');
+  return lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf');
 }
 
 function formatFilament(grams: number): string {
@@ -251,13 +251,25 @@ export function ProjectDetailPage() {
     enabled: projectId > 0,
   });
 
-  const folderFileQueries = useQueries({
-    queries: (linkedFolders ?? []).map((folder) => ({
-      queryKey: ['folder-files', folder.id],
-      queryFn: () => api.getLibraryFiles(folder.id),
-      enabled: !!linkedFolders,
-    })),
+  // Single bulk query — replaces the previous N+1 useQueries pattern
+  const { data: allProjectFiles, isLoading: projectFilesLoading } = useQuery({
+    queryKey: ['project-files', projectId],
+    queryFn: () => api.getLibraryFiles(null, false, projectId),
+    enabled: projectId > 0,
   });
+
+  // Group files by folder_id for the section-based render
+  const filesByFolder = useMemo(() => {
+    const map = new Map<number, LibraryFileListItem[]>();
+    for (const file of allProjectFiles ?? []) {
+      if (file.folder_id != null) {
+        const arr = map.get(file.folder_id) ?? [];
+        arr.push(file);
+        map.set(file.folder_id, arr);
+      }
+    }
+    return map;
+  }, [allProjectFiles]);
 
   const currency = getCurrencySymbol(settings?.currency || 'USD');
   const timeFormat: TimeFormat = settings?.time_format || 'system';
@@ -876,10 +888,9 @@ export function ProjectDetailPage() {
 
           {linkedFolders && linkedFolders.length > 0 ? (
             <div className="space-y-4">
-              {linkedFolders.map((folder, idx) => {
-                const query = folderFileQueries[idx];
-                const files = query?.data ?? [];
-                const isLoading = query?.isLoading ?? true;
+              {linkedFolders.map((folder) => {
+                const files = filesByFolder.get(folder.id) ?? [];
+                const isLoading = projectFilesLoading;
 
                 return (
                   <div key={folder.id}>

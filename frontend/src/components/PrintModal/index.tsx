@@ -739,6 +739,8 @@ export function PrintModal({
                   project_id: projectId,
                 });
               } else {
+                // project_id is intentionally omitted here: reprintArchive targets an existing
+                // archive that already carries its own project association from the original print.
                 await api.reprintArchive(archiveId!, printerId, {
                   plate_id: selectedPlate ?? undefined,
                   plate_name: selectedPlateName,

@@ -1141,4 +1141,107 @@ describe('PrintModal', () => {
       expect(input.value).toBe('5');
     });
   });
+
+  describe('project_id forwarding', () => {
+    beforeEach(() => {
+      // Additional handlers needed for library file mode
+      server.use(
+        http.get('/api/v1/library/files/:id', () => {
+          return HttpResponse.json({
+            id: 5,
+            filename: 'benchy.gcode.3mf',
+            print_name: null,
+            file_type: '3mf',
+            folder_id: null,
+            project_id: null,
+            file_hash: null,
+            file_size_bytes: 1024,
+            thumbnail_path: null,
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          });
+        }),
+        http.get('/api/v1/library/files/:id/plates', () => {
+          return HttpResponse.json({ is_multi_plate: false, plates: [] });
+        }),
+        http.get('/api/v1/library/files/:id/filament-requirements', () => {
+          return HttpResponse.json({ file_id: 5, filename: 'benchy.gcode.3mf', filaments: [] });
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] });
+        }),
+      );
+    });
+
+    it('includes project_id in printLibraryFile call when projectId prop is set', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post('/api/v1/library/files/:id/print', async ({ request }) => {
+          capturedBody = await request.json() as Record<string, unknown>;
+          return HttpResponse.json({ status: 'dispatched', dispatch_job_id: 'abc', dispatch_position: 0 });
+        })
+      );
+      const user = userEvent.setup();
+
+      render(
+        <PrintModal
+          mode="reprint"
+          libraryFileId={5}
+          archiveName="Benchy"
+          projectId={42}
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      // Wait for the modal to load printer and file data
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^print$/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /^print$/i }));
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull();
+        expect(capturedBody?.project_id).toBe(42);
+      });
+    });
+
+    it('does NOT include project_id in reprintArchive call (archives carry their own project association)', async () => {
+      // The reprintArchive branch omits project_id by design — archives already carry
+      // their project association from the original print. This test guards that intent.
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post('/api/v1/archives/:id/reprint', async ({ request }) => {
+          capturedBody = await request.json() as Record<string, unknown>;
+          return HttpResponse.json({ status: 'dispatched' });
+        })
+      );
+      const user = userEvent.setup();
+
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          projectId={42}
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^print$/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /^print$/i }));
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull();
+        expect(capturedBody).not.toHaveProperty('project_id');
+      });
+    });
+  });
 });

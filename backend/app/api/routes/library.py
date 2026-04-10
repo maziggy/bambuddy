@@ -1044,14 +1044,16 @@ async def scan_external_folder(
 async def list_files(
     response: Response,
     folder_id: int | None = None,
+    project_id: int | None = None,
     include_root: bool = True,
     db: AsyncSession = Depends(get_db),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
-    """List files, optionally filtered by folder.
+    """List files, optionally filtered by folder or project.
 
     Args:
         folder_id: Filter by folder ID. If None and include_root=True, returns root files.
+        project_id: Return all files across folders linked to this project (bulk fetch, avoids N+1).
         include_root: If True and folder_id is None, returns files at root level.
                      If False and folder_id is None, returns all files.
     """
@@ -1059,6 +1061,10 @@ async def list_files(
 
     if folder_id is not None:
         query = query.where(LibraryFile.folder_id == folder_id)
+    elif project_id is not None:
+        # Single join instead of one query per folder (avoids N+1 pattern)
+        query = query.join(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
+        query = query.where(LibraryFolder.project_id == project_id)
     elif include_root:
         query = query.where(LibraryFile.folder_id.is_(None))
 
@@ -2209,6 +2215,12 @@ async def print_library_file(
     # Check printer is connected
     if not printer_manager.is_connected(printer_id):
         raise HTTPException(status_code=400, detail="Printer is not connected")
+
+    # Validate project exists before dispatching so a bogus ID yields 404, not a FK-constraint 500
+    if body.project_id is not None:
+        project_result = await db.execute(select(Project).where(Project.id == body.project_id))
+        if not project_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Project not found")
 
     plate_name = body.plate_name
     if not plate_name and body.plate_id is not None:

@@ -677,7 +677,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
 // Helper to check if a file is sliced (printable)
 function isSlicedFilename(filename: string): boolean {
   const lower = filename.toLowerCase();
-  return lower.endsWith('.gcode') || lower.includes('.gcode.');
+  return lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf');
 }
 
 // File Card

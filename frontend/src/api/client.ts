@@ -4242,10 +4242,13 @@ export const api = {
   getLibraryFoldersByArchive: (archiveId: number) =>
     request<LibraryFolder[]>(`/library/folders/by-archive/${archiveId}`),
 
-  getLibraryFiles: (folderId?: number | null, includeRoot = true) => {
+  getLibraryFiles: (folderId?: number | null, includeRoot = true, projectId?: number) => {
     const params = new URLSearchParams();
     if (folderId !== undefined && folderId !== null) {
       params.set('folder_id', String(folderId));
+    }
+    if (projectId !== undefined) {
+      params.set('project_id', String(projectId));
     }
     params.set('include_root', String(includeRoot));
     return request<LibraryFileListItem[]>(`/library/files?${params}`);

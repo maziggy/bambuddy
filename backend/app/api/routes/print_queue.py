@@ -336,12 +336,6 @@ async def list_queue(
 
 @router.post("/", response_model=PrintQueueItemResponse)
 async def add_to_queue(
-    # Validate project exists before insert so a bogus ID yields 404, not an FK-constraint 500
-    if data.project_id is not None:
-        project_result = await db.execute(select(Project).where(Project.id == data.project_id))
-            if not project_result.scalar_one_or_none():
-                raise HTTPException(status_code=404, detail="Project not found")
-                
     data: PrintQueueItemCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
@@ -494,9 +488,9 @@ async def add_to_queue(
     # Validate project exists before insert so a bogus ID yields 404, not an FK-constraint 500
     if data.project_id is not None:
         project_result = await db.execute(select(Project).where(Project.id == data.project_id))
-            if not project_result.scalar_one_or_none():
-                raise HTTPException(status_code=404, detail="Project not found")
-              
+        if not project_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Project not found")
+
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
     items = []
     for i in range(quantity):

@@ -1,0 +1,200 @@
+2026-04-10 09:28:02,731 INFO [backend.app.api.routes.camera] Stopped 0 camera stream(s) for printer 1
+2026-04-10 09:29:57,996 INFO [backend.app.services.mqtt_relay] MQTT relay disabled
+2026-04-10 09:30:46,008 INFO [backend.app.services.mqtt_relay] MQTT relay disabled
+2026-04-10 09:30:46,673 INFO [backend.app.services.mqtt_relay] MQTT relay disabled
+2026-04-10 09:31:22,483 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 09:36:22,495 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 09:36:37,615 INFO [backend.app.api.routes.virtual_printers] Created virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:36:48,381 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:36:51,628 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:36:58,182 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:36:58,188 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 09:41:13,034 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:41:16,887 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:41:22,511 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 09:41:41,355 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:41:45,112 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:41:45,114 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 09:41:56,544 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFG99', 'GFL96']
+2026-04-10 09:45:23,713 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:45:24,802 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:45:24,804 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 09:45:27,100 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:45:27,102 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 09:45:28,324 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:45:28,329 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 09:45:29,702 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:45:29,705 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 09:45:32,729 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 09:45:32,731 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 09:46:22,519 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 09:51:22,524 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 09:51:34,499 INFO [root] Logging to file: /app/logs/bambuddy.log
+2026-04-10 09:51:34,500 INFO [root] Bambuddy starting - debug=False, log_level=INFO
+2026-04-10 09:51:35,363 INFO [backend.app.services.mqtt_relay] MQTT relay disabled
+2026-04-10 09:51:36,394 INFO [backend.app.services.background_dispatch] Background dispatch dispatcher started
+2026-04-10 09:51:36,394 INFO [backend.app.services.smart_plug_manager] Smart plug scheduler started
+2026-04-10 09:51:36,401 INFO [backend.app.services.print_scheduler] Print scheduler started
+2026-04-10 09:51:36,408 INFO [backend.app.services.notification_service] Notification digest scheduler started
+2026-04-10 09:51:36,408 INFO [backend.app.services.github_backup] Starting GitHub backup scheduler
+2026-04-10 09:51:36,408 INFO [backend.app.main] AMS history recording started
+2026-04-10 09:51:36,409 INFO [backend.app.main] Printer runtime tracking started
+2026-04-10 09:51:36,409 INFO [backend.app.main] SpoolBuddy watchdog started
+2026-04-10 09:51:36,409 INFO [backend.app.main] Camera stream cleanup started
+2026-04-10 09:51:36,409 INFO [backend.app.main] Expected prints cleanup started
+2026-04-10 09:51:36,442 ERROR [backend.app.services.virtual_printer.manager] Cannot create directory /app/data/virtual_printer/uploads: Permission denied. For Docker: ensure the data volume is writable by the container user. For bare metal: run 'sudo chown -R $(whoami) /app/data/virtual_printer'
+2026-04-10 09:51:36,442 ERROR [backend.app.services.virtual_printer.manager] Cannot create directory /app/data/virtual_printer/certs: Permission denied. For Docker: ensure the data volume is writable by the container user. For bare metal: run 'sudo chown -R $(whoami) /app/data/virtual_printer'
+2026-04-10 09:51:36,454 WARNING [root] Failed to sync virtual printers: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 09:51:36,672 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-10 09:51:36,672 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Disconnected shortly after request topic subscription. Disabling request topic for this printer.
+2026-04-10 09:51:38,814 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-10 09:51:38,855 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.04.00.00
+2026-04-10 09:51:38,856 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: serial number not available in version info
+2026-04-10 09:51:38,857 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: firmware version not available in version info
+2026-04-10 09:51:38,910 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-10 09:51:38,910 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-10 09:51:38,912 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-10 09:51:46,462 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 09:56:46,467 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 10:01:46,472 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 10:05:21,591 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-04-10 10:05:21,646 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Unspecified error
+2026-04-10 10:05:23,773 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: serial number not available in version info
+2026-04-10 10:05:23,774 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: firmware version not available in version info
+2026-04-10 10:06:46,488 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 10:11:46,498 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 10:16:46,507 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 10:18:52,303 INFO [backend.app.services.camera] Found ffmpeg at: /usr/bin/ffmpeg
+2026-04-10 10:18:55,493 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFG99', 'GFL96']
+2026-04-10 10:19:20,445 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 10:19:20,447 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:19:32,241 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 10:19:32,243 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:19:37,999 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: bambuddy_vp (id=1)
+2026-04-10 10:19:44,633 INFO [backend.app.api.routes.virtual_printers] Deleted virtual printer: bambuddy_vp (id=1)
+2026-04-10 10:20:05,633 INFO [backend.app.api.routes.virtual_printers] Created virtual printer: A1mini_virt (id=1)
+2026-04-10 10:20:22,346 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:20:25,143 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:20:26,831 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:20:28,584 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:20:38,152 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:20:38,155 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:20:53,325 INFO [backend.app.services.discovery] Starting subnet scan of [IP]/24 (254 hosts)
+2026-04-10 10:20:55,387 INFO [backend.app.services.discovery] Found potential Bambu printer at [IP]
+2026-04-10 10:20:59,413 INFO [backend.app.services.discovery] Subnet scan complete. Found 1 printers.
+2026-04-10 10:21:46,512 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 10:21:56,833 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-10 10:21:59,845 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-10 10:21:59,845 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-10 10:21:59,847 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-10 10:22:12,051 INFO [backend.app.api.routes.auth] Creating admin user: [USER]
+2026-04-10 10:22:12,063 INFO [backend.app.api.routes.auth] Added new admin user to Administrators group
+2026-04-10 10:22:12,064 INFO [backend.app.api.routes.auth] Admin user added to session: [USER]
+2026-04-10 10:22:12,075 INFO [backend.app.api.routes.auth] Admin user created successfully: 1
+2026-04-10 10:22:12,075 INFO [backend.app.api.routes.auth] Setup completed: auth_enabled=True, admin_created=True
+2026-04-10 10:22:17,205 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-10 10:22:17,206 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-10 10:22:17,207 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-10 10:22:43,317 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:22:43,318 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:22:44,334 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:22:44,336 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:22:48,450 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:22:48,452 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:23:00,383 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:23:00,389 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:23:12,501 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:23:12,502 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:24:13,000 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFG99', 'GFL96']
+2026-04-10 10:24:52,411 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-10 10:25:03,466 DEBUG [httpcore.connection] connect_tcp.started host='api.github.com' port=443 local_address=None timeout=10.0 socket_options=None
+2026-04-10 10:25:03,506 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7b3264201b50>
+2026-04-10 10:25:03,507 DEBUG [httpcore.connection] start_tls.started ssl_context=<ssl.SSLContext object at 0x7b3240c4b2f0> server_hostname='api.github.com' timeout=10.0
+2026-04-10 10:25:03,551 DEBUG [httpcore.connection] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7b3264200850>
+2026-04-10 10:25:03,552 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-10 10:25:03,552 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-10 10:25:03,553 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-10 10:25:03,553 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-10 10:25:03,553 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-10 10:25:03,917 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Fri, 10 Apr 2026 08:25:03 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Cache-Control', b'public, max-age=60, s-maxage=60'), (b'Vary', b'Accept,Accept-Encoding, Accept, X-Requested-With'), (b'ETag', b'W/"584a10f94c17545c79dec161ec66d9f7d15b85acaedf9a77c9b90a2a31045740"'), (b'X-GitHub-Media-Type', b'github.v3; format=json'), (b'Link', b'<https://api.github.com/repositories/1105867170/releases?per_page=20&page=2>; rel="next", <https://api.github.com/repositories/1105867170/releases?per_page=20&page=3>; rel="last"'), (b'x-github-api-version-selected', b'2022-11-28'), (b'Access-Control-Expose-Headers', b'ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset'), (b'Access-Control-Allow-Origin', b'*'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubdomains; preload'), (b'X-Frame-Options', b'deny'), (b'X-Content-Type-Options', b'nosniff'), (b'X-XSS-Protection', b'0'), (b'Referrer-Policy', b'origin-when-cross-origin, strict-origin-when-cross-origin'), (b'Content-Security-Policy', b"default-src 'none'"), (b'Content-Encoding', b'gzip'), (b'Server', b'github.com'), (b'Accept-Ranges', b'bytes'), (b'X-RateLimit-Limit', b'60'), (b'X-RateLimit-Remaining', b'54'), (b'X-RateLimit-Used', b'6'), (b'X-RateLimit-Resource', b'core'), (b'X-RateLimit-Reset', b'1775810490'), (b'Transfer-Encoding', b'chunked'), (b'X-GitHub-Request-Id', b'EDF7:28E223:4AAA247:4241B9E:69D8B3DF')])
+2026-04-10 10:25:03,918 INFO [httpx] HTTP Request: GET https://api.github.com/repos/maziggy/bambuddy/releases?per_page=20 "HTTP/1.1 200 OK"
+2026-04-10 10:25:03,918 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-10 10:25:03,985 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-10 10:25:03,985 DEBUG [httpcore.http11] response_closed.started
+2026-04-10 10:25:03,986 DEBUG [httpcore.http11] response_closed.complete
+2026-04-10 10:25:03,989 DEBUG [httpcore.connection] close.started
+2026-04-10 10:25:03,989 DEBUG [httpcore.connection] close.complete
+2026-04-10 10:25:06,238 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': False}
+2026-04-10 10:25:06,238 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-10 10:25:06,238 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-04-10 10:25:06,238 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'c', 'tray_is_bbl_bits': 'c', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'c', 'tray_reading_bits': '0', 'version': 2, 'insert_flag': False, 'power_on_flag': False}
+2026-04-10 10:25:06,238 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-10 10:25:06,239 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-10 10:25:06,239 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-10 10:25:06,239 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-10 10:25:06,239 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-10 10:25:06,239 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-10 10:25:06,239 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-10 10:25:06,239 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-10 10:25:06,240 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-10 10:25:06,240 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-10 10:25:06,240 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -42dBm
+2026-04-10 10:25:06,240 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-04-10 10:25:06,241 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-04-10 10:25:07,140 DEBUG [backend.app.api.routes.virtual_printers] Update VP 1: body={'enabled': False}, current state: mode=print_queue, enabled=True, access_code_set=True, bind_ip=[IP], target=1
+2026-04-10 10:25:07,143 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:25:08,491 DEBUG [backend.app.api.routes.virtual_printers] Update VP 1: body={'enabled': True}, current state: mode=print_queue, enabled=False, access_code_set=True, bind_ip=[IP], target=1
+2026-04-10 10:25:08,493 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:25:08,495 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:25:33,961 INFO [backend.app.api.routes.support] Generated support bundle: bambuddy-support-20260410-102533.zip
+2026-04-10 10:25:37,975 INFO [backend.app.api.routes.support] Log level changed to INFO
+2026-04-10 10:26:46,522 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 10:31:46,529 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-10 10:32:34,442 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-10 10:32:34,443 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-10 10:32:34,443 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-10 10:32:39,765 DEBUG [httpcore.connection] connect_tcp.started host='api.github.com' port=443 local_address=None timeout=10.0 socket_options=None
+2026-04-10 10:32:39,803 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7b3240dbc3d0>
+2026-04-10 10:32:39,803 DEBUG [httpcore.connection] start_tls.started ssl_context=<ssl.SSLContext object at 0x7b3240d202d0> server_hostname='api.github.com' timeout=10.0
+2026-04-10 10:32:39,844 DEBUG [httpcore.connection] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7b3260be9010>
+2026-04-10 10:32:39,845 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-10 10:32:39,845 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-10 10:32:39,845 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-10 10:32:39,846 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-10 10:32:39,846 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-10 10:32:40,133 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Fri, 10 Apr 2026 08:32:40 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Cache-Control', b'public, max-age=60, s-maxage=60'), (b'Vary', b'Accept,Accept-Encoding, Accept, X-Requested-With'), (b'ETag', b'W/"584a10f94c17545c79dec161ec66d9f7d15b85acaedf9a77c9b90a2a31045740"'), (b'X-GitHub-Media-Type', b'github.v3; format=json'), (b'Link', b'<https://api.github.com/repositories/1105867170/releases?per_page=20&page=2>; rel="next", <https://api.github.com/repositories/1105867170/releases?per_page=20&page=3>; rel="last"'), (b'x-github-api-version-selected', b'2022-11-28'), (b'Access-Control-Expose-Headers', b'ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset'), (b'Access-Control-Allow-Origin', b'*'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubdomains; preload'), (b'X-Frame-Options', b'deny'), (b'X-Content-Type-Options', b'nosniff'), (b'X-XSS-Protection', b'0'), (b'Referrer-Policy', b'origin-when-cross-origin, strict-origin-when-cross-origin'), (b'Content-Security-Policy', b"default-src 'none'"), (b'Content-Encoding', b'gzip'), (b'Server', b'github.com'), (b'Accept-Ranges', b'bytes'), (b'X-RateLimit-Limit', b'60'), (b'X-RateLimit-Remaining', b'53'), (b'X-RateLimit-Used', b'7'), (b'X-RateLimit-Resource', b'core'), (b'X-RateLimit-Reset', b'1775810490'), (b'Transfer-Encoding', b'chunked'), (b'X-GitHub-Request-Id', b'EDFF:DEECC:4A51AEB:41D01F1:69D8B5A7')])
+2026-04-10 10:32:40,134 INFO [httpx] HTTP Request: GET https://api.github.com/repos/maziggy/bambuddy/releases?per_page=20 "HTTP/1.1 200 OK"
+2026-04-10 10:32:40,134 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-10 10:32:40,232 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-10 10:32:40,233 DEBUG [httpcore.http11] response_closed.started
+2026-04-10 10:32:40,233 DEBUG [httpcore.http11] response_closed.complete
+2026-04-10 10:32:40,237 DEBUG [httpcore.connection] close.started
+2026-04-10 10:32:40,237 DEBUG [httpcore.connection] close.complete
+2026-04-10 10:32:48,420 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': False}
+2026-04-10 10:32:48,420 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-10 10:32:48,421 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-04-10 10:32:48,421 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'c', 'tray_is_bbl_bits': 'c', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'c', 'tray_reading_bits': '0', 'version': 2, 'insert_flag': False, 'power_on_flag': False}
+2026-04-10 10:32:48,422 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-10 10:32:48,422 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-10 10:32:48,423 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-10 10:32:48,423 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-10 10:32:48,423 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-10 10:32:48,424 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-10 10:32:48,424 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-10 10:32:48,424 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-10 10:32:48,424 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-10 10:32:48,424 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-10 10:32:48,424 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-10 10:32:48,424 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-04-10 10:32:48,424 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-04-10 10:32:49,664 DEBUG [backend.app.api.routes.virtual_printers] Update VP 1: body={'mode': 'proxy'}, current state: mode=print_queue, enabled=True, access_code_set=True, bind_ip=[IP], target=1
+2026-04-10 10:32:49,671 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:32:49,674 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:32:51,222 DEBUG [backend.app.api.routes.virtual_printers] Update VP 1: body={'mode': 'print_queue'}, current state: mode=proxy, enabled=True, access_code_set=True, bind_ip=[IP], target=1
+2026-04-10 10:32:51,224 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:32:51,226 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'
+2026-04-10 10:32:54,649 DEBUG [backend.app.api.routes.virtual_printers] Update VP 1: body={'enabled': False}, current state: mode=print_queue, enabled=True, access_code_set=True, bind_ip=[IP], target=1
+2026-04-10 10:32:54,651 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:32:55,615 DEBUG [backend.app.api.routes.virtual_printers] Update VP 1: body={'enabled': True}, current state: mode=print_queue, enabled=False, access_code_set=True, bind_ip=[IP], target=1
+2026-04-10 10:32:55,617 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: A1mini_virt (id=1)
+2026-04-10 10:32:55,619 ERROR [backend.app.api.routes.virtual_printers] Failed to sync virtual printers after update: [Errno 13] Permission denied: '/app/data/virtual_printer/uploads'

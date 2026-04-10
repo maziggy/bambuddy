@@ -66,6 +66,33 @@ Features and user-visible behavior changes **must** include matching documentati
 
 If your change truly doesn't need docs (internal refactor, silent bug fix), say so in the PR description and give a one-line reason.
 
+### Previews before you merge
+
+Both docs repos are connected to [Cloudflare Pages](https://pages.cloudflare.com/). Every PR triggers an automatic build and deploys the result to a throwaway preview URL, so you can see your changes rendered on the real site before merging.
+
+**What you'll see on a docs PR**:
+
+1. Within ~30 seconds of pushing, a GitHub check appears:
+   `Cloudflare Pages — Deploying...` (yellow dot).
+2. After the build completes (~1 minute for the wiki, ~10 seconds for the website), the check turns green and `cloudflare-pages[bot]` posts a comment with a preview URL like:
+   > Deploying bambuddy-wiki with Cloudflare Pages
+   > Preview: https://&lt;branch-name&gt;.bambuddy-wiki.pages.dev/
+3. Click the URL — you'll see the full rendered site with your changes, on the real theme, with working navigation, images, and links.
+4. Review the preview like you would the production site. Catch broken links, layout regressions, typos, missing images.
+5. If the preview looks right, merge the PR. If not, push more commits to the same branch — the preview auto-rebuilds on each push.
+
+**If the build fails**:
+
+- The check turns red and no preview URL is posted.
+- Click the check's "Details" link to see the build log.
+- Common causes: MkDocs YAML syntax error, broken image path, unclosed HTML tag. Fix in another commit, the build retries automatically.
+
+**Preview URL quirks to know**:
+
+- Previews are **publicly accessible** — fine for open-source docs, but don't paste drafts you wouldn't want strangers to see.
+- Preview URLs persist for a while after the PR is merged or closed, but Cloudflare eventually cleans them up.
+- Previews build from the **PR branch**, not from `main` — so you're always looking at exactly what will be merged.
+
 ### Editing docs without a local clone
 
 Both docs repos can be edited directly in the browser, no `git clone` required:

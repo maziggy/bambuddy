@@ -103,18 +103,31 @@ _TRUSTED_PROXY_IPS: frozenset[str] = frozenset(
 
 
 def _get_client_ip(request: Request) -> str:
-    """Return the real client IP.
+    """Return the real client IP for rate-limiting purposes.
 
-    When TRUSTED_PROXY_IPS is configured and the direct TCP peer is one of the
-    trusted proxies, the leftmost address from X-Forwarded-For is used.
-    Otherwise falls back to the ASGI transport-layer IP (request.client.host).
+    When TRUSTED_PROXY_IPS is configured and the direct TCP peer is a trusted
+    proxy, X-Forwarded-For is evaluated right-to-left: the rightmost IP that is
+    NOT itself a trusted proxy is the true client address (M-R10-A fix).
+
+    Standard nginx with proxy_add_x_forwarded_for *appends* the client IP, so
+    the rightmost entry is always the one added by the last trusted proxy —
+    i.e. the real client. Walking right-to-left and skipping known proxies is
+    safe for multi-hop chains as well.
+
+    Falls back to request.client.host when TRUSTED_PROXY_IPS is unset (direct
+    deployment without a reverse proxy).
     """
     direct_ip = request.client.host if request.client else "unknown"
     if _TRUSTED_PROXY_IPS and direct_ip in _TRUSTED_PROXY_IPS:
         forwarded_for = request.headers.get("X-Forwarded-For", "")
-        first_ip = forwarded_for.split(",")[0].strip()
-        if first_ip:
-            return first_ip
+        ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
+        # Walk right-to-left; skip IPs that belong to trusted proxies.
+        for ip in reversed(ips):
+            if ip not in _TRUSTED_PROXY_IPS:
+                return ip
+        # Edge case: every entry is a trusted proxy — fall back to leftmost.
+        if ips:
+            return ips[0]
     return direct_ip
 
 

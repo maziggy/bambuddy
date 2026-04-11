@@ -301,6 +301,11 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
             detail="Authentication is not enabled",
         )
 
+    # Rate-limit repeated login failures per username (M-R5-B)
+    from backend.app.api.routes.mfa import MAX_LOGIN_ATTEMPTS, check_rate_limit, record_failed_attempt
+
+    await check_rate_limit(db, request.username, event_type="login_attempt", max_attempts=MAX_LOGIN_ATTEMPTS)
+
     # Check if LDAP is enabled
     ldap_user = None
     ldap_settings = await _get_ldap_settings(db)
@@ -349,6 +354,7 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
             user = await authenticate_user_by_email(db, request.username, request.password)
 
     if not user:
+        await record_failed_attempt(db, request.username, event_type="login_attempt")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

@@ -103,6 +103,7 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 # TTL / rate-limit constants
 # ---------------------------------------------------------------------------
 MAX_2FA_ATTEMPTS = 5
+MAX_LOGIN_ATTEMPTS = 10
 LOCKOUT_WINDOW = timedelta(minutes=15)
 MAX_EMAIL_OTP_SENDS = 3
 EMAIL_OTP_SEND_WINDOW = timedelta(minutes=10)
@@ -243,10 +244,15 @@ async def peek_pre_auth_token(db: AsyncSession, token: str, challenge_id: str | 
 # ---------------------------------------------------------------------------
 # DB-backed rate-limiting helpers
 # ---------------------------------------------------------------------------
-async def check_rate_limit(db: AsyncSession, username: str) -> None:
-    """Raise HTTP 429 if the user has exceeded the failed 2FA attempt limit.
+async def check_rate_limit(
+    db: AsyncSession,
+    username: str,
+    event_type: str = "2fa_attempt",
+    max_attempts: int = MAX_2FA_ATTEMPTS,
+) -> None:
+    """Raise HTTP 429 if the user has exceeded the failed attempt limit.
 
-    The username is normalised to lower-case so case-variant login attempts
+    The username is normalised to lower-case so case-variant attempts
     (which all resolve to the same user) share the same rate-limit bucket.
     """
     username_key = username.lower()
@@ -255,21 +261,21 @@ async def check_rate_limit(db: AsyncSession, username: str) -> None:
     result = await db.execute(
         select(AuthRateLimitEvent).where(
             AuthRateLimitEvent.username == username_key,
-            AuthRateLimitEvent.event_type == "2fa_attempt",
+            AuthRateLimitEvent.event_type == event_type,
             AuthRateLimitEvent.occurred_at > cutoff,
         )
     )
     recent_count = len(result.scalars().all())
-    if recent_count >= MAX_2FA_ATTEMPTS:
+    if recent_count >= max_attempts:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many failed 2FA attempts. Please try again later.",
+            detail="Too many failed attempts. Please try again later.",
         )
 
 
-async def record_failed_attempt(db: AsyncSession, username: str) -> None:
-    """Record a failed 2FA attempt for rate-limiting purposes."""
-    db.add(AuthRateLimitEvent(username=username.lower(), event_type="2fa_attempt"))
+async def record_failed_attempt(db: AsyncSession, username: str, event_type: str = "2fa_attempt") -> None:
+    """Record a failed attempt for rate-limiting purposes."""
+    db.add(AuthRateLimitEvent(username=username.lower(), event_type=event_type))
     await db.commit()
 
 

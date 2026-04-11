@@ -1,13 +1,22 @@
+from datetime import datetime, timezone
+from typing import Annotated
+
+import jwt as _jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.settings import get_external_login_url
 from backend.app.core.auth import (
+    ALGORITHM,
+    SECRET_KEY,
     RequirePermissionIfAuthEnabled,
     get_current_user_optional,
     get_password_hash,
+    revoke_jti,
+    security,
     verify_password,
 )
 from backend.app.core.database import get_db
@@ -398,6 +407,7 @@ async def delete_user(
 @router.post("/me/change-password", response_model=dict)
 async def change_own_password(
     password_data: ChangePasswordRequest,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
     current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
@@ -421,17 +431,17 @@ async def change_own_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account has no local password set",
         )
+
+    # Rate-limit failed password-change attempts (H-R5-A)
+    from backend.app.api.routes.mfa import MAX_2FA_ATTEMPTS, check_rate_limit, record_failed_attempt
+
+    await check_rate_limit(db, current_user.username, event_type="password_change", max_attempts=MAX_2FA_ATTEMPTS)
+
     if not verify_password(password_data.current_password, current_user.password_hash):
+        await record_failed_attempt(db, current_user.username, event_type="password_change")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
-        )
-
-    # Validate new password
-    if len(password_data.new_password) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be at least 6 characters",
         )
 
     # Fetch user from this session to ensure changes are persisted
@@ -446,5 +456,16 @@ async def change_own_password(
     # Update password
     user.password_hash = get_password_hash(password_data.new_password)
     await db.commit()
+
+    # Revoke the current session token so the caller must re-authenticate (M-R5-A)
+    if credentials is not None:
+        try:
+            payload = _jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            if jti and exp:
+                await revoke_jti(jti, datetime.fromtimestamp(exp, tz=timezone.utc), user.username)
+        except Exception:
+            pass  # Best-effort — token validity is not required for the revocation attempt
 
     return {"message": "Password changed successfully"}

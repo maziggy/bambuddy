@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import jwt
 import pyotp
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from jwt import PyJWKClient
 from passlib.context import CryptContext
@@ -73,6 +73,7 @@ from backend.app.schemas.auth import (
     TOTPDisableRequest,
     TOTPEnableRequest,
     TOTPEnableResponse,
+    TOTPSetupRequest,
     TOTPSetupResponse,
     TwoFAStatusResponse,
     TwoFAVerifyRequest,
@@ -370,6 +371,7 @@ async def get_2fa_status(
 
 @router.post("/2fa/totp/setup", response_model=TOTPSetupResponse)
 async def setup_totp(
+    body: TOTPSetupRequest | None = Body(default=None),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> TOTPSetupResponse:
@@ -377,17 +379,33 @@ async def setup_totp(
 
     Creates (or replaces) a pending UserTOTP record with is_enabled=False.
     The caller must confirm with POST /auth/2fa/totp/enable.
+
+    M-R7-A: If an *active* TOTP is already configured, the caller must supply
+    the current TOTP code in the request body to confirm intent before the
+    secret is overwritten (prevents silently locking out the real user).
     """
     if not await is_auth_enabled(db):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Authentication is not enabled")
+
+    # Upsert a pending TOTP record (is_enabled=False)
+    existing = (await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))).scalar_one_or_none()
+
+    # M-R7-A: Guard against silent TOTP replacement when one is already active.
+    if existing and existing.is_enabled:
+        await check_rate_limit(db, current_user.username, event_type="2fa_attempt")
+        supplied_code = (body.code if body else None) or ""
+        if not pyotp.TOTP(existing.secret).verify(supplied_code, valid_window=1):
+            await record_failed_attempt(db, current_user.username, event_type="2fa_attempt")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current TOTP code required to replace an active authenticator",
+            )
+        await clear_failed_attempts(db, current_user.username, event_type="2fa_attempt")
 
     secret = pyotp.random_base32()
     totp = pyotp.TOTP(secret)
     provisioning_uri = totp.provisioning_uri(name=current_user.username, issuer_name="Bambuddy")
     qr_b64 = _generate_totp_qr_b64(provisioning_uri)
-
-    # Upsert a pending TOTP record (is_enabled=False)
-    existing = (await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))).scalar_one_or_none()
 
     if existing:
         existing.secret = secret
@@ -410,7 +428,11 @@ async def enable_totp(
     """Confirm TOTP setup by verifying a code from the authenticator app.
 
     On success, enables TOTP and returns 10 single-use backup codes (shown once).
+    L-R7-A: Rate-limited to prevent brute-forcing the 6-digit confirmation code.
     """
+    # L-R7-A: Rate-limit the enable step to prevent brute-forcing the 6-digit code.
+    await check_rate_limit(db, current_user.username, event_type="2fa_attempt")
+
     result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))
     totp_record = result.scalar_one_or_none()
 
@@ -420,8 +442,10 @@ async def enable_totp(
         )
 
     if not pyotp.TOTP(totp_record.secret).verify(body.code, valid_window=1):
+        await record_failed_attempt(db, current_user.username, event_type="2fa_attempt")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
 
+    await clear_failed_attempts(db, current_user.username, event_type="2fa_attempt")
     plain_codes, hashed_codes = _generate_backup_codes()
     totp_record.is_enabled = True
     totp_record.backup_codes = hashed_codes
@@ -1117,6 +1141,13 @@ async def oidc_callback(
         token_endpoint = discovery.get("token_endpoint")
         jwks_uri = discovery.get("jwks_uri")
         if not token_endpoint or not jwks_uri:
+            return RedirectResponse(url=f"{frontend_error_url}invalid_discovery_document", status_code=302)
+        # L-R7-C: Reject non-HTTP(S) URLs in the discovery document to prevent
+        # SSRF via crafted responses (e.g. file://, gopher://, internal schemes).
+        if not token_endpoint.startswith(("https://", "http://")) or not jwks_uri.startswith(("https://", "http://")):
+            logger.warning(
+                "OIDC discovery document contains non-HTTP URL(s): token=%s jwks=%s", token_endpoint, jwks_uri
+            )
             return RedirectResponse(url=f"{frontend_error_url}invalid_discovery_document", status_code=302)
 
         # ── Step 2: Exchange authorization code for tokens ───────────────────

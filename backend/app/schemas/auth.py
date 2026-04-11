@@ -183,6 +183,17 @@ class TOTPSetupResponse(BaseModel):
     issuer: str
 
 
+class TOTPSetupRequest(BaseModel):
+    """Optional body for POST /auth/2fa/totp/setup.
+
+    Only required when re-initialising setup while an active TOTP record exists.
+    Provide the current TOTP code (from the existing authenticator app) to
+    confirm intent — mirrors the verification requirement in disable_totp.
+    """
+
+    code: str | None = None
+
+
 class TOTPEnableRequest(BaseModel):
     code: str  # 6-digit TOTP code from the authenticator app
 

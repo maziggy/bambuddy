@@ -455,6 +455,7 @@ async def change_own_password(
 
     # Update password
     user.password_hash = get_password_hash(password_data.new_password)
+    user.password_changed_at = datetime.now(timezone.utc)  # M-R7-B: invalidate all prior JWTs
     await db.commit()
 
     # L-R6-A: Password verified successfully — reset the failure counter

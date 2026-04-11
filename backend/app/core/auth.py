@@ -186,16 +186,34 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """Create a JWT access token with a unique jti claim for revocation support."""
+    """Create a JWT access token with jti (revocation) and iat (freshness) claims."""
     to_encode = data.copy()
+    now = datetime.now(timezone.utc)
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     jti = secrets.token_hex(16)
-    to_encode.update({"exp": expire, "jti": jti})
+    to_encode.update({"exp": expire, "jti": jti, "iat": now})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def _is_token_fresh(iat: int | float | None, user: User) -> bool:
+    """Return False if the token was issued before the user's last password change.
+
+    Used to invalidate all sessions after a password reset/change (M-R7-B).
+    Returns True when no freshness information is available (safe default: allow).
+    """
+    if iat is None:
+        return True  # Old token without iat — tolerate during transition window
+    if not hasattr(user, "password_changed_at") or user.password_changed_at is None:
+        return True  # No password change recorded yet
+    token_issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
+    pca = user.password_changed_at
+    if pca.tzinfo is None:
+        pca = pca.replace(tzinfo=timezone.utc)
+    return token_issued_at >= pca
 
 
 async def revoke_jti(jti: str, expires_at: datetime, username: str | None = None) -> None:
@@ -337,12 +355,15 @@ async def get_current_user_optional(
         jti: str | None = payload.get("jti")
         if not jti or await is_jti_revoked(jti):
             return None
+        iat: int | float | None = payload.get("iat")
     except JWTError:
         return None
 
     async with async_session() as db:
         user = await get_user_by_username(db, username)
         if user is None or not user.is_active:
+            return None
+        if not _is_token_fresh(iat, user):
             return None
         return user
 
@@ -367,6 +388,7 @@ async def get_current_user(
         jti: str | None = payload.get("jti")
         if not jti or await is_jti_revoked(jti):
             raise credentials_exception
+        iat: int | float | None = payload.get("iat")
     except JWTError:
         raise credentials_exception
 
@@ -379,6 +401,8 @@ async def get_current_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is disabled",
             )
+        if not _is_token_fresh(iat, user):
+            raise credentials_exception
         return user
 
 
@@ -438,6 +462,7 @@ async def require_auth_if_enabled(
                         detail="Could not validate credentials",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
+                iat: int | float | None = payload.get("iat")
             except JWTError:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -447,6 +472,12 @@ async def require_auth_if_enabled(
 
             user = await get_user_by_username(db, username)
             if user is None or not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if not _is_token_fresh(iat, user):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Could not validate credentials",
@@ -678,11 +709,14 @@ def require_permission(*permissions: str | Permission):
                 jti: str | None = payload.get("jti")
                 if not jti or await is_jti_revoked(jti):
                     raise credentials_exception
+                iat: int | float | None = payload.get("iat")
             except JWTError:
                 raise credentials_exception
 
             user = await get_user_by_username(db, username)
             if user is None or not user.is_active:
+                raise credentials_exception
+            if not _is_token_fresh(iat, user):
                 raise credentials_exception
 
             if not user.has_all_permissions(*perm_strings):
@@ -757,6 +791,7 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
                             detail="Could not validate credentials",
                             headers={"WWW-Authenticate": "Bearer"},
                         )
+                    iat: int | float | None = payload.get("iat")
                 except JWTError:
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -766,6 +801,12 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
 
                 user = await get_user_by_username(db, username)
                 if user is None or not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                if not _is_token_fresh(iat, user):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Could not validate credentials",
@@ -893,6 +934,7 @@ def require_ownership_permission(
                             detail="Could not validate credentials",
                             headers={"WWW-Authenticate": "Bearer"},
                         )
+                    iat: int | float | None = payload.get("iat")
                 except JWTError:
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -902,6 +944,12 @@ def require_ownership_permission(
 
                 user = await get_user_by_username(db, username)
                 if user is None or not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                if not _is_token_fresh(iat, user):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Could not validate credentials",

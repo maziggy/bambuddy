@@ -825,6 +825,7 @@ async def forgot_password_confirm(request: ForgotPasswordConfirmRequest, db: Asy
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired password reset token")
 
     user.password_hash = get_password_hash(request.new_password)
+    user.password_changed_at = now  # M-R7-B: invalidate all prior JWTs
     await db.commit()
     _logger.info("Password reset completed for user '%s'", username)
 
@@ -921,7 +922,7 @@ async def reset_user_password(
         _logger.error("Failed to send admin password reset for user '%s': %s", user.username, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to reset password: {str(e)}",
+            detail="Failed to send password reset link. Check server logs.",  # L-R7-B: no internal details
         )
 
 

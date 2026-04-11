@@ -1452,6 +1452,11 @@ async def run_migrations(conn):
     # Migration: Add auto_link_existing_accounts column to oidc_providers (M-4)
     await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT 1")
 
+    # Migration: Add password_changed_at to users (M-R7-B)
+    # Tracks the last time a user's password was changed/reset.  JWTs whose iat
+    # predates this timestamp are rejected in all six auth validation paths.
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN password_changed_at DATETIME")
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

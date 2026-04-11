@@ -279,12 +279,12 @@ async def record_failed_attempt(db: AsyncSession, username: str, event_type: str
     await db.commit()
 
 
-async def clear_failed_attempts(db: AsyncSession, username: str) -> None:
-    """Delete all recorded 2FA attempts for a user on successful verification."""
+async def clear_failed_attempts(db: AsyncSession, username: str, event_type: str = "2fa_attempt") -> None:
+    """Delete all recorded failed attempts for a user on successful verification."""
     await db.execute(
         delete(AuthRateLimitEvent).where(
             AuthRateLimitEvent.username == username.lower(),
-            AuthRateLimitEvent.event_type == "2fa_attempt",
+            AuthRateLimitEvent.event_type == event_type,
         )
     )
     await db.commit()

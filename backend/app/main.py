@@ -3740,9 +3740,9 @@ _AUTH_CLEANUP_INTERVAL = 3600  # seconds (hourly)
 
 
 async def _run_auth_cleanup() -> None:
-    """Single cleanup pass: remove stale unconfirmed TOTP records and expired revoked JTIs."""
+    """Single cleanup pass: remove stale TOTP records, expired revoked JTIs, and old rate-limit events."""
     from backend.app.core.database import async_session
-    from backend.app.models.auth_ephemeral import AuthEphemeralToken
+    from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
     from backend.app.models.user_totp import UserTOTP
 
     now = datetime.now(timezone.utc)
@@ -3780,6 +3780,23 @@ async def _run_auth_cleanup() -> None:
             await db.commit()
     except Exception as e:
         logging.warning("Auth cleanup: failed to purge expired revoked JTIs: %s", e)
+
+    # L-R6-B: Purge AuthRateLimitEvent rows older than the lockout window (15 min).
+    # Events outside this window can never affect rate-limit decisions — they only
+    # consume DB space.  Use the same window constant as the rate limiter so the
+    # two are always in sync.
+    try:
+        from backend.app.api.routes.mfa import LOCKOUT_WINDOW
+
+        async with async_session() as db:
+            await db.execute(
+                delete(AuthRateLimitEvent).where(
+                    AuthRateLimitEvent.occurred_at < now - LOCKOUT_WINDOW,
+                )
+            )
+            await db.commit()
+    except Exception as e:
+        logging.warning("Auth cleanup: failed to purge stale rate-limit events: %s", e)
 
 
 async def _auth_cleanup_loop() -> None:

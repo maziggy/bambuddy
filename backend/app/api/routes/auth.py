@@ -301,10 +301,15 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
             detail="Authentication is not enabled",
         )
 
-    # Rate-limit repeated login failures per username (M-R5-B)
+    # Rate-limit repeated login failures — two independent buckets (M-R5-B / M-R6-A):
+    #   1. Per-username (10/15 min): prevents password brute-force on a known account.
+    #   2. Per-IP     (20/15 min): prevents an attacker from locking out arbitrary accounts
+    #      (DoS) by sending failures for many usernames from a single address.
     from backend.app.api.routes.mfa import MAX_LOGIN_ATTEMPTS, check_rate_limit, record_failed_attempt
 
     await check_rate_limit(db, request.username, event_type="login_attempt", max_attempts=MAX_LOGIN_ATTEMPTS)
+    client_ip = raw_request.client.host if raw_request.client else "unknown"
+    await check_rate_limit(db, client_ip, event_type="login_ip", max_attempts=20)
 
     # Check if LDAP is enabled
     ldap_user = None
@@ -355,6 +360,7 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
 
     if not user:
         await record_failed_attempt(db, request.username, event_type="login_attempt")
+        await record_failed_attempt(db, client_ip, event_type="login_ip")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -364,6 +370,12 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
     # Reload user with groups for proper permission calculation
     result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
     user = result.scalar_one()
+
+    # L-R6-A: Password was correct — reset login failure counters for both buckets
+    from backend.app.api.routes.mfa import clear_failed_attempts
+
+    await clear_failed_attempts(db, user.username, event_type="login_attempt")
+    await clear_failed_attempts(db, client_ip, event_type="login_ip")
 
     # --- 2FA check ---
     # Determine which 2FA methods are active for this user.

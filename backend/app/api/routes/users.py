@@ -457,6 +457,11 @@ async def change_own_password(
     user.password_hash = get_password_hash(password_data.new_password)
     await db.commit()
 
+    # L-R6-A: Password verified successfully — reset the failure counter
+    from backend.app.api.routes.mfa import clear_failed_attempts
+
+    await clear_failed_attempts(db, user.username, event_type="password_change")
+
     # Revoke the current session token so the caller must re-authenticate (M-R5-A)
     if credentials is not None:
         try:

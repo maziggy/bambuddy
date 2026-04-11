@@ -890,6 +890,27 @@ class TestDisplayEndpoints:
         )
         assert resp.status_code == 422  # Validation error: brightness > 100
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_display_settings(self, async_client: AsyncClient, device_factory):
+        """The kiosk idle watchdog (install/spoolbuddy-idle.sh) reads this
+        endpoint on autostart to configure swayidle with the user-selected
+        blank timeout before launching. See issue #937."""
+        await device_factory(device_id="sb-disp-get", display_brightness=60, display_blank_timeout=450)
+
+        resp = await async_client.get(f"{API}/devices/sb-disp-get/display")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["brightness"] == 60
+        assert data["blank_timeout"] == 450
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_display_unknown_device_404(self, async_client: AsyncClient):
+        resp = await async_client.get(f"{API}/devices/ghost/display")
+        assert resp.status_code == 404
+
 
 # ============================================================================
 # Update endpoints

@@ -487,14 +487,17 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
 // H2C Nozzle Rack Card — compact single row showing 6-position tool-changer dock
 function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client').NozzleRackSlot[]; filamentInfo?: Record<string, { name: string; k: number | null }> }) {
   const { t } = useTranslation();
-  // Rack nozzles only (IDs >= 2) — excludes L/R hotend nozzles (IDs 0, 1)
-  // H2C rack IDs are 16-21 — map by actual ID so empty slots appear in the correct position
+  // Rack nozzles only (IDs >= 2) — excludes L/R hotend nozzles (IDs 0, 1).
+  // H2C rack slot IDs are fixed at 16..21. When a nozzle is picked up into the
+  // hotend the firmware omits that rack ID entirely, so we must map by the fixed
+  // base — computing it from min(present IDs) shifts everything left when slot 16
+  // is the one currently mounted (#943).
   const rackNozzles = slots.filter(s => s.id >= 2);
   const RACK_SIZE = 6;
-  const minRackId = rackNozzles.length > 0 ? Math.min(...rackNozzles.map(s => s.id)) : 16;
+  const RACK_BASE_ID = 16;
   const rackSlots: (import('../api/client').NozzleRackSlot)[] = Array.from(
     { length: RACK_SIZE },
-    (_, i) => rackNozzles.find(s => s.id === minRackId + i) ?? {
+    (_, i) => rackNozzles.find(s => s.id === RACK_BASE_ID + i) ?? {
       id: -(i + 1), nozzle_type: '', nozzle_diameter: '', wear: null, stat: null,
       max_temp: 0, serial_number: '', filament_color: '', filament_id: '', filament_type: '',
     },

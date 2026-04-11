@@ -236,6 +236,45 @@ describe('PrintersPage', () => {
       expect(dashes.length).toBeGreaterThanOrEqual(3); // 3 empty rack positions (IDs 19,20,21)
     });
 
+    it('keeps empty slot anchored to physical position when its nozzle is mounted (#943)', async () => {
+      // H2C with rack slot 16 picked up into the hotend — firmware omits ID 16
+      // entirely from nozzle.info. Each rack diameter is unique so we can assert
+      // the ordering by tooltip lookup.
+      const h2cSlot16Mounted = {
+        ...mockPrinterStatus,
+        nozzle_rack: [
+          { id: 0, nozzle_type: 'HS', nozzle_diameter: '0.4', wear: 5, stat: 1, max_temp: 300, serial_number: 'SN-L', filament_color: '', filament_id: '', filament_type: '' },
+          { id: 1, nozzle_type: 'HS', nozzle_diameter: '0.4', wear: 3, stat: 0, max_temp: 300, serial_number: 'SN-R', filament_color: '', filament_id: '', filament_type: '' },
+          // ID 16 missing — currently in hotend
+          { id: 17, nozzle_type: 'HS', nozzle_diameter: '0.2', wear: 0, stat: 0, max_temp: 300, serial_number: 'SN-17', filament_color: '', filament_id: '', filament_type: '' },
+          { id: 18, nozzle_type: 'HS', nozzle_diameter: '0.6', wear: 0, stat: 0, max_temp: 300, serial_number: 'SN-18', filament_color: '', filament_id: '', filament_type: '' },
+          { id: 19, nozzle_type: 'HS', nozzle_diameter: '0.8', wear: 0, stat: 0, max_temp: 300, serial_number: 'SN-19', filament_color: '', filament_id: '', filament_type: '' },
+          { id: 20, nozzle_type: 'HH01', nozzle_diameter: '1.0', wear: 0, stat: 0, max_temp: 300, serial_number: 'SN-20', filament_color: '', filament_id: '', filament_type: '' },
+          { id: 21, nozzle_type: 'HH01', nozzle_diameter: '1.2', wear: 0, stat: 0, max_temp: 300, serial_number: 'SN-21', filament_color: '', filament_id: '', filament_type: '' },
+        ],
+      };
+
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json(h2cSlot16Mounted);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Nozzle Rack').length).toBeGreaterThan(0);
+      });
+
+      // Slot 1 (leftmost, ID 16) should be the empty dash; slots 2..6 should
+      // hold the 5 remaining nozzles in order 17, 18, 19, 20, 21.
+      const rackLabel = screen.getAllByText('Nozzle Rack')[0];
+      const rackCard = rackLabel.parentElement!;
+      const slotRow = rackCard.querySelectorAll('div.flex')[0];
+      const slotTexts = Array.from(slotRow.querySelectorAll('span')).map(s => s.textContent);
+      expect(slotTexts).toEqual(['—', '0.2', '0.6', '0.8', '1.0', '1.2']);
+    });
+
     it('hides nozzle rack when only L/R nozzles present (H2D)', async () => {
       const h2dStatus = {
         ...mockPrinterStatus,

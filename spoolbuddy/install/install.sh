@@ -947,7 +947,7 @@ setup_kiosk() {
         dpkg-divert --local --rename --add /usr/sbin/update-initramfs >/dev/null 2>&1 || true
         ln -sf /bin/true /usr/sbin/update-initramfs
     fi
-    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium plymouth wlr-randr
+    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium plymouth wlr-randr swayidle wlopm jq
     # Restore real update-initramfs
     if dpkg-divert --list /usr/sbin/update-initramfs 2>/dev/null | grep -q local; then
         rm -f /usr/sbin/update-initramfs
@@ -1183,8 +1183,11 @@ EOF
 # Force 1024x600 (panel doesn't advertise this natively)
 wlr-randr --output HDMI-A-1 --custom-mode 1024x600@60 &
 
-# Prevent display blanking (labwc <0.8 lacks screenBlankTimeout config support)
-(while true; do wlr-randr --output HDMI-A-1 --on 2>/dev/null; sleep 60; done) &
+# Idle watchdog: powers off HDMI via wlopm after the configured inactivity
+# timeout (SpoolBuddy Settings → Display → Screen blank timeout). Reads the
+# current value from the backend on startup; UI changes take effect on the
+# next reboot / kiosk restart.
+$INSTALL_PATH/spoolbuddy/install/spoolbuddy-idle.sh &
 
 # Launch Chromium via helper that resolves URL from spoolbuddy/.env
 $kiosk_launcher &

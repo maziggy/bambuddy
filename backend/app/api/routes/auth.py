@@ -18,6 +18,7 @@ from backend.app.core.auth import (
     SECRET_KEY,
     Permission,
     RequirePermissionIfAuthEnabled,
+    _is_token_fresh,
     _validate_api_key,
     authenticate_user,
     authenticate_user_by_email,
@@ -484,6 +485,7 @@ async def get_current_user_info(
                     detail="Could not validate credentials",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+            iat: int | float | None = payload.get("iat")
         except JWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -501,6 +503,13 @@ async def get_current_user_info(
         # Reload with groups for proper permission calculation
         result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
         user = result.scalar_one()
+        # L-R8-A: reject tokens issued before the last password change
+        if not _is_token_fresh(iat, user):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return _user_to_response(user)
 
     # No credentials provided

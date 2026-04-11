@@ -4232,7 +4232,13 @@ async def auth_middleware(request, call_next):
     import jwt
 
     try:
-        from backend.app.core.auth import ALGORITHM, SECRET_KEY, get_user_by_username, is_jti_revoked
+        from backend.app.core.auth import (
+            ALGORITHM,
+            SECRET_KEY,
+            _is_token_fresh,
+            get_user_by_username,
+            is_jti_revoked,
+        )
 
         token = auth_header.replace("Bearer ", "")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -4242,6 +4248,7 @@ async def auth_middleware(request, call_next):
         jti = payload.get("jti")
         if not jti:
             raise ValueError("No jti in token")
+        iat = payload.get("iat")
 
         # Reject revoked tokens (defense-in-depth gateway check)
         if await is_jti_revoked(jti):
@@ -4251,13 +4258,19 @@ async def auth_middleware(request, call_next):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Verify user exists and is active
+        # Verify user exists, is active, and token is still fresh (L-R8-A)
         async with async_session() as db:
             user = await get_user_by_username(db, username)
             if not user or not user.is_active:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "User not found or inactive"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if not _is_token_fresh(iat, user):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Token no longer valid"},
                     headers={"WWW-Authenticate": "Bearer"},
                 )
     except jwt.ExpiredSignatureError:

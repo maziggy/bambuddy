@@ -48,28 +48,24 @@ def _create_engine():
             if parameters is None:
                 return statement, parameters
 
+            # Recursive strip that walks any nesting of dict/list/tuple. Needed
+            # because SQLAlchemy passes parameters in several shapes depending
+            # on the path: a dict for named binds, a tuple for positional, a
+            # list of dicts/tuples for executemany, and for insertmanyvalues
+            # sometimes a list of tuples inside an outer list. The simplest
+            # correct answer is "strip datetimes at any depth".
             def _strip(val):
                 if isinstance(val, datetime.datetime) and val.tzinfo is not None:
                     return val.replace(tzinfo=None)
+                if isinstance(val, dict):
+                    return {k: _strip(v) for k, v in val.items()}
+                if isinstance(val, list):
+                    return [_strip(v) for v in val]
+                if isinstance(val, tuple):
+                    return tuple(_strip(v) for v in val)
                 return val
 
-            def _strip_container(params):
-                if isinstance(params, dict):
-                    return {k: _strip(v) for k, v in params.items()}
-                elif isinstance(params, tuple):
-                    return tuple(_strip(v) for v in params)
-                elif isinstance(params, list):
-                    # SQLAlchemy's insertmanyvalues feature sends one flattened
-                    # list of positional params for a single batched INSERT.
-                    return [_strip(v) for v in params]
-                return params
-
-            if executemany and isinstance(parameters, (list, tuple)):
-                # Batch: list of dicts or list of tuples
-                parameters = [_strip_container(row) for row in parameters]
-            else:
-                parameters = _strip_container(parameters)
-            return statement, parameters
+            return statement, _strip(parameters)
 
     return eng
 

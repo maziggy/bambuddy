@@ -3752,6 +3752,29 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.warning("Failed to fix aborted queue items: %s", e)
 
+    # L-2: Clean up stale (pending/unconfirmed) TOTP records left behind by
+    # interrupted setup flows.  Any UserTOTP row that is still is_enabled=False
+    # after 1 hour is orphaned and should be removed so a user can restart setup.
+    try:
+        async with async_session() as db:
+            from backend.app.models.user_totp import UserTOTP
+
+            stale_cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+            result = await db.execute(
+                select(UserTOTP).where(
+                    UserTOTP.is_enabled.is_(False),
+                    UserTOTP.created_at < stale_cutoff,
+                )
+            )
+            stale_records = result.scalars().all()
+            if stale_records:
+                for rec in stale_records:
+                    await db.delete(rec)
+                await db.commit()
+                logging.info("Removed %d stale (unconfirmed) TOTP record(s) on startup", len(stale_records))
+    except Exception as e:
+        logging.warning("Failed to clean up stale TOTP records: %s", e)
+
     # Restore debug logging state from previous session
     await init_debug_logging()
 
@@ -3991,6 +4014,7 @@ PUBLIC_API_ROUTES = {
     # Advanced auth status needed for login page
     "/api/v1/auth/advanced-auth/status",
     "/api/v1/auth/forgot-password",  # Password reset for advanced auth
+    "/api/v1/auth/forgot-password/confirm",  # Complete password reset with token (H-6)
     # 2FA routes that are called BEFORE a JWT is issued (pre-auth flow)
     "/api/v1/auth/2fa/verify",  # Exchange pre_auth_token + 2FA code for JWT
     "/api/v1/auth/2fa/email/send",  # Send OTP email (pre_auth_token based)
@@ -4043,6 +4067,8 @@ async def security_headers_middleware(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 

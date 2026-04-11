@@ -45,6 +45,9 @@ class OIDCProvider(Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # When True, a new local user is created automatically on first OIDC login
     auto_create_users: Mapped[bool] = mapped_column(Boolean, default=False)
+    # When True (default), an existing local user whose email matches the OIDC claim is
+    # automatically linked on first SSO login.  Set to False to require explicit linking.
+    auto_link_existing_accounts: Mapped[bool] = mapped_column(Boolean, default=True)
     # Optional icon URL (SVG/PNG) shown on the login button
     icon_url: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

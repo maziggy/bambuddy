@@ -10,7 +10,7 @@ import { api, type LoginResponse } from '../api/client';
 import { Card, CardHeader, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 
-type LoginStep = 'credentials' | '2fa';
+type LoginStep = 'credentials' | '2fa' | 'reset-password';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -34,6 +34,11 @@ export function LoginPage() {
   const [twoFACode, setTwoFACode] = useState('');
   const [emailOTPSent, setEmailOTPSent] = useState(false);
 
+  // H-6: Password reset step state
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
   // Check if advanced auth is enabled
   const { data: advancedAuthStatus } = useQuery({
     queryKey: ['advancedAuthStatus'],
@@ -46,9 +51,23 @@ export function LoginPage() {
     queryFn: () => api.getOIDCProviders(),
   });
 
-  // Handle OIDC callback: if ?oidc_token=... is present, exchange it for a real token
+  // H-6: Detect ?reset_token=... in the URL and switch to the password-reset step.
   useEffect(() => {
-    const oidcToken = searchParams.get('oidc_token');
+    const token = searchParams.get('reset_token');
+    if (token) {
+      setResetToken(token);
+      setStep('reset-password');
+      // Remove the token from the URL immediately so it can't be bookmarked or logged.
+      navigate('/login', { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle OIDC callback: if #oidc_token=... is present in the fragment, exchange it.
+  // H-4: Read from the URL fragment (#) — fragments are never sent to the server
+  // so the exchange token stays out of access logs and Referer headers.
+  useEffect(() => {
+    const hash = window.location.hash;
+    const oidcToken = hash.startsWith('#oidc_token=') ? hash.slice('#oidc_token='.length) : null;
     const oidcError = searchParams.get('oidc_error');
 
     if (oidcError) {
@@ -116,6 +135,21 @@ export function LoginPage() {
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
+    },
+  });
+
+  // H-6: Mutation to set a new password using the reset token from the email link
+  const resetPasswordMutation = useMutation({
+    mutationFn: () => api.forgotPasswordConfirm(resetToken, newPassword),
+    onSuccess: (data) => {
+      showToast(data.message, 'success');
+      setStep('credentials');
+      setResetToken('');
+      setNewPassword('');
+      setConfirmPassword('');
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Password reset failed. The link may have expired.', 'error');
     },
   });
 
@@ -192,6 +226,97 @@ export function LoginPage() {
     setTwoFACode('');
     setEmailOTPSent(false);
   };
+
+  // ---- Render: password-reset step (H-6) ----
+  if (step === 'reset-password') {
+    const handleResetSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (newPassword !== confirmPassword) {
+        showToast('Passwords do not match', 'error');
+        return;
+      }
+      if (newPassword.length < 8) {
+        showToast('Password must be at least 8 characters', 'error');
+        return;
+      }
+      resetPasswordMutation.mutate();
+    };
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bambu-dark p-4">
+        <div className="max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg">
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-14 h-14 rounded-full bg-bambu-green/20 flex items-center justify-center">
+                <Key className="w-7 h-7 text-bambu-green" />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-white">Set New Password</h2>
+            <p className="mt-2 text-sm text-bambu-gray">Enter and confirm your new password below.</p>
+          </div>
+
+          <form onSubmit={handleResetSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="new-password" className="block text-sm font-medium text-white mb-2">
+                New Password
+              </label>
+              <input
+                id="new-password"
+                type="password"
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                placeholder="At least 8 characters"
+                autoFocus
+                autoComplete="new-password"
+                minLength={8}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="confirm-password" className="block text-sm font-medium text-white mb-2">
+                Confirm Password
+              </label>
+              <input
+                id="confirm-password"
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                placeholder="Repeat new password"
+                autoComplete="new-password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={resetPasswordMutation.isPending || !newPassword || !confirmPassword}
+              className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {resetPasswordMutation.isPending ? 'Saving…' : 'Set New Password'}
+            </button>
+          </form>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setStep('credentials');
+                setResetToken('');
+                setNewPassword('');
+                setConfirmPassword('');
+              }}
+              className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
+            >
+              Back to login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ---- Render: 2FA step ----
   if (step === '2fa') {

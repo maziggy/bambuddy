@@ -288,7 +288,7 @@ describe('LoginPage', () => {
     });
 
     it('shows send code button when email method is selected', async () => {
-      const user = await loginWith2FA(['email']);
+      const _user = await loginWith2FA(['email']);
 
       await waitFor(() => {
         expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();

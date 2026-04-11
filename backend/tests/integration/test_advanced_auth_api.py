@@ -388,7 +388,13 @@ class TestForgotPasswordAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_forgot_password_changes_password(self, async_client: AsyncClient, admin_token: str):
-        """After forgot-password, old password stops working."""
+        """After forgot-password + confirm, old password stops working and new one works.
+
+        H-6: The flow is now token-based: /forgot-password issues a reset link and
+        /forgot-password/confirm consumes the token and sets the new password.
+        """
+        from unittest.mock import AsyncMock
+
         headers = {"Authorization": f"Bearer {admin_token}"}
 
         with patch("backend.app.api.routes.users.send_email"):
@@ -413,12 +419,34 @@ class TestForgotPasswordAPI:
         )
         assert login_resp.status_code == 200
 
-        # Trigger forgot password
-        with patch("backend.app.api.routes.auth.send_email"):
-            await async_client.post(
+        # Trigger forgot-password and capture the reset URL (contains the token)
+        captured: dict[str, str] = {}
+
+        async def _capture_link_email(db, username, reset_url):
+            captured["reset_url"] = reset_url
+            return ("subject", "body", "<body/>")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch("backend.app.api.routes.auth.send_email"),
+        ):
+            resp = await async_client.post(
                 "/api/v1/auth/forgot-password",
                 json={"email": "resetme@test.com"},
             )
+        assert resp.status_code == 200
+        assert "reset_url" in captured, "Reset URL not captured — email function was not called"
+
+        # Extract the token from the captured URL and confirm the reset
+        reset_token = captured["reset_url"].split("reset_token=")[1]
+        confirm_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": reset_token, "new_password": "Newpass456!"},
+        )
+        assert confirm_resp.status_code == 200
 
         # Old password should no longer work
         login_resp = await async_client.post(
@@ -426,6 +454,13 @@ class TestForgotPasswordAPI:
             json={"username": "resetme", "password": "originalpass123"},
         )
         assert login_resp.status_code == 401
+
+        # New password must work
+        login_resp = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "resetme", "password": "Newpass456!"},
+        )
+        assert login_resp.status_code == 200
 
 
 class TestAdminResetPasswordAPI:

@@ -93,7 +93,7 @@ def _get_jwt_secret() -> str:
 # JWT settings
 SECRET_KEY = _get_jwt_secret()
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours (M-2: reduced from 7 days)
 
 # HTTP Bearer token
 security = HTTPBearer(auto_error=False)

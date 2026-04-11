@@ -3,14 +3,17 @@ import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/
 const API_BASE = '/api/v1';
 
 // Auth token storage
-let authToken: string | null = localStorage.getItem('auth_token');
+// H-5: Use sessionStorage instead of localStorage so the JWT is not persisted
+// across browser sessions and is not accessible by other tabs/origins via
+// the localStorage API (sessionStorage is scoped to the tab).
+let authToken: string | null = sessionStorage.getItem('auth_token');
 
 export function setAuthToken(token: string | null) {
   authToken = token;
   if (token) {
-    localStorage.setItem('auth_token', token);
+    sessionStorage.setItem('auth_token', token);
   } else {
-    localStorage.removeItem('auth_token');
+    sessionStorage.removeItem('auth_token');
   }
 }
 
@@ -2502,6 +2505,12 @@ export const api = {
     request<ForgotPasswordResponse>('/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  // H-6: Confirm password reset using the token from the emailed link
+  forgotPasswordConfirm: (token: string, newPassword: string) =>
+    request<ForgotPasswordResponse>('/auth/forgot-password/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ token, new_password: newPassword }),
     }),
   resetUserPassword: (data: ResetPasswordRequest) =>
     request<ResetPasswordResponse>('/auth/reset-password', {

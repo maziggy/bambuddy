@@ -1,10 +1,11 @@
+import logging
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,10 +28,12 @@ from backend.app.core.auth import (
 )
 from backend.app.core.database import get_db
 from backend.app.core.permissions import ALL_PERMISSIONS
+from backend.app.models.auth_ephemeral import AuthEphemeralToken
 from backend.app.models.group import Group
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.schemas.auth import (
+    ForgotPasswordConfirmRequest,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     GroupBrief,
@@ -47,6 +50,7 @@ from backend.app.schemas.auth import (
 )
 from backend.app.services.email_service import (
     create_password_reset_email_from_template,
+    create_password_reset_link_email_from_template,
     generate_secure_password,
     get_smtp_settings,
     save_smtp_settings,
@@ -278,7 +282,7 @@ async def disable_auth(
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(request: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+async def login(raw_request: Request, request: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Login and get access token.
 
     Supports username or email-based login. Username lookup is case-insensitive.
@@ -382,6 +386,10 @@ async def login(request: LoginRequest, response: Response, db: AsyncSession = De
             key="2fa_challenge",
             value=challenge_id,
             httponly=True,
+            # H-1: only transmit over HTTPS so the binding cookie can't be intercepted
+            # on mixed-content deployments.  Falls back to False on plain HTTP so tests
+            # and local development still work (the client wouldn't send it otherwise).
+            secure=raw_request.url.scheme == "https",
             samesite="lax",
             max_age=300,
             path="/api/v1/auth/2fa",
@@ -653,13 +661,20 @@ async def get_advanced_auth_status(db: AsyncSession = Depends(get_db)):
     }
 
 
+_logger = logging.getLogger(__name__)
+
+# TTL for password-reset tokens (H-6)
+_RESET_TOKEN_TTL = timedelta(hours=1)
+
+
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
-    """Request password reset via email (advanced auth only)."""
-    import logging
+    """Request password reset via email (advanced auth only).
 
-    logger = logging.getLogger(__name__)
-
+    H-6: Issues a short-lived single-use reset token and emails the user a
+    secure link instead of a plaintext temporary password.  The new password is
+    set only when the user clicks the link and POSTs to /forgot-password/confirm.
+    """
     # Check if advanced auth is enabled
     advanced_auth = await is_advanced_auth_enabled(db)
     if not advanced_auth:
@@ -676,34 +691,85 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
             detail="Email service is not configured",
         )
 
-    # Find user by email
+    # Find user by email — always return success to prevent email enumeration.
     user = await get_user_by_email(db, request.email)
 
-    # Always return success message to prevent email enumeration
-    # but only send email if user exists and is not an LDAP user
     if user and user.is_active and user.auth_source != "ldap":
         try:
-            # Generate new password
-            new_password = generate_secure_password()
-            user.password_hash = get_password_hash(new_password)
+            now = datetime.now(timezone.utc)
+            # Prune any outstanding reset tokens for this user before issuing a new one.
+            await db.execute(
+                delete(AuthEphemeralToken).where(
+                    AuthEphemeralToken.token_type == "password_reset",
+                    AuthEphemeralToken.username == user.username,
+                )
+            )
+            reset_token = secrets.token_urlsafe(32)
+            db.add(
+                AuthEphemeralToken(
+                    token=reset_token,
+                    token_type="password_reset",
+                    username=user.username,
+                    expires_at=now + _RESET_TOKEN_TTL,
+                )
+            )
             await db.commit()
 
             login_url = await get_external_login_url(db)
+            reset_url = f"{login_url}?reset_token={reset_token}"
 
-            # Send password reset email
-            subject, text_body, html_body = await create_password_reset_email_from_template(
-                db, user.username, new_password, login_url
+            subject, text_body, html_body = await create_password_reset_link_email_from_template(
+                db, user.username, reset_url
             )
             send_email(smtp_settings, user.email, subject, text_body, html_body)
-
-            logger.info(f"Password reset email sent to {user.email}")
+            _logger.info("Password reset link sent to %s", user.email)
         except Exception as e:
-            logger.error(f"Failed to send password reset email: {e}")
-            # Don't reveal error to user for security
+            _logger.error("Failed to send password reset email: %s", e)
+            # Don't reveal error to caller for security
 
     return ForgotPasswordResponse(
         message="If the email address is associated with an account, a password reset email has been sent."
     )
+
+
+@router.post("/forgot-password/confirm", response_model=ForgotPasswordResponse)
+async def forgot_password_confirm(request: ForgotPasswordConfirmRequest, db: AsyncSession = Depends(get_db)):
+    """Complete a password reset by supplying the token from the reset email.
+
+    H-6: Atomically consumes the single-use token (DELETE…RETURNING) and sets
+    the new password.  Expired or already-used tokens are silently rejected with
+    the same response to prevent oracle attacks.
+    """
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        delete(AuthEphemeralToken)
+        .where(
+            AuthEphemeralToken.token == request.token,
+            AuthEphemeralToken.token_type == "password_reset",
+        )
+        .returning(AuthEphemeralToken.username, AuthEphemeralToken.expires_at)
+    )
+    row = result.one_or_none()
+    await db.commit()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired password reset token")
+
+    username, expires_at = row
+    # SQLite returns naive datetimes; treat them as UTC.
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if now > expires_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired password reset token")
+
+    user = await get_user_by_username(db, username)
+    if not user or not user.is_active or user.auth_source == "ldap":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired password reset token")
+
+    user.password_hash = get_password_hash(request.new_password)
+    await db.commit()
+    _logger.info("Password reset completed for user '%s'", username)
+
+    return ForgotPasswordResponse(message="Password has been reset successfully.")
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse)

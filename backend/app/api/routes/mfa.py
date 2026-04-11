@@ -450,6 +450,7 @@ async def disable_totp(
     code_valid = totp_obj.verify(body.code, valid_window=1)
     if code_valid:
         _assert_totp_not_replayed(totp_obj, totp_record)
+        await db.flush()  # L-3: persist last_totp_counter immediately to block replay
     else:
         # Check backup codes
         for hashed in totp_record.backup_codes:
@@ -489,6 +490,7 @@ async def regenerate_backup_codes(
         await record_failed_attempt(db, current_user.username)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
     _assert_totp_not_replayed(totp_obj, totp_record)
+    await db.flush()  # L-3: persist last_totp_counter immediately to block replay
 
     plain_codes, hashed_codes = _generate_backup_codes()
     totp_record.backup_codes = hashed_codes
@@ -510,7 +512,9 @@ async def enable_email_otp(
     C5: Proof of possession — the user must prove they control the registered email
     address before email 2FA is activated.  Returns a ``setup_token`` that must be
     passed to POST /auth/2fa/email/enable/confirm together with the received code.
+    H-3: Rate-limited to prevent email flooding via repeated calls to this endpoint.
     """
+    await check_email_otp_send_rate(db, current_user.username)
     if not current_user.email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -625,9 +629,12 @@ async def disable_email_otp(
     C6: Re-authentication required — the caller must supply their account password
     to prevent a hijacked session from silently removing a second factor.
     LDAP/OIDC-only users (no local password) are exempt from this check.
+    H-2: Rate-limited to prevent brute-forcing the password via this endpoint.
     """
+    await check_rate_limit(db, current_user.username)
     if current_user.password_hash:
         if not verify_password(body.password, current_user.password_hash):
+            await record_failed_attempt(db, current_user.username)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
     await _set_email_2fa_enabled(db, current_user.id, False)
     await db.commit()
@@ -760,6 +767,7 @@ async def verify_2fa(
             await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
         _assert_totp_not_replayed(totp_obj, totp_record)
+        await db.flush()  # L-3: persist last_totp_counter immediately to block replay
 
     elif method == "email":
         now = datetime.now(timezone.utc)
@@ -820,7 +828,11 @@ async def verify_2fa(
 
     # Verification succeeded — consume the pre-auth token (single-use enforcement)
     # and clear the rate-limit counter.
-    await consume_pre_auth_token(db, body.pre_auth_token)
+    # C-1: Check the return value; if None the token was already consumed by a
+    # concurrent request (race condition) — reject to prevent double-use.
+    consumed_username = await consume_pre_auth_token(db, body.pre_auth_token)
+    if not consumed_username:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
     await clear_failed_attempts(db, username)
 
     access_token = create_access_token(
@@ -1181,32 +1193,19 @@ async def oidc_callback(
             jwks_client.fetch_data = lambda: jwks_data  # type: ignore[method-assign]
             signing_key = jwks_client.get_signing_key_from_jwt(id_token)
 
-            # Decode without PyJWT issuer check; we validate manually below with
-            # trailing-slash normalisation so both strict and lenient providers work.
+            # M-3: Use PyJWT native issuer validation (issuer= parameter) instead of
+            # decoding with verify_iss=False and checking manually.  PyJWT will raise
+            # InvalidIssuerError when iss != discovery_issuer, which is caught below.
             claims = jwt.decode(
                 id_token,
                 signing_key.key,
                 algorithms=["RS256", "ES256", "RS384", "ES384", "RS512"],
                 audience=provider.client_id,
-                options={"verify_iss": False},
+                issuer=discovery_issuer,
             )
         except Exception as exc:
             logger.error("OIDC JWT validation failed for provider %d: %s", provider_id, exc, exc_info=True)
             return RedirectResponse(url=f"{frontend_error_url}token_validation_failed", status_code=302)
-
-        # Validate issuer with trailing-slash normalisation (I8: require truthy iss)
-        token_iss = claims.get("iss")
-        if not token_iss:
-            logger.warning("OIDC token missing iss claim for provider %d", provider_id)
-            return RedirectResponse(url=f"{frontend_error_url}missing_iss_claim", status_code=302)
-        if token_iss.rstrip("/") != discovery_issuer:
-            logger.warning(
-                "OIDC issuer mismatch for provider %d: jwt iss=%r, discovery issuer=%r",
-                provider_id,
-                token_iss,
-                discovery_issuer,
-            )
-            return RedirectResponse(url=f"{frontend_error_url}issuer_mismatch", status_code=302)
 
         # Verify nonce — fail closed: we always send a nonce, so the provider must echo it.
         # Skipping the check when nonce is absent would allow CSRF on non-nonce providers.
@@ -1264,8 +1263,10 @@ async def oidc_callback(
                     )
                     email_user = eu_result.scalar_one_or_none()
 
-                if email_user:
-                    # Auto-link the existing account (works regardless of auto_create_users)
+                if email_user and provider.auto_link_existing_accounts:
+                    # M-4: Only auto-link when the provider has auto_link_existing_accounts
+                    # enabled.  Operators can disable this to require explicit account linking,
+                    # preventing an attacker-controlled IdP from hijacking local accounts.
                     db.add(
                         UserOIDCLink(
                             user_id=email_user.id,
@@ -1358,7 +1359,9 @@ async def oidc_callback(
             )
             await db.commit()
 
-            return RedirectResponse(url=f"{external_url}/login?oidc_token={exchange_token}", status_code=302)
+            # H-4: Use a URL fragment (#) instead of a query parameter so the exchange
+            # token is never sent to the server in the Referer header or server logs.
+            return RedirectResponse(url=f"{external_url}/login#oidc_token={exchange_token}", status_code=302)
 
         except Exception as exc:
             logger.error("OIDC user resolution failed for provider %d: %s", provider_id, exc, exc_info=True)
@@ -1369,10 +1372,11 @@ async def oidc_callback(
             return RedirectResponse(url=f"{frontend_error_url}user_resolution_failed", status_code=302)
 
     except Exception as exc:
-        exc_name = type(exc).__name__
-        logger.error("Unexpected error in OIDC callback (%s): %s", exc_name, exc, exc_info=True)
+        # L-1: Log the exception class name internally but never expose it in the
+        # redirect URL — leaking exception names aids attacker reconnaissance.
+        logger.error("Unexpected error in OIDC callback (%s): %s", type(exc).__name__, exc, exc_info=True)
         try:
-            return RedirectResponse(url=f"{frontend_error_url}internal_{exc_name}", status_code=302)
+            return RedirectResponse(url=f"{frontend_error_url}internal_error", status_code=302)
         except Exception:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OIDC callback failed")
 

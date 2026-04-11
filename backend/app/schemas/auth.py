@@ -81,6 +81,11 @@ class ForgotPasswordRequest(BaseModel):
     email: str
 
 
+class ForgotPasswordConfirmRequest(BaseModel):
+    token: str = Field(..., max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=256)
+
+
 class ForgotPasswordResponse(BaseModel):
     message: str
 
@@ -204,6 +209,15 @@ class EmailOTPDisableRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _validate_icon_url(v: str | None) -> str | None:
+    """Reject non-HTTPS icon URLs to prevent SSRF / mixed-content issues."""
+    if v is None:
+        return v
+    if not v.startswith("https://"):
+        raise ValueError("icon_url must start with https://")
+    return v
+
+
 def _validate_issuer_url(v: str | None) -> str | None:
     """Reject non-HTTP(S) issuer URLs to prevent SSRF via internal scheme abuse."""
     if v is None:
@@ -221,6 +235,7 @@ class OIDCProviderCreate(BaseModel):
     scopes: str = "openid email profile"
     is_enabled: bool = True
     auto_create_users: bool = False
+    auto_link_existing_accounts: bool = True
     icon_url: str | None = None
 
     @field_validator("issuer_url")
@@ -229,6 +244,11 @@ class OIDCProviderCreate(BaseModel):
         result = _validate_issuer_url(v)
         assert result is not None
         return result
+
+    @field_validator("icon_url")
+    @classmethod
+    def validate_icon_url(cls, v: str | None) -> str | None:
+        return _validate_icon_url(v)
 
 
 class OIDCProviderUpdate(BaseModel):
@@ -245,7 +265,13 @@ class OIDCProviderUpdate(BaseModel):
     scopes: str | None = None
     is_enabled: bool | None = None
     auto_create_users: bool | None = None
+    auto_link_existing_accounts: bool | None = None
     icon_url: str | None = None
+
+    @field_validator("icon_url")
+    @classmethod
+    def validate_icon_url(cls, v: str | None) -> str | None:
+        return _validate_icon_url(v)
 
 
 class OIDCProviderResponse(BaseModel):
@@ -256,6 +282,7 @@ class OIDCProviderResponse(BaseModel):
     scopes: str
     is_enabled: bool
     auto_create_users: bool
+    auto_link_existing_accounts: bool = True
     icon_url: str | None = None
 
     class Config:

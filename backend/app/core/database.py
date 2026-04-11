@@ -1449,6 +1449,9 @@ async def run_migrations(conn):
     # Migration: Add challenge_id for pre-auth token client binding (HttpOnly cookie)
     await _safe_execute(conn, "ALTER TABLE auth_ephemeral_tokens ADD COLUMN challenge_id VARCHAR(128)")
 
+    # Migration: Add auto_link_existing_accounts column to oidc_providers (M-4)
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT 1")
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

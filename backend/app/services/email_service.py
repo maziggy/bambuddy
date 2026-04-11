@@ -32,8 +32,6 @@ def generate_secure_password(length: int = 16) -> str:
     Returns:
         A secure random password containing uppercase, lowercase, digits, and special characters
     """
-    import random
-
     # Define character sets
     lowercase = string.ascii_lowercase
     uppercase = string.ascii_uppercase
@@ -52,8 +50,8 @@ def generate_secure_password(length: int = 16) -> str:
     all_chars = lowercase + uppercase + digits + special
     password_chars.extend(secrets.choice(all_chars) for _ in range(length - 4))
 
-    # Shuffle to avoid predictable patterns
-    random.shuffle(password_chars)
+    # Shuffle with CSPRNG — random.shuffle() is seeded from time and not cryptographically safe
+    secrets.SystemRandom().shuffle(password_chars)
 
     return "".join(password_chars)
 
@@ -379,6 +377,71 @@ BamBuddy Team
 """
 
     return subject, text_body, html_body
+
+
+def create_password_reset_link_email(username: str, reset_url: str) -> tuple[str, str, str]:
+    """Create a password-reset email that contains a secure link (not a plaintext password)."""
+    subject = "BamBuddy - Password Reset Request"
+
+    text_body = f"""A password reset was requested for your BamBuddy account.
+
+Username: {username}
+
+Click the link below to set a new password (valid for 1 hour):
+{reset_url}
+
+If you did not request this reset, you can safely ignore this email.
+
+Best regards,
+BamBuddy Team
+"""
+
+    html_body = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-color: #667eea; padding: 20px; border-radius: 8px 8px 0 0;">
+        <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Password Reset Request</h1>
+    </div>
+    <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #ddd; border-top: none;">
+        <p style="font-size: 16px;">A password reset was requested for your BamBuddy account (<strong>{username}</strong>).</p>
+        <p>Click the button below to set a new password. This link is valid for <strong>1 hour</strong>.</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{reset_url}" style="display: inline-block; background-color: #667eea; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 4px; font-weight: bold;">Reset Password</a>
+        </div>
+        <div style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; font-size: 14px; color: #856404;">
+                <strong>Did not request this?</strong> You can safely ignore this email. Your password has not been changed.
+            </p>
+        </div>
+        <p style="font-size: 14px; color: #999; margin-top: 30px;">
+            Best regards,<br>BamBuddy Team
+        </p>
+    </div>
+</body>
+</html>
+"""
+    return subject, text_body, html_body
+
+
+async def create_password_reset_link_email_from_template(
+    db: AsyncSession, username: str, reset_url: str
+) -> tuple[str, str, str]:
+    """Create password-reset link email, using DB template if configured."""
+    template = await get_notification_template(db, "password_reset_link")
+    if template:
+        variables = {"username": username, "reset_url": reset_url}
+        subject = render_template(template.subject or "BamBuddy - Password Reset Request", variables)
+        text_body = render_template(template.body or "", variables)
+        html_body = render_template(template.html_body or "", variables) if template.html_body else None
+        if not html_body:
+            _, text_body, html_body = create_password_reset_link_email(username, reset_url)
+            return subject, text_body, html_body
+        return subject, text_body, html_body
+    return create_password_reset_link_email(username, reset_url)
 
 
 async def create_welcome_email_from_template(

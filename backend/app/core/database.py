@@ -58,6 +58,10 @@ def _create_engine():
                     return {k: _strip(v) for k, v in params.items()}
                 elif isinstance(params, tuple):
                     return tuple(_strip(v) for v in params)
+                elif isinstance(params, list):
+                    # SQLAlchemy's insertmanyvalues feature sends one flattened
+                    # list of positional params for a single batched INSERT.
+                    return [_strip(v) for v in params]
                 return params
 
             if executemany and isinstance(parameters, (list, tuple)):

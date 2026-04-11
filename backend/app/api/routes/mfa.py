@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import jwt
 import pyotp
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from jwt import PyJWKClient
 from passlib.context import CryptContext
@@ -1384,6 +1384,8 @@ async def oidc_callback(
 @router.post("/oidc/exchange", response_model=LoginResponse)
 async def oidc_exchange(
     body: OIDCExchangeRequest,
+    raw_request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     """Exchange an OIDC exchange token (from the callback redirect) for a full JWT.
@@ -1427,7 +1429,8 @@ async def oidc_exchange(
     email_2fa_enabled = await _get_email_2fa_enabled(db, user.id)
 
     if totp_enabled or email_2fa_enabled:
-        # User has 2FA — issue a pre_auth_token and let the frontend handle the 2FA step.
+        # User has 2FA — issue a pre_auth_token bound to this browser session via
+        # an HttpOnly cookie (H-A: mirrors the cookie-binding done in auth.py:login).
         two_fa_methods: list[str] = []
         if totp_enabled:
             two_fa_methods.append("totp")
@@ -1435,7 +1438,17 @@ async def oidc_exchange(
             two_fa_methods.append("email")
         if totp_enabled:
             two_fa_methods.append("backup")
-        pre_auth_token = await create_pre_auth_token(db, user.username)
+        challenge_id = secrets.token_hex(32)
+        pre_auth_token = await create_pre_auth_token(db, user.username, challenge_id=challenge_id)
+        response.set_cookie(
+            key="2fa_challenge",
+            value=challenge_id,
+            httponly=True,
+            secure=raw_request.url.scheme == "https",
+            samesite="lax",
+            max_age=300,
+            path="/api/v1/auth/2fa",
+        )
         return LoginResponse(
             requires_2fa=True,
             pre_auth_token=pre_auth_token,

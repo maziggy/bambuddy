@@ -3,8 +3,10 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
+import jwt as _jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
+from jwt.exceptions import PyJWTError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -24,11 +26,12 @@ from backend.app.core.auth import (
     get_password_hash,
     get_user_by_email,
     get_user_by_username,
+    revoke_jti,
     security,
 )
 from backend.app.core.database import get_db
 from backend.app.core.permissions import ALL_PERMISSIONS
-from backend.app.models.auth_ephemeral import AuthEphemeralToken
+from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
 from backend.app.models.group import Group
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -49,9 +52,7 @@ from backend.app.schemas.auth import (
     UserResponse,
 )
 from backend.app.services.email_service import (
-    create_password_reset_email_from_template,
     create_password_reset_link_email_from_template,
-    generate_secure_password,
     get_smtp_settings,
     save_smtp_settings,
     send_email,
@@ -493,8 +494,22 @@ async def get_current_user_info(
 
 
 @router.post("/logout")
-async def logout():
-    """Logout (client should discard token)."""
+async def logout(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+):
+    """Logout — revokes the current JWT so it cannot be reused after logout."""
+    if credentials is not None:
+        try:
+            payload = _jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+            jti: str | None = payload.get("jti")
+            exp = payload.get("exp")
+            if jti and exp:
+                expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+                username: str | None = payload.get("sub")
+                await revoke_jti(jti, expires_at, username)
+        except PyJWTError:
+            pass  # Expired / invalid tokens are harmless — just clear client-side
+
     return {"message": "Logged out successfully"}
 
 
@@ -666,6 +681,10 @@ _logger = logging.getLogger(__name__)
 # TTL for password-reset tokens (H-6)
 _RESET_TOKEN_TTL = timedelta(hours=1)
 
+# Rate-limit for password-reset email sends per identifier (M-A)
+_MAX_PWD_RESET_SENDS = 3
+_PWD_RESET_SEND_WINDOW = timedelta(minutes=15)
+
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
@@ -682,6 +701,26 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Advanced authentication is not enabled",
         )
+
+    # M-A: Rate-limit by normalised email to prevent reset-email flooding.
+    # Apply unconditionally (before the user lookup) so unknown emails are also
+    # throttled — this prevents both flooding and timing-based enumeration.
+    identifier = request.email.lower()
+    cutoff = datetime.now(timezone.utc) - _PWD_RESET_SEND_WINDOW
+    rate_result = await db.execute(
+        select(AuthRateLimitEvent).where(
+            AuthRateLimitEvent.username == identifier,
+            AuthRateLimitEvent.event_type == "password_reset_send",
+            AuthRateLimitEvent.occurred_at > cutoff,
+        )
+    )
+    if len(rate_result.scalars().all()) >= _MAX_PWD_RESET_SENDS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many password reset requests. Please wait {_PWD_RESET_SEND_WINDOW.seconds // 60} minutes.",
+        )
+    db.add(AuthRateLimitEvent(username=identifier, event_type="password_reset_send"))
+    await db.commit()
 
     # Get SMTP settings
     smtp_settings = await get_smtp_settings(db)
@@ -716,7 +755,9 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
             await db.commit()
 
             login_url = await get_external_login_url(db)
-            reset_url = f"{login_url}?reset_token={reset_token}"
+            # M-B: Deliver token in the URL fragment so it never reaches the server
+            # in access-logs or Referer headers (mirrors H-4 for the OIDC token).
+            reset_url = f"{login_url}#reset_token={reset_token}"
 
             subject, text_body, html_body = await create_password_reset_link_email_from_template(
                 db, user.username, reset_url
@@ -779,10 +820,6 @@ async def reset_user_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Reset a user's password and send them an email (admin only, advanced auth only)."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
     # Reload user with groups for proper is_admin check
     result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
     admin_user = result.scalar_one()
@@ -831,24 +868,39 @@ async def reset_user_password(
         )
 
     try:
-        # Generate new password
-        new_password = generate_secure_password()
-        user.password_hash = get_password_hash(new_password)
+        # H-B: Issue a single-use reset link instead of generating a plaintext password.
+        # The admin never sees the credential — the user sets their own password.
+        now = datetime.now(timezone.utc)
+        await db.execute(
+            delete(AuthEphemeralToken).where(
+                AuthEphemeralToken.token_type == "password_reset",
+                AuthEphemeralToken.username == user.username,
+            )
+        )
+        reset_token = secrets.token_urlsafe(32)
+        db.add(
+            AuthEphemeralToken(
+                token=reset_token,
+                token_type="password_reset",
+                username=user.username,
+                expires_at=now + _RESET_TOKEN_TTL,
+            )
+        )
         await db.commit()
 
         login_url = await get_external_login_url(db)
+        reset_url = f"{login_url}#reset_token={reset_token}"
 
-        # Send password reset email
-        subject, text_body, html_body = await create_password_reset_email_from_template(
-            db, user.username, new_password, login_url
+        subject, text_body, html_body = await create_password_reset_link_email_from_template(
+            db, user.username, reset_url
         )
         send_email(smtp_settings, user.email, subject, text_body, html_body)
 
-        logger.info(f"Password reset by admin {admin_user.username} for user {user.username}")
-        return ResetPasswordResponse(message=f"Password reset email sent to {user.email}")
+        _logger.info("Admin password reset link sent for user '%s' by admin '%s'", user.username, admin_user.username)
+        return ResetPasswordResponse(message=f"Password reset link sent to {user.email}")
     except Exception as e:
         await db.rollback()
-        logger.error(f"Failed to reset password for user {user.username}: {e}")
+        _logger.error("Failed to send admin password reset for user '%s': %s", user.username, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reset password: {str(e)}",

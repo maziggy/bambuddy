@@ -19,6 +19,7 @@ from sqlalchemy.orm import selectinload
 from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.api_key import APIKey
+from backend.app.models.auth_ephemeral import AuthEphemeralToken
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 
@@ -185,15 +186,41 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """Create a JWT access token."""
+    """Create a JWT access token with a unique jti claim for revocation support."""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    jti = secrets.token_hex(16)
+    to_encode.update({"exp": expire, "jti": jti})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+async def revoke_jti(jti: str, expires_at: datetime, username: str | None = None) -> None:
+    """Store a revoked JWT jti so it is rejected on future requests."""
+    async with async_session() as db:
+        revoked = AuthEphemeralToken(
+            token=jti,
+            token_type="revoked_jti",
+            username=username,
+            expires_at=expires_at,
+        )
+        db.add(revoked)
+        await db.commit()
+
+
+async def is_jti_revoked(jti: str) -> bool:
+    """Return True if the given jti has been revoked."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(AuthEphemeralToken).where(
+                AuthEphemeralToken.token == jti,
+                AuthEphemeralToken.token_type == "revoked_jti",
+            )
+        )
+        return result.scalar_one_or_none() is not None
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
@@ -299,6 +326,9 @@ async def get_current_user_optional(
         username: str = payload.get("sub")
         if username is None:
             return None
+        jti: str | None = payload.get("jti")
+        if jti and await is_jti_revoked(jti):
+            return None
     except JWTError:
         return None
 
@@ -325,6 +355,9 @@ async def get_current_user(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
+            raise credentials_exception
+        jti: str | None = payload.get("jti")
+        if jti and await is_jti_revoked(jti):
             raise credentials_exception
     except JWTError:
         raise credentials_exception
@@ -385,6 +418,13 @@ async def require_auth_if_enabled(
                 payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
                 username: str = payload.get("sub")
                 if username is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                jti: str | None = payload.get("jti")
+                if jti and await is_jti_revoked(jti):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Could not validate credentials",

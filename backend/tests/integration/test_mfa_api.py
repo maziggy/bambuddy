@@ -949,7 +949,7 @@ class TestAdminDisableNonAdminRejection:
         # Create a regular user via user management
         create_resp = await async_client.post(
             "/api/v1/users",
-            json={"username": "regularusr2fa", "password": "regularusr2fa1"},
+            json={"username": "regularusr2fa", "password": "Regularusr2fa1!"},
             headers=_auth_header(admin_token),
         )
         assert create_resp.status_code == 201
@@ -957,7 +957,7 @@ class TestAdminDisableNonAdminRejection:
         # Login as regular user
         login_resp = await async_client.post(
             LOGIN_URL,
-            json={"username": "regularusr2fa", "password": "regularusr2fa1"},
+            json={"username": "regularusr2fa", "password": "Regularusr2fa1!"},
         )
         regular_token = login_resp.json()["access_token"]
 

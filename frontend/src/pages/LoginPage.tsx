@@ -51,13 +51,16 @@ export function LoginPage() {
     queryFn: () => api.getOIDCProviders(),
   });
 
-  // H-6: Detect ?reset_token=... in the URL and switch to the password-reset step.
+  // M-B: Detect #reset_token=... in the URL fragment and switch to the reset step.
+  // Fragments are never sent to the server so the token never appears in access-logs
+  // or Referer headers — mirrors the H-4 treatment of the OIDC token.
   useEffect(() => {
-    const token = searchParams.get('reset_token');
+    const hash = window.location.hash;
+    const token = hash.startsWith('#reset_token=') ? hash.slice('#reset_token='.length) : null;
     if (token) {
       setResetToken(token);
       setStep('reset-password');
-      // Remove the token from the URL immediately so it can't be bookmarked or logged.
+      // Clear the fragment from the URL so it can't be bookmarked or re-triggered.
       navigate('/login', { replace: true });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

@@ -3731,6 +3731,84 @@ def stop_expected_prints_cleanup() -> None:
         logging.getLogger(__name__).info("Expected prints cleanup stopped")
 
 
+# ---------------------------------------------------------------------------
+# L-2: Periodic auth-token cleanup (stale TOTP + expired revoked JTIs)
+# ---------------------------------------------------------------------------
+
+_auth_cleanup_task: asyncio.Task | None = None
+_AUTH_CLEANUP_INTERVAL = 3600  # seconds (hourly)
+
+
+async def _run_auth_cleanup() -> None:
+    """Single cleanup pass: remove stale unconfirmed TOTP records and expired revoked JTIs."""
+    from backend.app.core.database import async_session
+    from backend.app.models.auth_ephemeral import AuthEphemeralToken
+    from backend.app.models.user_totp import UserTOTP
+
+    now = datetime.now(timezone.utc)
+
+    # Remove unconfirmed (is_enabled=False) TOTP records older than 1 hour.
+    try:
+        async with async_session() as db:
+            stale_cutoff = now - timedelta(hours=1)
+            result = await db.execute(
+                select(UserTOTP).where(
+                    UserTOTP.is_enabled.is_(False),
+                    UserTOTP.created_at < stale_cutoff,
+                )
+            )
+            stale_records = result.scalars().all()
+            if stale_records:
+                for rec in stale_records:
+                    await db.delete(rec)
+                await db.commit()
+                logging.info("Auth cleanup: removed %d stale unconfirmed TOTP record(s)", len(stale_records))
+    except Exception as e:
+        logging.warning("Auth cleanup: failed to purge stale TOTP records: %s", e)
+
+    # Remove expired revoked-JTI entries (they are no longer needed once the
+    # original token's exp has passed — the token would be rejected by JWT
+    # signature verification regardless).
+    try:
+        async with async_session() as db:
+            await db.execute(
+                delete(AuthEphemeralToken).where(
+                    AuthEphemeralToken.token_type == "revoked_jti",
+                    AuthEphemeralToken.expires_at < now,
+                )
+            )
+            await db.commit()
+    except Exception as e:
+        logging.warning("Auth cleanup: failed to purge expired revoked JTIs: %s", e)
+
+
+async def _auth_cleanup_loop() -> None:
+    """Periodic background task: run auth cleanup every hour."""
+    while True:
+        try:
+            await _run_auth_cleanup()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logging.warning("Auth cleanup loop error: %s", e)
+        await asyncio.sleep(_AUTH_CLEANUP_INTERVAL)
+
+
+def start_auth_cleanup() -> None:
+    global _auth_cleanup_task
+    if _auth_cleanup_task is None:
+        _auth_cleanup_task = asyncio.create_task(_auth_cleanup_loop())
+        logging.getLogger(__name__).info("Auth periodic cleanup started")
+
+
+def stop_auth_cleanup() -> None:
+    global _auth_cleanup_task
+    if _auth_cleanup_task:
+        _auth_cleanup_task.cancel()
+        _auth_cleanup_task = None
+        logging.getLogger(__name__).info("Auth periodic cleanup stopped")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -3751,29 +3829,6 @@ async def lifespan(app: FastAPI):
                 logging.info("Fixed %d queue item(s) with invalid 'aborted' status → 'cancelled'", len(aborted_items))
     except Exception as e:
         logging.warning("Failed to fix aborted queue items: %s", e)
-
-    # L-2: Clean up stale (pending/unconfirmed) TOTP records left behind by
-    # interrupted setup flows.  Any UserTOTP row that is still is_enabled=False
-    # after 1 hour is orphaned and should be removed so a user can restart setup.
-    try:
-        async with async_session() as db:
-            from backend.app.models.user_totp import UserTOTP
-
-            stale_cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
-            result = await db.execute(
-                select(UserTOTP).where(
-                    UserTOTP.is_enabled.is_(False),
-                    UserTOTP.created_at < stale_cutoff,
-                )
-            )
-            stale_records = result.scalars().all()
-            if stale_records:
-                for rec in stale_records:
-                    await db.delete(rec)
-                await db.commit()
-                logging.info("Removed %d stale (unconfirmed) TOTP record(s) on startup", len(stale_records))
-    except Exception as e:
-        logging.warning("Failed to clean up stale TOTP records: %s", e)
 
     # Restore debug logging state from previous session
     await init_debug_logging()
@@ -3948,6 +4003,9 @@ async def lifespan(app: FastAPI):
     # registered but on_print_start never fires)
     start_expected_prints_cleanup()
 
+    # L-2: Start periodic auth cleanup (stale TOTP + expired revoked JTIs)
+    start_auth_cleanup()
+
     # Initialize virtual printer manager and sync from DB
     from backend.app.services.virtual_printer import virtual_printer_manager
 
@@ -3971,6 +4029,7 @@ async def lifespan(app: FastAPI):
     stop_spoolbuddy_watchdog()
     stop_camera_cleanup()
     stop_expected_prints_cleanup()
+    stop_auth_cleanup()
     printer_manager.disconnect_all()
     await close_spoolman_client()
 

@@ -306,7 +306,7 @@ class TestUsersAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "newuser",
-                "password": "newuserpassword",
+                "password": "Newuserpass1!",
                 "role": "user",
             },
         )
@@ -327,7 +327,7 @@ class TestUsersAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "duplicateuser",
-                "password": "password123",
+                "password": "Password123!",
                 "role": "user",
             },
         )
@@ -338,7 +338,7 @@ class TestUsersAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "duplicateuser",
-                "password": "password456",
+                "password": "Password456!",
                 "role": "user",
             },
         )
@@ -356,7 +356,7 @@ class TestUsersAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "updateuser",
-                "password": "password123",
+                "password": "Password123!",
                 "role": "user",
             },
         )
@@ -382,7 +382,7 @@ class TestUsersAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "deleteuser",
-                "password": "password123",
+                "password": "Password123!",
                 "role": "user",
             },
         )
@@ -619,7 +619,7 @@ class TestUserGroupsAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "groupuser",
-                "password": "password123",
+                "password": "Password123!",
                 "group_ids": [operators_group["id"]],
             },
         )
@@ -636,7 +636,7 @@ class TestUserGroupsAPI:
         user_response = await async_client.post(
             "/api/v1/users/",
             headers={"Authorization": f"Bearer {auth_token}"},
-            json={"username": "addtogroup", "password": "password123"},
+            json={"username": "addtogroup", "password": "Password123!"},
         )
         user_id = user_response.json()["id"]
 
@@ -689,13 +689,13 @@ class TestChangePasswordAPI:
         await async_client.post(
             "/api/v1/users/",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"username": "pwchangeuser", "password": "oldpassword123"},
+            json={"username": "pwchangeuser", "password": "Oldpassword123!"},
         )
 
         # Login as regular user
         user_login = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "pwchangeuser", "password": "oldpassword123"},
+            json={"username": "pwchangeuser", "password": "Oldpassword123!"},
         )
         return user_login.json()["access_token"]
 
@@ -707,8 +707,8 @@ class TestChangePasswordAPI:
             "/api/v1/users/me/change-password",
             headers={"Authorization": f"Bearer {user_token}"},
             json={
-                "current_password": "oldpassword123",
-                "new_password": "newpassword456",
+                "current_password": "Oldpassword123!",
+                "new_password": "Newpassword456!",
             },
         )
 
@@ -718,7 +718,7 @@ class TestChangePasswordAPI:
         # Verify can login with new password
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "pwchangeuser", "password": "newpassword456"},
+            json={"username": "pwchangeuser", "password": "Newpassword456!"},
         )
         assert login_response.status_code == 200
 
@@ -731,7 +731,7 @@ class TestChangePasswordAPI:
             headers={"Authorization": f"Bearer {user_token}"},
             json={
                 "current_password": "wrongpassword",
-                "new_password": "newpassword456",
+                "new_password": "Newpassword456!",
             },
         )
 
@@ -746,7 +746,7 @@ class TestChangePasswordAPI:
             "/api/v1/users/me/change-password",
             json={
                 "current_password": "oldpassword",
-                "new_password": "newpassword",
+                "new_password": "Strongpass456!",
             },
         )
 

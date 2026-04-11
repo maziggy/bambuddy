@@ -1,0 +1,200 @@
+2026-04-11 14:00:09,135 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:05:09,146 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:10:09,159 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:15:09,172 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:20:09,186 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:21:06,310 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-11 14:21:06,311 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-11 14:21:06,317 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-11 14:21:07,923 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: sE5niOXeN23L-GA3Vc7aO
+2026-04-11 14:25:09,198 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:26:43,239 INFO [backend.app.services.mqtt_relay] MQTT relay disabled
+2026-04-11 14:29:20,034 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 14:29:20,048 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.10.00.00
+2026-04-11 14:29:29,303 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-11 14:29:30,255 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-11 14:29:30,256 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-11 14:29:30,258 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-11 14:30:09,210 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:30:11,987 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Triggering RFID re-read: AMS 0, slot 0
+2026-04-11 14:30:53,102 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-11 14:31:05,813 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-11 14:31:05,814 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-11 14:31:05,817 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-11 14:35:09,224 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:40:09,238 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:41:25,045 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-11 14:41:39,588 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-11 14:41:39,588 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-11 14:41:39,594 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-11 14:42:01,033 INFO [backend.app.api.routes.inventory] Spool assign: using official filament_id='GFA00'
+2026-04-11 14:42:01,034 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Publishing ams_filament_setting: AMS 255, tray 0, tray_info_idx=GFA00, setting_id=GFSA00
+2026-04-11 14:42:01,034 INFO [backend.app.api.routes.inventory] Auto-configured AMS slot ams=255 tray=0 for spool 1 on printer 1
+2026-04-11 14:42:01,045 INFO [backend.app.api.routes.inventory] Saved slot preset mapping: preset_id='GFSA00', preset_name='Bambu PLA Basic'
+2026-04-11 14:42:07,510 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-11 14:45:09,251 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:46:41,440 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-11 14:50:09,263 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 14:55:09,279 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:00:09,293 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:05:09,306 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:10:09,319 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:15:09,332 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:20:09,343 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:25:09,356 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:30:09,367 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:35:09,379 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:35:40,208 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 15:36:49,931 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-11 15:36:49,932 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-11 15:36:49,944 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-11 15:36:50,043 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-11 15:36:51,721 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: sE5niOXeN23L-GA3Vc7aO
+2026-04-11 15:38:56,339 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:38:56,346 INFO [backend.app.main] Auto-unlink: spool 1 AMS255-T0 — fingerprint mismatch but tray matches spool, updating fp
+2026-04-11 15:39:27,529 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 15:39:30,295 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:39:49,139 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-11 15:39:49,978 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-11 15:39:49,979 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-11 15:39:49,982 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-11 15:39:50,883 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-11 15:40:09,392 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:45:09,406 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:45:20,496 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-11 15:48:55,113 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:48:57,122 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:48:57,155 INFO [backend.app.services.spool_tag_matcher] Auto-assigned spool 1 to printer 1 AMS0-T3 (RFID match)
+2026-04-11 15:48:57,157 INFO [backend.app.main] RFID auto-assigned spool 1 to printer 1 AMS0-T3
+2026-04-11 15:49:32,012 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-04-11 15:49:32,055 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=7, 0 profiles, expected=0.4
+2026-04-11 15:49:32,055 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-04-11 15:49:32,056 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-04-11 15:50:09,418 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:50:14,633 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Resetting AMS slot: AMS 0, tray 3
+2026-04-11 15:50:16,787 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:50:16,794 INFO [backend.app.main] Auto-unlink: spool 1 AMS0-T3 — fingerprint mismatch (cur=00000000/ fp=00AE42FF/PLA spool=00AE42FF/PLA)
+2026-04-11 15:50:16,795 INFO [backend.app.main] Auto-unlinked 1 stale spool assignments for printer 1
+2026-04-11 15:50:23,435 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Triggering RFID re-read: AMS 0, slot 3
+2026-04-11 15:50:26,821 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:50:42,940 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:50:44,962 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:50:44,988 INFO [backend.app.services.spool_tag_matcher] Auto-assigned spool 1 to printer 1 AMS0-T3 (RFID match)
+2026-04-11 15:50:44,990 INFO [backend.app.main] RFID auto-assigned spool 1 to printer 1 AMS0-T3
+2026-04-11 15:50:58,196 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-04-11 15:50:58,219 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=8, 0 profiles, expected=0.4
+2026-04-11 15:50:58,220 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-04-11 15:50:58,220 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-04-11 15:51:27,216 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:51:27,224 INFO [backend.app.main] Auto-unlink: spool 1 AMS0-T3 — fingerprint mismatch (cur=/ fp=00AE42FF/PLA spool=00AE42FF/PLA)
+2026-04-11 15:51:27,225 INFO [backend.app.main] Auto-unlinked 1 stale spool assignments for printer 1
+2026-04-11 15:51:35,277 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:51:35,299 INFO [backend.app.services.spool_tag_matcher] Auto-assigned spool 1 to printer 1 AMS0-T3 (RFID match)
+2026-04-11 15:51:35,301 INFO [backend.app.main] RFID auto-assigned spool 1 to printer 1 AMS0-T3
+2026-04-11 15:53:42,015 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:53:42,024 INFO [backend.app.main] Auto-unlink: spool 1 AMS0-T3 — fingerprint mismatch (cur=/ fp=00AE42FF/PLA spool=00AE42FF/PLA)
+2026-04-11 15:53:42,024 INFO [backend.app.main] Auto-unlinked 1 stale spool assignments for printer 1
+2026-04-11 15:54:40,312 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:54:42,325 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:54:42,352 INFO [backend.app.services.spool_tag_matcher] Auto-assigned spool 1 to printer 1 AMS0-T0 (RFID match)
+2026-04-11 15:54:42,354 INFO [backend.app.main] RFID auto-assigned spool 1 to printer 1 AMS0-T0
+2026-04-11 15:55:09,429 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 15:55:35,826 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 15:55:37,981 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:56:36,167 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Triggering RFID re-read: AMS 0, slot 1
+2026-04-11 15:57:04,402 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.10.00.00
+2026-04-11 15:57:04,526 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:57:04,531 INFO [backend.app.main] Auto-unlink: spool 1 AMS0-T0 — tray not found in AMS data (slot empty?)
+2026-04-11 15:57:04,532 INFO [backend.app.main] Auto-unlinked 1 stale spool assignments for printer 1
+2026-04-11 15:57:04,632 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-11 15:57:11,727 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 15:57:11,776 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.10.00.00
+2026-04-11 15:57:59,132 INFO [backend.app.services.mqtt_relay] MQTT relay disabled
+2026-04-11 16:01:41,758 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 16:01:41,759 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 16:01:47,936 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 16:01:47,961 INFO [backend.app.services.spool_tag_matcher] Auto-assigned spool 1 to printer 1 AMS0-T0 (RFID match)
+2026-04-11 16:01:47,963 INFO [backend.app.main] RFID auto-assigned spool 1 to printer 1 AMS0-T0
+2026-04-11 16:04:26,854 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 16:04:26,864 INFO [backend.app.main] Auto-unlink: spool 1 AMS0-T0 — fingerprint mismatch (cur=/ fp=00AE42FF/PLA spool=00AE42FF/PLA)
+2026-04-11 16:04:26,864 INFO [backend.app.main] Auto-unlinked 1 stale spool assignments for printer 1
+2026-04-11 16:05:09,452 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 16:05:13,898 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 16:05:13,898 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 16:07:50,576 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-11 16:08:00,195 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.10.00.00
+2026-04-11 16:08:01,025 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 16:09:11,639 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-11 16:09:12,831 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-11 16:09:12,832 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-11 16:09:12,836 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-11 16:09:13,227 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-11 16:09:57,444 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 16:09:57,445 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 16:10:00,088 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 16:10:00,114 INFO [backend.app.services.spool_tag_matcher] Auto-assigned spool 1 to printer 1 AMS0-T0 (RFID match)
+2026-04-11 16:10:00,116 INFO [backend.app.main] RFID auto-assigned spool 1 to printer 1 AMS0-T0
+2026-04-11 16:10:09,466 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 16:11:36,329 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-04-11 16:11:36,637 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=5, 0 profiles, expected=0.4
+2026-04-11 16:11:36,643 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-04-11 16:11:36,649 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-04-11 16:11:44,137 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Resetting AMS slot: AMS 0, tray 0
+2026-04-11 16:11:46,271 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 16:11:46,279 INFO [backend.app.main] Auto-unlink: spool 1 AMS0-T0 — fingerprint mismatch (cur=00000000/ fp=00AE42FF/PLA spool=00AE42FF/PLA)
+2026-04-11 16:11:46,280 INFO [backend.app.main] Auto-unlinked 1 stale spool assignments for printer 1
+2026-04-11 16:12:53,657 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-11 16:13:28,947 INFO [backend.app.services.discovery] Starting subnet scan of [IP]/24 (254 hosts)
+2026-04-11 16:13:30,544 INFO [backend.app.services.discovery] Found potential Bambu printer at [IP]
+2026-04-11 16:13:30,640 INFO [backend.app.services.discovery] Found potential Bambu printer at [IP]
+2026-04-11 16:13:30,663 INFO [backend.app.services.discovery] Found potential Bambu printer at [IP]
+2026-04-11 16:13:35,708 INFO [backend.app.services.discovery] Subnet scan complete. Found 3 printers.
+2026-04-11 16:16:39,435 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 16:16:39,436 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.10.00.00
+2026-04-11 16:16:39,724 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-11 16:16:54,449 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-04-11 16:16:54,521 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=3, 0 profiles, expected=0.4
+2026-04-11 16:16:54,522 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-04-11 16:16:54,523 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-04-11 16:16:57,636 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Resetting AMS slot: AMS 255, tray 0
+2026-04-11 16:17:38,433 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 16:17:38,434 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.10.00.00
+2026-04-11 16:17:52,459 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-11 16:17:53,584 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-11 16:18:07,860 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Triggering RFID re-read: AMS 0, slot 0
+2026-04-11 16:18:10,731 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 16:18:34,824 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-11 16:20:09,490 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-11 16:20:24,693 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-04-11 16:20:24,852 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=3, 0 profiles, expected=0.4
+2026-04-11 16:20:24,852 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-04-11 16:20:24,853 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-04-11 16:22:40,353 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-11 16:22:40,353 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-11 16:22:40,354 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-11 16:22:41,341 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-04-11 16:22:41,341 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': '7', 'tray_is_bbl_bits': '1', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '7', 'tray_reading_bits': '0', 'version': 34, 'insert_flag': True, 'power_on_flag': False}
+2026-04-11 16:22:41,342 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-11 16:22:41,342 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-11 16:22:41,342 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-11 16:22:41,342 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-11 16:22:41,343 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-11 16:22:41,343 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-11 16:22:41,343 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-11 16:22:41,344 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-11 16:22:41,344 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-11 16:22:41,344 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-11 16:22:41,345 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-11 16:22:41,345 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-11 16:22:41,345 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -42dBm
+2026-04-11 16:22:41,345 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-04-11 16:22:41,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-04-11 16:22:47,371 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-11 16:22:47,371 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-11 16:22:47,371 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-11 16:22:47,371 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-11 16:22:47,372 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-11 16:22:49,392 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-11 16:22:49,392 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-11 16:22:49,392 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-11 16:22:49,393 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status

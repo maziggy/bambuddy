@@ -199,7 +199,12 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 
 
 async def revoke_jti(jti: str, expires_at: datetime, username: str | None = None) -> None:
-    """Store a revoked JWT jti so it is rejected on future requests."""
+    """Store a revoked JWT jti so it is rejected on future requests.
+
+    Silently ignores duplicate inserts (e.g. double-logout with the same token).
+    """
+    from sqlalchemy.exc import IntegrityError
+
     async with async_session() as db:
         revoked = AuthEphemeralToken(
             token=jti,
@@ -208,7 +213,10 @@ async def revoke_jti(jti: str, expires_at: datetime, username: str | None = None
             expires_at=expires_at,
         )
         db.add(revoked)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()  # jti already revoked — desired state, ignore
 
 
 async def is_jti_revoked(jti: str) -> bool:

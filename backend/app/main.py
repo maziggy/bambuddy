@@ -4126,6 +4126,25 @@ async def security_headers_middleware(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Content-Security-Policy for the React SPA.
+    # Notes:
+    #   - 'unsafe-inline' for style-src: React and UI libs inject inline styles at runtime.
+    #   - connect-src ws:/wss:: MQTT/printer WebSocket connections.
+    #   - img-src data: / blob:: base64 thumbnails and Blob-URL timelapse previews.
+    #   - media-src blob:: timelapse video player uses Blob URLs.
+    #   - font-src data:: some icon fonts are embedded as data URIs.
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "media-src 'self' blob:; "
+        "connect-src 'self' ws: wss:; "
+        "font-src 'self' data:; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'none';"
+    )
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -4196,18 +4215,27 @@ async def auth_middleware(request, call_next):
     import jwt
 
     try:
-        from backend.app.core.auth import ALGORITHM, SECRET_KEY
+        from backend.app.core.auth import ALGORITHM, SECRET_KEY, get_user_by_username, is_jti_revoked
 
         token = auth_header.replace("Bearer ", "")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if not username:
             raise ValueError("No username in token")
+        jti = payload.get("jti")
+        if not jti:
+            raise ValueError("No jti in token")
+
+        # Reject revoked tokens (defense-in-depth gateway check)
+        if await is_jti_revoked(jti):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Token has been revoked"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         # Verify user exists and is active
         async with async_session() as db:
-            from backend.app.core.auth import get_user_by_username
-
             user = await get_user_by_username(db, username)
             if not user or not user.is_active:
                 return JSONResponse(

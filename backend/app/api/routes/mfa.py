@@ -482,11 +482,11 @@ async def disable_totp(
         _assert_totp_not_replayed(totp_obj, totp_record)
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
     else:
-        # Check backup codes
+        # Check backup codes — always iterate all entries (L-R9-A: no early break
+        # to avoid timing oracle based on code position in the list).
         for hashed in totp_record.backup_codes:
             if pwd_context.verify(body.code, hashed):
                 code_valid = True
-                break
 
     if not code_valid:
         await record_failed_attempt(db, current_user.username)
@@ -840,11 +840,12 @@ async def verify_2fa(
             await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP is not enabled for this user")
 
+        # Always iterate all codes — no early break (L-R9-A: constant iteration
+        # count prevents timing oracle based on used-code position in the list).
         matched_index: int | None = None
         for idx, hashed in enumerate(totp_record.backup_codes):
-            if pwd_context.verify(body.code, hashed):
+            if pwd_context.verify(body.code, hashed) and matched_index is None:
                 matched_index = idx
-                break
 
         if matched_index is None:
             await record_failed_attempt(db, username)

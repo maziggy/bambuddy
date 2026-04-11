@@ -1,10 +1,11 @@
 import logging
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import jwt as _jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from jwt.exceptions import PyJWTError
 from sqlalchemy import delete, select
@@ -89,6 +90,32 @@ def _api_key_to_user_response(api_key) -> UserResponse:
         permissions=sorted(ALL_PERMISSIONS),
         created_at=api_key.created_at.isoformat(),
     )
+
+
+# ---------------------------------------------------------------------------
+# M-R9-A: Real client IP resolution for rate limiting behind reverse proxies.
+# Set TRUSTED_PROXY_IPS (comma-separated) to enable X-Forwarded-For trust.
+# Without this env var client.host is used directly (safe default).
+# ---------------------------------------------------------------------------
+_TRUSTED_PROXY_IPS: frozenset[str] = frozenset(
+    ip.strip() for ip in os.environ.get("TRUSTED_PROXY_IPS", "").split(",") if ip.strip()
+)
+
+
+def _get_client_ip(request: Request) -> str:
+    """Return the real client IP.
+
+    When TRUSTED_PROXY_IPS is configured and the direct TCP peer is one of the
+    trusted proxies, the leftmost address from X-Forwarded-For is used.
+    Otherwise falls back to the ASGI transport-layer IP (request.client.host).
+    """
+    direct_ip = request.client.host if request.client else "unknown"
+    if _TRUSTED_PROXY_IPS and direct_ip in _TRUSTED_PROXY_IPS:
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        first_ip = forwarded_for.split(",")[0].strip()
+        if first_ip:
+            return first_ip
+    return direct_ip
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -309,7 +336,7 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
     from backend.app.api.routes.mfa import MAX_LOGIN_ATTEMPTS, check_rate_limit, record_failed_attempt
 
     await check_rate_limit(db, request.username, event_type="login_attempt", max_attempts=MAX_LOGIN_ATTEMPTS)
-    client_ip = raw_request.client.host if raw_request.client else "unknown"
+    client_ip = _get_client_ip(raw_request)
     await check_rate_limit(db, client_ip, event_type="login_ip", max_attempts=20)
 
     # Check if LDAP is enabled
@@ -714,7 +741,11 @@ _PWD_RESET_SEND_WINDOW = timedelta(minutes=15)
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
-async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     """Request password reset via email (advanced auth only).
 
     H-6: Issues a short-lived single-use reset token and emails the user a
@@ -789,8 +820,10 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
             subject, text_body, html_body = await create_password_reset_link_email_from_template(
                 db, user.username, reset_url
             )
-            send_email(smtp_settings, user.email, subject, text_body, html_body)
-            _logger.info("Password reset link sent to %s", user.email)
+            # L-R9-B: send asynchronously so response time is independent of
+            # whether the user exists (prevents email-existence timing oracle).
+            background_tasks.add_task(send_email, smtp_settings, user.email, subject, text_body, html_body)
+            _logger.info("Password reset email queued for %s", user.email)
         except Exception as e:
             _logger.error("Failed to send password reset email: %s", e)
             # Don't reveal error to caller for security

@@ -1372,7 +1372,34 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local' NOT NULL")
 
     # Migration: Make password_hash nullable for LDAP users (#794)
-    if not is_sqlite():
+    # LDAP users have no local password — the column must allow NULL so auto-provisioning
+    # doesn't hit a NOT NULL constraint failure on upgraded installs whose users table was
+    # originally created before LDAP support landed.
+    if is_sqlite():
+        # SQLite can't ALTER COLUMN; patch sqlite_master directly via writable_schema.
+        # Bump schema_version afterwards so SQLite reloads the table definition from disk —
+        # without that bump, the current connection keeps enforcing the old NOT NULL from
+        # its cached schema. Safe because row data is untouched and the replace() is a
+        # no-op if the constraint has already been removed.
+        try:
+            result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"))
+            users_sql = result.scalar()
+            if users_sql and "password_hash VARCHAR(255) NOT NULL" in users_sql:
+                version_result = await conn.execute(text("PRAGMA schema_version"))
+                schema_version = version_result.scalar() or 0
+                await conn.execute(text("PRAGMA writable_schema = ON"))
+                await conn.execute(
+                    text(
+                        "UPDATE sqlite_master "
+                        "SET sql = replace(sql, 'password_hash VARCHAR(255) NOT NULL', 'password_hash VARCHAR(255)') "
+                        "WHERE type = 'table' AND name = 'users'"
+                    )
+                )
+                await conn.execute(text(f"PRAGMA schema_version = {schema_version + 1}"))
+                await conn.execute(text("PRAGMA writable_schema = OFF"))
+        except (OperationalError, ProgrammingError):
+            pass
+    else:
         await _safe_execute(conn, "ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
 
     # Migration: Add energy_start_kwh to print_archives (#941)

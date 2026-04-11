@@ -18,10 +18,7 @@ export function SpoolBuddyLayout() {
   useColorCatalogVersion();
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | null>(null);
   const [alert, setAlert] = useState<{ type: 'warning' | 'error' | 'info'; message: string } | null>(null);
-  const [blanked, setBlanked] = useState(false);
   const [displayBrightness, setDisplayBrightness] = useState(100);
-  const [displayBlankTimeout, setDisplayBlankTimeout] = useState(0);
-  const lastActivityRef = useRef(Date.now());
   const { i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -56,7 +53,6 @@ export function SpoolBuddyLayout() {
   useEffect(() => {
     if (device && !initializedRef.current) {
       setDisplayBrightness(device.display_brightness);
-      setDisplayBlankTimeout(device.display_blank_timeout);
       initializedRef.current = true;
     }
   }, [device]);
@@ -98,44 +94,20 @@ export function SpoolBuddyLayout() {
     }
   }, [effectiveDeviceOnline, updateCheck?.update_available, updateCheck?.latest_version]);
 
-  // Track user activity for screen blank
-  const resetActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    setBlanked(false);
-  }, []);
-
-  useEffect(() => {
-    window.addEventListener('pointerdown', resetActivity);
-    window.addEventListener('keydown', resetActivity);
-    return () => {
-      window.removeEventListener('pointerdown', resetActivity);
-      window.removeEventListener('keydown', resetActivity);
-    };
-  }, [resetActivity]);
-
-  // Auto-navigate to dashboard when a NEW tag is detected (transition from no-tag to tag)
+  // Auto-navigate to dashboard when a NEW tag is detected (transition from no-tag to tag).
+  // Blanking itself is handled by swayidle/wlopm at the OS level on the kiosk device —
+  // when the HDMI output powers off and the user taps the screen, labwc delivers the
+  // input event to swayidle's `resume` command which re-powers HDMI. See issue #937.
   const tagDetected = Boolean(sbState.matchedSpool || sbState.unknownTagUid);
   const prevTagDetected = useRef(false);
   useEffect(() => {
     if (tagDetected && !prevTagDetected.current) {
-      resetActivity();
       if (location.pathname !== '/spoolbuddy') {
         navigate('/spoolbuddy');
       }
     }
     prevTagDetected.current = tagDetected;
-  }, [tagDetected, location.pathname, navigate, resetActivity]);
-
-  // Screen blank timer
-  useEffect(() => {
-    if (displayBlankTimeout <= 0) return;
-    const interval = setInterval(() => {
-      if (Date.now() - lastActivityRef.current >= displayBlankTimeout * 1000) {
-        setBlanked(true);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [displayBlankTimeout]);
+  }, [tagDetected, location.pathname, navigate]);
 
   // Online printers list for swipe-to-switch
   const { data: printers = [] } = useQuery({
@@ -245,7 +217,6 @@ export function SpoolBuddyLayout() {
           <Outlet context={{
             selectedPrinterId, setSelectedPrinterId, sbState: sbStateForUi, setAlert,
             displayBrightness, setDisplayBrightness,
-            displayBlankTimeout, setDisplayBlankTimeout,
           }} />
         </main>
 
@@ -261,14 +232,6 @@ export function SpoolBuddyLayout() {
         deviceId={device?.device_id ?? null}
         deviceOnline={effectiveDeviceOnline}
       />
-
-      {/* Screen blank overlay — touch to wake */}
-      {blanked && (
-        <div
-          className="fixed inset-0 bg-black z-[9999]"
-          onPointerDown={(e) => { e.stopPropagation(); resetActivity(); }}
-        />
-      )}
     </>
   );
 }
@@ -281,6 +244,4 @@ export interface SpoolBuddyOutletContext {
   setAlert: (alert: { type: 'warning' | 'error' | 'info'; message: string } | null) => void;
   displayBrightness: number;
   setDisplayBrightness: (brightness: number) => void;
-  displayBlankTimeout: number;
-  setDisplayBlankTimeout: (timeout: number) => void;
 }

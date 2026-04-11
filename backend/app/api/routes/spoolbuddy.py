@@ -630,6 +630,28 @@ async def get_calibration(
 # --- Display settings ---
 
 
+@router.get("/devices/{device_id}/display")
+async def get_display_settings(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Read current display brightness and screen blank timeout for a device.
+
+    Used by the SpoolBuddy kiosk idle watchdog on autostart to configure
+    swayidle with the same timeout the user picked in the UI, without having
+    to wait for the daemon heartbeat to arrive first.
+    """
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+    return {
+        "brightness": device.display_brightness,
+        "blank_timeout": device.display_blank_timeout,
+    }
+
+
 @router.put("/devices/{device_id}/display")
 async def update_display_settings(
     device_id: str,

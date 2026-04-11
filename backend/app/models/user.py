@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from backend.app.core.database import Base
 
 if TYPE_CHECKING:

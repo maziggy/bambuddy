@@ -327,7 +327,7 @@ async def get_current_user_optional(
         if username is None:
             return None
         jti: str | None = payload.get("jti")
-        if jti and await is_jti_revoked(jti):
+        if not jti or await is_jti_revoked(jti):
             return None
     except JWTError:
         return None
@@ -357,7 +357,7 @@ async def get_current_user(
         if username is None:
             raise credentials_exception
         jti: str | None = payload.get("jti")
-        if jti and await is_jti_revoked(jti):
+        if not jti or await is_jti_revoked(jti):
             raise credentials_exception
     except JWTError:
         raise credentials_exception
@@ -424,7 +424,7 @@ async def require_auth_if_enabled(
                         headers={"WWW-Authenticate": "Bearer"},
                     )
                 jti: str | None = payload.get("jti")
-                if jti and await is_jti_revoked(jti):
+                if not jti or await is_jti_revoked(jti):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Could not validate credentials",
@@ -668,7 +668,7 @@ def require_permission(*permissions: str | Permission):
                 if username is None:
                     raise credentials_exception
                 jti: str | None = payload.get("jti")
-                if jti and await is_jti_revoked(jti):
+                if not jti or await is_jti_revoked(jti):
                     raise credentials_exception
             except JWTError:
                 raise credentials_exception
@@ -743,7 +743,7 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
                             headers={"WWW-Authenticate": "Bearer"},
                         )
                     jti: str | None = payload.get("jti")
-                    if jti and await is_jti_revoked(jti):
+                    if not jti or await is_jti_revoked(jti):
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Could not validate credentials",
@@ -879,7 +879,7 @@ def require_ownership_permission(
                             headers={"WWW-Authenticate": "Bearer"},
                         )
                     jti: str | None = payload.get("jti")
-                    if jti and await is_jti_revoked(jti):
+                    if not jti or await is_jti_revoked(jti):
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Could not validate credentials",

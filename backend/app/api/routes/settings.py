@@ -1,5 +1,6 @@
 import io
 import logging
+import os
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -457,7 +458,9 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
         if output_path is not None:
             zip_file = output_path / filename
         else:
-            zip_file = Path(tempfile.mktemp(suffix=".zip"))  # noqa: S306
+            fd, tmp = tempfile.mkstemp(suffix=".zip")
+            os.close(fd)
+            zip_file = Path(tmp)
 
         with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
             for file_path in temp_path.rglob("*"):

@@ -4,6 +4,9 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.2.3b4] - Unreleased
 
+### Fixed
+- **Insecure Temp File Creation in Backup Export** — The manual backup download endpoint used `tempfile.mktemp()`, which is vulnerable to a symlink race condition (CWE-377). Replaced with `tempfile.mkstemp()` which atomically creates the file, eliminating the TOCTOU window.
+
 
 ## [0.2.3b3] - 2026-04-12
 

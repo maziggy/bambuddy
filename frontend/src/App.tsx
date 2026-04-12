@@ -20,6 +20,7 @@ import { SystemInfoPage } from './pages/SystemInfoPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
 import { NotificationsPage } from './pages/NotificationsPage';
+import { PluginsPage } from './pages/PluginsPage';
 import { useWebSocket } from './hooks/useWebSocket';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -150,6 +151,7 @@ function App() {
                   <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="system" element={<SystemInfoPage />} />
                   <Route path="notifications" element={<NotificationsPage />} />
+                  <Route path="plugins" element={<PluginsPage />} />
                   <Route path="external/:id" element={<ExternalLinkPage />} />
                 </Route>
               </Routes>

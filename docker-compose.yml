@@ -35,6 +35,10 @@ services:
       - bambuddy_data:/app/data
       - bambuddy_logs:/app/logs
       #
+      # Plugins directory — drop plugin folders here, then restart the container.
+      # Each subdirectory (or .py file) is auto-discovered on startup.
+      - ./plugins:/app/data/plugins
+      #
       # Share virtual printer certs with native installation
       # This ensures the slicer only needs to trust one CA certificate.
       - ./virtual_printer:/app/data/virtual_printer

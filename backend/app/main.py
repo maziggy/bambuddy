@@ -34,6 +34,7 @@ from backend.app.api.routes import (
     notification_templates,
     notifications,
     pending_uploads,
+    plugins as plugins_routes,
     print_log,
     print_queue,
     printers,
@@ -51,6 +52,9 @@ from backend.app.api.routes import (
     webhook,
     websocket,
 )
+from backend.app.plugins.loader import discover_and_load_plugins
+from backend.app.plugins.registry import plugin_registry
+from backend.app.plugins.base import Events
 from backend.app.api.routes.maintenance import _get_printer_maintenance_internal, ensure_default_types
 from backend.app.api.routes.support import init_debug_logging
 from backend.app.core.config import APP_VERSION, settings as app_settings
@@ -1227,6 +1231,13 @@ async def on_print_start(printer_id: int, data: dict):
 
     await ws_manager.send_print_start(printer_id, data)
 
+    # Fire plugin event
+    asyncio.create_task(plugin_registry.fire_event(Events.PRINT_STARTED, {
+        "printer_id": printer_id,
+        "filename": data.get("filename") or data.get("subtask_name"),
+        "data": data,
+    }))
+
     # Notify when the print-start AMS mapping references tray slots without spool assignments.
     await notify_missing_spool_assignments_on_print_start(printer_id, data, logger)
 
@@ -1922,15 +1933,17 @@ async def on_print_start(printer_id: int, data: dict):
                 except Exception as e:
                     logger.warning("Failed to record starting energy: %s", e)
 
-                await ws_manager.send_archive_created(
-                    {
-                        "id": archive.id,
-                        "printer_id": archive.printer_id,
-                        "filename": archive.filename,
-                        "print_name": archive.print_name,
-                        "status": archive.status,
-                    }
-                )
+                _archive_ws_data = {
+                    "id": archive.id,
+                    "printer_id": archive.printer_id,
+                    "filename": archive.filename,
+                    "print_name": archive.print_name,
+                    "status": archive.status,
+                }
+                await ws_manager.send_archive_created(_archive_ws_data)
+                asyncio.create_task(plugin_registry.fire_event(
+                    Events.ARCHIVE_CREATED, _archive_ws_data
+                ))
 
                 # MQTT relay - publish archive created
                 try:
@@ -3236,6 +3249,23 @@ async def on_print_complete(printer_id: int, data: dict):
         asyncio.create_task(_scan_for_timelapse_with_retries(archive_id, baseline))
         log_timing("Timelapse scan scheduled")
 
+    # Fire plugin event based on final print status
+    _final_status = data.get("status", "completed")
+    _plugin_event = {
+        "completed": Events.PRINT_DONE,
+        "failed": Events.PRINT_FAILED,
+        "cancelled": Events.PRINT_CANCELLED,
+        "stopped": Events.PRINT_CANCELLED,
+        "aborted": Events.PRINT_CANCELLED,
+    }.get(_final_status, Events.PRINT_DONE)
+    asyncio.create_task(plugin_registry.fire_event(_plugin_event, {
+        "printer_id": printer_id,
+        "filename": data.get("filename") or data.get("subtask_name"),
+        "status": _final_status,
+        "archive_id": archive_id,
+        "data": data,
+    }))
+
     logger.info("[CALLBACK] on_print_complete finished for printer %s, archive %s", printer_id, archive_id)
 
 
@@ -3688,6 +3718,10 @@ async def lifespan(app: FastAPI):
     # Startup
     await init_db()
 
+    # Discover and load plugins from the plugins/ directory
+    async with async_session() as db:
+        await discover_and_load_plugins(app_settings.plugins_dir, db)
+
     # Fix queue items stuck with invalid "aborted" status (should be "cancelled").
     # This can happen when a print was cancelled mid-print on versions before this fix.
     try:
@@ -3841,6 +3875,10 @@ async def lifespan(app: FastAPI):
     # registered but on_print_start never fires)
     start_expected_prints_cleanup()
 
+    # Fire plugin startup hooks
+    await plugin_registry.fire_startup()
+    await plugin_registry.fire_event(Events.STARTUP)
+
     # Initialize virtual printer manager and sync from DB
     from backend.app.services.virtual_printer import virtual_printer_manager
 
@@ -3854,6 +3892,9 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    await plugin_registry.fire_event(Events.SHUTDOWN)
+    await plugin_registry.fire_shutdown()
+
     print_scheduler.stop()
     await background_dispatch.stop()
     smart_plug_manager.stop_scheduler()
@@ -4080,6 +4121,7 @@ app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
 app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
 app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)
+app.include_router(plugins_routes.router, prefix=app_settings.api_prefix)
 
 
 # Serve static files (React build)

@@ -74,3 +74,9 @@ debug_logs/
 
 # SSH keys Spoolbuddy
 spoolbuddy/ssh/
+
+# User-installed plugins (keep the example and .gitkeep)
+plugins/*
+!plugins/.gitkeep
+!plugins/example_plugin/
+!plugins/prettygcode/

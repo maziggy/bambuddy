@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Package, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -36,6 +36,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'inventory', to: '/inventory', icon: Disc3, labelKey: 'nav.inventory' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
   // User-account features: kept adjacent to Settings intentionally
+  { id: 'plugins', to: '/plugins', icon: Package, labelKey: 'nav.plugins' },
   { id: 'notifications', to: '/notifications', icon: Bell, labelKey: 'nav.notifications' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];

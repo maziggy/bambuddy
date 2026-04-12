@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.3b3] - Unreleased
+## [0.2.3b3] - 2026-04-12
 
 ### Improved
 - **AMS Drying Support for P2S** — Remote AMS drying and queue auto-drying now work on P2S printers with firmware 01.02.00.00 or later. Previously P2S was hard-blocked from the drying feature.

@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
     # Run on PRs targeting main, but skip for repo owner (runs local tests)
 
 # Skip CI for PRs authored by repo owner (they run tests locally)

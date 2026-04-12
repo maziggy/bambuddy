@@ -2,10 +2,11 @@
 
 Brightness: DSI backlights are controlled via sysfs /sys/class/backlight/*/brightness.
             HDMI brightness is handled by the frontend via CSS filter.
-Blanking:   The daemon tracks idle state and controls HDMI power via wlopm when
-            available. NFC tag scans and scale weight changes wake the display
-            automatically, and the idle timeout re-blanks it.  swayidle handles
-            touch-based wake/blank independently — both are idempotent via wlopm.
+Blanking:   swayidle is the sole authority on screen blanking (idle timeout →
+            wlopm --off, touch → wlopm --on).  The daemon only *wakes* the
+            display via wlopm --on when NFC/scale activity is detected — it
+            never blanks.  wlopm --on is idempotent so both paths coexist
+            safely.
 """
 
 import logging
@@ -27,7 +28,6 @@ class DisplayControl:
         self._blank_timeout = 0  # seconds, 0 = disabled
         self._last_activity = time.monotonic()
         self._blanked = False
-        self._daemon_woke = False  # True when the daemon woke the display (NFC/scale)
         self._wlopm_path = shutil.which("wlopm")
         self._wayland_env: dict[str, str] | None = None
         self._output = os.environ.get("SPOOLBUDDY_DISPLAY_OUTPUT", "HDMI-A-1")
@@ -85,20 +85,26 @@ class DisplayControl:
         self._blank_timeout = max(0, seconds)
 
     def wake(self):
-        """Wake screen on activity (NFC tag, scale weight change)."""
+        """Wake screen on activity (NFC tag, scale weight change).
+
+        Always calls wlopm --on regardless of the daemon's internal blanked
+        state, because swayidle may have blanked the screen independently and
+        the daemon has no way to know.  wlopm --on is idempotent so calling it
+        while the screen is already on is harmless.
+        """
         self._last_activity = time.monotonic()
-        if self._blanked:
-            self._unblank()
+        self._blanked = False
+        self._wlopm(on=True)
 
     def tick(self):
-        """Called periodically from heartbeat loop. Blanks screen if idle."""
+        """Called periodically from heartbeat loop. Tracks idle state internally."""
         if self._blank_timeout <= 0:
-            if self._blanked:
-                self._unblank()
+            self._blanked = False
             return
         idle = time.monotonic() - self._last_activity
         if not self._blanked and idle >= self._blank_timeout:
-            self._blank()
+            self._blanked = True
+            logger.debug("Screen idle timeout reached (swayidle manages blanking)")
 
     def _discover_wayland_env(self) -> dict[str, str] | None:
         """Discover WAYLAND_DISPLAY and XDG_RUNTIME_DIR for the kiosk session.
@@ -139,23 +145,3 @@ class DisplayControl:
             )
         except Exception as e:
             logger.debug("wlopm %s %s failed: %s", flag, self._output, e)
-
-    def _blank(self):
-        self._blanked = True
-        # Only power off HDMI if the daemon was responsible for the last wake.
-        # Touch-based wake/blank is managed entirely by swayidle — if we called
-        # wlopm --off here unconditionally, we'd fight swayidle because the
-        # daemon never sees touch events and its idle timer would expire while
-        # the user is still interacting via the touchscreen.
-        if self._daemon_woke:
-            self._daemon_woke = False
-            self._wlopm(on=False)
-            logger.debug("Daemon wake idle timeout reached, HDMI off")
-        else:
-            logger.debug("Screen idle timeout reached (swayidle manages HDMI)")
-
-    def _unblank(self):
-        self._blanked = False
-        self._daemon_woke = True
-        self._wlopm(on=True)
-        logger.debug("Activity detected (NFC/scale), HDMI on")

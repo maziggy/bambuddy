@@ -1,0 +1,200 @@
+2026-04-12 19:18:45,389 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:18:45,390 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:19:15,399 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:19:15,399 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:19:45,409 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:19:45,410 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:20:15,419 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:20:15,419 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:20:45,428 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:20:45,428 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:21:15,437 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:21:15,438 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:21:45,447 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:21:45,447 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:22:14,431 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 19:22:15,457 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:22:15,457 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:22:45,466 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:22:45,466 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:23:15,474 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:23:15,475 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:23:45,485 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:23:45,485 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:24:15,494 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:24:15,495 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:24:45,505 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:24:45,505 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:25:15,514 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:25:15,515 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:25:45,524 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:25:45,524 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:26:15,534 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:26:15,534 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:26:45,543 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:26:45,543 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:27:14,444 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 19:27:15,551 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:27:15,551 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:27:45,561 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:27:45,561 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:28:15,571 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:28:15,572 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:28:45,581 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:28:45,581 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:29:15,592 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:29:15,592 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:29:45,602 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:29:45,602 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:30:15,612 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:30:15,613 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:30:45,622 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:30:45,622 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:31:15,632 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:31:15,633 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:31:45,642 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:31:45,643 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:32:14,457 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 19:32:15,652 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:32:15,653 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:32:45,662 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:32:45,663 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:33:15,673 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:33:15,673 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:33:45,683 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:33:45,684 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:34:15,694 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:34:15,694 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:34:45,704 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:34:45,705 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:35:15,714 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:35:15,715 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:35:45,723 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:35:45,723 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:36:15,732 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:36:15,732 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:36:45,742 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:36:45,742 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:37:14,468 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 19:37:15,751 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:37:15,752 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:37:45,761 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:37:45,761 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:38:15,771 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:38:15,771 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:38:45,780 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:38:45,781 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:39:15,792 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:39:15,792 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:39:45,802 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:39:45,802 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:40:15,812 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:40:15,813 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:40:45,823 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:40:45,823 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:41:15,833 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:41:15,833 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:41:45,843 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:41:45,843 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:42:14,482 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 19:42:15,853 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:42:15,853 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:42:45,861 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:42:45,861 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:43:15,871 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:43:15,872 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:43:45,881 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:43:45,881 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:44:15,891 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:44:15,892 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:44:45,902 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:44:45,902 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:45:15,911 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:45:15,911 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:45:45,922 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:45:45,922 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:46:15,933 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:46:15,933 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:46:45,943 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:46:45,943 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:47:14,496 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 19:47:15,952 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:47:15,953 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:47:45,963 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:47:45,963 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:48:15,972 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:48:15,973 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:48:45,983 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:48:45,983 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:49:15,993 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:49:15,994 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:49:46,004 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:49:46,004 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:50:16,014 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:50:16,014 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:50:46,024 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:50:46,024 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:51:16,034 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:51:16,034 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:51:46,044 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:51:46,044 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:52:14,507 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 19:52:16,053 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:52:16,053 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:52:46,063 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:52:46,063 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:53:16,072 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:53:16,073 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:53:46,082 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:53:46,082 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:54:16,092 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:54:16,092 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:54:46,102 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:54:46,102 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:55:16,112 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:55:16,113 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:55:46,122 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:55:46,123 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:56:16,042 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-12 19:56:16,043 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-12 19:56:16,046 INFO [backend.app.api.routes.websocket] Sent initial status for 3 printers
+2026-04-12 19:56:16,153 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:56:16,153 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:56:18,361 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['Pf14c8c4', 'Pc817a1d']
+2026-04-12 19:56:18,994 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pf14c8c4 (API ID: Pf14c8c4): Failed to get setting detail: 400
+2026-04-12 19:56:19,272 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pc817a1d (API ID: Pc817a1d): Failed to get setting detail: 400
+2026-04-12 19:56:24,026 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-12 19:56:25,010 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-12 19:56:25,011 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-12 19:56:25,021 INFO [backend.app.api.routes.websocket] Sent initial status for 3 printers
+2026-04-12 19:56:25,223 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: sE5niOXeN23L-GA3Vc7aO
+2026-04-12 19:56:25,567 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['Pf14c8c4', 'Pc817a1d']
+2026-04-12 19:56:46,185 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:56:46,186 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:57:14,519 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 19:57:16,195 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:57:16,196 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:57:46,205 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(7, 2, None, 7)]
+2026-04-12 19:57:46,206 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 19:57:55,440 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-12 19:57:55,441 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-12 19:57:55,441 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-12 19:57:55,442 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-12 19:57:55,442 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-12 19:57:55,446 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-12 19:57:55,446 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 19:57:55,800 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 19:57:55,802 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 19:57:55,803 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 19:57:55,803 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 19:57:55,803 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -46dBm
+2026-04-12 19:57:59,546 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-12 19:57:59,547 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 19:57:59,799 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 19:57:59,800 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 19:57:59,800 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 19:57:59,800 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 19:58:01,836 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 19:58:01,836 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 19:58:01,837 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 19:58:01,837 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status

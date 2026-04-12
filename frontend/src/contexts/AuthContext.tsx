@@ -33,12 +33,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuthStatus = async () => {
     try {
-      // Bootstrap: if URL has ?token= param, store it and strip from URL.
-      // Allows SpoolBuddy kiosk to pass API key via URL on first load.
+      // Bootstrap: if URL has ?token= param, store it session-only first and
+      // strip it from the URL. Allows SpoolBuddy kiosk to pass an API key via
+      // URL on first load. Persistence to localStorage is deferred until the
+      // token has been verified by the server (L-4: prevents session fixation
+      // where an attacker-crafted URL immediately persists a forged/stolen token).
       const urlParams = new URLSearchParams(window.location.search);
       const urlToken = urlParams.get('token');
       if (urlToken) {
-        setAuthToken(urlToken);
+        setAuthToken(urlToken, false); // session-only until server confirms it's valid
         urlParams.delete('token');
         const cleanSearch = urlParams.toString();
         const cleanUrl = window.location.pathname
@@ -59,8 +62,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const currentUser = await api.getCurrentUser();
             if (!mountedRef.current) return;
             setUser(currentUser);
+            // Persist kiosk token only after the server confirms it is valid.
+            if (urlToken && token === urlToken) {
+              setAuthToken(urlToken, true);
+            }
           } catch {
-            // Token invalid, clear it
+            // Token invalid, clear it (removes from both sessionStorage and localStorage)
             setAuthToken(null);
             if (!mountedRef.current) return;
             setUser(null);

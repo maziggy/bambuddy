@@ -1457,6 +1457,16 @@ async def run_migrations(conn):
     # predates this timestamp are rejected in all six auth validation paths.
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN password_changed_at DATETIME")
 
+    # Migration: Back-fill password_changed_at = created_at for existing users (I2).
+    # Users who never changed their password would have NULL here, meaning old
+    # tokens could never be invalidated via the freshness check.  Setting it to
+    # created_at is conservative: any token issued before the account was created
+    # is always invalid, so this is a safe lower bound.
+    await _safe_execute(
+        conn,
+        "UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL",
+    )
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

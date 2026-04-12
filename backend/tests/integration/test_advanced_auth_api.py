@@ -663,3 +663,52 @@ class TestUserCreationAdvancedAuth:
         result = response.json()
         assert "email" in result
         assert result["email"] == "emailresp@test.com"
+
+
+# ===========================================================================
+# M-1: OIDC/LDAP users must not be able to use the password reset flow
+# ===========================================================================
+
+
+class TestAuthSourcePasswordResetBlocking:
+    """Forgot-password must silently skip OIDC and LDAP users (M-1)."""
+
+    @pytest.fixture
+    async def admin_token(self, async_client: AsyncClient):
+        return await _setup_admin(async_client, "authsrcadmin", "adminpass123")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_silently_skips_oidc_user(
+        self, async_client: AsyncClient, admin_token: str, db_session
+    ):
+        """forgot-password for an OIDC user returns 200 but does NOT send email."""
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.user import User
+
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        await async_client.post("/api/v1/auth/smtp", headers=headers, json=SMTP_DATA)
+        await async_client.post("/api/v1/auth/advanced-auth/enable", headers=headers)
+
+        # Directly insert an OIDC-sourced user into the DB
+        oidc_user = User(
+            username="oidcpwreset",
+            email="oidcpwreset@test.com",
+            auth_source="oidc",
+            password_hash=get_password_hash("irrelevant"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(oidc_user)
+        await db_session.commit()
+
+        with patch("backend.app.api.routes.auth.send_email") as mock_send:
+            response = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "oidcpwreset@test.com"},
+            )
+
+        # Anti-enumeration: still returns 200
+        assert response.status_code == 200
+        # But no email is sent for OIDC users
+        mock_send.assert_not_called()

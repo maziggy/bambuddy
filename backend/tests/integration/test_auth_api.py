@@ -863,3 +863,57 @@ class TestAuthMiddlewarePublicRoutes:
         # Will likely be 400 (advanced auth not enabled) but that's okay -
         # the important thing is it's not blocked by auth middleware
         assert response.status_code in [200, 400]
+
+
+# ===========================================================================
+# H-1: Input length validation
+# ===========================================================================
+
+
+class TestInputLengthValidation:
+    """LoginRequest and SetupRequest must reject oversized inputs (H-1)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_login_password_too_long_rejected(self, async_client: AsyncClient):
+        """Password exceeding 256 characters must be rejected with 422."""
+        response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "x" * 257},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_login_username_too_long_rejected(self, async_client: AsyncClient):
+        """Username exceeding 150 characters must be rejected with 422."""
+        response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "u" * 151, "password": "password"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_setup_password_too_long_rejected(self, async_client: AsyncClient):
+        """SetupRequest admin_password exceeding 256 characters must be rejected with 422."""
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "admin",
+                "admin_password": "x" * 257,
+            },
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_login_password_at_limit_accepted(self, async_client: AsyncClient):
+        """Password of exactly 256 characters must pass schema validation (may fail auth)."""
+        response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "x" * 256},
+        )
+        # Schema accepts it; auth may reject with 401 (auth disabled) or 400
+        assert response.status_code != 422

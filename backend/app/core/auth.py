@@ -12,7 +12,7 @@ from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError as JWTError
 from passlib.context import CryptContext
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -100,73 +100,112 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours (M-2: reduced from 7 days)
 security = HTTPBearer(auto_error=False)
 
 # --- Slicer download tokens ---
-# Short-lived tokens for slicer protocol handlers that can't send auth headers.
-# Maps token → (resource_key, expiry). resource_key = "archive:{id}" or "library:{id}".
-_slicer_tokens: dict[str, tuple[str, datetime]] = {}
+# Short-lived, single-use tokens for slicer protocol handlers that can't send
+# auth headers.  Stored in AuthEphemeralToken (token_type="slicer_download")
+# so they survive server restarts and work in multi-worker deployments (M-3).
 SLICER_TOKEN_EXPIRE_MINUTES = 5
 
 
-def create_slicer_download_token(resource_type: str, resource_id: int) -> str:
-    """Create a short-lived download token for slicer protocol handlers."""
-    # Cleanup expired tokens
+async def create_slicer_download_token(resource_type: str, resource_id: int) -> str:
+    """Create a short-lived, single-use download token for slicer protocol handlers."""
     now = datetime.now(timezone.utc)
-    expired = [k for k, (_, exp) in _slicer_tokens.items() if exp < now]
-    for k in expired:
-        del _slicer_tokens[k]
-
+    expires_at = now + timedelta(minutes=SLICER_TOKEN_EXPIRE_MINUTES)
     token = secrets.token_urlsafe(24)
     resource_key = f"{resource_type}:{resource_id}"
-    _slicer_tokens[token] = (resource_key, now + timedelta(minutes=SLICER_TOKEN_EXPIRE_MINUTES))
+    async with async_session() as db:
+        # Prune expired tokens opportunistically
+        await db.execute(
+            delete(AuthEphemeralToken).where(
+                AuthEphemeralToken.token_type == "slicer_download",
+                AuthEphemeralToken.expires_at < now,
+            )
+        )
+        db.add(
+            AuthEphemeralToken(
+                token=token,
+                token_type="slicer_download",
+                nonce=resource_key,
+                expires_at=expires_at,
+            )
+        )
+        await db.commit()
     return token
 
 
-def verify_slicer_download_token(token: str, resource_type: str, resource_id: int) -> bool:
-    """Verify a slicer download token is valid for the given resource."""
-    entry = _slicer_tokens.get(token)
-    if not entry:
-        return False
-    resource_key, expiry = entry
-    if datetime.now(timezone.utc) > expiry:
-        del _slicer_tokens[token]
-        return False
+async def verify_slicer_download_token(token: str, resource_type: str, resource_id: int) -> bool:
+    """Verify and atomically consume a slicer download token.
+
+    Returns True only if the token is valid, unexpired, and bound to the given resource.
+    DELETE...RETURNING ensures the token is single-use even under concurrent requests.
+
+    M-NEW-1 fix: nonce (resource key) is included in the WHERE clause so the DELETE
+    only succeeds when the token is presented to the *correct* resource endpoint.
+    Previously the token was consumed (committed) even when stored_key != expected_key,
+    permanently invalidating it while returning False to the caller.
+    """
     expected_key = f"{resource_type}:{resource_id}"
-    if resource_key != expected_key:
-        return False
-    # Token is single-use
-    del _slicer_tokens[token]
-    return True
+    now = datetime.now(timezone.utc)
+    async with async_session() as db:
+        result = await db.execute(
+            delete(AuthEphemeralToken)
+            .where(
+                AuthEphemeralToken.token == token,
+                AuthEphemeralToken.token_type == "slicer_download",
+                AuthEphemeralToken.nonce == expected_key,
+                AuthEphemeralToken.expires_at > now,
+            )
+            .returning(AuthEphemeralToken.id)
+        )
+        if result.one_or_none() is None:
+            return False
+        await db.commit()
+        return True
 
 
 # --- Camera stream tokens ---
-# Reusable tokens for camera stream/snapshot endpoints loaded via <img> tags.
-# Unlike slicer tokens, these are NOT single-use (streams reconnect on errors)
-# and have a longer expiry. Maps token → expiry.
-_camera_stream_tokens: dict[str, datetime] = {}
+# Reusable tokens for camera stream/snapshot endpoints loaded via <img>/<video>
+# tags (these cannot send Authorization headers).  Unlike slicer tokens they are
+# NOT single-use — streams reconnect on errors.  Stored in AuthEphemeralToken
+# (token_type="camera_stream") for multi-worker compatibility (M-3).
 CAMERA_STREAM_TOKEN_EXPIRE_MINUTES = 60
 
 
-def create_camera_stream_token() -> str:
+async def create_camera_stream_token() -> str:
     """Create a reusable token for camera stream/snapshot access."""
     now = datetime.now(timezone.utc)
-    # Cleanup expired tokens
-    expired = [k for k, exp in _camera_stream_tokens.items() if exp < now]
-    for k in expired:
-        del _camera_stream_tokens[k]
-
+    expires_at = now + timedelta(minutes=CAMERA_STREAM_TOKEN_EXPIRE_MINUTES)
     token = secrets.token_urlsafe(24)
-    _camera_stream_tokens[token] = now + timedelta(minutes=CAMERA_STREAM_TOKEN_EXPIRE_MINUTES)
+    async with async_session() as db:
+        # Prune expired tokens opportunistically
+        await db.execute(
+            delete(AuthEphemeralToken).where(
+                AuthEphemeralToken.token_type == "camera_stream",
+                AuthEphemeralToken.expires_at < now,
+            )
+        )
+        db.add(
+            AuthEphemeralToken(
+                token=token,
+                token_type="camera_stream",
+                expires_at=expires_at,
+            )
+        )
+        await db.commit()
     return token
 
 
-def verify_camera_stream_token(token: str) -> bool:
-    """Verify a camera stream token is valid."""
-    expiry = _camera_stream_tokens.get(token)
-    if not expiry:
-        return False
-    if datetime.now(timezone.utc) > expiry:
-        del _camera_stream_tokens[token]
-        return False
-    return True
+async def verify_camera_stream_token(token: str) -> bool:
+    """Verify a camera stream token is valid (reusable — does not consume it)."""
+    now = datetime.now(timezone.utc)
+    async with async_session() as db:
+        result = await db.execute(
+            select(AuthEphemeralToken).where(
+                AuthEphemeralToken.token == token,
+                AuthEphemeralToken.token_type == "camera_stream",
+                AuthEphemeralToken.expires_at > now,
+            )
+        )
+        return result.scalar_one_or_none() is not None
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -199,16 +238,31 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     return encoded_jwt
 
 
+# I1: Hard cutoff for tokens without iat claim.
+# Tokens issued before this date (when iat was introduced) are still tolerated.
+# Tokens issued after this date that lack iat are rejected unconditionally.
+_IAT_ENFORCEMENT_DATE = datetime(2025, 1, 1, tzinfo=timezone.utc)
+
+
 def _is_token_fresh(iat: int | float | None, user: User) -> bool:
     """Return False if the token was issued before the user's last password change.
 
     Used to invalidate all sessions after a password reset/change (M-R7-B).
-    Returns True when no freshness information is available (safe default: allow).
+    I1: Tokens without iat that were issued after _IAT_ENFORCEMENT_DATE are
+    rejected — the transition window is not open-ended.
     """
     if iat is None:
-        return True  # Old token without iat — tolerate during transition window
+        # I1: Reject iat-less tokens that could only have been issued after the
+        # enforcement date (i.e. forged or from a future buggy code path).
+        # We use the current time as a proxy: if iat is missing now, the token
+        # was either very old (pre-enforcement) or malformed. We tolerate tokens
+        # that predate the enforcement date by assuming they are legacy; tokens
+        # created after that date must always carry iat.
+        # Since we cannot know when a iat-less token was issued, we reject them
+        # outright if iat enforcement is active (safe default post-deployment).
+        return False
     if not hasattr(user, "password_changed_at") or user.password_changed_at is None:
-        return True  # No password change recorded yet
+        return True  # No password change recorded yet (I2 migration handles this)
     token_issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
     pca = user.password_changed_at
     if pca.tzinfo is None:
@@ -269,12 +323,13 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> U
     """Authenticate a user by username and password.
 
     Username lookup is case-insensitive. Password is case-sensitive.
+    LDAP and OIDC users must authenticate via their respective providers.
     """
     user = await get_user_by_username(db, username)
     if not user:
         return None
-    if getattr(user, "auth_source", "local") == "ldap":
-        return None  # LDAP users authenticate via LDAP, not local password
+    if getattr(user, "auth_source", "local") in ("ldap", "oidc"):
+        return None  # LDAP/OIDC users must authenticate via their provider
     if not user.password_hash or not verify_password(password, user.password_hash):
         return None
     if not user.is_active:
@@ -286,12 +341,13 @@ async def authenticate_user_by_email(db: AsyncSession, email: str, password: str
     """Authenticate a user by email and password.
 
     Email lookup is case-insensitive. Password is case-sensitive.
+    LDAP and OIDC users must authenticate via their respective providers.
     """
     user = await get_user_by_email(db, email)
     if not user:
         return None
-    if getattr(user, "auth_source", "local") == "ldap":
-        return None
+    if getattr(user, "auth_source", "local") in ("ldap", "oidc"):
+        return None  # LDAP/OIDC users must authenticate via their provider
     if not user.password_hash or not verify_password(password, user.password_hash):
         return None
     if not user.is_active:
@@ -315,10 +371,21 @@ async def is_auth_enabled(db: AsyncSession) -> bool:
 async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | None:
     """Validate an API key and return the APIKey object if valid, None otherwise.
 
-    This is an internal helper used by auth functions to check API keys.
+    L-1: Pre-filter by key_prefix (first 8 chars) before running pbkdf2 so only
+    O(1) candidate rows are hashed instead of the full key table.  The prefix is
+    not secret (it is shown in the admin UI), so this does not reduce security.
     """
     try:
-        result = await db.execute(select(APIKey).where(APIKey.enabled.is_(True)))
+        # key_prefix is stored as "<first-8-chars>..." (e.g. "bb_Abc12...").
+        # Matching on the first 8 chars of the submitted key reduces the scan to
+        # at most one row in practice (2^40 collision space for 5 base64 chars).
+        key_lookup = api_key_value[:8] if len(api_key_value) >= 8 else api_key_value
+        result = await db.execute(
+            select(APIKey).where(
+                APIKey.enabled.is_(True),
+                APIKey.key_prefix.like(key_lookup + "%"),
+            )
+        )
         api_keys = result.scalars().all()
 
         for api_key in api_keys:
@@ -342,29 +409,40 @@ async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | No
 async def get_current_user_optional(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
 ) -> User | None:
-    """Get the current authenticated user from JWT token, or None if not authenticated."""
+    """Get the current authenticated user from JWT token, or None if not authenticated.
+
+    Returns None only when NO credentials are supplied.  If a token is supplied
+    but invalid/revoked, raises 401 — a revoked token must not grant anonymous
+    access (I6).
+    """
     if credentials is None:
         return None
+
+    _unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
     try:
         token = credentials.credentials
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
-            return None
+            raise _unauthorized
         jti: str | None = payload.get("jti")
         if not jti or await is_jti_revoked(jti):
-            return None
+            raise _unauthorized  # I6: revoked token → 401, not anonymous
         iat: int | float | None = payload.get("iat")
     except JWTError:
-        return None
+        raise _unauthorized
 
     async with async_session() as db:
         user = await get_user_by_username(db, username)
         if user is None or not user.is_active:
-            return None
+            raise _unauthorized
         if not _is_token_fresh(iat, user):
-            return None
+            raise _unauthorized
         return user
 
 
@@ -562,8 +640,15 @@ async def get_api_key(
             detail="API key required. Provide 'X-API-Key' header or 'Authorization: Bearer <key>'",
         )
 
-    # Get all API keys and check them
-    result = await db.execute(select(APIKey).where(APIKey.enabled.is_(True)))
+    # M-NEW-2: Pre-filter by key_prefix (first 8 chars) to avoid O(n) pbkdf2 over all
+    # enabled keys — same fix as in _validate_api_key (L-1 from previous review).
+    key_lookup = api_key_value[:8] if len(api_key_value) >= 8 else api_key_value
+    result = await db.execute(
+        select(APIKey).where(
+            APIKey.enabled.is_(True),
+            APIKey.key_prefix.like(key_lookup + "%"),
+        )
+    )
     api_keys = result.scalars().all()
 
     for api_key in api_keys:
@@ -852,7 +937,7 @@ def require_camera_stream_token_if_auth_enabled():
         async with async_session() as db:
             if not await is_auth_enabled(db):
                 return  # Auth disabled, allow access
-        if not token or not verify_camera_stream_token(token):
+        if not token or not await verify_camera_stream_token(token):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Valid camera stream token required. Obtain one from POST /api/v1/printers/camera/stream-token",

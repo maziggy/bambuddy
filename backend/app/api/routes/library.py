@@ -2499,7 +2499,7 @@ async def create_library_slicer_token(
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    token = create_slicer_download_token("library", file_id)
+    token = await create_slicer_download_token("library", file_id)
     return {"token": token}
 
 
@@ -2518,7 +2518,7 @@ async def download_library_file_for_slicer(
     """
     from backend.app.core.auth import verify_slicer_download_token
 
-    if not verify_slicer_download_token(token, "library", file_id):
+    if not await verify_slicer_download_token(token, "library", file_id):
         raise HTTPException(status_code=403, detail="Invalid or expired download token")
 
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))

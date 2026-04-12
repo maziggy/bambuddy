@@ -30,7 +30,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         String(20), default="user"
     )  # "admin" or "user" (legacy, kept for backward compat)
-    auth_source: Mapped[str] = mapped_column(String(20), default="local")  # "local" or "ldap"
+    auth_source: Mapped[str] = mapped_column(String(20), default="local")  # "local", "ldap", or "oidc"
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

@@ -28,6 +28,7 @@ from backend.app.core.auth import (
     get_password_hash,
     get_user_by_email,
     get_user_by_username,
+    is_jti_revoked,
     revoke_jti,
     security,
 )
@@ -59,6 +60,8 @@ from backend.app.services.email_service import (
     save_smtp_settings,
     send_email,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 def _user_to_response(user: User) -> UserResponse:
@@ -117,7 +120,12 @@ def _get_client_ip(request: Request) -> str:
     Falls back to request.client.host when TRUSTED_PROXY_IPS is unset (direct
     deployment without a reverse proxy).
     """
-    direct_ip = request.client.host if request.client else "unknown"
+    # I5: Use a per-request unique token instead of "unknown" when the transport
+    # layer provides no client address.  This prevents all such requests from
+    # sharing one rate-limit bucket, and avoids collision with a literal username
+    # "unknown".  The token is not stable across requests, which is intentional:
+    # we cannot track the IP so we also cannot rate-limit by it meaningfully.
+    direct_ip = request.client.host if request.client else f"__no_ip_{secrets.token_hex(8)}__"
     if _TRUSTED_PROXY_IPS and direct_ip in _TRUSTED_PROXY_IPS:
         forwarded_for = request.headers.get("X-Forwarded-For", "")
         ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
@@ -253,7 +261,7 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
                     logger.error("Failed to create admin user: %s", e, exc_info=True)
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to create admin user: {str(e)}",
+                        detail="Failed to create admin user",
                     )
 
         # Set auth enabled and mark setup as completed
@@ -274,7 +282,7 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Setup failed: {str(e)}",
+            detail="Setup failed",
         )
 
 
@@ -319,7 +327,7 @@ async def disable_auth(
         logger.error("Failed to disable authentication: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to disable authentication: {str(e)}",
+            detail="Failed to disable authentication",
         )
 
 
@@ -525,6 +533,13 @@ async def get_current_user_info(
                     detail="Could not validate credentials",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+            jti: str | None = payload.get("jti")
+            if not jti or await is_jti_revoked(jti):  # B1: logout bypass fix
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             iat: int | float | None = payload.get("iat")
         except JWTError:
             raise HTTPException(
@@ -566,16 +581,28 @@ async def logout(
 ):
     """Logout — revokes the current JWT so it cannot be reused after logout."""
     if credentials is not None:
+        raw_token = credentials.credentials
+        # B3: Extract jti from the unverified payload so revocation is attempted
+        # even when the token is expired or uses an unexpected algorithm.
+        # We do NOT trust the payload for auth here — we just want the jti to
+        # add to the revocation list so it can never be used again.
         try:
-            payload = _jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-            jti: str | None = payload.get("jti")
-            exp = payload.get("exp")
+            unverified = _jwt.decode(
+                raw_token,
+                options={"verify_signature": False},
+                algorithms=[ALGORITHM],
+            )
+            jti: str | None = unverified.get("jti")
+            exp = unverified.get("exp")
+            username: str | None = unverified.get("sub")
             if jti and exp:
                 expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
-                username: str | None = payload.get("sub")
-                await revoke_jti(jti, expires_at, username)
+                try:
+                    await revoke_jti(jti, expires_at, username)
+                except Exception as exc:
+                    _logger.error("Failed to revoke JTI on logout for user %s: %s", username, exc)
         except PyJWTError:
-            pass  # Expired / invalid tokens are harmless — just clear client-side
+            _logger.warning("Logout called with unparseable token — skipping revocation")
 
     return {"message": "Logged out successfully"}
 
@@ -611,8 +638,8 @@ async def test_smtp_connection(
         logger.info(f"Test email sent successfully to {test_request.test_recipient}")
         return TestSMTPResponse(success=True, message="Test email sent successfully")
     except Exception as e:
-        logger.error(f"Failed to send test email: {e}")
-        return TestSMTPResponse(success=False, message=f"Failed to send test email: {str(e)}")
+        logger.error("Failed to send test email: %s", e)
+        return TestSMTPResponse(success=False, message="Failed to send test email")
 
 
 @router.get("/smtp", response_model=SMTPSettings | None)
@@ -646,10 +673,10 @@ async def save_smtp_config(
         return {"message": "SMTP settings saved successfully"}
     except Exception as e:
         await db.rollback()
-        logger.error(f"Failed to save SMTP settings: {e}")
+        logger.error("Failed to save SMTP settings: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save SMTP settings: {str(e)}",
+            detail="Failed to save SMTP settings",
         )
 
 
@@ -691,10 +718,10 @@ async def enable_advanced_auth(
         return {"message": "Advanced authentication enabled successfully", "advanced_auth_enabled": True}
     except Exception as e:
         await db.rollback()
-        logger.error(f"Failed to enable advanced authentication: {e}")
+        logger.error("Failed to enable advanced authentication: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to enable advanced authentication: {str(e)}",
+            detail="Failed to enable advanced authentication",
         )
 
 
@@ -725,10 +752,10 @@ async def disable_advanced_auth(
         return {"message": "Advanced authentication disabled successfully", "advanced_auth_enabled": False}
     except Exception as e:
         await db.rollback()
-        logger.error(f"Failed to disable advanced authentication: {e}")
+        logger.error("Failed to disable advanced authentication: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to disable advanced authentication: {str(e)}",
+            detail="Failed to disable advanced authentication",
         )
 
 
@@ -743,20 +770,21 @@ async def get_advanced_auth_status(db: AsyncSession = Depends(get_db)):
     }
 
 
-_logger = logging.getLogger(__name__)
-
 # TTL for password-reset tokens (H-6)
 _RESET_TOKEN_TTL = timedelta(hours=1)
 
 # Rate-limit for password-reset email sends per identifier (M-A)
 _MAX_PWD_RESET_SENDS = 3
 _PWD_RESET_SEND_WINDOW = timedelta(minutes=15)
+# L-NEW-6: per-IP cap to prevent mass-reset flooding across many addresses
+_MAX_PWD_RESET_SENDS_PER_IP = 10
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(
     request: ForgotPasswordRequest,
     background_tasks: BackgroundTasks,
+    raw_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Request password reset via email (advanced auth only).
@@ -790,7 +818,25 @@ async def forgot_password(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many password reset requests. Please wait {_PWD_RESET_SEND_WINDOW.seconds // 60} minutes.",
         )
+
+    # L-NEW-6: per-IP rate limit — prevents mass-reset flooding across many
+    # different email addresses from a single source IP.
+    client_ip = _get_client_ip(raw_request)
+    ip_rate_result = await db.execute(
+        select(AuthRateLimitEvent).where(
+            AuthRateLimitEvent.username == client_ip,
+            AuthRateLimitEvent.event_type == "password_reset_ip",
+            AuthRateLimitEvent.occurred_at > cutoff,
+        )
+    )
+    if len(ip_rate_result.scalars().all()) >= _MAX_PWD_RESET_SENDS_PER_IP:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many password reset requests. Please wait {_PWD_RESET_SEND_WINDOW.seconds // 60} minutes.",
+        )
+
     db.add(AuthRateLimitEvent(username=identifier, event_type="password_reset_send"))
+    db.add(AuthRateLimitEvent(username=client_ip, event_type="password_reset_ip"))
     await db.commit()
 
     # Get SMTP settings
@@ -804,7 +850,8 @@ async def forgot_password(
     # Find user by email — always return success to prevent email enumeration.
     user = await get_user_by_email(db, request.email)
 
-    if user and user.is_active and user.auth_source != "ldap":
+    # M-1: exclude LDAP and OIDC users — they must use their respective provider.
+    if user and user.is_active and user.auth_source not in ("ldap", "oidc"):
         try:
             now = datetime.now(timezone.utc)
             # Prune any outstanding reset tokens for this user before issuing a new one.
@@ -876,7 +923,8 @@ async def forgot_password_confirm(request: ForgotPasswordConfirmRequest, db: Asy
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired password reset token")
 
     user = await get_user_by_username(db, username)
-    if not user or not user.is_active or user.auth_source == "ldap":
+    # M-1: block LDAP/OIDC users — they authenticate via their provider, not local password.
+    if not user or not user.is_active or user.auth_source in ("ldap", "oidc"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired password reset token")
 
     user.password_hash = get_password_hash(request.new_password)
@@ -929,10 +977,11 @@ async def reset_user_password(
             detail="User not found",
         )
 
-    if user.auth_source == "ldap":
+    # M-1: block LDAP/OIDC users — passwords are managed by their respective providers.
+    if user.auth_source in ("ldap", "oidc"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot reset password for LDAP users — passwords are managed by the LDAP server",
+            detail="Cannot reset password for LDAP/OIDC users — authentication is managed by their provider",
         )
 
     if not user.email:

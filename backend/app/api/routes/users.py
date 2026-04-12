@@ -470,8 +470,16 @@ async def change_own_password(
             jti = payload.get("jti")
             exp = payload.get("exp")
             if jti and exp:
-                await revoke_jti(jti, datetime.fromtimestamp(exp, tz=timezone.utc), user.username)
+                try:
+                    await revoke_jti(jti, datetime.fromtimestamp(exp, tz=timezone.utc), user.username)
+                except Exception as exc:
+                    # B4: log so operators know revocation is broken; password was
+                    # already changed so the token will fail freshness checks anyway.
+                    import logging
+                    logging.getLogger(__name__).error(
+                        "Failed to revoke JTI after password change for user %s: %s", user.username, exc
+                    )
         except Exception:
-            pass  # Best-effort — token validity is not required for the revocation attempt
+            pass  # Decode failure is harmless — token is already invalidated by password_changed_at
 
     return {"message": "Password changed successfully"}

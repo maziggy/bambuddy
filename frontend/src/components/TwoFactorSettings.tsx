@@ -50,8 +50,8 @@ function BackupCodesDisplay({ codes, onDone }: { codes: string[]; onDone: () => 
         <p className="text-amber-400 text-sm font-medium">{t('settings.twoFa.backupCodesWarning')}</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {codes.map((code) => (
-          <code key={code} className="bg-bambu-dark-secondary rounded px-3 py-2 text-center font-mono text-sm text-white tracking-widest">
+        {codes.map((code, index) => (
+          <code key={index} className="bg-bambu-dark-secondary rounded px-3 py-2 text-center font-mono text-sm text-white tracking-widest">
             {code}
           </code>
         ))}
@@ -342,7 +342,7 @@ export function TwoFactorSettings() {
           ) : showRegenBackup ? (
             <div className="space-y-4">
               <p className="text-bambu-gray-light text-sm">{t('settings.twoFa.regenBackupHint')}</p>
-              <CodeInput value={regenCode} onChange={setRegenCode} placeholder="000000" />
+              <CodeInput value={regenCode} onChange={setRegenCode} placeholder="000000 or XXXXXXXX" maxLength={8} />
               <div className="flex gap-3">
                 <Button variant="secondary" onClick={() => { setShowRegenBackup(false); setRegenCode(''); }} className="flex-1">
                   {t('common.cancel')}
@@ -350,7 +350,7 @@ export function TwoFactorSettings() {
                 <Button
                   variant="primary"
                   className="flex-1"
-                  disabled={regenCode.length !== 6 || regenMutation.isPending}
+                  disabled={regenCode.length < 6 || regenMutation.isPending}
                   onClick={() => regenMutation.mutate(regenCode)}
                 >
                   {regenMutation.isPending ? t('common.saving') : t('settings.twoFa.regenBackup')}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +33,7 @@ export function LoginPage() {
   const [twoFAMethod, setTwoFAMethod] = useState<'totp' | 'email' | 'backup'>('totp');
   const [twoFACode, setTwoFACode] = useState('');
   const [emailOTPSent, setEmailOTPSent] = useState(false);
+  const twoFAInputRef = useRef<HTMLInputElement>(null);
 
   // H-6: Password reset step state
   const [resetToken, setResetToken] = useState('');
@@ -74,9 +75,33 @@ export function LoginPage() {
     const oidcError = searchParams.get('oidc_error');
 
     if (oidcError) {
-      showToast(oidcError, 'error');
+      // L-3: Whitelist known OIDC error codes so provider-controlled text is never
+      // shown verbatim. Any unknown code falls back to a generic message.
+      const KNOWN_OIDC_ERRORS: Record<string, string> = {
+        oidc_provider_error: t('login.oidcErrors.providerError'),
+        missing_parameters: t('login.oidcErrors.missingParameters'),
+        invalid_state: t('login.oidcErrors.invalidState'),
+        state_expired: t('login.oidcErrors.stateExpired'),
+        provider_not_found: t('login.oidcErrors.providerNotFound'),
+        discovery_failed: t('login.oidcErrors.discoveryFailed'),
+        invalid_discovery_document: t('login.oidcErrors.invalidDiscovery'),
+        token_exchange_network_error: t('login.oidcErrors.networkError'),
+        token_exchange_bad_response: t('login.oidcErrors.badResponse'),
+        no_id_token: t('login.oidcErrors.noIdToken'),
+        token_validation_failed: t('login.oidcErrors.validationFailed'),
+        nonce_mismatch: t('login.oidcErrors.nonceMismatch'),
+        missing_sub_claim: t('login.oidcErrors.missingSubClaim'),
+        no_linked_account: t('login.oidcErrors.noLinkedAccount'),
+        account_inactive: t('login.oidcErrors.accountInactive'),
+        user_resolution_failed: t('login.oidcErrors.userResolutionFailed'),
+        internal_error: t('login.oidcErrors.internalError'),
+      };
+      // Dynamic codes like "token_exchange_<provider_code>" → generic message
+      const errorMsg = KNOWN_OIDC_ERRORS[oidcError]
+        ?? (oidcError.startsWith('token_exchange_') ? t('login.oidcErrors.tokenExchangeFailed') : t('login.oidcLoginFailed'));
+      showToast(errorMsg, 'error');
       // Remove query params from URL cleanly
-      navigate('/', { replace: true });
+      navigate('/login', { replace: true });
       return;
     }
 
@@ -100,7 +125,7 @@ export function LoginPage() {
         }
       }).catch((err: Error) => {
         showToast(err.message || t('login.oidcLoginFailed'), 'error');
-        navigate('/', { replace: true });
+        navigate('/login', { replace: true });
       });
     }
   }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -152,7 +177,7 @@ export function LoginPage() {
       setConfirmPassword('');
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Password reset failed. The link may have expired.', 'error');
+      showToast(error.message || t('login.resetPassword.resetFailed'), 'error');
     },
   });
 
@@ -228,6 +253,8 @@ export function LoginPage() {
     setTwoFAMethod(method);
     setTwoFACode('');
     setEmailOTPSent(false);
+    // Re-focus the code input after method switch (autoFocus only fires on mount)
+    setTimeout(() => twoFAInputRef.current?.focus(), 0);
   };
 
   // ---- Render: password-reset step (H-6) ----
@@ -235,11 +262,11 @@ export function LoginPage() {
     const handleResetSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       if (newPassword !== confirmPassword) {
-        showToast('Passwords do not match', 'error');
+        showToast(t('login.resetPassword.passwordsDoNotMatch'), 'error');
         return;
       }
       if (newPassword.length < 8) {
-        showToast('Password must be at least 8 characters', 'error');
+        showToast(t('login.resetPassword.passwordTooShort'), 'error');
         return;
       }
       resetPasswordMutation.mutate();
@@ -254,14 +281,14 @@ export function LoginPage() {
                 <Key className="w-7 h-7 text-bambu-green" />
               </div>
             </div>
-            <h2 className="text-2xl font-bold text-white">Set New Password</h2>
-            <p className="mt-2 text-sm text-bambu-gray">Enter and confirm your new password below.</p>
+            <h2 className="text-2xl font-bold text-white">{t('login.resetPassword.title')}</h2>
+            <p className="mt-2 text-sm text-bambu-gray">{t('login.resetPassword.subtitle')}</p>
           </div>
 
           <form onSubmit={handleResetSubmit} className="space-y-4">
             <div>
               <label htmlFor="new-password" className="block text-sm font-medium text-white mb-2">
-                New Password
+                {t('login.resetPassword.newPassword')}
               </label>
               <input
                 id="new-password"
@@ -270,7 +297,7 @@ export function LoginPage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                placeholder="At least 8 characters"
+                placeholder={t('login.resetPassword.newPasswordPlaceholder')}
                 autoFocus
                 autoComplete="new-password"
                 minLength={8}
@@ -279,7 +306,7 @@ export function LoginPage() {
 
             <div>
               <label htmlFor="confirm-password" className="block text-sm font-medium text-white mb-2">
-                Confirm Password
+                {t('login.resetPassword.confirmPassword')}
               </label>
               <input
                 id="confirm-password"
@@ -288,7 +315,7 @@ export function LoginPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                placeholder="Repeat new password"
+                placeholder={t('login.resetPassword.confirmPasswordPlaceholder')}
                 autoComplete="new-password"
               />
             </div>
@@ -298,7 +325,7 @@ export function LoginPage() {
               disabled={resetPasswordMutation.isPending || !newPassword || !confirmPassword}
               className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {resetPasswordMutation.isPending ? 'Saving…' : 'Set New Password'}
+              {resetPasswordMutation.isPending ? t('login.resetPassword.saving') : t('login.resetPassword.submit')}
             </button>
           </form>
 
@@ -313,7 +340,7 @@ export function LoginPage() {
               }}
               className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
             >
-              Back to login
+              {t('login.resetPassword.backToLogin')}
             </button>
           </div>
         </div>
@@ -431,6 +458,7 @@ export function LoginPage() {
                   : t('login.twoFA.codeLabel')}
               </label>
               <input
+                ref={twoFAInputRef}
                 id="twofa-code"
                 type="text"
                 inputMode={twoFAMethod === 'backup' ? 'text' : 'numeric'}
@@ -506,7 +534,7 @@ export function LoginPage() {
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-white mb-2">
                 {advancedAuthStatus?.advanced_auth_enabled
-                  ? t('login.usernameOrEmail') || 'Username or Email'
+                  ? t('login.usernameOrEmail')
                   : t('login.username')}
               </label>
               <input
@@ -517,7 +545,7 @@ export function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
                 placeholder={advancedAuthStatus?.advanced_auth_enabled
-                  ? t('login.usernameOrEmailPlaceholder') || 'Enter your username or email'
+                  ? t('login.usernameOrEmailPlaceholder')
                   : t('login.usernamePlaceholder')}
                 autoComplete="username"
               />
@@ -525,7 +553,7 @@ export function LoginPage() {
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-white mb-2">
-                {t('login.password')}
+                {t('login.password') || 'Password'}
               </label>
               <input
                 id="password"
@@ -627,12 +655,12 @@ export function LoginPage() {
               {advancedAuthStatus?.advanced_auth_enabled ? (
                 <form onSubmit={handleForgotPassword} className="space-y-4">
                   <p className="text-bambu-gray text-sm">
-                    {t('login.forgotPasswordEmailMessage') || 'Enter your email address and we\'ll send you a new password.'}
+                    {t('login.forgotPasswordEmailMessage')}
                   </p>
 
                   <div>
                     <label htmlFor="forgot-email" className="block text-sm font-medium text-white mb-2">
-                      {t('login.emailAddress') || 'Email Address'}
+                      {t('login.emailAddress')}
                     </label>
                     <input
                       id="forgot-email"
@@ -641,7 +669,7 @@ export function LoginPage() {
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}
                       className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                      placeholder={t('login.emailPlaceholder') || 'your.email@example.com'}
+                      placeholder={t('login.emailPlaceholder')}
                     />
                   </div>
 
@@ -655,7 +683,7 @@ export function LoginPage() {
                         setForgotEmail('');
                       }}
                     >
-                      {t('login.cancel') || 'Cancel'}
+                      {t('login.cancel')}
                     </Button>
                     <Button
                       type="submit"
@@ -663,8 +691,8 @@ export function LoginPage() {
                       disabled={forgotPasswordMutation.isPending}
                     >
                       {forgotPasswordMutation.isPending
-                        ? (t('login.sending') || 'Sending...')
-                        : (t('login.sendResetEmail') || 'Send Reset Email')}
+                        ? t('login.sending')
+                        : t('login.sendResetEmail')}
                     </Button>
                   </div>
                 </form>

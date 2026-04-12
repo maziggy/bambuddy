@@ -3,17 +3,22 @@ import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/
 const API_BASE = '/api/v1';
 
 // Auth token storage
-// H-5: Use sessionStorage instead of localStorage so the JWT is not persisted
-// across browser sessions and is not accessible by other tabs/origins via
-// the localStorage API (sessionStorage is scoped to the tab).
-let authToken: string | null = sessionStorage.getItem('auth_token');
+// By default tokens are stored in sessionStorage (tab-scoped, cleared on close).
+// When the token originates from the ?token= URL param (kiosk bootstrap), it is
+// additionally persisted in localStorage so the kiosk survives page reloads.
+let authToken: string | null =
+  sessionStorage.getItem('auth_token') ?? localStorage.getItem('auth_token');
 
-export function setAuthToken(token: string | null) {
+export function setAuthToken(token: string | null, persist = false) {
   authToken = token;
   if (token) {
     sessionStorage.setItem('auth_token', token);
+    if (persist) {
+      localStorage.setItem('auth_token', token);
+    }
   } else {
     sessionStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_token');
   }
 }
 

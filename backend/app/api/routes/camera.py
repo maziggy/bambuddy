@@ -525,7 +525,7 @@ async def create_stream_token(
     Returns a token valid for 60 minutes that can be appended as ?token=xxx
     to camera stream/snapshot URLs loaded via <img> tags.
     """
-    return {"token": create_camera_stream_token()}
+    return {"token": await create_camera_stream_token()}
 
 
 @router.get("/{printer_id}/camera/stream")

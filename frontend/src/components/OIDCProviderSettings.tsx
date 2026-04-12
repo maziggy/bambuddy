@@ -305,7 +305,7 @@ export function OIDCProviderSettings() {
             </CardContent>
           )}
 
-          {!editingId && (
+          {editingId !== provider.id && (
             <CardContent>
               <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-sm">
                 <div>

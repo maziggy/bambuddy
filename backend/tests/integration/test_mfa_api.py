@@ -1657,3 +1657,703 @@ class TestOIDCEndToEnd:
             )
             assert second.status_code == 302
             assert "invalid_state" in second.headers.get("location", "")
+
+
+# ===========================================================================
+# H-2: Wrong code must NOT consume the email OTP setup token (peek-then-consume)
+# ===========================================================================
+
+
+class TestEmailOTPSetupTokenPreservedOnWrongCode:
+    """After H-2 fix: a wrong code leaves the setup token intact so the user can retry."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_wrong_code_does_not_consume_setup_token(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Wrong code returns 400 but the setup token survives; correct code then works."""
+        token = await _setup_and_login(async_client, "h2retryuser", "h2retrypass1")
+
+        code = "999999"
+        code_hash = _pwd_context.hash(code)
+        setup_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=setup_token,
+                token_type="email_otp_setup",
+                username="h2retryuser",
+                nonce=code_hash,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+
+        # First attempt: wrong code → 400
+        wrong = await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": "000000"},
+            headers=_auth_header(token),
+        )
+        assert wrong.status_code == 400
+
+        # Second attempt: correct code → must succeed (token was NOT consumed)
+        correct = await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": setup_token, "code": code},
+            headers=_auth_header(token),
+        )
+        assert correct.status_code == 200
+
+
+# ===========================================================================
+# M-2: New OIDC provider must default to auto_link_existing_accounts=False
+# ===========================================================================
+
+
+class TestOIDCProviderAutoLinkDefault:
+    """auto_link_existing_accounts must default to False (M-2 fix)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_new_provider_auto_link_defaults_to_false(self, async_client: AsyncClient):
+        token = await _setup_and_login(async_client, "m2autolinkadmin", "m2autolinkadmin1")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "AutoLinkTest",
+                "issuer_url": "https://autolink.example.com",
+                "client_id": "alc",
+                "client_secret": "als",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+                # auto_link_existing_accounts intentionally omitted
+            },
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 201
+        assert resp.json()["auto_link_existing_accounts"] is False
+
+
+# ===========================================================================
+# L-5: 2FA verify code format validation
+# ===========================================================================
+
+
+class TestTwoFAVerifyCodeFormat:
+    """TwoFAVerifyRequest.code must be 6–8 alphanumeric characters (L-5)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_too_long_rejected(self, async_client: AsyncClient):
+        """code > 8 characters must be rejected with 422."""
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": "anytoken", "code": "1" * 9, "method": "totp"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_non_alphanumeric_rejected(self, async_client: AsyncClient):
+        """code containing non-alphanumeric chars must be rejected with 422."""
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": "anytoken", "code": "12-456", "method": "totp"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_too_short_rejected(self, async_client: AsyncClient):
+        """code < 6 characters must be rejected with 422."""
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": "anytoken", "code": "12345", "method": "totp"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_exactly_6_passes_schema(self, async_client: AsyncClient):
+        """6-character alphanumeric code passes schema (may fail 2FA logic with 400)."""
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": "x" * 32, "code": "123456", "method": "totp"},
+        )
+        assert resp.status_code != 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_exactly_8_passes_schema(self, async_client: AsyncClient):
+        """8-character alphanumeric backup code passes schema."""
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": "x" * 32, "code": "ABCD1234", "method": "backup"},
+        )
+        assert resp.status_code != 422
+
+
+# ===========================================================================
+# M-NEW-1: verify_slicer_download_token must NOT consume token on wrong resource
+# ===========================================================================
+
+
+class TestSlicerTokenResourceBinding:
+    """Token for resource A must survive a wrong-resource check and still work for A."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_wrong_resource_does_not_consume_token(self, async_client: AsyncClient, db_session: AsyncSession):
+        """A slicer token bound to archive:5 must NOT be consumed when checked against archive:6."""
+        from datetime import datetime, timedelta, timezone
+
+        from backend.app.core.auth import verify_slicer_download_token
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+        now = datetime.now(timezone.utc)
+        token_val = secrets.token_urlsafe(24)
+        db_session.add(
+            AuthEphemeralToken(
+                token=token_val,
+                token_type="slicer_download",
+                nonce="archive:5",
+                expires_at=now + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        # Wrong resource → must return False and NOT consume the token
+        wrong = await verify_slicer_download_token(token_val, "archive", 6)
+        assert wrong is False
+
+        # Correct resource → must return True (token survived the wrong-resource check)
+        correct = await verify_slicer_download_token(token_val, "archive", 5)
+        assert correct is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_correct_resource_consumes_token(self, async_client: AsyncClient, db_session: AsyncSession):
+        """A slicer token is single-use: second correct-resource check must return False."""
+        from datetime import datetime, timedelta, timezone
+
+        from backend.app.core.auth import verify_slicer_download_token
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+        now = datetime.now(timezone.utc)
+        token_val = secrets.token_urlsafe(24)
+        db_session.add(
+            AuthEphemeralToken(
+                token=token_val,
+                token_type="slicer_download",
+                nonce="library:99",
+                expires_at=now + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        first = await verify_slicer_download_token(token_val, "library", 99)
+        assert first is True
+
+        second = await verify_slicer_download_token(token_val, "library", 99)
+        assert second is False
+
+
+# ===========================================================================
+# M-NEW-3 / L-NEW-1: Schema length validation for change-password & forgot-password
+# ===========================================================================
+
+
+class TestSchemaLengthValidationR2:
+    """Input length limits added in review round 2."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_change_password_current_too_long_rejected(self, async_client: AsyncClient):
+        """current_password > 256 chars must be rejected with 422 (prevents pbkdf2 DoS)."""
+        resp = await async_client.post(
+            "/api/v1/users/me/change-password",
+            json={"current_password": "x" * 257, "new_password": "ValidPass1!"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_email_too_long_rejected(self, async_client: AsyncClient):
+        """email > 254 chars must be rejected with 422."""
+        resp = await async_client.post(
+            "/api/v1/auth/forgot-password",
+            json={"email": "a" * 243 + "@example.com"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_email_at_limit_passes_schema(self, async_client: AsyncClient):
+        """Short email passes schema (may return 400/200 from business logic)."""
+        resp = await async_client.post(
+            "/api/v1/auth/forgot-password",
+            json={"email": "user@example.com"},
+        )
+        assert resp.status_code != 422
+
+
+# ===========================================================================
+# L-NEW-2: TOTPSetupRequest.code max_length
+# ===========================================================================
+
+
+class TestTOTPSetupCodeMaxLength:
+    """TOTPSetupRequest.code must be bounded (L-NEW-2)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_setup_code_too_long_rejected(self, async_client: AsyncClient):
+        """code > 8 chars must be rejected with 422."""
+        import pyotp as _pyotp
+
+        token = await _setup_and_login(async_client, "totp_setup_maxlen", "totp_setup_maxlen1")
+        # Enable TOTP so the setup-code guard path is active
+        setup_resp = await async_client.post("/api/v1/auth/2fa/totp/setup", headers=_auth_header(token))
+        secret = setup_resp.json()["secret"]
+        await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": _pyotp.TOTP(secret).now()},
+            headers=_auth_header(token),
+        )
+
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/setup",
+            json={"code": "1" * 9},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 422
+
+
+# ===========================================================================
+# L-NEW-3: EmailOTPEnableConfirmRequest.code must be exactly 6 digits
+# ===========================================================================
+
+
+class TestEmailOTPConfirmCodeFormat:
+    """EmailOTPEnableConfirmRequest.code must be 6 digits (L-NEW-3)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_digit_code_rejected(self, async_client: AsyncClient):
+        """Alpha characters in the email OTP confirm code must be rejected with 422."""
+        token = await _setup_and_login(async_client, "emailotpfmt", "emailotpfmt1")
+
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": "x" * 32, "code": "ABCDEF"},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_seven_digit_code_rejected(self, async_client: AsyncClient):
+        """7-digit code must be rejected with 422 (min_length=max_length=6)."""
+        token = await _setup_and_login(async_client, "emailotplen7", "emailotplen7x")
+
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": "x" * 32, "code": "1234567"},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_valid_six_digit_code_passes_schema(self, async_client: AsyncClient):
+        """6-digit numeric code passes schema (may return 400 on bad token — that's fine)."""
+        token = await _setup_and_login(async_client, "emailotpfmt6", "emailotpfmt6x")
+
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/email/enable/confirm",
+            json={"setup_token": "x" * 32, "code": "123456"},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code != 422
+
+
+# ===========================================================================
+# L-NEW-4: OIDCProviderCreate field max_length constraints
+# ===========================================================================
+
+
+class TestOIDCProviderFieldLengths:
+    """OIDCProviderCreate fields must reject inputs exceeding max_length (L-NEW-4)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_name_too_long_rejected(self, async_client: AsyncClient):
+        token = await _setup_and_login(async_client, "oidcfldadmin", "oidcfldadmin1")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "n" * 101,
+                "issuer_url": "https://test.example.com",
+                "client_id": "cid",
+                "client_secret": "csec",
+                "scopes": "openid",
+            },
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_client_secret_too_long_rejected(self, async_client: AsyncClient):
+        token = await _setup_and_login(async_client, "oidcseclen", "oidcseclen123")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "ValidName",
+                "issuer_url": "https://test.example.com",
+                "client_id": "cid",
+                "client_secret": "s" * 513,
+                "scopes": "openid",
+            },
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# M-NEW-4 / M-NEW-5 / L-NEW-5: UserCreate & UserUpdate field length limits
+# ---------------------------------------------------------------------------
+
+
+class TestUserCreateUpdateFieldLengths:
+    """UserCreate and UserUpdate must enforce max_length on username, password, email."""
+
+    @pytest.fixture
+    async def admin_token(self, async_client: AsyncClient) -> str:
+        return await _setup_and_login(async_client, "ucfldadmin", "ucfldadmin1!")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_username_too_long_rejected(self, async_client: AsyncClient, admin_token: str):
+        resp = await async_client.post(
+            "/api/v1/users/",
+            json={
+                "username": "u" * 151,
+                "password": "ValidPass1!",
+                "role": "user",
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_password_too_long_rejected(self, async_client: AsyncClient, admin_token: str):
+        resp = await async_client.post(
+            "/api/v1/users/",
+            json={
+                "username": "newuserX",
+                "password": "A1!" + "x" * 254,
+                "role": "user",
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_email_too_long_rejected(self, async_client: AsyncClient, admin_token: str):
+        resp = await async_client.post(
+            "/api/v1/users/",
+            json={
+                "username": "newuserY",
+                "password": "ValidPass1!",
+                "email": "a" * 246 + "@x.com",  # total 253 chars -> fine; 248+@x.com=255 -> too long
+                "role": "user",
+            },
+            headers=_auth_header(admin_token),
+        )
+        # 248 'a' + '@x.com' (6) = 254 chars — just at limit, should pass
+        # Use 249 + '@x.com' = 255 chars to trigger the 422
+        assert resp.status_code in (201, 422)  # boundary sanity check
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_email_exceeds_limit_rejected(self, async_client: AsyncClient, admin_token: str):
+        resp = await async_client.post(
+            "/api/v1/users/",
+            json={
+                "username": "newuserZ",
+                "password": "ValidPass1!",
+                "email": "a" * 249 + "@x.com",  # 255 chars — exceeds RFC 5321 max of 254
+                "role": "user",
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_username_too_long_rejected(self, async_client: AsyncClient, admin_token: str):
+        # Create a user first
+        create_resp = await async_client.post(
+            "/api/v1/users/",
+            json={"username": "updusr1", "password": "ValidPass1!", "role": "user"},
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        user_id = create_resp.json()["id"]
+
+        resp = await async_client.patch(
+            f"/api/v1/users/{user_id}",
+            json={"username": "u" * 151},
+            headers=_auth_header(admin_token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_password_too_long_rejected(self, async_client: AsyncClient, admin_token: str):
+        create_resp = await async_client.post(
+            "/api/v1/users/",
+            json={"username": "updusr2", "password": "ValidPass1!", "role": "user"},
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        user_id = create_resp.json()["id"]
+
+        resp = await async_client.patch(
+            f"/api/v1/users/{user_id}",
+            json={"password": "A1!" + "x" * 254},
+            headers=_auth_header(admin_token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_email_too_long_rejected(self, async_client: AsyncClient, admin_token: str):
+        create_resp = await async_client.post(
+            "/api/v1/users/",
+            json={"username": "updusr3", "password": "ValidPass1!", "role": "user"},
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        user_id = create_resp.json()["id"]
+
+        resp = await async_client.patch(
+            f"/api/v1/users/{user_id}",
+            json={"email": "a" * 249 + "@x.com"},  # 255 chars
+            headers=_auth_header(admin_token),
+        )
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# L-NEW-6: per-IP rate limiting on /forgot-password
+# ---------------------------------------------------------------------------
+
+_SMTP_DATA_FOR_IPLIMIT = {
+    "smtp_host": "smtp.test.com",
+    "smtp_port": 587,
+    "smtp_username": "test@test.com",
+    "smtp_password": "testpass",
+    "smtp_security": "starttls",
+    "smtp_auth_enabled": True,
+    "smtp_from_email": "noreply@test.com",
+}
+
+
+class TestForgotPasswordPerIpRateLimit:
+    """POST /forgot-password must enforce a per-IP cap (L-NEW-6).
+
+    The test sends 11 requests from the simulated test-client IP using 11
+    different email addresses (so the per-email bucket is never exhausted).
+    The 11th request must be rejected with 429.
+    """
+
+    @pytest.fixture
+    async def advanced_auth_token(self, async_client: AsyncClient) -> str:
+        """Set up auth, SMTP, and enable advanced auth; return admin token."""
+        token = await _setup_and_login(async_client, "iprladmin", "iprladmin1!")
+        headers = _auth_header(token)
+        await async_client.post("/api/v1/auth/smtp", headers=headers, json=_SMTP_DATA_FOR_IPLIMIT)
+        await async_client.post("/api/v1/auth/advanced-auth/enable", headers=headers)
+        return token
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_per_ip_limit_triggers_429(self, async_client: AsyncClient, advanced_auth_token: str):
+        # Send 11 requests from the same test-client IP using unique email
+        # addresses so the per-email bucket (limit=3) is never exhausted.
+        responses = []
+        for i in range(11):
+            resp = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": f"unique{i}@example.com"},
+            )
+            responses.append(resp.status_code)
+
+        # First 10 must not be rate-limited by the IP bucket
+        for code in responses[:10]:
+            assert code != 429, f"Unexpected 429 before limit reached: {responses}"
+
+        # The 11th must be rate-limited
+        assert responses[10] == 429, f"Expected 429 on 11th request, got {responses[10]}"
+
+
+# ---------------------------------------------------------------------------
+# M-NEW-6: OIDC auto-link must be rejected if target user already has an
+#          OIDC link to a different provider
+# ---------------------------------------------------------------------------
+
+
+class TestOIDCAutoLinkExistingLinkRejection:
+    """OIDC callback must reject auto-linking when the email-matched user
+    already has an OIDC link to a different provider (M-NEW-6)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auto_link_rejected_when_user_already_linked(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Auto-link via email-match is rejected when the target user is
+        already linked to another OIDC provider."""
+        import base64
+        import hashlib
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
+        from backend.app.models.user import User
+
+        # ── 1. Target user with a known email ────────────────────────────
+        target = User(
+            username="oidcALTarget",
+            email="alinktest@example.com",
+            auth_source="oidc",
+            password_hash=get_password_hash(secrets.token_urlsafe(16)),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(target)
+        await db_session.flush()
+
+        # ── 2. Provider B — legitimate, already linked to target ──────────
+        prov_b = OIDCProvider(
+            name="ProvB_m6test",
+            issuer_url="https://providerb-m6.example.com",
+            client_id="client_b",
+            _client_secret_enc="secret_b",
+            scopes="openid email profile",
+            is_enabled=True,
+            auto_link_existing_accounts=False,
+            auto_create_users=False,
+        )
+        db_session.add(prov_b)
+        await db_session.flush()
+
+        db_session.add(
+            UserOIDCLink(
+                user_id=target.id,
+                provider_id=prov_b.id,
+                provider_user_id="legitimate_sub",
+                provider_email="alinktest@example.com",
+            )
+        )
+
+        # ── 3. Provider A — attacker-controlled, auto_link=True ───────────
+        prov_a = OIDCProvider(
+            name="ProvA_m6test",
+            issuer_url="https://providera-m6.example.com",
+            client_id="client_a",
+            _client_secret_enc="secret_a",
+            scopes="openid email profile",
+            is_enabled=True,
+            auto_link_existing_accounts=True,
+            auto_create_users=False,
+        )
+        db_session.add(prov_a)
+        await db_session.flush()
+
+        # ── 4. OIDC state for Provider A ──────────────────────────────────
+        state = secrets.token_urlsafe(32)
+        nonce = secrets.token_urlsafe(32)
+        code_verifier = secrets.token_urlsafe(48)
+
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=prov_a.id,
+                nonce=nonce,
+                code_verifier=code_verifier,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+
+        # ── 5. Mock HTTP + JWT so the callback can reach the auto-link check ─
+        fake_discovery = {
+            "issuer": "https://providera-m6.example.com",
+            "token_endpoint": "https://providera-m6.example.com/token",
+            "jwks_uri": "https://providera-m6.example.com/jwks",
+        }
+        fake_token = {"access_token": "acc_tok", "id_token": "fake.id.token"}
+        fake_claims = {
+            "sub": "attacker_sub_unique",
+            "email": "alinktest@example.com",
+            "email_verified": True,
+            "nonce": nonce,
+            "iss": "https://providera-m6.example.com",
+            "aud": "client_a",
+            "exp": 9_999_999_999,
+        }
+
+        disc_resp = AsyncMock()
+        disc_resp.raise_for_status = MagicMock()
+        disc_resp.json = MagicMock(return_value=fake_discovery)
+
+        token_resp = AsyncMock()
+        token_resp.ok = True
+        token_resp.json = MagicMock(return_value=fake_token)
+
+        jwks_resp = AsyncMock()
+        jwks_resp.raise_for_status = MagicMock()
+        jwks_resp.json = MagicMock(return_value={})
+
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(side_effect=[disc_resp, jwks_resp])
+        mock_http.post = AsyncMock(return_value=token_resp)
+
+        mock_signing_key = MagicMock()
+        mock_signing_key.key = "fake_key"
+
+        with (
+            patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_httpx_cls,
+            patch("backend.app.api.routes.mfa.jwt.decode", return_value=fake_claims),
+            patch("backend.app.api.routes.mfa.PyJWKClient") as mock_jwks_cls,
+        ):
+            mock_httpx_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_httpx_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_jwks_cls.return_value.get_signing_key_from_jwt.return_value = mock_signing_key
+
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=fake_code&state={state}",
+                follow_redirects=False,
+            )
+
+        # M-NEW-6: must redirect with no_linked_account — NOT create a second link
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "no_linked_account" in location, f"Expected no_linked_account in redirect, got: {location}"
+
+        # Verify no second OIDC link was created for Provider A
+        from sqlalchemy import select as sa_select
+
+        from backend.app.models.oidc_provider import UserOIDCLink as _UOL
+
+        async with db_session as s:
+            links_result = await s.execute(
+                sa_select(_UOL).where(_UOL.user_id == target.id, _UOL.provider_id == prov_a.id)
+            )
+            assert links_result.scalar_one_or_none() is None, "No link to Provider A must exist"

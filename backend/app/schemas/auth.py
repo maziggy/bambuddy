@@ -32,8 +32,8 @@ class GroupBrief(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., max_length=150)
+    password: str = Field(..., max_length=256)
 
 
 class LoginResponse(BaseModel):
@@ -47,9 +47,9 @@ class LoginResponse(BaseModel):
 
 
 class UserCreate(BaseModel):
-    username: str
-    password: str | None = None  # Optional when advanced auth is enabled
-    email: str | None = None
+    username: str = Field(..., max_length=150)
+    password: str | None = Field(default=None, max_length=256)  # M-NEW-4: cap before pbkdf2
+    email: str | None = Field(default=None, max_length=254)  # L-NEW-5: RFC 5321 max
     role: str = "user"
     group_ids: list[int] | None = None
 
@@ -62,9 +62,9 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    username: str | None = None
-    password: str | None = None
-    email: str | None = None
+    username: str | None = Field(default=None, max_length=150)
+    password: str | None = Field(default=None, max_length=256)  # M-NEW-4: cap before pbkdf2
+    email: str | None = Field(default=None, max_length=254)  # L-NEW-5: RFC 5321 max
     role: str | None = None
     is_active: bool | None = None
     group_ids: list[int] | None = None
@@ -94,7 +94,7 @@ class UserResponse(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str
+    current_password: str = Field(..., max_length=256)  # M-NEW-3: cap before pbkdf2
     new_password: str = Field(..., min_length=8, max_length=256)
 
     @field_validator("new_password")
@@ -105,8 +105,8 @@ class ChangePasswordRequest(BaseModel):
 
 class SetupRequest(BaseModel):
     auth_enabled: bool
-    admin_username: str | None = None
-    admin_password: str | None = None
+    admin_username: str | None = Field(default=None, max_length=150)
+    admin_password: str | None = Field(default=None, max_length=256)
 
 
 class SetupResponse(BaseModel):
@@ -115,7 +115,7 @@ class SetupResponse(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: str
+    email: str = Field(..., max_length=254)  # L-NEW-1: RFC 5321 max; caps memory/CPU before lookup
 
 
 class ForgotPasswordConfirmRequest(BaseModel):
@@ -191,7 +191,7 @@ class TOTPSetupRequest(BaseModel):
     confirm intent — mirrors the verification requirement in disable_totp.
     """
 
-    code: str | None = None
+    code: str | None = Field(default=None, max_length=8)  # L-NEW-2: bound before pyotp
 
 
 class TOTPEnableRequest(BaseModel):
@@ -230,8 +230,18 @@ class EmailOTPEnableRequest(BaseModel):
 
 class TwoFAVerifyRequest(BaseModel):
     pre_auth_token: str = Field(..., max_length=128)
-    code: str = Field(..., max_length=128)
+    # TOTP/email codes are 6 digits; backup codes are 8 uppercase alphanumeric chars.
+    # max_length=8 prevents excessively long inputs from reaching pbkdf2/pyotp.
+    code: str = Field(..., min_length=6, max_length=8)
     method: Literal["totp", "email", "backup"] = "totp"
+
+    @field_validator("code")
+    @classmethod
+    def validate_code_format(cls, v: str) -> str:
+        v = v.strip()
+        if not re.match(r"^[A-Za-z0-9]{6,8}$", v):
+            raise ValueError("Code must be 6–8 alphanumeric characters")
+        return v.upper()  # normalise backup codes to uppercase
 
 
 class TwoFAVerifyResponse(BaseModel):
@@ -248,7 +258,16 @@ class EmailOTPEnableConfirmRequest(BaseModel):
     """Body for the second step of email OTP enable: verify the proof-of-possession code."""
 
     setup_token: str = Field(..., max_length=128)
-    code: str = Field(..., max_length=8, min_length=6)
+    # L-NEW-3: email OTP setup codes are always exactly 6 digits; reject anything else.
+    code: str = Field(..., min_length=6, max_length=6)
+
+    @field_validator("code")
+    @classmethod
+    def validate_code_digits(cls, v: str) -> str:
+        v = v.strip()
+        if not v.isdigit() or len(v) != 6:
+            raise ValueError("Email OTP setup code must be exactly 6 digits")
+        return v
 
 
 class EmailOTPDisableRequest(BaseModel):
@@ -281,14 +300,14 @@ def _validate_issuer_url(v: str | None) -> str | None:
 
 
 class OIDCProviderCreate(BaseModel):
-    name: str
+    name: str = Field(..., max_length=100)  # L-NEW-4
     issuer_url: str
-    client_id: str
-    client_secret: str
-    scopes: str = "openid email profile"
+    client_id: str = Field(..., max_length=256)  # L-NEW-4
+    client_secret: str = Field(..., max_length=512)  # L-NEW-4: Fernet input bounded
+    scopes: str = Field(default="openid email profile", max_length=256)  # L-NEW-4
     is_enabled: bool = True
     auto_create_users: bool = False
-    auto_link_existing_accounts: bool = True
+    auto_link_existing_accounts: bool = False  # M-2: conservative default, opt-in only
     icon_url: str | None = None
 
     @field_validator("issuer_url")
@@ -305,7 +324,7 @@ class OIDCProviderCreate(BaseModel):
 
 
 class OIDCProviderUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=100)
     issuer_url: str | None = None
 
     @field_validator("issuer_url")
@@ -313,9 +332,9 @@ class OIDCProviderUpdate(BaseModel):
     def validate_issuer_url(cls, v: str | None) -> str | None:
         return _validate_issuer_url(v)
 
-    client_id: str | None = None
-    client_secret: str | None = None
-    scopes: str | None = None
+    client_id: str | None = Field(default=None, max_length=256)
+    client_secret: str | None = Field(default=None, max_length=512)
+    scopes: str | None = Field(default=None, max_length=256)
     is_enabled: bool | None = None
     auto_create_users: bool | None = None
     auto_link_existing_accounts: bool | None = None
@@ -335,7 +354,7 @@ class OIDCProviderResponse(BaseModel):
     scopes: str
     is_enabled: bool
     auto_create_users: bool
-    auto_link_existing_accounts: bool = True
+    auto_link_existing_accounts: bool = False
     icon_url: str | None = None
 
     class Config:

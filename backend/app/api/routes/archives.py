@@ -1514,7 +1514,7 @@ async def create_archive_slicer_token(
     if not archive:
         raise HTTPException(404, "Archive not found")
 
-    token = create_slicer_download_token("archive", archive_id)
+    token = await create_slicer_download_token("archive", archive_id)
     return {"token": token}
 
 
@@ -1533,7 +1533,7 @@ async def download_archive_for_slicer(
     """
     from backend.app.core.auth import verify_slicer_download_token
 
-    if not verify_slicer_download_token(token, "archive", archive_id):
+    if not await verify_slicer_download_token(token, "archive", archive_id):
         raise HTTPException(403, "Invalid or expired download token")
 
     service = ArchiveService(db)
@@ -3512,7 +3512,7 @@ async def create_source_slicer_token(
     if not archive.source_3mf_path:
         raise HTTPException(404, "No source 3MF attached to this archive")
 
-    token = create_slicer_download_token("source", archive_id)
+    token = await create_slicer_download_token("source", archive_id)
     return {"token": token}
 
 
@@ -3530,7 +3530,7 @@ async def download_source_3mf_for_slicer_with_token(
     """
     from backend.app.core.auth import verify_slicer_download_token
 
-    if not verify_slicer_download_token(token, "source", archive_id):
+    if not await verify_slicer_download_token(token, "source", archive_id):
         raise HTTPException(403, "Invalid or expired download token")
 
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))

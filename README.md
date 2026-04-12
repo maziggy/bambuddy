@@ -207,6 +207,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - **Local Profiles** - Import OrcaSlicer presets (`.orca_filament`, `.bbscfg`, `.bbsflmt`, `.zip`, `.json`) without Bambu Cloud
 - K-profiles (pressure advance)
 - **GitHub backup** - Schedule automatic backups of cloud profiles, k profiles and settings to GitHub
+- **Scheduled local backups** - Automatic backup snapshots on hourly/daily/weekly schedule with retention management and NAS-mountable output
 - External sidebar links
 - Webhooks & API keys
 - Interactive API browser with live testing

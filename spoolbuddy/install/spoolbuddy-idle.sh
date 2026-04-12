@@ -85,13 +85,45 @@ if [ -n "$BACKEND_URL" ] && [ -n "$API_KEY" ] && [ -n "$DEVICE_ID" ]; then
     fi
 fi
 
+# FIFO for the SpoolBuddy daemon to request display wake from outside the
+# Wayland session (NFC tag scan, scale weight change).  The daemon writes
+# "wake\n" to this pipe; the monitor loop below calls wlopm --on.
+WAKE_FIFO="/tmp/spoolbuddy-wake"
+rm -f "$WAKE_FIFO"
+mkfifo -m 622 "$WAKE_FIFO"
+echo "wake FIFO created at $WAKE_FIFO"
+
 if [ "$TIMEOUT" -le 0 ]; then
-    # Blanking explicitly disabled — don't launch swayidle at all.
-    echo "timeout<=0, sleeping forever"
-    exec sleep infinity
+    # Blanking explicitly disabled — just monitor the wake FIFO so NFC/scale
+    # wake still works even without swayidle.
+    echo "timeout<=0, monitoring wake FIFO only (no swayidle)"
+    while read -r _ < "$WAKE_FIFO"; do
+        wlopm --on "$OUTPUT" 2>/dev/null || true
+    done
+    exit 0
 fi
 
-echo "execing swayidle with timeout=$TIMEOUT output=$OUTPUT"
-exec swayidle -w \
+echo "starting swayidle with timeout=$TIMEOUT output=$OUTPUT"
+swayidle -w \
     timeout "$TIMEOUT" "wlopm --off $OUTPUT" \
-    resume "wlopm --on $OUTPUT"
+    resume "wlopm --on $OUTPUT" &
+SWAYIDLE_PID=$!
+
+# Monitor wake FIFO — when the daemon writes to it, turn the display on
+# and schedule a re-blank after TIMEOUT seconds (swayidle doesn't know about
+# FIFO wakes so it won't re-blank on its own).
+REBLANK_PID=""
+while read -r _ < "$WAKE_FIFO"; do
+    wlopm --on "$OUTPUT" 2>/dev/null || true
+    # Cancel any pending re-blank timer, then start a new one
+    [ -n "$REBLANK_PID" ] && kill "$REBLANK_PID" 2>/dev/null || true
+    (sleep "$TIMEOUT" && wlopm --off "$OUTPUT" 2>/dev/null) &
+    REBLANK_PID=$!
+done &
+FIFO_PID=$!
+
+# If either process exits, clean up and exit.
+wait -n "$SWAYIDLE_PID" "$FIFO_PID" 2>/dev/null
+echo "child exited, cleaning up"
+kill "$SWAYIDLE_PID" "$FIFO_PID" 2>/dev/null || true
+rm -f "$WAKE_FIFO"

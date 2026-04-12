@@ -845,6 +845,12 @@ export interface AppSettings {
   ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
   drying_presets: string;  // JSON blob of drying presets per filament type
   gcode_snippets: string;  // JSON: per-model G-code injection snippets
+  // Scheduled local backup
+  local_backup_enabled: boolean;
+  local_backup_schedule: string;
+  local_backup_time: string;
+  local_backup_retention: number;
+  local_backup_path: string;
   // Print modal settings
   per_printer_mapping_expanded: boolean;  // Whether custom mapping is expanded by default in print modal
   // Date/time format settings
@@ -1812,6 +1818,26 @@ export interface GitHubBackupStatus {
   last_backup_at: string | null;
   last_backup_status: string | null;
   next_scheduled_run: string | null;
+}
+
+export interface LocalBackupStatus {
+  enabled: boolean;
+  schedule: string;
+  time: string;
+  retention: number;
+  path: string;
+  default_path: string;
+  is_running: boolean;
+  last_backup_at: string | null;
+  last_status: string | null;
+  last_message: string | null;
+  next_run: string | null;
+}
+
+export interface LocalBackupFile {
+  filename: string;
+  size: number;
+  created_at: string;
 }
 
 export interface GitHubTestConnectionResponse {
@@ -4631,6 +4657,31 @@ export const api = {
 
   clearGitHubBackupLogs: (keepLast: number = 10) =>
     request<{ deleted: number; message: string }>(`/github-backup/logs?keep_last=${keepLast}`, { method: 'DELETE' }),
+
+  // Scheduled local backups
+  getLocalBackupStatus: () =>
+    request<LocalBackupStatus>('/local-backup/status'),
+
+  triggerLocalBackup: () =>
+    request<{ success: boolean; message: string; filename?: string }>('/local-backup/run', { method: 'POST' }),
+
+  getLocalBackups: () =>
+    request<LocalBackupFile[]>('/local-backup/backups'),
+
+  downloadLocalBackup: async (filename: string): Promise<{ blob: Blob; filename: string }> => {
+    const response = await fetch(`${API_BASE}/local-backup/backups/${encodeURIComponent(filename)}/download`, {
+      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+    });
+    if (!response.ok) throw new Error('Download failed');
+    const blob = await response.blob();
+    return { blob, filename };
+  },
+
+  restoreLocalBackup: (filename: string) =>
+    request<{ success: boolean; message: string }>(`/local-backup/backups/${encodeURIComponent(filename)}/restore`, { method: 'POST' }),
+
+  deleteLocalBackup: (filename: string) =>
+    request<{ success: boolean; message: string }>(`/local-backup/backups/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
 
   // Local Presets (OrcaSlicer imports)
   getLocalPresets: () =>

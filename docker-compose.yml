@@ -38,6 +38,11 @@ services:
       # Share virtual printer certs with native installation
       # This ensures the slicer only needs to trust one CA certificate.
       - ./virtual_printer:/app/data/virtual_printer
+      #
+      # Mount scheduled backup output to NAS or external storage
+      # Backups default to DATA_DIR/backups/ inside the data volume.
+      # Uncomment to store them externally (e.g. on a NAS share).
+      #- /path/to/nas/bambuddy-backups:/app/data/backups
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # Port BamBuddy runs on (default: 8000)

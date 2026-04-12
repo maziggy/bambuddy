@@ -90,6 +90,13 @@ class AppSettings(BaseModel):
         description="JSON: per-model G-code injection snippets {model: {start_gcode, end_gcode}}",
     )
 
+    # Scheduled local backup (#884)
+    local_backup_enabled: bool = Field(default=False, description="Enable scheduled local backups")
+    local_backup_schedule: str = Field(default="daily", description="Backup frequency: hourly, daily, weekly")
+    local_backup_time: str = Field(default="03:00", description="Time of day for daily/weekly backups (HH:MM, 24h)")
+    local_backup_retention: int = Field(default=5, description="Number of backup files to keep (1-100)")
+    local_backup_path: str = Field(default="", description="Backup output directory (empty = DATA_DIR/backups)")
+
     # Print modal settings
     per_printer_mapping_expanded: bool = Field(
         default=False, description="Expand custom filament mapping by default in print modal"
@@ -334,6 +341,11 @@ class AppSettingsUpdate(BaseModel):
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
     gcode_snippets: str | None = None
+    local_backup_enabled: bool | None = None
+    local_backup_schedule: str | None = None
+    local_backup_time: str | None = None
+    local_backup_retention: int | None = None
+    local_backup_path: str | None = None
     ldap_enabled: bool | None = None
     ldap_server_url: str | None = None
     ldap_bind_dn: str | None = None

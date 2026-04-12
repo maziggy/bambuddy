@@ -1,11 +1,12 @@
 import io
 import logging
+import os
 import zipfile
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -350,129 +351,142 @@ async def get_homeassistant_settings(db: AsyncSession) -> dict:
     }
 
 
-@router.get("/backup")
-async def create_backup(
-    db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_BACKUP),
-):
-    """Create a complete backup (database + all files) as a ZIP.
+async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]:
+    """Create a complete backup ZIP (database + all data directories).
 
-    Includes the database (SQLite file or PostgreSQL pg_dump) and all data directories.
+    If output_path is given, the ZIP is written there.
+    Otherwise a temporary file is created (caller must clean up).
+    Returns (zip_path, filename).
     """
     import shutil
     import tempfile
 
     from backend.app.core.db_dialect import is_sqlite
 
-    try:
-        base_dir = app_settings.base_dir
+    base_dir = app_settings.base_dir
+    filename = f"bambuddy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
 
-            if is_sqlite():
-                from sqlalchemy import text
+        if is_sqlite():
+            from sqlalchemy import text
 
-                from backend.app.core.database import engine
+            from backend.app.core.database import engine
 
-                db_path = Path(app_settings.database_url.replace("sqlite+aiosqlite:///", ""))
+            db_path = Path(app_settings.database_url.replace("sqlite+aiosqlite:///", ""))
 
-                # Checkpoint WAL to ensure all data is in main db file
-                async with engine.begin() as conn:
-                    await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+            # Checkpoint WAL to ensure all data is in main db file
+            async with engine.begin() as conn:
+                await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
 
-                # Copy database file
-                shutil.copy2(db_path, temp_path / "bambuddy.db")
-            else:
-                # PostgreSQL: export to a portable SQLite file via SQLAlchemy.
-                # This makes backups restorable on both SQLite and Postgres installs.
-                import sqlite3
+            # Copy database file
+            shutil.copy2(db_path, temp_path / "bambuddy.db")
+        else:
+            # PostgreSQL: export to a portable SQLite file via SQLAlchemy.
+            # This makes backups restorable on both SQLite and Postgres installs.
+            import json
+            import sqlite3
 
-                from backend.app.core.database import Base, engine
+            from backend.app.core.database import Base, engine
 
-                backup_db_path = temp_path / "bambuddy.db"
-                dst = sqlite3.connect(str(backup_db_path))
-                metadata = Base.metadata
+            backup_db_path = temp_path / "bambuddy.db"
+            dst = sqlite3.connect(str(backup_db_path))
+            metadata = Base.metadata
 
-                # Create tables in SQLite backup (simplified — just column names and types)
+            # Create tables in SQLite backup (simplified — just column names and types)
+            for table in metadata.sorted_tables:
+                cols = []
+                pk_cols = [col.name for col in table.columns if col.primary_key]
+                for col in table.columns:
+                    col_type = "TEXT"  # Default
+                    type_str = str(col.type).upper()
+                    if "INT" in type_str:
+                        col_type = "INTEGER"
+                    elif "FLOAT" in type_str or "REAL" in type_str or "NUMERIC" in type_str:
+                        col_type = "REAL"
+                    elif "BOOL" in type_str:
+                        col_type = "BOOLEAN"
+                    # Only inline PRIMARY KEY for single-column PKs
+                    pk = " PRIMARY KEY" if col.primary_key and len(pk_cols) == 1 else ""
+                    cols.append(f"{col.name} {col_type}{pk}")
+                # Add composite primary key constraint if needed
+                if len(pk_cols) > 1:
+                    cols.append(f"PRIMARY KEY ({', '.join(pk_cols)})")
+                dst.execute(f"CREATE TABLE IF NOT EXISTS {table.name} ({', '.join(cols)})")  # noqa: S608
+
+            # Export data from Postgres to SQLite
+            async with engine.connect() as conn:
                 for table in metadata.sorted_tables:
-                    cols = []
-                    pk_cols = [col.name for col in table.columns if col.primary_key]
-                    for col in table.columns:
-                        col_type = "TEXT"  # Default
-                        type_str = str(col.type).upper()
-                        if "INT" in type_str:
-                            col_type = "INTEGER"
-                        elif "FLOAT" in type_str or "REAL" in type_str or "NUMERIC" in type_str:
-                            col_type = "REAL"
-                        elif "BOOL" in type_str:
-                            col_type = "BOOLEAN"
-                        # Only inline PRIMARY KEY for single-column PKs
-                        pk = " PRIMARY KEY" if col.primary_key and len(pk_cols) == 1 else ""
-                        cols.append(f"{col.name} {col_type}{pk}")
-                    # Add composite primary key constraint if needed
-                    if len(pk_cols) > 1:
-                        cols.append(f"PRIMARY KEY ({', '.join(pk_cols)})")
-                    dst.execute(f"CREATE TABLE IF NOT EXISTS {table.name} ({', '.join(cols)})")  # noqa: S608
+                    result = await conn.execute(table.select())
+                    rows = result.fetchall()
+                    if not rows:
+                        continue
+                    columns = list(result.keys())
+                    placeholders = ", ".join(["?"] * len(columns))
+                    col_list = ", ".join(columns)
+                    insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
 
-                # Export data from Postgres to SQLite
-                async with engine.connect() as conn:
-                    for table in metadata.sorted_tables:
-                        result = await conn.execute(table.select())
-                        rows = result.fetchall()
-                        if not rows:
-                            continue
-                        columns = list(result.keys())
-                        placeholders = ", ".join(["?"] * len(columns))
-                        col_list = ", ".join(columns)
-                        insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
-                        import json
+                    def _serialize_row(row):
+                        return tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row)
 
-                        def _serialize_row(row):
-                            return tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row)
+                    dst.executemany(insert_sql, [_serialize_row(row) for row in rows])
 
-                        dst.executemany(insert_sql, [_serialize_row(row) for row in rows])
+            dst.commit()
+            dst.close()
+            logger.info("PostgreSQL backup exported to portable SQLite format")
 
-                dst.commit()
-                dst.close()
-                logger.info("PostgreSQL backup exported to portable SQLite format")
+        # Copy data directories (if they exist)
+        dirs_to_backup = [
+            ("archive", base_dir / "archive"),
+            ("virtual_printer", base_dir / "virtual_printer"),
+            ("plate_calibration", app_settings.plate_calibration_dir),
+            ("icons", base_dir / "icons"),
+            ("projects", base_dir / "projects"),
+        ]
 
-            # 3. Copy data directories (if they exist)
-            dirs_to_backup = [
-                ("archive", base_dir / "archive"),
-                ("virtual_printer", base_dir / "virtual_printer"),
-                ("plate_calibration", app_settings.plate_calibration_dir),
-                ("icons", base_dir / "icons"),
-                ("projects", base_dir / "projects"),
-            ]
+        for name, src_dir in dirs_to_backup:
+            if src_dir.exists() and any(src_dir.iterdir()):
+                try:
+                    shutil.copytree(src_dir, temp_path / name)
+                except shutil.Error as e:
+                    logger.warning("Some files in %s could not be copied: %s", name, e)
+                except PermissionError as e:
+                    logger.warning("Permission denied copying %s: %s", name, e)
 
-            for name, src_dir in dirs_to_backup:
-                if src_dir.exists() and any(src_dir.iterdir()):
-                    try:
-                        shutil.copytree(src_dir, temp_path / name)
-                    except shutil.Error as e:
-                        # Some files may have restricted permissions (e.g., SSL keys)
-                        # Log the error but continue with partial backup
-                        logger.warning("Some files in %s could not be copied: %s", name, e)
-                    except PermissionError as e:
-                        logger.warning("Permission denied copying %s: %s", name, e)
+        # Create ZIP
+        if output_path is not None:
+            zip_file = output_path / filename
+        else:
+            fd, tmp = tempfile.mkstemp(suffix=".zip")
+            os.close(fd)
+            zip_file = Path(tmp)
 
-            # 4. Create ZIP
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for file_path in temp_path.rglob("*"):
-                    if file_path.is_file():
-                        arcname = file_path.relative_to(temp_path)
-                        zf.write(file_path, arcname)
+        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path in temp_path.rglob("*"):
+                if file_path.is_file():
+                    arcname = file_path.relative_to(temp_path)
+                    zf.write(file_path, arcname)
 
-            zip_buffer.seek(0)
-            filename = f"bambuddy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+    return zip_file, filename
 
-            return StreamingResponse(
-                zip_buffer,
-                media_type="application/zip",
-                headers={"Content-Disposition": f"attachment; filename={filename}"},
-            )
+
+@router.get("/backup")
+async def create_backup(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_BACKUP),
+):
+    """Create a complete backup (database + all files) as a ZIP download."""
+    from starlette.background import BackgroundTask
+
+    try:
+        zip_file, filename = await create_backup_zip()
+        return FileResponse(
+            path=zip_file,
+            filename=filename,
+            media_type="application/zip",
+            background=BackgroundTask(lambda: zip_file.unlink(missing_ok=True)),
+        )
     except Exception as e:
         logger.error("Backup failed: %s", e, exc_info=True)
         return JSONResponse(
@@ -524,7 +538,7 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
             if fks:
                 saved_fks[table.name] = fks
                 for fk in fks:
-                    table.constraints.remove(fk)
+                    table.constraints.discard(fk)
 
         async with pg_engine.begin() as conn:
             await conn.run_sync(metadata.drop_all)

@@ -28,6 +28,7 @@ from backend.app.api.routes import (
     inventory,
     kprofiles,
     library,
+    local_backup,
     local_presets,
     maintenance,
     metrics,
@@ -64,6 +65,7 @@ from backend.app.services.bambu_ftp import download_file_async, get_ftp_retry_se
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.homeassistant import homeassistant_service
+from backend.app.services.local_backup import local_backup_service
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
 from backend.app.services.notification_service import notification_service
@@ -4004,6 +4006,9 @@ async def lifespan(app: FastAPI):
     # Start the GitHub backup scheduler
     await github_backup_service.start_scheduler()
 
+    # Start the local backup scheduler
+    await local_backup_service.start_scheduler()
+
     # Start AMS history recording
     start_ams_history_recording()
 
@@ -4041,6 +4046,7 @@ async def lifespan(app: FastAPI):
     smart_plug_manager.stop_scheduler()
     notification_service.stop_digest_scheduler()
     github_backup_service.stop_scheduler()
+    local_backup_service.stop_scheduler()
     stop_ams_history_recording()
     stop_runtime_tracking()
     stop_spoolbuddy_watchdog()
@@ -4327,6 +4333,7 @@ app.include_router(discovery.router, prefix=app_settings.api_prefix)
 app.include_router(pending_uploads.router, prefix=app_settings.api_prefix)
 app.include_router(firmware.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
+app.include_router(local_backup.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
 app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
 app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)

@@ -3592,6 +3592,29 @@ export default {
     noDataFound: 'No data was found to restore in the backup file.',
     close: 'Close',
 
+    // Scheduled local backups (#884)
+    scheduledBackup: 'Scheduled Backups',
+    scheduledBackupDescription: 'Automatically create backup snapshots on a schedule. Output directory can be mounted to a NAS or external storage.',
+    frequency: 'Frequency',
+    backupTime: 'Time',
+    retention: 'Retention',
+    retentionDescription: 'Number of backups to keep',
+    outputPath: 'Output Path',
+    outputPathPlaceholder: 'Default: {{path}}',
+    outputPathDescription: 'Leave empty for default location',
+    runNow: 'Run Now',
+    backupFiles: 'Backup Files',
+    noScheduledBackups: 'No backups yet',
+    deleteBackup: 'Delete',
+    deleteBackupConfirm: 'Delete this backup file?',
+    backupRunning: 'Backup in progress...',
+    scheduledBackupComplete: 'Backup completed successfully',
+    scheduledBackupFailed: 'Backup failed',
+    nextBackup: 'Next backup',
+    backupSize: 'Size',
+    utc: 'UTC',
+    defaultPathLabel: 'Default:',
+
     // Category labels
     categories: {
       settings: 'Settings',

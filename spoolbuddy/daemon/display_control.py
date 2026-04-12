@@ -2,17 +2,23 @@
 
 Brightness: DSI backlights are controlled via sysfs /sys/class/backlight/*/brightness.
             HDMI brightness is handled by the frontend via CSS filter.
-Blanking:   Handled entirely by the frontend (CSS black overlay with touch-to-wake).
-            The daemon tracks idle state but does not control the physical display.
+Blanking:   swayidle is the sole authority on screen blanking (idle timeout →
+            wlopm --off, touch → wlopm --on).  The daemon wakes the display by
+            writing to a FIFO that the idle watchdog monitors — the watchdog
+            runs inside the Wayland session and calls wlopm --on on behalf of
+            the daemon.
 """
 
 import logging
+import os
+import stat
 import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 BACKLIGHT_BASE = Path("/sys/class/backlight")
+WAKE_FIFO = Path("/tmp/spoolbuddy-wake")
 
 
 class DisplayControl:
@@ -71,25 +77,43 @@ class DisplayControl:
         self._blank_timeout = max(0, seconds)
 
     def wake(self):
-        """Wake screen on activity (NFC tag, scale weight change)."""
+        """Wake screen on activity (NFC tag, scale weight change).
+
+        Writes to /tmp/spoolbuddy-wake FIFO which the idle watchdog
+        (spoolbuddy-idle.sh) monitors inside the Wayland session.  The
+        watchdog calls wlopm --on on our behalf.  No-op if the FIFO
+        doesn't exist (kiosk not running or blanking disabled without FIFO).
+        """
         self._last_activity = time.monotonic()
-        if self._blanked:
-            self._unblank()
+        self._blanked = False
+        self._signal_wake()
 
     def tick(self):
-        """Called periodically from heartbeat loop. Blanks screen if idle."""
+        """Called periodically from heartbeat loop. Tracks idle state internally."""
         if self._blank_timeout <= 0:
-            if self._blanked:
-                self._unblank()
+            self._blanked = False
             return
         idle = time.monotonic() - self._last_activity
         if not self._blanked and idle >= self._blank_timeout:
-            self._blank()
+            self._blanked = True
+            logger.debug("Screen idle timeout reached (swayidle manages blanking)")
 
-    def _blank(self):
-        self._blanked = True
-        logger.debug("Screen idle timeout reached (frontend handles blanking)")
-
-    def _unblank(self):
-        self._blanked = False
-        logger.debug("Activity detected (frontend handles unblanking)")
+    def _signal_wake(self) -> None:
+        """Write to the wake FIFO to request display power-on."""
+        if not WAKE_FIFO.exists():
+            return
+        try:
+            # Verify it's actually a FIFO, not a regular file
+            if not stat.S_ISFIFO(WAKE_FIFO.stat().st_mode):
+                return
+            # Open non-blocking so we don't hang if no reader is attached
+            fd = os.open(str(WAKE_FIFO), os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                os.write(fd, b"wake\n")
+                logger.info("Wake signal sent via FIFO")
+            finally:
+                os.close(fd)
+        except OSError as e:
+            # ENXIO = no reader on the FIFO (idle script not running) — expected
+            if e.errno != 6:  # ENXIO
+                logger.debug("Wake FIFO write failed: %s", e)

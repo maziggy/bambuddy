@@ -74,3 +74,4 @@ spoolbuddy/ssh/
 debug_logs/
 db_backup/
 support-packages/
+backups/

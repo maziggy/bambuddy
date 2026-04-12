@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Trash2,
   RotateCcw,
+  FolderArchive,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -26,6 +27,8 @@ import type {
   GitHubBackupLog,
   GitHubBackupStatus,
   GitHubBackupTriggerResponse,
+  LocalBackupFile,
+  LocalBackupStatus,
   ScheduleType,
   CloudAuthStatus,
   Printer,
@@ -99,6 +102,80 @@ export function GitHubBackupSettings() {
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreResult, setRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Scheduled local backup state
+  const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null);
+  const [restoreConfirmFile, setRestoreConfirmFile] = useState<string | null>(null);
+  const [localBackupPath, setLocalBackupPath] = useState('');
+
+  const { data: localBackupStatus, refetch: refetchLocalStatus } = useQuery<LocalBackupStatus>({
+    queryKey: ['local-backup-status'],
+    queryFn: api.getLocalBackupStatus,
+    refetchInterval: (query) => query.state.data?.is_running ? 1000 : 10000,
+  });
+
+  const { data: localBackups, refetch: refetchLocalBackups } = useQuery<LocalBackupFile[]>({
+    queryKey: ['local-backup-files'],
+    queryFn: api.getLocalBackups,
+    refetchInterval: 30000,
+  });
+
+  // Sync local path state from server
+  useEffect(() => {
+    if (localBackupStatus?.path !== undefined) {
+      setLocalBackupPath(localBackupStatus.path);
+    }
+  }, [localBackupStatus?.path]);
+
+  const triggerLocalBackupMutation = useMutation({
+    mutationFn: api.triggerLocalBackup,
+    onSuccess: (data) => {
+      if (data.success) {
+        showToast(t('backup.scheduledBackupComplete'));
+      } else {
+        showToast(data.message, 'error');
+      }
+      refetchLocalStatus();
+      refetchLocalBackups();
+    },
+    onError: () => showToast(t('backup.scheduledBackupFailed'), 'error'),
+  });
+
+  const deleteLocalBackupMutation = useMutation({
+    mutationFn: (filename: string) => api.deleteLocalBackup(filename),
+    onSuccess: () => {
+      refetchLocalBackups();
+      setDeleteConfirmFile(null);
+    },
+  });
+
+  const restoreLocalBackupMutation = useMutation({
+    mutationFn: async (filename: string) => {
+      setRestoreConfirmFile(null);
+      setIsRestoring(true);
+      setRestoreResult(null);
+      setOperationStatus(t('backup.restoring'));
+      return api.restoreLocalBackup(filename);
+    },
+    onSuccess: (data) => {
+      setIsRestoring(false);
+      setOperationStatus('');
+      if (data.success) {
+        setRestoreResult({ success: true, message: data.message });
+        showToast(t('backup.backupRestoredRestart'), 'success');
+      } else {
+        setRestoreResult({ success: false, message: data.message });
+        showToast(data.message, 'error');
+      }
+    },
+    onError: (e) => {
+      setIsRestoring(false);
+      setOperationStatus('');
+      const msg = e instanceof Error ? e.message : t('backup.failedToRestore');
+      setRestoreResult({ success: false, message: msg });
+      showToast(msg, 'error');
+    },
+  });
 
   // Block navigation while backup/restore is in progress
   useEffect(() => {
@@ -845,7 +922,250 @@ export function GitHubBackupSettings() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Scheduled Local Backups */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FolderArchive className="w-5 h-5 text-gray-400" />
+                <h2 className="text-lg font-semibold text-white">{t('backup.scheduledBackup')}</h2>
+              </div>
+              <Toggle
+                checked={localBackupStatus?.enabled ?? false}
+                onChange={async (checked) => {
+                  try {
+                    await api.updateSettings({ local_backup_enabled: checked });
+                    showToast(t('backup.settingsSaved'));
+                  } catch (e) {
+                    showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                  }
+                  refetchLocalStatus();
+                }}
+              />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-bambu-gray">
+              {t('backup.scheduledBackupDescription')}
+            </p>
+
+            {localBackupStatus?.enabled && (
+              <>
+                {/* Schedule + Time + Retention */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('backup.frequency')}</label>
+                    <select
+                      value={localBackupStatus?.schedule ?? 'daily'}
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      onChange={async (e) => {
+                        try {
+                          await api.updateSettings({ local_backup_schedule: e.target.value });
+                          showToast(t('backup.settingsSaved'));
+                        } catch (e) {
+                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                        }
+                        refetchLocalStatus();
+                      }}
+                    >
+                      <option value="hourly">{t('backup.hourly')}</option>
+                      <option value="daily">{t('backup.daily')}</option>
+                      <option value="weekly">{t('backup.weekly')}</option>
+                    </select>
+                  </div>
+                  {(localBackupStatus?.schedule ?? 'daily') !== 'hourly' && (
+                    <div>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('backup.backupTime')}</label>
+                      <input
+                        type="time"
+                        value={localBackupStatus?.time ?? '03:00'}
+                        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none [color-scheme:dark]"
+                        onChange={async (e) => {
+                          try {
+                            await api.updateSettings({ local_backup_time: e.target.value });
+                            showToast(t('backup.settingsSaved'));
+                          } catch (err) {
+                            showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : 'Unknown error' }), 'error');
+                          }
+                          refetchLocalStatus();
+                        }}
+                      />
+                      <p className="text-xs text-bambu-gray-light mt-1">{t('backup.utc')}</p>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('backup.retention')}</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={localBackupStatus?.retention ?? 5}
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      onChange={async (e) => {
+                        const val = Math.max(1, Math.min(100, parseInt(e.target.value) || 5));
+                        try {
+                          await api.updateSettings({ local_backup_retention: val });
+                          showToast(t('backup.settingsSaved'));
+                        } catch (e) {
+                          showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');
+                        }
+                        refetchLocalStatus();
+                      }}
+                    />
+                    <p className="text-xs text-bambu-gray-light mt-1">{t('backup.retentionDescription')}</p>
+                  </div>
+                </div>
+
+                {/* Output Path */}
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">{t('backup.outputPath')}</label>
+                  <input
+                    type="text"
+                    value={localBackupPath}
+                    onChange={(e) => setLocalBackupPath(e.target.value)}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    onBlur={async () => {
+                      try {
+                        await api.updateSettings({ local_backup_path: localBackupPath });
+                        showToast(t('backup.settingsSaved'));
+                      } catch (err) {
+                        showToast(t('backup.failedToSave', { message: err instanceof Error ? err.message : 'Unknown error' }), 'error');
+                      }
+                      refetchLocalStatus();
+                      refetchLocalBackups();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                    }}
+                  />
+                  <p className="text-xs text-bambu-gray-light mt-1">
+                    {localBackupPath
+                      ? t('backup.outputPathDescription')
+                      : <>{t('backup.defaultPathLabel')} <code className="text-bambu-gray">{localBackupStatus?.default_path || '...'}</code></>
+                    }
+                  </p>
+                </div>
+
+                {/* Status + Run Now */}
+                <div className="flex items-center justify-between py-3 border-t border-bambu-dark-tertiary">
+                  <div className="text-sm">
+                    {localBackupStatus?.last_backup_at && (
+                      <div className="flex items-center gap-2 text-bambu-gray">
+                        <span>{t('backup.lastBackup')}:</span>
+                        <StatusBadge status={localBackupStatus.last_status} />
+                        <span>{formatRelativeTime(localBackupStatus.last_backup_at)}</span>
+                      </div>
+                    )}
+                    {localBackupStatus?.next_run && (
+                      <div className="text-bambu-gray mt-1">
+                        <span>{t('backup.nextBackup')}: </span>
+                        <span>{formatDateTime(localBackupStatus.next_run)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={localBackupStatus?.is_running || triggerLocalBackupMutation.isPending}
+                    onClick={() => triggerLocalBackupMutation.mutate()}
+                  >
+                    {localBackupStatus?.is_running || triggerLocalBackupMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                    {localBackupStatus?.is_running ? t('backup.backupRunning') : t('backup.runNow')}
+                  </Button>
+                </div>
+
+                {/* Backup Files List */}
+                {localBackups && localBackups.length > 0 && (
+                  <div className="border-t border-bambu-dark-tertiary pt-3">
+                    <h3 className="text-sm font-medium text-white mb-2">{t('backup.backupFiles')}</h3>
+                    <div className="space-y-1">
+                      {localBackups.map((file) => (
+                        <div key={file.filename} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-bambu-dark-tertiary/50 text-sm">
+                          <div className="flex-1 min-w-0">
+                            <span className="text-white truncate block">{file.filename}</span>
+                            <span className="text-bambu-gray text-xs">
+                              {(file.size / 1024 / 1024).toFixed(1)} MB &middot; {formatDateTime(file.created_at)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              className="text-bambu-gray hover:text-bambu-green p-1"
+                              title={t('backup.download')}
+                              onClick={async () => {
+                                try {
+                                  const { blob, filename: fname } = await api.downloadLocalBackup(file.filename);
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = fname;
+                                  a.click();
+                                  URL.revokeObjectURL(url);
+                                } catch {
+                                  showToast(t('backup.scheduledBackupFailed'), 'error');
+                                }
+                              }}
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              className="text-bambu-gray hover:text-yellow-400 p-1"
+                              title={t('backup.restore')}
+                              onClick={() => setRestoreConfirmFile(file.filename)}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              className="text-bambu-gray hover:text-red-400 p-1"
+                              onClick={() => setDeleteConfirmFile(file.filename)}
+                              title={t('backup.deleteBackup')}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {localBackups && localBackups.length === 0 && (
+                  <p className="text-sm text-bambu-gray text-center py-3 border-t border-bambu-dark-tertiary">
+                    {t('backup.noScheduledBackups')}
+                  </p>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Delete Backup Confirmation Modal */}
+      {deleteConfirmFile && (
+        <ConfirmModal
+          title={t('backup.deleteBackup')}
+          message={t('backup.deleteBackupConfirm')}
+          confirmText={t('backup.deleteBackup')}
+          variant="danger"
+          onConfirm={() => deleteLocalBackupMutation.mutate(deleteConfirmFile)}
+          onCancel={() => setDeleteConfirmFile(null)}
+        />
+      )}
+
+      {/* Restore from Scheduled Backup Confirmation Modal */}
+      {restoreConfirmFile && (
+        <ConfirmModal
+          title={t('backup.restoreConfirmTitle')}
+          message={t('backup.restoreConfirmMessage', { filename: restoreConfirmFile })}
+          confirmText={t('backup.restoreConfirmButton')}
+          variant="danger"
+          onConfirm={() => restoreLocalBackupMutation.mutate(restoreConfirmFile)}
+          onCancel={() => setRestoreConfirmFile(null)}
+        />
+      )}
 
       {/* Restore Confirmation Modal */}
       {showRestoreConfirm && restoreFile && (

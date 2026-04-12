@@ -18,7 +18,7 @@ aioftp>=0.22.0
 
 # Virtual Printer (emulates Bambu printer for slicer uploads)
 pyftpdlib>=2.0.0
-cryptography>=46.0.5
+cryptography>=46.0.7
 
 # SpoolBuddy remote SSH updates (pure-Python SSH client; avoids the
 # OpenSSH `ssh` binary which calls getpwuid() and fails in Docker when

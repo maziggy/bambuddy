@@ -1,0 +1,200 @@
+2026-04-12 09:55:07,890 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-04-12 09:55:15,773 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /space+rack+wide+complete_v3_lower_3x.3mf: 226
+2026-04-12 09:55:15,773 INFO [backend.app.services.bambu_ftp] FTP upload complete: /space+rack+wide+complete_v3_lower_3x.3mf (1325269 bytes in 7.9s, 163 KB/s)
+2026-04-12 09:55:15,773 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-12 09:55:15,826 INFO [backend.app.main] Registered expected print: printer=1, file=space+rack+wide+complete_v3_lower_3x.3mf, archive=60, ams_mapping=[1, 3]
+2026-04-12 09:55:15,828 INFO [backend.app.services.print_scheduler] Queue item 83: Status set to 'printing', sending print command...
+2026-04-12 09:55:15,828 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=space+rack+wide+complete_v3_lower_3x.3mf, caller=print_scheduler.py:216:check_queue
+2026-04-12 09:55:15,828 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_5.gcode", "url": "ftp://space+rack+wide+complete_v3_lower_3x.3mf", "file": "space+rack+wide+complete_v3_lower_3x.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "space+rack+wide+complete_v3_lower_3x", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [1, 3], "ams_mapping2": [{"ams_id": 0, "slot_id": 1}, {"ams_id": 0, "slot_id": 3}]}}
+2026-04-12 09:55:15,828 INFO [backend.app.services.print_scheduler] Queue item 83: Print started successfully - space+rack+wide+complete_v3_lower 3x.gcode.3mf
+2026-04-12 09:55:15,830 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 09:55:15,830 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=IDLE, plate_cleared=False
+2026-04-12 09:55:45,833 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 09:55:45,833 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 09:56:15,837 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 09:56:15,837 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 09:56:32,548 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 09:56:45,841 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 09:56:45,841 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 09:57:15,844 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 09:57:15,844 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 09:57:45,847 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 09:57:45,847 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 09:58:15,851 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 09:58:15,851 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 09:58:45,855 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 09:58:45,855 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 09:59:15,859 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 09:59:15,859 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 09:59:45,864 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 09:59:45,864 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:00:15,868 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:00:15,868 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:00:45,871 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:00:45,871 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:01:15,874 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:01:15,875 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:01:32,552 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 10:01:45,878 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:01:45,878 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:02:15,881 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:02:15,881 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:02:45,884 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:02:45,884 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:03:15,887 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:03:15,887 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:03:45,890 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:03:45,890 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:04:15,894 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:04:15,894 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:04:16,623 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFA01', 'GFA00']
+2026-04-12 10:04:45,897 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:04:45,897 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:05:15,900 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:05:15,900 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:05:45,902 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:05:45,902 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:06:15,906 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:06:15,906 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:06:32,558 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-12 10:06:45,908 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:06:45,909 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:07:15,911 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:07:15,911 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:07:45,914 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:07:45,914 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:08:15,919 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:08:15,919 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:08:41,196 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-12 10:08:41,196 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-12 10:08:41,196 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-12 10:08:41,246 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Queue (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-12 10:08:43,956 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-12 10:08:43,956 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 10:08:44,028 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:08:44,028 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -40dBm
+2026-04-12 10:08:45,922 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:08:45,922 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:08:46,051 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:08:48,087 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:08:48,087 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -41dBm
+2026-04-12 10:08:48,970 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-12 10:08:48,970 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 10:08:49,114 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sent stop print command
+2026-04-12 10:08:49,114 INFO [backend.app.main] Marked printer 1 as user-stopped from queue
+2026-04-12 10:08:49,116 INFO [backend.app.api.routes.print_queue] Stopped printing queue item 83 (stop command sent: True)
+2026-04-12 10:08:51,935 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-12 10:08:51,935 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 10:08:52,152 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:08:52,153 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -40dBm
+2026-04-12 10:08:53,900 INFO [backend.app.api.routes.print_queue] Added archive 60 to queue for 1
+2026-04-12 10:09:11,270 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Queue (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-12 10:09:12,512 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:09:12,512 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -41dBm
+2026-04-12 10:09:14,434 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:09:14,434 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -40dBm
+2026-04-12 10:09:15,925 INFO [backend.app.services.print_scheduler] Queue check: found 4 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None), (84, 1, 60, None)]
+2026-04-12 10:09:15,926 INFO [backend.app.services.print_scheduler] Starting queue item 84
+2026-04-12 10:09:15,929 INFO [backend.app.services.print_scheduler] Queue item 84: FTP upload starting - printer=[PRINTER] ([PRINTER]), ip=[IP], file=space+rack+wide+complete_v3_lower_3x.3mf, local_path=/app/data/archive/unassigned/20260407_182101_space+rack+wide+complete_v3_lower 3x.gcode/space+rack+wide+complete_v3_lower 3x.gcode.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-04-12 10:09:15,929 DEBUG [backend.app.services.print_scheduler] Queue item 84: Deleting existing file /space+rack+wide+complete_v3_lower_3x.3mf if present...
+2026-04-12 10:09:15,930 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=[PRINTER], prot_c=False)
+2026-04-12 10:09:16,699 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-12 10:09:16,727 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-12 10:09:16,748 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-12 10:09:16,748 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-12 10:09:16,801 DEBUG [backend.app.services.print_scheduler] Queue item 84: Delete result: True
+2026-04-12 10:09:16,801 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=[PRINTER], mode=prot_p, socket_timeout=30.0s)...
+2026-04-12 10:09:16,801 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=[PRINTER], prot_c=False)
+2026-04-12 10:09:17,774 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-12 10:09:17,791 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-12 10:09:17,806 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-12 10:09:17,806 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-12 10:09:17,806 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-12 10:09:17,806 INFO [backend.app.services.bambu_ftp] FTP uploading /app/data/archive/unassigned/20260407_182101_space+rack+wide+complete_v3_lower 3x.gcode/space+rack+wide+complete_v3_lower 3x.gcode.3mf (1325269 bytes) to /space+rack+wide+complete_v3_lower_3x.3mf
+2026-04-12 10:09:17,806 DEBUG [backend.app.services.bambu_ftp] FTP STOR command starting for /space+rack+wide+complete_v3_lower_3x.3mf
+2026-04-12 10:09:17,870 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-04-12 10:09:17,878 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 65536/1325269 bytes
+2026-04-12 10:09:17,936 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 131072/1325269 bytes
+2026-04-12 10:09:17,943 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 196608/1325269 bytes
+2026-04-12 10:09:18,046 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 262144/1325269 bytes
+2026-04-12 10:09:18,411 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 327680/1325269 bytes
+2026-04-12 10:09:18,818 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 393216/1325269 bytes
+2026-04-12 10:09:19,185 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 458752/1325269 bytes
+2026-04-12 10:09:19,525 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 524288/1325269 bytes
+2026-04-12 10:09:19,879 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 589824/1325269 bytes
+2026-04-12 10:09:20,231 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 655360/1325269 bytes
+2026-04-12 10:09:20,609 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 720896/1325269 bytes
+2026-04-12 10:09:20,937 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 786432/1325269 bytes
+2026-04-12 10:09:21,412 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 851968/1325269 bytes
+2026-04-12 10:09:21,719 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 917504/1325269 bytes
+2026-04-12 10:09:22,405 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 983040/1325269 bytes
+2026-04-12 10:09:22,667 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1048576/1325269 bytes
+2026-04-12 10:09:23,035 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1114112/1325269 bytes
+2026-04-12 10:09:23,392 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1179648/1325269 bytes
+2026-04-12 10:09:23,934 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1245184/1325269 bytes
+2026-04-12 10:09:24,306 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1310720/1325269 bytes
+2026-04-12 10:09:24,893 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1325269/1325269 bytes
+2026-04-12 10:09:24,893 DEBUG [backend.app.services.bambu_ftp] FTP upload: final chunk reached
+2026-04-12 10:09:25,898 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /space+rack+wide+complete_v3_lower_3x.3mf: 226
+2026-04-12 10:09:25,898 INFO [backend.app.services.bambu_ftp] FTP upload complete: /space+rack+wide+complete_v3_lower_3x.3mf (1325269 bytes in 8.1s, 160 KB/s)
+2026-04-12 10:09:25,898 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-12 10:09:25,915 INFO [backend.app.main] Registered expected print: printer=1, file=space+rack+wide+complete_v3_lower_3x.3mf, archive=60, ams_mapping=[1, 3]
+2026-04-12 10:09:25,917 INFO [backend.app.services.print_scheduler] Queue item 84: Status set to 'printing', sending print command...
+2026-04-12 10:09:25,917 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=space+rack+wide+complete_v3_lower_3x.3mf, caller=print_scheduler.py:216:check_queue
+2026-04-12 10:09:25,917 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_5.gcode", "url": "ftp://space+rack+wide+complete_v3_lower_3x.3mf", "file": "space+rack+wide+complete_v3_lower_3x.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "space+rack+wide+complete_v3_lower_3x", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [1, 3], "ams_mapping2": [{"ams_id": 0, "slot_id": 1}, {"ams_id": 0, "slot_id": 3}]}}
+2026-04-12 10:09:25,918 INFO [backend.app.services.print_scheduler] Queue item 84: Print started successfully - space+rack+wide+complete_v3_lower 3x.gcode.3mf
+2026-04-12 10:09:25,919 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:09:25,919 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=IDLE, plate_cleared=False
+2026-04-12 10:09:25,936 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:09:25,936 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -41dBm
+2026-04-12 10:09:32,017 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:09:32,018 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -40dBm
+2026-04-12 10:09:34,042 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:09:35,743 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-12 10:09:35,743 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 10:09:37,568 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFA01', 'GFA00']
+2026-04-12 10:09:37,571 DEBUG [httpcore.connection] close.started
+2026-04-12 10:09:37,572 DEBUG [httpcore.connection] close.complete
+2026-04-12 10:09:37,572 DEBUG [httpcore.connection] connect_tcp.started host='api.bambulab.com' port=443 local_address=None timeout=30.0 socket_options=None
+2026-04-12 10:09:37,598 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7205d0367250>
+2026-04-12 10:09:37,598 DEBUG [httpcore.connection] start_tls.started ssl_context=<ssl.SSLContext object at 0x7205d260d630> server_hostname='api.bambulab.com' timeout=30.0
+2026-04-12 10:09:37,615 DEBUG [httpcore.connection] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7205af49b610>
+2026-04-12 10:09:37,615 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 10:09:37,616 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 10:09:37,616 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 10:09:37,616 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 10:09:37,616 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 10:09:37,701 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 12 Apr 2026 15:09:37 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'b3', b'ea1b59f805fc3df7e865b90d53230b06-c96373271b5b7fe7-1'), (b'traceparent', b'00-ea1b59f805fc3df7e865b90d53230b06-c96373271b5b7fe7-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'53a4753c-4ee8-49bb-9145-b42f38affba2'), (b'x-xss-protection', b'1; mode=block'), (b'x-frame-options', b'SAMEORIGIN'), (b'cf-cache-status', b'DYNAMIC'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'9eb327362a98ad14-MSP'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 10:09:37,702 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSA01 "HTTP/1.1 200 OK"
+2026-04-12 10:09:37,702 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 10:09:37,702 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 10:09:37,702 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 10:09:37,702 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 10:09:37,703 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 10:09:37,703 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 10:09:37,703 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 10:09:37,703 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 10:09:37,703 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 10:09:37,811 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 12 Apr 2026 15:09:37 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'b3', b'b8c125c7d8bedd4cd819cbcca0c47c3a-c7fb62fa05253c3d-1'), (b'traceparent', b'00-b8c125c7d8bedd4cd819cbcca0c47c3a-c7fb62fa05253c3d-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'4636bfb8-4984-4ff9-b4b1-99202a3b9194'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'9eb32736ac16ad14-MSP'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 10:09:37,811 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSA00 "HTTP/1.1 200 OK"
+2026-04-12 10:09:37,812 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 10:09:37,812 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 10:09:37,812 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 10:09:37,812 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 10:09:39,876 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Set chamber lights off (seq=84)
+2026-04-12 10:09:41,289 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Queue (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-12 10:09:41,981 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Set chamber lights on (seq=86)
+2026-04-12 10:09:44,161 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:09:46,190 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:09:46,190 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-04-12 10:09:50,229 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:09:50,229 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -40dBm
+2026-04-12 10:09:54,317 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:09:54,317 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-04-12 10:09:55,922 INFO [backend.app.services.print_scheduler] Queue check: found 3 pending items: [(80, 1, 61, None), (49, 1, 45, None), (19, 1, 24, None)]
+2026-04-12 10:09:55,922 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 3}
+2026-04-12 10:10:00,407 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:10:02,437 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:10:02,437 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -35dBm
+2026-04-12 10:10:06,474 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 10:10:06,474 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -38dBm

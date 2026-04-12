@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     plate_calibration_dir: Path = _plate_cal_dir  # Plate detection references
     static_dir: Path = _app_dir / "static"  # Static files are part of app, not data
     log_dir: Path = _log_dir
+    plugins_dir: Path = _data_dir / "plugins"  # User-installed plugins
     database_url: str = _external_db_url or f"sqlite+aiosqlite:///{_db_path}"
 
     # Logging
@@ -81,6 +82,7 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Ensure directories exist
+settings.plugins_dir.mkdir(parents=True, exist_ok=True)
 settings.archive_dir.mkdir(parents=True, exist_ok=True)
 settings.plate_calibration_dir.mkdir(parents=True, exist_ok=True)
 settings.static_dir.mkdir(exist_ok=True)

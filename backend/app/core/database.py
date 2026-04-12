@@ -189,6 +189,7 @@ async def init_db():
         user,
         user_email_pref,
         virtual_printer,
+        plugin,
     )
 
     async with engine.begin() as conn:

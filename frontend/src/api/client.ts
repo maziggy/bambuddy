@@ -5319,6 +5319,79 @@ export interface BugReportResponse {
   issue_number?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Plugins
+// ---------------------------------------------------------------------------
+
+export interface PluginInfo {
+  plugin_key: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  enabled: boolean;
+  loaded: boolean;
+  has_viewer: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PluginUploadPreview {
+  upload_id: string;
+  plugin_type: 'bambuddy' | 'octoprint' | 'unknown';
+  plugin_key: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  supported_mixins: string[];
+  unsupported_mixins: string[];
+  conversion_notes: string[];
+  converted_code: string | null;
+  already_installed: boolean;
+}
+
+export interface PluginInstallResult {
+  status: string;
+  plugin_key: string;
+  name: string;
+  plugin_type: string;
+  restart_required: boolean;
+}
+
+export const pluginsApi = {
+  list: () => request<PluginInfo[]>('/plugins'),
+  enable: (key: string) =>
+    request<{ status: string; restart_required: boolean }>(`/plugins/${key}/enable`, { method: 'PATCH' }),
+  disable: (key: string) =>
+    request<{ status: string; restart_required: boolean }>(`/plugins/${key}/disable`, { method: 'PATCH' }),
+  getSettings: (key: string) => request<Record<string, unknown>>(`/plugins/${key}/settings`),
+  updateSettings: (key: string, settings: Record<string, unknown>) =>
+    request<{ status: string }>(`/plugins/${key}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify({ settings }),
+    }),
+  upload: async (file: File): Promise<PluginUploadPreview> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/plugins/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+  install: (upload_id: string) =>
+    request<PluginInstallResult>(`/plugins/install/${upload_id}`, { method: 'POST' }),
+};
+
 export const bugReportApi = {
   submit: (data: BugReportRequest) =>
     request<BugReportResponse>('/bug-report/submit', {

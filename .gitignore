@@ -74,3 +74,9 @@ spoolbuddy/ssh/
 debug_logs/
 db_backup/
 support-packages/
+
+# User-installed plugins (keep the bundled examples and .gitkeep)
+plugins/*
+!plugins/.gitkeep
+!plugins/example_plugin/
+!plugins/prettygcode/

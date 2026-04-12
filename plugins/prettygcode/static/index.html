@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PrettyGCode — Bambuddy</title>
+
+  <link rel="stylesheet" href="css/prettygcode.css">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      margin: 0; padding: 0;
+      height: 100%;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+    }
+
+    /* Top toolbar */
+    #bb-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px;
+      background: #111;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    #bb-toolbar label { color: #aaa; font-size: 12px; white-space: nowrap; }
+    #bb-printer-select {
+      background: #222; color: #ddd;
+      border: 1px solid #444; border-radius: 4px;
+      padding: 3px 6px; font-size: 12px;
+    }
+    #bb-file-btn {
+      background: #2a6496; color: #fff;
+      border: none; border-radius: 4px;
+      padding: 4px 10px; cursor: pointer; font-size: 12px;
+    }
+    #bb-file-btn:hover { background: #1c4d72; }
+    #bb-current-file {
+      color: #9ecfff; font-size: 12px;
+      max-width: 300px; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    #bb-open-settings {
+      margin-left: auto;
+      background: none; color: #aaa;
+      border: 1px solid #555; border-radius: 4px;
+      padding: 3px 8px; cursor: pointer; font-size: 12px;
+    }
+    #bb-open-settings:hover { color: #fff; border-color: #888; }
+
+    /* File picker dropdown */
+    #bb-file-picker {
+      display: none;
+      position: absolute;
+      top: 38px; left: 10px;
+      width: 320px;
+      background: #222; border: 1px solid #444;
+      border-radius: 6px; padding: 6px;
+      z-index: 200;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+    }
+    #bb-file-picker.bb-open { display: block; }
+
+    /* Main layout */
+    #bb-layout {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #bb-viewer-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* The prettygcode container — must fill its parent */
+    .page-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #tab_plugin_prettygcode {
+      width: 100%;
+      height: 100%;
+    }
+
+    .gwin {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #mycanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Webcam element cloned by prettygcode.js — keep hidden until fullscreen */
+    #webcam_rotator {
+      display: none;
+    }
+    #webcam_image { max-width: 100%; }
+
+    /* Control buttons inside .gwin */
+    .pgstatetoggle, .pgfilestoggle, .pgsettingstoggle, .fstoggle,
+    .pgdashtoggle,  .pgcameratoggle {
+      background: rgba(0,0,0,0.5);
+      border: 1px solid #666;
+      border-radius: 4px;
+      color: #ddd;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 4px 7px;
+      z-index: 10;
+    }
+    .pgstatetoggle:hover, .pgfilestoggle:hover, .pgsettingstoggle:hover,
+    .fstoggle:hover, .pgdashtoggle:hover, .pgcameratoggle:hover {
+      background: rgba(60,60,60,0.8);
+    }
+
+    /* Slider shim styles */
+    .slider {
+      position: absolute;
+      right: 20px;
+      top: 5%;
+      height: 90%;
+      width: 28px;
+      z-index: 10;
+      cursor: pointer;
+      user-select: none;
+    }
+    .slider-vertical { writing-mode: vertical-lr; }
+    .slider-track {
+      position: absolute;
+      left: 50%;
+      top: 0; bottom: 0;
+      width: 4px;
+      transform: translateX(-50%);
+      background: #555;
+      border-radius: 2px;
+    }
+    .slider-selection {
+      position: absolute;
+      left: 0; right: 0;
+      bottom: 0;
+      background: #4a9;
+      border-radius: 2px;
+    }
+    .slider-handle {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 24px; height: 24px;
+      background: #6cf;
+      border-radius: 50%;
+      line-height: 24px;
+      text-align: center;
+      font-size: 9px;
+      color: #111;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<div id="bb-layout">
+
+  <!-- Toolbar -->
+  <div id="bb-toolbar">
+    <label for="bb-printer-select">Printer:</label>
+    <select id="bb-printer-select"><option value="">Loading…</option></select>
+
+    <button id="bb-file-btn">&#128196; Load file</button>
+    <span id="bb-current-file">— no file loaded —</span>
+
+    <a href="/api/v1/plugins/prettygcode/assets/index.html?fullscreen=1"
+       style="margin-left:auto;color:#aaa;font-size:12px;text-decoration:none;"
+       title="Open in fullscreen">&#9974; Fullscreen</a>
+  </div>
+
+  <!-- File picker (positioned relative to toolbar) -->
+  <div id="bb-file-picker"></div>
+
+  <!-- Viewer area -->
+  <div id="bb-viewer-wrap">
+    <div class="page-container">
+
+      <div id="tab_plugin_prettygcode">
+        <div class="gwin">
+          <canvas id="mycanvas"></canvas>
+          <div id="pgstatus" class="pgstatus">T:0/0 B:0/0</div>
+          <div id="mygui" class="pghidden">View Options</div>
+
+          <button class="pgstatetoggle" title="Toggle state window">&#9432;</button>
+          <button class="pgfilestoggle" title="Toggle file list">&#9776;</button>
+          <button class="pgsettingstoggle" title="Toggle settings">&#9881;</button>
+          <button class="fstoggle" title="Toggle fullscreen">&#9974;</button>
+          <button class="pgcameratoggle" title="Toggle webcam">&#128247;</button>
+        </div>
+      </div>
+
+      <!-- Webcam source element — prettygcode.js clones this into .gwin -->
+      <div id="webcam_rotator" style="display:none;">
+        <img id="webcam_image" src="" alt="webcam">
+      </div>
+
+    </div>
+  </div><!-- /bb-viewer-wrap -->
+</div><!-- /bb-layout -->
+
+<!-- Scripts — load order matters -->
+<script src="js/jquery.min.js"></script>
+<script src="js/slider-shim.js"></script>
+<script src="js/three.min.js"></script>
+<script src="js/LineSegmentsGeometry.js"></script>
+<script src="js/LineGeometry.js"></script>
+<script src="js/LineMaterial.js"></script>
+<script src="js/LineSegments2.js"></script>
+<script src="js/Line2.js"></script>
+<script src="js/Lut.js"></script>
+<script src="js/OBJLoader.js"></script>
+<script src="js/camera-controls.js"></script>
+<script src="js/dat.gui.js"></script>
+
+<!-- Adapter MUST load before prettygcode.js -->
+<script src="js/bambuddy_adapter.js"></script>
+<script src="js/prettygcode.js"></script>
+
+<script>
+  // Wire the file-picker button toggle
+  document.getElementById('bb-file-btn').addEventListener('click', function (e) {
+    var picker = document.getElementById('bb-file-picker');
+    picker.classList.toggle('bb-open');
+    e.stopPropagation();
+  });
+  document.addEventListener('click', function () {
+    document.getElementById('bb-file-picker').classList.remove('bb-open');
+  });
+  document.getElementById('bb-file-picker').addEventListener('click', function (e) {
+    e.stopPropagation();
+  });
+</script>
+
+</body>
+</html>

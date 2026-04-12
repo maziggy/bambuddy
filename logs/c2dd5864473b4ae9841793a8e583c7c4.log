@@ -1,0 +1,200 @@
+2026-04-12 02:16:31,427 DEBUG [httpcore.connection] close.started
+2026-04-12 02:16:31,428 DEBUG [httpcore.connection] close.complete
+2026-04-12 02:16:31,429 DEBUG [httpcore.connection] connect_tcp.started host='api.bambulab.com' port=443 local_address=None timeout=30.0 socket_options=None
+2026-04-12 02:16:31,473 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-12 02:16:31,473 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 02:16:31,556 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x77fcd1c4e620>
+2026-04-12 02:16:31,556 DEBUG [httpcore.connection] start_tls.started ssl_context=<ssl.SSLContext object at 0x77fccc1e65d0> server_hostname='api.bambulab.com' timeout=30.0
+2026-04-12 02:16:31,618 INFO [backend.app.api.routes.cloud] get_filament_info called with 3 IDs: ['P84fab6d', 'GFL99', 'Pc817a1d']
+2026-04-12 02:16:31,620 DEBUG [httpcore.connection] connect_tcp.started host='api.bambulab.com' port=443 local_address=None timeout=30.0 socket_options=None
+2026-04-12 02:16:31,626 DEBUG [httpcore.connection] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x77fcac796260>
+2026-04-12 02:16:31,628 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:31,629 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 02:16:31,629 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 02:16:31,630 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 02:16:31,630 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:31,671 INFO [backend.app.api.routes.cloud] get_filament_info called with 3 IDs: ['P84fab6d', 'GFL99', 'Pf14c8c4']
+2026-04-12 02:16:31,673 DEBUG [httpcore.connection] connect_tcp.started host='api.bambulab.com' port=443 local_address=None timeout=30.0 socket_options=None
+2026-04-12 02:16:31,724 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x77fcd2143ca0>
+2026-04-12 02:16:31,724 DEBUG [httpcore.connection] start_tls.started ssl_context=<ssl.SSLContext object at 0x77fccc1e65d0> server_hostname='api.bambulab.com' timeout=30.0
+2026-04-12 02:16:31,725 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x77fcd2140f50>
+2026-04-12 02:16:31,725 DEBUG [httpcore.connection] start_tls.started ssl_context=<ssl.SSLContext object at 0x77fccc1e65d0> server_hostname='api.bambulab.com' timeout=30.0
+2026-04-12 02:16:31,780 DEBUG [httpcore.connection] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x77fbf954a580>
+2026-04-12 02:16:31,781 DEBUG [httpcore.connection] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x77fbf954bb60>
+2026-04-12 02:16:31,782 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:31,782 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:31,783 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 02:16:31,783 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 02:16:31,783 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 02:16:31,783 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:31,784 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 02:16:31,784 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 02:16:31,784 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 02:16:31,784 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:31,887 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Sun, 12 Apr 2026 00:16:31 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'c27ac33593c6b89e6c4678660ede853c-8ee5480629393d34-1'), (b'traceparent', b'00-c27ac33593c6b89e6c4678660ede853c-8ee5480629393d34-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'6a772d5e-2520-4d57-95e5-bccdc0d73cd6'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'set-cookie', b'__cf_bm=rrhLbtjWSYQHoQS867KAR5ODhUZjcge4ka.2qZ2p2F8-1775952991.6798038-[IP]-6NHHLR9u.CTElXN6uoDYtjZ_GiXaasUP5GtYuiXKKl2N1DxMm83oKs.cGAgRKqOFhyhnUrAeeE8NCB9nUC0cfAaQvm0jE0t5NSH_d3Qgaz_zLz6bTd0sZWooHsZ0_twc; HttpOnly; Secure; Path=/; Domain=bambulab.com; Expires=Sun, 12 Apr 2026 00:46:31 GMT'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9eae0af5f9985aef-VIE'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 02:16:31,888 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/Pf14c8c4 "HTTP/1.1 400 Bad Request"
+2026-04-12 02:16:31,888 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 02:16:31,889 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 02:16:31,889 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 02:16:31,889 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 02:16:31,890 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pf14c8c4 (API ID: Pf14c8c4): Failed to get setting detail: 400
+2026-04-12 02:16:31,891 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:31,892 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 02:16:31,892 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 02:16:31,892 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 02:16:31,893 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:32,157 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:32,158 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Sun, 12 Apr 2026 00:16:32 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'6b86c0a7c347d939c81b09e229dae9ba-7e7fb6bcd78f6f4b-1'), (b'traceparent', b'00-6b86c0a7c347d939c81b09e229dae9ba-7e7fb6bcd78f6f4b-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'2c2e039b-6b74-4d76-a0b3-b5ba16f9f624'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'set-cookie', b'__cf_bm=rzgAxhCVvJL2hSZL8cLMy6SqIBoiCQ_surjRfU3jjzs-1775952991.8204842-[IP]-vba1.UC9V_6mOpMEk8rf5Z9qQMvI7zUROEhf21atYDPAV73bcOzibHpJH0Zf0A1YIIAXpYJS93Ln4Zm6IVssyAEkckSjNgzyFLwa6EN5JUucR5TR.otjGnRvPO7cd64I; HttpOnly; Secure; Path=/; Domain=bambulab.com; Expires=Sun, 12 Apr 2026 00:46:32 GMT'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9eae0af6dff96cb4-VIE'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 02:16:32,158 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -58dBm
+2026-04-12 02:16:32,160 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/P84fab6d "HTTP/1.1 400 Bad Request"
+2026-04-12 02:16:32,161 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,161 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 02:16:32,162 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 02:16:32,162 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 02:16:32,163 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset P84fab6d (API ID: P84fab6d): Failed to get setting detail: 400
+2026-04-12 02:16:32,166 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Sun, 12 Apr 2026 00:16:32 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'6582dfc5bf21102d20b64ea67a47aa23-1835045851d6b710-1'), (b'traceparent', b'00-6582dfc5bf21102d20b64ea67a47aa23-1835045851d6b710-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'8b0f2adf-860f-4bca-b727-b489d389b393'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'set-cookie', b'__cf_bm=Nl0XpCx5NOoRNXZwskUKq_kUVeyA1e5DBbJcJ0SoSo4-1775952991.8676722-[IP]-EcjTbyT.5T1fcJFKYjPGagIvqIbIzwDiRdU_kMpiK8wP.OCGVH3VtbuMgCjqYhj2K0fndlwT4cTjvmFh7fFTz8p18XDk.Gtk_5ljcO.Ybk7N3xRFZc0YG3nQUI_ngQG2; HttpOnly; Secure; Path=/; Domain=bambulab.com; Expires=Sun, 12 Apr 2026 00:46:32 GMT'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9eae0af72aeba39a-VIE'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 02:16:32,167 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/P84fab6d "HTTP/1.1 400 Bad Request"
+2026-04-12 02:16:32,168 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,168 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 02:16:32,169 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 02:16:32,169 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:32,170 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 02:16:32,171 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset P84fab6d (API ID: P84fab6d): Failed to get setting detail: 400
+2026-04-12 02:16:32,173 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Sun, 12 Apr 2026 00:16:32 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'6be017136c4e5e27ec19338dc37f5a7e-4405f85632653db3-1'), (b'traceparent', b'00-6be017136c4e5e27ec19338dc37f5a7e-4405f85632653db3-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'f43f3059-6594-4518-926e-e69086e0d9fb'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9eae0af7da0d5aef-VIE'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 02:16:32,174 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/Pc817a1d "HTTP/1.1 400 Bad Request"
+2026-04-12 02:16:32,174 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,175 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 02:16:32,175 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 02:16:32,176 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 02:16:32,176 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,176 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 02:16:32,176 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:32,177 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 02:16:32,178 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pc817a1d (API ID: Pc817a1d): Failed to get setting detail: 400
+2026-04-12 02:16:32,180 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:32,180 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 02:16:32,181 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,181 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 02:16:32,181 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:32,438 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 12 Apr 2026 00:16:32 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'b3', b'467cb07a034c4a0a1ca9e2043dfcf3d1-e987e7a6976f46a2-1'), (b'traceparent', b'00-467cb07a034c4a0a1ca9e2043dfcf3d1-e987e7a6976f46a2-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'2c20c295-5e99-44ac-af31-26e86a0f3da4'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'9eae0af959ef6cb4-VIE'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 02:16:32,439 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSL99 "HTTP/1.1 200 OK"
+2026-04-12 02:16:32,439 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,440 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 02:16:32,441 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 02:16:32,441 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 02:16:32,445 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 12 Apr 2026 00:16:32 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'b3', b'f518fb0a407076b68a13869c0239c6c9-041343b865007b5f-1'), (b'traceparent', b'00-f518fb0a407076b68a13869c0239c6c9-041343b865007b5f-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'3b92f4b9-bf5d-4589-a463-18d2aa655ec5'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'9eae0af95d3fa39a-VIE'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 02:16:32,446 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSL99 "HTTP/1.1 200 OK"
+2026-04-12 02:16:32,446 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,447 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 02:16:32,448 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 02:16:32,448 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 02:16:32,451 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:32,452 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 02:16:32,452 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,453 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 02:16:32,453 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:32,454 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:32,455 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-12 02:16:32,455 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,456 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-12 02:16:32,456 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-12 02:16:32,695 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Sun, 12 Apr 2026 00:16:32 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'8aed1f2138af0b63b77e9aa13ff7cfcc-8ffd6dd1df876388-1'), (b'traceparent', b'00-8aed1f2138af0b63b77e9aa13ff7cfcc-8ffd6dd1df876388-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'e8c14e22-3844-4095-aea5-7cc28376e8d8'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9eae0afb1bc66cb4-VIE'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 02:16:32,696 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/Pf14c8c4 "HTTP/1.1 400 Bad Request"
+2026-04-12 02:16:32,696 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,696 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 02:16:32,697 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 02:16:32,697 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 02:16:32,698 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pf14c8c4 (API ID: Pf14c8c4): Failed to get setting detail: 400
+2026-04-12 02:16:32,742 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Sun, 12 Apr 2026 00:16:32 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'86697da2ba5ff86b8672594d61874172-7b2c69308eccf5bf-1'), (b'traceparent', b'00-86697da2ba5ff86b8672594d61874172-7b2c69308eccf5bf-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'2b266f9b-2f61-42ae-a1ca-a53268182432'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9eae0afb1b115aef-VIE'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-12 02:16:32,742 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/Pc817a1d "HTTP/1.1 400 Bad Request"
+2026-04-12 02:16:32,743 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-12 02:16:32,743 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-12 02:16:32,744 DEBUG [httpcore.http11] response_closed.started
+2026-04-12 02:16:32,744 DEBUG [httpcore.http11] response_closed.complete
+2026-04-12 02:16:32,745 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pc817a1d (API ID: Pc817a1d): Failed to get setting detail: 400
+2026-04-12 02:16:33,570 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:33,571 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-12 02:16:34,482 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:34,483 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -57dBm
+2026-04-12 02:16:35,504 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=25950s (7.21h)
+2026-04-12 02:16:35,508 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-12 02:16:35,611 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:35,611 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-12 02:16:36,186 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:36,187 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -59dBm
+2026-04-12 02:16:37,616 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:37,616 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -50dBm
+2026-04-12 02:16:38,204 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:38,205 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -60dBm
+2026-04-12 02:16:41,679 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:41,679 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-12 02:16:43,731 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 02:16:43,731 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 02:16:43,732 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 02:16:43,732 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:43,732 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-12 02:16:44,111 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-12 02:16:44,111 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 02:16:44,246 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:44,247 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -59dBm
+2026-04-12 02:16:44,539 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:44,540 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -56dBm
+2026-04-12 02:16:45,762 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:45,763 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-12 02:16:49,859 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 02:16:49,859 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 02:16:49,859 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 02:16:49,859 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:49,860 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -50dBm
+2026-04-12 02:16:50,205 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(2, 1, None, 4)]
+2026-04-12 02:16:50,205 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 1}
+2026-04-12 02:16:50,301 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:50,301 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -61dBm
+2026-04-12 02:16:51,923 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 02:16:51,924 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 02:16:51,924 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 02:16:51,925 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:51,925 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-12 02:16:52,624 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:52,624 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -57dBm
+2026-04-12 02:16:53,438 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-12 02:16:53,438 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 02:16:53,942 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:53,943 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -50dBm
+2026-04-12 02:16:54,352 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:54,352 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -59dBm
+2026-04-12 02:16:56,657 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 02:16:56,657 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 02:16:56,657 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 02:16:56,658 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:57,981 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 02:16:57,981 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 02:16:57,981 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 02:16:57,982 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:57,982 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-12 02:16:58,355 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:58,684 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 02:16:58,684 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 02:16:58,685 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 02:16:58,685 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:16:58,685 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -56dBm
+2026-04-12 02:17:00,011 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:17:00,012 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-12 02:17:00,703 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:17:01,180 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-12 02:17:01,181 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-12 02:17:02,159 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 02:17:02,160 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 02:17:02,160 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 02:17:02,161 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:17:02,378 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:17:02,379 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -61dBm
+2026-04-12 02:17:04,217 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-12 02:17:04,218 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-12 02:17:04,218 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-12 02:17:04,218 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:17:04,219 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-12 02:17:04,398 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-12 02:17:04,399 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -60dBm
+2026-04-12 02:17:05,512 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=25980s (7.22h)
+2026-04-12 02:17:05,515 DEBUG [backend.app.main] Updated runtime for 1 printer(s)

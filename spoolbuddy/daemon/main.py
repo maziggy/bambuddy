@@ -171,7 +171,9 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
 
     last_report = 0.0
     last_reported_grams: float | None = None
+    last_wake_grams: float | None = None
     REPORT_THRESHOLD = 2.0  # Only report if weight changed by more than this (grams)
+    WAKE_THRESHOLD = 50.0  # Only wake display on large changes (spool placed/removed, not sensor bounce)
     try:
         while True:
             result = await asyncio.to_thread(scale.read)
@@ -185,7 +187,12 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
                     weight_changed = last_reported_grams is None or abs(grams - last_reported_grams) >= REPORT_THRESHOLD
 
                     if weight_changed:
-                        display.wake()
+                        # Wake display only on large weight changes (spool placed/removed)
+                        # to avoid sensor bounce keeping the screen on forever.
+                        wake_changed = last_wake_grams is None or abs(grams - last_wake_grams) >= WAKE_THRESHOLD
+                        if wake_changed:
+                            display.wake()
+                            last_wake_grams = grams
                         await api.scale_reading(
                             device_id=config.device_id,
                             weight_grams=grams,

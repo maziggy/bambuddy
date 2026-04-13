@@ -32,31 +32,9 @@
   <body>
     <div id="root"></div>
 
-    <!-- Service Worker Registration (skip on SpoolBuddy kiosk) -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        if (location.pathname.startsWith('/spoolbuddy')) {
-          // Kiosk mode — nuke SW and all caches, then reload once to get clean state
-          navigator.serviceWorker.getRegistrations().then((regs) => {
-            if (regs.length > 0) {
-              Promise.all([
-                ...regs.map((r) => r.unregister()),
-                caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))),
-              ]).then(() => location.reload());
-            }
-          });
-        } else {
-          window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js')
-              .then((registration) => {
-                console.log('SW registered:', registration.scope);
-              })
-              .catch((error) => {
-                console.log('SW registration failed:', error);
-              });
-          });
-        }
-      }
-    </script>
+    <!-- Service Worker Registration (skip on SpoolBuddy kiosk).
+         Kept as an external file so the CSP `script-src 'self'` covers it
+         without needing 'unsafe-inline' or per-build hashes. -->
+    <script src="/sw-register.js"></script>
   </body>
 </html>

@@ -4173,13 +4173,14 @@ async def security_headers_middleware(request, call_next):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "img-src 'self' data: blob:; "
         "media-src 'self' blob:; "
         "connect-src 'self' ws: wss:; "
-        "font-src 'self' data:; "
+        "font-src 'self' data: https://fonts.gstatic.com; "
         "object-src 'none'; "
         "base-uri 'self'; "
+        "frame-src 'self' https:; "
         "frame-ancestors 'none';"
     )
     if request.url.scheme == "https":
@@ -4414,6 +4415,19 @@ async def serve_service_worker():
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
         )
     return {"error": "Service worker not found"}
+
+
+@app.get("/sw-register.js")
+async def serve_sw_register():
+    """Serve the service-worker registration bootstrap script.
+
+    Served as a real JS file so the strict `script-src 'self'` CSP covers it
+    without needing 'unsafe-inline' or per-build hashes on the inline tag.
+    """
+    reg_file = app_settings.static_dir / "sw-register.js"
+    if reg_file.exists():
+        return FileResponse(reg_file, media_type="application/javascript")
+    return {"error": "sw-register.js not found"}
 
 
 # Catch-all route for React Router (must be last)

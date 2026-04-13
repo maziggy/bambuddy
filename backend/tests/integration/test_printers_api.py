@@ -1113,6 +1113,50 @@ class TestChamberLightAPI:
             assert "failed" in response.json()["detail"].lower()
 
 
+class TestAirductModeAPI:
+    """Integration tests for the airduct mode endpoint (P2S/H2*)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_invalid_mode_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="P2S")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/airduct-mode?mode=foo")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="P2S")
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/airduct-mode?mode=cooling")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cooling_success(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="P2S")
+        mock_client = MagicMock()
+        mock_client.set_airduct_mode.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/airduct-mode?mode=cooling")
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        mock_client.set_airduct_mode.assert_called_once_with("cooling")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_heating_failure_returns_500(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="P2S")
+        mock_client = MagicMock()
+        mock_client.set_airduct_mode.return_value = False
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/airduct-mode?mode=heating")
+        assert response.status_code == 500
+
+
 class TestClearHMSErrorsAPI:
     """Integration tests for clear HMS errors endpoint."""
 

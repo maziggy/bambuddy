@@ -224,6 +224,8 @@ export default {
     camera: 'Camera',
     skipObject: 'Salta Oggetto',
     reconnect: 'Riconnetti',
+    forceRefresh: 'Forza aggiornamento',
+    forceRefreshSuccess: 'Aggiornamento richiesto',
     mqttDebug: 'Debug MQTT',
     printerInformation: 'Informazioni stampante',
     copyToClipboard: 'Copia',
@@ -496,6 +498,16 @@ export default {
       standard: 'Standard (100%)',
       sport: 'Sport (124%)',
       ludicrous: 'Ludicrous (166%)',
+    },
+    airduct: {
+      title: 'Modalità condotto d\'aria',
+      cooling: 'Raffreddamento',
+      heating: 'Riscaldamento',
+    },
+    noSdCard: 'Nessuna SD',
+    door: {
+      open: 'Aperta',
+      closed: 'Chiusa',
     },
     // Fans
     fans: {

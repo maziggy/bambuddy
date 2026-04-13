@@ -206,3 +206,38 @@ describe('FormData requests include auth header', () => {
     expect(capturedHeaders!.get('Authorization')).toBe('Bearer test-token');
   });
 });
+
+describe('Printer control endpoints', () => {
+  it('refreshPrinterStatus POSTs to /printers/:id/refresh-status', async () => {
+    let calledUrl: string | null = null;
+    let calledMethod: string | null = null;
+    server.use(
+      http.post('/api/v1/printers/:id/refresh-status', ({ request, params }) => {
+        calledUrl = `/printers/${params.id}/refresh-status`;
+        calledMethod = request.method;
+        return HttpResponse.json({ status: 'ok' });
+      }),
+    );
+
+    const result = await api.refreshPrinterStatus(7);
+    expect(calledMethod).toBe('POST');
+    expect(calledUrl).toBe('/printers/7/refresh-status');
+    expect(result).toEqual({ status: 'ok' });
+  });
+
+  it('setAirductMode passes mode in query string', async () => {
+    let capturedUrl = '';
+    server.use(
+      http.post('/api/v1/printers/:id/airduct-mode', ({ request }) => {
+        capturedUrl = request.url;
+        return HttpResponse.json({ success: true, message: 'ok' });
+      }),
+    );
+
+    await api.setAirductMode(3, 'cooling');
+    expect(capturedUrl).toContain('mode=cooling');
+
+    await api.setAirductMode(3, 'heating');
+    expect(capturedUrl).toContain('mode=heating');
+  });
+});

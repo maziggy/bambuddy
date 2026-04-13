@@ -487,7 +487,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         f"{state.stg_cur}:{bed_target}:{nozzle_target}:"
         f"{state.cooling_fan_speed}:{state.big_fan1_speed}:{state.big_fan2_speed}:"
         f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}:"
-        f"{ams_dry_key}:{ams_tray_key}"
+        f"{ams_dry_key}:{ams_tray_key}:{state.door_open}"
     )
 
     # MQTT relay - publish status (before dedup check - always publish to MQTT)

@@ -583,6 +583,7 @@ async def get_printer_status(
         ipcam=state.ipcam,
         wifi_signal=state.wifi_signal,
         wired_network=state.wired_network,
+        door_open=state.door_open,
         nozzles=nozzles,
         nozzle_rack=nozzle_rack,
         print_options=print_options,
@@ -2331,6 +2332,33 @@ async def set_print_speed(
 
     speed_names = {1: "Silent", 2: "Standard", 3: "Sport", 4: "Ludicrous"}
     return {"success": True, "message": f"Print speed set to {speed_names.get(mode, 'Unknown')}"}
+
+
+@router.post("/{printer_id}/airduct-mode")
+async def set_airduct_mode(
+    printer_id: int,
+    mode: str = Query(..., description="Airduct mode: 'cooling' or 'heating'"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the airduct mode (cooling/heating) on supported printers (P2S/H2*)."""
+    if mode not in ("cooling", "heating"):
+        raise HTTPException(400, "Mode must be 'cooling' or 'heating'")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.set_airduct_mode(mode)
+    if not success:
+        raise HTTPException(500, "Failed to set airduct mode")
+
+    return {"success": True, "message": f"Airduct mode set to {mode}"}
 
 
 @router.post("/{printer_id}/chamber-light")

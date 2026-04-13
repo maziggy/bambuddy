@@ -307,14 +307,28 @@ def _validate_icon_url(v: str | None) -> str | None:
 
 
 def _validate_issuer_url(v: str | None) -> str | None:
-    """Nit4: Reject non-HTTPS issuer URLs to prevent SSRF and mixed-content issues.
+    """Nit4: Reject non-HTTPS issuer URLs and private/loopback/link-local hosts.
 
     HTTP is no longer accepted — OIDC providers must be reachable over TLS.
+    Private-network and loopback addresses are rejected to prevent SSRF attacks
+    where an admin-supplied URL could reach internal services.
     """
+    import ipaddress
+    from urllib.parse import urlparse
+
     if v is None:
         return v
     if not v.startswith("https://"):
         raise ValueError("issuer_url must start with https://")
+    host = urlparse(v).hostname or ""
+    try:
+        addr = ipaddress.ip_address(host)
+        if addr.is_private or addr.is_loopback or addr.is_link_local:
+            raise ValueError("issuer_url must not point to a private, loopback, or link-local address")
+    except ValueError as exc:
+        if "issuer_url" in str(exc):
+            raise
+        # hostname is a domain name, not a bare IP — that's fine
     return v
 
 

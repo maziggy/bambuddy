@@ -310,6 +310,19 @@ async def run_migrations(conn):
     except (OperationalError, ProgrammingError):
         pass  # Already applied
 
+    # Migration: Enforce uniqueness on user_oidc_links for existing rows.
+    # create_all() is idempotent and does not add constraints to existing tables,
+    # so we create covering unique indexes explicitly here.
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_oidc_link_provider_sub"
+        " ON user_oidc_links (provider_id, provider_user_id)",
+    )
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_oidc_link_user_provider ON user_oidc_links (user_id, provider_id)",
+    )
+
     # Migration: Create FTS5 virtual table for archive full-text search (SQLite only)
     # PostgreSQL uses tsvector + GIN index instead (set up in archives.py search route)
     if is_sqlite():

@@ -34,7 +34,7 @@ from backend.app.core.auth import (
 )
 from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import ALL_PERMISSIONS
-from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
+from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent, EventType, TokenType
 from backend.app.models.group import Group
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -356,9 +356,9 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
     #      (DoS) by sending failures for many usernames from a single address.
     from backend.app.api.routes.mfa import MAX_LOGIN_ATTEMPTS, check_rate_limit, record_failed_attempt
 
-    await check_rate_limit(db, request.username, event_type="login_attempt", max_attempts=MAX_LOGIN_ATTEMPTS)
+    await check_rate_limit(db, request.username, event_type=EventType.LOGIN_ATTEMPT, max_attempts=MAX_LOGIN_ATTEMPTS)
     client_ip = _get_client_ip(raw_request)
-    await check_rate_limit(db, client_ip, event_type="login_ip", max_attempts=20)
+    await check_rate_limit(db, client_ip, event_type=EventType.LOGIN_IP, max_attempts=20)
 
     # Check if LDAP is enabled
     ldap_user = None
@@ -408,8 +408,8 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
             user = await authenticate_user_by_email(db, request.username, request.password)
 
     if not user:
-        await record_failed_attempt(db, request.username, event_type="login_attempt")
-        await record_failed_attempt(db, client_ip, event_type="login_ip")
+        await record_failed_attempt(db, request.username, event_type=EventType.LOGIN_ATTEMPT)
+        await record_failed_attempt(db, client_ip, event_type=EventType.LOGIN_IP)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -423,8 +423,8 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
     # L-R6-A: Password was correct — reset login failure counters for both buckets
     from backend.app.api.routes.mfa import clear_failed_attempts
 
-    await clear_failed_attempts(db, user.username, event_type="login_attempt")
-    await clear_failed_attempts(db, client_ip, event_type="login_ip")
+    await clear_failed_attempts(db, user.username, event_type=EventType.LOGIN_ATTEMPT)
+    await clear_failed_attempts(db, client_ip, event_type=EventType.LOGIN_IP)
 
     # --- 2FA check ---
     # Determine which 2FA methods are active for this user.
@@ -821,7 +821,7 @@ async def _send_reset_email_or_delete_token(
                 await db.execute(
                     delete(AuthEphemeralToken).where(
                         AuthEphemeralToken.token == reset_token,
-                        AuthEphemeralToken.token_type == "password_reset",
+                        AuthEphemeralToken.token_type == TokenType.PASSWORD_RESET,
                     )
                 )
                 await db.commit()
@@ -858,7 +858,7 @@ async def forgot_password(
     rate_result = await db.execute(
         select(AuthRateLimitEvent).where(
             AuthRateLimitEvent.username == identifier,
-            AuthRateLimitEvent.event_type == "password_reset_send",
+            AuthRateLimitEvent.event_type == EventType.PASSWORD_RESET_SEND,
             AuthRateLimitEvent.occurred_at > cutoff,
         )
     )
@@ -874,7 +874,7 @@ async def forgot_password(
     ip_rate_result = await db.execute(
         select(AuthRateLimitEvent).where(
             AuthRateLimitEvent.username == client_ip,
-            AuthRateLimitEvent.event_type == "password_reset_ip",
+            AuthRateLimitEvent.event_type == EventType.PASSWORD_RESET_IP,
             AuthRateLimitEvent.occurred_at > cutoff,
         )
     )
@@ -888,7 +888,7 @@ async def forgot_password(
     # different email addresses from one IP).  The email-level event is only
     # recorded when we actually send an email to a local user — LDAP/OIDC users
     # do not consume a slot because this flow is a no-op for them.
-    db.add(AuthRateLimitEvent(username=client_ip, event_type="password_reset_ip"))
+    db.add(AuthRateLimitEvent(username=client_ip, event_type=EventType.PASSWORD_RESET_IP))
     await db.commit()
 
     # Get SMTP settings
@@ -907,13 +907,13 @@ async def forgot_password(
         try:
             # Record email-level slot only for local users who will actually receive
             # the reset email (Nit7: don't waste the user's quota for LDAP/OIDC no-ops).
-            db.add(AuthRateLimitEvent(username=identifier, event_type="password_reset_send"))
+            db.add(AuthRateLimitEvent(username=identifier, event_type=EventType.PASSWORD_RESET_SEND))
 
             now = datetime.now(timezone.utc)
             # Prune any outstanding reset tokens for this user before issuing a new one.
             await db.execute(
                 delete(AuthEphemeralToken).where(
-                    AuthEphemeralToken.token_type == "password_reset",
+                    AuthEphemeralToken.token_type == TokenType.PASSWORD_RESET,
                     AuthEphemeralToken.username == user.username,
                 )
             )
@@ -921,7 +921,7 @@ async def forgot_password(
             db.add(
                 AuthEphemeralToken(
                     token=reset_token,
-                    token_type="password_reset",
+                    token_type=TokenType.PASSWORD_RESET,
                     username=user.username,
                     expires_at=now + _RESET_TOKEN_TTL,
                 )
@@ -972,7 +972,7 @@ async def forgot_password_confirm(request: ForgotPasswordConfirmRequest, db: Asy
         delete(AuthEphemeralToken)
         .where(
             AuthEphemeralToken.token == request.token,
-            AuthEphemeralToken.token_type == "password_reset",
+            AuthEphemeralToken.token_type == TokenType.PASSWORD_RESET,
         )
         .returning(AuthEphemeralToken.username, AuthEphemeralToken.expires_at)
     )
@@ -1063,7 +1063,7 @@ async def reset_user_password(
         now = datetime.now(timezone.utc)
         await db.execute(
             delete(AuthEphemeralToken).where(
-                AuthEphemeralToken.token_type == "password_reset",
+                AuthEphemeralToken.token_type == TokenType.PASSWORD_RESET,
                 AuthEphemeralToken.username == user.username,
             )
         )
@@ -1071,7 +1071,7 @@ async def reset_user_password(
         db.add(
             AuthEphemeralToken(
                 token=reset_token,
-                token_type="password_reset",
+                token_type=TokenType.PASSWORD_RESET,
                 username=user.username,
                 expires_at=now + _RESET_TOKEN_TTL,
             )

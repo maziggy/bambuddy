@@ -19,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.api_key import APIKey
-from backend.app.models.auth_ephemeral import AuthEphemeralToken
+from backend.app.models.auth_ephemeral import AuthEphemeralToken, TokenType
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 
@@ -101,7 +101,7 @@ security = HTTPBearer(auto_error=False)
 
 # --- Slicer download tokens ---
 # Short-lived, single-use tokens for slicer protocol handlers that can't send
-# auth headers.  Stored in AuthEphemeralToken (token_type="slicer_download")
+# auth headers.  Stored in AuthEphemeralToken (token_type=TokenType.SLICER_DOWNLOAD)
 # so they survive server restarts and work in multi-worker deployments (M-3).
 SLICER_TOKEN_EXPIRE_MINUTES = 5
 
@@ -116,14 +116,14 @@ async def create_slicer_download_token(resource_type: str, resource_id: int) -> 
         # Prune expired tokens opportunistically
         await db.execute(
             delete(AuthEphemeralToken).where(
-                AuthEphemeralToken.token_type == "slicer_download",
+                AuthEphemeralToken.token_type == TokenType.SLICER_DOWNLOAD,
                 AuthEphemeralToken.expires_at < now,
             )
         )
         db.add(
             AuthEphemeralToken(
                 token=token,
-                token_type="slicer_download",
+                token_type=TokenType.SLICER_DOWNLOAD,
                 nonce=resource_key,
                 expires_at=expires_at,
             )
@@ -150,7 +150,7 @@ async def verify_slicer_download_token(token: str, resource_type: str, resource_
             delete(AuthEphemeralToken)
             .where(
                 AuthEphemeralToken.token == token,
-                AuthEphemeralToken.token_type == "slicer_download",
+                AuthEphemeralToken.token_type == TokenType.SLICER_DOWNLOAD,
                 AuthEphemeralToken.nonce == expected_key,
                 AuthEphemeralToken.expires_at > now,
             )

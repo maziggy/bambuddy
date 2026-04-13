@@ -2685,7 +2685,7 @@ class TestSetupTOTPReplayRejected:
             headers=_auth_header(token),
         )
         assert replay_resp.status_code == 400
-        assert "already been used" in replay_resp.json()["detail"]
+        assert "already used" in replay_resp.json()["detail"]
 
 
 # ===========================================================================

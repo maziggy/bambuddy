@@ -41,6 +41,7 @@ class TokenType(str, Enum):
     OIDC_EXCHANGE = "oidc_exchange"
     PASSWORD_RESET = "password_reset"
     EMAIL_OTP_SETUP = "email_otp_setup"
+    SLICER_DOWNLOAD = "slicer_download"
 
 
 class EventType(str, Enum):
@@ -54,6 +55,8 @@ class EventType(str, Enum):
     EMAIL_SEND = "email_send"
     LOGIN_ATTEMPT = "login_attempt"
     LOGIN_IP = "login_ip"
+    PASSWORD_RESET_SEND = "password_reset_send"
+    PASSWORD_RESET_IP = "password_reset_ip"
 
 
 class AuthEphemeralToken(Base):

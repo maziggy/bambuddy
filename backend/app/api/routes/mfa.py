@@ -51,7 +51,7 @@ from backend.app.core.auth import (
 )
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
+from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent, EventType, TokenType
 from backend.app.models.group import Group
 from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
 from backend.app.models.user import User
@@ -177,7 +177,7 @@ async def create_pre_auth_token(db: AsyncSession, username: str, challenge_id: s
     # Prune expired tokens opportunistically (keep table small)
     await db.execute(
         delete(AuthEphemeralToken).where(
-            AuthEphemeralToken.token_type == "pre_auth",
+            AuthEphemeralToken.token_type == TokenType.PRE_AUTH,
             AuthEphemeralToken.expires_at < now,
         )
     )
@@ -185,7 +185,7 @@ async def create_pre_auth_token(db: AsyncSession, username: str, challenge_id: s
     db.add(
         AuthEphemeralToken(
             token=token,
-            token_type="pre_auth",
+            token_type=TokenType.PRE_AUTH,
             username=username,
             challenge_id=challenge_id,
             expires_at=now + PRE_AUTH_TOKEN_TTL,
@@ -209,7 +209,7 @@ async def consume_pre_auth_token(db: AsyncSession, token: str, challenge_id: str
         delete(AuthEphemeralToken)
         .where(
             AuthEphemeralToken.token == token,
-            AuthEphemeralToken.token_type == "pre_auth",
+            AuthEphemeralToken.token_type == TokenType.PRE_AUTH,
             AuthEphemeralToken.expires_at > now,
         )
         .returning(AuthEphemeralToken.username, AuthEphemeralToken.challenge_id)
@@ -238,7 +238,7 @@ async def peek_pre_auth_token(db: AsyncSession, token: str, challenge_id: str | 
     result = await db.execute(
         select(AuthEphemeralToken).where(
             AuthEphemeralToken.token == token,
-            AuthEphemeralToken.token_type == "pre_auth",
+            AuthEphemeralToken.token_type == TokenType.PRE_AUTH,
             AuthEphemeralToken.expires_at > now,
         )
     )
@@ -258,7 +258,7 @@ async def peek_pre_auth_token(db: AsyncSession, token: str, challenge_id: str | 
 async def check_rate_limit(
     db: AsyncSession,
     username: str,
-    event_type: str = "2fa_attempt",
+    event_type: str = EventType.TWO_FA_ATTEMPT,
     max_attempts: int = MAX_2FA_ATTEMPTS,
 ) -> None:
     """Raise HTTP 429 if the user has exceeded the failed attempt limit.
@@ -293,13 +293,13 @@ async def check_rate_limit(
         )
 
 
-async def record_failed_attempt(db: AsyncSession, username: str, event_type: str = "2fa_attempt") -> None:
+async def record_failed_attempt(db: AsyncSession, username: str, event_type: str = EventType.TWO_FA_ATTEMPT) -> None:
     """Record a failed attempt for rate-limiting purposes."""
     db.add(AuthRateLimitEvent(username=username.lower(), event_type=event_type))
     await db.commit()
 
 
-async def clear_failed_attempts(db: AsyncSession, username: str, event_type: str = "2fa_attempt") -> None:
+async def clear_failed_attempts(db: AsyncSession, username: str, event_type: str = EventType.TWO_FA_ATTEMPT) -> None:
     """Delete all recorded failed attempts for a user on successful verification."""
     await db.execute(
         delete(AuthRateLimitEvent).where(
@@ -325,7 +325,7 @@ async def check_email_otp_send_rate(db: AsyncSession, username: str) -> None:
     result = await db.execute(
         select(AuthRateLimitEvent).where(
             AuthRateLimitEvent.username == username_key,
-            AuthRateLimitEvent.event_type == "email_send",
+            AuthRateLimitEvent.event_type == EventType.EMAIL_SEND,
             AuthRateLimitEvent.occurred_at > cutoff,
         )
     )
@@ -343,7 +343,7 @@ async def record_email_otp_send(db: AsyncSession, username: str) -> None:
     Must be called *after* the email has been sent successfully so that failed
     sends do not consume a slot from the user's quota.
     """
-    db.add(AuthRateLimitEvent(username=username.lower(), event_type="email_send"))
+    db.add(AuthRateLimitEvent(username=username.lower(), event_type=EventType.EMAIL_SEND))
     await db.commit()
 
 
@@ -370,12 +370,7 @@ def _assert_totp_not_replayed(totp_obj: pyotp.TOTP, totp_record: UserTOTP, code:
     if accepted_counter is None:
         accepted_counter = totp_obj.timecode(now)  # fallback (should not happen after verify())
 
-    if totp_record.last_totp_counter is not None and totp_record.last_totp_counter == accepted_counter:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This TOTP code has already been used. Please wait for the next code.",
-        )
-    totp_record.last_totp_counter = accepted_counter
+    totp_record.accept_counter(accepted_counter)
 
 
 # ---------------------------------------------------------------------------
@@ -438,15 +433,15 @@ async def setup_totp(
 
     # M-R7-A: Guard against silent TOTP replacement when one is already active.
     if existing and existing.is_enabled:
-        await check_rate_limit(db, current_user.username, event_type="2fa_attempt")
+        await check_rate_limit(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
         supplied_code = (body.code if body else None) or ""
         if not pyotp.TOTP(existing.secret).verify(supplied_code, valid_window=1):
-            await record_failed_attempt(db, current_user.username, event_type="2fa_attempt")
+            await record_failed_attempt(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Current TOTP code required to replace an active authenticator",
             )
-        await clear_failed_attempts(db, current_user.username, event_type="2fa_attempt")
+        await clear_failed_attempts(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
         _assert_totp_not_replayed(pyotp.TOTP(existing.secret), existing, supplied_code)
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
 
@@ -479,7 +474,7 @@ async def enable_totp(
     L-R7-A: Rate-limited to prevent brute-forcing the 6-digit confirmation code.
     """
     # L-R7-A: Rate-limit the enable step to prevent brute-forcing the 6-digit code.
-    await check_rate_limit(db, current_user.username, event_type="2fa_attempt")
+    await check_rate_limit(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
 
     result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))
     totp_record = result.scalar_one_or_none()
@@ -490,10 +485,10 @@ async def enable_totp(
         )
 
     if not pyotp.TOTP(totp_record.secret).verify(body.code, valid_window=1):
-        await record_failed_attempt(db, current_user.username, event_type="2fa_attempt")
+        await record_failed_attempt(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
 
-    await clear_failed_attempts(db, current_user.username, event_type="2fa_attempt")
+    await clear_failed_attempts(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
     plain_codes, hashed_codes = _generate_backup_codes()
     totp_record.is_enabled = True
     totp_record.backup_code_hashes = hashed_codes
@@ -620,7 +615,7 @@ async def enable_email_otp(
     # Prune any existing pending setup tokens for this user
     await db.execute(
         delete(AuthEphemeralToken).where(
-            AuthEphemeralToken.token_type == "email_otp_setup",
+            AuthEphemeralToken.token_type == TokenType.EMAIL_OTP_SETUP,
             AuthEphemeralToken.username == current_user.username,
         )
     )
@@ -632,7 +627,7 @@ async def enable_email_otp(
     db.add(
         AuthEphemeralToken(
             token=setup_token,
-            token_type="email_otp_setup",
+            token_type=TokenType.EMAIL_OTP_SETUP,
             username=current_user.username,
             # Reuse the nonce field to store the code hash
             nonce=code_hash,
@@ -682,14 +677,14 @@ async def confirm_enable_email_otp(
     up to the rate limit (5 attempts / 15 min).
     M4: Rate-limited to prevent brute-forcing the 6-digit setup code.
     """
-    await check_rate_limit(db, current_user.username, event_type="2fa_attempt")
+    await check_rate_limit(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
     now = datetime.now(timezone.utc)
 
     # --- Peek: validate token without consuming ---
     peek_result = await db.execute(
         select(AuthEphemeralToken).where(
             AuthEphemeralToken.token == body.setup_token,
-            AuthEphemeralToken.token_type == "email_otp_setup",
+            AuthEphemeralToken.token_type == TokenType.EMAIL_OTP_SETUP,
             AuthEphemeralToken.username == current_user.username,
             AuthEphemeralToken.expires_at > now,
         )
@@ -702,7 +697,7 @@ async def confirm_enable_email_otp(
 
     # --- Verify code before consuming the token ---
     if not pwd_context.verify(body.code, code_hash):
-        await record_failed_attempt(db, current_user.username, event_type="2fa_attempt")
+        await record_failed_attempt(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
 
     # --- Atomically consume the token now that the code is correct ---
@@ -711,7 +706,7 @@ async def confirm_enable_email_otp(
         delete(AuthEphemeralToken)
         .where(
             AuthEphemeralToken.token == body.setup_token,
-            AuthEphemeralToken.token_type == "email_otp_setup",
+            AuthEphemeralToken.token_type == TokenType.EMAIL_OTP_SETUP,
             AuthEphemeralToken.username == current_user.username,
         )
         .returning(AuthEphemeralToken.id)
@@ -720,7 +715,7 @@ async def confirm_enable_email_otp(
         # Concurrent request consumed it between peek and delete — treat as invalid.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired setup token")
 
-    await clear_failed_attempts(db, current_user.username, event_type="2fa_attempt")
+    await clear_failed_attempts(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
     await _set_email_2fa_enabled(db, current_user.id, True)
     await db.commit()
     return {"message": "Email OTP 2FA enabled"}
@@ -897,7 +892,7 @@ async def verify_2fa(
             )
 
         if otp_record.attempts >= UserOTPCode.MAX_ATTEMPTS:
-            otp_record.used = True
+            otp_record.consume()
             await db.commit()
             await record_failed_attempt(db, username)
             raise HTTPException(
@@ -910,8 +905,7 @@ async def verify_2fa(
             await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid OTP code")
 
-        # Mark as used
-        otp_record.used = True
+        otp_record.consume()
         await db.commit()
 
     else:  # method == "backup"
@@ -1154,7 +1148,7 @@ async def oidc_authorize(
     # Prune expired OIDC states from the DB
     await db.execute(
         delete(AuthEphemeralToken).where(
-            AuthEphemeralToken.token_type == "oidc_state",
+            AuthEphemeralToken.token_type == TokenType.OIDC_STATE,
             AuthEphemeralToken.expires_at < now,
         )
     )
@@ -1168,7 +1162,7 @@ async def oidc_authorize(
     db.add(
         AuthEphemeralToken(
             token=state,
-            token_type="oidc_state",
+            token_type=TokenType.OIDC_STATE,
             provider_id=provider_id,
             nonce=nonce,
             code_verifier=code_verifier,
@@ -1220,13 +1214,13 @@ async def oidc_callback(
             delete(AuthEphemeralToken)
             .where(
                 AuthEphemeralToken.token == state,
-                AuthEphemeralToken.token_type == "oidc_state",
+                AuthEphemeralToken.token_type == TokenType.OIDC_STATE,
+                AuthEphemeralToken.expires_at > now,  # reject expired tokens atomically
             )
             .returning(
                 AuthEphemeralToken.provider_id,
                 AuthEphemeralToken.nonce,
                 AuthEphemeralToken.code_verifier,
-                AuthEphemeralToken.expires_at,
             )
         )
         state_row = state_del.one_or_none()
@@ -1234,11 +1228,8 @@ async def oidc_callback(
             await db.rollback()
             return RedirectResponse(url=f"{frontend_error_url}invalid_state", status_code=302)
 
-        provider_id, nonce, code_verifier, state_expires_at = state_row
+        provider_id, nonce, code_verifier = state_row
         await db.commit()
-
-        if now > _as_utc(state_expires_at):
-            return RedirectResponse(url=f"{frontend_error_url}state_expired", status_code=302)
 
         # Load provider
         result = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
@@ -1522,7 +1513,7 @@ async def oidc_callback(
             now2 = datetime.now(timezone.utc)
             await db.execute(
                 delete(AuthEphemeralToken).where(
-                    AuthEphemeralToken.token_type == "oidc_exchange",
+                    AuthEphemeralToken.token_type == TokenType.OIDC_EXCHANGE,
                     AuthEphemeralToken.expires_at < now2,
                 )
             )
@@ -1530,7 +1521,7 @@ async def oidc_callback(
             db.add(
                 AuthEphemeralToken(
                     token=exchange_token,
-                    token_type="oidc_exchange",
+                    token_type=TokenType.OIDC_EXCHANGE,
                     username=user.username,
                     expires_at=now2 + OIDC_EXCHANGE_TTL,
                 )
@@ -1578,19 +1569,17 @@ async def oidc_exchange(
         delete(AuthEphemeralToken)
         .where(
             AuthEphemeralToken.token == body.oidc_token,
-            AuthEphemeralToken.token_type == "oidc_exchange",
+            AuthEphemeralToken.token_type == TokenType.OIDC_EXCHANGE,
+            AuthEphemeralToken.expires_at > now,  # reject expired tokens atomically
         )
-        .returning(AuthEphemeralToken.username, AuthEphemeralToken.expires_at)
+        .returning(AuthEphemeralToken.username)
     )
     row = consume_result.one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired OIDC exchange token")
 
-    username, expires_at = row
+    (username,) = row
     await db.commit()
-
-    if now > _as_utc(expires_at):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OIDC exchange token has expired")
 
     user = await get_user_by_username(db, username)
     if not user or not user.is_active:

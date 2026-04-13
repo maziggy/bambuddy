@@ -122,6 +122,7 @@ class PrinterState:
     ipcam: bool = False  # Live view / camera streaming enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
     wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
+    door_open: bool = False  # Enclosure door open (home_flag bit 23, X1/P1S/P2S/H2*)
     # Nozzle hardware info (for dual nozzle printers, index 0 = left, 1 = right)
     nozzles: list = field(default_factory=lambda: [NozzleInfo(), NozzleInfo()])
     # AI detection and print options
@@ -2253,6 +2254,39 @@ class BambuMQTTClient:
                     f"[{self.serial_number}] store_to_sdcard changed: {self.state.store_to_sdcard} -> {store_to_sdcard}"
                 )
             self.state.store_to_sdcard = store_to_sdcard
+
+        # Door open detection — source depends on printer family:
+        #   X1 series (X1, X1C, X1E): home_flag bit 23
+        #   All others (P1/P2/H2/A1/N-series): top-level `stat` field (hex string), bit 23
+        # Both share the same bitmask (0x00800000) but live in different fields.
+        model_upper = (self.model or "").upper().strip()
+        is_x1_family = model_upper in ("X1", "X1C", "X1E")
+        if is_x1_family and "home_flag" in data:
+            door_open = (home_flag & 0x00800000) != 0
+            if door_open != self.state.door_open:
+                logger.debug(
+                    "[%s] door_open changed: %s -> %s (home_flag=0x%08X)",
+                    self.serial_number,
+                    self.state.door_open,
+                    door_open,
+                    home_flag,
+                )
+            self.state.door_open = door_open
+        elif not is_x1_family and "stat" in data:
+            try:
+                stat_value = int(data["stat"], 16) if isinstance(data["stat"], str) else int(data["stat"])
+                door_open = (stat_value & 0x00800000) != 0
+                if door_open != self.state.door_open:
+                    logger.debug(
+                        "[%s] door_open changed: %s -> %s (stat=0x%08X)",
+                        self.serial_number,
+                        self.state.door_open,
+                        door_open,
+                        stat_value,
+                    )
+                self.state.door_open = door_open
+            except (ValueError, TypeError):
+                logger.debug("[%s] could not parse stat field: %r", self.serial_number, data["stat"])
 
         # Parse timelapse status (recording active during print)
         if "timelapse" in data:

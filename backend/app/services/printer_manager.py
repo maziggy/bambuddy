@@ -801,6 +801,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         # WiFi signal strength
         "wifi_signal": state.wifi_signal,
         "wired_network": state.wired_network,
+        "door_open": state.door_open,
         # Calibration stage tracking
         "stg_cur": state.stg_cur,
         "stg_cur_name": get_derived_status_name(state, model),

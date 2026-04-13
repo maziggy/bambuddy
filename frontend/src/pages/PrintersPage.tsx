@@ -12,6 +12,7 @@ import {
   MoreVertical,
   Trash2,
   RefreshCw,
+  RotateCw,
   Box,
   HardDrive,
   AlertTriangle,
@@ -47,7 +48,10 @@ import {
   Info,
   Cable,
   Flame,
+  Snowflake,
   Gauge,
+  DoorOpen,
+  DoorClosed,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -1326,6 +1330,7 @@ function PrinterCard({
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState<number | null>(null);
+  const [showAirductMenu, setShowAirductMenu] = useState<number | null>(null);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [showUploadForPrint, setShowUploadForPrint] = useState(false);
@@ -1625,6 +1630,15 @@ function PrinterCard({
     },
   });
 
+  const forceRefreshMutation = useMutation({
+    mutationFn: () => api.refreshPrinterStatus(printer.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+      showToast(t('printers.forceRefreshSuccess'), 'success');
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
+  });
+
   const unlinkSpoolMutation = useMutation({
     mutationFn: (spoolId: number) => api.unlinkSpool(spoolId),
     onSuccess: (result) => {
@@ -1756,6 +1770,25 @@ function PrinterCard({
         queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
       }
       showToast(error.message || t('printers.toast.failedToSetSpeed'), 'error');
+    },
+  });
+
+  const airductMutation = useMutation({
+    mutationFn: (mode: 'cooling' | 'heating') => api.setAirductMode(printer.id, mode),
+    onMutate: async (mode) => {
+      await queryClient.cancelQueries({ queryKey: ['printerStatus', printer.id] });
+      const previousStatus = queryClient.getQueryData(['printerStatus', printer.id]);
+      queryClient.setQueryData(['printerStatus', printer.id], (old: typeof status) => ({
+        ...old,
+        airduct_mode: mode === 'cooling' ? 0 : 1,
+      }));
+      return { previousStatus };
+    },
+    onError: (error: Error, _, context) => {
+      if (context?.previousStatus) {
+        queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
+      }
+      showToast(error.message || t('printers.toast.failedToSendCommand'), 'error');
     },
   });
 
@@ -2261,6 +2294,17 @@ function PrinterCard({
                     {t('printers.reconnect')}
                   </button>
                   <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2 disabled:opacity-50"
+                    disabled={forceRefreshMutation.isPending}
+                    onClick={() => {
+                      forceRefreshMutation.mutate();
+                      setShowMenu(false);
+                    }}
+                  >
+                    <RotateCw className={`w-4 h-4 ${forceRefreshMutation.isPending ? 'animate-spin' : ''}`} />
+                    {t('printers.forceRefresh')}
+                  </button>
+                  <button
                     className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
                     onClick={() => {
                       setShowMQTTDebug(true);
@@ -2416,6 +2460,34 @@ function PrinterCard({
                   {status.firmware_version}
                 </span>
               ) : null}
+
+              {/* SD Card Badge */}
+              {status && (
+                <span
+                  className={`flex items-center px-2 py-1 rounded-full text-xs ${
+                    status.sdcard
+                      ? 'bg-status-ok/20 text-status-ok'
+                      : 'bg-red-500/20 text-red-400'
+                  }`}
+                  title={`${t('printers.sdCard')}: ${status.sdcard ? t('printers.inserted') : t('printers.notInserted')}`}
+                >
+                  <HardDrive className="w-3 h-3" />
+                </span>
+              )}
+
+              {/* Enclosure Door Badge (X1/P1S/P2S/H2*) */}
+              {status && ['X1C', 'X1', 'X1E', 'P1S', 'P1P', 'P2S', 'H2D', 'H2D Pro', 'H2C', 'H2S'].includes(printer.model ?? '') && (
+                <span
+                  className={`flex items-center px-2 py-1 rounded-full text-xs ${
+                    status.door_open
+                      ? 'bg-yellow-500/20 text-yellow-400'
+                      : 'bg-status-ok/20 text-status-ok'
+                  }`}
+                  title={status.door_open ? t('printers.door.open') : t('printers.door.closed')}
+                >
+                  {status.door_open ? <DoorOpen className="w-3 h-3" /> : <DoorClosed className="w-3 h-3" />}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -2771,6 +2843,56 @@ function PrinterCard({
 
                       {/* Separator */}
                       <div className="w-px h-5 bg-bambu-gray/30" />
+
+                      {/* Airduct Mode (P2S / H2*) */}
+                      {(['P2S', 'H2D', 'H2C', 'H2S'].includes(printer.model ?? '')) && (() => {
+                        const isHeating = status.airduct_mode === 1;
+                        const Icon = isHeating ? Flame : Snowflake;
+                        const color = isHeating ? 'text-orange-400' : 'text-sky-400';
+                        const bg = isHeating ? 'bg-orange-500/10 hover:bg-orange-500/20' : 'bg-sky-500/10 hover:bg-sky-500/20';
+                        return (
+                          <div className="relative">
+                            <button
+                              onClick={() => setShowAirductMenu(showAirductMenu === printer.id ? null : printer.id)}
+                              disabled={!hasPermission('printers:control')}
+                              className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${bg} disabled:opacity-50 disabled:cursor-not-allowed`}
+                              title={t('printers.airduct.title')}
+                            >
+                              <Icon className={`w-3.5 h-3.5 ${color}`} />
+                              <span className={`text-[10px] ${color}`}>
+                                {isHeating ? t('printers.airduct.heating') : t('printers.airduct.cooling')}
+                              </span>
+                            </button>
+                            {showAirductMenu === printer.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowAirductMenu(null)} />
+                                <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg py-1 min-w-[130px]">
+                                  {([
+                                    { mode: 'cooling', label: t('printers.airduct.cooling'), modeId: 0 },
+                                    { mode: 'heating', label: t('printers.airduct.heating'), modeId: 1 },
+                                  ] as const).map(({ mode, label, modeId }) => (
+                                    <button
+                                      key={mode}
+                                      onClick={() => {
+                                        airductMutation.mutate(mode);
+                                        setShowAirductMenu(null);
+                                      }}
+                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
+                                        status.airduct_mode === modeId
+                                          ? 'text-bambu-green bg-bambu-green/10'
+                                          : 'text-white hover:bg-bambu-dark-tertiary'
+                                      }`}
+                                    >
+                                      {mode === 'heating' ? <Flame className="w-3 h-3" /> : <Snowflake className="w-3 h-3" />}
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Print Speed */}
                       {(() => {

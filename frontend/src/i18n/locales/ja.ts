@@ -226,6 +226,8 @@ export default {
     camera: 'カメラ',
     skipObject: 'オブジェクトスキップ',
     reconnect: '再接続',
+    forceRefresh: '強制更新',
+    forceRefreshSuccess: '更新をリクエストしました',
     mqttDebug: 'MQTTデバッグ',
     printerInformation: 'プリンター情報',
     copyToClipboard: 'コピー',
@@ -498,6 +500,16 @@ export default {
       standard: 'スタンダード (100%)',
       sport: 'スポーツ (124%)',
       ludicrous: 'ルディクラス (166%)',
+    },
+    airduct: {
+      title: 'エアダクトモード',
+      cooling: '冷却',
+      heating: '加熱',
+    },
+    noSdCard: 'SDなし',
+    door: {
+      open: '開',
+      closed: '閉',
     },
     // Fans
     fans: {

@@ -227,6 +227,8 @@ export default {
     camera: '摄像头',
     skipObject: '跳过对象',
     reconnect: '重新连接',
+    forceRefresh: '强制刷新',
+    forceRefreshSuccess: '已请求刷新',
     mqttDebug: 'MQTT 调试',
     printerInformation: '打印机信息',
     copyToClipboard: '复制',
@@ -499,6 +501,16 @@ export default {
       standard: '标准 (100%)',
       sport: '运动 (124%)',
       ludicrous: '疯狂 (166%)',
+    },
+    airduct: {
+      title: '风道模式',
+      cooling: '制冷',
+      heating: '加热',
+    },
+    noSdCard: '无SD',
+    door: {
+      open: '开',
+      closed: '关',
     },
     // Fans
     fans: {

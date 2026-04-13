@@ -3520,3 +3520,57 @@ class TestStaleReconnect:
 
         assert state_changes == [False]
         assert mqtt_client.state.connected is False
+
+
+class TestDoorOpenParsing:
+    """Tests for enclosure door state parsing (X1 home_flag bit 23 vs others stat bit 23)."""
+
+    def _make_client(self, model: str):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST",
+            access_code="12345678",
+            model=model,
+        )
+
+    def test_x1c_door_open_from_home_flag(self):
+        client = self._make_client("X1C")
+        # bit 23 set
+        client._update_state({"home_flag": 0xC0E5CD98})
+        assert client.state.door_open is True
+
+    def test_x1c_door_closed_from_home_flag(self):
+        client = self._make_client("X1C")
+        client.state.door_open = True  # start "open"
+        client._update_state({"home_flag": 0xC065CD98})
+        assert client.state.door_open is False
+
+    def test_x1c_ignores_stat_field(self):
+        # X1C must NOT use stat (bit 23 in stat is unrelated for X1)
+        client = self._make_client("X1C")
+        client._update_state({"home_flag": 0xC065CD98, "stat": "47A58000"})
+        assert client.state.door_open is False  # home_flag wins
+
+    def test_h2d_door_open_from_stat(self):
+        client = self._make_client("H2D")
+        client._update_state({"stat": "640A58000"})  # bit 23 set
+        assert client.state.door_open is True
+
+    def test_h2d_door_closed_from_stat(self):
+        client = self._make_client("H2D")
+        client.state.door_open = True
+        client._update_state({"stat": "640258000"})  # bit 23 cleared
+        assert client.state.door_open is False
+
+    def test_h2d_ignores_home_flag(self):
+        # Non-X1 must NOT consume home_flag for door state
+        client = self._make_client("H2D")
+        client._update_state({"home_flag": 0xC0E5CD98, "stat": "640258000"})
+        assert client.state.door_open is False  # stat wins
+
+    def test_invalid_stat_does_not_raise(self):
+        client = self._make_client("H2D")
+        client._update_state({"stat": "not-hex"})
+        assert client.state.door_open is False

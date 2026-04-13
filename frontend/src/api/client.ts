@@ -250,6 +250,7 @@ export interface PrinterStatus {
   ipcam: boolean;  // Live view enabled
   wifi_signal: number | null;  // WiFi signal strength in dBm
   wired_network: boolean;  // Ethernet connection detected
+  door_open: boolean;  // Enclosure door open (X1/P1S/P2S/H2*)
   nozzles: NozzleInfo[];  // Nozzle hardware info (index 0=left/primary, 1=right)
   nozzle_rack: NozzleRackSlot[];  // H2C 6-nozzle tool-changer rack
   print_options: PrintOptions | null;  // AI detection and print options
@@ -2807,6 +2808,11 @@ export const api = {
   // Print Speed Control
   setPrintSpeed: (printerId: number, mode: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/print-speed?mode=${mode}`, {
+      method: 'POST',
+    }),
+
+  setAirductMode: (printerId: number, mode: 'cooling' | 'heating') =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/airduct-mode?mode=${mode}`, {
       method: 'POST',
     }),
 

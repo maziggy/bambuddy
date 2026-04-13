@@ -1,0 +1,200 @@
+2026-04-13 19:34:48,206 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:34:48,207 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-13 19:34:48,465 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-13 19:34:48,466 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 254
+2026-04-13 19:34:50,223 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:34:50,223 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-13 19:34:52,231 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:34:53,559 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-13 19:34:53,559 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 254
+2026-04-13 19:34:54,241 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:34:54,241 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-13 19:34:55,606 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sent stop print command
+2026-04-13 19:34:55,606 INFO [backend.app.main] Marked printer 1 as user-stopped from queue
+2026-04-13 19:34:55,611 INFO [backend.app.api.routes.print_queue] Stopped printing queue item 24 (stop command sent: True)
+2026-04-13 19:35:00,253 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-13 19:35:00,254 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 254
+2026-04-13 19:35:00,265 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:35:00,273 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-13 19:35:00,329 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-13 19:35:00,330 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 254
+2026-04-13 19:35:01,582 INFO [backend.app.api.routes.print_queue] Added archive 28 to queue for 1
+2026-04-13 19:35:02,284 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:35:04,167 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-13 19:35:04,305 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:35:04,309 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-13 19:35:04,520 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-13 19:35:04,599 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7f9e96a3f0>
+2026-04-13 19:35:04,600 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:04,603 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-13 19:35:04,603 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-13 19:35:04,604 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-13 19:35:04,604 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:04,664 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/15.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-13 19:35:04,665 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-13 19:35:04,666 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-13 19:35:04,667 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-13 19:35:04,668 DEBUG [httpcore.http11] response_closed.started
+2026-04-13 19:35:04,669 DEBUG [httpcore.http11] response_closed.complete
+2026-04-13 19:35:04,700 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-13 19:35:04,706 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7fa48ad810>
+2026-04-13 19:35:04,707 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:04,708 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-13 19:35:04,708 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-13 19:35:04,708 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-13 19:35:04,709 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:04,769 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/15.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-13 19:35:04,770 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-13 19:35:04,770 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-13 19:35:04,776 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-13 19:35:04,776 DEBUG [httpcore.http11] response_closed.started
+2026-04-13 19:35:04,777 DEBUG [httpcore.http11] response_closed.complete
+2026-04-13 19:35:06,303 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:35:06,304 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-13 19:35:08,134 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-13 19:35:08,135 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 254
+2026-04-13 19:35:08,323 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:35:12,334 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:35:14,357 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:35:14,358 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-13 19:35:15,480 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-13 19:35:15,660 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7f9e968460>
+2026-04-13 19:35:15,661 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:15,662 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-13 19:35:15,662 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-13 19:35:15,662 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-13 19:35:15,663 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:15,696 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/15.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-13 19:35:15,697 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-13 19:35:15,697 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-13 19:35:15,699 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-13 19:35:15,700 DEBUG [httpcore.http11] response_closed.started
+2026-04-13 19:35:15,700 DEBUG [httpcore.http11] response_closed.complete
+2026-04-13 19:35:15,732 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-13 19:35:15,737 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7f9e5d45f0>
+2026-04-13 19:35:15,738 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:15,739 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-13 19:35:15,739 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-13 19:35:15,739 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-13 19:35:15,740 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:15,800 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/15.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-13 19:35:15,801 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-13 19:35:15,801 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-13 19:35:15,804 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-13 19:35:15,805 DEBUG [httpcore.http11] response_closed.started
+2026-04-13 19:35:15,805 DEBUG [httpcore.http11] response_closed.complete
+2026-04-13 19:35:16,362 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:35:16,363 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-13 19:35:19,142 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(25, 1, 28, None)]
+2026-04-13 19:35:19,143 INFO [backend.app.services.print_scheduler] Starting queue item 25
+2026-04-13 19:35:19,176 INFO [backend.app.services.print_scheduler] Queue item 25: FTP upload starting - printer=[PRINTER] (A1), ip=[IP], file=jens(schild).3mf, local_path=/app/data/archive/unassigned/20260413_190439_jens(schild).gcode/jens(schild).gcode.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-04-13 19:35:19,177 DEBUG [backend.app.services.print_scheduler] Queue item 25: Deleting existing file /jens(schild).3mf if present...
+2026-04-13 19:35:19,178 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=A1, prot_c=False)
+2026-04-13 19:35:19,998 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-13 19:35:20,015 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-13 19:35:20,031 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-13 19:35:20,031 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-13 19:35:20,380 DEBUG [backend.app.services.print_scheduler] Queue item 25: Delete result: True
+2026-04-13 19:35:20,382 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=A1, mode=prot_p, socket_timeout=30.0s)...
+2026-04-13 19:35:20,383 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=A1, prot_c=False)
+2026-04-13 19:35:21,199 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-13 19:35:21,215 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-13 19:35:21,231 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-13 19:35:21,231 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-13 19:35:21,232 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-13 19:35:21,232 INFO [backend.app.services.bambu_ftp] FTP uploading /app/data/archive/unassigned/20260413_190439_jens(schild).gcode/jens(schild).gcode.3mf (883070 bytes) to /jens(schild).3mf
+2026-04-13 19:35:21,233 DEBUG [backend.app.services.bambu_ftp] FTP STOR command starting for /jens(schild).3mf
+2026-04-13 19:35:21,323 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-04-13 19:35:21,333 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 65536/883070 bytes
+2026-04-13 19:35:21,390 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 131072/883070 bytes
+2026-04-13 19:35:21,395 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 196608/883070 bytes
+2026-04-13 19:35:22,290 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 262144/883070 bytes
+2026-04-13 19:35:25,936 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 327680/883070 bytes
+2026-04-13 19:35:29,617 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 393216/883070 bytes
+2026-04-13 19:35:33,272 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 458752/883070 bytes
+2026-04-13 19:35:34,202 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-13 19:35:36,936 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 524288/883070 bytes
+2026-04-13 19:35:40,616 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 589824/883070 bytes
+2026-04-13 19:35:43,733 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-13 19:35:43,734 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 254
+2026-04-13 19:35:44,285 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 655360/883070 bytes
+2026-04-13 19:35:47,320 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-13 19:35:47,402 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7fa4466b70>
+2026-04-13 19:35:47,403 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:47,404 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-13 19:35:47,404 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-13 19:35:47,404 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-13 19:35:47,404 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:47,421 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/15.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-13 19:35:47,422 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-13 19:35:47,423 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-13 19:35:47,426 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-13 19:35:47,426 DEBUG [httpcore.http11] response_closed.started
+2026-04-13 19:35:47,427 DEBUG [httpcore.http11] response_closed.complete
+2026-04-13 19:35:47,459 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-13 19:35:47,465 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7f9c9c17c0>
+2026-04-13 19:35:47,466 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:47,467 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-13 19:35:47,467 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-13 19:35:47,467 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-13 19:35:47,467 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-13 19:35:47,529 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/15.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-13 19:35:47,530 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-13 19:35:47,530 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-13 19:35:47,533 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-13 19:35:47,534 DEBUG [httpcore.http11] response_closed.started
+2026-04-13 19:35:47,534 DEBUG [httpcore.http11] response_closed.complete
+2026-04-13 19:35:47,977 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 720896/883070 bytes
+2026-04-13 19:35:51,654 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 786432/883070 bytes
+2026-04-13 19:35:55,304 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 851968/883070 bytes
+2026-04-13 19:35:58,984 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 883070/883070 bytes
+2026-04-13 19:35:58,984 DEBUG [backend.app.services.bambu_ftp] FTP upload: final chunk reached
+2026-04-13 19:36:04,273 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-13 19:36:10,911 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /jens(schild).3mf: 226
+2026-04-13 19:36:10,911 INFO [backend.app.services.bambu_ftp] FTP upload complete: /jens(schild).3mf (883070 bytes in 49.7s, 17 KB/s)
+2026-04-13 19:36:10,911 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-13 19:36:10,924 INFO [backend.app.main] Registered expected print: printer=1, file=jens(schild).3mf, archive=28, ams_mapping=[254]
+2026-04-13 19:36:10,929 INFO [backend.app.services.print_scheduler] Queue item 25: Status set to 'printing', sending print command...
+2026-04-13 19:36:10,929 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=jens(schild).3mf, caller=print_scheduler.py:216:check_queue
+2026-04-13 19:36:10,930 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://jens(schild).3mf", "file": "jens(schild).3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "jens(schild)", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [-1], "ams_mapping2": [{"ams_id": 254, "slot_id": 0}]}}
+2026-04-13 19:36:10,930 INFO [backend.app.services.print_scheduler] Queue item 25: Print started successfully - jens(schild).gcode.3mf
+2026-04-13 19:36:10,934 INFO [backend.app.services.print_scheduler] Queue: printer 1 not available — connected=True, state=FINISH, plate_cleared=False
+2026-04-13 19:36:11,592 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:11,592 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-13 19:36:13,603 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:13,604 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-13 19:36:15,625 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:17,635 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:29,693 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:34,359 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-13 19:36:35,721 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:35,722 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-13 19:36:37,726 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:37,727 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-13 19:36:41,753 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:45,771 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:47,775 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:49,787 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:51,803 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:53,813 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:57,833 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:59,841 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:36:59,843 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-13 19:37:01,850 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:37:01,851 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-13 19:37:04,370 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-13 19:37:05,871 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:37:05,872 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-13 19:37:13,907 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:37:13,908 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-13 19:37:17,936 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:37:23,964 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:37:25,969 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:37:27,989 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:37:33,740 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-13 19:37:33,741 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 254
+2026-04-13 19:37:34,011 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:37:34,012 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-13 19:37:34,396 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-13 19:37:36,025 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-13 19:37:36,030 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm

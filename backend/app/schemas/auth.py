@@ -108,6 +108,13 @@ class SetupRequest(BaseModel):
     admin_username: str | None = Field(default=None, max_length=150)
     admin_password: str | None = Field(default=None, max_length=256)
 
+    @field_validator("admin_password")
+    @classmethod
+    def validate_admin_password(cls, v: str | None) -> str | None:
+        if v is not None:
+            _validate_password_complexity(v)
+        return v
+
 
 class SetupResponse(BaseModel):
     auth_enabled: bool
@@ -274,6 +281,15 @@ class EmailOTPDisableRequest(BaseModel):
     """Requires the account password to disable email OTP."""
 
     password: str = Field(..., max_length=256)
+
+
+class AdminDisable2FARequest(BaseModel):
+    """Admin must supply their own password as re-auth before disabling 2FA for another user.
+
+    OIDC/LDAP-only admins (no local password_hash) are exempt from this check.
+    """
+
+    admin_password: str | None = Field(default=None, max_length=256)
 
 
 # ---------------------------------------------------------------------------

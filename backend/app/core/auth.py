@@ -238,28 +238,15 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     return encoded_jwt
 
 
-# I1: Hard cutoff for tokens without iat claim.
-# Tokens issued before this date (when iat was introduced) are still tolerated.
-# Tokens issued after this date that lack iat are rejected unconditionally.
-_IAT_ENFORCEMENT_DATE = datetime(2025, 1, 1, tzinfo=timezone.utc)
-
-
 def _is_token_fresh(iat: int | float | None, user: User) -> bool:
     """Return False if the token was issued before the user's last password change.
 
     Used to invalidate all sessions after a password reset/change (M-R7-B).
-    I1: Tokens without iat that were issued after _IAT_ENFORCEMENT_DATE are
-    rejected — the transition window is not open-ended.
+    All tokens without an iat claim are unconditionally rejected — every token
+    issued by this server carries iat, so absence means the token is forged or
+    from a pre-iat code path whose max TTL (24 h) has long since expired.
     """
     if iat is None:
-        # I1: Reject iat-less tokens that could only have been issued after the
-        # enforcement date (i.e. forged or from a future buggy code path).
-        # We use the current time as a proxy: if iat is missing now, the token
-        # was either very old (pre-enforcement) or malformed. We tolerate tokens
-        # that predate the enforcement date by assuming they are legacy; tokens
-        # created after that date must always carry iat.
-        # Since we cannot know when a iat-less token was issued, we reject them
-        # outright if iat enforcement is active (safe default post-deployment).
         return False
     if not hasattr(user, "password_changed_at") or user.password_changed_at is None:
         return True  # No password change recorded yet (I2 migration handles this)
@@ -267,6 +254,8 @@ def _is_token_fresh(iat: int | float | None, user: User) -> bool:
     pca = user.password_changed_at
     if pca.tzinfo is None:
         pca = pca.replace(tzinfo=timezone.utc)
+    # JWT iat is whole seconds; truncate pca so tokens issued in the same second pass.
+    pca = pca.replace(microsecond=0)
     return token_issued_at >= pca
 
 

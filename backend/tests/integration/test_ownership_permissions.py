@@ -22,14 +22,14 @@ class TestOwnershipPermissionsSetup:
             json={
                 "auth_enabled": True,
                 "admin_username": "ownershipadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         # Login as admin
         admin_login = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "ownershipadmin", "password": "adminpassword123"},
+            json={"username": "ownershipadmin", "password": "AdminPass1!"},
         )
         admin_token = admin_login.json()["access_token"]
         admin_user = admin_login.json()["user"]

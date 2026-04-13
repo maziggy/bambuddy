@@ -61,7 +61,7 @@ class TestAuthSetupAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "testadmin",
-                "admin_password": "testpassword123",
+                "admin_password": "TestPass1!",
             },
         )
 
@@ -96,14 +96,14 @@ class TestAuthLoginAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "logintest",
-                "admin_password": "loginpassword123",
+                "admin_password": "LoginPass1!",
             },
         )
 
         # Now login
         response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "logintest", "password": "loginpassword123"},
+            json={"username": "logintest", "password": "LoginPass1!"},
         )
 
         assert response.status_code == 200
@@ -123,7 +123,7 @@ class TestAuthLoginAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "invalidtest",
-                "admin_password": "correctpassword",
+                "admin_password": "CorrectPass1!",
             },
         )
 
@@ -158,13 +158,13 @@ class TestAuthMeAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "metest",
-                "admin_password": "mepassword123",
+                "admin_password": "MePass1!",
             },
         )
 
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "metest", "password": "mepassword123"},
+            json={"username": "metest", "password": "MePass1!"},
         )
         token = login_response.json()["access_token"]
 
@@ -254,13 +254,13 @@ class TestUsersAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "usersadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "usersadmin", "password": "adminpassword123"},
+            json={"username": "usersadmin", "password": "AdminPass1!"},
         )
         return login_response.json()["access_token"]
 
@@ -274,7 +274,7 @@ class TestUsersAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "authreqadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
@@ -410,14 +410,14 @@ class TestAuthDisableAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "disableadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         # Login to get token
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "disableadmin", "password": "adminpassword123"},
+            json={"username": "disableadmin", "password": "AdminPass1!"},
         )
         token = login_response.json()["access_token"]
 
@@ -446,13 +446,13 @@ class TestGroupsAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "groupsadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "groupsadmin", "password": "adminpassword123"},
+            json={"username": "groupsadmin", "password": "AdminPass1!"},
         )
         return login_response.json()["access_token"]
 
@@ -592,13 +592,13 @@ class TestUserGroupsAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "usergroupadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "usergroupadmin", "password": "adminpassword123"},
+            json={"username": "usergroupadmin", "password": "AdminPass1!"},
         )
         return login_response.json()["access_token"]
 
@@ -675,13 +675,13 @@ class TestChangePasswordAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "pwchangeadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         admin_login = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "pwchangeadmin", "password": "adminpassword123"},
+            json={"username": "pwchangeadmin", "password": "AdminPass1!"},
         )
         admin_token = admin_login.json()["access_token"]
 
@@ -768,7 +768,7 @@ class TestAuthMiddlewarePublicRoutes:
             json={
                 "auth_enabled": True,
                 "admin_username": "middlewareadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
@@ -786,7 +786,7 @@ class TestAuthMiddlewarePublicRoutes:
         """Verify /api/v1/auth/login is accessible without auth."""
         response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "middlewareadmin", "password": "adminpassword123"},
+            json={"username": "middlewareadmin", "password": "AdminPass1!"},
         )
         # Should not return 401 (unauthorized) - it should either succeed or return
         # a different error (like 400 for wrong credentials)
@@ -826,7 +826,7 @@ class TestAuthMiddlewarePublicRoutes:
         # Login to get token
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "middlewareadmin", "password": "adminpassword123"},
+            json={"username": "middlewareadmin", "password": "AdminPass1!"},
         )
         token = login_response.json()["access_token"]
 

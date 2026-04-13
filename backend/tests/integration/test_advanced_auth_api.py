@@ -22,7 +22,7 @@ SMTP_DATA = {
 }
 
 
-async def _setup_admin(async_client: AsyncClient, username: str = "admin", password: str = "adminpass123"):
+async def _setup_admin(async_client: AsyncClient, username: str = "admin", password: str = "AdminPass1!"):
     """Enable auth and create admin user, return admin token."""
     await async_client.post(
         "/api/v1/auth/setup",
@@ -68,7 +68,7 @@ class TestSMTPConfigAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "smtpadmin", "adminpass123")
+        return await _setup_admin(async_client, "smtpadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -143,7 +143,7 @@ class TestAdvancedAuthToggleAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "toggleadmin", "adminpass123")
+        return await _setup_admin(async_client, "toggleadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -208,7 +208,7 @@ class TestEmailLoginAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "emailadmin", "adminpass123")
+        return await _setup_admin(async_client, "emailadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -327,7 +327,7 @@ class TestForgotPasswordAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "forgotadmin", "adminpass123")
+        return await _setup_admin(async_client, "forgotadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -468,7 +468,7 @@ class TestAdminResetPasswordAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "resetadmin", "adminpass123")
+        return await _setup_admin(async_client, "resetadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -578,7 +578,7 @@ class TestUserCreationAdvancedAuth:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "createadmin", "adminpass123")
+        return await _setup_admin(async_client, "createadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -675,7 +675,7 @@ class TestAuthSourcePasswordResetBlocking:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "authsrcadmin", "adminpass123")
+        return await _setup_admin(async_client, "authsrcadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration

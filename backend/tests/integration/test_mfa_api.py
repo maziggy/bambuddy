@@ -39,8 +39,18 @@ AUTH_SETUP_URL = "/api/v1/auth/setup"
 LOGIN_URL = "/api/v1/auth/login"
 
 
+def _norm_pw(password: str) -> str:
+    """Ensure password meets complexity requirements (I4: SetupRequest now validates)."""
+    if not any(c.isupper() for c in password):
+        password = password[0].upper() + password[1:]
+    if not any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" for c in password):
+        password = password + "!"
+    return password
+
+
 async def _setup_and_login(client: AsyncClient, username: str, password: str) -> str:
     """Enable auth, create an admin user, login, and return the bearer token."""
+    password = _norm_pw(password)
     await client.post(
         AUTH_SETUP_URL,
         json={
@@ -56,6 +66,7 @@ async def _setup_and_login(client: AsyncClient, username: str, password: str) ->
 
 async def _login_get_pre_auth_token(client: AsyncClient, username: str, password: str) -> str:
     """Login a user who has 2FA enabled; return the pre_auth_token from the response."""
+    password = _norm_pw(password)
     resp = await client.post(LOGIN_URL, json={"username": username, "password": password})
     assert resp.status_code == 200
     data = resp.json()
@@ -408,7 +419,7 @@ class TestEmailOTP:
         # Now disable
         response = await async_client.post(
             "/api/v1/auth/2fa/email/disable",
-            json={"password": "disemailpw1"},
+            json={"password": _norm_pw("disemailpw1")},
             headers=_auth_header(token),
         )
         assert response.status_code == 200
@@ -645,7 +656,12 @@ class TestAdminDisable2FA:
         # The only user in a fresh setup IS admin, so just check the 404 path
         token = await _setup_and_login(async_client, "admincheck", "admincheck123")
         # Try to disable for a non-existent user_id — should get 200 (no-op) or 404
-        response = await async_client.delete("/api/v1/auth/2fa/admin/99999", headers=_auth_header(token))
+        response = await async_client.request(
+            "DELETE",
+            "/api/v1/auth/2fa/admin/99999",
+            json={"admin_password": _norm_pw("admincheck123")},
+            headers=_auth_header(token),
+        )
         # Admin users succeed regardless (returns 200 even if user doesn't exist)
         assert response.status_code == 200
 
@@ -670,11 +686,27 @@ class TestAdminDisable2FA:
         me_resp = await async_client.get("/api/v1/auth/me", headers=_auth_header(token))
         user_id = me_resp.json()["id"]
 
-        response = await async_client.delete(f"/api/v1/auth/2fa/admin/{user_id}", headers=_auth_header(token))
+        response = await async_client.request(
+            "DELETE",
+            f"/api/v1/auth/2fa/admin/{user_id}",
+            json={"admin_password": _norm_pw("admintotp123")},
+            headers=_auth_header(token),
+        )
         assert response.status_code == 200
 
+        # I2: admin_disable_2fa bumps password_changed_at, invalidating the old token.
+        # Re-login to get a fresh token before checking status.
+        new_login = await async_client.post(
+            LOGIN_URL, json={"username": "admintotp", "password": _norm_pw("admintotp123")}
+        )
+        assert new_login.status_code == 200, f"re-login failed: {new_login.json()}"
+        assert new_login.json().get("requires_2fa") is False, f"still requires 2FA: {new_login.json()}"
+        new_token = new_login.json()["access_token"]
+        assert new_token is not None, f"no access_token in: {new_login.json()}"
+
         # Status should now show TOTP disabled
-        status_resp = await async_client.get("/api/v1/auth/2fa/status", headers=_auth_header(token))
+        status_resp = await async_client.get("/api/v1/auth/2fa/status", headers=_auth_header(new_token))
+        assert status_resp.status_code == 200, f"status check failed: {status_resp.json()}"
         assert status_resp.json()["totp_enabled"] is False
 
 
@@ -1092,7 +1124,7 @@ class TestLoginResponseShape:
             headers=_auth_header(token),
         )
 
-        login_resp = await async_client.post(LOGIN_URL, json={"username": "loginshape", "password": "loginshape1"})
+        login_resp = await async_client.post(LOGIN_URL, json={"username": "loginshape", "password": "Loginshape1!"})
         assert login_resp.status_code == 200
         data = login_resp.json()
         assert data.get("requires_2fa") is True
@@ -2357,3 +2389,300 @@ class TestOIDCAutoLinkExistingLinkRejection:
                 sa_select(_UOL).where(_UOL.user_id == target.id, _UOL.provider_id == prov_a.id)
             )
             assert links_result.scalar_one_or_none() is None, "No link to Provider A must exist"
+
+
+# ===========================================================================
+# Test Gap 1: OIDC state token is single-use — replay must be rejected
+# ===========================================================================
+
+
+class TestOIDCStateReplay:
+    """OIDC state token must be consumed on first use; a second callback with
+    the same state must redirect to ``?oidc_error=invalid_state``."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_replay_rejected(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Replaying a consumed OIDC state token must return invalid_state."""
+        from backend.app.models.oidc_provider import OIDCProvider
+
+        # ── 1. Seed a minimal provider ────────────────────────────────────
+        provider = OIDCProvider(
+            name="StateReplayIdP",
+            issuer_url="https://statereplay-idp.example.com",
+            client_id="client_replay",
+            _client_secret_enc="secret_replay",
+            scopes="openid",
+            is_enabled=True,
+            auto_link_existing_accounts=False,
+            auto_create_users=False,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+
+        # ── 2. Seed an OIDC state token ───────────────────────────────────
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider.id,
+                nonce=secrets.token_urlsafe(32),
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+
+        # ── 3. First callback — discovery will fail (no real IdP), but the
+        #       state token is atomically consumed (DELETE…RETURNING + commit)
+        #       before the HTTP call is attempted.
+        first = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=any_code&state={state}",
+            follow_redirects=False,
+        )
+        assert first.status_code == 302
+        # The first call may fail for any reason except invalid_state
+        assert "invalid_state" not in first.headers.get("location", ""), (
+            f"First call should NOT get invalid_state: {first.headers.get('location')}"
+        )
+
+        # ── 4. Second callback with the same state → must be invalid_state ─
+        second = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=any_code&state={state}",
+            follow_redirects=False,
+        )
+        assert second.status_code == 302
+        assert "invalid_state" in second.headers.get("location", ""), (
+            f"Replayed state must redirect to invalid_state, got: {second.headers.get('location')}"
+        )
+
+
+# ===========================================================================
+# Test Gap 2: OIDC iss claim mismatch must redirect to token_validation_failed
+# ===========================================================================
+
+
+class TestOIDCIssMismatch:
+    """JWT whose iss claim does not match the discovery issuer must be rejected."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_iss_mismatch_redirects_token_validation_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        import time
+        from unittest.mock import patch
+
+        import jwt as pyjwt
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        correct_issuer = "https://correct-iss.example.com"
+        wrong_issuer = "https://wrong-iss.example.com"
+        client_id = "iss-mismatch-client"
+        nonce = secrets.token_urlsafe(16)
+        now = int(time.time())
+
+        # Sign the token with the WRONG issuer (iss != discovery_issuer)
+        id_token = pyjwt.encode(
+            {
+                "sub": "sub-iss-test",
+                "iss": wrong_issuer,
+                "aud": client_id,
+                "nonce": nonce,
+                "email": "iss@example.com",
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+
+        admin_token = await _setup_and_login(async_client, "issadmin1", "issadmin1!")
+        cr = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "IssTest-IdP",
+                "issuer_url": correct_issuer,
+                "client_id": client_id,
+                "client_secret": "s",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert cr.status_code in (200, 201), cr.text
+        provider_id = cr.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=nonce,
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        # Discovery returns the CORRECT issuer; JWT carries the WRONG one.
+        discovery_doc = {
+            "issuer": correct_issuer,
+            "token_endpoint": f"{correct_issuer}/token",
+            "jwks_uri": f"{correct_issuer}/.well-known/jwks.json",
+        }
+        token_response = {"access_token": "a", "id_token": id_token}
+
+        class _MockResp:
+            def __init__(self, data):
+                self._data = data
+                self.status_code = 200
+                self.is_success = True
+                self.text = ""
+
+            def json(self):
+                return self._data
+
+            def raise_for_status(self):
+                pass
+
+        class _MockHttpxClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            async def get(self, url, **kw):
+                return _MockResp(jwks_data if "jwks" in url else discovery_doc)
+
+            async def post(self, url, **kw):
+                return _MockResp(token_response)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=c&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "token_validation_failed" in location, f"Expected token_validation_failed, got: {location}"
+
+
+# ===========================================================================
+# Test Gap 3: /forgot-password/confirm token is single-use
+# ===========================================================================
+
+
+class TestForgotPasswordTokenSingleUse:
+    """POST /forgot-password/confirm must reject a token after its first use."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_token_reuse_rejected(self, async_client: AsyncClient, db_session: AsyncSession):
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.user import User as _User
+
+        user = _User(
+            username="fpcuser1",
+            email="fpc@example.com",
+            password_hash=get_password_hash("OldPass1!"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(user)
+        await db_session.flush()
+
+        reset_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=reset_token,
+                token_type="password_reset",
+                username="fpcuser1",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
+        await db_session.commit()
+
+        # First use → success
+        resp1 = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": reset_token, "new_password": "NewPass1!"},
+        )
+        assert resp1.status_code == 200, resp1.text
+
+        # Second use → token already consumed, must fail
+        resp2 = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": reset_token, "new_password": "AnotherNew1!"},
+        )
+        assert resp2.status_code == 400
+
+
+# ===========================================================================
+# C1 regression: setup_totp must reject a replayed TOTP code
+# ===========================================================================
+
+
+class TestSetupTOTPReplayRejected:
+    """setup_totp must reject a TOTP code that was already accepted in its window."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_replayed_setup_code_rejected(self, async_client: AsyncClient, db_session: AsyncSession):
+        from sqlalchemy import select as sa_select
+
+        from backend.app.models.user_totp import UserTOTP
+
+        token = await _setup_and_login(async_client, "setupreplay1", "setupreplay1!")
+
+        # Step 1: Initial TOTP setup (no active TOTP yet → no code required)
+        setup_resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/setup",
+            headers=_auth_header(token),
+        )
+        assert setup_resp.status_code == 200
+        secret = setup_resp.json()["secret"]
+
+        # Step 2: Enable TOTP with a valid code
+        totp_obj = pyotp.TOTP(secret)
+        enable_resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/enable",
+            json={"code": totp_obj.now()},
+            headers=_auth_header(token),
+        )
+        assert enable_resp.status_code == 200  # TOTP is now active (is_enabled=True)
+
+        # Step 3: Determine current valid code and its counter
+        me_resp = await async_client.get("/api/v1/auth/me", headers=_auth_header(token))
+        user_id = me_resp.json()["id"]
+
+        totp_result = await db_session.execute(sa_select(UserTOTP).where(UserTOTP.user_id == user_id))
+        totp_record = totp_result.scalar_one()
+        secret_now = totp_record.secret  # decrypted via property
+
+        totp_now = pyotp.TOTP(secret_now)
+        valid_code = totp_now.now()
+        accepted_counter = totp_now.timecode(datetime.now(timezone.utc))
+
+        # Step 4: Pre-set last_totp_counter so this code looks already used
+        totp_record.last_totp_counter = accepted_counter
+        await db_session.commit()
+
+        # Step 5: Attempt setup_totp with the "already used" code → must be rejected
+        replay_resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/setup",
+            json={"code": valid_code},
+            headers=_auth_header(token),
+        )
+        assert replay_resp.status_code == 400
+        assert "already been used" in replay_resp.json()["detail"]

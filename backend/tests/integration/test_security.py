@@ -38,7 +38,17 @@ def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _norm_pw(password: str) -> str:
+    """Ensure password meets complexity requirements (I4: SetupRequest now validates)."""
+    if not any(c.isupper() for c in password):
+        password = password[0].upper() + password[1:]
+    if not any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" for c in password):
+        password = password + "!"
+    return password
+
+
 async def _setup_and_login(client: AsyncClient, username: str, password: str) -> str:
+    password = _norm_pw(password)
     await client.post(
         AUTH_SETUP_URL,
         json={"auth_enabled": True, "admin_username": username, "admin_password": password},
@@ -129,11 +139,12 @@ class TestEncryption:
             enc_mod._fernet_instance = None
             enc_mod._warn_shown = False
             # A value with the fernet: prefix but no key configured
-            with patch.dict("os.environ", {}, clear=True):
-                env = {k: v for k, v in __import__("os").environ.items() if k != "MFA_ENCRYPTION_KEY"}
-                with patch.dict("os.environ", env, clear=True):
-                    with pytest.raises(RuntimeError, match="MFA_ENCRYPTION_KEY must be set"):
-                        enc_mod.mfa_decrypt("fernet:gAAAAA-fake-ciphertext")
+            env = {k: v for k, v in __import__("os").environ.items() if k != "MFA_ENCRYPTION_KEY"}
+            with (
+                patch.dict("os.environ", env, clear=True),
+                pytest.raises(RuntimeError, match="MFA_ENCRYPTION_KEY must be set"),
+            ):
+                enc_mod.mfa_decrypt("fernet:gAAAAA-fake-ciphertext")
         finally:
             enc_mod._fernet_instance = original
             enc_mod._warn_shown = original_warn
@@ -251,19 +262,19 @@ class TestOIDCExchangeReplay:
         await db_session.commit()
 
         # Seed the user so the exchange can resolve it
-        from backend.app.core.database import async_session, seed_default_groups
         from backend.app.core.auth import get_password_hash
+        from backend.app.core.database import async_session, seed_default_groups
 
         async with async_session() as db:
-            result = await db.execute(
-                __import__("sqlalchemy").select(User).where(User.username == "oidc_replay_user")
-            )
+            result = await db.execute(__import__("sqlalchemy").select(User).where(User.username == "oidc_replay_user"))
             if result.scalar_one_or_none() is None:
-                db.add(User(
-                    username="oidc_replay_user",
-                    password_hash=get_password_hash("pw"),
-                    is_active=True,
-                ))
+                db.add(
+                    User(
+                        username="oidc_replay_user",
+                        password_hash=get_password_hash("pw"),
+                        is_active=True,
+                    )
+                )
                 await db.commit()
 
         first = await async_client.post("/api/v1/auth/oidc/exchange", json={"oidc_token": exchange_token})
@@ -389,7 +400,7 @@ class TestOIDCEmailVerified:
                 return _MockResp({"access_token": "mock", "token_type": "Bearer", "id_token": id_token})
 
         with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClientEV):
-            callback_resp = await async_client.get(
+            await async_client.get(
                 f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
                 follow_redirects=False,
             )
@@ -399,6 +410,7 @@ class TestOIDCEmailVerified:
         # Either a new user is provisioned (redirect with oidc_token) or the callback
         # fails.  In either case, the existing user must not have an OIDC link.
         from sqlalchemy import select as sa_select
+
         from backend.app.models.oidc_provider import UserOIDCLink
 
         link_result = await db_session.execute(
@@ -420,9 +432,7 @@ class TestEmailOTPMaxAttempts:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_email_otp_invalidated_after_max_attempts(
-        self, async_client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_email_otp_invalidated_after_max_attempts(self, async_client: AsyncClient, db_session: AsyncSession):
         from passlib.context import CryptContext
         from sqlalchemy import select as sa_select
 
@@ -459,7 +469,9 @@ class TestEmailOTPMaxAttempts:
         )
 
         # Login to get pre_auth_token
-        login_resp = await async_client.post(LOGIN_URL, json={"username": "otp_max_admin", "password": "otp_max_admin1"})
+        login_resp = await async_client.post(
+            LOGIN_URL, json={"username": "otp_max_admin", "password": "Otp_max_admin1"}
+        )
         pre_auth_token = login_resp.json()["pre_auth_token"]
 
         # Insert an OTP record directly (bypassing SMTP)
@@ -509,7 +521,6 @@ class TestOIDCSSRFProtection:
     ):
         issuer = "https://idp.ssrf.example.com"
         client_id = "ssrf-client"
-        nonce = secrets.token_urlsafe(16)
 
         admin_token = await _setup_and_login(async_client, "ssrf_admin", "ssrf_admin1")
         create_resp = await async_client.post(
@@ -594,7 +605,7 @@ class TestLoginRateLimiting:
         # Setup auth but do NOT log in
         await async_client.post(
             AUTH_SETUP_URL,
-            json={"auth_enabled": True, "admin_username": "ratelimit_user", "admin_password": "ratelimit_pw1"},
+            json={"auth_enabled": True, "admin_username": "ratelimit_user", "admin_password": "Ratelimit_pw1"},
         )
 
         status_codes = []
@@ -623,18 +634,18 @@ class TestChallengeIdCookieBinding:
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
         import pyotp
-
         from passlib.context import CryptContext
 
         _pwd_ctx = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
         # Set up user with TOTP
-        admin_token = await _setup_and_login(async_client, "cookie_bind_user", "cookie_bind_pw1")
+        await _setup_and_login(async_client, "cookie_bind_user", "cookie_bind_pw1")
 
         secret = pyotp.random_base32()
         totp_obj = pyotp.TOTP(secret)
-        from backend.app.models.user_totp import UserTOTP
         from sqlalchemy import select as sa_select
+
+        from backend.app.models.user_totp import UserTOTP
 
         result = await db_session.execute(sa_select(User).where(User.username == "cookie_bind_user"))
         user = result.scalar_one()
@@ -643,7 +654,7 @@ class TestChallengeIdCookieBinding:
 
         # Login from "session A" — gets a pre_auth_token and a 2fa_challenge cookie
         login_resp = await async_client.post(
-            LOGIN_URL, json={"username": "cookie_bind_user", "password": "cookie_bind_pw1"}
+            LOGIN_URL, json={"username": "cookie_bind_user", "password": "Cookie_bind_pw1"}
         )
         assert login_resp.status_code == 200
         assert login_resp.json()["requires_2fa"] is True
@@ -652,6 +663,7 @@ class TestChallengeIdCookieBinding:
 
         # Simulate session B by creating a new client WITHOUT the cookie
         from httpx import ASGITransport, AsyncClient as FreshClient
+
         from backend.app.main import app
 
         async with FreshClient(transport=ASGITransport(app=app), base_url="http://test") as session_b:

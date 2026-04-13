@@ -938,6 +938,7 @@ async def forgot_password_confirm(request: ForgotPasswordConfirmRequest, db: Asy
 @router.post("/reset-password", response_model=ResetPasswordResponse)
 async def reset_user_password(
     request: ResetPasswordRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1017,9 +1018,9 @@ async def reset_user_password(
         subject, text_body, html_body = await create_password_reset_link_email_from_template(
             db, user.username, reset_url
         )
-        send_email(smtp_settings, user.email, subject, text_body, html_body)
+        background_tasks.add_task(send_email, smtp_settings, user.email, subject, text_body, html_body)
 
-        _logger.info("Admin password reset link sent for user '%s' by admin '%s'", user.username, admin_user.username)
+        _logger.info("Admin password reset link queued for user '%s' by admin '%s'", user.username, admin_user.username)
         return ResetPasswordResponse(message=f"Password reset link sent to {user.email}")
     except Exception as e:
         await db.rollback()

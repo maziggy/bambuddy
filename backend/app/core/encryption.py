@@ -67,4 +67,13 @@ def mfa_decrypt(value: str) -> str:
         raise RuntimeError(
             "MFA_ENCRYPTION_KEY must be set to decrypt MFA secrets that were stored with encryption enabled."
         )
-    return f.decrypt(value[len(_FERNET_PREFIX) :].encode()).decode()
+    from cryptography.fernet import InvalidToken
+
+    try:
+        return f.decrypt(value[len(_FERNET_PREFIX) :].encode()).decode()
+    except InvalidToken:
+        raise RuntimeError(
+            "MFA secret was encrypted under a different MFA_ENCRYPTION_KEY. "
+            "Key rotation is not currently supported — restore the previous key "
+            "or have users re-enroll."
+        )

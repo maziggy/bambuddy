@@ -44,7 +44,6 @@ from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
     create_access_token,
     get_current_active_user,
-    get_password_hash,
     get_user_by_username,
     is_auth_enabled,
     verify_password,
@@ -58,6 +57,7 @@ from backend.app.models.user import User
 from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
 from backend.app.schemas.auth import (
+    AdminDisable2FARequest,
     BackupCodesResponse,
     EmailOTPDisableRequest,
     EmailOTPEnableConfirmRequest,
@@ -431,6 +431,8 @@ async def setup_totp(
                 detail="Current TOTP code required to replace an active authenticator",
             )
         await clear_failed_attempts(db, current_user.username, event_type="2fa_attempt")
+        _assert_totp_not_replayed(pyotp.TOTP(existing.secret), existing, supplied_code)
+        await db.flush()  # L-3: persist last_totp_counter immediately to block replay
 
     secret = pyotp.random_base32()
     totp = pyotp.TOTP(secret)
@@ -961,10 +963,21 @@ async def verify_2fa(
 @router.delete("/2fa/admin/{user_id}")
 async def admin_disable_2fa(
     user_id: int,
+    body: AdminDisable2FARequest = Body(default_factory=AdminDisable2FARequest),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Admin endpoint: disable all 2FA for a given user."""
+    """Admin endpoint: disable all 2FA for a given user.
+
+    Nit 3: Requires the admin's own password as a re-auth step (matching how
+    disable_email_otp protects a user's own 2FA removal). OIDC/LDAP-only admins
+    (no local password_hash) are exempt.
+    """
+    # Nit 3: Re-auth — admin must supply their own password.
+    if current_user and current_user.password_hash:
+        if not body.admin_password or not verify_password(body.admin_password, current_user.password_hash):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin password required")
+
     # Delete TOTP record
     await db.execute(delete(UserTOTP).where(UserTOTP.user_id == user_id))
 
@@ -977,6 +990,12 @@ async def admin_disable_2fa(
         .where(UserOTPCode.user_id == user_id)
         .values(used=True)
     )
+
+    # I2: Invalidate existing JWTs for the target user by bumping password_changed_at.
+    # Without this, a stolen token remains valid after 2FA removal.
+    target_user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if target_user:
+        target_user.password_changed_at = datetime.now(timezone.utc)
 
     await db.commit()
     actor = current_user.username if current_user else "anonymous"
@@ -1450,7 +1469,7 @@ async def oidc_callback(
                         # M-1: auth_source="oidc" prevents local password-reset flow
                         # for users who should only authenticate via OIDC.
                         auth_source="oidc",
-                        password_hash=get_password_hash(secrets.token_urlsafe(32)),
+                        password_hash=None,  # OIDC users never use password auth
                         role="user",
                         is_active=True,
                         groups=[viewers_group] if viewers_group else [],

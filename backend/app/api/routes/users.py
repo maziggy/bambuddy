@@ -476,6 +476,7 @@ async def change_own_password(
                     # B4: log so operators know revocation is broken; password was
                     # already changed so the token will fail freshness checks anyway.
                     import logging
+
                     logging.getLogger(__name__).error(
                         "Failed to revoke JTI after password change for user %s: %s", user.username, exc
                     )

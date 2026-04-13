@@ -571,6 +571,7 @@ class UnlinkedSpool(BaseModel):
 
     id: int
     filament_name: str | None
+    filament_vendor: str | None
     filament_material: str | None
     filament_color_hex: str | None
     remaining_weight: float | None
@@ -613,6 +614,7 @@ async def get_unlinked_spools(
                 UnlinkedSpool(
                     id=spool["id"],
                     filament_name=filament.get("name"),
+                    filament_vendor=(filament.get("vendor") or {}).get("name"),
                     filament_material=filament.get("material"),
                     filament_color_hex=filament.get("color_hex"),
                     remaining_weight=spool.get("remaining_weight"),

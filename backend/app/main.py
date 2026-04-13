@@ -2320,6 +2320,13 @@ async def on_print_complete(printer_id: int, data: dict):
         data = {**data, "status": "cancelled"}
     _user_stopped_printers.discard(printer_id)
 
+    # Raise the plate-clear gate for queued dispatch (#961). Only for completed/failed —
+    # user-cancelled prints don't require a plate-clear ack (nothing printed on the bed).
+    # Persisted to DB so the gate survives Auto Off power cycles and Bambuddy restarts.
+    _final_status = data.get("status", "completed")
+    if _final_status in ("completed", "failed"):
+        printer_manager.set_awaiting_plate_clear(printer_id, True)
+
     # MQTT relay - publish print complete
     try:
         printer_info = printer_manager.get_printer(printer_id)
@@ -3860,6 +3867,9 @@ async def lifespan(app: FastAPI):
     printer_manager.set_print_complete_callback(on_print_complete)
     printer_manager.set_ams_change_callback(on_ams_change)
 
+    # Rehydrate persisted awaiting-plate-clear gate (#961) so prompts survive restarts
+    await printer_manager.load_awaiting_plate_clear_from_db()
+
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):
         """Capture timelapse frame on layer change + first layer notification."""
@@ -4147,7 +4157,7 @@ async def security_headers_middleware(request, call_next):
     """Add standard HTTP security headers to every response."""
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     # Content-Security-Policy for the React SPA.
     # Notes:

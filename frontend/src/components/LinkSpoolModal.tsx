@@ -38,6 +38,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
       const q = search.toLowerCase();
       return (
         (s.filament_name && s.filament_name.toLowerCase().includes(q)) ||
+        (s.filament_vendor && s.filament_vendor.toLowerCase().includes(q)) ||
         (s.filament_material && s.filament_material.toLowerCase().includes(q)) ||
         String(s.id).includes(q)
       );
@@ -131,6 +132,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
                     {spool.filament_name || t('spoolman.spoolId')}
                   </div>
                   <div className="text-xs text-bambu-gray truncate">
+                    {spool.filament_vendor ? `${spool.filament_vendor} · ` : ''}
                     {spool.filament_material || 'Unknown'} &middot; #{spool.id}
                   </div>
                 </div>

@@ -1300,6 +1300,9 @@ async def run_migrations(conn):
     # Migration: Add camera_rotation column to printers
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN camera_rotation INTEGER DEFAULT 0")
 
+    # Migration: Add awaiting_plate_clear column to printers (#961)
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN awaiting_plate_clear BOOLEAN DEFAULT FALSE NOT NULL")
+
     # Migration: Add REST/Webhook smart plug fields
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_on_url VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_on_body TEXT")

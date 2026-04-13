@@ -292,8 +292,9 @@ export interface PrinterStatus {
   firmware_version: string | null;   // Firmware version from MQTT
   // Developer LAN mode: true = enabled, false = disabled, null = unknown
   developer_mode: boolean | null;
-  // Queue: user has acknowledged plate is cleared for next queued print
-  plate_cleared: boolean;
+  // Queue: printer is awaiting user ack that the build plate was cleared after a
+  // finished/failed print. Persisted across restarts (#961).
+  awaiting_plate_clear: boolean;
   // AMS drying support
   supports_drying: boolean;
 }
@@ -1990,6 +1991,7 @@ export interface SpoolmanSyncResult {
 export interface UnlinkedSpool {
   id: number;
   filament_name: string | null;
+  filament_vendor: string | null;
   filament_material: string | null;
   filament_color_hex: string | null;
   remaining_weight: number | null;

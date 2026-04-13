@@ -2614,7 +2614,7 @@ function PrinterCard({
                 </div>
 
                 {/* Queue Widget - always visible when there are pending items */}
-                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} printerState={status.state} plateCleared={status.plate_cleared} requirePlateClear={requirePlateClear} loadedFilamentTypes={loadedFilamentTypes} loadedFilaments={loadedFilaments} />
+                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} printerState={status.state} awaitingPlateClear={status.awaiting_plate_clear} requirePlateClear={requirePlateClear} loadedFilamentTypes={loadedFilamentTypes} loadedFilaments={loadedFilaments} />
               </>
             )}
 
@@ -5730,7 +5730,7 @@ export function PrintersPage() {
         case 'stop': return status.state === 'RUNNING' || status.state === 'PAUSE';
         case 'pause': return status.state === 'RUNNING';
         case 'resume': return status.state === 'PAUSE';
-        case 'clearPlate': return (status.state === 'FINISH' || status.state === 'FAILED') && !(status as { plate_cleared?: boolean }).plate_cleared;
+        case 'clearPlate': return !!(status as { awaiting_plate_clear?: boolean }).awaiting_plate_clear;
         case 'clearHMS': return status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0;
         default: return false;
       }

@@ -22,7 +22,7 @@ interface PrinterStatus {
   connected: boolean;
   state: string | null;
   hms_errors?: HMSError[];
-  plate_cleared?: boolean;
+  awaiting_plate_clear?: boolean;
 }
 
 interface BulkPrinterToolbarProps {
@@ -76,7 +76,7 @@ export function BulkPrinterToolbar({
   );
   const anyStoppable = anyRunning || anyPaused;
   const anyNeedsClearPlate = selectedStatuses.some(
-    ({ status }) => status?.connected && (status.state === 'FINISH' || status.state === 'FAILED') && !status.plate_cleared,
+    ({ status }) => !!(status?.connected && status.awaiting_plate_clear),
   );
   const anyWithHMS = selectedStatuses.some(({ status }) => {
     if (!status?.connected || !status.hms_errors) return false;

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import mimetypes as _mimetypes
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -4428,6 +4429,35 @@ async def serve_sw_register():
     if reg_file.exists():
         return FileResponse(reg_file, media_type="application/javascript")
     return {"error": "sw-register.js not found"}
+
+
+# ── GCode viewer static files ────────────────────────────────────────────────
+# Served via explicit routes so ordering is guaranteed (app.mount() loses
+# to the /{full_path:path} catch-all in some Starlette versions).
+_gcode_viewer_dir = (app_settings.static_dir.parent / "gcode_viewer").resolve()
+
+
+def _gcode_viewer_response(rel: str) -> FileResponse:
+    from fastapi import HTTPException as _HTTPException
+
+    safe = (_gcode_viewer_dir / rel).resolve()
+    if not safe.is_relative_to(_gcode_viewer_dir):
+        raise _HTTPException(status_code=403)
+    if safe.is_file():
+        mt, _ = _mimetypes.guess_type(str(safe))
+        return FileResponse(str(safe), media_type=mt or "application/octet-stream")
+    raise _HTTPException(status_code=404)
+
+
+@app.get("/gcode-viewer")
+@app.get("/gcode-viewer/")
+async def serve_gcode_viewer_index() -> FileResponse:
+    return _gcode_viewer_response("index.html")
+
+
+@app.get("/gcode-viewer/{file_path:path}")
+async def serve_gcode_viewer_file(file_path: str) -> FileResponse:
+    return _gcode_viewer_response(file_path)
 
 
 # Catch-all route for React Router (must be last)

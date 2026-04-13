@@ -10,6 +10,7 @@ export default {
     projects: 'Projects',
     inventory: 'Filament',
     files: 'File Manager',
+    gcodeViewer: 'GCode Viewer',
     notifications: 'Notifications',
     settings: 'Settings',
     system: 'System',

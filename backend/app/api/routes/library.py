@@ -106,9 +106,15 @@ def to_absolute_path(relative_path: str | None) -> Path | None:
         return None
     # Handle already-absolute paths (for backwards compatibility during migration)
     path = Path(relative_path)
+    base = Path(app_settings.base_dir).resolve()
     if path.is_absolute():
-        return path
-    return Path(app_settings.base_dir) / relative_path
+        resolved = path.resolve()
+    else:
+        resolved = (base / relative_path).resolve()
+    # Guard against path traversal — resolved path must stay inside base_dir
+    if not str(resolved).startswith(str(base)):
+        raise ValueError(f"Path escapes base directory: {relative_path!r}")
+    return resolved
 
 
 def calculate_file_hash(file_path: Path) -> str:
@@ -2499,7 +2505,7 @@ async def create_library_slicer_token(
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    token = await create_slicer_download_token("library", file_id)
+    token = create_slicer_download_token("library", file_id)
     return {"token": token}
 
 
@@ -2518,7 +2524,7 @@ async def download_library_file_for_slicer(
     """
     from backend.app.core.auth import verify_slicer_download_token
 
-    if not await verify_slicer_download_token(token, "library", file_id):
+    if not verify_slicer_download_token(token, "library", file_id):
         raise HTTPException(status_code=403, detail="Invalid or expired download token")
 
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))

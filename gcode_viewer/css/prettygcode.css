@@ -1,0 +1,417 @@
+/* Dark mode color variables */
+:root {
+    --pg-bg-light: #ffffff;
+    --pg-bg-dark: #1e1e1e;
+    --pg-text-light: #000000;
+    --pg-text-dark: #e0e0e0;
+    --pg-panel-light: rgba(255, 255, 255, 0.9);
+    --pg-panel-dark: rgba(30, 30, 30, 0.95);
+    --pg-border-light: #ddd;
+    --pg-border-dark: #444;
+    --pg-input-light: #e9e9e9;
+    --pg-input-dark: #2a2a2a;
+}
+
+#tab_plugin_prettygcode .gwin {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+
+#tab_plugin_prettygcode .webcam_rotated {
+    transform: rotateZ(-90deg);
+}
+
+
+.pgfullscreen #tab_plugin_prettygcode .gwin {
+    top: 0px;
+    left: 0px;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+}
+
+#tab_plugin_prettygcode .fstoggle {
+    top: 20px;
+    right: 60px;
+    position: absolute;
+    z-index: 10;
+}
+
+#tab_plugin_prettygcode .pgsettingstoggle {
+    top: 20px;
+    right: 95px;
+    position: absolute;
+    z-index: 10;
+}
+
+.pgfullscreen #tab_plugin_prettygcode .pgstatetoggle {
+    top: 20px;
+    left: 20px;
+    position: absolute;
+    z-index: 10;
+    display: unset;
+}
+
+#tab_plugin_prettygcode .pgstatetoggle {
+    display: none;
+}
+
+.pgfullscreen {
+    color: black;
+}
+
+.pgfullscreen #tab_plugin_prettygcode .pgfilestoggle {
+    top: 20px;
+    left: 95px;
+    position: absolute;
+    z-index: 10;
+    display: unset;
+}
+
+#tab_plugin_prettygcode .pgfilestoggle {
+    display: none;
+}
+
+.pgfullscreen #tab_plugin_prettygcode .pgcameratoggle {
+    bottom: 20px;
+    right: 40px;
+    position: absolute;
+    z-index: 10;
+    display: unset;
+}
+
+#tab_plugin_prettygcode .pgcameratoggle {
+    display: none;
+}
+
+.pgfullscreen .pgstatus {
+    display: unset;
+}
+
+.pgstatus {
+    display: none;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    width: 100%;
+    font-size: large;
+    text-align: center;
+    background: #ffffff50;
+}
+
+.pgfullscreen #state_wrapper {
+    top: 20px;
+    left: 20px;
+    width: 300px;
+    position: absolute;
+    box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+    background: rgba(255, 255, 255, 0.2);
+    z-index: 5;
+}
+
+.pgfullscreen #files_wrapper {
+    left: 95px;
+    top: 20px;
+    max-width: 80%;
+    width: 300px;
+    position: absolute;
+    box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.70);
+    background: rgba(204, 204, 204, 0.9);
+    z-index: 6;
+}
+
+/* .pgfullscreen #files .gcode_files .entry {
+    padding: 5px;
+    line-height: 20px;
+    border-bottom: 1px solid #ddd;
+    position: relative;
+    width: 220px;
+    display: inline-grid;
+    background: white;
+    height: 100px;
+} */
+/* .pgfullscreen #files.collapse {
+    width:0px;
+} */
+
+.gwin #webcam_rotator {
+    bottom: 20px;
+    right: 40px;
+    position: absolute;
+    box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+    z-index: 5;
+    display: none;
+}
+
+.pgfullscreen .gwin #webcam_rotator {
+    display: unset;
+}
+
+.pgfullscreen .gwin #webcam_rotator.pghidden {
+    display: none;
+}
+
+/* Hide notifications in fullscreen mode.*/
+/* todo. only do this if not logged in or as admin. 
+.pgfullscreen .ui-notify {
+    display:none;
+}
+*/
+.pgfullscreen .pghidden {
+    display: none;
+}
+
+.gwin .pghidden {
+    display: none;
+}
+
+/*dat gui*/
+#tab_plugin_prettygcode #mygui {
+    position: absolute;
+    right: 95px;
+    top: 20px;
+    opacity: 1.0;
+    z-index: 5;
+    box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+    z-index: 4;
+    background: rgba(255, 255, 255, 1.0);
+    opacity: 0.8;
+
+}
+
+.gwin .dg li.save-row {
+    background: black;
+    color: yellow;
+}
+
+.gwin .dg li.save-row .button {
+    background: black;
+    color: yellow;
+}
+
+.gwin .dg li.save-row select {
+    height: 100%;
+}
+
+.gwin .dg .close-button {
+    display: none;
+}
+
+.gwin .dg li.save-row .button.revert {
+    display: none;
+}
+
+.gwin .dg li.save-row .button.gears {
+    display: none;
+}
+
+.gwin .has-save .save-row::before {
+    content: "Preset: ";
+}
+
+.gwin .dg li.save-row {
+    display: none;
+}
+
+.gwin .dg.main.taller-than-window .close-button {
+    border-top: 1px solid #ddd;
+}
+
+.gwin .dg.main .close-button {
+    background-color: #ccc;
+}
+
+.gwin .dg.main .close-button:hover {
+    background-color: #ddd;
+}
+
+.gwin .dg {
+    color: #555;
+    text-shadow: none !important;
+}
+
+.gwin .dg.main::-webkit-scrollbar {
+    background: #fafafa;
+}
+
+.gwin .dg.main::-webkit-scrollbar-thumb {
+    background: #bbb;
+}
+
+.gwin .dg li:not(.folder) {
+    background: #fafafa;
+    border-bottom: 1px solid #ddd;
+}
+
+.gwin .dg li.save-row .button {
+    text-shadow: none !important;
+}
+
+.gwin .dg li.title {
+    background: #e8e8e8 url(data:image/gif;base64,R0lGODlhBQAFAJEAAP////Pz8////////yH5BAEAAAIALAAAAAAFAAUAAAIIlI+hKgFxoCgAOw==) 6px 10px no-repeat;
+}
+
+.gwin .dg .cr.function:hover,
+.dg .cr.boolean:hover {
+    background: #fff;
+}
+
+.gwin .dg .c input[type=text] {
+    background: #e9e9e9;
+}
+
+.gwin .dg .c input[type=text]:hover {
+    background: #eee;
+}
+
+.gwin .dg .c input[type=text]:focus {
+    background: #eee;
+    color: #555;
+}
+
+.gwin .dg .c .slider {
+    background: #e9e9e9;
+}
+
+.gwin .dg .c .slider:hover {
+    background: #eee;
+}
+
+/*style slider to be more progress bar like*/
+.gwin #myslider .slider-track {
+    background: green;
+}
+
+.gwin #myslider .slider-handle {
+    width: 24px;
+}
+
+.gwin #myslider .tooltip {
+    display: none;
+}
+
+
+
+#tab_plugin_prettygcode code {
+    border: 1px black;
+    white-space: pre;
+}
+
+/*Support Octoprint Dashboard plugin*/
+
+
+.pgfullscreen #tab_plugin_dashboard {
+    display: unset;
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+    z-index: 4;
+    background: rgba(255, 255, 255, 0.2);
+    opacity: 0.8;
+    /* width: 300px;  */
+    /* transform: scale(0.8); */
+}
+
+.pgfullscreen #tab_plugin_prettygcode .pgdashtoggle {
+    left: 20px;
+    bottom: 20px;
+    position: absolute;
+    z-index: 10;
+    display: unset;
+}
+
+#tab_plugin_prettygcode .pgdashtoggle {
+    display: none;
+}
+
+.pgfullscreen #tab_plugin_dashboard.pghidden {
+    display: none;
+}
+
+/* Dark Mode Styles */
+.pgdarkmode .pgfullscreen {
+    color: var(--pg-text-dark);
+}
+
+.pgdarkmode #state_wrapper {
+    background: var(--pg-panel-dark);
+    color: var(--pg-text-dark);
+}
+
+.pgdarkmode #files_wrapper {
+    background: var(--pg-panel-dark);
+    color: var(--pg-text-dark);
+}
+
+.pgdarkmode #tab_plugin_prettygcode #mygui {
+    background: var(--pg-panel-dark);
+}
+
+.pgdarkmode .gwin .dg {
+    color: var(--pg-text-dark);
+}
+
+.pgdarkmode .gwin .dg li:not(.folder) {
+    background: var(--pg-input-dark);
+    border-bottom: 1px solid var(--pg-border-dark);
+}
+
+.pgdarkmode .gwin .dg li.title {
+    background: #333 url(data:image/gif;base64,R0lGODlhBQAFAJEAAP////Pz8////////yH5BAEAAAIALAAAAAAFAAUAAAIIlI+hKgFxoCgAOw==) 6px 10px no-repeat;
+}
+
+.pgdarkmode .gwin .dg .cr.function:hover,
+.pgdarkmode .gwin .dg .cr.boolean:hover {
+    background: #3a3a3a;
+}
+
+.pgdarkmode .gwin .dg .c input[type=text] {
+    background: var(--pg-input-dark);
+    color: var(--pg-text-dark);
+}
+
+.pgdarkmode .gwin .dg .c input[type=text]:hover {
+    background: #333;
+}
+
+.pgdarkmode .gwin .dg .c input[type=text]:focus {
+    background: #333;
+    color: var(--pg-text-dark);
+}
+
+.pgdarkmode .gwin .dg .c .slider {
+    background: var(--pg-input-dark);
+}
+
+.pgdarkmode .gwin .dg .c .slider:hover {
+    background: #333;
+}
+
+.pgdarkmode .gwin .dg.main .close-button {
+    background-color: #333;
+}
+
+.pgdarkmode .gwin .dg.main .close-button:hover {
+    background-color: #444;
+}
+
+.pgdarkmode .gwin .dg.main::-webkit-scrollbar {
+    background: #1e1e1e;
+}
+
+.pgdarkmode .gwin .dg.main::-webkit-scrollbar-thumb {
+    background: #555;
+}
+
+.pgdarkmode #tab_plugin_dashboard {
+    background: var(--pg-panel-dark);
+    color: var(--pg-text-dark);
+}
+
+.pgdarkmode .pgstatus {
+    background: rgba(30, 30, 30, 0.5);
+    color: var(--pg-text-dark);
+}

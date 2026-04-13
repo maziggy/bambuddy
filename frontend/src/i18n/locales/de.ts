@@ -10,6 +10,7 @@ export default {
     projects: 'Projekte',
     inventory: 'Filament',
     files: 'Dateimanager',
+    gcodeViewer: 'GCode-Viewer',
     notifications: 'Benachrichtigungen',
     settings: 'Einstellungen',
     system: 'System',
@@ -213,6 +214,7 @@ export default {
     chamberLightOff: 'Kammerbeleuchtung ausschalten',
     // Files
     files: 'Dateien',
+    gcodeViewer: 'GCode-Viewer',
     browseFiles: 'Druckerdateien durchsuchen',
     // Smart plug
     autoOffAfterPrint: 'Automatisches Ausschalten nach Druck',
@@ -2887,6 +2889,7 @@ export default {
     lowDiskSpaceWarning: 'Warnung: Wenig Speicherplatz',
     lowDiskSpaceDetails: 'Nur {{free}} frei von {{total}} gesamt. Schwellenwert ist auf {{threshold}} GB eingestellt.',
     files: 'Dateien',
+    gcodeViewer: 'GCode-Viewer',
     folders: 'Ordner',
     size: 'Größe',
     free: 'Frei',
@@ -2987,6 +2990,7 @@ export default {
     createFirstButton: 'Erstes Projekt erstellen',
     create: 'Erstellen',
     files: 'Dateien',
+    gcodeViewer: 'GCode-Viewer',
     prints: 'Drucke',
     plates: 'Platten',
     parts: 'Teile',

@@ -36,6 +36,9 @@ class Printer(Base):
     plate_detection_roi_y: Mapped[float | None] = mapped_column(Float, nullable=True)  # Y start %
     plate_detection_roi_w: Mapped[float | None] = mapped_column(Float, nullable=True)  # Width %
     plate_detection_roi_h: Mapped[float | None] = mapped_column(Float, nullable=True)  # Height %
+    # Queue: True after a print finishes/fails, until user acknowledges the plate is cleared.
+    # Persisted so the gate survives crashes and power cycles (issue #961).
+    awaiting_plate_clear: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

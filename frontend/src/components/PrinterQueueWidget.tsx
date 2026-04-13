@@ -12,14 +12,15 @@ import { filterCompatibleQueueItems } from '../utils/printer';
 interface PrinterQueueWidgetProps {
   printerId: number;
   printerModel?: string | null;
+  /** @deprecated use awaitingPlateClear — kept so existing callers/tests still compile */
   printerState?: string | null;
-  plateCleared?: boolean;
+  awaitingPlateClear?: boolean;
   requirePlateClear?: boolean;
   loadedFilamentTypes?: Set<string>;
   loadedFilaments?: Set<string>;  // "TYPE:rrggbb" pairs for filament override color matching
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared, requirePlateClear = true, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, awaitingPlateClear, requirePlateClear = true, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -42,13 +43,14 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
     },
   });
 
-  // Reset mutation state when printer starts a new print cycle so the button
-  // is clickable again when the next print finishes (fixes #912)
+  // Reset mutation state when the awaiting flag clears so the button is clickable
+  // again after the next finished print (fixes #912). The flag is the authoritative
+  // signal — state alone is not reliable across power cycles (#961).
   useEffect(() => {
-    if (printerState !== 'FINISH' && printerState !== 'FAILED') {
+    if (!awaitingPlateClear) {
       clearPlateMutation.reset();
     }
-  }, [printerState, clearPlateMutation]);
+  }, [awaitingPlateClear, clearPlateMutation]);
 
   // Filter queue to items this printer can actually print (filament type + color check)
   const compatibleQueue = queue ? filterCompatibleQueueItems(queue, loadedFilamentTypes, loadedFilaments) : undefined;
@@ -63,8 +65,11 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
 
   const nextAutoItem = autoDispatchQueue[0];
   const nextItem = compatibleQueue?.[0];
-  // Only prompt "Clear Plate & Start Next" when there are auto-dispatchable items
-  const needsClearPlate = requirePlateClear && (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared && autoDispatchQueue.length > 0;
+  // Prompt "Clear Plate & Start Next" whenever the backend flags the printer as awaiting
+  // acknowledgment. Don't gate on reported state: after Auto Off cycles the printer, it
+  // boots into IDLE while still awaiting — the prompt must survive that (#961). The flag
+  // is cleared by the backend on ack or when the next print dispatches.
+  const needsClearPlate = requirePlateClear && !!awaitingPlateClear && autoDispatchQueue.length > 0;
 
   if (needsClearPlate) {
     const displayItem = nextAutoItem || nextItem;

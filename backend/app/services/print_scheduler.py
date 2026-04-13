@@ -399,14 +399,14 @@ class PrintScheduler:
                 for pid in busy_printers:
                     state = printer_manager.get_status(pid)
                     connected = printer_manager.is_connected(pid)
-                    plate_cleared = printer_manager.is_plate_cleared(pid)
+                    awaiting = printer_manager.is_awaiting_plate_clear(pid)
                     state_name = state.state if state else "NO_STATUS"
                     logger.info(
-                        "Queue: printer %d not available — connected=%s, state=%s, plate_cleared=%s",
+                        "Queue: printer %d not available — connected=%s, state=%s, awaiting_plate_clear=%s",
                         pid,
                         connected,
                         state_name,
-                        plate_cleared,
+                        awaiting,
                     )
 
             # Auto-drying: start drying on idle printers that have no pending queue items
@@ -1117,19 +1117,22 @@ class PrintScheduler:
             logger.debug("Printer %d: no status available", printer_id)
             return False
 
-        # IDLE = ready for next print
-        # FINISH/FAILED = ready if plate-clear not required, or user confirmed plate is cleared
-        idle = state.state == "IDLE" or (
-            state.state in ("FINISH", "FAILED")
-            and (not require_plate_clear or printer_manager.is_plate_cleared(printer_id))
-        )
-        if not idle:
+        # Plate-clear gate: if the printer finished/failed a previous print and the user
+        # hasn't acknowledged the plate was cleared, the queue must not dispatch the next
+        # job — even if the printer currently reports IDLE. After Auto Off cycles the
+        # printer, it boots back into IDLE with no memory of the previous finish; without
+        # the persisted awaiting flag we'd bypass the confirmation prompt (#961).
+        if require_plate_clear and printer_manager.is_awaiting_plate_clear(printer_id):
             logger.debug(
-                "Printer %d: not idle — state=%s, plate_cleared=%s",
+                "Printer %d: not idle — awaiting plate-clear acknowledgment (state=%s)",
                 printer_id,
                 state.state,
-                printer_manager.is_plate_cleared(printer_id),
             )
+            return False
+
+        idle = state.state in ("IDLE", "FINISH", "FAILED")
+        if not idle:
+            logger.debug("Printer %d: not idle — state=%s", printer_id, state.state)
         return idle
 
     async def _get_setting(self, db: AsyncSession, key: str) -> str | None:
@@ -1825,8 +1828,8 @@ class PrintScheduler:
         item.started_at = datetime.now(timezone.utc)
         await db.commit()
 
-        # Consume the plate-cleared flag now that we're starting a print
-        printer_manager.consume_plate_cleared(item.printer_id)
+        # Clear the awaiting-plate-clear flag now that we're starting a new print
+        printer_manager.set_awaiting_plate_clear(item.printer_id, False)
         logger.info("Queue item %s: Status set to 'printing', sending print command...", item.id)
 
         # Start the print with AMS mapping, plate_id and print options

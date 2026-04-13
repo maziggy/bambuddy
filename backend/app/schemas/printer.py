@@ -267,7 +267,8 @@ class PrinterStatus(BaseModel):
     firmware_version: str | None = None
     # Developer LAN mode: True = enabled, False = disabled (MQTT encryption), None = unknown
     developer_mode: bool | None = None
-    # Queue: user has acknowledged plate is cleared for next queued print
-    plate_cleared: bool = False
+    # Queue: printer is awaiting the user to acknowledge the build plate is cleared
+    # after a finished/failed print. Persisted across restarts (#961).
+    awaiting_plate_clear: bool = False
     # AMS drying support
     supports_drying: bool = False

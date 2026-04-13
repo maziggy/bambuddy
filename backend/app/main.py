@@ -2319,6 +2319,13 @@ async def on_print_complete(printer_id: int, data: dict):
         data = {**data, "status": "cancelled"}
     _user_stopped_printers.discard(printer_id)
 
+    # Raise the plate-clear gate for queued dispatch (#961). Only for completed/failed —
+    # user-cancelled prints don't require a plate-clear ack (nothing printed on the bed).
+    # Persisted to DB so the gate survives Auto Off power cycles and Bambuddy restarts.
+    _final_status = data.get("status", "completed")
+    if _final_status in ("completed", "failed"):
+        printer_manager.set_awaiting_plate_clear(printer_id, True)
+
     # MQTT relay - publish print complete
     try:
         printer_info = printer_manager.get_printer(printer_id)
@@ -3763,6 +3770,9 @@ async def lifespan(app: FastAPI):
     printer_manager.set_print_start_callback(on_print_start)
     printer_manager.set_print_complete_callback(on_print_complete)
     printer_manager.set_ams_change_callback(on_ams_change)
+
+    # Rehydrate persisted awaiting-plate-clear gate (#961) so prompts survive restarts
+    await printer_manager.load_awaiting_plate_clear_from_db()
 
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):

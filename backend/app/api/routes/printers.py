@@ -607,7 +607,7 @@ async def get_printer_status(
         heatbreak_fan_speed=state.heatbreak_fan_speed,
         firmware_version=state.firmware_version,
         developer_mode=state.developer_mode if state else None,
-        plate_cleared=printer_manager.is_plate_cleared(printer_id),
+        awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
         supports_drying=supports_drying(printer.model, state.firmware_version),
     )
 
@@ -2246,13 +2246,18 @@ async def clear_plate(
     if not printer_manager.is_connected(printer_id):
         raise HTTPException(400, "Printer not connected")
 
+    # Accept the acknowledgment whenever the printer is awaiting it — not only when the
+    # reported state is FINISH/FAILED. After a power cycle the printer boots into IDLE
+    # but the awaiting flag persists, and the user still needs a way to ack it (#961).
     state = printer_manager.get_status(printer_id)
-    if not state or state.state not in ("FINISH", "FAILED"):
+    awaiting = printer_manager.is_awaiting_plate_clear(printer_id)
+    if not awaiting and (not state or state.state not in ("FINISH", "FAILED")):
         raise HTTPException(
-            400, f"Printer is not in FINISH or FAILED state (current: {state.state if state else 'unknown'})"
+            400,
+            f"Printer is not awaiting plate-clear acknowledgment (state={state.state if state else 'unknown'})",
         )
 
-    printer_manager.set_plate_cleared(printer_id)
+    printer_manager.set_awaiting_plate_clear(printer_id, False)
 
     return {"success": True, "message": "Plate cleared, next print will start shortly"}
 

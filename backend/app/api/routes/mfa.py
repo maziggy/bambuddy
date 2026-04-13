@@ -44,6 +44,7 @@ from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
     create_access_token,
     get_current_active_user,
+    get_user_by_email,
     get_user_by_username,
     is_auth_enabled,
     verify_password,
@@ -1412,13 +1413,14 @@ async def oidc_callback(
                 )
                 user = user_result.scalar_one_or_none()
             else:
-                # 2. No OIDC link yet — check for an existing user with the same email
+                # 2. No OIDC link yet — check for an existing user with the same email.
+                # Use case-insensitive matching (func.lower) so that "User@Example.com"
+                # and "user@example.com" are treated as the same identity, preventing
+                # an attacker-controlled IdP from bypassing the auto-link guard by
+                # registering the target email with different casing.
                 email_user: User | None = None
                 if provider_email:
-                    eu_result = await db.execute(
-                        select(User).where(User.email == provider_email).options(selectinload(User.groups))
-                    )
-                    email_user = eu_result.scalar_one_or_none()
+                    email_user = await get_user_by_email(db, provider_email)
 
                 if email_user and provider.auto_link_existing_accounts:
                     # M-4: Only auto-link when the provider has auto_link_existing_accounts
@@ -1614,7 +1616,7 @@ async def oidc_exchange(
             two_fa_methods.append("email")
         if totp_enabled:
             two_fa_methods.append("backup")
-        challenge_id = secrets.token_hex(32)
+        challenge_id = secrets.token_urlsafe(32)
         pre_auth_token = await create_pre_auth_token(db, user.username, challenge_id=challenge_id)
         response.set_cookie(
             key="2fa_challenge",

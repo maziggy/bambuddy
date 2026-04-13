@@ -2920,6 +2920,4 @@ class TestOIDCAudAndNonceMismatch:
         assert resp.status_code == 302
         location = resp.headers.get("location", "")
         # The callback redirects to ?oidc_error=nonce_mismatch when nonces differ.
-        assert "nonce_mismatch" in location, (
-            f"Expected nonce_mismatch redirect for nonce mismatch, got: {location}"
-        )
+        assert "nonce_mismatch" in location, f"Expected nonce_mismatch redirect for nonce mismatch, got: {location}"

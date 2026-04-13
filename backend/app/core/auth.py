@@ -637,7 +637,10 @@ async def get_api_key(
     result = await db.execute(
         select(APIKey).where(
             APIKey.enabled.is_(True),
-            APIKey.key_prefix.like(key_lookup + "%"),
+            APIKey.key_prefix.like(
+                key_lookup.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",
+                escape="\\",
+            ),
         )
     )
     api_keys = result.scalars().all()

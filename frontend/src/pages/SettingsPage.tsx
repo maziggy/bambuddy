@@ -437,6 +437,18 @@ export function SettingsPage() {
     queryFn: () => api.getLDAPStatus(),
   });
 
+  // Tab-indicator queries: green bullet when 2FA is enabled for the current
+  // user, or when at least one OIDC provider is configured and enabled.
+  const { data: twoFAStatus } = useQuery({
+    queryKey: ['twoFAStatus'],
+    queryFn: () => api.get2FAStatus(),
+  });
+  const { data: oidcProvidersAll = [] } = useQuery({
+    queryKey: ['oidcProvidersAll'],
+    queryFn: () => api.getOIDCProvidersAll(),
+    enabled: isAdmin,
+  });
+
   // User management queries and mutations
   const { data: usersData = [], isLoading: usersLoading } = useQuery({
     queryKey: ['users'],
@@ -4415,6 +4427,13 @@ export function SettingsPage() {
             >
               <Shield className="w-4 h-4" />
               {t('settings.tabs.twoFa')}
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  twoFAStatus?.totp_enabled || twoFAStatus?.email_otp_enabled
+                    ? 'bg-green-400'
+                    : 'bg-bambu-gray/40'
+                }`}
+              />
             </button>
             {isAdmin && (
               <button
@@ -4427,6 +4446,13 @@ export function SettingsPage() {
               >
                 <Globe className="w-4 h-4" />
                 {t('settings.tabs.oidc')}
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    oidcProvidersAll.some((p) => p.is_enabled)
+                      ? 'bg-green-400'
+                      : 'bg-bambu-gray/40'
+                  }`}
+                />
               </button>
             )}
           </div>

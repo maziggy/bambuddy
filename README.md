@@ -249,6 +249,8 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Admin creates users with email — system sends secure random password automatically
 - Users can reset their own password from the login screen (no admin needed)
 - Customizable email templates (welcome email, password reset)
+- **Two-Factor Authentication (TOTP + Email OTP)** — Per-user opt-in 2FA compatible with Google Authenticator, Authy, 2FAS and any standard TOTP app, or a 6-digit code delivered by email. Each user gets 10 single-use backup codes. Brute-force-protected (per-user + per-IP rate limits), replay-protected (same code cannot be accepted twice in the same 30 s window), and the pre-auth token is a single-use DB-backed challenge bound to the browser session via an HttpOnly cookie.
+- **Single Sign-On (OIDC / SSO)** — Log in via PocketID, Authentik, Keycloak, or any standards-compliant OIDC provider. PKCE (S256) for public clients, `email_verified` gating, issuer & `aud`/`nonce` validation, opt-in account linking via verified email, optional auto-provisioning of new BamBuddy accounts, and strict SSRF hardening on every URL pulled from the OIDC discovery document (scheme + private/loopback/link-local IP checks).
 - **Per-user email notifications** — Users receive email alerts for their own print jobs (start, complete, failed, stopped) with individual toggle controls
 
 </td>

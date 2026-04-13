@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- L-4: Restrict Referer header to origin-only on cross-origin navigation so
+         sensitive tokens in query parameters are not leaked to third-party servers. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>Bambuddy</title>
 
     <!-- PWA Meta Tags -->
@@ -23,8 +26,8 @@
 
     <!-- Splash screens for iOS -->
     <link rel="apple-touch-startup-image" href="/img/android-chrome-512x512.png" />
-    <script type="module" crossorigin src="/assets/index-D7ghDKX2.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-B1-InwHl.css">
+    <script type="module" crossorigin src="/assets/index-BFeV6ocI.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-B7mnhxng.css">
   </head>
   <body>
     <div id="root"></div>

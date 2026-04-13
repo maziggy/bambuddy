@@ -1471,7 +1471,11 @@ async def run_migrations(conn):
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat
     # predates this timestamp are rejected in all six auth validation paths.
-    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN password_changed_at DATETIME")
+    # R4 fix: TIMESTAMP is accepted by both SQLite and PostgreSQL; DATETIME
+    # is rejected by Postgres ("type 'datetime' does not exist"), which made
+    # _safe_execute swallow the error and leave existing Postgres installs
+    # without the column — causing UndefinedColumnError on every User query.
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN password_changed_at TIMESTAMP")
 
     # Migration: Back-fill password_changed_at = created_at for existing users (I2).
     # Users who never changed their password would have NULL here, meaning old

@@ -934,6 +934,12 @@ export interface AppSettings {
   ldap_group_mapping: string;
   ldap_auto_provision: boolean;
   ldap_default_group: string;
+  obico_enabled: boolean;
+  obico_ml_url: string;
+  obico_sensitivity: 'low' | 'medium' | 'high';
+  obico_action: 'notify' | 'pause' | 'pause_and_off';
+  obico_poll_interval: number;
+  obico_enabled_printers: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -1839,6 +1845,37 @@ export interface LocalBackupFile {
   filename: string;
   size: number;
   created_at: string;
+}
+
+export interface ObicoDetectionEvent {
+  printer_id: number;
+  task_name: string;
+  timestamp: string;
+  current_p: number;
+  score: number;
+  class: 'safe' | 'warning' | 'failure';
+  detections: number;
+}
+
+export interface ObicoStatus {
+  is_running: boolean;
+  last_error: string | null;
+  per_printer: Record<string, { class: string; frame_count: number; score: number }>;
+  thresholds: { low: number; high: number };
+  history: ObicoDetectionEvent[];
+  enabled: boolean;
+  ml_url: string;
+  sensitivity: 'low' | 'medium' | 'high';
+  action: 'notify' | 'pause' | 'pause_and_off';
+  poll_interval: number;
+  external_url_configured: boolean;
+}
+
+export interface ObicoTestConnection {
+  ok: boolean;
+  status_code: number | null;
+  body: string | null;
+  error: string | null;
 }
 
 export interface GitHubTestConnectionResponse {
@@ -4684,6 +4721,16 @@ export const api = {
 
   deleteLocalBackup: (filename: string) =>
     request<{ success: boolean; message: string }>(`/local-backup/backups/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+
+  // Obico AI failure detection
+  getObicoStatus: () =>
+    request<ObicoStatus>('/obico/status'),
+
+  testObicoConnection: (url: string) =>
+    request<ObicoTestConnection>('/obico/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
 
   // Local Presets (OrcaSlicer imports)
   getLocalPresets: () =>

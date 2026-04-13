@@ -35,6 +35,7 @@ from backend.app.api.routes import (
     mfa,
     notification_templates,
     notifications,
+    obico,
     pending_uploads,
     print_log,
     print_queue,
@@ -69,6 +70,7 @@ from backend.app.services.local_backup import local_backup_service
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
 from backend.app.services.notification_service import notification_service
+from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_scheduler import scheduler as print_scheduler
 from backend.app.services.printer_manager import (
     init_printer_connections,
@@ -4018,6 +4020,7 @@ async def lifespan(app: FastAPI):
 
     # Start the local backup scheduler
     await local_backup_service.start_scheduler()
+    await obico_detection_service.start()
 
     # Start AMS history recording
     start_ams_history_recording()
@@ -4057,6 +4060,7 @@ async def lifespan(app: FastAPI):
     notification_service.stop_digest_scheduler()
     github_backup_service.stop_scheduler()
     local_backup_service.stop_scheduler()
+    obico_detection_service.stop()
     stop_ams_history_recording()
     stop_runtime_tracking()
     stop_spoolbuddy_watchdog()
@@ -4344,6 +4348,7 @@ app.include_router(pending_uploads.router, prefix=app_settings.api_prefix)
 app.include_router(firmware.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(local_backup.router, prefix=app_settings.api_prefix)
+app.include_router(obico.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
 app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
 app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)

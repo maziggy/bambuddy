@@ -119,6 +119,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Print success rates & trends
 - Filament usage tracking
 - Cost analytics & failure analysis
+- **AI print-failure detection** — Optional integration with a self-hosted [Obico](https://github.com/TheSpaghettiDetective/obico-server) ML API: watches each running print's camera feed, smooths scores over time (30-frame warmup + EWM + rolling means), and fires a configurable action once per print (notify / pause / pause-and-off)
 - Per-user statistics filtering (admin permission gated)
 - CSV/Excel export
 

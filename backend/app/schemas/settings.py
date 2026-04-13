@@ -256,6 +256,31 @@ class AppSettings(BaseModel):
         description="Fallback BamBuddy group name assigned when an LDAP user authenticates but has no mapped groups. Empty = no fallback.",
     )
 
+    # Obico AI failure detection (#172)
+    obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
+    obico_ml_url: str = Field(
+        default="",
+        description="Self-hosted Obico ML API base URL (e.g., http://192.168.1.10:3333)",
+    )
+    obico_sensitivity: str = Field(
+        default="medium",
+        description="Detection sensitivity: 'low', 'medium', or 'high' (adjusts LOW/HIGH thresholds)",
+    )
+    obico_action: str = Field(
+        default="notify",
+        description="Action on detected failure: 'notify', 'pause', or 'pause_and_off'",
+    )
+    obico_poll_interval: int = Field(
+        default=10,
+        ge=5,
+        le=120,
+        description="Seconds between detection checks while a print is running",
+    )
+    obico_enabled_printers: str = Field(
+        default="",
+        description="JSON array of printer IDs to monitor (empty = all connected printers)",
+    )
+
     # Default sidebar order (admin-set for all users)
     default_sidebar_order: str = Field(
         default="",
@@ -356,6 +381,12 @@ class AppSettingsUpdate(BaseModel):
     ldap_group_mapping: str | None = None
     ldap_auto_provision: bool | None = None
     ldap_default_group: str | None = None
+    obico_enabled: bool | None = None
+    obico_ml_url: str | None = None
+    obico_sensitivity: str | None = None
+    obico_action: str | None = None
+    obico_poll_interval: int | None = Field(default=None, ge=5, le=120)
+    obico_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
 
     @field_validator("gcode_snippets")
@@ -382,6 +413,37 @@ class AppSettingsUpdate(BaseModel):
             raise ValueError("ldap_group_mapping must be valid JSON or empty")
         if not isinstance(parsed, dict):
             raise ValueError("ldap_group_mapping must be a JSON object mapping LDAP group DNs to BamBuddy group names")
+        return v
+
+    @field_validator("obico_enabled_printers")
+    @classmethod
+    def validate_obico_enabled_printers(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError:
+            raise ValueError("obico_enabled_printers must be valid JSON or empty")
+        if not isinstance(parsed, list) or not all(isinstance(item, int) for item in parsed):
+            raise ValueError("obico_enabled_printers must be a JSON array of printer IDs (integers)")
+        return v
+
+    @field_validator("obico_sensitivity")
+    @classmethod
+    def validate_obico_sensitivity(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in ("low", "medium", "high"):
+            raise ValueError("obico_sensitivity must be 'low', 'medium', or 'high'")
+        return v
+
+    @field_validator("obico_action")
+    @classmethod
+    def validate_obico_action(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in ("notify", "pause", "pause_and_off"):
+            raise ValueError("obico_action must be 'notify', 'pause', or 'pause_and_off'")
         return v
 
     @field_validator("default_sidebar_order")

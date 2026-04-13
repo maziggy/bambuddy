@@ -649,7 +649,7 @@ class TestChallengeIdCookieBinding:
 
         result = await db_session.execute(sa_select(User).where(User.username == "cookie_bind_user"))
         user = result.scalar_one()
-        db_session.add(UserTOTP(user_id=user.id, secret=secret, is_enabled=True, backup_codes=[]))
+        db_session.add(UserTOTP(user_id=user.id, secret=secret, is_enabled=True))
         await db_session.commit()
 
         # Login from "session A" — gets a pre_auth_token and a 2fa_challenge cookie
@@ -681,3 +681,116 @@ class TestChallengeIdCookieBinding:
                 f"Expected 401 for token replay from cookieless session, got {verify_resp.status_code}: "
                 f"{verify_resp.json()}"
             )
+
+
+# ===========================================================================
+# C2: Security-header middleware
+# ===========================================================================
+
+
+class TestSecurityHeaders:
+    """Every HTTP response must include standard security headers (C2)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_security_headers_present(self, async_client: AsyncClient):
+        """GET /api/v1/auth/me (unauthenticated → 401) still carries security headers."""
+        resp = await async_client.get(ME_URL)
+        assert resp.status_code == 401  # sanity — no auth token
+
+        assert resp.headers.get("x-content-type-options") == "nosniff"
+        assert resp.headers.get("x-frame-options") == "SAMEORIGIN"
+        assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+
+        csp = resp.headers.get("content-security-policy", "")
+        assert "default-src 'self'" in csp
+        assert "script-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+        assert "object-src 'none'" in csp
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_hsts_absent_for_http(self, async_client: AsyncClient):
+        """HSTS must NOT be set over plain HTTP (test transport uses http)."""
+        resp = await async_client.get(ME_URL)
+        assert "strict-transport-security" not in resp.headers
+
+
+# ===========================================================================
+# I3: Rate-limit bucket interaction — IP spray vs. username spray
+# ===========================================================================
+
+
+class TestRateLimitBuckets:
+    """IP-spray and username-spray must each trip the correct independent bucket."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ip_spray_trips_ip_bucket(self, async_client: AsyncClient):
+        """20 failed logins from one IP across 20 different usernames trips the IP bucket.
+
+        Each per-username bucket only has 1 failure (well below MAX_LOGIN_ATTEMPTS=10),
+        so the username bucket is never the reason for the 429.
+        """
+        from unittest.mock import patch as _patch
+
+        unique_ip = "10.99.1.1"
+
+        # Ensure auth is enabled
+        await async_client.post(
+            AUTH_SETUP_URL,
+            json={"auth_enabled": True, "admin_username": "spray_ip_admin", "admin_password": "SprayIp_admin1"},
+        )
+
+        status_codes: list[int] = []
+        with _patch("backend.app.api.routes.auth._get_client_ip", return_value=unique_ip):
+            for i in range(22):
+                resp = await async_client.post(
+                    LOGIN_URL,
+                    json={"username": f"spray_ip_victim_{i}", "password": "wrong"},
+                )
+                status_codes.append(resp.status_code)
+
+        # The first 20 attempts fail with 401; the 21st+ must be 429 (IP bucket full)
+        assert status_codes[-1] == 429, f"Expected 429 after 20 IP-spray failures, got: {status_codes}"
+        # No single username saw more than one attempt → username buckets not tripped
+        non_429 = [c for c in status_codes[:-2] if c == 429]
+        assert not non_429, f"Username bucket triggered early: {status_codes}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_username_spray_trips_username_bucket(self, async_client: AsyncClient):
+        """One username targeted from 10+ different IPs trips the username bucket.
+
+        Each per-IP bucket only sees 1 failure, so no IP bucket is tripped.
+        The username bucket (max 10) is what fires the 429.
+        """
+        from unittest.mock import patch as _patch
+
+        from backend.app.api.routes.mfa import MAX_LOGIN_ATTEMPTS
+
+        # Ensure auth is enabled
+        await async_client.post(
+            AUTH_SETUP_URL,
+            json={
+                "auth_enabled": True,
+                "admin_username": "spray_uname_admin",
+                "admin_password": "SprayUname_admin1",
+            },
+        )
+
+        target_username = "spray_uname_victim"
+        status_codes: list[int] = []
+        for i in range(MAX_LOGIN_ATTEMPTS + 2):
+            rotating_ip = f"10.99.2.{i + 1}"
+            with _patch("backend.app.api.routes.auth._get_client_ip", return_value=rotating_ip):
+                resp = await async_client.post(
+                    LOGIN_URL,
+                    json={"username": target_username, "password": "wrong"},
+                )
+                status_codes.append(resp.status_code)
+
+        # After MAX_LOGIN_ATTEMPTS failures for same username the bucket fires
+        assert status_codes[-1] == 429, (
+            f"Expected 429 after {MAX_LOGIN_ATTEMPTS} username-spray failures, got: {status_codes}"
+        )

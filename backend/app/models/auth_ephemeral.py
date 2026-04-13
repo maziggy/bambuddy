@@ -21,11 +21,39 @@ AuthRateLimitEvent
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from enum import Enum
 
 from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
+
+
+class TokenType(str, Enum):
+    """T3: Enumerated token types for AuthEphemeralToken.token_type.
+
+    Using str-based Enum keeps the stored values human-readable and
+    backward-compatible with existing rows.
+    """
+
+    PRE_AUTH = "pre_auth"
+    OIDC_STATE = "oidc_state"
+    OIDC_EXCHANGE = "oidc_exchange"
+    PASSWORD_RESET = "password_reset"
+    EMAIL_OTP_SETUP = "email_otp_setup"
+
+
+class EventType(str, Enum):
+    """T3: Enumerated event types for AuthRateLimitEvent.event_type.
+
+    Using str-based Enum keeps the stored values human-readable and
+    backward-compatible with existing rows.
+    """
+
+    TWO_FA_ATTEMPT = "2fa_attempt"
+    EMAIL_SEND = "email_send"
+    LOGIN_ATTEMPT = "login_attempt"
+    LOGIN_IP = "login_ip"
 
 
 class AuthEphemeralToken(Base):
@@ -59,6 +87,98 @@ class AuthEphemeralToken(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+    # ------------------------------------------------------------------
+    # T1: Classmethod factories — enforce required fields per token type
+    # and prevent accidentally leaving optional fields at their defaults.
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def new_pre_auth(
+        cls,
+        token: str,
+        username: str,
+        expires_at: datetime,
+        challenge_id: str | None = None,
+    ) -> AuthEphemeralToken:
+        """Create a pre-auth token (issued after password check, before 2FA)."""
+        return cls(
+            token=token,
+            token_type=TokenType.PRE_AUTH,
+            username=username,
+            expires_at=expires_at,
+            challenge_id=challenge_id,
+        )
+
+    @classmethod
+    def new_oidc_state(
+        cls,
+        token: str,
+        provider_id: int,
+        nonce: str,
+        code_verifier: str,
+        expires_at: datetime,
+    ) -> AuthEphemeralToken:
+        """Create an OIDC state token (CSRF protection + PKCE for authorize redirect)."""
+        return cls(
+            token=token,
+            token_type=TokenType.OIDC_STATE,
+            provider_id=provider_id,
+            nonce=nonce,
+            code_verifier=code_verifier,
+            expires_at=expires_at,
+        )
+
+    @classmethod
+    def new_oidc_exchange(
+        cls,
+        token: str,
+        username: str,
+        expires_at: datetime,
+    ) -> AuthEphemeralToken:
+        """Create an OIDC exchange token (bridge from callback to SPA)."""
+        return cls(
+            token=token,
+            token_type=TokenType.OIDC_EXCHANGE,
+            username=username,
+            expires_at=expires_at,
+        )
+
+    @classmethod
+    def new_password_reset(
+        cls,
+        token: str,
+        username: str,
+        expires_at: datetime,
+    ) -> AuthEphemeralToken:
+        """Create a password-reset token (single-use link emailed to the user)."""
+        return cls(
+            token=token,
+            token_type=TokenType.PASSWORD_RESET,
+            username=username,
+            expires_at=expires_at,
+        )
+
+    @classmethod
+    def new_email_otp_setup(
+        cls,
+        token: str,
+        username: str,
+        code_hash: str,
+        expires_at: datetime,
+    ) -> AuthEphemeralToken:
+        """Create an email-OTP setup token.
+
+        The ``code_hash`` is stored in the ``nonce`` column (field reuse
+        documented inline in the enable_email_otp endpoint).
+        """
+        return cls(
+            token=token,
+            token_type=TokenType.EMAIL_OTP_SETUP,
+            username=username,
+            nonce=code_hash,
+            expires_at=expires_at,
+        )
 
 
 class AuthRateLimitEvent(Base):

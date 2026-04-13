@@ -2686,3 +2686,240 @@ class TestSetupTOTPReplayRejected:
         )
         assert replay_resp.status_code == 400
         assert "already been used" in replay_resp.json()["detail"]
+
+
+# ===========================================================================
+# Nit8: OIDC aud mismatch and nonce mismatch tests
+# ===========================================================================
+
+
+class TestOIDCAudAndNonceMismatch:
+    """Nit8: aud != client_id and nonce != stored value must each fail the callback."""
+
+    def _make_oidc_provider_setup(self):
+        """Return a helper for building OIDC test fixtures inline."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        return private_pem, jwks_data
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_aud_mismatch_redirects_token_validation_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """ID token with aud != client_id must be rejected (PyJWT InvalidAudienceError)."""
+        import time
+        from unittest.mock import patch
+
+        import jwt as pyjwt
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://aud-mismatch.example.com"
+        client_id = "aud-test-client"
+        wrong_aud = "some-other-client"
+        nonce = secrets.token_urlsafe(16)
+        now = int(time.time())
+
+        id_token = pyjwt.encode(
+            {
+                "sub": "sub-aud-test",
+                "iss": issuer,
+                "aud": wrong_aud,  # <-- wrong audience
+                "nonce": nonce,
+                "email": "aud@example.com",
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+
+        admin_token = await _setup_and_login(async_client, "audmismatch_admin", "AudMismatch_admin1")
+        cr = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "AudMismatch-IdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "s",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert cr.status_code in (200, 201), cr.text
+        provider_id = cr.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=nonce,
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        discovery_doc = {
+            "issuer": issuer,
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        class _MockResp:
+            def __init__(self, data):
+                self._data = data
+                self.status_code = 200
+                self.is_success = True
+                self.text = ""
+
+            def json(self):
+                return self._data
+
+            def raise_for_status(self):
+                pass
+
+        class _MockHttpxClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            async def get(self, url, **kw):
+                return _MockResp(jwks_data if "jwks" in url else discovery_doc)
+
+            async def post(self, url, **kw):
+                return _MockResp({"access_token": "a", "id_token": id_token})
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=c&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "token_validation_failed" in location, (
+            f"Expected token_validation_failed redirect for aud mismatch, got: {location}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_nonce_mismatch_redirects_token_validation_failed(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """ID token with nonce != stored state nonce must be rejected."""
+        import time
+        from unittest.mock import patch
+
+        import jwt as pyjwt
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://nonce-mismatch.example.com"
+        client_id = "nonce-test-client"
+        stored_nonce = secrets.token_urlsafe(16)
+        wrong_nonce = secrets.token_urlsafe(16)  # different from stored_nonce
+        now = int(time.time())
+
+        id_token = pyjwt.encode(
+            {
+                "sub": "sub-nonce-test",
+                "iss": issuer,
+                "aud": client_id,
+                "nonce": wrong_nonce,  # <-- does not match stored_nonce
+                "email": "nonce@example.com",
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+
+        admin_token = await _setup_and_login(async_client, "noncemismatch_admin", "NonceMismatch_admin1")
+        cr = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "NonceMismatch-IdP",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "s",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert cr.status_code in (200, 201), cr.text
+        provider_id = cr.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=stored_nonce,  # state has correct nonce; JWT carries wrong_nonce
+                code_verifier=secrets.token_urlsafe(48),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        discovery_doc = {
+            "issuer": issuer,
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+
+        class _MockResp:
+            def __init__(self, data):
+                self._data = data
+                self.status_code = 200
+                self.is_success = True
+                self.text = ""
+
+            def json(self):
+                return self._data
+
+            def raise_for_status(self):
+                pass
+
+        class _MockHttpxClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            async def get(self, url, **kw):
+                return _MockResp(jwks_data if "jwks" in url else discovery_doc)
+
+            async def post(self, url, **kw):
+                return _MockResp({"access_token": "a", "id_token": id_token})
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=c&state={state}",
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        # The callback redirects to ?oidc_error=nonce_mismatch when nonces differ.
+        assert "nonce_mismatch" in location, (
+            f"Expected nonce_mismatch redirect for nonce mismatch, got: {location}"
+        )

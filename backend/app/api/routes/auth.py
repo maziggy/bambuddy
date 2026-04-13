@@ -32,7 +32,7 @@ from backend.app.core.auth import (
     revoke_jti,
     security,
 )
-from backend.app.core.database import get_db
+from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import ALL_PERMISSIONS
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
 from backend.app.models.group import Group
@@ -577,24 +577,27 @@ async def get_current_user_info(
 
 @router.post("/logout")
 async def logout(
+    raw_request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
 ):
     """Logout — revokes the current JWT so it cannot be reused after logout."""
     if credentials is not None:
         raw_token = credentials.credentials
-        # B3: Extract jti from the unverified payload so revocation is attempted
-        # even when the token is expired or uses an unexpected algorithm.
-        # We do NOT trust the payload for auth here — we just want the jti to
-        # add to the revocation list so it can never be used again.
+        # Nit2: Verify signature before revoking to prevent DoS-revoke attacks
+        # (an attacker crafting a token with an arbitrary jti cannot force
+        # revocation of a legitimate token because the signature check rejects it).
+        # Expired tokens are still accepted — the user is logging out and their
+        # token may have just expired; we still want to record the revocation.
         try:
-            unverified = _jwt.decode(
+            verified = _jwt.decode(
                 raw_token,
-                options={"verify_signature": False},
+                SECRET_KEY,
                 algorithms=[ALGORITHM],
+                options={"verify_exp": False},  # allow expired tokens at logout
             )
-            jti: str | None = unverified.get("jti")
-            exp = unverified.get("exp")
-            username: str | None = unverified.get("sub")
+            jti: str | None = verified.get("jti")
+            exp = verified.get("exp")
+            username: str | None = verified.get("sub")
             if jti and exp:
                 expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
                 try:
@@ -602,7 +605,14 @@ async def logout(
                 except Exception as exc:
                     _logger.error("Failed to revoke JTI on logout for user %s: %s", username, exc)
         except PyJWTError:
-            _logger.warning("Logout called with unparseable token — skipping revocation")
+            client_ip = _get_client_ip(raw_request)
+            ua = raw_request.headers.get("user-agent", "<unknown>")
+            _logger.error(
+                "Logout received token that failed signature verification — skipping revocation "
+                "(possible tamper attempt; ip=%s ua=%s)",
+                client_ip,
+                ua,
+            )
 
     return {"message": "Logged out successfully"}
 
@@ -780,6 +790,45 @@ _PWD_RESET_SEND_WINDOW = timedelta(minutes=15)
 _MAX_PWD_RESET_SENDS_PER_IP = 10
 
 
+async def _send_reset_email_or_delete_token(
+    reset_token: str,
+    smtp_settings,
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str,
+    log_label: str,
+) -> None:
+    """Background task: send a password-reset email and delete the token on failure.
+
+    C1: FastAPI silently swallows BackgroundTask exceptions.  This wrapper
+    catches send failures, deletes the single-use token so it cannot be used
+    (user is not locked out forever — they can request a new link), and logs at
+    ERROR so operators are alerted without leaking details to the caller.
+    """
+    try:
+        send_email(smtp_settings, to_email, subject, text_body, html_body)
+        _logger.info("Password reset email sent (%s) to %s", log_label, to_email)
+    except Exception as exc:
+        _logger.error(
+            "Password reset email failed (%s) to %s — deleting token to unblock re-request: %s",
+            log_label,
+            to_email,
+            exc,
+        )
+        try:
+            async with async_session() as db:
+                await db.execute(
+                    delete(AuthEphemeralToken).where(
+                        AuthEphemeralToken.token == reset_token,
+                        AuthEphemeralToken.token_type == "password_reset",
+                    )
+                )
+                await db.commit()
+        except Exception as db_exc:
+            _logger.error("Failed to delete reset token after send failure: %s", db_exc)
+
+
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(
     request: ForgotPasswordRequest,
@@ -835,7 +884,10 @@ async def forgot_password(
             detail=f"Too many password reset requests. Please wait {_PWD_RESET_SEND_WINDOW.seconds // 60} minutes.",
         )
 
-    db.add(AuthRateLimitEvent(username=identifier, event_type="password_reset_send"))
+    # Nit7: Always record the IP-level event (prevents spray attacks across many
+    # different email addresses from one IP).  The email-level event is only
+    # recorded when we actually send an email to a local user — LDAP/OIDC users
+    # do not consume a slot because this flow is a no-op for them.
     db.add(AuthRateLimitEvent(username=client_ip, event_type="password_reset_ip"))
     await db.commit()
 
@@ -853,6 +905,10 @@ async def forgot_password(
     # M-1: exclude LDAP and OIDC users — they must use their respective provider.
     if user and user.is_active and user.auth_source not in ("ldap", "oidc"):
         try:
+            # Record email-level slot only for local users who will actually receive
+            # the reset email (Nit7: don't waste the user's quota for LDAP/OIDC no-ops).
+            db.add(AuthRateLimitEvent(username=identifier, event_type="password_reset_send"))
+
             now = datetime.now(timezone.utc)
             # Prune any outstanding reset tokens for this user before issuing a new one.
             await db.execute(
@@ -882,7 +938,17 @@ async def forgot_password(
             )
             # L-R9-B: send asynchronously so response time is independent of
             # whether the user exists (prevents email-existence timing oracle).
-            background_tasks.add_task(send_email, smtp_settings, user.email, subject, text_body, html_body)
+            # C1: wrapper deletes the token if SMTP fails so the user can re-request.
+            background_tasks.add_task(
+                _send_reset_email_or_delete_token,
+                reset_token,
+                smtp_settings,
+                user.email,
+                subject,
+                text_body,
+                html_body,
+                "forgot_password",
+            )
             _logger.info("Password reset email queued for %s", user.email)
         except Exception as e:
             _logger.error("Failed to send password reset email: %s", e)
@@ -1018,7 +1084,16 @@ async def reset_user_password(
         subject, text_body, html_body = await create_password_reset_link_email_from_template(
             db, user.username, reset_url
         )
-        background_tasks.add_task(send_email, smtp_settings, user.email, subject, text_body, html_body)
+        background_tasks.add_task(
+            _send_reset_email_or_delete_token,
+            reset_token,
+            smtp_settings,
+            user.email,
+            subject,
+            text_body,
+            html_body,
+            "admin_reset",
+        )
 
         _logger.info("Admin password reset link queued for user '%s' by admin '%s'", user.username, admin_user.username)
         return ResetPasswordResponse(message=f"Password reset link sent to {user.email}")

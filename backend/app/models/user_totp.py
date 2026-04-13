@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
+from fastapi import HTTPException, status
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,16 +47,38 @@ class UserTOTP(Base):
         self._secret_enc = mfa_encrypt(value)
 
     @property
-    def backup_codes(self) -> list[str]:
-        """Get backup codes as a list."""
+    def backup_code_hashes(self) -> list[str]:
+        """T5: Get stored backup-code hashes as a list.
+
+        The name makes clear that these are *hashes*, not plaintext codes,
+        so callers know they must verify with a password-hashing library
+        rather than compare directly.
+        """
         if not self.backup_codes_json:
             return []
         return json.loads(self.backup_codes_json)
 
-    @backup_codes.setter
-    def backup_codes(self, codes: list[str]) -> None:
-        """Set backup codes from a list."""
-        self.backup_codes_json = json.dumps(codes)
+    @backup_code_hashes.setter
+    def backup_code_hashes(self, hashes: list[str]) -> None:
+        """Persist backup-code hashes as a JSON array."""
+        self.backup_codes_json = json.dumps(hashes)
+
+    def accept_counter(self, new_counter: int) -> None:
+        """T4: Record an accepted TOTP time-step counter, rejecting backward movement.
+
+        Raises ``HTTPException(400)`` if ``new_counter`` is not strictly greater
+        than ``last_totp_counter``, preventing counter roll-back attacks (e.g. an
+        attacker who replays a previously accepted code after the counter wraps or
+        the clock is skewed backward).
+
+        The caller is responsible for flushing/committing the change to the DB.
+        """
+        if self.last_totp_counter is not None and new_counter <= self.last_totp_counter:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="TOTP code already used",
+            )
+        self.last_totp_counter = new_counter
 
     def __repr__(self) -> str:
         return f"<UserTOTP user_id={self.user_id} enabled={self.is_enabled}>"

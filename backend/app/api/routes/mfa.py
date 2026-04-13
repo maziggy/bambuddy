@@ -310,7 +310,14 @@ async def clear_failed_attempts(db: AsyncSession, username: str, event_type: str
 
 
 async def check_email_otp_send_rate(db: AsyncSession, username: str) -> None:
-    """Raise HTTP 429 if the user has requested too many OTP emails recently."""
+    """Raise HTTP 429 if the user has requested too many OTP emails recently.
+
+    I1: This function only *checks* the limit.  The caller is responsible for
+    recording the slot via ``record_email_otp_send`` **after** the email has
+    been sent successfully.  This prevents failed sends from consuming a slot
+    (wasting the user's quota) and makes it impossible to farm rate-limit events
+    without actually triggering a send.
+    """
     username_key = username.lower()
     now = datetime.now(timezone.utc)
     cutoff = now - EMAIL_OTP_SEND_WINDOW
@@ -327,7 +334,15 @@ async def check_email_otp_send_rate(db: AsyncSession, username: str) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many OTP email requests. Please wait {EMAIL_OTP_SEND_WINDOW.seconds // 60} minutes.",
         )
-    db.add(AuthRateLimitEvent(username=username_key, event_type="email_send"))
+
+
+async def record_email_otp_send(db: AsyncSession, username: str) -> None:
+    """Record a successful OTP email send for rate-limiting purposes (I1).
+
+    Must be called *after* the email has been sent successfully so that failed
+    sends do not consume a slot from the user's quota.
+    """
+    db.add(AuthRateLimitEvent(username=username.lower(), event_type="email_send"))
     await db.commit()
 
 
@@ -389,7 +404,7 @@ async def get_2fa_status(
     totp_record = result.scalar_one_or_none()
 
     totp_enabled = totp_record is not None and totp_record.is_enabled
-    backup_codes_remaining = len(totp_record.backup_codes) if totp_record else 0
+    backup_codes_remaining = len(totp_record.backup_code_hashes) if totp_record else 0
     email_otp_enabled = await _get_email_2fa_enabled(db, current_user.id)
 
     return TwoFAStatusResponse(
@@ -442,7 +457,7 @@ async def setup_totp(
     if existing:
         existing.secret = secret
         existing.is_enabled = False
-        existing.backup_codes = []
+        existing.backup_code_hashes = []
     else:
         db.add(UserTOTP(user_id=current_user.id, secret=secret, is_enabled=False))
 
@@ -480,7 +495,7 @@ async def enable_totp(
     await clear_failed_attempts(db, current_user.username, event_type="2fa_attempt")
     plain_codes, hashed_codes = _generate_backup_codes()
     totp_record.is_enabled = True
-    totp_record.backup_codes = hashed_codes
+    totp_record.backup_code_hashes = hashed_codes
     await db.commit()
 
     return TOTPEnableResponse(
@@ -516,7 +531,7 @@ async def disable_totp(
     else:
         # Check backup codes — always iterate all entries (L-R9-A: no early break
         # to avoid timing oracle based on code position in the list).
-        for hashed in totp_record.backup_codes:
+        for hashed in totp_record.backup_code_hashes:
             if pwd_context.verify(body.code, hashed):
                 code_valid = True
 
@@ -557,17 +572,17 @@ async def regenerate_backup_codes(
     else:
         # Accept a backup code as an alternative (M10)
         matched_index: int | None = None
-        for idx, hashed in enumerate(totp_record.backup_codes):
+        for idx, hashed in enumerate(totp_record.backup_code_hashes):
             if pwd_context.verify(body.code, hashed) and matched_index is None:
                 matched_index = idx
         if matched_index is None:
             await record_failed_attempt(db, current_user.username)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP or backup code")
         # Remove the used backup code
-        totp_record.backup_codes = [c for i, c in enumerate(totp_record.backup_codes) if i != matched_index]
+        totp_record.backup_code_hashes = [c for i, c in enumerate(totp_record.backup_code_hashes) if i != matched_index]
 
     plain_codes, hashed_codes = _generate_backup_codes()
-    totp_record.backup_codes = hashed_codes
+    totp_record.backup_code_hashes = hashed_codes
     await db.commit()
 
     return BackupCodesResponse(
@@ -643,6 +658,7 @@ async def enable_email_otp(
                 "If you did not request this, you can safely ignore this email.</p>"
             ),
         )
+        await record_email_otp_send(db, current_user.username)
     except Exception as exc:
         logger.error("Failed to send email OTP setup code to user_id=%d: %s", current_user.id, exc)
         raise HTTPException(
@@ -801,6 +817,7 @@ async def send_email_otp(
                 f"<p>If you did not request this code, you can safely ignore this email.</p>"
             ),
         )
+        await record_email_otp_send(db, username)
     except Exception as exc:
         logger.error("Failed to send OTP email to user_id=%d: %s", user.id, exc)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send OTP email")
@@ -906,7 +923,7 @@ async def verify_2fa(
         # Always iterate all codes — no early break (L-R9-A: constant iteration
         # count prevents timing oracle based on used-code position in the list).
         matched_index: int | None = None
-        for idx, hashed in enumerate(totp_record.backup_codes):
+        for idx, hashed in enumerate(totp_record.backup_code_hashes):
             if pwd_context.verify(body.code, hashed) and matched_index is None:
                 matched_index = idx
 
@@ -923,8 +940,8 @@ async def verify_2fa(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired pre-auth token")
 
         # Remove the used backup code now that the token is atomically consumed.
-        updated_codes = [c for i, c in enumerate(totp_record.backup_codes) if i != matched_index]
-        totp_record.backup_codes = updated_codes
+        updated_codes = [c for i, c in enumerate(totp_record.backup_code_hashes) if i != matched_index]
+        totp_record.backup_code_hashes = updated_codes
         await db.commit()
         await clear_failed_attempts(db, username)
 
@@ -1526,8 +1543,8 @@ async def oidc_callback(
             logger.error("OIDC user resolution failed for provider %d: %s", provider_id, exc, exc_info=True)
             try:
                 await db.rollback()
-            except Exception:
-                pass
+            except Exception as rb_exc:
+                logger.error("DB rollback failed after OIDC user-resolution error: %s", rb_exc, exc_info=True)
             return RedirectResponse(url=f"{frontend_error_url}user_resolution_failed", status_code=302)
 
     except Exception as exc:

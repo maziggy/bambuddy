@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -31,6 +31,25 @@ class UserOTPCode(Base):
     used: Mapped[bool] = mapped_column(Boolean, default=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def consume(self) -> None:
+        """T4: Mark this OTP as used, enforcing preconditions.
+
+        Raises ``ValueError`` if the code is already used or expired so callers
+        cannot silently re-use an invalidated code.  The caller is responsible
+        for flushing/committing the change to the DB.
+        """
+        now = datetime.now(timezone.utc)
+        exp = self.expires_at
+        if exp.tzinfo is None:
+            from datetime import timezone as _tz
+
+            exp = exp.replace(tzinfo=_tz.utc)
+        if self.used:
+            raise ValueError("OTP code has already been used")
+        if exp < now:
+            raise ValueError("OTP code has expired")
+        self.used = True
 
     def __repr__(self) -> str:
         return f"<UserOTPCode user_id={self.user_id} used={self.used}>"

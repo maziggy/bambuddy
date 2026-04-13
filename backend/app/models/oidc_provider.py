@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -70,6 +70,13 @@ class UserOIDCLink(Base):
     """Links a local Bambuddy user account to an identity at an OIDC provider."""
 
     __tablename__ = "user_oidc_links"
+    __table_args__ = (
+        # T2: Prevent duplicate OIDC identities and duplicate provider links.
+        # (provider_id, provider_user_id) — one OIDC sub per provider maps to at most one local user.
+        UniqueConstraint("provider_id", "provider_user_id", name="uq_oidc_link_provider_sub"),
+        # (user_id, provider_id) — one local user can link to each provider at most once.
+        UniqueConstraint("user_id", "provider_id", name="uq_oidc_link_user_provider"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)

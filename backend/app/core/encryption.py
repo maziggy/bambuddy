@@ -60,6 +60,15 @@ def mfa_decrypt(value: str) -> str:
     Raises ``RuntimeError`` if the prefix is present but no key is configured.
     """
     if not value.startswith(_FERNET_PREFIX):
+        # Nit6: Warn when a key IS configured but the stored value is plaintext.
+        # This surfaces rows that were written before encryption was enabled so
+        # operators know they need a migration / re-enroll cycle.
+        if _get_fernet() is not None:
+            logger.warning(
+                "mfa_decrypt: MFA_ENCRYPTION_KEY is set but the stored value has no "
+                "'fernet:' prefix — returning legacy plaintext. Consider re-enrolling "
+                "this secret to store it encrypted."
+            )
         return value  # Legacy plaintext — backward compatible
 
     f = _get_fernet()

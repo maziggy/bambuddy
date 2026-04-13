@@ -307,11 +307,29 @@ def _validate_icon_url(v: str | None) -> str | None:
 
 
 def _validate_issuer_url(v: str | None) -> str | None:
-    """Reject non-HTTP(S) issuer URLs to prevent SSRF via internal scheme abuse."""
+    """Nit4: Reject non-HTTPS issuer URLs to prevent SSRF and mixed-content issues.
+
+    HTTP is no longer accepted — OIDC providers must be reachable over TLS.
+    """
     if v is None:
         return v
-    if not v.startswith(("https://", "http://")):
-        raise ValueError("issuer_url must start with https:// or http://")
+    if not v.startswith("https://"):
+        raise ValueError("issuer_url must start with https://")
+    return v
+
+
+def _validate_scopes(v: str | None) -> str | None:
+    """Nit5: Require that the 'openid' scope is present.
+
+    The OpenID Connect spec mandates the 'openid' scope; without it the
+    response is plain OAuth2, not OIDC, and claims like sub/email are not
+    guaranteed.
+    """
+    if v is None:
+        return v
+    scope_list = v.split()
+    if "openid" not in scope_list:
+        raise ValueError("scopes must include 'openid'")
     return v
 
 
@@ -330,6 +348,13 @@ class OIDCProviderCreate(BaseModel):
     @classmethod
     def validate_issuer_url(cls, v: str) -> str:
         result = _validate_issuer_url(v)
+        assert result is not None
+        return result
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, v: str) -> str:
+        result = _validate_scopes(v)
         assert result is not None
         return result
 
@@ -355,6 +380,11 @@ class OIDCProviderUpdate(BaseModel):
     auto_create_users: bool | None = None
     auto_link_existing_accounts: bool | None = None
     icon_url: str | None = None
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, v: str | None) -> str | None:
+        return _validate_scopes(v)
 
     @field_validator("icon_url")
     @classmethod

@@ -12,13 +12,15 @@ export function GCodeViewerPage() {
   }
 
   return (
+    // h-14 (3.5 rem) is the fixed header height defined in Layout.tsx.
+    // Subtracting it prevents a double scrollbar inside the layout shell.
     <iframe
       src="/gcode-viewer/"
       title="GCode Viewer"
       style={{
         display: 'block',
         width: '100%',
-        height: '100vh',
+        height: 'calc(100vh - 3.5rem)',
         border: 'none',
       }}
     />

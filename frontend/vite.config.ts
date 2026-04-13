@@ -92,12 +92,6 @@ export default defineConfig({
         target: backendUrl,
         changeOrigin: true,
       },
-      // Keep proxy as fallback for any direct /gcode-viewer requests the
-      // middleware doesn't catch (shouldn't happen, but belt-and-suspenders)
-      '/gcode-viewer': {
-        target: backendUrl,
-        changeOrigin: true,
-      },
     },
   },
   resolve: {

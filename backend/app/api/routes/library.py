@@ -104,15 +104,18 @@ def to_absolute_path(relative_path: str | None) -> Path | None:
     """Convert a relative path (from database) to an absolute path for file operations."""
     if not relative_path:
         return None
-    # Handle already-absolute paths (for backwards compatibility during migration)
     path = Path(relative_path)
-    base = Path(app_settings.base_dir).resolve()
+    # Handle already-absolute paths verbatim (backwards compatibility during migration).
+    # Legacy DB rows may store absolute paths that predate the base_dir layout; the
+    # traversal guard below only applies to relative paths coming from user input.
     if path.is_absolute():
-        resolved = path.resolve()
-    else:
-        resolved = (base / relative_path).resolve()
-    # Guard against path traversal — resolved path must stay inside base_dir
-    if not str(resolved).startswith(str(base)):
+        return path.resolve()
+    base = Path(app_settings.base_dir).resolve()
+    resolved = (base / relative_path).resolve()
+    # Guard against path traversal — resolved path must stay inside base_dir.
+    # Use is_relative_to() to avoid the /data/app vs /data/app_evil prefix confusion
+    # that a plain startswith(str(base)) check would miss.
+    if not resolved.is_relative_to(base):
         raise ValueError(f"Path escapes base directory: {relative_path!r}")
     return resolved
 
@@ -2505,7 +2508,7 @@ async def create_library_slicer_token(
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    token = create_slicer_download_token("library", file_id)
+    token = await create_slicer_download_token("library", file_id)
     return {"token": token}
 
 
@@ -2524,7 +2527,7 @@ async def download_library_file_for_slicer(
     """
     from backend.app.core.auth import verify_slicer_download_token
 
-    if not verify_slicer_download_token(token, "library", file_id):
+    if not await verify_slicer_download_token(token, "library", file_id):
         raise HTTPException(status_code=403, detail="Invalid or expired download token")
 
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))

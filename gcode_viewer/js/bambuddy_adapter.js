@@ -32,7 +32,9 @@
     // Auth helper
     // -------------------------------------------------------------------------
     function authHeaders() {
-        const token = localStorage.getItem('auth_token');
+        // sessionStorage is used when the user opts out of "remember me";
+        // fall back to localStorage for persistent sessions.
+        const token = sessionStorage.getItem('auth_token') ?? localStorage.getItem('auth_token');
         return token ? { Authorization: 'Bearer ' + token } : {};
     }
 

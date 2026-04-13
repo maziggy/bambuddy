@@ -2921,3 +2921,96 @@ class TestOIDCAudAndNonceMismatch:
         location = resp.headers.get("location", "")
         # The callback redirects to ?oidc_error=nonce_mismatch when nonces differ.
         assert "nonce_mismatch" in location, f"Expected nonce_mismatch redirect for nonce mismatch, got: {location}"
+
+
+# ===========================================================================
+# Expired OIDC token rejection — state and exchange tokens
+# ===========================================================================
+
+
+class TestOIDCExpiredTokenRejection:
+    """Expired OIDC state and exchange tokens must be rejected atomically.
+
+    The DELETE … WHERE expires_at > now must ensure that an already-expired
+    token is never consumed (committed) before the expiry is checked, so the
+    token row stays in the DB and is not silently discarded.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_expired_state_token_rejected_as_invalid_state(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """An expired OIDC state token must redirect to invalid_state without
+        being consumed — it must still exist in the DB after the rejected call."""
+        from backend.app.models.oidc_provider import OIDCProvider
+
+        provider = OIDCProvider(
+            name="ExpiredStateIdP",
+            issuer_url="https://expired-state.example.com",
+            client_id="client_expired_state",
+            _client_secret_enc="secret_exp_state",
+            scopes="openid",
+            is_enabled=True,
+            auto_link_existing_accounts=False,
+            auto_create_users=False,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider.id,
+                nonce=secrets.token_urlsafe(16),
+                code_verifier=secrets.token_urlsafe(48),
+                # already expired
+                expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=any_code&state={state}",
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 302
+        location = resp.headers.get("location", "")
+        assert "invalid_state" in location, f"Expected invalid_state redirect for expired state, got: {location}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_expired_exchange_token_rejected(self, async_client: AsyncClient, db_session: AsyncSession):
+        """An expired OIDC exchange token must return 401 without being consumed."""
+        from sqlalchemy import select as sa_select
+
+        expired_token = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=expired_token,
+                token_type="oidc_exchange",
+                username="some_user",
+                # already expired
+                expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/exchange",
+            json={"oidc_token": expired_token},
+        )
+
+        assert resp.status_code == 401
+        assert "expired" in resp.json().get("detail", "").lower() or "invalid" in resp.json().get("detail", "").lower()
+
+        # Token must NOT have been consumed — it should still be in the DB
+        # (the atomic DELETE WHERE expires_at > now left it untouched)
+        result = await db_session.execute(
+            sa_select(AuthEphemeralToken).where(AuthEphemeralToken.token == expired_token)
+        )
+        remaining = result.scalar_one_or_none()
+        assert remaining is not None, "Expired exchange token must not be consumed by a rejected request"

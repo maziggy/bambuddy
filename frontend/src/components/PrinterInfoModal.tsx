@@ -162,22 +162,6 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
     value: printer.nozzle_count,
   });
 
-  // SD Card
-  if (status?.sdcard != null) {
-    rows.push({
-      label: t('printers.sdCard'),
-      value: (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-          status.sdcard
-            ? 'bg-bambu-green/20 text-bambu-green'
-            : 'bg-bambu-dark-tertiary text-bambu-gray'
-        }`}>
-          {status.sdcard ? t('printers.inserted') : t('printers.notInserted')}
-        </span>
-      ),
-    });
-  }
-
   // Auto-Archive
   rows.push({
     label: t('printers.autoArchive'),

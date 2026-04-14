@@ -2480,20 +2480,6 @@ function PrinterCard({
                 </span>
               ) : null}
 
-              {/* SD Card Badge */}
-              {status?.connected && (
-                <span
-                  className={`flex items-center px-2 py-1 rounded-full text-xs ${
-                    status.sdcard
-                      ? 'bg-status-ok/20 text-status-ok'
-                      : 'bg-red-500/20 text-red-400'
-                  }`}
-                  title={`${t('printers.sdCard')}: ${status.sdcard ? t('printers.inserted') : t('printers.notInserted')}`}
-                >
-                  <HardDrive className="w-3 h-3" />
-                </span>
-              )}
-
               {/* Enclosure Door Badge (X1/P1S/P2S/H2*) */}
               {status?.connected && ['X1C', 'X1', 'X1E', 'P1S', 'P1P', 'P2S', 'H2D', 'H2D Pro', 'H2C', 'H2S'].includes(printer.model ?? '') && (
                 <span

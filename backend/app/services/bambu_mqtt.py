@@ -2263,27 +2263,19 @@ class BambuMQTTClient:
             if home_flag < 0:
                 home_flag = home_flag & 0xFFFFFFFF
 
-        # A "full" push_status report carries many state fields; heartbeat pushes
-        # are sparse (often just home_flag + a handful of counters). We use this
-        # to decide whether home_flag's SD bits can be trusted as ground truth.
-        _full_push_markers = ("gcode_state", "mc_percent", "nozzle_temper", "print_type", "stg_cur", "ams")
-        _is_full_push = sum(1 for k in _full_push_markers if k in data) >= 2
-
-        # Parse SD card status. H2D (and likely others) emit heartbeat-style pushes
-        # that carry `home_flag` with bits 8-9 cleared even when a card is inserted,
-        # so `home_flag` alone is not reliable. Prefer the legacy top-level `sdcard`
-        # field when present (handling bool/int/string variants), and only consult
-        # `home_flag` bits 8-9 when the push looks like a full status report and
-        # `sdcard` is absent.
-        def _truthy_sdcard(v: object) -> bool:
-            if isinstance(v, str):
-                return "HAS_SDCARD" in v.upper() or v.lower() in ("true", "normal", "1")
-            return bool(v)
-
+        # SD card presence: the only remaining consumer is the firmware-update
+        # precondition check (firmware_update.py). Use the top-level `sdcard`
+        # field when present with a permissive truthy check covering the
+        # bool/int/"HAS_SDCARD_NORMAL" variants real firmware emits. We do NOT
+        # derive this from home_flag — heartbeat pushes clear bits 8-9 even
+        # when a card is inserted, which caused the badge to flap before the
+        # badge was removed entirely.
         if "sdcard" in data:
-            self.state.sdcard = _truthy_sdcard(data["sdcard"])
-        elif home_flag is not None and _is_full_push:
-            self.state.sdcard = ((home_flag >> 8) & 0x3) != 0
+            raw_sdcard = data["sdcard"]
+            if isinstance(raw_sdcard, str):
+                self.state.sdcard = "HAS_SDCARD" in raw_sdcard.upper() or raw_sdcard.lower() in ("true", "normal", "1")
+            else:
+                self.state.sdcard = bool(raw_sdcard)
 
         if home_flag is not None:
             store_to_sdcard = bool((home_flag >> 11) & 1)

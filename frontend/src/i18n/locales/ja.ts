@@ -326,6 +326,19 @@ export default {
     rfid: {
       reread: 'RFID再読み取り',
     },
+    bedJog: {
+      title: 'ビルドプレートを移動',
+      bed: 'ベッド',
+      step: 'ステップ (mm)',
+      up: 'プレートを上へ',
+      down: 'プレートを下へ',
+      disabledWhilePrinting: '印刷中は無効',
+      notHomedTitle: 'プリンターがホーミングされていません',
+      notHomedMessage: '前回の印刷以降、Z軸がホーミングされていません。安全な位置決めのためにまずZをホーミングするか、このまま移動してください — ソフトエンドストップはバイパスされます。',
+      homeZ: 'Zをホーミング',
+      moveAnyway: 'このまま移動',
+      homingStarted: 'Z軸をホーミング中…',
+    },
     // Permissions
     permission: {
       noAdd: 'プリンターを追加する権限がありません',

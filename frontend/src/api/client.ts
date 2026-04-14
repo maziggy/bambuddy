@@ -244,7 +244,6 @@ export interface PrinterStatus {
   ams: AMSUnit[];
   ams_exists: boolean;
   vt_tray: AMSTray[];  // Virtual tray / external spool(s)
-  sdcard: boolean;  // SD card inserted
   store_to_sdcard: boolean;  // Store sent files on SD card
   timelapse: boolean;  // Timelapse recording active
   ipcam: boolean;  // Live view enabled
@@ -2817,6 +2816,18 @@ export const api = {
     request<{ success: boolean; message: string }>(`/printers/${printerId}/airduct-mode?mode=${mode}`, {
       method: 'POST',
     }),
+
+  // Bed (Z-axis) jog
+  bedJog: (printerId: number, distance: number, force: boolean = false) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/bed-jog?distance=${distance}&force=${force}`,
+      { method: 'POST' }
+    ),
+  homeAxes: (printerId: number, axes: 'z' | 'xy' | 'all' = 'z') =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/home-axes?axes=${axes}`,
+      { method: 'POST' }
+    ),
 
   // Chamber Light Control
   setChamberLight: (printerId: number, on: boolean) =>

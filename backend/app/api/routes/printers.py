@@ -2428,6 +2428,81 @@ async def set_chamber_light(
     return {"success": True, "message": f"Chamber light {'on' if on else 'off'}"}
 
 
+@router.post("/{printer_id}/bed-jog")
+async def bed_jog(
+    printer_id: int,
+    distance: float = Query(
+        ..., description="Relative Z distance in mm (positive = bed down / nozzle further away, negative = bed up)"
+    ),
+    force: bool = Query(False, description="If true, bypass soft endstops via M211 (for use when Z is not homed)"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move the build plate along the Z axis by a relative distance.
+
+    Emits a short G-code sequence via MQTT. When ``force`` is true the soft
+    endstops are disabled for the duration of the move, matching the
+    "ignore and move anyway" option Bambu Studio offers when the printer
+    is not homed.
+    """
+    if distance == 0 or abs(distance) > 200:
+        raise HTTPException(400, "Distance must be non-zero and ≤ 200 mm")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    lines = []
+    if force:
+        lines.append("M211 S0")
+    lines += ["G91", f"G1 Z{distance:.2f} F600", "G90"]
+    if force:
+        lines.append("M211 S1")
+
+    if not client.send_gcode("\n".join(lines)):
+        raise HTTPException(500, "Failed to send bed-jog command")
+
+    return {"success": True, "message": f"Bed jog {distance:+.1f} mm sent"}
+
+
+@router.post("/{printer_id}/home-axes")
+async def home_axes(
+    printer_id: int,
+    axes: str = Query("z", description="Axes to home: 'z', 'xy', or 'all'"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Home one or more axes via G28."""
+    axes = axes.lower()
+    if axes == "z":
+        gcode = "G28 Z"
+    elif axes == "xy":
+        gcode = "G28 X Y"
+    elif axes == "all":
+        gcode = "G28"
+    else:
+        raise HTTPException(400, "axes must be 'z', 'xy', or 'all'")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    if not client.send_gcode(gcode):
+        raise HTTPException(500, "Failed to send home command")
+
+    return {"success": True, "message": f"Home {axes} command sent"}
+
+
 @router.post("/{printer_id}/hms/clear")
 async def clear_hms_errors(
     printer_id: int,

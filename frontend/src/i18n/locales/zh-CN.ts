@@ -327,6 +327,19 @@ export default {
     rfid: {
       reread: '重新读取 RFID',
     },
+    bedJog: {
+      title: '移动热床',
+      bed: '热床',
+      step: '步长 (mm)',
+      up: '热床上移',
+      down: '热床下移',
+      disabledWhilePrinting: '打印中已禁用',
+      notHomedTitle: '打印机未归零',
+      notHomedMessage: '自上次打印以来 Z 轴尚未归零。请先归零 Z 以确保安全定位，或者直接移动 — 软限位将被绕过。',
+      homeZ: '归零 Z',
+      moveAnyway: '强制移动',
+      homingStarted: 'Z 轴归零中…',
+    },
     // Permissions
     permission: {
       noAdd: '您没有添加打印机的权限',

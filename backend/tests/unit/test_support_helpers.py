@@ -578,3 +578,61 @@ class TestCollectSupportInfo:
         assert "log_file" in info
         assert info["log_file"]["size_bytes"] > 0
         assert "B" in info["log_file"]["size_formatted"] or "KB" in info["log_file"]["size_formatted"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_settings_include_all_keys_with_sensitive_redacted(self):
+        """All settings keys must appear in output; sensitive values are replaced with [REDACTED]."""
+        from backend.app.api.routes.support import _collect_support_info
+
+        fake_settings = [
+            MagicMock(key="benign_flag", value="true"),
+            MagicMock(key="bambu_cloud_token", value="super-secret"),
+            MagicMock(key="github_webhook", value="https://hooks.example/abc"),
+            MagicMock(key="empty_password", value=""),
+            MagicMock(key="local_backup_path", value="/data/backups"),
+        ]
+
+        def make_result(rows=None):
+            r = MagicMock()
+            r.scalar.return_value = 0
+            r.scalar_one_or_none.return_value = None
+            r.scalars.return_value.all.return_value = rows or []
+            r.all.return_value = []
+            return r
+
+        async def fake_execute(stmt, *_a, **_kw):
+            sql = str(stmt).lower()
+            # Route by table name in the compiled SQL
+            if "from settings" in sql or "settings.key" in sql:
+                return make_result(fake_settings)
+            return make_result([])
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("backend.app.api.routes.support.is_running_in_docker", return_value=False),
+            patch("backend.app.api.routes.support.async_session") as mock_session_ctx,
+            patch("backend.app.api.routes.support.printer_manager") as mock_pm,
+            patch("backend.app.api.routes.support.get_network_interfaces", return_value=[]),
+            patch("backend.app.api.routes.support.ws_manager") as mock_ws,
+            patch("backend.app.api.routes.support.settings") as mock_settings,
+        ):
+            mock_settings.base_dir = Path(tmpdir)
+            mock_settings.log_dir = Path(tmpdir)
+            mock_settings.debug = False
+            mock_pm.get_all_statuses.return_value = {}
+            mock_ws.active_connections = []
+
+            mock_db = AsyncMock()
+            mock_db.execute = fake_execute
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            info = await _collect_support_info()
+
+        s = info["settings"]
+        assert s.get("bambu_cloud_token") == "[REDACTED]"
+        assert s.get("github_webhook") == "[REDACTED]"
+        assert s.get("local_backup_path") == "[REDACTED]"
+        assert s.get("empty_password") == ""
+        assert s.get("benign_flag") == "true"

@@ -327,6 +327,19 @@ export default {
     rfid: {
       reread: 'Re-read RFID',
     },
+    bedJog: {
+      title: 'Move build plate',
+      bed: 'Bed',
+      step: 'Step (mm)',
+      up: 'Move plate up',
+      down: 'Move plate down',
+      disabledWhilePrinting: 'Disabled while printing',
+      notHomedTitle: 'Printer is not homed',
+      notHomedMessage: 'The Z axis has not been homed since the last print. Home Z first for safe positioning, or move anyway — soft endstops will be bypassed.',
+      homeZ: 'Home Z',
+      moveAnyway: 'Move anyway',
+      homingStarted: 'Homing Z axis…',
+    },
     // Permissions
     permission: {
       noAdd: 'You do not have permission to add printers',

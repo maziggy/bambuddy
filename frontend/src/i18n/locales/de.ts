@@ -327,6 +327,19 @@ export default {
     rfid: {
       reread: 'RFID neu lesen',
     },
+    bedJog: {
+      title: 'Druckbett bewegen',
+      bed: 'Bett',
+      step: 'Schritt (mm)',
+      up: 'Platte hoch',
+      down: 'Platte runter',
+      disabledWhilePrinting: 'Während des Drucks deaktiviert',
+      notHomedTitle: 'Drucker ist nicht referenziert',
+      notHomedMessage: 'Die Z-Achse wurde seit dem letzten Druck nicht referenziert. Referenzieren Sie Z zuerst für eine sichere Positionierung oder bewegen Sie trotzdem — die Software-Endschalter werden dabei umgangen.',
+      homeZ: 'Z referenzieren',
+      moveAnyway: 'Trotzdem bewegen',
+      homingStarted: 'Z-Achse wird referenziert…',
+    },
     // Permissions
     permission: {
       noAdd: 'Sie haben keine Berechtigung, Drucker hinzuzufügen',

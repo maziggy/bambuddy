@@ -327,6 +327,19 @@ export default {
     rfid: {
       reread: 'Relire RFID',
     },
+    bedJog: {
+      title: 'Déplacer le plateau',
+      bed: 'Plateau',
+      step: 'Pas (mm)',
+      up: 'Monter le plateau',
+      down: 'Descendre le plateau',
+      disabledWhilePrinting: 'Désactivé pendant l\'impression',
+      notHomedTitle: 'Imprimante non référencée',
+      notHomedMessage: 'L\'axe Z n\'a pas été référencé depuis la dernière impression. Référencez Z d\'abord pour un positionnement sûr, ou déplacez quand même — les butées logicielles seront ignorées.',
+      homeZ: 'Référencer Z',
+      moveAnyway: 'Déplacer quand même',
+      homingStarted: 'Référencement de l\'axe Z…',
+    },
     // Permissions
     permission: {
       noAdd: 'Pas d\'autorisation pour ajouter',

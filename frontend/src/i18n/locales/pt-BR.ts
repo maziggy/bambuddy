@@ -327,6 +327,19 @@ export default {
     rfid: {
       reread: 'Releitura de RFID',
     },
+    bedJog: {
+      title: 'Mover a mesa de impressão',
+      bed: 'Mesa',
+      step: 'Passo (mm)',
+      up: 'Mover mesa para cima',
+      down: 'Mover mesa para baixo',
+      disabledWhilePrinting: 'Desativado durante a impressão',
+      notHomedTitle: 'Impressora não referenciada',
+      notHomedMessage: 'O eixo Z não foi referenciado desde a última impressão. Referencie Z primeiro para um posicionamento seguro, ou mova assim mesmo — os fins de curso de software serão ignorados.',
+      homeZ: 'Referenciar Z',
+      moveAnyway: 'Mover assim mesmo',
+      homingStarted: 'Referenciando eixo Z…',
+    },
     // Permissions
     permission: {
       noAdd: 'Você não tem permissão para adicionar impressoras',

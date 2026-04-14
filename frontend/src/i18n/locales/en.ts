@@ -2167,6 +2167,8 @@ export default {
         enabled: 'Enabled',
         autoCreate: 'Auto-create users',
         autoCreateDesc: 'Automatically create a local account on first login.',
+        autoLink: 'Auto-link existing accounts',
+        autoLinkDesc: 'Link existing local accounts by matching email on first login.',
         secretHint: 'leave blank to keep current',
         secretPlaceholder: 'new secret',
       },

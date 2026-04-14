@@ -239,27 +239,19 @@ class NFCReader:
 
 
 def _extract_tray_uuid(blocks: dict[int, bytes]) -> str | None:
-    """Extract tray_uuid from Bambu MIFARE Classic data blocks."""
-    # Block 4-5 contain the tray UUID as 32 ASCII hex chars across 32 bytes.
-    if 4 in blocks and 5 in blocks:
-        raw = blocks[4] + blocks[5]
-        try:
-            # Preferred path: decode full ASCII payload, keep only hex chars.
-            ascii_candidate = raw.decode("ascii", errors="ignore")
-            hex_chars = "".join(ch for ch in ascii_candidate if ch in "0123456789abcdefABCDEF")
-            if len(hex_chars) >= 32:
-                uuid_str = hex_chars[:32].upper()
-                if uuid_str != "0" * 32:
-                    return uuid_str
-        except Exception:
-            pass
+    """Extract tray_uuid from Bambu MIFARE Classic data blocks.
 
-        try:
-            # Fallback for partially decoded payloads: use first 16 raw bytes as hex.
-            # This preserves compatibility with older decoding behavior.
-            uuid_str = raw[:16].hex().upper()
-            if uuid_str and uuid_str != "0" * 32:
-                return uuid_str
-        except Exception:
-            pass
-    return None
+    The tray UID is a 16-byte string at block 9 (sector 2, block 1).
+    Encoded as a 32-char uppercase hex string, matching what the AMS MQTT
+    firmware reports as tray_uuid.
+    """
+    if 9 not in blocks:
+        return None
+
+    raw = blocks[9][:16]
+    uuid_str = raw.hex().upper()
+
+    if not uuid_str or uuid_str == "0" * 32:
+        return None
+
+    return uuid_str

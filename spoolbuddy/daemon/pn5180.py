@@ -1,4 +1,4 @@
-"""PN5180 NFC frontend driver — ported from working Pico firmware (pico-nfc-bridge.ino).
+"""PN5180 NFC frontend driver - ported from working Pico firmware (pico-nfc-bridge.ino).
 
 Key learnings from pico-nfc-bridge.ino:
 - Must call setTransceiveMode() before every SEND_DATA
@@ -62,7 +62,7 @@ BAMBU_MASTER_KEY = bytes(
 BAMBU_CONTEXT = b"RFID-A\x00"  # 7 bytes including null terminator
 
 # Blocks to read for Bambu tag data
-BAMBU_BLOCKS = [1, 2, 4, 5]
+BAMBU_BLOCKS = [1, 2, 4, 5, 9]
 
 
 def hkdf_derive_keys(uid: bytes) -> bytes:

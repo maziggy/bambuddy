@@ -553,6 +553,13 @@ export default {
       uploadFirmware: 'Firmware hochladen',
       uploadFailed: 'Upload fehlgeschlagen: {{error}}',
       uploadedToast: 'Firmware hochgeladen! Starten Sie das Update vom Druckerbildschirm.',
+      availableVersions: 'Verfügbare Versionen',
+      usable: 'Installierbar',
+      unavailable: 'Nicht verfügbar',
+      installed: 'Installiert',
+      newerBadge: 'neuer',
+      olderBadge: 'älter',
+      currentBadge: 'aktuell',
     },
     accessCodePlaceholder: 'Leer lassen, um den aktuellen zu behalten',
     // ROI editor

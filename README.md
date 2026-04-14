@@ -230,7 +230,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Interval reminders (hours/days)
 - Print time accuracy stats
 - File manager for printer storage
-- Firmware update helper with version badge (LAN-only printers)
+- Firmware update helper with version badge (LAN-only printers) — lists all announced versions with Usable/Unavailable/Installed badges and supports rollback to older firmware
 - Debug logging toggle with live indicator
 - Live application log viewer with filtering
 - Support bundle generator with comprehensive diagnostics (privacy-filtered)

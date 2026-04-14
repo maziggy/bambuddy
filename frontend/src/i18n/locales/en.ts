@@ -553,6 +553,13 @@ export default {
       uploadFirmware: 'Upload Firmware',
       uploadFailed: 'Failed to start upload: {{error}}',
       uploadedToast: 'Firmware uploaded! Trigger update from printer screen.',
+      availableVersions: 'Available versions',
+      usable: 'Usable',
+      unavailable: 'Unavailable',
+      installed: 'Installed',
+      newerBadge: 'newer',
+      olderBadge: 'older',
+      currentBadge: 'current',
     },
     accessCodePlaceholder: 'Leave empty to keep current',
     // ROI editor

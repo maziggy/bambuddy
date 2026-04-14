@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { compareFwVersions } from '../utils/firmwareVersion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -5182,18 +5183,21 @@ function FirmwareUpdateModal({
   const [uploadStatus, setUploadStatus] = useState<FirmwareUploadStatus | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(
+    firmwareInfo.update_available ? firmwareInfo.latest_version : null,
+  );
 
-  // Prepare check query (only when update available and user can update)
+  // Prepare check query — runs when a version is selected and user can update
   const { data: prepareInfo, isLoading: isPreparing } = useQuery({
-    queryKey: ['firmwarePrepare', printer.id],
-    queryFn: () => firmwareApi.prepareUpload(printer.id),
+    queryKey: ['firmwarePrepare', printer.id, selectedVersion],
+    queryFn: () => firmwareApi.prepareUpload(printer.id, selectedVersion ?? undefined),
     staleTime: 30000,
-    enabled: firmwareInfo.update_available && canUpdate,
+    enabled: !!selectedVersion && canUpdate && !isUploading,
   });
 
   // Start upload mutation
   const uploadMutation = useMutation({
-    mutationFn: () => firmwareApi.startUpload(printer.id),
+    mutationFn: () => firmwareApi.startUpload(printer.id, selectedVersion ?? undefined),
     onSuccess: () => {
       setIsUploading(true);
       // Start polling for status
@@ -5255,33 +5259,98 @@ function FirmwareUpdateModal({
           </div>
 
           {/* Version Info */}
-          <div className="bg-bambu-dark rounded-lg p-3 mb-4">
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-bambu-gray">{t('printers.firmwareModal.currentVersion')}</span>
-              <span className={`font-mono ${firmwareInfo.update_available ? 'text-white' : 'text-status-ok'}`}>
-                {firmwareInfo.current_version || t('common.unknown')}
-              </span>
-            </div>
-            {firmwareInfo.update_available && (
-              <div className="flex justify-between items-center text-sm mt-1">
-                <span className="text-bambu-gray">{t('printers.firmwareModal.latestVersion')}</span>
-                <span className="text-orange-400 font-mono">{firmwareInfo.latest_version}</span>
-              </div>
-            )}
-            {firmwareInfo.release_notes && (
-              <details className="mt-3 text-sm" open={!firmwareInfo.update_available}>
-                <summary className={`cursor-pointer hover:underline ${firmwareInfo.update_available ? 'text-orange-400' : 'text-status-ok'}`}>
-                  {t('printers.firmwareModal.releaseNotes')}
-                </summary>
-                <div className="mt-2 text-bambu-gray text-xs max-h-40 overflow-y-auto whitespace-pre-wrap">
-                  {firmwareInfo.release_notes}
+          {(() => {
+            const selectedEntry = selectedVersion
+              ? firmwareInfo.available_versions?.find((v) => v.version === selectedVersion)
+              : null;
+            const displayVersion = selectedVersion ?? firmwareInfo.latest_version;
+            const displayNotes = selectedEntry?.release_notes ?? firmwareInfo.release_notes;
+            const showSecondLine = !!displayVersion && displayVersion !== firmwareInfo.current_version;
+            return (
+              <div className="bg-bambu-dark rounded-lg p-3 mb-4">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-bambu-gray">{t('printers.firmwareModal.currentVersion')}</span>
+                  <span className={`font-mono ${showSecondLine ? 'text-white' : 'text-status-ok'}`}>
+                    {firmwareInfo.current_version || t('common.unknown')}
+                  </span>
                 </div>
-              </details>
-            )}
-          </div>
+                {showSecondLine && (
+                  <div className="flex justify-between items-center text-sm mt-1">
+                    <span className="text-bambu-gray">{t('printers.firmwareModal.latestVersion')}</span>
+                    <span className="text-orange-400 font-mono">{displayVersion}</span>
+                  </div>
+                )}
+                {displayNotes && (
+                  <details className="mt-3 text-sm" open={!showSecondLine} key={displayVersion ?? 'none'}>
+                    <summary className={`cursor-pointer hover:underline ${showSecondLine ? 'text-orange-400' : 'text-status-ok'}`}>
+                      {t('printers.firmwareModal.releaseNotes')}
+                    </summary>
+                    <div className="mt-2 text-bambu-gray text-xs max-h-40 overflow-y-auto whitespace-pre-wrap">
+                      {displayNotes}
+                    </div>
+                  </details>
+                )}
+              </div>
+            );
+          })()}
 
-          {/* Status / Progress (only when update available) */}
-          {!firmwareInfo.update_available ? null : isPreparing ? (
+          {/* Available versions list */}
+          {firmwareInfo.available_versions && firmwareInfo.available_versions.length > 0 && !isUploading && uploadStatus?.status !== 'complete' && (
+            <div className="mb-4">
+              <div className="text-xs text-bambu-gray mb-2">{t('printers.firmwareModal.availableVersions')}</div>
+              <div className="max-h-56 overflow-y-auto border border-bambu-dark-tertiary rounded-lg divide-y divide-bambu-dark-tertiary">
+                {firmwareInfo.available_versions.map((v) => {
+                  const isCurrent = firmwareInfo.current_version === v.version;
+                  const isSelected = selectedVersion === v.version;
+                  const cmp = firmwareInfo.current_version
+                    ? compareFwVersions(v.version, firmwareInfo.current_version)
+                    : 0;
+                  const relLabel = isCurrent
+                    ? t('printers.firmwareModal.currentBadge')
+                    : cmp > 0
+                      ? t('printers.firmwareModal.newerBadge')
+                      : t('printers.firmwareModal.olderBadge');
+                  const relClass = isCurrent
+                    ? 'text-bambu-gray'
+                    : cmp > 0
+                      ? 'text-orange-400'
+                      : 'text-blue-400';
+                  return (
+                    <button
+                      key={v.version}
+                      type="button"
+                      disabled={!v.file_available || !canUpdate || isCurrent}
+                      onClick={() => setSelectedVersion(v.version)}
+                      className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${
+                        isSelected ? 'bg-orange-500/10' : 'hover:bg-bambu-dark'
+                      } ${!v.file_available || !canUpdate || isCurrent ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-mono text-white">{v.version}</span>
+                        <span className={`text-xs ${relClass}`}>{relLabel}</span>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        isCurrent
+                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                          : v.file_available
+                            ? 'bg-bambu-green/15 text-bambu-green border border-bambu-green/30'
+                            : 'bg-bambu-gray/10 text-bambu-gray border border-bambu-gray/30'
+                      }`}>
+                        {isCurrent
+                          ? t('printers.firmwareModal.installed')
+                          : v.file_available
+                          ? t('printers.firmwareModal.usable')
+                          : t('printers.firmwareModal.unavailable')}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Status / Progress (only when a version is selected) */}
+          {!selectedVersion ? null : isPreparing ? (
             <div className="flex items-center gap-2 text-bambu-gray text-sm mb-4">
               <Loader2 className="w-4 h-4 animate-spin" />
               {t('printers.firmwareModal.checkingPrereqs')}

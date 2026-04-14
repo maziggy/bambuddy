@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/firmware", tags=["firmware"])
 
 
+class AvailableFirmwareVersion(BaseModel):
+    """A single firmware version announced by Bambu Lab."""
+
+    version: str
+    file_available: bool
+    download_url: str | None = None
+    release_notes: str | None = None
+    release_time: str | None = None
+
+
 class FirmwareUpdateInfo(BaseModel):
     """Firmware update information for a printer."""
 
@@ -41,6 +51,7 @@ class FirmwareUpdateInfo(BaseModel):
     update_available: bool
     download_url: str | None = None
     release_notes: str | None = None
+    available_versions: list[AvailableFirmwareVersion] = Field(default_factory=list)
 
 
 class FirmwareUpdatesResponse(BaseModel):
@@ -106,6 +117,7 @@ async def check_firmware_updates(
                 update_available=update_info["update_available"],
                 download_url=update_info["download_url"],
                 release_notes=update_info["release_notes"],
+                available_versions=[AvailableFirmwareVersion(**v) for v in update_info.get("available_versions", [])],
             )
         )
 
@@ -149,6 +161,7 @@ async def check_printer_firmware(
         update_available=update_info["update_available"],
         download_url=update_info["download_url"],
         release_notes=update_info["release_notes"],
+        available_versions=[AvailableFirmwareVersion(**v) for v in update_info.get("available_versions", [])],
     )
 
 
@@ -192,6 +205,7 @@ class FirmwareUploadPrepareResponse(BaseModel):
     update_available: bool
     current_version: str | None = None
     latest_version: str | None = None
+    target_version: str | None = None
     firmware_filename: str | None = None
     errors: list[str] = Field(default_factory=list)
 
@@ -217,6 +231,7 @@ class FirmwareUploadStartResponse(BaseModel):
 @router.get("/updates/{printer_id}/prepare", response_model=FirmwareUploadPrepareResponse)
 async def prepare_firmware_upload(
     printer_id: int,
+    version: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
@@ -232,13 +247,14 @@ async def prepare_firmware_upload(
     can succeed.
     """
     update_service = get_firmware_update_service()
-    result = await update_service.prepare_update(printer_id, db)
+    result = await update_service.prepare_update(printer_id, db, target_version=version)
     return FirmwareUploadPrepareResponse(**result)
 
 
 @router.post("/updates/{printer_id}/upload", response_model=FirmwareUploadStartResponse)
 async def start_firmware_upload(
     printer_id: int,
+    version: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_UPDATE),
 ):
@@ -257,7 +273,7 @@ async def start_firmware_upload(
     """
     # First check prerequisites
     update_service = get_firmware_update_service()
-    prepare_result = await update_service.prepare_update(printer_id, db)
+    prepare_result = await update_service.prepare_update(printer_id, db, target_version=version)
 
     if not prepare_result["can_proceed"]:
         errors = prepare_result.get("errors", ["Cannot proceed with firmware upload"])
@@ -267,7 +283,7 @@ async def start_firmware_upload(
         )
 
     # Start the upload
-    started = await update_service.start_upload(printer_id, db)
+    started = await update_service.start_upload(printer_id, db, target_version=version)
 
     if not started:
         state = get_upload_state(printer_id)

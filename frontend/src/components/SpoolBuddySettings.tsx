@@ -14,6 +14,11 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Download,
+  Monitor,
+  RefreshCw,
+  RotateCw,
+  Power,
 } from 'lucide-react';
 import { spoolbuddyApi, type SpoolBuddyDevice } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
@@ -46,12 +51,59 @@ interface DeviceCardProps {
   isDeleting: boolean;
 }
 
+type ActionKey = 'update' | 'restart_browser' | 'restart_daemon' | 'reboot' | 'shutdown';
+
 function DeviceCard({ device, onUnregister, isDeleting }: DeviceCardProps) {
   const { t } = useTranslation();
+  const { showToast } = useToast();
   const stats = device.system_stats;
   const mem = stats?.memory;
   const disk = stats?.disk;
   const online = device.online;
+  const [pendingAction, setPendingAction] = useState<ActionKey | null>(null);
+  const [busyAction, setBusyAction] = useState<ActionKey | null>(null);
+
+  const runAction = async (action: ActionKey) => {
+    setBusyAction(action);
+    try {
+      if (action === 'update') {
+        await spoolbuddyApi.triggerUpdate(device.device_id);
+      } else {
+        await spoolbuddyApi.systemCommand(device.device_id, action);
+      }
+      showToast(t('settings.spoolbuddy.commandQueued'), 'success');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t('settings.spoolbuddy.commandError');
+      showToast(msg, 'error');
+    } finally {
+      setBusyAction(null);
+      setPendingAction(null);
+    }
+  };
+
+  const actions: { key: ActionKey; label: string; icon: typeof Download; variant?: 'danger' }[] = [
+    { key: 'update', label: t('settings.spoolbuddy.update'), icon: Download },
+    { key: 'restart_browser', label: t('settings.spoolbuddy.restartBrowser'), icon: Monitor },
+    { key: 'restart_daemon', label: t('settings.spoolbuddy.restartDaemon'), icon: RefreshCw },
+    { key: 'reboot', label: t('settings.spoolbuddy.reboot'), icon: RotateCw },
+    { key: 'shutdown', label: t('settings.spoolbuddy.shutdown'), icon: Power, variant: 'danger' },
+  ];
+
+  const confirmTitles: Record<ActionKey, string> = {
+    update: t('settings.spoolbuddy.updateConfirmTitle'),
+    restart_browser: t('settings.spoolbuddy.restartBrowserConfirmTitle'),
+    restart_daemon: t('settings.spoolbuddy.restartDaemonConfirmTitle'),
+    reboot: t('settings.spoolbuddy.rebootConfirmTitle'),
+    shutdown: t('settings.spoolbuddy.shutdownConfirmTitle'),
+  };
+
+  const confirmBodies: Record<ActionKey, string> = {
+    update: t('settings.spoolbuddy.updateConfirmBody', { hostname: device.hostname }),
+    restart_browser: t('settings.spoolbuddy.restartBrowserConfirmBody', { hostname: device.hostname }),
+    restart_daemon: t('settings.spoolbuddy.restartDaemonConfirmBody', { hostname: device.hostname }),
+    reboot: t('settings.spoolbuddy.rebootConfirmBody', { hostname: device.hostname }),
+    shutdown: t('settings.spoolbuddy.shutdownConfirmBody', { hostname: device.hostname }),
+  };
 
   return (
     <Card>
@@ -109,6 +161,27 @@ function DeviceCard({ device, onUnregister, isDeleting }: DeviceCardProps) {
             <div className="text-bambu-gray">{t('settings.spoolbuddy.daemonUptime')}</div>
             <div className="text-white">{formatUptime(device.uptime_s)}</div>
           </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex flex-wrap gap-2">
+          {actions.map(({ key, label, icon: Icon, variant }) => (
+            <Button
+              key={key}
+              variant={variant ?? 'secondary'}
+              size="sm"
+              onClick={() => setPendingAction(key)}
+              disabled={!online || busyAction !== null}
+              aria-label={label}
+            >
+              {busyAction === key ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Icon className="w-3.5 h-3.5" />
+              )}
+              <span>{label}</span>
+            </Button>
+          ))}
         </div>
 
         {/* Hardware flags */}
@@ -187,6 +260,17 @@ function DeviceCard({ device, onUnregister, isDeleting }: DeviceCardProps) {
           </div>
         )}
       </CardContent>
+      {pendingAction && (
+        <ConfirmModal
+          variant={pendingAction === 'shutdown' || pendingAction === 'reboot' ? 'danger' : 'default'}
+          title={confirmTitles[pendingAction]}
+          message={confirmBodies[pendingAction]}
+          confirmText={t('settings.spoolbuddy.commandConfirm')}
+          isLoading={busyAction !== null}
+          onConfirm={() => runAction(pendingAction)}
+          onCancel={() => setPendingAction(null)}
+        />
+      )}
     </Card>
   );
 }

@@ -2169,7 +2169,7 @@ async def print_library_file(
     printer_id: int,
     body: FilePrintRequest | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.PRINTERS_CONTROL)),
+    current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.PRINTERS_CONTROL)),
 ):
     """Dispatch a library file for send/start on a printer.
 
@@ -2238,8 +2238,8 @@ async def print_library_file(
             printer_name=printer.name,
             options=body.model_dump(exclude_none=True),
             project_id=body.project_id,
-            requested_by_user_id=None,
-            requested_by_username=None,
+            requested_by_user_id=current_user.id if current_user else None,
+            requested_by_username=current_user.username if current_user else None,
         )
     except DispatchEnqueueRejected as e:
         raise HTTPException(status_code=409, detail=str(e)) from e

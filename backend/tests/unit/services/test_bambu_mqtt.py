@@ -3574,3 +3574,61 @@ class TestDoorOpenParsing:
         client = self._make_client("H2D")
         client._update_state({"stat": "not-hex"})
         assert client.state.door_open is False
+
+
+class TestSdCardParsing:
+    """SD-card state is derived from home_flag bits 8-9 when present, else from
+    the top-level `sdcard` field (which firmware may send as bool, int, or string)."""
+
+    def _make_client(self, model: str = "H2D"):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST",
+            access_code="12345678",
+            model=model,
+        )
+
+    def test_home_flag_bit8_sets_sdcard_true(self):
+        client = self._make_client()
+        client._update_state({"home_flag": 0x00000100})  # bit 8
+        assert client.state.sdcard is True
+
+    def test_home_flag_bit9_sets_sdcard_true(self):
+        # Abnormal-but-present still counts as inserted for the badge
+        client = self._make_client()
+        client._update_state({"home_flag": 0x00000200})  # bit 9
+        assert client.state.sdcard is True
+
+    def test_home_flag_no_sdcard_bits(self):
+        client = self._make_client()
+        client.state.sdcard = True
+        client._update_state({"home_flag": 0x00000000})
+        assert client.state.sdcard is False
+
+    def test_home_flag_wins_over_sdcard_field(self):
+        # Real firmware can send `sdcard` as a non-bool; home_flag must still win.
+        client = self._make_client()
+        client._update_state({"home_flag": 0x00000100, "sdcard": "HAS_SDCARD_NORMAL"})
+        assert client.state.sdcard is True
+        client._update_state({"home_flag": 0x00000000, "sdcard": 1})
+        assert client.state.sdcard is False
+
+    def test_sdcard_string_fallback_when_no_home_flag(self):
+        client = self._make_client()
+        client._update_state({"sdcard": "HAS_SDCARD_NORMAL"})
+        assert client.state.sdcard is True
+
+    def test_sdcard_int_fallback_when_no_home_flag(self):
+        # `1 is True` is False — the old strict check flapped here.
+        client = self._make_client()
+        client._update_state({"sdcard": 1})
+        assert client.state.sdcard is True
+
+    def test_sdcard_bool_fallback_when_no_home_flag(self):
+        client = self._make_client()
+        client._update_state({"sdcard": True})
+        assert client.state.sdcard is True
+        client._update_state({"sdcard": False})
+        assert client.state.sdcard is False

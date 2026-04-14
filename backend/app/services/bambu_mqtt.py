@@ -2237,17 +2237,30 @@ class BambuMQTTClient:
                             )
                         )
 
-        # Parse SD card status
-        if "sdcard" in data:
-            self.state.sdcard = data["sdcard"] is True
-
-        # Parse home_flag for "Store Sent Files on External Storage" setting (bit 11)
+        # Parse home_flag first so SD-card detection below can prefer it.
+        # Bit 8 = HAS_SDCARD_NORMAL, bit 9 = HAS_SDCARD_ABNORMAL, bit 11 = store-to-SD,
+        # bit 23 = door-open (X1 family only).
+        home_flag = None
         if "home_flag" in data:
             home_flag = data["home_flag"]
-            # Bit 11 controls "Store Sent Files on External Storage"
-            # Convert to unsigned 32-bit if negative
             if home_flag < 0:
                 home_flag = home_flag & 0xFFFFFFFF
+
+        # Parse SD card status. Canonical source on real firmware is home_flag bits 8-9;
+        # the top-level `sdcard` field is firmware-dependent (bool on some models, string
+        # enum like "HAS_SDCARD_NORMAL" on others), so strict identity checks caused the
+        # badge to flap on H2D. Prefer home_flag when available, fall back to a truthy
+        # check on the `sdcard` field for firmwares that only send that.
+        if home_flag is not None:
+            self.state.sdcard = ((home_flag >> 8) & 0x3) != 0
+        elif "sdcard" in data:
+            raw_sdcard = data["sdcard"]
+            if isinstance(raw_sdcard, str):
+                self.state.sdcard = "HAS_SDCARD" in raw_sdcard.upper() or raw_sdcard.lower() in ("true", "normal", "1")
+            else:
+                self.state.sdcard = bool(raw_sdcard)
+
+        if home_flag is not None:
             store_to_sdcard = bool((home_flag >> 11) & 1)
             if store_to_sdcard != self.state.store_to_sdcard:
                 logger.debug(
@@ -2261,7 +2274,7 @@ class BambuMQTTClient:
         # Both share the same bitmask (0x00800000) but live in different fields.
         model_upper = (self.model or "").upper().strip()
         is_x1_family = model_upper in ("X1", "X1C", "X1E")
-        if is_x1_family and "home_flag" in data:
+        if is_x1_family and home_flag is not None:
             door_open = (home_flag & 0x00800000) != 0
             if door_open != self.state.door_open:
                 logger.debug(

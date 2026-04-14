@@ -4171,19 +4171,37 @@ async def security_headers_middleware(request, call_next):
     #   - img-src data: / blob:: base64 thumbnails and Blob-URL timelapse previews.
     #   - media-src blob:: timelapse video player uses Blob URLs.
     #   - font-src data:: some icon fonts are embedded as data URIs.
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "img-src 'self' data: blob:; "
-        "media-src 'self' blob:; "
-        "connect-src 'self' ws: wss:; "
-        "font-src 'self' data: https://fonts.gstatic.com; "
-        "object-src 'none'; "
-        "base-uri 'self'; "
-        "frame-src 'self' https:; "
-        "frame-ancestors 'none';"
-    )
+    if request.url.path.startswith("/gcode-viewer"):
+        # The gcode viewer is embedded in an iframe served by this same origin,
+        # so frame-ancestors must allow 'self'.  prettygcode.js also uses eval()
+        # internally, so script-src needs 'unsafe-eval'.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "img-src 'self' data: blob:; "
+            "media-src 'self' blob:; "
+            "connect-src 'self' ws: wss:; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-src 'self' https:; "
+            "frame-ancestors 'self';"
+        )
+    else:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "img-src 'self' data: blob:; "
+            "media-src 'self' blob:; "
+            "connect-src 'self' ws: wss:; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-src 'self' https:; "
+            "frame-ancestors 'none';"
+        )
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response

@@ -1,0 +1,200 @@
+2026-04-14 16:10:55,153 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/auto_cali_for_user_param.3mf will retry in 5.0s...
+2026-04-14 16:11:00,961 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:01,219 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/auto_cali_for_user_param.3mf: 550 
+2026-04-14 16:11:01,232 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/auto_cali_for_user_param.3mf attempt 4/4 returned failure
+2026-04-14 16:11:01,232 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/auto_cali_for_user_param.3mf failed after 4 attempts
+2026-04-14 16:11:02,049 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:02,099 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/auto_cali_for_user_param.3mf: 550 
+2026-04-14 16:11:02,110 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/auto_cali_for_user_param.3mf will retry in 5.0s...
+2026-04-14 16:11:07,933 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:07,974 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/auto_cali_for_user_param.3mf: 550 
+2026-04-14 16:11:07,985 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/auto_cali_for_user_param.3mf attempt 2/4 returned failure
+2026-04-14 16:11:07,985 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/auto_cali_for_user_param.3mf will retry in 5.0s...
+2026-04-14 16:11:13,803 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:13,858 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/auto_cali_for_user_param.3mf: 550 
+2026-04-14 16:11:13,868 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/auto_cali_for_user_param.3mf attempt 3/4 returned failure
+2026-04-14 16:11:13,868 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/auto_cali_for_user_param.3mf will retry in 5.0s...
+2026-04-14 16:11:19,720 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:19,772 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/auto_cali_for_user_param.3mf: 550 
+2026-04-14 16:11:19,798 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/auto_cali_for_user_param.3mf attempt 4/4 returned failure
+2026-04-14 16:11:19,798 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/auto_cali_for_user_param.3mf failed after 4 attempts
+2026-04-14 16:11:20,668 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:20,708 INFO [backend.app.services.bambu_ftp] FTP download failed for /auto_cali_for_user_param.3mf: 550 
+2026-04-14 16:11:20,719 INFO [backend.app.services.bambu_ftp] Download 3MF from /auto_cali_for_user_param.3mf will retry in 5.0s...
+2026-04-14 16:11:26,528 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:26,578 INFO [backend.app.services.bambu_ftp] FTP download failed for /auto_cali_for_user_param.3mf: 550 
+2026-04-14 16:11:26,588 INFO [backend.app.services.bambu_ftp] Download 3MF from /auto_cali_for_user_param.3mf attempt 2/4 returned failure
+2026-04-14 16:11:26,588 INFO [backend.app.services.bambu_ftp] Download 3MF from /auto_cali_for_user_param.3mf will retry in 5.0s...
+2026-04-14 16:11:32,388 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:32,429 INFO [backend.app.services.bambu_ftp] FTP download failed for /auto_cali_for_user_param.3mf: 550 
+2026-04-14 16:11:32,439 INFO [backend.app.services.bambu_ftp] Download 3MF from /auto_cali_for_user_param.3mf attempt 3/4 returned failure
+2026-04-14 16:11:32,439 INFO [backend.app.services.bambu_ftp] Download 3MF from /auto_cali_for_user_param.3mf will retry in 5.0s...
+2026-04-14 16:11:38,352 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:38,396 INFO [backend.app.services.bambu_ftp] FTP download failed for /auto_cali_for_user_param.3mf: 550 
+2026-04-14 16:11:38,406 INFO [backend.app.services.bambu_ftp] Download 3MF from /auto_cali_for_user_param.3mf attempt 4/4 returned failure
+2026-04-14 16:11:38,406 ERROR [backend.app.services.bambu_ftp] Download 3MF from /auto_cali_for_user_param.3mf failed after 4 attempts
+2026-04-14 16:11:38,406 INFO [backend.app.main] Direct FTP download failed, searching directories for 'auto_cali_for_user_param'
+2026-04-14 16:11:39,243 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:49,352 INFO [backend.app.main] Found 56 3MF files in /cache: ['WandRegalHalter_V1_v16.3mf', 'WandRegalHalter_V1_v18.3mf', 'flow_rate_coarse_calib_mode.3mf', 'Würfel.3mf', 'WandRegalHalter_V1_v20.3mf']...
+2026-04-14 16:11:50,157 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:50,377 INFO [backend.app.main] Found 8 3MF files in /model: ['3DBenchy by Creative Tool.gcode.3mf', '3DBenchy_3color by Creative Tool.gcode.3mf', 'Bag Clip by squinn.gcode.3mf', 'Blank Elephant by Amao Chan.gcode.3mf', 'Build Plate Protective Bumper by Bambu Lab.gcode.3mf']...
+2026-04-14 16:11:51,205 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:51,241 INFO [backend.app.services.bambu_ftp] FTP list_files failed for /data: 550 
+2026-04-14 16:11:52,035 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:52,087 INFO [backend.app.services.bambu_ftp] FTP list_files failed for /data/Metadata: 550 
+2026-04-14 16:11:52,877 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:11:53,457 INFO [backend.app.main] Found 68 3MF files in /: ['Organic_Vase_01.gcode.3mf', 'EV_Charger_cable_and_Type_2_plug_wall_holder.gcode.3mf', 'Stifthalter_v2.gcode.3mf', 'Stifthalter_v3.gcode.3mf', 'Corner_holder_for_Bambulab_A1.gcode.3mf']...
+2026-04-14 16:11:53,457 WARNING [backend.app.main] Could not find 3MF file for print: auto_cali_for_user_param.gcode
+2026-04-14 16:11:53,459 INFO [backend.app.main] Created fallback archive 68 for auto_cali_for_user_param (no 3MF available)
+2026-04-14 16:11:53,461 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-14 16:11:53,462 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-14 16:12:05,113 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 100731 bytes
+2026-04-14 16:12:05,113 INFO [backend.app.services.notification_service] on_print_start called for printer 1 ([PRINTER])
+2026-04-14 16:12:05,133 INFO [backend.app.services.notification_service] No notification providers configured for print_start event on printer 1
+2026-04-14 16:13:48,774 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 16:16:32,606 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-14 16:16:32,606 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-14 16:16:39,068 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 107793 bytes
+2026-04-14 16:18:48,776 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 16:23:48,779 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 16:25:42,782 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-14 16:25:42,782 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-14 16:25:51,044 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 98563 bytes
+2026-04-14 16:28:48,781 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 16:33:48,784 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 16:38:48,786 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 16:39:47,241 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-14 16:39:47,242 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-14 16:39:51,415 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] PRINT COMPLETE detected - state: FINISH, status: completed, file: auto_cali_for_user_param.gcode, subtask: auto_cali_for_user_param.gcode, was_running: True, timelapse_during_print: False
+2026-04-14 16:39:51,424 INFO [backend.app.main] [CALLBACK] on_print_complete started for printer 1
+2026-04-14 16:39:51,424 INFO [backend.app.main] [TIMING] WebSocket send_print_complete: 0.000s elapsed
+2026-04-14 16:39:51,424 INFO [backend.app.main] Print complete - filename: auto_cali_for_user_param.gcode, subtask: auto_cali_for_user_param.gcode, status: completed
+2026-04-14 16:39:51,424 INFO [backend.app.main] Looking for archive in _active_prints, keys to try: [(1, 'auto_cali_for_user_param.gcode.3mf'), (1, 'auto_cali_for_user_param.gcode.gcode.3mf'), (1, 'auto_cali_for_user_param.gcode'), (1, 'auto_cali_for_user_param.gcode.3mf'), (1, 'auto_cali_for_user_param.3mf')]...
+2026-04-14 16:39:51,424 INFO [backend.app.main] Current _active_prints: [(1, 'auto_cali_for_user_param.gcode'), (1, 'auto_cali_for_user_param.gcode.3mf')]
+2026-04-14 16:39:51,425 INFO [backend.app.main] Found archive 68 with key (1, 'auto_cali_for_user_param.gcode.3mf')
+2026-04-14 16:39:52,953 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:39:52,972 WARNING [backend.app.services.bambu_ftp] Failed to delete /auto_cali_for_user_param.gcode.3mf: 550 
+2026-04-14 16:39:55,818 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:39:55,842 WARNING [backend.app.services.bambu_ftp] Failed to delete /auto_cali_for_user_param.gcode.3mf: 550 
+2026-04-14 16:39:58,701 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:39:58,725 WARNING [backend.app.services.bambu_ftp] Failed to delete /auto_cali_for_user_param.gcode.3mf: 550 
+2026-04-14 16:39:58,733 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /auto_cali_for_user_param.gcode.3mf (file may linger on SD card)
+2026-04-14 16:39:59,546 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:39:59,573 WARNING [backend.app.services.bambu_ftp] Failed to delete /auto_cali_for_user_param.gcode.gcode: 550 
+2026-04-14 16:40:00,733 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 96383 bytes
+2026-04-14 16:40:02,376 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:40:02,395 WARNING [backend.app.services.bambu_ftp] Failed to delete /auto_cali_for_user_param.gcode.gcode: 550 
+2026-04-14 16:40:05,269 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:40:05,317 WARNING [backend.app.services.bambu_ftp] Failed to delete /auto_cali_for_user_param.gcode.gcode: 550 
+2026-04-14 16:40:05,336 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /auto_cali_for_user_param.gcode.gcode (file may linger on SD card)
+2026-04-14 16:40:05,336 INFO [backend.app.main] [TIMING] SD card cleanup: 13.912s elapsed
+2026-04-14 16:40:05,337 INFO [backend.app.main] [TIMING] Queue item update: 13.913s elapsed
+2026-04-14 16:40:05,337 INFO [backend.app.main] [TIMING] Archive lookup: 13.913s elapsed
+2026-04-14 16:40:05,337 INFO [backend.app.main] [ARCHIVE] Updating archive 68 status...
+2026-04-14 16:40:05,340 INFO [backend.app.main] [ARCHIVE] Archive 68 status updated to completed, failure_reason=None
+2026-04-14 16:40:05,340 INFO [backend.app.main] [ARCHIVE] WebSocket notification sent for archive 68
+2026-04-14 16:40:05,340 INFO [backend.app.main] [TIMING] Archive status update: 13.917s elapsed
+2026-04-14 16:40:05,342 INFO [backend.app.main] [PRINT_LOG] Log entry written for archive 68
+2026-04-14 16:40:05,342 INFO [backend.app.main] [TIMING] Print log entry: 13.919s elapsed
+2026-04-14 16:40:05,344 INFO [backend.app.services.usage_tracker] [UsageTracker] on_print_complete: printer=1, archive=68, session=yes, ams_mapping=None
+2026-04-14 16:40:05,344 INFO [backend.app.services.usage_tracker] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=255, last_loaded_tray=2
+2026-04-14 16:40:05,344 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: archive 68 has no file_path, skipping
+2026-04-14 16:40:05,345 INFO [backend.app.services.spoolman_tracking] [SPOOLMAN] No tracking data for print (printer=1, archive=68)
+2026-04-14 16:40:05,345 INFO [backend.app.main] [TIMING] Spoolman usage report: 13.922s elapsed
+2026-04-14 16:40:05,345 INFO [backend.app.main] [TIMING] Background tasks scheduled (energy, photo): 13.922s elapsed
+2026-04-14 16:40:05,345 INFO [backend.app.main] [TIMING] All background tasks scheduled: 13.922s elapsed
+2026-04-14 16:40:05,346 INFO [backend.app.main] [CALLBACK] on_print_complete finished for printer 1, archive 68
+2026-04-14 16:40:05,346 INFO [backend.app.main] [ENERGY-BG] Starting energy calculation for archive 68
+2026-04-14 16:40:05,346 INFO [backend.app.main] [PHOTO-BG] Starting finish photo capture for archive 68
+2026-04-14 16:40:05,346 INFO [backend.app.main] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-04-14 16:40:05,347 INFO [backend.app.main] [MAINT-BG] Starting maintenance check for printer 1
+2026-04-14 16:40:05,347 INFO [backend.app.main] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-04-14 16:40:05,348 INFO [backend.app.main] [AUTO-OFF-BG] Completed
+2026-04-14 16:40:05,348 INFO [backend.app.main] [ENERGY-BG] No smart plug for printer 1
+2026-04-14 16:40:05,350 WARNING [backend.app.main] [PHOTO-BG] Archive 68 has no file_path, using fallback dir
+2026-04-14 16:40:05,351 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-14 16:40:05,354 INFO [backend.app.main] [MAINT-BG] Completed (no items need attention)
+2026-04-14 16:40:08,456 INFO [backend.app.services.camera] Saved camera frame to: /opt/[user]/archive/68/photos/finish_20260414_164005_cc3e95ca.jpg
+2026-04-14 16:40:08,456 INFO [backend.app.services.camera] Finish photo saved: finish_20260414_164005_cc3e95ca.jpg
+2026-04-14 16:40:08,490 INFO [backend.app.main] [PHOTO-BG] Saved: finish_20260414_164005_cc3e95ca.jpg
+2026-04-14 16:40:08,490 INFO [backend.app.main] [PHOTO-NOTIFY] Photo task returned: finish_20260414_164005_cc3e95ca.jpg
+2026-04-14 16:40:08,490 INFO [backend.app.main] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260414_164005_cc3e95ca.jpg
+2026-04-14 16:40:08,493 INFO [backend.app.services.notification_service] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-04-14 16:40:08,493 INFO [backend.app.services.notification_service] No notification providers configured for on_print_complete event on printer 1
+2026-04-14 16:40:08,493 INFO [backend.app.main] [NOTIFY-BG] Completed
+2026-04-14 16:43:48,789 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 16:45:33,983 INFO [backend.app.api.routes.cloud] get_filament_info called with 4 IDs: ['PFUSd926', 'GFG99', 'PFUS9a8d', 'GFU99']
+2026-04-14 16:45:34,192 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset PFUSd926 (API ID: PFUSd926): Failed to get setting detail: 400
+2026-04-14 16:45:34,531 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset PFUS9a8d (API ID: PFUS9a8d): Failed to get setting detail: 400
+2026-04-14 16:45:34,702 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-04-14 16:45:36,128 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:45:52,667 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:46:03,556 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-14 16:46:03,556 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-14 16:46:11,272 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:46:19,043 INFO [backend.app.services.virtual_printer.mqtt_server] [Bambuddy] MQTT TLS connection from ('[IP]', 27666) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-04-14 16:46:19,043 INFO [backend.app.services.virtual_printer.mqtt_server] [Bambuddy] MQTT client connected: [IP]:27666
+2026-04-14 16:46:19,043 INFO [backend.app.services.virtual_printer.mqtt_server] [Bambuddy] MQTT client authenticated successfully
+2026-04-14 16:46:19,044 INFO [backend.app.services.virtual_printer.mqtt_server] [Bambuddy] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-04-14 16:46:19,105 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20001","version":1}}...
+2026-04-14 16:46:19,106 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT pushing command: pushall
+2026-04-14 16:46:19,106 INFO [backend.app.services.virtual_printer.mqtt_server] Sending status report in response to pushall
+2026-04-14 16:46:19,106 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20002"}}...
+2026-04-14 16:46:19,106 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT info command: get_version
+2026-04-14 16:46:19,107 INFO [backend.app.services.virtual_printer.mqtt_server] Sent version response (product_name=A1)
+2026-04-14 16:46:19,107 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20003"}}...
+2026-04-14 16:46:19,107 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT info command: get_version
+2026-04-14 16:46:19,107 INFO [backend.app.services.virtual_printer.mqtt_server] Sent version response (product_name=A1)
+2026-04-14 16:46:22,307 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-14 16:46:22,308 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-14 16:48:48,792 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 16:53:48,795 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 16:56:28,636 INFO [backend.app.api.routes.cloud] get_filament_info called with 4 IDs: ['PFUSd926', 'GFG99', 'PFUS9a8d', 'GFU99']
+2026-04-14 16:56:28,841 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset PFUSd926 (API ID: PFUSd926): Failed to get setting detail: 400
+2026-04-14 16:56:29,173 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset PFUS9a8d (API ID: PFUS9a8d): Failed to get setting detail: 400
+2026-04-14 16:56:29,343 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-04-14 16:57:07,483 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:57:21,933 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 16:57:32,843 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-14 16:57:32,843 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-14 16:58:48,797 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 17:01:32,043 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-14 17:01:32,044 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-14 17:01:32,044 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-14 17:01:34,530 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 17:01:36,676 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-14 17:01:36,728 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30s, model=A1, prot_c=False)
+2026-04-14 17:01:37,493 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-14 17:01:37,510 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-14 17:01:37,568 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-14 17:01:37,568 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 17:01:37,579 DEBUG [backend.app.services.bambu_ftp] AVBL command not supported: 502 
+2026-04-14 17:01:38,631 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30s, model=A1, prot_c=False)
+2026-04-14 17:01:40,113 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-14 17:01:42,095 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-14 17:01:44,847 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-14 17:01:44,847 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 17:01:46,366 DEBUG [backend.app.services.bambu_ftp] AVBL command not supported: 502 
+2026-04-14 17:01:55,411 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-14 17:01:55,412 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-14 17:02:00,381 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-14 17:02:00,381 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-14 17:02:01,669 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 17:02:01,670 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -56dBm
+2026-04-14 17:02:03,708 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 17:02:06,746 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-14 17:02:07,320 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30s, model=A1, prot_c=False)
+2026-04-14 17:02:08,069 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-14 17:02:08,083 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-14 17:02:08,103 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-14 17:02:08,103 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 17:02:08,119 DEBUG [backend.app.services.bambu_ftp] AVBL command not supported: 502 
+2026-04-14 17:02:19,124 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-14 17:02:19,124 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-14 17:02:19,280 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 17:02:21,317 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 17:02:23,341 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 17:02:25,366 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 17:02:25,431 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-14 17:02:25,431 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-14 17:02:27,402 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status

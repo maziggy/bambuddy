@@ -1,0 +1,200 @@
+2026-04-14 06:49:52,622 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:41880
+2026-04-14 06:49:52,622 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:41880
+2026-04-14 06:49:55,691 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:50:11,021 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:39312
+2026-04-14 06:50:11,021 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:39312
+2026-04-14 06:50:13,676 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:50:25,803 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:49478
+2026-04-14 06:50:25,803 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:49478
+2026-04-14 06:50:28,908 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:50:41,037 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:34746
+2026-04-14 06:50:41,037 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:34746
+2026-04-14 06:50:44,140 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:50:56,361 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:59200
+2026-04-14 06:50:56,361 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:59200
+2026-04-14 06:50:59,436 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:51:11,568 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:43990
+2026-04-14 06:51:11,568 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:43990
+2026-04-14 06:51:14,668 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:51:26,851 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:54324
+2026-04-14 06:51:26,852 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:54324
+2026-04-14 06:51:29,964 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:51:42,157 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:59580
+2026-04-14 06:51:42,157 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:59580
+2026-04-14 06:51:45,260 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:51:57,520 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:38166
+2026-04-14 06:51:57,521 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:38166
+2026-04-14 06:52:00,620 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:52:12,751 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:45768
+2026-04-14 06:52:12,751 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:45768
+2026-04-14 06:52:13,036 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:52:14,052 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:45772
+2026-04-14 06:52:14,052 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:45772
+2026-04-14 06:52:17,131 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:52:29,161 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:59758
+2026-04-14 06:52:29,161 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:59758
+2026-04-14 06:52:32,235 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:52:46,698 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:49066
+2026-04-14 06:52:46,698 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:49066
+2026-04-14 06:52:49,771 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:52:59,013 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:54382
+2026-04-14 06:52:59,013 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:54382
+2026-04-14 06:53:02,124 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:53:03,145 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:54384
+2026-04-14 06:53:03,145 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:54384
+2026-04-14 06:53:06,220 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:53:20,454 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:52238
+2026-04-14 06:53:20,454 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:52238
+2026-04-14 06:53:22,859 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:53:24,015 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:52254
+2026-04-14 06:53:24,015 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:52254
+2026-04-14 06:53:27,084 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:53:36,969 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:48884
+2026-04-14 06:53:36,970 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:48884
+2026-04-14 06:53:40,076 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:53:54,644 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:50396
+2026-04-14 06:53:54,645 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:50396
+2026-04-14 06:53:55,948 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:54:07,152 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:57886
+2026-04-14 06:54:07,152 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:57886
+2026-04-14 06:54:10,220 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:54:20,132 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:54718
+2026-04-14 06:54:20,132 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:54718
+2026-04-14 06:54:23,211 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:54:35,237 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:57006
+2026-04-14 06:54:35,238 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:57006
+2026-04-14 06:54:38,317 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:54:50,347 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:45108
+2026-04-14 06:54:50,347 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:45108
+2026-04-14 06:54:53,420 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:55:02,340 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:57876
+2026-04-14 06:55:02,340 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:57876
+2026-04-14 06:55:05,452 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:55:17,603 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:37108
+2026-04-14 06:55:17,603 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:37108
+2026-04-14 06:55:20,684 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:55:36,063 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:37736
+2026-04-14 06:55:36,063 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:37736
+2026-04-14 06:55:39,116 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:55:48,939 INFO [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: client connected from [IP]:45376
+2026-04-14 06:55:48,940 INFO [backend.app.services.virtual_printer.manager] [VP Virtual] Proxy MQTT: connected: [IP]:45376
+2026-04-14 06:55:52,043 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy: failed to connect to [IP]:8883: [Errno 113] Connect call failed ('[IP]', 8883)
+2026-04-14 06:56:07,797 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-14 06:56:07,798 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-14 06:56:07,798 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-14 06:56:08,172 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['Pb031311', 'P5d642c5']
+2026-04-14 06:56:08,378 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pb031311 (API ID: Pb031311): Failed to get setting detail: 400
+2026-04-14 06:56:08,554 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset P5d642c5 (API ID: P5d642c5): Failed to get setting detail: 400
+2026-04-14 07:01:27,694 INFO [backend.app.services.smart_plug_manager] Captured 2 energy snapshot(s)
+2026-04-14 07:16:56,000 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['Pb031311', 'P5d642c5']
+2026-04-14 07:16:56,248 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pb031311 (API ID: Pb031311): Failed to get setting detail: 400
+2026-04-14 07:16:56,456 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset P5d642c5 (API ID: P5d642c5): Failed to get setting detail: 400
+2026-04-14 07:17:01,950 INFO [backend.app.services.homeassistant] Toggled HA entity 'Bambu' (switch.bambu_enchufe_1)
+2026-04-14 07:17:27,802 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: serial number not available in version info
+2026-04-14 07:17:27,803 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: firmware version not available in version info
+2026-04-14 07:18:54,120 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-14 07:18:54,121 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-14 07:18:54,121 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-14 07:18:54,912 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-04-14 07:18:54,913 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-14 07:18:54,914 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-04-14 07:18:54,914 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 8, 'insert_flag': False, 'power_on_flag': True}
+2026-04-14 07:18:54,915 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-14 07:18:54,915 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-14 07:18:54,916 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-04-14 07:18:54,917 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-14 07:18:54,917 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-14 07:18:54,917 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 07:18:54,918 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-14 07:18:54,918 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-14 07:18:54,919 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-14 07:18:54,919 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-14 07:18:54,920 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-14 07:18:54,921 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-14 07:18:54,921 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -37dBm
+2026-04-14 07:18:54,921 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-04-14 07:18:54,922 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-04-14 07:18:55,566 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-04-14 07:18:55,567 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Virtual
+DevSignal.bambu.com: -37
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-04-14 07:18:55,567 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-04-14 07:18:55,669 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-04-14 07:18:55,670 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Virtual
+DevSignal.bambu.com: -37
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-04-14 07:18:55,670 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-04-14 07:18:56,954 DEBUG [httpcore.connection] connect_tcp.started host='localhost' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-04-14 07:18:56,955 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x73fc56474640>
+2026-04-14 07:18:56,955 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-14 07:18:56,956 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-14 07:18:56,956 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-14 07:18:56,956 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-14 07:18:56,956 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-14 07:18:56,956 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'383'), (b'Date', b'Tue, 14 Apr 2026 07:18:56 GMT')])
+2026-04-14 07:18:56,957 INFO [httpx] HTTP Request: GET http://localhost:8123/api/states/switch.bambu_enchufe_1 "HTTP/1.1 200 OK"
+2026-04-14 07:18:56,957 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-14 07:18:56,957 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-14 07:18:56,957 DEBUG [httpcore.http11] response_closed.started
+2026-04-14 07:18:56,957 DEBUG [httpcore.http11] response_closed.complete
+2026-04-14 07:18:56,958 DEBUG [httpcore.connection] close.started
+2026-04-14 07:18:56,958 DEBUG [httpcore.connection] close.complete
+2026-04-14 07:18:56,977 DEBUG [httpcore.connection] connect_tcp.started host='localhost' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-04-14 07:18:56,979 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x73fc564744b0>
+2026-04-14 07:18:56,979 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-14 07:18:56,980 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-14 07:18:56,980 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-14 07:18:56,980 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-14 07:18:56,980 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-14 07:18:56,980 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'406'), (b'Date', b'Tue, 14 Apr 2026 07:18:56 GMT')])
+2026-04-14 07:18:56,981 INFO [httpx] HTTP Request: GET http://localhost:8123/api/states/sensor.bambu_potencia "HTTP/1.1 200 OK"
+2026-04-14 07:18:56,981 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-14 07:18:56,981 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-14 07:18:56,981 DEBUG [httpcore.http11] response_closed.started
+2026-04-14 07:18:56,982 DEBUG [httpcore.http11] response_closed.complete
+2026-04-14 07:18:56,982 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-14 07:18:56,983 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-14 07:18:56,983 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-14 07:18:56,983 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-14 07:18:56,983 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-14 07:18:56,984 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'426'), (b'Date', b'Tue, 14 Apr 2026 07:18:56 GMT')])
+2026-04-14 07:18:56,984 INFO [httpx] HTTP Request: GET http://localhost:8123/api/states/sensor.bambu_energia_total "HTTP/1.1 200 OK"
+2026-04-14 07:18:56,984 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-14 07:18:56,984 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-14 07:18:56,984 DEBUG [httpcore.http11] response_closed.started
+2026-04-14 07:18:56,985 DEBUG [httpcore.http11] response_closed.complete
+2026-04-14 07:18:56,985 DEBUG [httpcore.connection] close.started
+2026-04-14 07:18:56,985 DEBUG [httpcore.connection] close.complete
+2026-04-14 07:18:58,966 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 07:18:59,824 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-14 07:18:59,824 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255

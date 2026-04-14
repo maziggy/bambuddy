@@ -81,6 +81,7 @@ import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag } from '../utils/amsHelpers';
 import { getPrinterImage, getWifiStrength, filterCompatibleQueueItems } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
+import { Collapsible } from '../components/Collapsible';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
 // Color names resolve via getColorName() which reads the backend color_catalog
@@ -985,6 +986,17 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
 
 type SortOption = 'name' | 'status' | 'model' | 'location';
 type ViewMode = 'expanded' | 'compact';
+
+const STATUS_GROUP_ORDER: string[] = ['error', 'printing', 'paused', 'finished', 'idle', 'offline'];
+
+const STATUS_GROUP_META: Record<string, { labelKey: string; dot: string }> = {
+  error:    { labelKey: 'printers.status.problem',   dot: 'bg-status-error' },
+  printing: { labelKey: 'printers.status.printing',  dot: 'bg-bambu-green animate-pulse' },
+  paused:   { labelKey: 'printers.status.paused',    dot: 'bg-status-warning' },
+  finished: { labelKey: 'printers.status.finished',  dot: 'bg-blue-400' },
+  idle:     { labelKey: 'printers.status.available',  dot: 'bg-bambu-green' },
+  offline:  { labelKey: 'printers.status.offline',   dot: 'bg-gray-400' },
+};
 
 /**
  * Get human-readable status display text for a printer.
@@ -5632,6 +5644,12 @@ export function PrintersPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [locationFilter, setLocationFilter] = useState<string>('all');
   const [statusCacheVersion, setStatusCacheVersion] = useState(0);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('printerCollapsedSections');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
@@ -6061,7 +6079,7 @@ export function PrintersPage() {
           case 'printing': if (status.connected && status.state === 'RUNNING') next.add(p.id); break;
           case 'paused': if (status.connected && status.state === 'PAUSE') next.add(p.id); break;
           case 'finished': if (status.connected && status.state === 'FINISH') next.add(p.id); break;
-          case 'idle': if (status.connected && status.state !== 'RUNNING' && status.state !== 'PAUSE' && status.state !== 'FINISH' && status.state !== 'FAILED') next.add(p.id); break;
+          case 'idle': if (status.connected && status.state !== 'RUNNING' && status.state !== 'PAUSE' && status.state !== 'FINISH' && status.state !== 'FAILED' && !(status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0)) next.add(p.id); break;
           case 'error': if (status.connected && (status.state === 'FAILED' || (status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0))) next.add(p.id); break;
           case 'offline': if (!status.connected) next.add(p.id); break;
         }
@@ -6080,18 +6098,64 @@ export function PrintersPage() {
     setIsSelectionMode(true);
   }, [sortedPrinters]);
 
-  // Group printers by location when sorted by location
+  const selectByModel = useCallback((model: string) => {
+    setSelectedPrinterIds(prev => {
+      const next = new Set(prev);
+      sortedPrinters.filter(p => (p.model || 'Unknown') === model).forEach(p => next.add(p.id));
+      return next;
+    });
+    setIsSelectionMode(true);
+  }, [sortedPrinters]);
+
+  const toggleSectionCollapse = useCallback((key: string) => {
+    setCollapsedSections(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem('printerCollapsedSections', JSON.stringify(next)); } catch { /* quota exceeded / private mode */ }
+      return next;
+    });
+  }, []);
+
+  // Group printers when sorted by location, status, or model
   const groupedPrinters = useMemo(() => {
-    if (sortBy !== 'location') return null;
+    if (sortBy === 'name') return null;
 
     const groups: Record<string, typeof sortedPrinters> = {};
-    sortedPrinters.forEach(printer => {
-      const location = printer.location || 'Ungrouped';
-      if (!groups[location]) groups[location] = [];
-      groups[location].push(printer);
-    });
+
+    if (sortBy === 'location') {
+      sortedPrinters.forEach(printer => {
+        const location = printer.location || 'Ungrouped';
+        if (!groups[location]) groups[location] = [];
+        groups[location].push(printer);
+      });
+    } else if (sortBy === 'model') {
+      sortedPrinters.forEach(printer => {
+        const model = printer.model || 'Unknown';
+        if (!groups[model]) groups[model] = [];
+        groups[model].push(printer);
+      });
+    } else if (sortBy === 'status') {
+      sortedPrinters.forEach(printer => {
+        const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', printer.id]);
+        let group: string;
+        if (!status?.connected) {
+          group = 'offline';
+        } else {
+          const hmsErrors = status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
+          if (hmsErrors.length > 0) group = 'error';
+          else if (status.state === 'RUNNING') group = 'printing';
+          else if (status.state === 'PAUSE') group = 'paused';
+          else if (status.state === 'FINISH') group = 'finished';
+          else if (status.state === 'FAILED') group = 'error';
+          else group = 'idle';
+        }
+        if (!groups[group]) groups[group] = [];
+        groups[group].push(printer);
+      });
+    }
+
     return groups;
-  }, [sortBy, sortedPrinters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortBy, sortedPrinters, queryClient, statusCacheVersion]);
 
   return (
     <div className="p-4 md:p-8">
@@ -6316,59 +6380,89 @@ export function PrintersPage() {
           </CardContent>
         </Card>
       ) : groupedPrinters ? (
-        /* Grouped by location view */
+        /* Grouped view (location, status, or model) */
         <div className="space-y-6">
-          {Object.entries(groupedPrinters).map(([location, locationPrinters]) => (
-            <div key={location}>
-              <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-bambu-green" />
-                {location}
-                <span className="text-sm font-normal text-bambu-gray">({locationPrinters.length})</span>
-                {selectionMode && (
-                  <button
-                    onClick={() => selectByLocation(location === 'Ungrouped' ? '' : location)}
-                    className="text-xs text-bambu-green hover:text-bambu-green-light transition-colors ml-1"
-                  >
-                    {t('printers.bulk.selectAll')}
-                  </button>
-                )}
-              </h2>
-              <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
-                {locationPrinters.map((printer) => (
-                  <PrinterCard
-                    key={printer.id}
-                    printer={printer}
-                    hideIfDisconnected={hideDisconnected}
-                    maintenanceInfo={maintenanceByPrinter[printer.id]}
-                    viewMode={viewMode}
-                    cardSize={cardSize}
-                    amsThresholds={settings ? {
-                      humidityGood: Number(settings.ams_humidity_good) || 40,
-                      humidityFair: Number(settings.ams_humidity_fair) || 60,
-                      tempGood: Number(settings.ams_temp_good) || 28,
-                      tempFair: Number(settings.ams_temp_fair) || 35,
-                    } : undefined}
-                    spoolmanEnabled={spoolmanEnabled}
-                    hasUnlinkedSpools={hasUnlinkedSpools}
-                    linkedSpools={linkedSpools}
-                    spoolmanUrl={spoolmanStatus?.url}
-                    spoolmanSyncMode={spoolmanSyncMode}
-                    onGetAssignment={getAssignment}
-                    onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
-                    timeFormat={settings?.time_format || 'system'}
-                    cameraViewMode={settings?.camera_view_mode || 'window'}
-                    onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
-                    checkPrinterFirmware={settings?.check_printer_firmware !== false}
-                    dryingPresets={effectiveDryingPresets}
-                    requirePlateClear={settings?.require_plate_clear === true}
-                    selectionMode={selectionMode}
-                    isSelected={selectedPrinterIds.has(printer.id)}
-                    onToggleSelect={toggleSelect}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+          {(() => {
+            const keys = sortBy === 'status'
+              ? STATUS_GROUP_ORDER.filter(k => groupedPrinters[k]?.length > 0)
+              : Object.keys(groupedPrinters);
+            return (sortAsc ? keys : [...keys].reverse());
+          })().map((groupKey) => {
+            const groupPrinters = groupedPrinters[groupKey];
+            const collapseKey = `${sortBy}:${groupKey}`;
+            const isOpen = !collapsedSections[collapseKey];
+
+            const dot = sortBy === 'status'
+              ? STATUS_GROUP_META[groupKey]?.dot || 'bg-bambu-green'
+              : 'bg-bambu-green';
+            const label = sortBy === 'status'
+              ? t(STATUS_GROUP_META[groupKey]?.labelKey || groupKey)
+              : groupKey;
+
+            return (
+              <Collapsible
+                key={groupKey}
+                open={isOpen}
+                onToggle={() => toggleSectionCollapse(collapseKey)}
+                summaryClassName="py-1"
+                summary={
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${dot}`} />
+                    {label}
+                    <span className="text-sm font-normal text-bambu-gray">({groupPrinters.length})</span>
+                    {selectionMode && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (sortBy === 'location') selectByLocation(groupKey === 'Ungrouped' ? '' : groupKey);
+                          else if (sortBy === 'status') selectByState(groupKey as PrinterState);
+                          else if (sortBy === 'model') selectByModel(groupKey);
+                        }}
+                        className="text-xs text-bambu-green hover:text-bambu-green-light transition-colors ml-1"
+                      >
+                        {t('printers.bulk.selectAll')}
+                      </button>
+                    )}
+                  </h2>
+                }
+              >
+                <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
+                  {groupPrinters.map((printer) => (
+                    <PrinterCard
+                      key={printer.id}
+                      printer={printer}
+                      hideIfDisconnected={hideDisconnected}
+                      maintenanceInfo={maintenanceByPrinter[printer.id]}
+                      viewMode={viewMode}
+                      cardSize={cardSize}
+                      amsThresholds={settings ? {
+                        humidityGood: Number(settings.ams_humidity_good) || 40,
+                        humidityFair: Number(settings.ams_humidity_fair) || 60,
+                        tempGood: Number(settings.ams_temp_good) || 28,
+                        tempFair: Number(settings.ams_temp_fair) || 35,
+                      } : undefined}
+                      spoolmanEnabled={spoolmanEnabled}
+                      hasUnlinkedSpools={hasUnlinkedSpools}
+                      linkedSpools={linkedSpools}
+                      spoolmanUrl={spoolmanStatus?.url}
+                      spoolmanSyncMode={spoolmanSyncMode}
+                      onGetAssignment={getAssignment}
+                      onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
+                      timeFormat={settings?.time_format || 'system'}
+                      cameraViewMode={settings?.camera_view_mode || 'window'}
+                      onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+                      checkPrinterFirmware={settings?.check_printer_firmware !== false}
+                      dryingPresets={effectiveDryingPresets}
+                      requirePlateClear={settings?.require_plate_clear === true}
+                      selectionMode={selectionMode}
+                      isSelected={selectedPrinterIds.has(printer.id)}
+                      onToggleSelect={toggleSelect}
+                    />
+                  ))}
+                </div>
+              </Collapsible>
+            );
+          })}
         </div>
       ) : (
         /* Regular grid view */

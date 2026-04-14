@@ -15,9 +15,12 @@ interface CollapsibleProps {
 }
 
 /**
- * Lightweight disclosure used for densifying the Settings page.
- * Renders a clickable summary row and animates open/close via a simple
- * display swap (no height animation — keeps it snappy and layout-stable).
+ * Lightweight disclosure widget.
+ * Renders a clickable summary row and conditionally displays children.
+ *
+ * The toggle region is a plain <div> with role="button" so that the summary
+ * slot may safely contain interactive elements (buttons, links) without
+ * nesting a <button> inside a <button>.
  *
  * Supports both uncontrolled (internal state) and controlled (`open`/`onToggle`) modes.
  */
@@ -42,17 +45,19 @@ export function Collapsible({
 
   return (
     <div className={className}>
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={handleToggle}
-        className={`w-full flex items-center justify-between gap-2 text-left ${summaryClassName}`}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle(); } }}
+        className={`w-full flex items-center justify-between gap-2 text-left cursor-pointer ${summaryClassName}`}
         aria-expanded={isOpen}
       >
         <div className="flex-1 min-w-0">{summary}</div>
         <ChevronDown
           className={`w-4 h-4 text-bambu-gray flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
-      </button>
+      </div>
       {isOpen && <div className="mt-3">{children}</div>}
     </div>
   );

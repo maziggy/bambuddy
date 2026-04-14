@@ -18,6 +18,7 @@ const EMPTY_FORM: OIDCProviderCreate = {
   scopes: 'openid email profile',
   is_enabled: true,
   auto_create_users: false,
+  auto_link_existing_accounts: false,
   icon_url: undefined,
 };
 
@@ -105,6 +106,13 @@ function ProviderForm({
           <div>
             <p className="text-white text-sm">{t('settings.oidc.form.autoCreate')}</p>
             <p className="text-bambu-gray text-xs">{t('settings.oidc.form.autoCreateDesc')}</p>
+          </div>
+        </label>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <Toggle checked={form.auto_link_existing_accounts ?? false} onChange={(v) => set('auto_link_existing_accounts', v)} />
+          <div>
+            <p className="text-white text-sm">{t('settings.oidc.form.autoLink')}</p>
+            <p className="text-bambu-gray text-xs">{t('settings.oidc.form.autoLinkDesc')}</p>
           </div>
         </label>
       </div>
@@ -295,6 +303,7 @@ export function OIDCProviderSettings() {
                     scopes: provider.scopes,
                     is_enabled: provider.is_enabled,
                     auto_create_users: provider.auto_create_users,
+                    auto_link_existing_accounts: provider.auto_link_existing_accounts,
                     icon_url: provider.icon_url ?? undefined,
                   }}
                   onSave={(data) => updateMutation.mutate({ id: provider.id, data })}
@@ -320,6 +329,12 @@ export function OIDCProviderSettings() {
                   <dt className="text-bambu-gray">{t('settings.oidc.form.autoCreate')}</dt>
                   <dd className={provider.auto_create_users ? 'text-green-400' : 'text-bambu-gray'}>
                     {provider.auto_create_users ? t('common.yes') : t('common.no')}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-bambu-gray">{t('settings.oidc.form.autoLink')}</dt>
+                  <dd className={provider.auto_link_existing_accounts ? 'text-green-400' : 'text-bambu-gray'}>
+                    {provider.auto_link_existing_accounts ? t('common.yes') : t('common.no')}
                   </dd>
                 </div>
               </dl>

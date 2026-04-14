@@ -2145,6 +2145,8 @@ export default {
         enabled: '有効',
         autoCreate: 'ユーザーを自動作成',
         autoCreateDesc: '初回ログイン時にローカルアカウントを自動的に作成します。',
+        autoLink: '既存アカウントを自動リンク',
+        autoLinkDesc: '初回ログイン時にメールアドレスで既存のローカルアカウントにリンクします。',
         secretHint: '空白のままで現在のものを維持',
         secretPlaceholder: '新しいシークレット',
       },

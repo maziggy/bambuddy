@@ -2107,6 +2107,8 @@ export default {
         enabled: 'Activé',
         autoCreate: 'Créer les utilisateurs automatiquement',
         autoCreateDesc: 'Crée automatiquement un compte local lors de la première connexion.',
+        autoLink: 'Lier automatiquement les comptes existants',
+        autoLinkDesc: 'Lie les comptes locaux existants par e-mail lors de la première connexion.',
         secretHint: 'laisser vide pour conserver',
         secretPlaceholder: 'nouveau secret',
       },

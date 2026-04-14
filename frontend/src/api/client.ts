@@ -2465,6 +2465,7 @@ export interface OIDCProvider {
   scopes: string;
   is_enabled: boolean;
   auto_create_users: boolean;
+  auto_link_existing_accounts: boolean;
   icon_url?: string | null;
 }
 
@@ -2476,6 +2477,7 @@ export interface OIDCProviderCreate {
   scopes?: string;
   is_enabled?: boolean;
   auto_create_users?: boolean;
+  auto_link_existing_accounts?: boolean;
   icon_url?: string | null;
 }
 

@@ -143,7 +143,13 @@ class TestPollOneStateLifecycle:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client),
+            patch(
+                "backend.app.services.obico_detection.create_camera_stream_token",
+                new=AsyncMock(return_value="tok"),
+            ),
+        ):
             await svc._check_printer(1, status, settings)
 
         # State was reset (frame_count is 1 after the single update, not 36)
@@ -170,7 +176,13 @@ class TestPollOneStateLifecycle:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client),
+            patch(
+                "backend.app.services.obico_detection.create_camera_stream_token",
+                new=AsyncMock(return_value="tok"),
+            ),
+        ):
             await svc._check_printer(1, status, settings)
 
         assert svc._last_error is not None
@@ -212,6 +224,10 @@ class TestPollOneStateLifecycle:
         with (
             patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client),
             patch("backend.app.services.obico_actions.execute_action", new=AsyncMock()) as mock_action,
+            patch(
+                "backend.app.services.obico_detection.create_camera_stream_token",
+                new=AsyncMock(return_value="tok"),
+            ),
         ):
             await svc._check_printer(1, status, settings)
             assert mock_action.call_count == 1

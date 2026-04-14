@@ -11,11 +11,16 @@ import asyncio
 import json
 import logging
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
 import httpx
 from sqlalchemy import select
 
+from backend.app.core.auth import (
+    CAMERA_STREAM_TOKEN_EXPIRE_MINUTES,
+    create_camera_stream_token,
+)
 from backend.app.core.database import async_session
 from backend.app.models.settings import Settings
 from backend.app.services.obico_smoothing import (
@@ -48,6 +53,10 @@ class ObicoDetectionService:
         # Global detection event log (most-recent-first)
         self._history: deque = deque(maxlen=HISTORY_MAX)
         self._last_error: str | None = None
+        # Cached camera-stream token so the ML API can fetch snapshots when
+        # auth is enabled. Refreshed before expiry; harmless when auth is off.
+        self._snapshot_token: str | None = None
+        self._snapshot_token_expires_at: datetime | None = None
 
     # ---- lifecycle ----
 
@@ -62,6 +71,26 @@ class ObicoDetectionService:
             self._task.cancel()
             self._task = None
             logger.info("Stopped Obico detection service")
+
+    # ---- snapshot auth ----
+
+    async def _get_snapshot_token(self) -> str:
+        """Return a valid camera-stream token, refreshing it before expiry.
+
+        The ML API fetches the snapshot URL directly, so when Bambuddy's auth
+        is enabled the URL must carry a token (same scheme used by <img>-based
+        camera consumers). When auth is disabled the token is simply ignored.
+        """
+        now = datetime.now(timezone.utc)
+        refresh_before = timedelta(minutes=5)
+        if (
+            self._snapshot_token is None
+            or self._snapshot_token_expires_at is None
+            or self._snapshot_token_expires_at - now <= refresh_before
+        ):
+            self._snapshot_token = await create_camera_stream_token()
+            self._snapshot_token_expires_at = now + timedelta(minutes=CAMERA_STREAM_TOKEN_EXPIRE_MINUTES)
+        return self._snapshot_token
 
     # ---- settings ----
 
@@ -151,7 +180,10 @@ class ObicoDetectionService:
             self._state_keys[printer_id] = key
             self._action_fired[printer_id] = False
 
-        snapshot_url = f"{settings['external_url']}/api/v1/printers/{printer_id}/camera/snapshot"
+        token = await self._get_snapshot_token()
+        snapshot_url = (
+            f"{settings['external_url']}/api/v1/printers/{printer_id}/camera/snapshot?{urlencode({'token': token})}"
+        )
         ml_url = f"{settings['ml_url']}/p/"
 
         try:

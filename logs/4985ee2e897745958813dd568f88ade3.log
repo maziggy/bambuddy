@@ -1,0 +1,200 @@
+2026-04-13 05:25:19,175 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/5U+Lab+Rax+Bolt+Together.gcode.3mf: 550 
+2026-04-13 05:25:19,237 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/5U+Lab+Rax+Bolt+Together.gcode.3mf: 550 
+2026-04-13 05:25:19,297 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/5U+Lab+Rax+Bolt+Together.gcode.3mf: 550 
+2026-04-13 05:27:18,006 INFO [backend.app.services.bambu_ftp] Successfully downloaded /5U+Lab+Rax+Bolt+Together.3mf to /app/data/archive/temp/cover_1_5U+Lab+Rax+Bolt+Together.gcode.3mf (8561958 bytes)
+2026-04-13 05:27:18,020 INFO [backend.app.api.routes.printers] Downloaded file size: 8561958 bytes
+2026-04-13 05:27:26,413 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-13 05:33:49,488 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-13 05:33:49,488 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-13 05:33:51,999 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 112631 bytes
+2026-04-13 05:33:54,042 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-13 05:43:13,596 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-13 05:43:13,596 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-13 05:43:15,872 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 106484 bytes
+2026-04-13 05:43:16,705 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-13 05:45:51,365 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-13 05:45:54,855 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-13 05:45:54,856 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-13 05:45:54,857 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-13 05:50:18,495 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-13 06:06:47,848 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-13 06:06:47,848 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-13 06:06:50,736 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 116806 bytes
+2026-04-13 06:06:51,561 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-13 06:28:57,687 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-13 06:28:57,687 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-13 06:29:00,864 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 110523 bytes
+2026-04-13 06:29:01,728 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-13 06:50:07,261 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] PRINT COMPLETE detected - state: FINISH, status: completed, file: 5U+Lab+Rax+Bolt+Together.3mf, subtask: 5U+Lab+Rax+Bolt+Together, was_running: True, timelapse_during_print: False
+2026-04-13 06:50:07,262 INFO [backend.app.main] [CALLBACK] on_print_complete started for printer 1
+2026-04-13 06:50:07,263 INFO [backend.app.main] [TIMING] WebSocket send_print_complete: 0.001s elapsed
+2026-04-13 06:50:07,263 INFO [backend.app.main] Print complete - filename: 5U+Lab+Rax+Bolt+Together.3mf, subtask: 5U+Lab+Rax+Bolt+Together, status: completed
+2026-04-13 06:50:07,263 INFO [backend.app.main] Looking for archive in _active_prints, keys to try: [(1, '5U+Lab+Rax+Bolt+Together.3mf'), (1, '5U+Lab+Rax+Bolt+Together.gcode.3mf'), (1, '5U+Lab+Rax+Bolt+Together'), (1, '5U+Lab+Rax+Bolt+Together.3mf'), (1, '5U+Lab+Rax+Bolt+Together.3mf')]...
+2026-04-13 06:50:07,263 INFO [backend.app.main] Current _active_prints: [(1, '5U+Lab+Rax+Bolt+Together.gcode.3mf'), (1, '5U+Lab+Rax+Bolt+Together.3mf')]
+2026-04-13 06:50:07,263 INFO [backend.app.main] Found archive 4 with key (1, '5U+Lab+Rax+Bolt+Together.3mf')
+2026-04-13 06:50:08,080 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-13 06:50:08,147 INFO [backend.app.main] Deleted /5U+Lab+Rax+Bolt+Together.3mf from printer [PRINTER] SD card
+2026-04-13 06:50:08,969 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-13 06:50:08,990 WARNING [backend.app.services.bambu_ftp] Failed to delete /5U+Lab+Rax+Bolt+Together.gcode: 550 
+2026-04-13 06:50:11,843 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-13 06:50:12,258 WARNING [backend.app.services.bambu_ftp] Failed to delete /5U+Lab+Rax+Bolt+Together.gcode: 550 
+2026-04-13 06:50:15,097 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-13 06:50:15,109 WARNING [backend.app.services.bambu_ftp] Failed to delete /5U+Lab+Rax+Bolt+Together.gcode: 550 
+2026-04-13 06:50:15,118 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /5U+Lab+Rax+Bolt+Together.gcode (file may linger on SD card)
+2026-04-13 06:50:15,118 INFO [backend.app.main] [TIMING] SD card cleanup: 7.856s elapsed
+2026-04-13 06:50:15,121 INFO [backend.app.main] [TIMING] Queue item update: 7.860s elapsed
+2026-04-13 06:50:15,126 INFO [backend.app.main] [BED-COOL] Registered waiter for printer 1 (threshold: 40°C)
+2026-04-13 06:50:15,130 INFO [backend.app.services.usage_tracker] [UsageTracker] on_print_complete: printer=1, archive=4, session=yes, ams_mapping=[254]
+2026-04-13 06:50:15,130 INFO [backend.app.services.usage_tracker] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=254, last_loaded_tray=254
+2026-04-13 06:50:15,136 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: archive 4, filament_usage=[{'slot_id': 1, 'used_g': 328.4, 'type': 'PCTG', 'color': '#000000'}, {'slot_id': 1, 'used_g': 320.12, 'type': 'PCTG', 'color': '#000000'}, {'slot_id': 1, 'used_g': 69.06, 'type': 'PCTG', 'color': '#000000'}, {'slot_id': 1, 'used_g': 69.06, 'type': 'PCTG', 'color': '#000000'}, {'slot_id': 1, 'used_g': 54.07, 'type': 'PCTG', 'color': '#000000'}, {'slot_id': 1, 'used_g': 50.01, 'type': 'PCTG', 'color': '#000000'}, {'slot_id': 1, 'used_g': 60.59, 'type': 'PCTG', 'color': '#000000'}]
+2026-04-13 06:50:15,136 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_to_tray=[254] (source: print_cmd)
+2026-04-13 06:50:15,137 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=1 -> global_tray=254 -> AMS255-T0 (used_g=328.4, tray_now_override=None)
+2026-04-13 06:50:15,140 INFO [backend.app.services.usage_tracker] [UsageTracker] Spool 2 consumed 328.4g (3MF, print_cmd_map) on printer 1 AMS255-T0 (completed)
+2026-04-13 06:50:15,141 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=1 -> global_tray=254 -> AMS255-T0 (used_g=320.1, tray_now_override=None)
+2026-04-13 06:50:15,141 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=1 -> global_tray=254 -> AMS255-T0 (used_g=69.1, tray_now_override=None)
+2026-04-13 06:50:15,141 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=1 -> global_tray=254 -> AMS255-T0 (used_g=69.1, tray_now_override=None)
+2026-04-13 06:50:15,141 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=1 -> global_tray=254 -> AMS255-T0 (used_g=54.1, tray_now_override=None)
+2026-04-13 06:50:15,141 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=1 -> global_tray=254 -> AMS255-T0 (used_g=50.0, tray_now_override=None)
+2026-04-13 06:50:15,141 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=1 -> global_tray=254 -> AMS255-T0 (used_g=60.6, tray_now_override=None)
+2026-04-13 06:50:15,149 INFO [backend.app.main] [TIMING] Usage tracker: 7.887s elapsed
+2026-04-13 06:50:15,151 INFO [backend.app.services.spoolman_tracking] [SPOOLMAN] No tracking data for print (printer=1, archive=4)
+2026-04-13 06:50:15,151 INFO [backend.app.main] [TIMING] Spoolman usage report: 7.890s elapsed
+2026-04-13 06:50:15,152 INFO [backend.app.main] [TIMING] Filament usage tracking: 7.890s elapsed
+2026-04-13 06:50:15,152 INFO [backend.app.main] [TIMING] Archive lookup: 7.890s elapsed
+2026-04-13 06:50:15,152 INFO [backend.app.main] [ARCHIVE] Updating archive 4 status...
+2026-04-13 06:50:15,163 INFO [backend.app.main] [ARCHIVE] Archive 4 status updated to completed, failure_reason=None
+2026-04-13 06:50:15,164 INFO [backend.app.main] [ARCHIVE] WebSocket notification sent for archive 4
+2026-04-13 06:50:15,164 INFO [backend.app.main] [TIMING] Archive status update: 7.903s elapsed
+2026-04-13 06:50:15,170 INFO [backend.app.main] [PRINT_LOG] Log entry written for archive 4
+2026-04-13 06:50:15,170 INFO [backend.app.main] [TIMING] Print log entry: 7.908s elapsed
+2026-04-13 06:50:15,170 INFO [backend.app.main] [TIMING] Background tasks scheduled (energy, photo): 7.908s elapsed
+2026-04-13 06:50:15,170 INFO [backend.app.main] [TIMING] All background tasks scheduled: 7.909s elapsed
+2026-04-13 06:50:15,171 INFO [backend.app.main] [CALLBACK] on_print_complete finished for printer 1, archive 4
+2026-04-13 06:50:15,171 INFO [backend.app.main] [ENERGY-BG] Starting energy calculation for archive 4
+2026-04-13 06:50:15,172 INFO [backend.app.main] [PHOTO-BG] Starting finish photo capture for archive 4
+2026-04-13 06:50:15,173 INFO [backend.app.main] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-04-13 06:50:15,173 INFO [backend.app.main] [MAINT-BG] Starting maintenance check for printer 1
+2026-04-13 06:50:15,174 INFO [backend.app.main] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-04-13 06:50:15,179 INFO [backend.app.main] [ENERGY-BG] No smart plug for printer 1
+2026-04-13 06:50:15,180 INFO [backend.app.main] [AUTO-OFF-BG] Completed
+2026-04-13 06:50:15,186 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-13 06:50:15,196 INFO [backend.app.services.notification_service] Found 1 providers for maintenance_due: ['[PRINTER]']
+2026-04-13 06:50:15,569 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-13 06:50:15,569 INFO [backend.app.main] [MAINT-BG] Sent notification: 1 items need attention
+2026-04-13 06:50:17,507 INFO [backend.app.services.camera] Saved camera frame to: /app/data/archive/unassigned/20260412_152516_5U+Lab+Rax+Bolt+Together.gcode/photos/finish_20260413_065015_01bcf9ec.jpg
+2026-04-13 06:50:17,507 INFO [backend.app.services.camera] Finish photo saved: finish_20260413_065015_01bcf9ec.jpg
+2026-04-13 06:50:17,509 INFO [backend.app.main] [PHOTO-BG] Saved: finish_20260413_065015_01bcf9ec.jpg
+2026-04-13 06:50:17,509 INFO [backend.app.main] [PHOTO-NOTIFY] Photo task returned: finish_20260413_065015_01bcf9ec.jpg
+2026-04-13 06:50:17,510 INFO [backend.app.main] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260413_065015_01bcf9ec.jpg
+2026-04-13 06:50:17,515 INFO [backend.app.main] [NOTIFY-BG] Loaded finish photo bytes: 121000 bytes
+2026-04-13 06:50:17,516 INFO [backend.app.services.notification_service] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-04-13 06:50:17,518 INFO [backend.app.services.notification_service] Found 1 providers for on_print_complete: ['[PRINTER]']
+2026-04-13 06:50:18,658 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-13 06:50:18,660 INFO [backend.app.main] [NOTIFY-BG] Completed
+2026-04-13 07:01:39,087 INFO [backend.app.main] [BED-COOL] Bed cooled to 40.0°C on printer 1 (threshold: 40°C)
+2026-04-13 07:01:40,416 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-13 07:33:23,142 INFO [backend.app.main] Evicted 1 stale expected-print entries (TTL=7200s)
+2026-04-13 08:24:41,944 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-14 02:47:03,313 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-14 02:47:03,315 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-14 02:47:03,317 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-14 02:47:03,591 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-14 02:47:04,417 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: JWs-I8xci0LKfSZDcnGeK
+2026-04-14 02:49:01,507 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-14 04:20:55,390 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-14 04:20:55,391 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-14 04:20:55,393 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-14 04:20:56,145 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-14 04:20:56,517 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: JWs-I8xci0LKfSZDcnGeK
+2026-04-14 04:21:34,233 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-14 04:22:52,496 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-14 04:22:52,496 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-14 04:22:52,497 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-14 04:23:02,731 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-14 04:28:00,507 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-14 04:28:00,507 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-14 04:28:00,511 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-14 04:28:00,792 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-14 04:29:17,320 INFO [backend.app.api.routes.archives] Dispatched reprint archive 4 for printer 1 (dispatch_job_id=7, dispatch_position=1)
+2026-04-14 04:29:18,164 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 04:29:18,224 WARNING [backend.app.services.bambu_ftp] Failed to delete /5U+Lab+Rax+Bolt+Together.3mf: 550 
+2026-04-14 04:29:18,231 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=A1, mode=prot_p, socket_timeout=30.0s)...
+2026-04-14 04:29:19,025 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 04:29:19,025 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-14 04:29:19,026 INFO [backend.app.services.bambu_ftp] FTP uploading /app/data/archive/unassigned/20260412_152516_5U+Lab+Rax+Bolt+Together.gcode/5U+Lab+Rax+Bolt+Together.gcode.3mf (8561958 bytes) to /5U+Lab+Rax+Bolt+Together.3mf
+2026-04-14 04:29:19,087 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-04-14 04:30:32,124 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /5U+Lab+Rax+Bolt+Together.3mf: 226
+2026-04-14 04:30:32,125 INFO [backend.app.services.bambu_ftp] FTP upload complete: /5U+Lab+Rax+Bolt+Together.3mf (8561958 bytes in 73.1s, 114 KB/s)
+2026-04-14 04:30:32,125 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-14 04:30:32,138 INFO [backend.app.main] Registered expected print: printer=1, file=5U+Lab+Rax+Bolt+Together.3mf, archive=4, ams_mapping=[254]
+2026-04-14 04:30:32,139 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=5U+Lab+Rax+Bolt+Together.3mf, caller=background_dispatch.py:534:_process_job
+2026-04-14 04:30:32,139 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] All filament slots use external spool — setting use_ams=False
+2026-04-14 04:30:32,139 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_5.gcode", "url": "ftp://5U+Lab+Rax+Bolt+Together.3mf", "file": "5U+Lab+Rax+Bolt+Together.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": false, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "5U+Lab+Rax+Bolt+Together", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [-1], "ams_mapping2": [{"ams_id": 255, "slot_id": 0}]}}
+2026-04-14 04:30:50,463 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-14 04:30:50,464 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-14 04:30:50,464 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-14 04:30:50,496 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-04-14 04:30:50,496 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-14 04:30:50,496 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: PREPARE, gcode_file: 5U+Lab+Rax+Bolt+Together.3mf, subtask_name: 5U+Lab+Rax+Bolt+Together
+2026-04-14 04:30:50,497 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '255', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 4, 'insert_flag': True, 'power_on_flag': False}
+2026-04-14 04:30:50,497 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 254
+2026-04-14 04:30:50,497 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-04-14 04:30:50,497 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-14 04:30:50,497 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 04:30:50,498 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-14 04:30:50,498 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-14 04:30:50,498 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-14 04:30:50,498 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-14 04:30:50,498 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-14 04:30:50,499 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-14 04:30:50,499 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-14 04:30:50,499 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-04-14 04:30:50,499 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: PREPARE -> PREPARE, file: 5U+Lab+Rax+Bolt+Together.3mf, subtask: 5U+Lab+Rax+Bolt+Together
+2026-04-14 04:30:52,583 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 04:30:52,583 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -53dBm
+2026-04-14 04:30:54,594 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: None, subtask_name: None
+2026-04-14 04:30:54,594 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 04:30:54,594 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: PREPARE -> RUNNING, file: 5U+Lab+Rax+Bolt+Together.3mf, subtask: 5U+Lab+Rax+Bolt+Together
+2026-04-14 04:30:54,595 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Now tracking RUNNING state for 5U+Lab+Rax+Bolt+Together.3mf
+2026-04-14 04:30:54,595 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] PRINT START detected - file: 5U+Lab+Rax+Bolt+Together.3mf, subtask: 5U+Lab+Rax+Bolt+Together, is_new: True, is_file_change: False
+2026-04-14 04:30:54,596 INFO [backend.app.main] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-04-14 04:30:54,600 INFO [backend.app.services.usage_tracker] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=254, last_loaded_tray=254
+2026-04-14 04:30:54,602 INFO [backend.app.services.usage_tracker] [UsageTracker] Snapshotted 1 spool assignments for printer 1: {'255-0': 2}
+2026-04-14 04:30:54,602 INFO [backend.app.services.usage_tracker] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-04-14 04:30:54,608 INFO [backend.app.main] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-04-14 04:30:54,608 INFO [backend.app.main] [CALLBACK] Print start detected - filename: 5U+Lab+Rax+Bolt+Together.3mf, subtask: 5U+Lab+Rax+Bolt+Together
+2026-04-14 04:30:54,608 INFO [backend.app.main] Using expected archive 4 for print (skipping duplicate)
+2026-04-14 04:30:54,614 INFO [backend.app.main] [CALLBACK] Injected ams_mapping into usage tracker session: [254]
+2026-04-14 04:30:54,616 INFO [backend.app.main] [ENERGY] Print start - archive 4, printer 1, plug found: False
+2026-04-14 04:30:54,616 INFO [backend.app.main] [ENERGY] No smart plug found for printer 1
+2026-04-14 04:30:54,621 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-14 04:30:54,621 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-14 04:30:56,583 DEBUG [backend.app.services.camera] Chamber image: received 125524 bytes
+2026-04-14 04:30:56,599 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 125524 bytes
+2026-04-14 04:30:56,599 INFO [backend.app.services.notification_service] on_print_start called for printer 1 ([PRINTER])
+2026-04-14 04:30:56,602 DEBUG [backend.app.services.notification_service] Using print_time_seconds from archive: 21395
+2026-04-14 04:30:56,604 INFO [backend.app.services.notification_service] Found 1 providers for print_start: ['[PRINTER]']
+2026-04-14 04:30:56,606 DEBUG [httpcore.connection] close.started
+2026-04-14 04:30:56,606 DEBUG [httpcore.connection] close.complete
+2026-04-14 04:30:56,607 DEBUG [httpcore.connection] connect_tcp.started host='discord.com' port=443 local_address=None timeout=30.0 socket_options=None
+2026-04-14 04:30:56,634 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 04:30:56,634 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] stg_cur changed: 255 -> 2 (Heatbed preheating)
+2026-04-14 04:30:56,708 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x760daf26bb10>
+2026-04-14 04:30:56,708 DEBUG [httpcore.connection] start_tls.started ssl_context=<ssl.SSLContext object at 0x760daf387b10> server_hostname='discord.com' timeout=30.0
+2026-04-14 04:30:56,780 DEBUG [httpcore.connection] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x760daca2c0f0>
+2026-04-14 04:30:56,781 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'POST']>
+2026-04-14 04:30:56,781 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-14 04:30:56,782 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'POST']>
+2026-04-14 04:30:56,967 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-14 04:30:56,967 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'POST']>
+2026-04-14 04:30:57,798 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Tue, 14 Apr 2026 04:30:57 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Server', b'cloudflare'), (b'strict-transport-security', b'max-age=31536000; includeSubDomains; preload'), (b'x-ratelimit-bucket', b'3d2712a9e4fe17cc9d3fed4a8e672e5f'), (b'x-ratelimit-limit', b'5'), (b'x-ratelimit-remaining', b'4'), (b'x-ratelimit-reset', b'1776141058'), (b'x-ratelimit-reset-after', b'1'), (b'x-discord-features', b'webhooks'), (b'Content-Encoding', b'gzip'), (b'vary', b'Accept-Encoding'), (b'via', b'1.1 google'), (b'alt-svc', b'h3=":443"; ma=86400'), (b'cf-cache-status', b'DYNAMIC'), (b'Content-Security-Policy', b"frame-ancestors 'none'; default-src https://o64374.ingest.sentry.io; report-to csp-sentry; report-uri https://o64374.ingest.sentry.io/api/5441894/security/?sentry_key=8fbbce30bf5244ec9429546beef21870&sentry_environment=stable"), (b'X-Content-Type-Options', b'nosniff'), (b'Report-To', b'{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=4S8PehyBoC8QZ5l1UcpOKaEaGJrvAn1mglLb%2Fv6H8VLzfvppqroy%2FZsbRO4e4XSSXYgX31Rg8GDI36QE47JOERgdjZAcsmd7I%2Bq6726%2F58JzmKoZsqn63rBUJGzX"}]}'), (b'Nel', b'{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}'), (b'Reporting-Endpoints', b'csp-sentry="https://o64374.ingest.sentry.io/api/5441894/security/?sentry_key=8fbbce30bf5244ec9429546beef21870&sentry_environment=stable"'), (b'CF-RAY', b'9ebffa650b695901-LAX')])
+2026-04-14 04:30:57,799 INFO [httpx] HTTP Request: POST https://discord.com/api/webhooks/1491689906005737552/hMOM9SIioCeMoBWjhpXwOdw6x2PjY3v5o_KqnpeAuibGNiyjAvfv0-pMr2b9zuhkC6qS "HTTP/1.1 200 OK"
+2026-04-14 04:30:57,799 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'POST']>
+2026-04-14 04:30:57,801 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-14 04:30:57,802 DEBUG [httpcore.http11] response_closed.started
+2026-04-14 04:30:57,802 DEBUG [httpcore.http11] response_closed.complete
+2026-04-14 04:30:57,813 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-14 04:30:57,815 DEBUG [backend.app.services.notification_service] [EMAIL] Skipping user print email (user_print_start): advanced_auth not enabled
+2026-04-14 04:30:57,824 INFO [backend.app.main] Loaded 4 printable objects for printer 1
+2026-04-14 04:30:58,639 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 04:30:58,639 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm

@@ -108,7 +108,7 @@ export function BulkPrinterToolbar({
     printing: t('printers.status.printing'),
     paused: t('printers.status.paused', 'Paused'),
     finished: t('printers.status.finished', 'Finished'),
-    idle: t('printers.status.available'),
+    idle: t('printers.status.idle'),
     error: t('printers.status.problem'),
     offline: t('printers.status.offline'),
   };

@@ -2106,6 +2106,8 @@ export default {
         enabled: '已启用',
         autoCreate: '自动创建用户',
         autoCreateDesc: '首次登录时自动创建本地账户。',
+        autoLink: '自动关联已有账户',
+        autoLinkDesc: '首次登录时通过邮箱匹配现有本地账户并自动关联。',
         secretHint: '留空以保留当前',
         secretPlaceholder: '新密钥',
       },

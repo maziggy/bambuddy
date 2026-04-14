@@ -2146,6 +2146,8 @@ export default {
         enabled: 'Aktiviert',
         autoCreate: 'Benutzer automatisch anlegen',
         autoCreateDesc: 'Erstellt beim ersten Login automatisch ein lokales Konto.',
+        autoLink: 'Bestehende Konten automatisch verknüpfen',
+        autoLinkDesc: 'Verknüpft beim ersten Login vorhandene lokale Konten anhand der E-Mail-Adresse.',
         secretHint: 'leer lassen zum Beibehalten',
         secretPlaceholder: 'neues Secret',
       },

@@ -1,0 +1,200 @@
+2026-04-14 12:12:56,841 INFO [backend.app.services.notification_service] Notification digest scheduler started
+2026-04-14 12:12:56,842 INFO [backend.app.services.github_backup] Starting GitHub backup scheduler
+2026-04-14 12:12:56,842 INFO [backend.app.services.local_backup] Starting local backup scheduler
+2026-04-14 12:12:56,856 INFO [backend.app.services.obico_detection] Starting Obico detection service
+2026-04-14 12:12:56,857 INFO [backend.app.main] AMS history recording started
+2026-04-14 12:12:56,857 INFO [backend.app.main] Printer runtime tracking started
+2026-04-14 12:12:56,858 INFO [backend.app.main] SpoolBuddy watchdog started
+2026-04-14 12:12:56,858 INFO [backend.app.main] Camera stream cleanup started
+2026-04-14 12:12:56,858 INFO [backend.app.main] Expected prints cleanup started
+2026-04-14 12:12:56,858 INFO [backend.app.main] Auth periodic cleanup started
+2026-04-14 12:12:56,961 INFO [root] Virtual printer manager synced from database
+2026-04-14 12:12:57,350 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-14 12:12:57,351 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-14 12:12:57,351 INFO [backend.app.api.routes.websocket] Sent initial status for 0 printers
+2026-04-14 12:13:28,187 INFO [backend.app.services.camera] Found ffmpeg at: /usr/bin/ffmpeg
+2026-04-14 12:13:28,485 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-14 12:13:30,323 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-14 12:13:30,324 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-14 12:13:30,325 INFO [backend.app.api.routes.websocket] Sent initial status for 0 printers
+2026-04-14 12:13:31,694 INFO [backend.app.services.mqtt_relay] MQTT relay disabled
+2026-04-14 12:13:35,640 INFO [backend.app.services.discovery] Starting subnet scan of [IP]/24 (254 hosts)
+2026-04-14 12:13:39,107 INFO [backend.app.services.discovery] Found potential Bambu printer at [IP]
+2026-04-14 12:13:42,126 INFO [backend.app.services.discovery] Subnet scan complete. Found 1 printers.
+2026-04-14 12:13:52,940 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-14 12:13:52,941 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Disconnected shortly after request topic subscription. Disabling request topic for this printer.
+2026-04-14 12:13:54,811 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.07.02.00
+2026-04-14 12:13:55,691 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] State is FINISH but completion NOT triggered: prev=unknown, was_running=False, already_triggered=False, has_callback=True
+2026-04-14 12:13:55,698 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-14 12:13:56,224 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-14 12:13:56,225 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: )
+2026-04-14 12:13:56,227 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-04-14 12:13:56,282 INFO [backend.app.services.spool_tag_matcher] Color resolve: tray_id_name='A00-R0' rgba='C12E1FFF' → resolved='Red'
+2026-04-14 12:13:56,302 INFO [backend.app.services.spool_tag_matcher] Auto-created spool 1 from AMS tray data: PLA Basic Red (tag=B548B30400000100 uuid=0F4C6DEBC65C4E78B40A2A888CB7F07C)
+2026-04-14 12:13:56,314 INFO [backend.app.services.spool_tag_matcher] Auto-assigned spool 1 to printer 1 AMS0-T0 (RFID match)
+2026-04-14 12:13:56,316 INFO [backend.app.main] RFID auto-assigned spool 1 to printer 1 AMS0-T0
+2026-04-14 12:13:56,363 INFO [backend.app.services.spool_tag_matcher] Color resolve: tray_id_name='A00-Y2' rgba='FEC600FF' → resolved='Sunflower Yellow'
+2026-04-14 12:13:56,370 INFO [backend.app.services.spool_tag_matcher] Auto-created spool 2 from AMS tray data: PLA Basic Sunflower Yellow (tag=F520B3A200000100 uuid=A76BE13F75DB4A079D1AEE824012CE38)
+2026-04-14 12:13:56,376 INFO [backend.app.services.spool_tag_matcher] Auto-assigned spool 2 to printer 1 AMS0-T3 (RFID match)
+2026-04-14 12:13:56,378 INFO [backend.app.main] RFID auto-assigned spool 2 to printer 1 AMS0-T3
+2026-04-14 12:13:58,632 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 170493 bytes
+2026-04-14 12:14:01,765 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=5)
+2026-04-14 12:14:01,778 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Developer mode probe: ENABLED (result='')
+2026-04-14 12:14:17,150 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] State is FINISH but completion NOT triggered: prev=None, was_running=False, already_triggered=False, has_callback=True
+2026-04-14 12:14:17,151 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-14 12:14:17,153 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.07.02.00
+2026-04-14 12:14:17,156 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: serial number not available in version info
+2026-04-14 12:14:17,158 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: firmware version not available in version info
+2026-04-14 12:14:17,173 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-14 12:14:17,173 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-04-14 12:14:19,513 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 170756 bytes
+2026-04-14 12:14:31,310 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=3)
+2026-04-14 12:14:31,322 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Developer mode probe: ENABLED (result='')
+2026-04-14 12:14:44,025 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:14:44,980 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=[PRINTER], mode=prot_p, socket_timeout=30.0s)...
+2026-04-14 12:14:45,936 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:14:45,936 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-14 12:14:45,937 INFO [backend.app.services.bambu_ftp] FTP uploading /app/data/archive/library/files/e66e2d8a7ca24a31a752cbf320c136a2.3mf (1609469 bytes) to /Unbenannt.3mf
+2026-04-14 12:14:46,276 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.3s (PASV + TLS handshake)
+2026-04-14 12:15:14,408 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /Unbenannt.3mf: 226
+2026-04-14 12:15:14,408 INFO [backend.app.services.bambu_ftp] FTP upload complete: /Unbenannt.3mf (1609469 bytes in 28.5s, 55 KB/s)
+2026-04-14 12:15:14,409 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-14 12:15:14,435 INFO [backend.app.main] Registered expected print: printer=1, file=Unbenannt.3mf, archive=1, ams_mapping=[1]
+2026-04-14 12:15:14,441 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=Unbenannt.3mf, caller=background_dispatch.py:537:_process_job
+2026-04-14 12:15:14,442 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://Unbenannt.3mf", "file": "Unbenannt.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "Unbenannt", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [1], "ams_mapping2": [{"ams_id": 0, "slot_id": 1}]}}
+2026-04-14 12:15:29,446 WARNING [backend.app.services.background_dispatch] Printer [PRINTER] (1) did not respond to print command within 15s (state still FINISH) — printer may need restart
+2026-04-14 12:17:19,600 INFO [backend.app.api.routes.archives] Dispatched reprint archive 1 for printer 1 (dispatch_job_id=2, dispatch_position=1)
+2026-04-14 12:17:20,603 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:17:21,584 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=[PRINTER], mode=prot_p, socket_timeout=30.0s)...
+2026-04-14 12:17:22,471 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:17:22,471 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-14 12:17:22,472 INFO [backend.app.services.bambu_ftp] FTP uploading /app/data/archive/1/20260414_121443_Unbenannt.gcode/e66e2d8a7ca24a31a752cbf320c136a2.3mf (1609469 bytes) to /Unbenannt.3mf
+2026-04-14 12:17:22,936 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.5s (PASV + TLS handshake)
+2026-04-14 12:17:50,990 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /Unbenannt.3mf: 226
+2026-04-14 12:17:50,991 INFO [backend.app.services.bambu_ftp] FTP upload complete: /Unbenannt.3mf (1609469 bytes in 28.5s, 55 KB/s)
+2026-04-14 12:17:50,994 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-14 12:17:51,055 INFO [backend.app.main] Registered expected print: printer=1, file=Unbenannt.3mf, archive=1, ams_mapping=[1]
+2026-04-14 12:17:51,058 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=Unbenannt.3mf, caller=background_dispatch.py:534:_process_job
+2026-04-14 12:17:51,059 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://Unbenannt.3mf", "file": "Unbenannt.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "Unbenannt", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [1], "ams_mapping2": [{"ams_id": 0, "slot_id": 1}]}}
+2026-04-14 12:18:05,213 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:18:05,683 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:18:06,065 WARNING [backend.app.services.background_dispatch] Printer [PRINTER] (1) did not respond to print command within 15s (state still FINISH) — printer may need restart
+2026-04-14 12:18:06,967 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 12:18:42,834 INFO [backend.app.services.mqtt_relay] MQTT relay disabled
+2026-04-14 12:23:06,985 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 12:28:07,010 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 12:33:07,036 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 12:38:07,062 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 12:43:07,087 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 12:48:07,119 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 12:50:26,806 INFO [backend.app.api.routes.settings] Cleared 2 spool assignments on switch to Spoolman mode
+2026-04-14 12:50:51,423 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-04-14 12:50:51,851 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: JWs-I8xci0LKfSZDcnGeK
+2026-04-14 12:51:11,757 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:51:12,536 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=[PRINTER], mode=prot_p, socket_timeout=30.0s)...
+2026-04-14 12:51:13,446 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:51:13,446 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-14 12:51:13,446 INFO [backend.app.services.bambu_ftp] FTP uploading /app/data/archive/library/files/e66e2d8a7ca24a31a752cbf320c136a2.3mf (1609469 bytes) to /Unbenannt.3mf
+2026-04-14 12:51:13,895 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.4s (PASV + TLS handshake)
+2026-04-14 12:51:42,414 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /Unbenannt.3mf: 226
+2026-04-14 12:51:42,415 INFO [backend.app.services.bambu_ftp] FTP upload complete: /Unbenannt.3mf (1609469 bytes in 29.0s, 54 KB/s)
+2026-04-14 12:51:42,416 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-14 12:51:42,455 INFO [backend.app.main] Registered expected print: printer=1, file=Unbenannt.3mf, archive=2, ams_mapping=[1]
+2026-04-14 12:51:42,457 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=Unbenannt.3mf, caller=background_dispatch.py:537:_process_job
+2026-04-14 12:51:42,458 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://Unbenannt.3mf", "file": "Unbenannt.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "Unbenannt", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [1], "ams_mapping2": [{"ams_id": 0, "slot_id": 1}]}}
+2026-04-14 12:51:57,464 WARNING [backend.app.services.background_dispatch] Printer [PRINTER] (1) did not respond to print command within 15s (state still FINISH) — printer may need restart
+2026-04-14 12:52:40,070 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-14 12:52:40,071 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-14 12:52:40,071 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-14 12:52:40,179 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-04-14 12:52:40,179 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-14 12:52:40,180 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: Cup_dispenser_0.3l.3mf
+2026-04-14 12:52:40,180 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 10, 'insert_flag': False, 'power_on_flag': True}
+2026-04-14 12:52:40,180 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-14 12:52:40,181 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-14 12:52:40,182 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-04-14 12:52:40,182 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-14 12:52:40,182 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-14 12:52:40,183 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:52:40,183 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-14 12:52:40,184 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-14 12:52:40,184 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-14 12:52:40,185 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-14 12:52:40,185 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: [{'attr': 83887360, 'code': 65543, 'action': 0, 'timestamp': 1776163902}]
+2026-04-14 12:52:40,186 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] print_error: 83935249 (0x0500c011) -> short_code=0500_C011
+2026-04-14 12:52:40,186 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-14 12:52:40,187 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -52dBm
+2026-04-14 12:52:40,187 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-04-14 12:52:40,188 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: Cup_dispenser_0.3l.3mf
+2026-04-14 12:52:44,232 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:52:46,277 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:52:49,365 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-14 12:52:49,365 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-14 12:52:49,456 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-14 12:52:49,456 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-14 12:52:55,114 DEBUG [backend.app.services.archive] Auto-detected 1 parts from 3MF printable objects
+2026-04-14 12:52:55,171 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=[PRINTER], prot_c=False)
+2026-04-14 12:52:55,986 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-14 12:52:56,022 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-14 12:52:56,059 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-14 12:52:56,059 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:52:56,573 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=[PRINTER], mode=prot_p, socket_timeout=30.0s)...
+2026-04-14 12:52:56,574 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=[PRINTER], prot_c=False)
+2026-04-14 12:52:57,371 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-14 12:52:57,416 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-14 12:52:57,445 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-14 12:52:57,446 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-14 12:52:57,446 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-14 12:52:57,446 INFO [backend.app.services.bambu_ftp] FTP uploading /app/data/archive/library/files/e66e2d8a7ca24a31a752cbf320c136a2.3mf (1609469 bytes) to /Unbenannt.3mf
+2026-04-14 12:52:57,446 DEBUG [backend.app.services.bambu_ftp] FTP STOR command starting for /Unbenannt.3mf
+2026-04-14 12:52:57,872 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.4s (PASV + TLS handshake)
+2026-04-14 12:52:57,881 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 65536/1609469 bytes
+2026-04-14 12:52:57,896 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 131072/1609469 bytes
+2026-04-14 12:52:57,968 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 196608/1609469 bytes
+2026-04-14 12:52:59,830 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 262144/1609469 bytes
+2026-04-14 12:53:01,274 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 327680/1609469 bytes
+2026-04-14 12:53:01,279 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 393216/1609469 bytes
+2026-04-14 12:53:02,684 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 458752/1609469 bytes
+2026-04-14 12:53:04,578 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 524288/1609469 bytes
+2026-04-14 12:53:05,889 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 589824/1609469 bytes
+2026-04-14 12:53:07,139 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-14 12:53:07,295 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 655360/1609469 bytes
+2026-04-14 12:53:07,418 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 720896/1609469 bytes
+2026-04-14 12:53:09,362 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 786432/1609469 bytes
+2026-04-14 12:53:10,624 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 851968/1609469 bytes
+2026-04-14 12:53:10,741 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 917504/1609469 bytes
+2026-04-14 12:53:13,664 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 983040/1609469 bytes
+2026-04-14 12:53:15,073 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1048576/1609469 bytes
+2026-04-14 12:53:15,441 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1114112/1609469 bytes
+2026-04-14 12:53:16,562 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1179648/1609469 bytes
+2026-04-14 12:53:18,420 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1245184/1609469 bytes
+2026-04-14 12:53:19,800 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1310720/1609469 bytes
+2026-04-14 12:53:21,137 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1376256/1609469 bytes
+2026-04-14 12:53:21,276 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1441792/1609469 bytes
+2026-04-14 12:53:23,157 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1507328/1609469 bytes
+2026-04-14 12:53:24,523 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1572864/1609469 bytes
+2026-04-14 12:53:24,527 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 1609469/1609469 bytes
+2026-04-14 12:53:24,529 DEBUG [backend.app.services.bambu_ftp] FTP upload: final chunk reached
+2026-04-14 12:53:27,587 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /Unbenannt.3mf: 226
+2026-04-14 12:53:27,588 INFO [backend.app.services.bambu_ftp] FTP upload complete: /Unbenannt.3mf (1609469 bytes in 30.1s, 52 KB/s)
+2026-04-14 12:53:27,588 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-14 12:53:27,652 INFO [backend.app.main] Registered expected print: printer=1, file=Unbenannt.3mf, archive=3, ams_mapping=[1]
+2026-04-14 12:53:27,653 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=Unbenannt.3mf, caller=background_dispatch.py:537:_process_job
+2026-04-14 12:53:27,654 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://Unbenannt.3mf", "file": "Unbenannt.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "Unbenannt", "profile_id": "0", "project_id": "0", "subtask_id": "0", "task_id": "0", "ams_mapping": [1], "ams_mapping2": [{"ams_id": 0, "slot_id": 1}]}}
+2026-04-14 12:53:27,687 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-14 12:53:27,688 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-14 12:53:28,175 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:53:30,209 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:53:30,210 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-14 12:53:32,237 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:53:32,238 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-14 12:53:36,284 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:53:36,285 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-14 12:53:38,305 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:53:38,306 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -52dBm
+2026-04-14 12:53:40,341 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:53:40,342 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-14 12:53:42,366 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:53:42,659 WARNING [backend.app.services.background_dispatch] Printer [PRINTER] (1) did not respond to print command within 15s (state still FINISH) — printer may need restart
+2026-04-14 12:53:46,406 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-14 12:53:46,408 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -52dBm

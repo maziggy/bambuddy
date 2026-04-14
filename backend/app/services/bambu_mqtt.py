@@ -360,11 +360,6 @@ class BambuMQTTClient:
         self._dev_mode_probe_failures: int = 0  # consecutive unanswered probes
         self._connect_time: float = 0.0  # monotonic timestamp of last _on_connect
 
-        # Once we've seen home_flag from this printer, it's the canonical SD-card
-        # source. The legacy top-level `sdcard` field arrives in partial pushes
-        # with inconsistent typing and caused badge flap (#936 follow-up).
-        self._home_flag_seen: bool = False
-
         # Set when check_staleness() force-closes the socket to trigger reconnect.
         # Prevents _on_disconnect from redundantly broadcasting state (already done).
         self._stale_reconnecting: bool = False
@@ -461,7 +456,6 @@ class BambuMQTTClient:
             self._dev_mode_probe_seq = None
             self._dev_mode_probe_time = 0.0
             self._dev_mode_probe_failures = 0
-            self._home_flag_seen = False
             self._connect_time = time.monotonic()
             client.subscribe(self.topic_subscribe)
             # Subscribe to request topic for ams_mapping capture (if supported by broker)
@@ -2269,33 +2263,27 @@ class BambuMQTTClient:
             if home_flag < 0:
                 home_flag = home_flag & 0xFFFFFFFF
 
-        # Parse SD card status. Canonical source on real firmware is home_flag bits 8-9;
-        # the top-level `sdcard` field is firmware-dependent (bool on some models, string
-        # enum like "HAS_SDCARD_NORMAL" on others), so strict identity checks caused the
-        # badge to flap on H2D. Prefer home_flag when available, fall back to a truthy
-        # check on the `sdcard` field for firmwares that only send that.
-        if home_flag is not None:
-            sd_bits_set = ((home_flag >> 8) & 0x3) != 0
-            # H2D sometimes sends heartbeat-style home_flag pushes where bits 8-9
-            # are clear even when an SD card is inserted. Only downgrade true->false
-            # after several consecutive clear reads; upgrade false->true immediately.
-            if sd_bits_set:
-                self.state.sdcard = True
-                self._sdcard_clear_streak = 0
-            else:
-                self._sdcard_clear_streak = getattr(self, "_sdcard_clear_streak", 0) + 1
-                if self._sdcard_clear_streak >= 3 or not self.state.sdcard:
-                    self.state.sdcard = False
-            self._home_flag_seen = True
-        elif "sdcard" in data and not self._home_flag_seen:
-            # Only trust the legacy top-level field on firmwares that never send
-            # home_flag. Once we've seen home_flag on this session, partial
-            # pushes carrying only `sdcard` must not flip the badge.
-            raw_sdcard = data["sdcard"]
-            if isinstance(raw_sdcard, str):
-                self.state.sdcard = "HAS_SDCARD" in raw_sdcard.upper() or raw_sdcard.lower() in ("true", "normal", "1")
-            else:
-                self.state.sdcard = bool(raw_sdcard)
+        # A "full" push_status report carries many state fields; heartbeat pushes
+        # are sparse (often just home_flag + a handful of counters). We use this
+        # to decide whether home_flag's SD bits can be trusted as ground truth.
+        _full_push_markers = ("gcode_state", "mc_percent", "nozzle_temper", "print_type", "stg_cur", "ams")
+        _is_full_push = sum(1 for k in _full_push_markers if k in data) >= 2
+
+        # Parse SD card status. H2D (and likely others) emit heartbeat-style pushes
+        # that carry `home_flag` with bits 8-9 cleared even when a card is inserted,
+        # so `home_flag` alone is not reliable. Prefer the legacy top-level `sdcard`
+        # field when present (handling bool/int/string variants), and only consult
+        # `home_flag` bits 8-9 when the push looks like a full status report and
+        # `sdcard` is absent.
+        def _truthy_sdcard(v: object) -> bool:
+            if isinstance(v, str):
+                return "HAS_SDCARD" in v.upper() or v.lower() in ("true", "normal", "1")
+            return bool(v)
+
+        if "sdcard" in data:
+            self.state.sdcard = _truthy_sdcard(data["sdcard"])
+        elif home_flag is not None and _is_full_push:
+            self.state.sdcard = ((home_flag >> 8) & 0x3) != 0
 
         if home_flag is not None:
             store_to_sdcard = bool((home_flag >> 11) & 1)

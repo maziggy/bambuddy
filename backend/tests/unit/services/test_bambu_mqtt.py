@@ -3577,8 +3577,13 @@ class TestDoorOpenParsing:
 
 
 class TestSdCardParsing:
-    """SD-card state is derived from home_flag bits 8-9 when present, else from
-    the top-level `sdcard` field (which firmware may send as bool, int, or string)."""
+    """SD-card state is derived from the top-level `sdcard` field when present
+    (firmware may send bool/int/string). `home_flag` bits 8-9 are only consulted
+    on full push_status reports when `sdcard` is absent, because H2D heartbeat
+    pushes carry `home_flag` with those bits cleared regardless of card state."""
+
+    # Markers used by bambu_mqtt to recognize a full push_status payload.
+    FULL_PUSH = {"gcode_state": "IDLE", "mc_percent": 0}
 
     def _make_client(self, model: str = "H2D"):
         from backend.app.services.bambu_mqtt import BambuMQTTClient
@@ -3590,35 +3595,40 @@ class TestSdCardParsing:
             model=model,
         )
 
-    def test_home_flag_bit8_sets_sdcard_true(self):
+    def test_home_flag_bit8_sets_sdcard_true_on_full_push(self):
         client = self._make_client()
-        client._update_state({"home_flag": 0x00000100})  # bit 8
+        client._update_state({"home_flag": 0x00000100, **self.FULL_PUSH})
         assert client.state.sdcard is True
 
-    def test_home_flag_bit9_sets_sdcard_true(self):
-        # Abnormal-but-present still counts as inserted for the badge
+    def test_home_flag_bit9_sets_sdcard_true_on_full_push(self):
         client = self._make_client()
-        client._update_state({"home_flag": 0x00000200})  # bit 9
+        client._update_state({"home_flag": 0x00000200, **self.FULL_PUSH})
         assert client.state.sdcard is True
 
-    def test_home_flag_no_sdcard_bits(self):
+    def test_heartbeat_home_flag_does_not_flip_badge(self):
+        # The actual bug: repeated heartbeat pushes (home_flag only, bits clear)
+        # must NOT downgrade an inserted card. Only full pushes or an explicit
+        # `sdcard` field can change state.
         client = self._make_client()
         client.state.sdcard = True
-        # Downgrade requires 3 consecutive clear reads (H2D heartbeat workaround).
-        client._update_state({"home_flag": 0x00000000})
+        for _ in range(10):
+            client._update_state({"home_flag": 0x00000000})
         assert client.state.sdcard is True
-        client._update_state({"home_flag": 0x00000000})
+
+    def test_sdcard_field_wins_over_home_flag(self):
+        # The legacy top-level `sdcard` field is reliable; home_flag bits 8-9
+        # are cleared on heartbeats even when a card is inserted.
+        client = self._make_client()
+        client._update_state({"home_flag": 0x00000000, "sdcard": "HAS_SDCARD_NORMAL"})
         assert client.state.sdcard is True
-        client._update_state({"home_flag": 0x00000000})
+        client._update_state({"home_flag": 0x00000100, "sdcard": False})
         assert client.state.sdcard is False
 
-    def test_home_flag_wins_over_sdcard_field(self):
-        # Real firmware can send `sdcard` as a non-bool; home_flag must still win.
+    def test_full_push_downgrade_when_no_sdcard_field(self):
+        # On a genuine full push with bits clear and no `sdcard` field, we do downgrade.
         client = self._make_client()
-        client._update_state({"home_flag": 0x00000100, "sdcard": "HAS_SDCARD_NORMAL"})
-        assert client.state.sdcard is True
-        for _ in range(3):
-            client._update_state({"home_flag": 0x00000000, "sdcard": 1})
+        client.state.sdcard = True
+        client._update_state({"home_flag": 0x00000000, **self.FULL_PUSH})
         assert client.state.sdcard is False
 
     def test_sdcard_string_fallback_when_no_home_flag(self):

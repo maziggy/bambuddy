@@ -4923,10 +4923,10 @@ function AddPrinterModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
       onClick={onClose}
     >
-      <Card className="w-full max-w-md" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent>
           <h2 className="text-xl font-semibold mb-4">{t('printers.addPrinter')}</h2>
 
@@ -5421,10 +5421,10 @@ function EditPrinterModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
       onClick={onClose}
     >
-      <Card className="w-full max-w-md" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent>
           <h2 className="text-xl font-semibold mb-4">{t('printers.editPrinter')}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">

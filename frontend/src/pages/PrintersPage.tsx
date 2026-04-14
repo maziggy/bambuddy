@@ -1279,7 +1279,7 @@ function PrinterCard({
   onOpenEmbeddedCamera,
   checkPrinterFirmware = true,
   dryingPresets = DRYING_PRESETS,
-  requirePlateClear = true,
+  requirePlateClear = false,
   selectionMode = false,
   isSelected = false,
   onToggleSelect,
@@ -6360,7 +6360,7 @@ export function PrintersPage() {
                     onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
                     checkPrinterFirmware={settings?.check_printer_firmware !== false}
                     dryingPresets={effectiveDryingPresets}
-                    requirePlateClear={settings?.require_plate_clear !== false}
+                    requirePlateClear={settings?.require_plate_clear === true}
                     selectionMode={selectionMode}
                     isSelected={selectedPrinterIds.has(printer.id)}
                     onToggleSelect={toggleSelect}
@@ -6399,7 +6399,7 @@ export function PrintersPage() {
               onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
               checkPrinterFirmware={settings?.check_printer_firmware !== false}
               dryingPresets={effectiveDryingPresets}
-              requirePlateClear={settings?.require_plate_clear !== false}
+              requirePlateClear={settings?.require_plate_clear === true}
               selectionMode={selectionMode}
               isSelected={selectedPrinterIds.has(printer.id)}
               onToggleSelect={toggleSelect}

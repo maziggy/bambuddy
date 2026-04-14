@@ -224,7 +224,7 @@ class AppSettings(BaseModel):
 
     # Plate-clear confirmation for queue scheduling
     require_plate_clear: bool = Field(
-        default=True,
+        default=False,
         description="Require per-printer plate-clear confirmation before starting queued prints on finished printers",
     )
     queue_shortest_first: bool = Field(

@@ -20,7 +20,7 @@ interface PrinterQueueWidgetProps {
   loadedFilaments?: Set<string>;  // "TYPE:rrggbb" pairs for filament override color matching
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, awaitingPlateClear, requirePlateClear = true, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, awaitingPlateClear, requirePlateClear = false, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();

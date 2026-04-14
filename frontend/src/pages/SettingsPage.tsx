@@ -889,7 +889,7 @@ export function SettingsPage() {
       (settings.default_timelapse ?? false) !== (localSettings.default_timelapse ?? false) ||
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
-      (settings.require_plate_clear ?? true) !== (localSettings.require_plate_clear ?? true);
+      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false);
 
     if (!hasChanges) {
       return;
@@ -3730,7 +3730,7 @@ export function SettingsPage() {
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={localSettings.require_plate_clear ?? true}
+                    checked={localSettings.require_plate_clear ?? false}
                     onChange={(e) => updateSetting('require_plate_clear', e.target.checked)}
                     className="sr-only peer"
                   />

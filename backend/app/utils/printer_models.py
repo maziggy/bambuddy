@@ -19,6 +19,7 @@ PRINTER_MODEL_MAP = {
     "Bambu Lab H2D Pro": "H2D Pro",
     "Bambu Lab H2C": "H2C",
     "Bambu Lab H2S": "H2S",
+    "Bambu Lab X2D": "X2D",
 }
 
 # Map from printer_model_id (internal codes in slice_info.config) to short names
@@ -28,6 +29,8 @@ PRINTER_MODEL_ID_MAP = {
     "C11": "X1C",
     "C12": "X1",
     "C13": "X1E",
+    # X2 series
+    "N6": "X2D",
     # P1 series
     "P1P": "P1P",
     "P1S": "P1S",
@@ -60,12 +63,14 @@ CARBON_ROD_MODELS = frozenset(
         "X1",
         "X1C",
         "X1E",
+        "X2D",
         "P1P",
         "P1S",
         # Internal codes
         "C11",  # X1C
         "C12",  # X1
         "C13",  # X1E
+        "N6",  # X2D
     ]
 )
 
@@ -110,6 +115,7 @@ ETHERNET_MODELS = frozenset(
         # Display names (uppercase, no spaces)
         "X1C",
         "X1E",
+        "X2D",
         "P1S",
         "P2S",
         "H2D",
@@ -119,6 +125,7 @@ ETHERNET_MODELS = frozenset(
         # Internal codes
         "C11",  # X1C
         "C13",  # X1E
+        "N6",  # X2D
         "P1S",  # P1S
         "O1D",  # H2D
         "O1E",  # H2D Pro

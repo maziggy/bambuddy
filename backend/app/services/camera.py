@@ -65,13 +65,14 @@ def get_ffmpeg_path() -> str | None:
 def supports_rtsp(model: str | None) -> bool:
     """Check if printer model supports RTSP camera streaming.
 
-    RTSP supported: X1, X1C, X1E, H2C, H2D, H2DPRO, H2S, P2S
+    RTSP supported: X1, X1C, X1E, X2D, H2C, H2D, H2DPRO, H2S, P2S
     Chamber image only: A1, A1MINI, P1P, P1S
 
     Note: Model can be either display name (e.g., "P2S") or internal code (e.g., "N7").
     Internal codes from MQTT/SSDP:
       - BL-P001: X1/X1C
       - C13: X1E
+      - N6: X2D
       - O1D: H2D
       - O1C, O1C2: H2C
       - O1S: H2S
@@ -80,11 +81,11 @@ def supports_rtsp(model: str | None) -> bool:
     """
     if model:
         model_upper = model.upper()
-        # Display names: X1, X1C, X1E, H2C, H2D, H2DPRO, H2S, P2S
-        if model_upper.startswith(("X1", "H2", "P2")):
+        # Display names: X1, X1C, X1E, X2D, H2C, H2D, H2DPRO, H2S, P2S
+        if model_upper.startswith(("X1", "X2", "H2", "P2")):
             return True
         # Internal codes for RTSP models
-        if model_upper in ("BL-P001", "C13", "O1D", "O1C", "O1C2", "O1S", "O1E", "O2D", "N7"):
+        if model_upper in ("BL-P001", "C13", "O1D", "O1C", "O1C2", "O1S", "O1E", "O2D", "N7", "N6"):
             return True
     # A1/P1 and unknown models use chamber image protocol
     return False

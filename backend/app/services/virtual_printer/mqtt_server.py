@@ -21,6 +21,7 @@ MODEL_PRODUCT_NAMES = {
     "BL-P001": "X1 Carbon",
     "BL-P002": "X1",
     "C13": "X1E",
+    "N6": "X2D",
     "C11": "P1P",
     "C12": "P1S",
     "N7": "P2S",

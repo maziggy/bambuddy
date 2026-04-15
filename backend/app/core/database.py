@@ -1250,6 +1250,7 @@ async def run_migrations(conn):
         "X1C": "BL-P001",
         "X1": "BL-P002",
         "X1E": "C13",
+        "X2D": "N6",
         "P1P": "C11",
         "P1S": "C12",
         "P2S": "N7",

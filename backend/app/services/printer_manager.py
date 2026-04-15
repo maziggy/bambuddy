@@ -21,6 +21,7 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         "X1",
         "X1C",
         "X1E",  # X1 series
+        "X2D",  # X2 series
         "P2S",  # P2 series
         "H2C",
         "H2D",
@@ -29,6 +30,7 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         # Internal codes (from MQTT/SSDP)
         "BL-P001",  # X1/X1C
         "C13",  # X1E
+        "N6",  # X2D
         "O1D",  # H2D
         "O1C",  # H2C
         "O1C2",  # H2C (dual nozzle variant)

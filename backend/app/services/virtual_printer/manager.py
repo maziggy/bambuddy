@@ -31,6 +31,8 @@ VIRTUAL_PRINTER_MODELS = {
     "BL-P001": "X1C",  # X1 Carbon
     "BL-P002": "X1",  # X1
     "C13": "X1E",  # X1E
+    # X2 Series
+    "N6": "X2D",  # X2D
     # P Series
     "C11": "P1P",  # P1P
     "C12": "P1S",  # P1S
@@ -59,6 +61,8 @@ MODEL_SERIAL_PREFIXES = {
     "BL-P001": "00M00A",  # X1C
     "BL-P002": "00M00A",  # X1
     "C13": "03W00A",  # X1E
+    # X2 Series
+    "N6": "04X00A",  # X2D
     # P Series
     "C11": "01S00A",  # P1P
     "C12": "01P00A",  # P1S

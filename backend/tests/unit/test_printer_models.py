@@ -2,7 +2,13 @@
 
 import pytest
 
-from backend.app.utils.printer_models import get_rod_type
+from backend.app.services.camera import get_camera_port, supports_rtsp
+from backend.app.utils.printer_models import (
+    get_rod_type,
+    has_ethernet,
+    normalize_printer_model,
+    normalize_printer_model_id,
+)
 
 
 class TestGetRodType:
@@ -46,3 +52,36 @@ class TestGetRodType:
     def test_strips_whitespace_and_dashes(self):
         assert get_rod_type(" P2S ") == "steel_rod"
         assert get_rod_type("A1-Mini") == "linear_rail"
+
+
+class TestX2DModel:
+    """Tests for X2D printer model support (issue #988)."""
+
+    def test_x2d_carbon_rod_display_name(self):
+        assert get_rod_type("X2D") == "carbon"
+
+    def test_x2d_carbon_rod_internal_code(self):
+        """N6 is the internal SSDP/MQTT code for the X2D."""
+        assert get_rod_type("N6") == "carbon"
+
+    def test_x2d_model_id_map(self):
+        assert normalize_printer_model_id("N6") == "X2D"
+
+    def test_x2d_model_map(self):
+        assert normalize_printer_model("Bambu Lab X2D") == "X2D"
+
+    def test_x2d_has_ethernet_display_name(self):
+        assert has_ethernet("X2D") is True
+
+    def test_x2d_has_ethernet_internal_code(self):
+        assert has_ethernet("N6") is True
+
+    def test_x2d_supports_rtsp_display_name(self):
+        assert supports_rtsp("X2D") is True
+
+    def test_x2d_supports_rtsp_internal_code(self):
+        assert supports_rtsp("N6") is True
+
+    def test_x2d_camera_port_is_rtsp(self):
+        assert get_camera_port("N6") == 322
+        assert get_camera_port("X2D") == 322

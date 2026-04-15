@@ -3014,3 +3014,68 @@ class TestOIDCExpiredTokenRejection:
         )
         remaining = result.scalar_one_or_none()
         assert remaining is not None, "Expired exchange token must not be consumed by a rejected request"
+
+
+# ===========================================================================
+# Trailing slash in issuer_url — discovery URL must not contain double slash
+# ===========================================================================
+
+
+class TestOIDCIssuerUrlTrailingSlash:
+    """Providers like Authentik use issuer URLs with a trailing slash.
+
+    BamBuddy must strip the slash before appending /.well-known/openid-configuration
+    to avoid a double-slash that results in a 404.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trailing_slash_issuer_url_fetches_correct_discovery_url(
+        self, async_client: AsyncClient
+    ):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        issuer_with_slash = "https://authentik.example.com/application/o/bambuddy/"
+
+        admin_token = await _setup_and_login(async_client, "oidcslashadm", "oidcslashadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "Authentik-Slash",
+                "issuer_url": issuer_with_slash,
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        fake_discovery = {
+            "issuer": issuer_with_slash,
+            "authorization_endpoint": "https://authentik.example.com/application/o/bambuddy/authorize",
+        }
+        disc_resp = AsyncMock()
+        disc_resp.raise_for_status = MagicMock()
+        disc_resp.json = MagicMock(return_value=fake_discovery)
+
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=disc_resp)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 200
+        called_url = mock_http.get.call_args_list[0][0][0]
+        assert "//" not in called_url.replace("https://", ""), (
+            f"Discovery URL must not contain double slash: {called_url}"
+        )
+        assert called_url.endswith("/.well-known/openid-configuration"), (
+            f"Expected discovery URL to end with /.well-known/openid-configuration, got: {called_url}"
+        )

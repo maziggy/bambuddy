@@ -1118,7 +1118,7 @@ async def oidc_authorize(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found or not enabled")
 
     # Fetch discovery document
-    discovery_url = f"{provider.issuer_url}/.well-known/openid-configuration"
+    discovery_url = f"{provider.issuer_url.rstrip('/')}/.well-known/openid-configuration"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(discovery_url)
@@ -1240,7 +1240,7 @@ async def oidc_callback(
         redirect_uri = f"{external_url}/api/v1/auth/oidc/callback"
 
         # ── Step 1: Fetch discovery document ────────────────────────────────
-        discovery_url = f"{provider.issuer_url}/.well-known/openid-configuration"
+        discovery_url = f"{provider.issuer_url.rstrip('/')}/.well-known/openid-configuration"
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 disc_resp = await client.get(discovery_url)

@@ -703,6 +703,112 @@ class TestAsyncWrappers:
         assert result is True
 
     @pytest.mark.asyncio
+    async def test_download_file_async_timeout_salvages_completed_zombie(self, tmp_path, monkeypatch):
+        """Executor thread that completes after wait_for timeout is salvaged.
+
+        asyncio.wait_for cannot cancel run_in_executor threads, so the FTP
+        download may still complete after we give up waiting. If the thread
+        genuinely finished (signalled via completion["success"] and the file
+        is on disk), download_file_async should return True rather than False.
+
+        Regression for #972: A1 user with 14 MB 3MF hit the hardcoded 60s
+        timeout, but the download thread finished ~45s later. The successful
+        file was written to disk but the async wrapper returned False, so the
+        archive was created as a fallback with no 3MF data.
+        """
+        from backend.app.services import bambu_ftp
+
+        # Clear mode cache so prot_p path is exercised.
+        bambu_ftp.BambuFTPClient._mode_cache.pop("127.0.0.1", None)
+
+        local = tmp_path / "zombie.bin"
+        expected_content = b"late arrival but complete"
+
+        class FakeClient:
+            """Connects instantly, download_to_file sleeps past wait_for's
+            timeout then writes the file and returns True."""
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                return True
+
+            def download_to_file(self, remote_path, local_path):
+                time.sleep(0.4)  # longer than wait_for timeout=0.1
+                local_path.write_bytes(expected_content)
+                return True
+
+            def disconnect(self):
+                pass
+
+        monkeypatch.setattr(bambu_ftp, "BambuFTPClient", FakeClient)
+        monkeypatch.setattr(FakeClient, "_mode_cache", {}, raising=False)
+        monkeypatch.setattr(FakeClient, "A1_MODELS", {"A1"}, raising=False)
+
+        def _noop_cache(ip, mode):
+            pass
+
+        monkeypatch.setattr(FakeClient, "cache_mode", staticmethod(_noop_cache), raising=False)
+
+        result = await download_file_async(
+            "127.0.0.1",
+            "12345678",
+            "/cache/zombie.bin",
+            local,
+            timeout=0.1,
+            printer_model="X1C",
+        )
+        assert result is True
+        assert local.read_bytes() == expected_content
+
+    @pytest.mark.asyncio
+    async def test_download_file_async_timeout_no_salvage_when_incomplete(self, tmp_path, monkeypatch):
+        """Timeout returns False when thread has not signalled success.
+
+        A partial file on disk (mid-retrbinary) must NOT be mistaken for a
+        completed download — only the thread's explicit success flag permits
+        salvage.
+        """
+        from backend.app.services import bambu_ftp
+
+        bambu_ftp.BambuFTPClient._mode_cache.pop("127.0.0.1", None)
+
+        local = tmp_path / "partial.bin"
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                return True
+
+            def download_to_file(self, remote_path, local_path):
+                # Simulate an in-progress partial write that never completes
+                # within the salvage grace period.
+                local_path.write_bytes(b"partial...")
+                time.sleep(2.0)
+                return True  # would complete eventually, but too late
+
+            def disconnect(self):
+                pass
+
+        monkeypatch.setattr(bambu_ftp, "BambuFTPClient", FakeClient)
+        monkeypatch.setattr(FakeClient, "_mode_cache", {}, raising=False)
+        monkeypatch.setattr(FakeClient, "A1_MODELS", set(), raising=False)
+        monkeypatch.setattr(FakeClient, "cache_mode", staticmethod(lambda ip, mode: None), raising=False)
+
+        result = await download_file_async(
+            "127.0.0.1",
+            "12345678",
+            "/cache/partial.bin",
+            local,
+            timeout=0.1,
+            printer_model="X1C",
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
     async def test_download_file_try_paths_first_succeeds(self, patch_ftp_port, tmp_path):
         """download_file_try_paths_async succeeds on first path."""
         server = patch_ftp_port

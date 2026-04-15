@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import posixpath
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -1741,6 +1742,7 @@ async def on_print_start(printer_id: int, data: dict):
                             printer.access_code,
                             remote_path,
                             temp_path,
+                            timeout=ftp_timeout,
                             socket_timeout=ftp_timeout,
                             printer_model=printer.model,
                             max_retries=ftp_retry_count,
@@ -1753,6 +1755,7 @@ async def on_print_start(printer_id: int, data: dict):
                             printer.access_code,
                             remote_path,
                             temp_path,
+                            timeout=ftp_timeout,
                             socket_timeout=ftp_timeout,
                             printer_model=printer.model,
                         )
@@ -1795,25 +1798,28 @@ async def on_print_start(printer_id: int, data: dict):
                             logger.info("Found matching file in %s: %s", search_dir, fname)
                             temp_path = app_settings.archive_dir / "temp" / fname
                             temp_path.parent.mkdir(parents=True, exist_ok=True)
+                            remote_full_path = posixpath.join(search_dir, fname)
                             if ftp_retry_enabled:
                                 downloaded = await with_ftp_retry(
                                     download_file_async,
                                     printer.ip_address,
                                     printer.access_code,
-                                    f"{search_dir}/{fname}",
+                                    remote_full_path,
                                     temp_path,
+                                    timeout=ftp_timeout,
                                     socket_timeout=ftp_timeout,
                                     printer_model=printer.model,
                                     max_retries=ftp_retry_count,
                                     retry_delay=ftp_retry_delay,
-                                    operation_name=f"Download 3MF from {search_dir}/{fname}",
+                                    operation_name=f"Download 3MF from {remote_full_path}",
                                 )
                             else:
                                 downloaded = await download_file_async(
                                     printer.ip_address,
                                     printer.access_code,
-                                    f"{search_dir}/{fname}",
+                                    remote_full_path,
                                     temp_path,
+                                    timeout=ftp_timeout,
                                     socket_timeout=ftp_timeout,
                                     printer_model=printer.model,
                                 )

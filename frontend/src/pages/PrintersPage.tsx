@@ -4179,7 +4179,9 @@ function PrinterCard({
                       `height=${state.height}`,
                       state.left !== undefined ? `left=${state.left}` : '',
                       state.top !== undefined ? `top=${state.top}` : '',
-                      'menubar=no,toolbar=no,location=no,status=no,noopener',
+                      // No `noopener`: same-origin popup needs opener so the browser
+                      // copies sessionStorage (auth token) into the new window.
+                      'menubar=no,toolbar=no,location=no,status=no',
                     ].filter(Boolean).join(',');
                     window.open(`/camera/${printer.id}`, `camera-${printer.id}`, features);
                   }

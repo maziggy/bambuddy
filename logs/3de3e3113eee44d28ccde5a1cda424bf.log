@@ -1,0 +1,200 @@
+2026-04-15 17:05:05,853 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFS02', 'GFA00']
+2026-04-15 17:05:05,858 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-15 17:05:07,189 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:05:10,468 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:05:10,468 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:05:10,471 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:05:11,015 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFS02', 'GFA00']
+2026-04-15 17:05:11,078 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-15 17:05:11,231 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:05:15,663 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:05:15,875 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:05:15,875 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:05:24,512 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:05:24,513 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:05:24,514 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:05:24,595 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:05:24,595 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:05:24,598 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:05:25,590 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:05:28,982 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:05:28,983 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:05:28,985 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:05:45,790 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:05:45,883 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:05:45,884 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:05:50,282 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:05:50,283 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:05:50,285 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:05:51,640 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:05:55,232 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:05:55,232 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:05:55,235 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:06:00,754 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:06:05,041 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:06:05,042 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:06:05,044 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:06:05,286 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:06:15,893 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:06:15,894 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:06:45,902 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:06:45,902 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:07:03,006 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:07:03,007 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:07:03,017 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:07:15,911 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:07:15,911 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:07:42,575 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:07:45,441 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:07:45,444 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:07:45,447 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:07:45,919 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:07:45,920 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:07:46,470 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:07:47,456 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFS02', 'GFA00']
+2026-04-15 17:07:47,637 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:07:47,638 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:07:47,647 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:07:47,682 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:07:47,825 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-15 17:07:47,835 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFS02', 'GFA00']
+2026-04-15 17:07:50,119 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:07:50,119 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:07:50,121 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:07:51,538 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:07:51,539 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:07:51,541 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:07:52,456 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:07:52,750 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:07:58,746 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:07:58,746 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:07:58,748 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:08:00,665 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:08:00,666 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:08:00,668 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:08:07,487 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:08:07,562 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:08:14,873 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:08:14,873 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:08:14,875 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:08:15,719 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFS02', 'GFA00']
+2026-04-15 17:08:15,804 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-15 17:08:15,929 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:08:15,929 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:08:45,938 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:08:45,939 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:09:15,947 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:09:15,948 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:09:27,071 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:09:27,373 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:09:27,374 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:09:27,376 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:09:35,738 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:09:38,202 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-15 17:09:40,180 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:09:40,180 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:09:40,182 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:09:45,956 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:09:45,957 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:10:06,691 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:10:10,191 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:10:10,192 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:10:10,194 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:10:12,729 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:10:15,966 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:10:15,967 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:10:17,525 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:10:17,526 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:10:17,528 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:10:36,518 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:10:36,519 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:10:36,521 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:10:38,750 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:10:45,975 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:10:45,975 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:10:47,532 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:10:47,533 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:10:47,535 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:10:47,760 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:10:49,122 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:10:49,122 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:10:49,124 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:10:57,679 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:11:07,520 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:11:07,521 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:11:07,523 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:11:08,807 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:11:13,455 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:11:13,455 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:11:13,457 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:11:13,837 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:11:15,984 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:11:15,985 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:11:22,719 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:11:22,719 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:11:22,721 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:11:29,216 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:11:33,915 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:11:37,761 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:11:37,762 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:11:37,764 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:11:39,920 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 17:11:43,612 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:11:43,612 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:11:43,614 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:11:45,993 INFO [backend.app.services.print_scheduler] Queue check: found 31 pending items: [(1, None, None, None), (2, None, None, None), (3, None, None, None), (4, None, None, None), (5, None, None, None), (6, None, None, None), (7, None, None, None), (8, None, None, None), (9, None, None, None), (10, None, None, None), (11, None, None, None), (12, None, None, None), (13, None, None, None), (14, None, None, None), (16, None, None, None), (17, None, None, None), (18, None, None, None), (19, None, None, None), (20, None, None, None), (21, None, None, None), (22, None, None, None), (23, None, None, None), (25, None, None, None), (24, None, None, None), (26, None, None, None), (27, None, None, None), (28, None, None, None), (29, None, None, None), (30, None, None, None), (31, None, None, None), (32, None, None, None)]
+2026-04-15 17:11:45,993 INFO [backend.app.services.print_scheduler] Queue skip summary: {'custom_request': 31}
+2026-04-15 17:12:00,340 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-15 17:12:00,340 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-15 17:12:00,340 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-15 17:12:00,341 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-15 17:12:00,363 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-04-15 17:12:00,363 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-15 17:12:00,363 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-04-15 17:12:00,363 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 3, 'insert_flag': True, 'power_on_flag': False}
+2026-04-15 17:12:00,364 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-15 17:12:00,364 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-04-15 17:12:00,364 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-15 17:12:00,364 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-15 17:12:00,364 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-15 17:12:00,365 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-15 17:12:00,365 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-15 17:12:00,365 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-15 17:12:00,365 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-15 17:12:00,365 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-15 17:12:00,365 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -37dBm
+2026-04-15 17:12:00,366 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-04-15 17:12:00,366 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-04-15 17:12:00,974 DEBUG [httpcore.connection] connect_tcp.started host='api.github.com' port=443 local_address=None timeout=10.0 socket_options=None
+2026-04-15 17:12:01,113 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0xe7ffbde06510>
+2026-04-15 17:12:01,113 DEBUG [httpcore.connection] start_tls.started ssl_context=<ssl.SSLContext object at 0xe7ffbc6a1ac0> server_hostname='api.github.com' timeout=10.0
+2026-04-15 17:12:01,206 DEBUG [httpcore.connection] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0xe7ffbc2b7f90>
+2026-04-15 17:12:01,207 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-15 17:12:01,208 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-15 17:12:01,209 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-15 17:12:01,209 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-15 17:12:01,209 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-15 17:12:01,498 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-15 17:12:01,498 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-15 17:12:01,529 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-15 17:12:01,529 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-15 17:12:01,729 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 15 Apr 2026 09:12:01 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Cache-Control', b'public, max-age=60, s-maxage=60'), (b'Vary', b'Accept,Accept-Encoding, Accept, X-Requested-With'), (b'ETag', b'W/"14d8d59795cded6db0cfdae7645db977a7e0906f9411e2e20a4a3c31a2efae72"'), (b'X-GitHub-Media-Type', b'github.v3; format=json'), (b'Link', b'<https://api.github.com/repositories/1105867170/releases?per_page=20&page=2>; rel="next", <https://api.github.com/repositories/1105867170/releases?per_page=20&page=3>; rel="last"'), (b'x-github-api-version-selected', b'2022-11-28'), (b'Access-Control-Expose-Headers', b'ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset'), (b'Access-Control-Allow-Origin', b'*'), (b'Strict-Transport-Security', b'max-age=31536000; includeSubdomains; preload'), (b'X-Frame-Options', b'deny'), (b'X-Content-Type-Options', b'nosniff'), (b'X-XSS-Protection', b'0'), (b'Referrer-Policy', b'origin-when-cross-origin, strict-origin-when-cross-origin'), (b'Content-Security-Policy', b"default-src 'none'"), (b'Content-Encoding', b'gzip'), (b'Server', b'github.com'), (b'Accept-Ranges', b'bytes'), (b'X-RateLimit-Limit', b'60'), (b'X-RateLimit-Remaining', b'37'), (b'X-RateLimit-Used', b'23'), (b'X-RateLimit-Resource', b'core'), (b'X-RateLimit-Reset', b'1776245048'), (b'Transfer-Encoding', b'chunked'), (b'X-GitHub-Request-Id', b'0943:0932:B2702:C2CDB:69DF5661')])
+2026-04-15 17:12:01,729 INFO [httpx] HTTP Request: GET https://api.github.com/repos/maziggy/bambuddy/releases?per_page=20 "HTTP/1.1 200 OK"
+2026-04-15 17:12:01,730 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-15 17:12:01,834 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-15 17:12:01,834 DEBUG [httpcore.http11] response_closed.started
+2026-04-15 17:12:01,835 DEBUG [httpcore.http11] response_closed.complete
+2026-04-15 17:12:01,839 DEBUG [httpcore.connection] close.started
+2026-04-15 17:12:01,840 DEBUG [httpcore.connection] close.complete
+2026-04-15 17:12:02,051 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFS02', 'GFA00']
+2026-04-15 17:12:02,097 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-15 17:12:02,371 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-15 17:12:03,198 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-15 17:12:03,199 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-15 17:12:03,201 INFO [backend.app.api.routes.websocket] Sent initial status for 2 printers
+2026-04-15 17:12:04,339 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-15 17:12:04,340 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-15 17:12:08,364 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-15 17:12:08,365 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -52dBm
+2026-04-15 17:12:10,413 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-15 17:12:10,414 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -36dBm

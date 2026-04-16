@@ -78,22 +78,34 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const timeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const dispatchToastId = 'background-dispatch';
   const lastDispatchSummaryRef = useRef<string | null>(null);
+  // Tracks whether the provider is still mounted. A toast can be triggered by
+  // an async callback that resolves AFTER React has unmounted us (common in
+  // tests: `cleanup()` runs while a login promise is still in flight, then
+  // the error handler calls showToast). In that case, scheduling a setTimeout
+  // that later calls setToasts produces "window is not defined" once the jsdom
+  // environment is torn down. Guard every setToasts call behind this ref so a
+  // post-unmount showToast is a no-op instead of crashing.
+  const isMountedRef = useRef(true);
 
   // Clean up all timeouts on unmount
   useEffect(() => {
+    isMountedRef.current = true;
     const timeouts = timeoutRefs.current;
     return () => {
+      isMountedRef.current = false;
       timeouts.forEach((timeout) => clearTimeout(timeout));
       timeouts.clear();
     };
   }, []);
 
   const showToast = useCallback((message: string, type: ToastType = 'success') => {
+    if (!isMountedRef.current) return;
     const id = Math.random().toString(36).substr(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
 
     // Auto-dismiss after 3 seconds
     const timeout = setTimeout(() => {
+      if (!isMountedRef.current) return;
       setToasts((prev) => prev.filter((t) => t.id !== id));
       timeoutRefs.current.delete(id);
     }, 3000);
@@ -101,6 +113,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showPersistentToast = useCallback((id: string, message: string, type: ToastType = 'info') => {
+    if (!isMountedRef.current) return;
     setToasts((prev) => {
       // Update existing toast if same id, otherwise add new one
       const exists = prev.find((t) => t.id === id);
@@ -112,6 +125,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const dismissToast = useCallback((id: string) => {
+    if (!isMountedRef.current) return;
     // Clear any pending auto-dismiss timeout
     const timeout = timeoutRefs.current.get(id);
     if (timeout) {
@@ -268,6 +282,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           const existingTimeout = timeoutRefs.current.get(dispatchToastId);
           if (existingTimeout) clearTimeout(existingTimeout);
           const timeout = setTimeout(() => {
+            if (!isMountedRef.current) return;
             setToasts((prev) => prev.filter((t) => t.id !== dispatchToastId));
             timeoutRefs.current.delete(dispatchToastId);
             lastDispatchSummaryRef.current = null;

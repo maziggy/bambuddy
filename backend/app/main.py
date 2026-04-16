@@ -63,7 +63,15 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.archive import ArchiveService
 from backend.app.services.background_dispatch import background_dispatch
-from backend.app.services.bambu_ftp import download_file_async, get_ftp_retry_settings, with_ftp_retry
+from backend.app.services.bambu_ftp import (
+    FileNotOnPrinterError,
+    cache_3mf_download,
+    clear_3mf_cache,
+    download_file_async,
+    get_cached_3mf,
+    get_ftp_retry_settings,
+    with_ftp_retry,
+)
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.homeassistant import homeassistant_service
@@ -1493,6 +1501,18 @@ async def on_print_start(printer_id: int, data: dict):
         filename = data.get("filename", "")
         subtask_name = data.get("subtask_name", "")
 
+        # MQTT subtask_id uniquely identifies a print job on the printer. When
+        # present, it lets us match an archive across a backend restart (#972):
+        # same id → same print → resume the existing row instead of cancelling
+        # it and recreating from scratch (which loses started_at). Treat "0"
+        # and "" as absent — Bambu reports "0" for non-cloud / local prints.
+        raw_mqtt = data.get("raw_data") or {}
+        subtask_id = raw_mqtt.get("subtask_id")
+        if subtask_id is not None:
+            subtask_id = str(subtask_id).strip()
+            if subtask_id in ("", "0"):
+                subtask_id = None
+
         logger.info("[CALLBACK] Print start detected - filename: %s, subtask: %s", filename, subtask_name)
 
         # Skip calibration prints — internal printer files should not be archived
@@ -1548,6 +1568,8 @@ async def on_print_start(printer_id: int, data: dict):
                 # Update archive status to printing
                 archive.status = "printing"
                 archive.started_at = datetime.now(timezone.utc)
+                if subtask_id and not archive.subtask_id:
+                    archive.subtask_id = subtask_id
                 await db.commit()
 
                 # Track as active print
@@ -1619,29 +1641,80 @@ async def on_print_start(printer_id: int, data: dict):
         # This prevents duplicates when backend restarts during an active print
         from backend.app.models.archive import PrintArchive
 
-        check_name = subtask_name or filename.split("/")[-1].replace(".gcode", "").replace(".3mf", "")
-        existing = await db.execute(
-            select(PrintArchive)
-            .where(PrintArchive.printer_id == printer_id)
-            .where(PrintArchive.status == "printing")
-            .where(
-                or_(
-                    PrintArchive.print_name == check_name,
-                    PrintArchive.filename.in_(
-                        [
-                            f"{check_name}.3mf",
-                            f"{check_name}.gcode.3mf",
-                        ]
-                    ),
-                )
+        existing_archive: PrintArchive | None = None
+
+        # Preferred match: subtask_id equality. MQTT reports the same subtask_id
+        # across a backend restart for the same print, so this is the most
+        # reliable way to reattach. We also accept a previously stale-cancelled
+        # archive here so users upgrading mid-print get revived when the row
+        # their earlier Bambuddy version wrongly cancelled reappears (#972).
+        if subtask_id:
+            by_id = await db.execute(
+                select(PrintArchive)
+                .where(PrintArchive.printer_id == printer_id)
+                .where(PrintArchive.subtask_id == subtask_id)
+                .where(PrintArchive.status.in_(["printing", "cancelled"]))
+                .order_by(PrintArchive.created_at.desc())
+                .limit(1)
             )
-            .order_by(PrintArchive.created_at.desc())
-            .limit(1)
-        )
-        existing_archive = existing.scalar_one_or_none()
+            candidate = by_id.scalar_one_or_none()
+            if candidate and (candidate.status == "printing" or (candidate.failure_reason or "").startswith("Stale")):
+                existing_archive = candidate
+
+        # Fallback match: name-based lookup. Kept as-is for prints whose
+        # subtask_id is missing ("0" / local / non-cloud prints).
+        if existing_archive is None:
+            check_name = subtask_name or filename.split("/")[-1].replace(".gcode", "").replace(".3mf", "")
+            existing = await db.execute(
+                select(PrintArchive)
+                .where(PrintArchive.printer_id == printer_id)
+                .where(PrintArchive.status == "printing")
+                .where(
+                    or_(
+                        PrintArchive.print_name == check_name,
+                        PrintArchive.filename.in_(
+                            [
+                                f"{check_name}.3mf",
+                                f"{check_name}.gcode.3mf",
+                            ]
+                        ),
+                    )
+                )
+                .order_by(PrintArchive.created_at.desc())
+                .limit(1)
+            )
+            existing_archive = existing.scalar_one_or_none()
+
         if existing_archive:
-            # Check if archive is stale (older than 4 hours) - likely a failed/cancelled print
-            # that didn't get properly updated
+            # subtask_id match → always resume, regardless of age. Same print,
+            # just a backend restart. Revive if it was previously stale-cancelled.
+            subtask_match = bool(subtask_id and existing_archive.subtask_id == subtask_id)
+
+            if subtask_match:
+                if existing_archive.status == "cancelled":
+                    logger.warning(
+                        "Reviving stale-cancelled archive %s — matching subtask_id %s confirms same print (#972)",
+                        existing_archive.id,
+                        subtask_id,
+                    )
+                    existing_archive.status = "printing"
+                    existing_archive.failure_reason = None
+                    await db.commit()
+                else:
+                    logger.info("Resuming archive %s on subtask_id match (%s)", existing_archive.id, subtask_id)
+                _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
+                if existing_archive.energy_start_kwh is None:
+                    await _record_energy_start(existing_archive, printer_id, db, context="subtask-resume")
+                if not notification_sent:
+                    archive_data = {
+                        "print_time_seconds": existing_archive.print_time_seconds,
+                        "created_by_id": existing_archive.created_by_id,
+                    }
+                    await _send_print_start_notification(printer_id, data, archive_data, logger)
+                _load_objects_from_archive(existing_archive, printer_id, logger)
+                return
+
+            # Name-match only: fall back to the legacy 4h staleness heuristic.
             archive_age = datetime.now(timezone.utc) - existing_archive.created_at.replace(tzinfo=timezone.utc)
             if archive_age.total_seconds() > 4 * 60 * 60:  # 4 hours
                 logger.warning(
@@ -1659,6 +1732,10 @@ async def on_print_start(printer_id: int, data: dict):
                 )
                 # Track this as the active print
                 _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
+                # Attach subtask_id retroactively so future restarts can resume
+                if subtask_id and not existing_archive.subtask_id:
+                    existing_archive.subtask_id = subtask_id
+                    await db.commit()
                 # Also set up energy tracking if not already tracked (#941: persisted column)
                 if existing_archive.energy_start_kwh is None:
                     await _record_energy_start(existing_archive, printer_id, db, context="existing-printing")
@@ -1714,19 +1791,38 @@ async def on_print_start(printer_id: int, data: dict):
         temp_path = None
         downloaded_filename = None
 
-        # Get FTP retry settings
-        ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
-
+        # Cache check: cover endpoint may have already pulled this 3MF during
+        # the print (frontend opens the card and shows the thumbnail) — reuse
+        # that file instead of re-downloading 36MB over the same FTP link that
+        # just served it (#972). The cache keys on a normalized filename so
+        # variants like "X", "X.3mf", "X.gcode.3mf" all collapse to one entry.
         for try_filename in possible_names:
             if not try_filename.endswith(".3mf"):
                 continue
+            cached = get_cached_3mf(printer_id, try_filename)
+            if cached:
+                logger.info("Reusing cached 3MF from %s (avoided duplicate FTP)", cached)
+                temp_path = cached
+                downloaded_filename = try_filename
+                break
 
+        # Get FTP retry settings
+        ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
+
+        for try_filename in possible_names if not downloaded_filename else []:
+            if not try_filename.endswith(".3mf"):
+                continue
+
+            # Root (/) is where BambuStudio/OrcaSlicer uploads land on A1/P1-series
+            # printers, so try it first — deferring it to last cost #972's reporter
+            # ~48 minutes of retries on /cache//model//data//data/Metadata before
+            # landing on the path that actually had the file.
             remote_paths = [
+                f"/{try_filename}",
                 f"/cache/{try_filename}",
                 f"/model/{try_filename}",
                 f"/data/{try_filename}",
                 f"/data/Metadata/{try_filename}",
-                f"/{try_filename}",
             ]
 
             temp_path = app_settings.archive_dir / "temp" / try_filename
@@ -1748,6 +1844,7 @@ async def on_print_start(printer_id: int, data: dict):
                             max_retries=ftp_retry_count,
                             retry_delay=ftp_retry_delay,
                             operation_name=f"Download 3MF from {remote_path}",
+                            non_retry_exceptions=(FileNotOnPrinterError,),
                         )
                     else:
                         downloaded = await download_file_async(
@@ -1762,7 +1859,14 @@ async def on_print_start(printer_id: int, data: dict):
                     if downloaded:
                         downloaded_filename = try_filename
                         logger.info("Downloaded: %s", remote_path)
+                        # Populate shared cache so the cover endpoint (if it
+                        # runs next) doesn't refetch the same 36MB over FTP.
+                        cache_3mf_download(printer_id, try_filename, temp_path)
                         break
+                except FileNotOnPrinterError:
+                    # 550 — file isn't at this path. Advance to next candidate
+                    # without burning the retry budget.
+                    logger.debug("3MF not at %s (550), trying next path", remote_path)
                 except Exception as e:
                     logger.debug("FTP download failed for %s: %s", remote_path, e)
 
@@ -1826,6 +1930,7 @@ async def on_print_start(printer_id: int, data: dict):
                             if downloaded:
                                 downloaded_filename = fname
                                 logger.info("Found and downloaded from %s: %s", search_dir, fname)
+                                cache_3mf_download(printer_id, fname, temp_path)
                                 break
                 except Exception as e:
                     logger.debug("Failed to list %s: %s", search_dir, e)
@@ -1866,6 +1971,7 @@ async def on_print_start(printer_id: int, data: dict):
                     print_time_seconds=fallback_print_time,
                     status="printing",
                     started_at=datetime.now(timezone.utc),
+                    subtask_id=subtask_id,
                     extra_data={"no_3mf_available": True, "original_subtask": subtask_name, "_print_data": data},
                 )
 
@@ -1951,6 +2057,7 @@ async def on_print_start(printer_id: int, data: dict):
                 printer_id=printer_id,
                 source_file=temp_path,
                 print_data={**data, "status": "printing"},
+                subtask_id=subtask_id,
             )
 
             if archive:
@@ -2055,7 +2162,12 @@ async def on_print_start(printer_id: int, data: dict):
                 except Exception as e:
                     logger.warning("[TIMELAPSE] Failed to capture baseline at print start: %s", e)
         finally:
-            if temp_path and temp_path.exists():
+            # Keep temp_path around until print completes so the cover endpoint
+            # can reuse it (#972). Cache eviction in on_print_complete deletes
+            # the file. If the cache entry was evicted early (file vanished),
+            # clean up any stragglers here to avoid leaking disk on retries.
+            cached_now = get_cached_3mf(printer_id, downloaded_filename) if downloaded_filename else None
+            if temp_path and temp_path.exists() and cached_now != temp_path:
                 temp_path.unlink()
 
 
@@ -2296,6 +2408,11 @@ async def on_print_complete(printer_id: int, data: dict):
         logger.info("[TIMING] %s: %.3fs elapsed", section, elapsed)
 
     logger.info("[CALLBACK] on_print_complete started for printer %s", printer_id)
+
+    # Drop the 3MF download cache for this printer (#972). The print is over,
+    # nothing else legitimately needs the bytes; keeping them would only risk
+    # handing a stale file to the next print if it reuses the same name.
+    clear_3mf_cache(printer_id)
 
     try:
         ws_data = {

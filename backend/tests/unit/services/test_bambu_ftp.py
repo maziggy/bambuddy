@@ -20,11 +20,17 @@ import pytest
 
 from backend.app.services.bambu_ftp import (
     BambuFTPClient,
+    FileNotOnPrinterError,
+    cache_3mf_download,
+    clear_3mf_cache,
     delete_file_async,
     download_file_async,
     download_file_try_paths_async,
+    get_cached_3mf,
     list_files_async,
+    normalize_3mf_name,
     upload_file_async,
+    with_ftp_retry,
 )
 
 # Brief delay to allow pyftpdlib to flush uploaded files to disk.
@@ -265,14 +271,19 @@ class TestDownload:
         assert not local.exists()
         client.disconnect()
 
-    def test_download_to_file_missing_returns_false(self, ftp_client_factory, tmp_path):
-        """Missing file returns False."""
+    def test_download_to_file_missing_raises_not_on_printer(self, ftp_client_factory, tmp_path):
+        """Missing file raises FileNotOnPrinterError so callers can short-circuit
+        the retry loop — 550 means the file isn't there and retrying won't help."""
+        from backend.app.services.bambu_ftp import FileNotOnPrinterError
+
         local = tmp_path / "missing.bin"
         client = ftp_client_factory()
         client.connect()
-        result = client.download_to_file("/cache/no_such_file.bin", local)
-        assert result is False
-        client.disconnect()
+        try:
+            with pytest.raises(FileNotOnPrinterError):
+                client.download_to_file("/cache/no_such_file.bin", local)
+        finally:
+            client.disconnect()
 
     def test_download_large_file(self, ftp_client_factory, ftp_server):
         """Large file download (>1MB) works correctly."""
@@ -1001,3 +1012,156 @@ class TestFailureScenarios:
             downloaded = client2.download_file("/cache/voidresp_test.3mf")
             assert downloaded == content, f"Content mismatch for model={model}"
             client2.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Short-circuit retries on 550 (#972)
+# ---------------------------------------------------------------------------
+class TestFileNotOnPrinterShortCircuit:
+    """FileNotOnPrinterError must bypass the retry budget.
+
+    Before this fix, a 3MF path that wasn't on the printer (550) cost
+    `ftp_retry_count + 1` attempts × `ftp_retry_delay` seconds per candidate
+    path. With ftp_retry_count=10 and four candidate paths, that's ~22 min
+    of dead retries before the real path is tried. #972 in the wild showed
+    48 min of retrying paths that didn't exist.
+    """
+
+    async def test_with_ftp_retry_propagates_file_not_on_printer_without_retrying(self):
+        """with_ftp_retry raises FileNotOnPrinterError on first attempt.
+
+        Verifies non_retry_exceptions short-circuits before the retry loop
+        has a chance to sleep and try again.
+        """
+        attempts = {"n": 0}
+
+        async def always_missing(*_args, **_kwargs):
+            attempts["n"] += 1
+            raise FileNotOnPrinterError("/cache/absent.3mf: 550")
+
+        with pytest.raises(FileNotOnPrinterError):
+            await with_ftp_retry(
+                always_missing,
+                max_retries=10,
+                retry_delay=0.01,
+                operation_name="test 550 short-circuit",
+                non_retry_exceptions=(FileNotOnPrinterError,),
+            )
+
+        assert attempts["n"] == 1, "550 must not trigger any retry"
+
+    async def test_with_ftp_retry_still_retries_transient_errors(self):
+        """Non-550 exceptions continue to retry up to max_retries + 1."""
+        attempts = {"n": 0}
+
+        async def flaky(*_args, **_kwargs):
+            attempts["n"] += 1
+            raise TimeoutError("transient")
+
+        result = await with_ftp_retry(
+            flaky,
+            max_retries=2,
+            retry_delay=0.01,
+            operation_name="test transient retries",
+            non_retry_exceptions=(FileNotOnPrinterError,),
+        )
+
+        assert result is None
+        assert attempts["n"] == 3, "Transient errors should retry to exhaustion"
+
+    def test_download_to_file_raises_on_missing_path(self, ftp_client_factory, tmp_path):
+        """download_to_file surfaces 550 as FileNotOnPrinterError end-to-end
+        against the real mock FTPS server, not just a hand-rolled mock."""
+        local = tmp_path / "never_downloaded.3mf"
+        client = ftp_client_factory()
+        client.connect()
+        try:
+            with pytest.raises(FileNotOnPrinterError):
+                client.download_to_file("/cache/does_not_exist.3mf", local)
+        finally:
+            client.disconnect()
+        assert not local.exists(), "Partial file must be cleaned up on 550"
+
+
+# ---------------------------------------------------------------------------
+# 3MF download cache (#972)
+# ---------------------------------------------------------------------------
+class TestThreeMFCache:
+    """Cover endpoint and archive flow share downloaded 3MF bytes via this
+    cache. Tests isolate themselves with clear_3mf_cache(delete_files=False)
+    so they don't clobber each other."""
+
+    def setup_method(self):
+        clear_3mf_cache(delete_files=False)
+
+    def teardown_method(self):
+        clear_3mf_cache(delete_files=False)
+
+    def test_normalize_collapses_filename_variants(self):
+        """Bambu names vary (.3mf, .gcode.3mf, with spaces) — they all map
+        to the same cache slot so both flows agree on the key."""
+        canonical = normalize_3mf_name("Broly_Legendary.gcode.3mf")
+        assert normalize_3mf_name("Broly_Legendary.3mf") == canonical
+        assert normalize_3mf_name("Broly_Legendary") == canonical
+        # Bambu Studio rewrites spaces to underscores on upload — treat as equal
+        assert normalize_3mf_name("Broly Legendary") == canonical
+        # Case is also collapsed so keys match across capitalizations
+        assert normalize_3mf_name("BROLY_LEGENDARY.3MF") == canonical
+
+    def test_cache_hit_returns_stored_path(self, tmp_path):
+        """get_cached_3mf returns the same Path that was put in."""
+        f = tmp_path / "Broly.gcode.3mf"
+        f.write_bytes(b"fake 3mf content")
+        cache_3mf_download(1, "Broly.gcode.3mf", f)
+        assert get_cached_3mf(1, "Broly.gcode.3mf") == f
+
+    def test_cache_lookup_uses_normalized_name(self, tmp_path):
+        """Caching under .gcode.3mf and querying with bare name still hits."""
+        f = tmp_path / "Broly.gcode.3mf"
+        f.write_bytes(b"x")
+        cache_3mf_download(1, "Broly.gcode.3mf", f)
+        assert get_cached_3mf(1, "Broly.3mf") == f
+        assert get_cached_3mf(1, "Broly") == f
+
+    def test_cache_miss_on_different_printer(self, tmp_path):
+        """Printer id is part of the key — two printers never collide."""
+        f = tmp_path / "A.3mf"
+        f.write_bytes(b"x")
+        cache_3mf_download(1, "A.3mf", f)
+        assert get_cached_3mf(2, "A.3mf") is None
+
+    def test_cache_evicts_when_file_deleted(self, tmp_path):
+        """Stale entry (file gone) returns None and is dropped from the dict."""
+        f = tmp_path / "A.3mf"
+        f.write_bytes(b"x")
+        cache_3mf_download(1, "A.3mf", f)
+        f.unlink()
+        assert get_cached_3mf(1, "A.3mf") is None
+        # Re-populating after eviction works — no ghost entries remain.
+        f.write_bytes(b"y")
+        cache_3mf_download(1, "A.3mf", f)
+        assert get_cached_3mf(1, "A.3mf") == f
+
+    def test_clear_by_printer_scoped(self, tmp_path):
+        """Clearing one printer leaves the other untouched."""
+        f1 = tmp_path / "one.3mf"
+        f1.write_bytes(b"1")
+        f2 = tmp_path / "two.3mf"
+        f2.write_bytes(b"2")
+        cache_3mf_download(1, "one.3mf", f1)
+        cache_3mf_download(2, "two.3mf", f2)
+        clear_3mf_cache(1)
+        assert get_cached_3mf(1, "one.3mf") is None
+        assert get_cached_3mf(2, "two.3mf") == f2
+        # clear_3mf_cache defaulted to delete_files=True, so the file is gone
+        assert not f1.exists()
+        assert f2.exists()
+
+    def test_clear_without_deleting_files(self, tmp_path):
+        """delete_files=False leaves files on disk — used by tests."""
+        f = tmp_path / "keep.3mf"
+        f.write_bytes(b"x")
+        cache_3mf_download(1, "keep.3mf", f)
+        clear_3mf_cache(1, delete_files=False)
+        assert get_cached_3mf(1, "keep.3mf") is None
+        assert f.exists()

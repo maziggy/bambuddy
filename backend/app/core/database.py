@@ -1427,6 +1427,12 @@ async def run_migrations(conn):
     # energy tracking survives a backend restart mid-print.
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN energy_start_kwh REAL")
 
+    # Migration: Add subtask_id to print_archives (#972)
+    # MQTT-provided task identifier used to resume the same archive row across a
+    # backend restart mid-print. Without it, a long print (e.g. 13h) triggers
+    # stale-cancel + new-archive, losing started_at continuity.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN subtask_id VARCHAR(64)")
+
     # Migration: Create smart_plug_energy_snapshots table (#941)
     # Hourly snapshots of each plug's lifetime counter, so date-range queries in
     # "total consumption" energy mode can compute (last - first) deltas.

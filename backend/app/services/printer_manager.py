@@ -816,6 +816,8 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         "chamber_light": state.chamber_light,
         # Active extruder for dual-nozzle printers (0=right, 1=left)
         "active_extruder": state.active_extruder,
+        # Print speed mode (1=silent, 2=standard, 3=sport, 4=ludicrous)
+        "speed_level": state.speed_level,
         # H2C nozzle rack (tool-changer dock positions)
         # Map raw MQTT field names (type/diameter) to schema names (nozzle_type/nozzle_diameter)
         "nozzle_rack": [

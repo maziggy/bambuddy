@@ -16,6 +16,17 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+class FileNotOnPrinterError(Exception):
+    """Raised when a remote FTP path returns 550 (file not found).
+
+    550 means the file does not exist at that path — retrying the same path
+    will never succeed. Callers use this sentinel with with_ftp_retry's
+    non_retry_exceptions to immediately move on to the next candidate path
+    instead of burning the full retry budget (up to 11 × 30s per path) on
+    a lookup that cannot recover.
+    """
+
+
 class ImplicitFTP_TLS(FTP_TLS):
     """FTP_TLS subclass for implicit FTPS (port 990) with model-specific SSL handling.
 
@@ -280,14 +291,21 @@ class BambuFTPClient:
             logger.info("Successfully downloaded %s to %s (%s bytes)", remote_path, local_path, file_size)
             return True
         except (OSError, ftplib.Error) as e:
-            # Log at INFO level so we can see failures in normal logs
-            logger.info("FTP download failed for %s: %s", remote_path, e)
             # Clean up partial file if it exists
             if local_path.exists():
                 try:
                     local_path.unlink()
                 except OSError:
                     pass  # Best-effort partial file cleanup; not critical if removal fails
+            # 550 means the file is not at this path. Surface as a sentinel so
+            # with_ftp_retry can abandon this path immediately and the caller
+            # can advance to the next candidate instead of retrying 11× at
+            # 30s intervals (the pattern that cost #972's reporter ~48min).
+            if isinstance(e, ftplib.error_perm) and str(e).startswith("550"):
+                logger.info("FTP download failed for %s: %s (not on printer)", remote_path, e)
+                raise FileNotOnPrinterError(f"{remote_path}: {e}") from e
+            # Log at INFO level so we can see failures in normal logs
+            logger.info("FTP download failed for %s: %s", remote_path, e)
             return False
 
     def diagnose_storage(self) -> dict:
@@ -597,6 +615,79 @@ class BambuFTPClient:
         return result if result else None
 
 
+# Shared 3MF download cache (#972).
+#
+# Both the cover thumbnail endpoint (api/routes/printers.py) and the archive
+# metadata flow (main.py) fetch the same 3MF file over FTP during a print.
+# On slow / contended links (A1 Wi-Fi, large files) the duplicate transfers
+# compete for the printer's single FTP socket and trigger 425 "can't open
+# data channel" errors, feeding back into cause-2's retry storm.
+#
+# This cache stores the local path of a successfully-downloaded 3MF keyed
+# by (printer_id, normalized_name). Whichever flow downloads first populates
+# the cache; the other flow reuses the file read-only. Evicted on print
+# completion so a later print with the same name re-downloads fresh bytes.
+_threemf_path_cache: dict[tuple[int, str], Path] = {}
+
+
+def normalize_3mf_name(name: str) -> str:
+    """Collapse various 3MF filename variants to a cache key.
+
+    Bambu tooling produces names as bare subtask ("Part"), with .3mf, with
+    .gcode.3mf, or (Studio-normalized) with spaces → underscores. All of
+    these refer to the same print job on the same printer, so they must
+    hash to the same cache key.
+    """
+    # Lowercase first so .3MF / .GCODE.3MF variants strip cleanly — a
+    # real-world case since Windows-side tooling sometimes uppercases
+    # extensions.
+    cleaned = name.strip().lower().replace(".gcode.3mf", "").replace(".gcode", "").replace(".3mf", "")
+    return cleaned.replace(" ", "_")
+
+
+def cache_3mf_download(printer_id: int, name: str, local_path: Path) -> None:
+    """Record a successfully-downloaded 3MF so a sibling flow can reuse it."""
+    _threemf_path_cache[(printer_id, normalize_3mf_name(name))] = local_path
+
+
+def get_cached_3mf(printer_id: int, name: str) -> Path | None:
+    """Return a cached 3MF path for this printer/name if the file still exists."""
+    key = (printer_id, normalize_3mf_name(name))
+    cached = _threemf_path_cache.get(key)
+    if cached and cached.exists() and cached.stat().st_size > 0:
+        return cached
+    # Evict dead entry — the file was cleaned up (temp dir clean, manual
+    # deletion, restart) so the cache value is no longer usable.
+    if cached:
+        _threemf_path_cache.pop(key, None)
+    return None
+
+
+def clear_3mf_cache(printer_id: int | None = None, delete_files: bool = True) -> None:
+    """Drop cache entries for one printer (or all with None).
+
+    When ``delete_files`` is True (default) the on-disk 3MF is removed as well
+    — called from on_print_complete so temp files don't accumulate across
+    prints. Tests that want to inspect the cache contents disable this.
+    """
+
+    def _maybe_unlink(path: Path) -> None:
+        if delete_files and path.exists():
+            try:
+                path.unlink()
+            except OSError as exc:
+                logger.debug("3MF cache cleanup skipped %s: %s", path, exc)
+
+    if printer_id is None:
+        for path in list(_threemf_path_cache.values()):
+            _maybe_unlink(path)
+        _threemf_path_cache.clear()
+        return
+    for key in [k for k in _threemf_path_cache if k[0] == printer_id]:
+        _maybe_unlink(_threemf_path_cache[key])
+        _threemf_path_cache.pop(key, None)
+
+
 async def download_file_async(
     ip_address: str,
     access_code: str,
@@ -711,7 +802,16 @@ async def download_file_try_paths_async(
             return False
 
         try:
-            return any(client.download_to_file(remote_path, local_path) for remote_path in remote_paths)
+            # FileNotOnPrinterError signals "try the next path", not "give up" —
+            # this function's whole purpose is to walk a list of candidates
+            # over one connection. Only a real transport error should bubble.
+            for remote_path in remote_paths:
+                try:
+                    if client.download_to_file(remote_path, local_path):
+                        return True
+                except FileNotOnPrinterError:
+                    continue
+            return False
         finally:
             client.disconnect()
 

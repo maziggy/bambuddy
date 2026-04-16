@@ -1,0 +1,200 @@
+2026-04-14 05:58:22,111 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=1 -> global_tray=254 -> AMS255-T0 (used_g=60.6, tray_now_override=None)
+2026-04-14 05:58:22,119 INFO [backend.app.main] [TIMING] Usage tracker: 7.576s elapsed
+2026-04-14 05:58:22,122 INFO [backend.app.services.spoolman_tracking] [SPOOLMAN] No tracking data for print (printer=1, archive=4)
+2026-04-14 05:58:22,122 INFO [backend.app.main] [TIMING] Spoolman usage report: 7.579s elapsed
+2026-04-14 05:58:22,123 INFO [backend.app.main] [TIMING] Filament usage tracking: 7.580s elapsed
+2026-04-14 05:58:22,123 INFO [backend.app.main] [TIMING] Archive lookup: 7.580s elapsed
+2026-04-14 05:58:22,123 INFO [backend.app.main] [ARCHIVE] Updating archive 4 status...
+2026-04-14 05:58:22,136 INFO [backend.app.main] [ARCHIVE] Archive 4 status updated to completed, failure_reason=None
+2026-04-14 05:58:22,136 INFO [backend.app.main] [ARCHIVE] WebSocket notification sent for archive 4
+2026-04-14 05:58:22,136 INFO [backend.app.main] [TIMING] Archive status update: 7.594s elapsed
+2026-04-14 05:58:22,143 INFO [backend.app.main] [PRINT_LOG] Log entry written for archive 4
+2026-04-14 05:58:22,143 INFO [backend.app.main] [TIMING] Print log entry: 7.600s elapsed
+2026-04-14 05:58:22,143 INFO [backend.app.main] [TIMING] Background tasks scheduled (energy, photo): 7.600s elapsed
+2026-04-14 05:58:22,144 INFO [backend.app.main] [TIMING] All background tasks scheduled: 7.601s elapsed
+2026-04-14 05:58:22,144 INFO [backend.app.main] [CALLBACK] on_print_complete finished for printer 1, archive 4
+2026-04-14 05:58:22,144 INFO [backend.app.main] [ENERGY-BG] Starting energy calculation for archive 4
+2026-04-14 05:58:22,145 INFO [backend.app.main] [PHOTO-BG] Starting finish photo capture for archive 4
+2026-04-14 05:58:22,146 INFO [backend.app.main] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-04-14 05:58:22,147 INFO [backend.app.main] [MAINT-BG] Starting maintenance check for printer 1
+2026-04-14 05:58:22,147 INFO [backend.app.main] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-04-14 05:58:22,150 INFO [backend.app.main] [AUTO-OFF-BG] Completed
+2026-04-14 05:58:22,153 INFO [backend.app.main] [ENERGY-BG] No smart plug for printer 1
+2026-04-14 05:58:22,160 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-14 05:58:22,168 INFO [backend.app.services.notification_service] Found 1 providers for maintenance_due: ['[PRINTER]']
+2026-04-14 05:58:23,241 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-14 05:58:23,241 INFO [backend.app.main] [MAINT-BG] Sent notification: 1 items need attention
+2026-04-14 05:58:24,514 INFO [backend.app.services.camera] Saved camera frame to: /app/data/archive/unassigned/20260412_152516_5U+Lab+Rax+Bolt+Together.gcode/photos/finish_20260414_055822_67ca53ae.jpg
+2026-04-14 05:58:24,514 INFO [backend.app.services.camera] Finish photo saved: finish_20260414_055822_67ca53ae.jpg
+2026-04-14 05:58:24,516 INFO [backend.app.main] [PHOTO-BG] Saved: finish_20260414_055822_67ca53ae.jpg
+2026-04-14 05:58:24,517 INFO [backend.app.main] [PHOTO-NOTIFY] Photo task returned: finish_20260414_055822_67ca53ae.jpg
+2026-04-14 05:58:24,517 INFO [backend.app.main] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260414_055822_67ca53ae.jpg
+2026-04-14 05:58:24,523 INFO [backend.app.main] [NOTIFY-BG] Loaded finish photo bytes: 121134 bytes
+2026-04-14 05:58:24,523 INFO [backend.app.services.notification_service] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-04-14 05:58:24,526 INFO [backend.app.services.notification_service] Found 1 providers for on_print_complete: ['[PRINTER]']
+2026-04-14 05:58:25,836 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-14 05:58:25,838 INFO [backend.app.main] [NOTIFY-BG] Completed
+2026-04-14 06:09:36,056 INFO [backend.app.main] [BED-COOL] Bed cooled to 40.0°C on printer 1 (threshold: 40°C)
+2026-04-14 06:09:36,414 INFO [backend.app.services.notification_service] Sent notification via [PRINTER]
+2026-04-14 06:33:23,221 INFO [backend.app.main] Evicted 1 stale expected-print entries (TTL=7200s)
+2026-04-14 18:25:28,345 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-14 18:25:28,345 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-14 18:25:28,346 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-14 18:25:28,600 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-14 18:25:29,316 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: 73Djgt-UysCpcEV04TJUn
+2026-04-14 18:25:35,778 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 18:25:39,906 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 18:25:40,478 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-14 18:25:40,479 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-14 18:25:48,973 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-14 18:25:49,504 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-14 18:25:49,505 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-14 18:26:30,284 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-15 07:00:27,461 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 05:40:03,646 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 05:40:03,646 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 05:40:03,649 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 05:40:03,904 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-16 05:40:04,689 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: 73Djgt-UysCpcEV04TJUn
+2026-04-16 05:40:46,879 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-16 05:41:13,451 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 05:41:13,825 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 05:41:13,826 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 05:41:13,829 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 05:41:14,077 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-16 05:41:15,017 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 05:41:15,170 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 05:41:15,170 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 05:41:15,171 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 05:41:15,414 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-16 05:41:28,345 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 05:41:28,680 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 05:41:28,680 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 05:41:28,682 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 05:41:28,960 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-16 05:41:30,456 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-16 05:41:34,072 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sent clear HMS errors command
+2026-04-16 05:41:40,227 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-16 05:41:41,207 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-16 05:41:41,208 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-16 05:42:06,339 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 05:43:48,400 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 05:43:48,401 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 05:43:48,402 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 05:43:52,036 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 05:44:27,009 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 05:44:27,010 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 05:44:27,011 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 05:44:36,306 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 05:45:10,777 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 05:45:10,778 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 05:45:10,779 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 05:45:18,532 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 05:46:07,095 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 05:46:07,095 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 05:46:07,096 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 05:47:21,790 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 05:47:40,793 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 05:47:40,794 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 05:47:40,795 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 05:49:00,176 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 06:13:52,831 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 06:13:52,831 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 06:13:52,832 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 06:13:55,328 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 06:24:58,469 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 06:24:58,470 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 06:24:58,473 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 06:24:58,800 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-16 06:25:19,411 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-04-16 06:25:19,450 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=6, 0 profiles, expected=0.4
+2026-04-16 06:25:19,450 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-04-16 06:25:19,450 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-04-16 06:25:40,032 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 06:25:42,778 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 06:25:42,778 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 06:25:42,780 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 06:59:35,659 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 06:59:39,455 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 06:59:39,456 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 06:59:39,457 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 07:00:49,521 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 07:02:17,701 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 07:02:17,702 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 07:02:17,703 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 07:02:19,787 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 07:02:26,746 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 07:02:26,746 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 07:02:26,747 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 07:02:50,563 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 07:03:09,016 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 07:03:09,017 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 07:03:09,018 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 07:03:26,951 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-16 07:03:57,625 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-16 07:03:57,625 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-16 07:03:57,625 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-16 07:03:57,906 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFG97']
+2026-04-16 07:03:58,675 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: 73Djgt-UysCpcEV04TJUn
+2026-04-16 07:04:02,167 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-16 07:04:05,390 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-16 07:04:06,014 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-16 07:04:06,015 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-16 07:04:13,360 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-16 07:04:13,864 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-16 07:04:13,864 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-16 07:04:20,898 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-16 07:04:20,906 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.07.02.00
+2026-04-16 07:04:25,746 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.07.02.00
+2026-04-16 07:04:25,969 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-16 07:04:30,437 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-16 07:04:31,246 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-16 07:04:31,246 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-16 07:04:31,267 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=3)
+2026-04-16 07:04:31,279 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-04-16 07:05:22,138 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-16 07:05:23,563 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-16 07:05:24,152 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-16 07:05:24,153 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-16 07:05:52,807 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-16 07:05:52,807 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-16 07:05:52,807 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-16 07:05:52,862 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-04-16 07:05:52,862 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-16 07:05:52,862 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: 5U+Lab+Rax+Bolt+Together.3mf, subtask_name: 5U+Lab+Rax+Bolt+Together
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '255', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 4, 'insert_flag': True, 'power_on_flag': False}
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 254
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-16 07:05:52,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-16 07:05:52,864 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-16 07:05:52,864 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-16 07:05:52,864 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-04-16 07:05:52,864 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: 5U+Lab+Rax+Bolt+Together.3mf, subtask: 5U+Lab+Rax+Bolt+Together
+2026-04-16 07:05:54,853 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-16 07:05:54,853 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-16 07:05:55,210 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30s, model=A1, prot_c=False)
+2026-04-16 07:05:56,000 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-16 07:05:56,029 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-16 07:05:56,048 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-16 07:05:56,049 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-16 07:05:56,055 DEBUG [backend.app.services.bambu_ftp] AVBL command not supported: 502 
+2026-04-16 07:05:56,241 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {}
+2026-04-16 07:05:56,241 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 254
+2026-04-16 07:05:56,643 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: A1
+2026-04-16 07:05:56,643 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 1: Failed to download firmware
+2026-04-16 07:05:57,975 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-16 07:05:57,975 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-16 07:05:59,988 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-16 07:05:59,988 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-16 07:06:02,006 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-16 07:06:02,006 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-16 07:06:04,016 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-16 07:06:04,016 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -49dBm
+2026-04-16 07:06:06,037 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-16 07:06:06,037 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm

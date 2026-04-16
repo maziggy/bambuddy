@@ -134,8 +134,21 @@ class PrintScheduler:
                 [(i.id, i.printer_id, i.archive_id, i.library_file_id) for i in items],
             )
 
-            # Track busy printers to avoid assigning multiple items to same printer
+            # Track busy printers to avoid assigning multiple items to same printer.
+            # Pre-populate from DB: any printer with an active "printing" item is
+            # already occupied, regardless of what the MQTT hardware state says.
+            # This prevents dispatching a second job during the lag between when
+            # we send the print command and when the P1S transitions to RUNNING state
+            # (which can be 20-60s, longer than the 30s scheduler interval).
             busy_printers: set[int] = set()
+            active_result = await db.execute(
+                select(PrintQueueItem.printer_id)
+                .where(PrintQueueItem.status == "printing")
+                .where(PrintQueueItem.printer_id.isnot(None))
+                .distinct()
+            )
+            for (pid,) in active_result:
+                busy_printers.add(pid)
 
             # Log skip reasons once per queue check (not per item)
             skip_reasons: dict[str, int] = {}

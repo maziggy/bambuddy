@@ -2513,6 +2513,15 @@ async def on_print_complete(printer_id: int, data: dict):
                     printer_id,
                     [(i.id, i.archive_id, i.library_file_id) for i in printing_items],
                 )
+                # Cancel phantom duplicates — they were dispatched during the lag
+                # between print command sent and printer reaching RUNNING state.
+                # The oldest item (lowest id) is the one that actually ran; cancel the rest.
+                now = datetime.now(timezone.utc)
+                for phantom in printing_items[1:]:
+                    phantom.status = "cancelled"
+                    phantom.completed_at = now
+                    phantom.error_message = "Cancelled: phantom dispatch (printer was not yet RUNNING when next job was sent)"
+                    logger.info("Cancelled phantom queue item %s for printer %s", phantom.id, printer_id)
             item = printing_items[0] if printing_items else None
             if item:
                 queue_status = data.get("status", "completed")

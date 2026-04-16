@@ -35,7 +35,7 @@ openpyxl>=3.1.0
 pywebpush>=2.0.0
 
 # Utilities
-python-multipart>=0.0.6
+python-multipart>=0.0.26
 aiofiles>=23.0.0
 
 # QR Code generation

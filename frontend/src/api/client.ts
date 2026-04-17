@@ -3646,10 +3646,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, code, tfa_key: tfaKey }),
     }),
-  cloudSetToken: (access_token: string) =>
+  cloudSetToken: (access_token: string, region: string = 'global') =>
     request<CloudAuthStatus>('/cloud/token', {
       method: 'POST',
-      body: JSON.stringify({ access_token }),
+      body: JSON.stringify({ access_token, region }),
     }),
   cloudLogout: () =>
     request<{ success: boolean }>('/cloud/logout', { method: 'POST' }),

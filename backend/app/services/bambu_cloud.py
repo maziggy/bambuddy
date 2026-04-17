@@ -525,3 +525,10 @@ def get_cloud_service() -> BambuCloudService:
     if _cloud_service is None:
         _cloud_service = BambuCloudService()
     return _cloud_service
+
+
+def reset_cloud_service(region: str = "global") -> BambuCloudService:
+    """Recreate the singleton with a specific region."""
+    global _cloud_service
+    _cloud_service = BambuCloudService(region=region)
+    return _cloud_service

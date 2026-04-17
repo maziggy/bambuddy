@@ -38,6 +38,7 @@ class CloudTokenRequest(BaseModel):
     """Request to set access token directly."""
 
     access_token: str = Field(..., description="Bambu Lab access token")
+    region: str = Field(default="global", description="Region: 'global' or 'china'")
 
 
 class SlicerSetting(BaseModel):

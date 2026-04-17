@@ -37,6 +37,7 @@ from backend.app.services.bambu_cloud import (
     BambuCloudAuthError,
     BambuCloudError,
     get_cloud_service,
+    reset_cloud_service,
 )
 from backend.app.utils.filament_ids import filament_id_to_setting_id
 
@@ -218,7 +219,7 @@ async def set_token(
 
     For users who already have a token (e.g., from Bambu Studio).
     """
-    cloud = get_cloud_service()
+    cloud = reset_cloud_service(request.region)
     cloud.set_token(request.access_token)
 
     # Verify token works by trying to get profile

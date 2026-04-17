@@ -24,6 +24,10 @@ JPEG_END = b"\xff\xd9"
 # Cache the ffmpeg path after first lookup
 _ffmpeg_path: str | None = None
 
+# Track PIDs of ffmpeg processes spawned for one-shot frame capture (snapshot).
+# The cleanup task in routes/camera.py checks this set to avoid killing active captures.
+_active_capture_pids: set[int] = set()
+
 
 def get_ffmpeg_path() -> str | None:
     """Find the ffmpeg executable path.
@@ -506,6 +510,7 @@ async def capture_camera_frame_bytes(
 
     logger.info("Capturing camera frame bytes from %s using RTSP (model: %s)", ip_address, model)
 
+    process = None
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -513,6 +518,7 @@ async def capture_camera_frame_bytes(
             stderr=asyncio.subprocess.PIPE,
         )
 
+        _active_capture_pids.add(process.pid)
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
         except TimeoutError:
@@ -536,6 +542,8 @@ async def capture_camera_frame_bytes(
         logger.exception("Camera frame bytes capture failed: %s", e)
         return None
     finally:
+        if process is not None:
+            _active_capture_pids.discard(process.pid)
         proxy_server.close()
         await proxy_server.wait_closed()
 

@@ -5006,8 +5006,6 @@ export default {
     actionPauseOff: '一時停止して電源を切る',
     pollInterval: 'ポーリング間隔(秒)',
     pollIntervalHint: '印刷中に各プリンターをチェックする頻度。最小 5 秒、最大 120 秒。',
-    externalUrlMissing: '外部 URL が設定されていません。',
-    externalUrlHint: 'ML API は URL 経由でカメラ画像を取得します。ML API コンテナが Bambuddy に到達できるよう、一般設定で外部 URL を設定してください。',
     perPrinterTitle: '監視対象プリンター',
     perPrinterHint: '検出サービスが監視するプリンターを選択します。',
     monitorAll: '接続されているすべてのプリンターを監視',

@@ -4272,9 +4272,6 @@ PUBLIC_API_PATTERNS = [
     # Camera (streams loaded via <img> tag)
     "/camera/stream",  # /printers/{id}/camera/stream
     "/camera/snapshot",  # /printers/{id}/camera/snapshot
-    # Obico ML API fetches JPEG frames by one-shot nonce (issue #172 follow-up).
-    # The nonce itself is the credential: 32-byte random, single-use, ~30s TTL.
-    "/obico/cached-frame/",  # /obico/cached-frame/{nonce}
     # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
     # download token in the URL path instead.

@@ -673,8 +673,8 @@ If you like Bambuddy and want to support it, you can <a href="https://ko-fi.com/
 <p align="center">
   Made with ❤️ for the 3D printing community
   <br><br>
-  <a href="https://discord.gg/aFS3ZfScHM">Join our Discord</a> •
   <a href="https://forum.bambuddy.cool">Forum</a> •
+  <a href="https://discord.gg/aFS3ZfScHM">Join our Discord</a> •
   <a href="https://github.com/maziggy/bambuddy/issues">Report Bug</a> •
   <a href="https://github.com/maziggy/bambuddy/issues">Request Feature</a> •
   <a href="http://wiki.bambuddy.cool">Documentation</a>

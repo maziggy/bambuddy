@@ -1,0 +1,200 @@
+2026-04-18 15:42:35,696 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Baby_Hammerhead_Shark.3mf attempt 2/4 returned failure
+2026-04-18 15:42:35,696 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:42:40,071 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:42:40,501 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:42:40,596 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:42:42,136 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:42:42,560 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:42:42,763 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Baby_Hammerhead_Shark.3mf attempt 3/4 returned failure
+2026-04-18 15:42:42,763 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:42:47,033 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:42:47,557 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:42:47,696 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:42:49,112 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:42:49,792 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:42:49,905 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Baby_Hammerhead_Shark.3mf attempt 4/4 returned failure
+2026-04-18 15:42:49,905 ERROR [backend.app.services.bambu_ftp] Download 3MF from /model/Baby_Hammerhead_Shark.3mf failed after 4 attempts
+2026-04-18 15:42:51,278 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:42:51,432 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:42:51,542 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:42:52,890 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:42:53,582 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:42:53,710 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:42:58,188 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:42:58,537 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:42:58,641 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:00,445 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:43:00,771 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:00,875 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Baby_Hammerhead_Shark.3mf attempt 2/4 returned failure
+2026-04-18 15:43:00,876 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:43:05,413 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:43:05,973 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:06,003 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:07,314 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:43:07,740 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:07,831 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Baby_Hammerhead_Shark.3mf attempt 3/4 returned failure
+2026-04-18 15:43:07,832 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:43:12,117 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:43:12,525 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:12,684 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:13,887 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:43:14,268 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:14,480 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Baby_Hammerhead_Shark.3mf attempt 4/4 returned failure
+2026-04-18 15:43:14,481 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/Baby_Hammerhead_Shark.3mf failed after 4 attempts
+2026-04-18 15:43:15,536 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: 1 - A1M - Virtual (id=1)
+2026-04-18 15:43:15,540 INFO [backend.app.services.virtual_printer.manager] VP 1 - A1M - Virtual config changed (mode: review→immediate), restarting
+2026-04-18 15:43:15,541 INFO [backend.app.services.virtual_printer.ftp_server] Stopping FTP server
+2026-04-18 15:43:15,541 INFO [backend.app.services.virtual_printer.mqtt_server] Stopping simple MQTT server
+2026-04-18 15:43:15,542 INFO [backend.app.services.virtual_printer.ftp_server] Stopping FTP server
+2026-04-18 15:43:15,542 INFO [backend.app.services.virtual_printer.mqtt_server] Periodic status push task stopped
+2026-04-18 15:43:15,543 INFO [backend.app.services.virtual_printer.bind_server] Stopping bind server
+2026-04-18 15:43:15,543 INFO [backend.app.services.virtual_printer.ssdp_server] Stopping SSDP server
+2026-04-18 15:43:15,544 INFO [backend.app.services.virtual_printer.mqtt_server] Stopping simple MQTT server
+2026-04-18 15:43:15,545 INFO [backend.app.services.virtual_printer.bind_server] Stopping bind server
+2026-04-18 15:43:15,545 INFO [backend.app.services.virtual_printer.manager] Removed VP instance: 1 - A1M - Virtual
+2026-04-18 15:43:15,546 INFO [backend.app.services.virtual_printer.manager] [VP 1 - A1M - Virtual] Starting server-mode services on [IP]
+2026-04-18 15:43:15,547 INFO [backend.app.services.virtual_printer.certificate] Deleted printer certificate (CA preserved)
+2026-04-18 15:43:15,547 INFO [backend.app.services.virtual_printer.certificate] Generating certificates for virtual printer (serial: [SERIAL])...
+2026-04-18 15:43:15,703 INFO [backend.app.services.virtual_printer.certificate] Using existing CA certificate (expires in 7282 days)
+2026-04-18 15:43:15,771 INFO [backend.app.services.virtual_printer.certificate] Generating printer certificate with CN=[SERIAL], local IP: [IP]
+2026-04-18 15:43:15,771 INFO [backend.app.services.virtual_printer.certificate] Added additional SAN IP: [IP]
+2026-04-18 15:43:15,776 INFO [backend.app.services.virtual_printer.certificate] Generated certificate chain at /app/data/virtual_printer/certs/1
+2026-04-18 15:43:15,776 INFO [backend.app.services.virtual_printer.certificate]   CA: CN=Virtual Printer CA
+2026-04-18 15:43:15,776 INFO [backend.app.services.virtual_printer.certificate]   Printer: CN=[SERIAL]
+2026-04-18 15:43:15,776 INFO [backend.app.services.virtual_printer.manager] [VP 1 - A1M - Virtual] Server-mode services started on [IP]
+2026-04-18 15:43:15,776 INFO [backend.app.services.virtual_printer.manager] Started server-mode VP: 1 - A1M - Virtual on [IP]
+2026-04-18 15:43:15,777 INFO [backend.app.services.virtual_printer.ftp_server] [1 - A1M - Virtual] Starting virtual printer implicit FTPS on [IP]:990
+2026-04-18 15:43:15,778 INFO [backend.app.services.virtual_printer.ftp_server] FTP SSL context created with standard settings
+2026-04-18 15:43:15,779 INFO [backend.app.services.virtual_printer.mqtt_server] Starting simple MQTT server on port 8883
+2026-04-18 15:43:15,805 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT SSL cert info: subject=CN=[SERIAL]
+issuer=CN=Virtual Printer CA
+2026-04-18 15:43:15,806 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT SSL context: TLS 1.2+, cert=/app/data/virtual_printer/certs/1/virtual_printer.crt
+2026-04-18 15:43:15,807 INFO [backend.app.services.virtual_printer.bind_server] Starting bind server on ports [3000, 3002] (serial=[SERIAL], model=N1, tls=True)
+2026-04-18 15:43:15,807 INFO [backend.app.services.virtual_printer.ssdp_server] Starting virtual printer SSDP server: 1 - A1M - Virtual ([SERIAL])
+2026-04-18 15:43:15,807 INFO [backend.app.services.virtual_printer.ssdp_server] SSDP server listening on port 2021, advertising IP: [IP]
+2026-04-18 15:43:15,807 INFO [backend.app.services.virtual_printer.ssdp_server] Virtual printer: 1 - A1M - Virtual ([SERIAL]) model=N1
+2026-04-18 15:43:15,807 INFO [backend.app.services.virtual_printer.ssdp_server] SSDP server also listening on [IP]:2021
+2026-04-18 15:43:15,808 INFO [backend.app.services.virtual_printer.ssdp_server] Sent initial SSDP NOTIFY announcement
+2026-04-18 15:43:15,809 INFO [backend.app.services.virtual_printer.ftp_server] Implicit FTPS server started on port 990
+2026-04-18 15:43:15,810 INFO [backend.app.services.virtual_printer.ftp_server] FTP passive data port range: 50000-50100
+2026-04-18 15:43:15,810 INFO [backend.app.services.virtual_printer.mqtt_server] Simple MQTT server listening on port 8883
+2026-04-18 15:43:15,810 INFO [backend.app.services.virtual_printer.bind_server] Bind server listening on [IP]:3000 (plain)
+2026-04-18 15:43:15,810 INFO [backend.app.services.virtual_printer.mqtt_server] Starting periodic status push task
+2026-04-18 15:43:15,811 INFO [backend.app.services.virtual_printer.bind_server] Bind server listening on [IP]:3002 (TLS)
+2026-04-18 15:43:16,107 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:43:16,649 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:16,934 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:17,015 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: 3 - A1 - VIrtual (id=3)
+2026-04-18 15:43:17,021 INFO [backend.app.services.virtual_printer.manager] VP 3 - A1 - VIrtual config changed (mode: review→immediate), restarting
+2026-04-18 15:43:17,021 INFO [backend.app.services.virtual_printer.ftp_server] Stopping FTP server
+2026-04-18 15:43:17,021 INFO [backend.app.services.virtual_printer.mqtt_server] Stopping simple MQTT server
+2026-04-18 15:43:17,022 INFO [backend.app.services.virtual_printer.ftp_server] Stopping FTP server
+2026-04-18 15:43:17,022 INFO [backend.app.services.virtual_printer.mqtt_server] Periodic status push task stopped
+2026-04-18 15:43:17,023 INFO [backend.app.services.virtual_printer.bind_server] Stopping bind server
+2026-04-18 15:43:17,023 INFO [backend.app.services.virtual_printer.ssdp_server] Stopping SSDP server
+2026-04-18 15:43:17,024 INFO [backend.app.services.virtual_printer.mqtt_server] Stopping simple MQTT server
+2026-04-18 15:43:17,024 INFO [backend.app.services.virtual_printer.bind_server] Stopping bind server
+2026-04-18 15:43:17,025 INFO [backend.app.services.virtual_printer.manager] Removed VP instance: 3 - A1 - VIrtual
+2026-04-18 15:43:17,025 INFO [backend.app.services.virtual_printer.manager] [VP 3 - A1 - VIrtual] Starting server-mode services on [IP]
+2026-04-18 15:43:17,026 INFO [backend.app.services.virtual_printer.certificate] Deleted printer certificate (CA preserved)
+2026-04-18 15:43:17,026 INFO [backend.app.services.virtual_printer.certificate] Generating certificates for virtual printer (serial: [SERIAL])...
+2026-04-18 15:43:17,202 INFO [backend.app.services.virtual_printer.certificate] Using existing CA certificate (expires in 7282 days)
+2026-04-18 15:43:17,491 INFO [backend.app.services.virtual_printer.certificate] Generating printer certificate with CN=[SERIAL], local IP: [IP]
+2026-04-18 15:43:17,491 INFO [backend.app.services.virtual_printer.certificate] Added additional SAN IP: [IP]
+2026-04-18 15:43:17,495 INFO [backend.app.services.virtual_printer.certificate] Generated certificate chain at /app/data/virtual_printer/certs/3
+2026-04-18 15:43:17,496 INFO [backend.app.services.virtual_printer.certificate]   CA: CN=Virtual Printer CA
+2026-04-18 15:43:17,496 INFO [backend.app.services.virtual_printer.certificate]   Printer: CN=[SERIAL]
+2026-04-18 15:43:17,496 INFO [backend.app.services.virtual_printer.manager] [VP 3 - A1 - VIrtual] Server-mode services started on [IP]
+2026-04-18 15:43:17,496 INFO [backend.app.services.virtual_printer.manager] Started server-mode VP: 3 - A1 - VIrtual on [IP]
+2026-04-18 15:43:17,497 INFO [backend.app.services.virtual_printer.ftp_server] [3 - A1 - VIrtual] Starting virtual printer implicit FTPS on [IP]:990
+2026-04-18 15:43:17,498 INFO [backend.app.services.virtual_printer.ftp_server] FTP SSL context created with standard settings
+2026-04-18 15:43:17,499 INFO [backend.app.services.virtual_printer.mqtt_server] Starting simple MQTT server on port 8883
+2026-04-18 15:43:17,544 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT SSL cert info: subject=CN=[SERIAL]
+issuer=CN=Virtual Printer CA
+2026-04-18 15:43:17,544 INFO [backend.app.services.virtual_printer.mqtt_server] MQTT SSL context: TLS 1.2+, cert=/app/data/virtual_printer/certs/3/virtual_printer.crt
+2026-04-18 15:43:17,546 INFO [backend.app.services.virtual_printer.bind_server] Starting bind server on ports [3000, 3002] (serial=[SERIAL], model=N2S, tls=True)
+2026-04-18 15:43:17,547 INFO [backend.app.services.virtual_printer.ssdp_server] Starting virtual printer SSDP server: 3 - A1 - VIrtual ([SERIAL])
+2026-04-18 15:43:17,547 INFO [backend.app.services.virtual_printer.ssdp_server] SSDP server listening on port 2021, advertising IP: [IP]
+2026-04-18 15:43:17,547 INFO [backend.app.services.virtual_printer.ssdp_server] Virtual printer: 3 - A1 - VIrtual ([SERIAL]) model=N2S
+2026-04-18 15:43:17,547 INFO [backend.app.services.virtual_printer.ssdp_server] SSDP server also listening on [IP]:2021
+2026-04-18 15:43:17,548 INFO [backend.app.services.virtual_printer.ssdp_server] Sent initial SSDP NOTIFY announcement
+2026-04-18 15:43:17,553 INFO [backend.app.services.virtual_printer.ftp_server] Implicit FTPS server started on port 990
+2026-04-18 15:43:17,553 INFO [backend.app.services.virtual_printer.ftp_server] FTP passive data port range: 50000-50100
+2026-04-18 15:43:17,553 INFO [backend.app.services.virtual_printer.mqtt_server] Simple MQTT server listening on port 8883
+2026-04-18 15:43:17,554 INFO [backend.app.services.virtual_printer.bind_server] Bind server listening on [IP]:3000 (plain)
+2026-04-18 15:43:17,554 INFO [backend.app.services.virtual_printer.mqtt_server] Starting periodic status push task
+2026-04-18 15:43:17,557 INFO [backend.app.services.virtual_printer.bind_server] Bind server listening on [IP]:3002 (TLS)
+2026-04-18 15:43:18,060 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:43:18,466 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:18,578 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:43:22,377 INFO [backend.app.main] Recorded 11 AMS sensor history entries
+2026-04-18 15:43:22,973 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:43:23,419 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:23,486 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:24,615 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:43:25,151 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:25,440 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Baby_Hammerhead_Shark.3mf attempt 2/4 returned failure
+2026-04-18 15:43:25,441 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:43:29,728 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:43:30,157 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:30,264 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:31,783 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:43:32,097 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:32,124 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Baby_Hammerhead_Shark.3mf attempt 3/4 returned failure
+2026-04-18 15:43:32,125 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:43:36,726 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:43:37,509 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:37,637 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:39,270 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:43:39,970 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:40,077 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Baby_Hammerhead_Shark.3mf attempt 4/4 returned failure
+2026-04-18 15:43:40,077 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Baby_Hammerhead_Shark.3mf failed after 4 attempts
+2026-04-18 15:43:41,712 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:43:42,358 INFO [backend.app.services.bambu_ftp] FTP download failed for /Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:42,533 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:43,887 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:43:44,373 INFO [backend.app.services.bambu_ftp] FTP download failed for /Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:44,478 INFO [backend.app.services.bambu_ftp] Download 3MF from /Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:43:50,010 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:43:51,029 INFO [backend.app.services.bambu_ftp] FTP download failed for /Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:51,063 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:52,399 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:43:52,979 INFO [backend.app.services.bambu_ftp] FTP download failed for /Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:53,083 INFO [backend.app.services.bambu_ftp] Download 3MF from /Baby_Hammerhead_Shark.3mf attempt 2/4 returned failure
+2026-04-18 15:43:53,083 INFO [backend.app.services.bambu_ftp] Download 3MF from /Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:43:57,481 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:43:58,002 INFO [backend.app.services.bambu_ftp] FTP download failed for /Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:43:58,199 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:43:59,629 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:44:00,290 INFO [backend.app.services.bambu_ftp] FTP download failed for /Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:44:00,378 INFO [backend.app.services.bambu_ftp] Download 3MF from /Baby_Hammerhead_Shark.3mf attempt 3/4 returned failure
+2026-04-18 15:44:00,378 INFO [backend.app.services.bambu_ftp] Download 3MF from /Baby_Hammerhead_Shark.3mf will retry in 3.0s...
+2026-04-18 15:44:04,700 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:44:04,960 INFO [backend.app.services.bambu_ftp] FTP download failed for /Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:44:05,163 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:44:06,290 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=True)
+2026-04-18 15:44:06,694 INFO [backend.app.services.bambu_ftp] FTP download failed for /Baby_Hammerhead_Shark.3mf: 550 
+2026-04-18 15:44:06,826 INFO [backend.app.services.bambu_ftp] Download 3MF from /Baby_Hammerhead_Shark.3mf attempt 4/4 returned failure
+2026-04-18 15:44:06,827 ERROR [backend.app.services.bambu_ftp] Download 3MF from /Baby_Hammerhead_Shark.3mf failed after 4 attempts
+2026-04-18 15:44:06,827 INFO [backend.app.main] Direct FTP download failed, searching directories for 'baby_hammerhead_shark'
+2026-04-18 15:44:08,435 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:44:16,118 INFO [backend.app.main] Found 52 3MF files in /cache: ['lfflexi1.3mf', 'mini3.3mf', 'mini6.3mf', 'CUBONE.3mf', 'Tiny_Cat.3mf']...
+2026-04-18 15:44:17,671 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:44:18,938 INFO [backend.app.main] Found 13 3MF files in /model: ['3DBenchy by Creative Tool.gcode.3mf', '3DBenchy_3color by Creative Tool.gcode.3mf', 'Bag Clip by squinn.gcode.3mf', 'Bed scraper by JernejP.gcode.3mf', 'Blank Elephant by Amao Chan.gcode.3mf']...
+2026-04-18 15:44:20,634 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:44:20,845 INFO [backend.app.services.bambu_ftp] FTP list_files failed for /data: 550 
+2026-04-18 15:44:22,363 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:44:22,562 INFO [backend.app.services.bambu_ftp] FTP list_files failed for /data/Metadata: 550 
+2026-04-18 15:44:24,313 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:44:25,764 INFO [backend.app.main] Found 12 3MF files in /: ['Glasseye_Octopus_Dragon_Colored_DD.gcode.3mf', 'Trex Booknook (Factory Files)_plate_7.gcode.3mf', 'Flowrate Test - Pass2.gcode.3mf', 'Mini_sculpt_narwhal_3mf.gcode.3mf', 'Mini_sculpt_whale_3mf.gcode.3mf']...
+2026-04-18 15:44:25,765 INFO [backend.app.main] Found matching file in /: Baby_Hammerhead_Shark.gcode.3mf
+2026-04-18 15:44:27,174 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:45:25,767 WARNING [backend.app.services.bambu_ftp] FTP download timed out after 60.0s for //Baby_Hammerhead_Shark.gcode.3mf
+2026-04-18 15:45:25,767 INFO [backend.app.services.bambu_ftp] Download 3MF from //Baby_Hammerhead_Shark.gcode.3mf will retry in 3.0s...
+2026-04-18 15:45:28,851 WARNING [backend.app.services.bambu_ftp] FTP connection failed to [IP]: [Errno 104] Connection reset by peer (type: ConnectionResetError)
+2026-04-18 15:45:28,855 INFO [backend.app.services.bambu_ftp] FTP download failed with prot_p for A1 model, trying prot_c fallback...
+2026-04-18 15:45:28,867 ERROR [backend.app.api.routes.printers] FTP download failed after 3 attempts: 
+2026-04-18 15:45:28,923 WARNING [backend.app.services.bambu_ftp] FTP connection failed to [IP]: [Errno 111] Connection refused (type: ConnectionRefusedError)
+2026-04-18 15:45:28,926 INFO [backend.app.services.bambu_ftp] Download 3MF from //Baby_Hammerhead_Shark.gcode.3mf attempt 2/4 returned failure
+2026-04-18 15:45:28,926 INFO [backend.app.services.bambu_ftp] Download 3MF from //Baby_Hammerhead_Shark.gcode.3mf will retry in 3.0s...
+2026-04-18 15:45:32,858 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)

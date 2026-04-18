@@ -4276,6 +4276,9 @@ PUBLIC_API_PATTERNS = [
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
     # download token in the URL path instead.
     "/dl/",  # /archives/{id}/dl/{token}/{filename}, /library/files/{id}/dl/{token}/{filename}
+    # Obico ML API fetches JPEG frames by one-shot nonce (issue #172 follow-up).
+    # The nonce itself is the credential: 32-byte random, single-use, ~30s TTL.
+    "/obico/cached-frame/",  # /obico/cached-frame/{nonce}
 ]
 
 

@@ -4981,6 +4981,8 @@ export default {
     actionPauseOff: 'Pausar e cortar energia',
     pollInterval: 'Intervalo de verificação (segundos)',
     pollIntervalHint: 'Frequência de verificação de cada impressora durante a impressão. Mínimo 5s, máximo 120s.',
+    externalUrlMissing: 'External URL is not set.',
+    externalUrlHint: 'The ML API fetches the camera snapshot by URL. Set the External URL in General settings so the ML API container can reach Bambuddy.',
     perPrinterTitle: 'Impressoras monitoradas',
     perPrinterHint: 'Escolha quais impressoras o serviço de detecção monitora.',
     monitorAll: 'Monitorar todas as impressoras conectadas',

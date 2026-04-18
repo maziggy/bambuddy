@@ -1868,6 +1868,7 @@ export interface ObicoStatus {
   sensitivity: 'low' | 'medium' | 'high';
   action: 'notify' | 'pause' | 'pause_and_off';
   poll_interval: number;
+  external_url_configured: boolean;
 }
 
 export interface ObicoTestConnection {

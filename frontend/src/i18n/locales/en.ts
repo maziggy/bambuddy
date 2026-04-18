@@ -5062,6 +5062,8 @@ export default {
     actionPauseOff: 'Pause and cut power',
     pollInterval: 'Poll interval (seconds)',
     pollIntervalHint: 'How often to check each printer while it is printing. Minimum 5s, maximum 120s.',
+    externalUrlMissing: 'External URL is not set.',
+    externalUrlHint: 'The ML API fetches the camera snapshot by URL. Set the External URL in General settings so the ML API container can reach Bambuddy.',
     perPrinterTitle: 'Monitored Printers',
     perPrinterHint: 'Choose which printers the detection service watches.',
     monitorAll: 'Monitor all connected printers',

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, ScanEye, Check, X, Info } from 'lucide-react';
+import { Loader2, ScanEye, Check, X, AlertTriangle, Info } from 'lucide-react';
 import { api } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
@@ -221,6 +221,15 @@ export function FailureDetectionSettings() {
               <p className="text-xs text-bambu-gray mt-1">{t('failureDetection.pollIntervalHint')}</p>
             </div>
 
+            {status && !status.external_url_configured && enabled && (
+              <div className="flex items-start gap-2 p-3 bg-amber-900/30 border border-amber-700 rounded text-sm text-amber-200">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="font-medium">{t('failureDetection.externalUrlMissing')}</div>
+                  <div className="text-xs mt-1">{t('failureDetection.externalUrlHint')}</div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -5,6 +5,7 @@ These tests focus on timelapse tracking during prints.
 """
 
 import json
+import time
 
 import pytest
 
@@ -3408,6 +3409,102 @@ class TestStartPrintAmsMapping:
         cmd = self._get_published_command(mqtt_client)
         assert cmd["timelapse"] is True
         assert cmd["flow_cali"] is False
+
+
+class TestStartPrintUniqueIdentityFields:
+    """Regression guard: project_id/subtask_id/task_id must be unique per submission (#1011).
+
+    Hardcoded "0" values caused third-party MQTT observers (e.g. OctoEverywhere)
+    to treat archive reprints as continuations of the same job and report
+    compounding durations on repeat replays. Each start_print call must produce
+    a distinct, non-zero identity triplet so the printer emits a fresh state
+    transition. md5 is deliberately left empty — historically firmware treats
+    "" as "skip validation" and we don't have the file's real digest here.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        client.state.connected = True
+        return client
+
+    def _get_published_command(self, mqtt_client):
+        call_args = mqtt_client._client.publish.call_args
+        return json.loads(call_args[0][1])["print"]
+
+    def test_identity_fields_are_non_zero(self, mqtt_client):
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["project_id"] != "0"
+        assert cmd["subtask_id"] != "0"
+        assert cmd["task_id"] != "0"
+
+    def test_identity_fields_are_all_equal_per_submission(self, mqtt_client):
+        """All three IDs come from the same submission timestamp — Studio also
+        uses a single identity per submission across the three fields."""
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["project_id"] == cmd["subtask_id"] == cmd["task_id"]
+
+    def test_md5_stays_empty(self, mqtt_client):
+        """Deliberate: synthetic md5 risks activating firmware validation."""
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["md5"] == ""
+
+    def test_identity_fields_change_between_submissions(self, mqtt_client):
+        """Two successive start_print calls must produce different IDs.
+
+        Without this, the printer can't tell replays apart and reuses
+        gcode_start_time from the prior job.
+        """
+        mqtt_client.start_print("test.3mf")
+        first = self._get_published_command(mqtt_client)
+
+        time.sleep(0.002)
+
+        mqtt_client.start_print("test.3mf")
+        second = self._get_published_command(mqtt_client)
+
+        assert first["task_id"] != second["task_id"]
+        assert first["subtask_id"] != second["subtask_id"]
+        assert first["project_id"] != second["project_id"]
+
+    def test_submission_id_is_numeric_string(self, mqtt_client):
+        """ID format: digits-only string (epoch millis). Studio uses cloud
+        task IDs that are also numeric-looking strings; the DB column is
+        VARCHAR(64) and Bambuddy's own subtask_id parser treats '0'/'' as
+        absent — any valid digit string that isn't '0' is fine."""
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["task_id"].isdigit()
+        assert int(cmd["task_id"]) > 0
+        # Must fit in VARCHAR(64); epoch-ms is 13 digits
+        assert len(cmd["task_id"]) <= 64
+
+    def test_unrelated_payload_fields_untouched(self, mqtt_client):
+        """Regression guard: fix only touches identity fields; everything else
+        (sequence_id, command verb, calibration defaults, profile_id) must be
+        unchanged to avoid silently breaking printer behavior."""
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["sequence_id"] == "20000"
+        assert cmd["command"] == "project_file"
+        assert cmd["param"] == "Metadata/plate_1.gcode"
+        assert cmd["url"] == "ftp://test.3mf"
+        assert cmd["file"] == "test.3mf"
+        assert cmd["profile_id"] == "0"
+        assert cmd["cfg"] == "0"
+        assert cmd["subtask_name"] == "test"
 
 
 class TestDeleteKProfileDualNozzleDetection:

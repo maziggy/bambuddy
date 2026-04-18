@@ -10,6 +10,8 @@ See `obico_smoothing.py` for the per-print EWM + rolling-mean math.
 import asyncio
 import json
 import logging
+import secrets
+import time
 from collections import deque
 from datetime import datetime, timezone
 
@@ -32,6 +34,44 @@ HISTORY_MAX = 50
 HEALTH_TIMEOUT = 5.0
 DETECTION_TIMEOUT = 30.0
 SNAPSHOT_CAPTURE_TIMEOUT = 20  # seconds — we control this, not Obico
+FRAME_CACHE_TTL = 30.0  # seconds — Obico usually fetches within 1s of receiving the URL
+
+# Module-level one-shot frame cache. Obico's ML API is GET-only (/p/?img=URL) and
+# fetches the URL itself with a hardcoded 5s read timeout. We capture locally first,
+# stash the JPEG under a random nonce, and hand Obico a URL that serves the cached
+# bytes instantly — so the 5s ceiling never races RTSP keyframe wait.
+_frame_cache: dict[str, tuple[bytes, float]] = {}
+_frame_cache_lock = asyncio.Lock()
+
+
+def _prune_frame_cache() -> None:
+    """Drop entries older than FRAME_CACHE_TTL. Called under the cache lock."""
+    now = time.monotonic()
+    expired = [k for k, (_b, ts) in _frame_cache.items() if now - ts > FRAME_CACHE_TTL]
+    for k in expired:
+        _frame_cache.pop(k, None)
+
+
+async def stash_frame(data: bytes) -> str:
+    """Store JPEG bytes and return a URL-safe nonce that serves them once."""
+    nonce = secrets.token_urlsafe(32)
+    async with _frame_cache_lock:
+        _prune_frame_cache()
+        _frame_cache[nonce] = (data, time.monotonic())
+    return nonce
+
+
+async def pop_frame(nonce: str) -> bytes | None:
+    """Return and remove a cached frame by nonce; None if missing or expired."""
+    async with _frame_cache_lock:
+        _prune_frame_cache()
+        entry = _frame_cache.pop(nonce, None)
+    if entry is None:
+        return None
+    data, ts = entry
+    if time.monotonic() - ts > FRAME_CACHE_TTL:
+        return None
+    return data
 
 
 class ObicoDetectionService:
@@ -75,6 +115,7 @@ class ObicoDetectionService:
             "obico_action",
             "obico_poll_interval",
             "obico_enabled_printers",
+            "external_url",
         ]
         async with async_session() as db:
             result = await db.execute(select(Settings).where(Settings.key.in_(keys)))
@@ -96,6 +137,7 @@ class ObicoDetectionService:
             "action": rows.get("obico_action", "notify"),
             "poll_interval": int(rows.get("obico_poll_interval", "10")),
             "enabled_printers": enabled_printers,
+            "external_url": (rows.get("external_url") or "").rstrip("/"),
         }
 
     # ---- main loop ----
@@ -116,7 +158,7 @@ class ObicoDetectionService:
                 break
             except Exception as e:
                 logger.error("Obico detection loop error: %s", e)
-                self._last_error = str(e)
+                self._last_error = str(e) or type(e).__name__
                 await asyncio.sleep(30)
 
     async def _poll_once(self, settings: dict):
@@ -171,28 +213,37 @@ class ObicoDetectionService:
             self._state_keys[printer_id] = key
             self._action_fired[printer_id] = False
 
-        # Capture locally, then POST the JPEG bytes directly to the ML API.
-        # This avoids the entire class of URL-reachability problems — the ML API
-        # never needs to call back into Bambuddy, so reverse proxies, external
-        # auth layers, and Docker networking are all irrelevant.
+        # Capture locally first, then hand Obico a nonce URL that returns the
+        # cached bytes instantly. Obico's ML API is GET-only (/p/?img=URL) with a
+        # hardcoded 5s read timeout which would otherwise race our /camera/snapshot
+        # keyframe wait.
         frame = await self._capture_frame(printer_id)
         if not frame:
             self._last_error = f"Failed to capture snapshot for printer {printer_id}"
             logger.warning(self._last_error)
             return
 
+        external_url = settings.get("external_url") or ""
+        if not external_url:
+            self._last_error = (
+                "external_url setting is empty — Obico's ML API needs a reachable URL to fetch the snapshot from. "
+                "Set Settings → General → External URL."
+            )
+            logger.warning(self._last_error)
+            return
+
+        nonce = await stash_frame(frame)
+        snapshot_url = f"{external_url}/api/v1/obico/cached-frame/{nonce}"
         ml_url = f"{settings['ml_url']}/p/"
 
         try:
             async with httpx.AsyncClient(timeout=DETECTION_TIMEOUT) as client:
-                resp = await client.post(
-                    ml_url,
-                    files={"img": ("snapshot.jpg", frame, "image/jpeg")},
-                )
+                resp = await client.get(ml_url, params={"img": snapshot_url})
                 resp.raise_for_status()
                 payload = resp.json()
         except Exception as e:
-            self._last_error = f"ML API call failed for printer {printer_id}: {e}"
+            detail = str(e) or type(e).__name__
+            self._last_error = f"ML API call failed for printer {printer_id}: {detail}"
             logger.warning(self._last_error)
             return
 
@@ -234,7 +285,7 @@ class ObicoDetectionService:
         try:
             await execute_action(printer_id, action, task_name, score)
         except Exception as e:
-            self._last_error = f"Action dispatch failed: {e}"
+            self._last_error = f"Action dispatch failed: {e or type(e).__name__}"
             logger.error(self._last_error)
 
     # ---- queries ----
@@ -270,7 +321,7 @@ class ObicoDetectionService:
                 "error": None,
             }
         except Exception as e:
-            return {"ok": False, "status_code": None, "body": None, "error": str(e)}
+            return {"ok": False, "status_code": None, "body": None, "error": str(e) or type(e).__name__}
 
 
 obico_detection_service = ObicoDetectionService()

@@ -4966,6 +4966,8 @@ export default {
     actionPauseOff: '暂停并切断电源',
     pollInterval: '检查间隔(秒)',
     pollIntervalHint: '打印过程中每台打印机的检查频率。最小 5 秒,最大 120 秒。',
+    externalUrlMissing: 'External URL is not set.',
+    externalUrlHint: 'The ML API fetches the camera snapshot by URL. Set the External URL in General settings so the ML API container can reach Bambuddy.',
     perPrinterTitle: '监控的打印机',
     perPrinterHint: '选择检测服务要监视哪些打印机。',
     monitorAll: '监控所有已连接的打印机',

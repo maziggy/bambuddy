@@ -3009,6 +3009,19 @@ class BambuMQTTClient:
                         self.serial_number,
                     )
 
+            # Unique per-submission identity fields. Hardcoded "0" values caused
+            # third-party MQTT observers (OctoEverywhere, etc.) to see reprints as
+            # continuations of the same job: the printer reuses gcode_start_time
+            # from the prior print with task_id=0, so observers latch onto a stale
+            # timestamp and report compounding durations on repeat replays (#1011).
+            # BambuStudio mints fresh IDs per submission; matching that behavior
+            # makes the printer emit a clean state-transition for each job.
+            # md5 is left empty — firmware historically accepts "" as "skip
+            # validation" (unlike Studio, we don't have the file's real md5 here
+            # without re-reading the upload, and sending a synthetic wrong digest
+            # risks activation of md5 verification on some firmwares).
+            submission_id = str(int(time.time() * 1000))
+
             command = {
                 "print": {
                     "sequence_id": "20000",
@@ -3031,9 +3044,9 @@ class BambuMQTTClient:
                     "nozzle_offset_cali": 2,
                     "subtask_name": filename.replace(".3mf", "").replace(".gcode", ""),
                     "profile_id": "0",
-                    "project_id": "0",
-                    "subtask_id": "0",
-                    "task_id": "0",
+                    "project_id": submission_id,
+                    "subtask_id": submission_id,
+                    "task_id": submission_id,
                 }
             }
 

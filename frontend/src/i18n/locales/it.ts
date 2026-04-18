@@ -4967,6 +4967,8 @@ export default {
     actionPauseOff: 'Pausa e stacca corrente',
     pollInterval: 'Intervallo di controllo (secondi)',
     pollIntervalHint: 'Frequenza di controllo di ogni stampante durante la stampa. Minimo 5s, massimo 120s.',
+    externalUrlMissing: 'External URL is not set.',
+    externalUrlHint: 'The ML API fetches the camera snapshot by URL. Set the External URL in General settings so the ML API container can reach Bambuddy.',
     perPrinterTitle: 'Stampanti monitorate',
     perPrinterHint: 'Scegli quali stampanti il servizio di rilevamento deve monitorare.',
     monitorAll: 'Monitora tutte le stampanti connesse',

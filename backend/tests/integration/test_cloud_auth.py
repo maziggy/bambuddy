@@ -6,7 +6,7 @@ Regression tests for:
 - Cloud endpoints use CLOUD_AUTH permission (not SETTINGS_READ)
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -484,88 +484,100 @@ class TestCloudRouteRegionPlumbing:
     """
 
     @staticmethod
-    def _make_response(json_body: dict, status: int = 200):
-        """Build a MagicMock httpx.Response stand-in for patched posts/gets."""
-        response = MagicMock()
-        response.status_code = status
-        response.text = "{}"
-        response.json.return_value = json_body
-        response.cookies = {}
-        return response
+    def _capturing_client(response_json: dict, status: int = 200):
+        """Build an httpx.AsyncClient backed by MockTransport that records every
+        outbound request URL. Returns ``(client, captured_urls)``.
+
+        Using MockTransport (rather than ``patch.object(httpx.AsyncClient, ...)``)
+        is critical: class-level method patches also intercept the ASGI test
+        client's own requests, so the route handler never runs and the
+        assertions end up inspecting the test-client URL instead of the
+        backend's outbound URL. MockTransport only affects the client we
+        inject into the backend via ``set_shared_http_client``.
+        """
+        import httpx
+
+        captured: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(str(request.url))
+            return httpx.Response(status, json=response_json)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        return client, captured
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_set_token_route_with_china_region_hits_cn_endpoint(self, async_client: AsyncClient):
         """POST /cloud/token with region=china routes get_user_profile to api.bambulab.cn."""
-        import httpx
+        from backend.app.services.bambu_cloud import set_shared_http_client
 
-        with (
-            patch("backend.app.core.auth.is_auth_enabled", return_value=False),
-            patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mock_get,
-        ):
-            mock_get.return_value = self._make_response({"uid": "123", "email": "x"})
+        mock_client, captured_urls = self._capturing_client({"uid": "123", "email": "x"})
+        set_shared_http_client(mock_client)
+        try:
+            with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
+                response = await async_client.post(
+                    "/api/v1/cloud/token",
+                    json={"access_token": "cn-token", "region": "china"},
+                )
 
-            response = await async_client.post(
-                "/api/v1/cloud/token",
-                json={"access_token": "cn-token", "region": "china"},
-            )
-
-            assert response.status_code == 200
-            # The profile check call must have hit api.bambulab.cn, never .com
-            called_urls = [str(call.args[0]) for call in mock_get.call_args_list if call.args]
-            assert any("api.bambulab.cn" in url for url in called_urls), called_urls
-            assert not any("api.bambulab.com" in url for url in called_urls), called_urls
+                assert response.status_code == 200
+                assert any("api.bambulab.cn" in url for url in captured_urls), captured_urls
+                assert not any("api.bambulab.com" in url for url in captured_urls), captured_urls
+        finally:
+            set_shared_http_client(None)
+            await mock_client.aclose()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_login_route_with_china_region_hits_cn_endpoint(self, async_client: AsyncClient):
         """POST /cloud/login with region=china routes login_request to api.bambulab.cn."""
-        import httpx
+        from backend.app.services.bambu_cloud import set_shared_http_client
 
-        with (
-            patch("backend.app.core.auth.is_auth_enabled", return_value=False),
-            patch.object(httpx.AsyncClient, "post", new_callable=AsyncMock) as mock_post,
-        ):
-            mock_post.return_value = self._make_response({"loginType": "verifyCode"})
+        mock_client, captured_urls = self._capturing_client({"loginType": "verifyCode"})
+        set_shared_http_client(mock_client)
+        try:
+            with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
+                response = await async_client.post(
+                    "/api/v1/cloud/login",
+                    json={"email": "user@example.com", "password": "x", "region": "china"},
+                )
 
-            response = await async_client.post(
-                "/api/v1/cloud/login",
-                json={"email": "user@example.com", "password": "x", "region": "china"},
-            )
-
-            assert response.status_code == 200
-            called_urls = [str(call.args[0]) for call in mock_post.call_args_list if call.args]
-            assert any("api.bambulab.cn" in url for url in called_urls), called_urls
-            assert not any("api.bambulab.com" in url for url in called_urls), called_urls
+                assert response.status_code == 200
+                assert any("api.bambulab.cn" in url for url in captured_urls), captured_urls
+                assert not any("api.bambulab.com" in url for url in captured_urls), captured_urls
+        finally:
+            set_shared_http_client(None)
+            await mock_client.aclose()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_verify_route_with_china_region_hits_cn_tfa_endpoint(self, async_client: AsyncClient):
         """POST /cloud/verify with region=china + tfa_key routes TOTP to bambulab.cn."""
-        import httpx
+        from backend.app.services.bambu_cloud import set_shared_http_client
 
-        with (
-            patch("backend.app.core.auth.is_auth_enabled", return_value=False),
-            patch.object(httpx.AsyncClient, "post", new_callable=AsyncMock) as mock_post,
-        ):
-            mock_post.return_value = self._make_response({"token": "t"})
+        mock_client, captured_urls = self._capturing_client({"token": "t"})
+        set_shared_http_client(mock_client)
+        try:
+            with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
+                response = await async_client.post(
+                    "/api/v1/cloud/verify",
+                    json={
+                        "email": "user@example.com",
+                        "code": "123456",
+                        "tfa_key": "tfa-xyz",
+                        "region": "china",
+                    },
+                )
 
-            response = await async_client.post(
-                "/api/v1/cloud/verify",
-                json={
-                    "email": "user@example.com",
-                    "code": "123456",
-                    "tfa_key": "tfa-xyz",
-                    "region": "china",
-                },
-            )
-
-            assert response.status_code == 200
-            called_urls = [str(call.args[0]) for call in mock_post.call_args_list if call.args]
-            # TOTP endpoint lives on bambulab.cn (without the api. prefix),
-            # NOT bambulab.com — that's exactly the bug we just fixed.
-            assert any("bambulab.cn/api/sign-in/tfa" in url for url in called_urls), called_urls
-            assert not any("bambulab.com" in url for url in called_urls), called_urls
+                assert response.status_code == 200
+                # TOTP endpoint lives on bambulab.cn (without the api. prefix),
+                # NOT bambulab.com — that's exactly the bug we just fixed.
+                assert any("bambulab.cn/api/sign-in/tfa" in url for url in captured_urls), captured_urls
+                assert not any("bambulab.com" in url for url in captured_urls), captured_urls
+        finally:
+            set_shared_http_client(None)
+            await mock_client.aclose()
 
     @pytest.mark.asyncio
     @pytest.mark.integration

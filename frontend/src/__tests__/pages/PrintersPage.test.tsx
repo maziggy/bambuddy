@@ -62,6 +62,8 @@ const mockPrinterStatus = {
 
 describe('PrintersPage', () => {
   beforeEach(() => {
+    localStorage.removeItem('printerCardSize');
+
     server.use(
       http.get('/api/v1/printers/', () => {
         return HttpResponse.json(mockPrinters);
@@ -223,6 +225,43 @@ describe('PrintersPage', () => {
       });
 
       expect(screen.getAllByText('Plate Clear').length).toBeGreaterThan(0);
+    });
+
+    it('shows an icon-only plate clear action in small card view', async () => {
+      let plateCleared = false;
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([mockPrinters[0]]);
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', plate_cleared: plateCleared });
+        }),
+        http.post('/api/v1/printers/:id/clear-plate', () => {
+          plateCleared = true;
+          return HttpResponse.json({ success: true, message: 'Plate cleared' });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'S' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Mark plate as cleared')).not.toBeInTheDocument();
+      });
+
+      const clearButton = screen.getByRole('button', { name: 'Mark plate as cleared' });
+
+      fireEvent.click(clearButton);
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
+      });
     });
 
     it('shows plate clear status but no action while idle', async () => {

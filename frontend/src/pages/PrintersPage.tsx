@@ -2624,7 +2624,25 @@ function PrinterCard({
                     <span className="text-xs text-white">{Math.round(status.progress || 0)}%</span>
                   </div>
                 ) : (
-                  <p className="text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="min-w-0 flex-1 truncate text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                    {showClearPlateButton && (
+                      <button
+                        type="button"
+                        onClick={() => clearPlateMutation.mutate()}
+                        disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+                        aria-label={t('printers.plateStatus.markCleared')}
+                        className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
+                        title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+                      >
+                        {clearPlateMutation.isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <PlateClearedIcon className="w-5 h-5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             ) : (

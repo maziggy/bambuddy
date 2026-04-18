@@ -76,6 +76,7 @@ import { AssignSpoolModal } from '../components/AssignSpoolModal';
 import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
+import { PlateClearedIcon } from '../components/icons/PlateClearedIcon';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
 import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
@@ -1644,6 +1645,9 @@ function PrinterCard({
     enabled: status?.connected && status?.state !== 'RUNNING',
   });
   const lastPrint = lastPrints?.[0];
+  const plateCleared = status?.plate_cleared ?? false;
+  const needsPlateClear = requirePlateClear && (status?.state === 'FINISH' || status?.state === 'FAILED') && !plateCleared;
+  const showClearPlateButton = status?.connected && needsPlateClear;
 
   // Determine if this card should be hidden (use cached connected state to prevent flicker)
   const shouldHide = hideIfDisconnected && isConnected === false;
@@ -1760,6 +1764,19 @@ function PrinterCard({
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToResumePrint'), 'error'),
+  });
+
+  const clearPlateMutation = useMutation({
+    mutationFn: () => api.clearPlate(printer.id),
+    onSuccess: () => {
+      showToast(t('queue.clearPlateSuccess'));
+      queryClient.setQueryData(['printerStatus', printer.id], (old: PrinterStatus | undefined) =>
+        old ? { ...old, plate_cleared: true } : old
+      );
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+      queryClient.invalidateQueries({ queryKey: ['queue', printer.id] });
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
 
   // Chamber light mutation with optimistic update
@@ -2815,6 +2832,21 @@ function PrinterCard({
                     <NozzleRackCard slots={status.nozzle_rack} filamentInfo={filamentInfo} />
                   )}
                 </div>
+                {showClearPlateButton && (
+                  <button
+                    onClick={() => clearPlateMutation.mutate()}
+                    disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+                    className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
+                    title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : undefined}
+                  >
+                    {clearPlateMutation.isPending ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <PlateClearedIcon className="w-4 h-4" />
+                    )}
+                    {t('printers.plateStatus.markCleared')}
+                  </button>
+                )}
               );
             })()}
 

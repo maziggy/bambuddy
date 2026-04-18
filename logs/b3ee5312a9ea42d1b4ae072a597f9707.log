@@ -1,0 +1,200 @@
+2026-04-18 15:09:39,253 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-18 15:09:39,265 INFO [backend.app.api.routes.websocket] Sent initial status for 9 printers
+2026-04-18 15:09:39,336 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:40,008 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:40,009 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -52dBm
+2026-04-18 15:09:40,328 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFL99']
+2026-04-18 15:09:40,822 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:40,824 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -42dBm
+2026-04-18 15:09:40,845 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFL99', 'GFSNL04']
+2026-04-18 15:09:41,020 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:41,021 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -36dBm
+2026-04-18 15:09:41,098 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:41,099 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-04-18 15:09:41,114 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:41,115 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -61dBm
+2026-04-18 15:09:41,587 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:41,595 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -53dBm
+2026-04-18 15:09:42,033 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:42,039 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -54dBm
+2026-04-18 15:09:42,152 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:42,192 INFO [backend.app.api.routes.cloud] get_filament_info called with 2 IDs: ['GFSNL04', 'GFL99']
+2026-04-18 15:09:43,071 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:43,072 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -35dBm
+2026-04-18 15:09:43,140 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:43,144 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -62dBm
+2026-04-18 15:09:43,373 INFO [backend.app.api.routes.cloud] get_filament_info called with 3 IDs: ['GFL00', 'GFL99', 'GFSNL04']
+2026-04-18 15:09:43,589 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:43,590 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -58dBm
+2026-04-18 15:09:43,771 INFO [backend.app.api.routes.cloud] get_filament_info called with 4 IDs: ['GFSNL04', 'GFL99', 'GFG99', 'Pfbbaea8']
+2026-04-18 15:09:44,068 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:44,187 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:45,603 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:45,604 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -59dBm
+2026-04-18 15:09:46,094 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:46,094 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -53dBm
+2026-04-18 15:09:47,161 INFO [backend.app.api.routes.support] Generated support bundle: bambuddy-support-20260418-150946.zip
+2026-04-18 15:09:47,164 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for 2 - P1S - Virtual (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-18 15:09:47,224 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:47,225 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -38dBm
+2026-04-18 15:09:47,434 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:47,435 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-18 15:09:48,152 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:48,153 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -54dBm
+2026-04-18 15:09:49,175 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:49,176 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -34dBm
+2026-04-18 15:09:49,182 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:49,183 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -63dBm
+2026-04-18 15:09:49,223 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:49,420 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:49,421 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-18 15:09:49,678 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:49,679 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -56dBm
+2026-04-18 15:09:49,887 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for 3 - A1 - VIrtual (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-18 15:09:49,987 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for 1 - A1M - Virtual (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-18 15:09:50,187 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:50,188 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -53dBm
+2026-04-18 15:09:51,212 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:51,213 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -35dBm
+2026-04-18 15:09:51,233 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:51,445 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:51,661 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:51,661 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -53dBm
+2026-04-18 15:09:52,192 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:52,193 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -54dBm
+2026-04-18 15:09:52,991 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:53,212 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:53,213 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -62dBm
+2026-04-18 15:09:53,477 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:53,477 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-18 15:09:53,689 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:53,690 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -58dBm
+2026-04-18 15:09:54,222 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:54,223 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -52dBm
+2026-04-18 15:09:55,029 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:55,239 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:55,239 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -60dBm
+2026-04-18 15:09:55,265 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:55,265 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -36dBm
+2026-04-18 15:09:55,314 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:55,315 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -40dBm
+2026-04-18 15:09:55,720 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:55,720 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -57dBm
+2026-04-18 15:09:56,251 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:56,251 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -54dBm
+2026-04-18 15:09:56,352 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:56,353 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-18 15:09:57,085 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:57,086 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -46dBm
+2026-04-18 15:09:57,372 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:57,385 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:57,386 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -38dBm
+2026-04-18 15:09:57,562 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:57,889 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:57,890 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -56dBm
+2026-04-18 15:09:58,391 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:58,392 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -50dBm
+2026-04-18 15:09:59,117 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:59,118 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-18 15:09:59,302 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:59,303 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -63dBm
+2026-04-18 15:09:59,428 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:59,429 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -34dBm
+2026-04-18 15:09:59,564 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:09:59,764 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:10:00,342 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:10:01,169 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 15:10:01,170 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -42dBm
+2026-04-18 15:10:01,183 INFO [backend.app.api.routes.support] Log level changed to INFO
+2026-04-18 15:10:13,679 WARNING [backend.app.services.bambu_ftp] FTP download timed out after 60.0s for /Mini_Water_Dragon.gcode.3mf
+2026-04-18 15:10:13,680 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.gcode.3mf will retry in 3.0s...
+2026-04-18 15:10:16,919 WARNING [backend.app.services.bambu_ftp] FTP connection failed to [IP]: [Errno 104] Connection reset by peer (type: ConnectionResetError)
+2026-04-18 15:10:16,922 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.gcode.3mf attempt 2/4 returned failure
+2026-04-18 15:10:16,923 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.gcode.3mf will retry in 3.0s...
+2026-04-18 15:10:16,934 WARNING [backend.app.api.routes.printers] FTP download attempt 2 failed: , retrying...
+2026-04-18 15:10:18,800 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:10:21,360 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:19,924 WARNING [backend.app.services.bambu_ftp] FTP download timed out after 60.0s for /Mini_Water_Dragon.gcode.3mf
+2026-04-18 15:11:19,925 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.gcode.3mf attempt 3/4 returned failure
+2026-04-18 15:11:19,925 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.gcode.3mf will retry in 3.0s...
+2026-04-18 15:11:23,081 WARNING [backend.app.services.bambu_ftp] FTP connection failed to [IP]: [Errno 104] Connection reset by peer (type: ConnectionResetError)
+2026-04-18 15:11:23,084 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.gcode.3mf attempt 4/4 returned failure
+2026-04-18 15:11:23,085 ERROR [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.gcode.3mf failed after 4 attempts
+2026-04-18 15:11:23,089 ERROR [backend.app.api.routes.printers] FTP download failed after 3 attempts: 
+2026-04-18 15:11:24,029 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:24,193 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:24,206 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:11:28,134 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:28,311 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:28,323 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Mini_Water_Dragon.3mf attempt 2/4 returned failure
+2026-04-18 15:11:28,323 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:11:32,309 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:32,490 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:32,602 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Mini_Water_Dragon.3mf attempt 3/4 returned failure
+2026-04-18 15:11:32,602 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:11:36,532 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:36,609 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:36,621 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/Mini_Water_Dragon.3mf attempt 4/4 returned failure
+2026-04-18 15:11:36,622 ERROR [backend.app.services.bambu_ftp] Download 3MF from /cache/Mini_Water_Dragon.3mf failed after 4 attempts
+2026-04-18 15:11:37,833 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:38,029 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:38,056 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:11:42,032 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:42,228 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:42,242 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Mini_Water_Dragon.3mf attempt 2/4 returned failure
+2026-04-18 15:11:42,242 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:11:46,342 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:46,414 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:46,427 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Mini_Water_Dragon.3mf attempt 3/4 returned failure
+2026-04-18 15:11:46,428 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:11:50,339 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:50,433 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:50,518 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/Mini_Water_Dragon.3mf attempt 4/4 returned failure
+2026-04-18 15:11:50,518 ERROR [backend.app.services.bambu_ftp] Download 3MF from /model/Mini_Water_Dragon.3mf failed after 4 attempts
+2026-04-18 15:11:51,778 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:51,949 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:51,963 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:11:55,978 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:11:56,147 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:11:56,172 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Mini_Water_Dragon.3mf attempt 2/4 returned failure
+2026-04-18 15:11:56,172 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:12:00,067 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:00,242 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:00,259 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Mini_Water_Dragon.3mf attempt 3/4 returned failure
+2026-04-18 15:12:00,259 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:12:04,265 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:04,335 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:04,345 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Mini_Water_Dragon.3mf attempt 4/4 returned failure
+2026-04-18 15:12:04,346 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/Mini_Water_Dragon.3mf failed after 4 attempts
+2026-04-18 15:12:05,195 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:05,305 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:05,362 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:12:09,388 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:09,571 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:09,587 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Mini_Water_Dragon.3mf attempt 2/4 returned failure
+2026-04-18 15:12:09,587 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:12:13,589 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:13,663 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:13,677 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Mini_Water_Dragon.3mf attempt 3/4 returned failure
+2026-04-18 15:12:13,677 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:12:17,802 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:17,977 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:17,989 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Mini_Water_Dragon.3mf attempt 4/4 returned failure
+2026-04-18 15:12:17,989 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/Mini_Water_Dragon.3mf failed after 4 attempts
+2026-04-18 15:12:19,118 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:19,217 INFO [backend.app.services.bambu_ftp] FTP download failed for /Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:19,230 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:12:23,720 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:23,826 INFO [backend.app.services.bambu_ftp] FTP download failed for /Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:23,842 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.3mf attempt 2/4 returned failure
+2026-04-18 15:12:23,842 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:12:27,814 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:27,918 INFO [backend.app.services.bambu_ftp] FTP download failed for /Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:27,934 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.3mf attempt 3/4 returned failure
+2026-04-18 15:12:27,934 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.3mf will retry in 3.0s...
+2026-04-18 15:12:31,881 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 15:12:31,932 INFO [backend.app.services.bambu_ftp] FTP download failed for /Mini_Water_Dragon.3mf: 550 
+2026-04-18 15:12:31,996 INFO [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.3mf attempt 4/4 returned failure
+2026-04-18 15:12:31,997 ERROR [backend.app.services.bambu_ftp] Download 3MF from /Mini_Water_Dragon.3mf failed after 4 attempts
+2026-04-18 15:12:31,997 INFO [backend.app.main] Direct FTP download failed, searching directories for 'mini_water_dragon'
+2026-04-18 15:12:32,945 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)

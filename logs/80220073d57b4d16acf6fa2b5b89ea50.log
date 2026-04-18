@@ -1,0 +1,200 @@
+2026-04-17 16:48:05,033 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 16:49:55,975 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-17 16:49:55,976 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-17 16:49:55,977 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-17 16:49:56,153 INFO [backend.app.api.routes.cloud] get_filament_info called with 4 IDs: ['PFUSd926', 'GFG99', 'PFUS9a8d', 'GFU99']
+2026-04-17 16:50:01,389 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset PFUSd926 (API ID: PFUSd926): Failed to get setting detail: 400
+2026-04-17 16:50:01,817 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset PFUS9a8d (API ID: PFUS9a8d): Failed to get setting detail: 400
+2026-04-17 16:50:02,022 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-04-17 16:50:21,380 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-17 16:52:12,184 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-17 16:52:12,184 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-17 16:52:12,185 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-17 16:52:21,986 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-17 16:52:32,917 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-17 16:52:32,918 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-17 16:52:32,918 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-17 16:53:05,036 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 16:53:26,230 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-17 16:58:05,038 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 16:58:55,295 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-17 16:58:55,295 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-17 16:58:57,353 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 144174 bytes
+2026-04-17 17:03:05,041 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:08:05,043 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:13:05,046 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:17:03,487 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-17 17:17:03,487 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-17 17:17:06,905 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 170639 bytes
+2026-04-17 17:18:05,047 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:23:05,048 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:28:05,052 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:28:17,358 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Tray change during print: tray=2 at layer=151
+2026-04-17 17:33:05,055 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:34:26,861 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] PRINT COMPLETE detected - state: FINISH, status: completed, file: Gridfinity_bin_5x1x5.gcode.3mf, subtask: Gridfinity_bin_5x1x5, was_running: True, timelapse_during_print: False
+2026-04-17 17:34:26,861 INFO [backend.app.main] [CALLBACK] on_print_complete started for printer 1
+2026-04-17 17:34:26,861 INFO [backend.app.main] [TIMING] WebSocket send_print_complete: 0.000s elapsed
+2026-04-17 17:34:26,862 INFO [backend.app.main] Print complete - filename: Gridfinity_bin_5x1x5.gcode.3mf, subtask: Gridfinity_bin_5x1x5, status: completed
+2026-04-17 17:34:26,862 INFO [backend.app.main] Looking for archive in _active_prints, keys to try: [(1, 'Gridfinity_bin_5x1x5.3mf'), (1, 'Gridfinity_bin_5x1x5.gcode.3mf'), (1, 'Gridfinity_bin_5x1x5'), (1, 'Gridfinity_bin_5x1x5.gcode.3mf'), (1, 'Gridfinity_bin_5x1x5.gcode.3mf')]...
+2026-04-17 17:34:26,862 INFO [backend.app.main] Current _active_prints: [(1, 'Gridfinity_bin_5x1x5.gcode.3mf'), (1, 'Gridfinity_bin_5x1x5.3mf')]
+2026-04-17 17:34:26,862 INFO [backend.app.main] Found archive 84 with key (1, 'Gridfinity_bin_5x1x5.3mf')
+2026-04-17 17:34:28,628 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-17 17:34:28,660 WARNING [backend.app.services.bambu_ftp] Failed to delete /Gridfinity_bin_5x1x5.3mf: 550 
+2026-04-17 17:34:31,577 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-17 17:34:31,644 WARNING [backend.app.services.bambu_ftp] Failed to delete /Gridfinity_bin_5x1x5.3mf: 550 
+2026-04-17 17:34:34,503 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-17 17:34:34,561 WARNING [backend.app.services.bambu_ftp] Failed to delete /Gridfinity_bin_5x1x5.3mf: 550 
+2026-04-17 17:34:34,591 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /Gridfinity_bin_5x1x5.3mf (file may linger on SD card)
+2026-04-17 17:34:35,511 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-17 17:34:35,572 WARNING [backend.app.services.bambu_ftp] Failed to delete /Gridfinity_bin_5x1x5.gcode: 550 
+2026-04-17 17:34:38,525 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-17 17:34:38,576 WARNING [backend.app.services.bambu_ftp] Failed to delete /Gridfinity_bin_5x1x5.gcode: 550 
+2026-04-17 17:34:41,505 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-17 17:34:41,558 WARNING [backend.app.services.bambu_ftp] Failed to delete /Gridfinity_bin_5x1x5.gcode: 550 
+2026-04-17 17:34:41,574 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /Gridfinity_bin_5x1x5.gcode (file may linger on SD card)
+2026-04-17 17:34:41,574 INFO [backend.app.main] [TIMING] SD card cleanup: 14.713s elapsed
+2026-04-17 17:34:41,575 INFO [backend.app.main] [TIMING] Queue item update: 14.714s elapsed
+2026-04-17 17:34:41,575 INFO [backend.app.main] [TIMING] Archive lookup: 14.714s elapsed
+2026-04-17 17:34:41,575 INFO [backend.app.main] [ARCHIVE] Updating archive 84 status...
+2026-04-17 17:34:41,579 INFO [backend.app.main] [ARCHIVE] Archive 84 status updated to completed, failure_reason=None
+2026-04-17 17:34:41,579 INFO [backend.app.main] [ARCHIVE] WebSocket notification sent for archive 84
+2026-04-17 17:34:41,580 INFO [backend.app.main] [TIMING] Archive status update: 14.719s elapsed
+2026-04-17 17:34:41,583 INFO [backend.app.main] [PRINT_LOG] Log entry written for archive 84
+2026-04-17 17:34:41,583 INFO [backend.app.main] [TIMING] Print log entry: 14.722s elapsed
+2026-04-17 17:34:41,584 INFO [backend.app.services.usage_tracker] [UsageTracker] on_print_complete: printer=1, archive=84, session=yes, ams_mapping=None
+2026-04-17 17:34:41,584 INFO [backend.app.services.usage_tracker] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=255, last_loaded_tray=2
+2026-04-17 17:34:41,585 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: archive 84, filament_usage=[{'slot_id': 2, 'used_g': 36.51, 'type': 'PETG', 'color': '#A0A0A0'}, {'slot_id': 3, 'used_g': 2.95, 'type': 'PETG', 'color': '#800000'}]
+2026-04-17 17:34:41,586 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_to_tray=None (source: none)
+2026-04-17 17:34:41,586 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=2 -> global_tray=1 -> AMS0-T1 (used_g=36.5, tray_now_override=None)
+2026-04-17 17:34:41,587 INFO [backend.app.services.usage_tracker] [UsageTracker] Spool 18 consumed 36.5g (3MF) on printer 1 AMS0-T1 (completed)
+2026-04-17 17:34:41,588 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=3 -> global_tray=2 -> AMS0-T2 (used_g=3.0, tray_now_override=None)
+2026-04-17 17:34:41,589 INFO [backend.app.services.usage_tracker] [UsageTracker] Spool 19 consumed 3.0g (3MF) on printer 1 AMS0-T2 (completed)
+2026-04-17 17:34:41,591 INFO [backend.app.main] [TIMING] Usage tracker: 14.730s elapsed
+2026-04-17 17:34:41,592 INFO [backend.app.services.spoolman_tracking] [SPOOLMAN] No tracking data for print (printer=1, archive=84)
+2026-04-17 17:34:41,592 INFO [backend.app.main] [TIMING] Spoolman usage report: 14.731s elapsed
+2026-04-17 17:34:41,592 INFO [backend.app.main] [TIMING] Background tasks scheduled (energy, photo): 14.731s elapsed
+2026-04-17 17:34:41,593 INFO [backend.app.main] [TIMING] All background tasks scheduled: 14.731s elapsed
+2026-04-17 17:34:41,593 INFO [backend.app.main] [CALLBACK] on_print_complete finished for printer 1, archive 84
+2026-04-17 17:34:41,593 INFO [backend.app.main] [ENERGY-BG] Starting energy calculation for archive 84
+2026-04-17 17:34:41,593 INFO [backend.app.main] [PHOTO-BG] Starting finish photo capture for archive 84
+2026-04-17 17:34:41,593 INFO [backend.app.main] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-04-17 17:34:41,594 INFO [backend.app.main] [MAINT-BG] Starting maintenance check for printer 1
+2026-04-17 17:34:41,594 INFO [backend.app.main] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-04-17 17:34:41,595 INFO [backend.app.main] [AUTO-OFF-BG] Completed
+2026-04-17 17:34:41,595 INFO [backend.app.main] [ENERGY-BG] No smart plug for printer 1
+2026-04-17 17:34:41,597 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-17 17:34:41,601 INFO [backend.app.main] [MAINT-BG] Completed (no items need attention)
+2026-04-17 17:34:44,515 INFO [backend.app.services.camera] Saved camera frame to: /opt/[user]/archive/1/20260417_161952_Gridfinity_bin_5x1x5.gcode/photos/finish_20260417_173441_e68035b9.jpg
+2026-04-17 17:34:44,515 INFO [backend.app.services.camera] Finish photo saved: finish_20260417_173441_e68035b9.jpg
+2026-04-17 17:34:44,516 INFO [backend.app.main] [PHOTO-BG] Saved: finish_20260417_173441_e68035b9.jpg
+2026-04-17 17:34:44,517 INFO [backend.app.main] [PHOTO-NOTIFY] Photo task returned: finish_20260417_173441_e68035b9.jpg
+2026-04-17 17:34:44,517 INFO [backend.app.main] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260417_173441_e68035b9.jpg
+2026-04-17 17:34:44,518 INFO [backend.app.main] [NOTIFY-BG] Loaded finish photo bytes: 178627 bytes
+2026-04-17 17:34:44,518 INFO [backend.app.services.notification_service] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-04-17 17:34:44,519 INFO [backend.app.services.notification_service] No notification providers configured for on_print_complete event on printer 1
+2026-04-17 17:34:44,519 INFO [backend.app.main] [NOTIFY-BG] Completed
+2026-04-17 17:38:05,057 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:43:05,060 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:48:05,062 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:53:05,064 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 17:58:05,066 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:03:05,069 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:08:05,071 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:13:05,073 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:18:05,075 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:23:05,077 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:28:05,079 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:33:05,082 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:38:05,085 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:43:05,088 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:48:05,091 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:53:05,094 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 18:58:05,096 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:03:05,099 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:08:05,101 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:13:05,103 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:18:05,107 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:23:05,109 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:28:05,111 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:33:05,114 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:38:05,116 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:43:05,118 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:48:05,119 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:53:05,122 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 19:58:05,123 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:03:05,126 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:08:05,128 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:13:05,131 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:18:05,134 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:23:05,136 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:28:05,139 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:33:05,141 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:38:05,144 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:43:05,147 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:48:05,149 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:53:05,152 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 20:58:05,155 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 21:03:05,158 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 21:08:05,160 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 21:13:05,170 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 21:18:05,186 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 21:23:05,189 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-17 21:24:59,915 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-17 21:24:59,915 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-18 07:11:18,839 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: serial number not available in version info
+2026-04-18 07:11:18,858 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: firmware version not available in version info
+2026-04-18 07:13:05,416 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 07:18:05,438 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 07:23:05,457 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 07:28:05,482 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 07:33:05,506 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 07:38:05,527 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 07:43:05,560 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 07:48:05,577 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 07:53:05,579 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 07:58:05,606 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 08:03:05,634 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 08:08:05,659 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 08:12:32,102 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-18 08:12:32,103 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-18 08:12:32,104 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-18 08:12:32,237 INFO [backend.app.api.routes.cloud] get_filament_info called with 4 IDs: ['PFUSd926', 'GFG99', 'PFUS9a8d', 'GFU99']
+2026-04-18 08:12:32,466 WARNING [backend.app.services.firmware_check] Failed to get Bambu Lab page: 403
+2026-04-18 08:12:32,484 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset PFUSd926 (API ID: PFUSd926): Failed to get setting detail: 400
+2026-04-18 08:12:32,826 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset PFUS9a8d (API ID: PFUS9a8d): Failed to get setting detail: 400
+2026-04-18 08:12:33,025 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-04-18 08:13:05,677 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-18 08:16:05,294 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-18 08:16:05,294 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-18 08:16:05,294 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-18 08:16:05,345 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': False}
+2026-04-18 08:16:05,345 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-18 08:16:05,345 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-04-18 08:16:05,345 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 3, 'insert_flag': True, 'power_on_flag': True}
+2026-04-18 08:16:05,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-18 08:16:05,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-18 08:16:05,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-04-18 08:16:05,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-18 08:16:05,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-18 08:16:05,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 08:16:05,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-18 08:16:05,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-18 08:16:05,347 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-18 08:16:05,347 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-18 08:16:05,347 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-18 08:16:05,347 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-18 08:16:05,347 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -57dBm
+2026-04-18 08:16:05,347 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-04-18 08:16:05,347 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-04-18 08:16:07,399 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 08:16:08,220 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-18 08:16:08,221 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-04-18 08:16:08,539 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-18 08:16:09,414 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 08:16:11,442 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-18 08:16:12,330 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30s, model=A1, prot_c=False)
+2026-04-18 08:16:13,093 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-18 08:16:13,109 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-18 08:16:13,124 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-18 08:16:13,125 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-04-18 08:16:13,133 DEBUG [backend.app.services.bambu_ftp] AVBL command not supported: 502 

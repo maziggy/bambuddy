@@ -22,7 +22,6 @@ from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
 from backend.app.models.spool_usage_history import SpoolUsageHistory
-from backend.app.services.bambu_cloud import get_cloud_service
 from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
@@ -415,16 +414,15 @@ class GitHubBackupService:
 
     async def _collect_cloud_profiles(self, db: AsyncSession, files: dict):
         """Collect Bambu Cloud profiles if authenticated."""
-        # Check if cloud is authenticated
-        cloud = get_cloud_service()
+        # Backup runs without a user context, so fall back to the auth-disabled
+        # Settings storage. ``build_authenticated_cloud`` honours the stored
+        # region so China-region tokens are validated against api.bambulab.cn.
+        from backend.app.api.routes.cloud import build_authenticated_cloud
 
-        # Try to restore token from DB
-        result = await db.execute(select(Settings).where(Settings.key == "bambu_cloud_token"))
-        setting = result.scalar_one_or_none()
-        if setting and setting.value:
-            cloud.set_token(setting.value)
-
-        if not cloud.is_authenticated:
+        cloud = await build_authenticated_cloud(db, user=None)
+        if cloud is None or not cloud.is_authenticated:
+            if cloud is not None:
+                await cloud.close()
             logger.info("Cloud not authenticated, skipping cloud profiles")
             return
 
@@ -472,6 +470,8 @@ class GitHubBackupService:
 
         except Exception as e:
             logger.warning("Failed to collect cloud profiles: %s", e)
+        finally:
+            await cloud.close()
 
     async def _collect_settings(self, db: AsyncSession, files: dict):
         """Collect app settings."""

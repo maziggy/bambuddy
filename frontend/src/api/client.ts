@@ -3642,10 +3642,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, password, region }),
     }),
-  cloudVerify: (email: string, code: string, tfaKey?: string) =>
+  cloudVerify: (email: string, code: string, tfaKey?: string, region: string = 'global') =>
     request<CloudLoginResponse>('/cloud/verify', {
       method: 'POST',
-      body: JSON.stringify({ email, code, tfa_key: tfaKey }),
+      body: JSON.stringify({ email, code, tfa_key: tfaKey, region }),
     }),
   cloudSetToken: (access_token: string, region: string = 'global') =>
     request<CloudAuthStatus>('/cloud/token', {

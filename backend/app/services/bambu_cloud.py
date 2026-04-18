@@ -515,20 +515,11 @@ class BambuCloudService:
         await self._client.aclose()
 
 
-# Singleton instance
-_cloud_service: BambuCloudService | None = None
-
-
-def get_cloud_service() -> BambuCloudService:
-    """Get the singleton cloud service instance."""
-    global _cloud_service
-    if _cloud_service is None:
-        _cloud_service = BambuCloudService()
-    return _cloud_service
-
-
-def reset_cloud_service(region: str = "global") -> BambuCloudService:
-    """Recreate the singleton with a specific region."""
-    global _cloud_service
-    _cloud_service = BambuCloudService(region=region)
-    return _cloud_service
+# Previously this module exposed a process-wide ``_cloud_service`` singleton
+# via ``get_cloud_service()`` / ``reset_cloud_service()``. That pattern leaked
+# region and token state across users (a China-region login would pin the
+# singleton to api.bambulab.cn until the next explicit reset), so the singleton
+# has been removed. Callers should construct a per-request
+# ``BambuCloudService(region=...)`` from the stored region and ``await
+# cloud.close()`` it when done. See ``routes.cloud.build_authenticated_cloud``
+# for the standard pattern.

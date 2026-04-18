@@ -267,19 +267,21 @@ class TestCloudTokenStorage:
         """get_stored_token with user=None and no global token returns (None, None)."""
         from backend.app.api.routes.cloud import get_stored_token
 
-        token, email = await get_stored_token(db_session, user=None)
+        token, email, region = await get_stored_token(db_session, user=None)
         assert token is None
         assert email is None
+        assert region == "global"  # default for missing rows
 
     @pytest.mark.asyncio
     async def test_store_and_get_global_token(self, db_session):
         """store_token with user=None stores in global Settings table."""
         from backend.app.api.routes.cloud import get_stored_token, store_token
 
-        await store_token(db_session, "test-token-123", "test@example.com", user=None)
-        token, email = await get_stored_token(db_session, user=None)
+        await store_token(db_session, "test-token-123", "test@example.com", "global", user=None)
+        token, email, region = await get_stored_token(db_session, user=None)
         assert token == "test-token-123"
         assert email == "test@example.com"
+        assert region == "global"
 
     @pytest.mark.asyncio
     async def test_store_and_get_per_user_token(self, db_session):
@@ -293,7 +295,7 @@ class TestCloudTokenStorage:
         await db_session.commit()
         await db_session.refresh(user)
 
-        await store_token(db_session, "user-token-abc", "user@example.com", user=user)
+        await store_token(db_session, "user-token-abc", "user@example.com", "global", user=user)
 
         # Re-fetch user to verify persistence
         from sqlalchemy import select
@@ -302,6 +304,7 @@ class TestCloudTokenStorage:
         refreshed = result.scalar_one()
         assert refreshed.cloud_token == "user-token-abc"
         assert refreshed.cloud_email == "user@example.com"
+        assert refreshed.cloud_region == "global"
 
     @pytest.mark.asyncio
     async def test_per_user_token_does_not_affect_global(self, db_session):
@@ -316,17 +319,17 @@ class TestCloudTokenStorage:
         await db_session.refresh(user)
 
         # Store per-user token
-        await store_token(db_session, "per-user-token", "per-user@test.com", user=user)
+        await store_token(db_session, "per-user-token", "per-user@test.com", "global", user=user)
 
         # Global should still be empty
-        global_token, global_email = await get_stored_token(db_session, user=None)
+        global_token, global_email, _ = await get_stored_token(db_session, user=None)
         assert global_token is None
         assert global_email is None
 
     @pytest.mark.asyncio
     async def test_clear_per_user_token(self, db_session):
         """clear_token with user clears only that user's credentials."""
-        from backend.app.api.routes.cloud import clear_token, get_stored_token, store_token
+        from backend.app.api.routes.cloud import clear_token, store_token
         from backend.app.core.auth import get_password_hash
         from backend.app.models.user import User
 
@@ -335,7 +338,7 @@ class TestCloudTokenStorage:
         await db_session.commit()
         await db_session.refresh(user)
 
-        await store_token(db_session, "to-clear", "clear@test.com", user=user)
+        await store_token(db_session, "to-clear", "clear@test.com", "china", user=user)
         await clear_token(db_session, user=user)
 
         from sqlalchemy import select
@@ -344,22 +347,24 @@ class TestCloudTokenStorage:
         refreshed = result.scalar_one()
         assert refreshed.cloud_token is None
         assert refreshed.cloud_email is None
+        assert refreshed.cloud_region is None
 
     @pytest.mark.asyncio
     async def test_clear_global_token(self, db_session):
         """clear_token with user=None clears from global Settings."""
         from backend.app.api.routes.cloud import clear_token, get_stored_token, store_token
 
-        await store_token(db_session, "global-token", "global@test.com", user=None)
+        await store_token(db_session, "global-token", "global@test.com", "global", user=None)
         await clear_token(db_session, user=None)
 
-        token, email = await get_stored_token(db_session, user=None)
+        token, email, region = await get_stored_token(db_session, user=None)
         assert token is None
         assert email is None
+        assert region == "global"  # normalised default
 
     @pytest.mark.asyncio
     async def test_two_users_independent_tokens(self, db_session):
-        """Two users should have completely independent cloud tokens."""
+        """Two users should have completely independent cloud tokens and regions."""
         from backend.app.api.routes.cloud import get_stored_token, store_token
         from backend.app.core.auth import get_password_hash
         from backend.app.models.user import User
@@ -371,8 +376,10 @@ class TestCloudTokenStorage:
         await db_session.refresh(user_a)
         await db_session.refresh(user_b)
 
-        await store_token(db_session, "token-a", "a@test.com", user=user_a)
-        await store_token(db_session, "token-b", "b@test.com", user=user_b)
+        # Different regions on purpose — a China user and a Global user must not
+        # bleed their region into each other's lookups.
+        await store_token(db_session, "token-a", "a@test.com", "china", user=user_a)
+        await store_token(db_session, "token-b", "b@test.com", "global", user=user_b)
 
         # Verify each user reads their own token (re-fetch from DB)
         from sqlalchemy import select
@@ -382,10 +389,84 @@ class TestCloudTokenStorage:
         fresh_a = result_a.scalar_one()
         fresh_b = result_b.scalar_one()
 
-        token_a, email_a = await get_stored_token(db_session, user=fresh_a)
-        token_b, email_b = await get_stored_token(db_session, user=fresh_b)
+        token_a, email_a, region_a = await get_stored_token(db_session, user=fresh_a)
+        token_b, email_b, region_b = await get_stored_token(db_session, user=fresh_b)
 
         assert token_a == "token-a"
         assert email_a == "a@test.com"
+        assert region_a == "china"
         assert token_b == "token-b"
         assert email_b == "b@test.com"
+        assert region_b == "global"
+
+
+class TestCloudRegionPersistence:
+    """Region must survive a DB round-trip so restarts don't silently flip users to api.bambulab.com."""
+
+    @pytest.mark.asyncio
+    async def test_region_survives_roundtrip_per_user(self, db_session):
+        """Stored China region is returned on subsequent get_stored_token calls."""
+        from backend.app.api.routes.cloud import get_stored_token, store_token
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.user import User
+
+        user = User(username="region-user", password_hash=get_password_hash("pass"), role="user")
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        await store_token(db_session, "cn-token", "token-auth", "china", user=user)
+
+        # Simulate "next request": re-fetch the user fresh from the DB.
+        from sqlalchemy import select
+
+        result = await db_session.execute(select(User).where(User.id == user.id))
+        refreshed = result.scalar_one()
+
+        _token, _email, region = await get_stored_token(db_session, user=refreshed)
+        assert region == "china"
+
+    @pytest.mark.asyncio
+    async def test_region_survives_roundtrip_global_fallback(self, db_session):
+        """Stored China region in auth-disabled Settings fallback survives too."""
+        from backend.app.api.routes.cloud import get_stored_token, store_token
+
+        await store_token(db_session, "cn-token", "token-auth", "china", user=None)
+        _token, _email, region = await get_stored_token(db_session, user=None)
+        assert region == "china"
+
+    @pytest.mark.asyncio
+    async def test_invalid_region_is_normalised_to_global(self, db_session):
+        """Unknown region values fall back to 'global' rather than mis-route."""
+        from backend.app.api.routes.cloud import get_stored_token, store_token
+
+        await store_token(db_session, "t", "x@test.com", "mars", user=None)
+        _token, _email, region = await get_stored_token(db_session, user=None)
+        assert region == "global"
+
+    @pytest.mark.asyncio
+    async def test_build_authenticated_cloud_uses_stored_region(self, db_session):
+        """build_authenticated_cloud wires the stored region into the per-request service."""
+        from backend.app.api.routes.cloud import build_authenticated_cloud, store_token
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.user import User
+
+        user = User(username="cn-build", password_hash=get_password_hash("pass"), role="user")
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        await store_token(db_session, "cn-token", "token-auth", "china", user=user)
+
+        from sqlalchemy import select
+
+        result = await db_session.execute(select(User).where(User.id == user.id))
+        refreshed = result.scalar_one()
+
+        cloud = await build_authenticated_cloud(db_session, refreshed)
+        assert cloud is not None
+        try:
+            assert cloud.base_url == "https://api.bambulab.cn"
+            assert cloud.access_token == "cn-token"
+        finally:
+            await cloud.close()

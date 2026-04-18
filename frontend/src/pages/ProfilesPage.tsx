@@ -128,7 +128,7 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
   });
 
   const verifyMutation = useMutation({
-    mutationFn: () => api.cloudVerify(email, code, tfaKey || undefined),
+    mutationFn: () => api.cloudVerify(email, code, tfaKey || undefined, region),
     onSuccess: (result) => {
       if (result.success) {
         showToast(t('profiles.login.toast.loggedIn'));

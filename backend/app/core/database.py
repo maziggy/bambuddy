@@ -1273,6 +1273,7 @@ async def run_migrations(conn):
     # Migration: Add per-user Bambu Cloud credential columns
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_email VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_region VARCHAR(10)")
 
     # Cleanup: Remove obsolete settings keys that are no longer used
     obsolete_keys = ["slicer_binary_path"]

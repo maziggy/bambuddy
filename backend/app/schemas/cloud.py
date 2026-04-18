@@ -37,6 +37,7 @@ class CloudAuthStatus(BaseModel):
 
     is_authenticated: bool
     email: str | None = None
+    region: Region | None = None
 
 
 class CloudTokenRequest(BaseModel):

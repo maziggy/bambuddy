@@ -6,7 +6,7 @@ Regression tests for:
 - Cloud endpoints use CLOUD_AUTH permission (not SETTINGS_READ)
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -470,3 +470,128 @@ class TestCloudRegionPersistence:
             assert cloud.access_token == "cn-token"
         finally:
             await cloud.close()
+
+
+class TestCloudRouteRegionPlumbing:
+    """Route-level proof that region=china on the wire actually steers outbound
+    HTTP calls to api.bambulab.cn / bambulab.cn. This is the core bug the PR
+    fixes — unit tests prove the service does the right thing given the region,
+    storage tests prove the region persists, but only these tests prove the
+    route handlers plumb the region through end-to-end.
+
+    Auth is disabled (Settings-fallback path) to keep the fixture footprint
+    minimal; the region plumbing code path is identical for the per-user path.
+    """
+
+    @staticmethod
+    def _make_response(json_body: dict, status: int = 200):
+        """Build a MagicMock httpx.Response stand-in for patched posts/gets."""
+        response = MagicMock()
+        response.status_code = status
+        response.text = "{}"
+        response.json.return_value = json_body
+        response.cookies = {}
+        return response
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_token_route_with_china_region_hits_cn_endpoint(self, async_client: AsyncClient):
+        """POST /cloud/token with region=china routes get_user_profile to api.bambulab.cn."""
+        import httpx
+
+        with (
+            patch("backend.app.core.auth.is_auth_enabled", return_value=False),
+            patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mock_get,
+        ):
+            mock_get.return_value = self._make_response({"uid": "123", "email": "x"})
+
+            response = await async_client.post(
+                "/api/v1/cloud/token",
+                json={"access_token": "cn-token", "region": "china"},
+            )
+
+            assert response.status_code == 200
+            # The profile check call must have hit api.bambulab.cn, never .com
+            called_urls = [str(call.args[0]) for call in mock_get.call_args_list if call.args]
+            assert any("api.bambulab.cn" in url for url in called_urls), called_urls
+            assert not any("api.bambulab.com" in url for url in called_urls), called_urls
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_login_route_with_china_region_hits_cn_endpoint(self, async_client: AsyncClient):
+        """POST /cloud/login with region=china routes login_request to api.bambulab.cn."""
+        import httpx
+
+        with (
+            patch("backend.app.core.auth.is_auth_enabled", return_value=False),
+            patch.object(httpx.AsyncClient, "post", new_callable=AsyncMock) as mock_post,
+        ):
+            mock_post.return_value = self._make_response({"loginType": "verifyCode"})
+
+            response = await async_client.post(
+                "/api/v1/cloud/login",
+                json={"email": "user@example.com", "password": "x", "region": "china"},
+            )
+
+            assert response.status_code == 200
+            called_urls = [str(call.args[0]) for call in mock_post.call_args_list if call.args]
+            assert any("api.bambulab.cn" in url for url in called_urls), called_urls
+            assert not any("api.bambulab.com" in url for url in called_urls), called_urls
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_verify_route_with_china_region_hits_cn_tfa_endpoint(self, async_client: AsyncClient):
+        """POST /cloud/verify with region=china + tfa_key routes TOTP to bambulab.cn."""
+        import httpx
+
+        with (
+            patch("backend.app.core.auth.is_auth_enabled", return_value=False),
+            patch.object(httpx.AsyncClient, "post", new_callable=AsyncMock) as mock_post,
+        ):
+            mock_post.return_value = self._make_response({"token": "t"})
+
+            response = await async_client.post(
+                "/api/v1/cloud/verify",
+                json={
+                    "email": "user@example.com",
+                    "code": "123456",
+                    "tfa_key": "tfa-xyz",
+                    "region": "china",
+                },
+            )
+
+            assert response.status_code == 200
+            called_urls = [str(call.args[0]) for call in mock_post.call_args_list if call.args]
+            # TOTP endpoint lives on bambulab.cn (without the api. prefix),
+            # NOT bambulab.com — that's exactly the bug we just fixed.
+            assert any("bambulab.cn/api/sign-in/tfa" in url for url in called_urls), called_urls
+            assert not any("bambulab.com" in url for url in called_urls), called_urls
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cloud_status_exposes_stored_region(self, async_client: AsyncClient):
+        """GET /cloud/status returns the stored region so the UI can render
+        'Connected (China)' after a reload."""
+        from backend.app.api.routes.cloud import store_token
+        from backend.app.core.database import async_session
+
+        with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
+            async with async_session() as db:
+                await store_token(db, "cn-token", "token-auth", "china", user=None)
+
+            response = await async_client.get("/api/v1/cloud/status")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["is_authenticated"] is True
+            assert data["region"] == "china"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cloud_status_region_is_null_when_unauthenticated(self, async_client: AsyncClient):
+        """No stored token ⇒ no region in the status payload."""
+        with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
+            response = await async_client.get("/api/v1/cloud/status")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["is_authenticated"] is False
+            assert data["region"] is None

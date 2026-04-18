@@ -957,6 +957,7 @@ export interface MQTTStatus {
 export interface CloudAuthStatus {
   is_authenticated: boolean;
   email: string | null;
+  region?: 'global' | 'china' | null;
 }
 
 export interface CloudLoginResponse {

@@ -151,20 +151,28 @@ async def get_auth_status(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
-    """Get current cloud authentication status."""
-    token, email, _region = await get_stored_token(db, current_user)
-    if not token:
-        return CloudAuthStatus(is_authenticated=False, email=None)
+    """Get current cloud authentication status.
 
-    cloud = await build_authenticated_cloud(db, current_user)
+    Reads the stored credentials in one DB round-trip (we used to call
+    ``get_stored_token`` twice — once here and once inside
+    ``build_authenticated_cloud``). ``region`` is exposed so the frontend can
+    show "Connected (China)" after a reload without relying on local state.
+    """
+    token, email, region = await get_stored_token(db, current_user)
+    if not token:
+        return CloudAuthStatus(is_authenticated=False, email=None, region=None)
+
+    cloud = BambuCloudService(region=region)
+    cloud.set_token(token)
     try:
+        authenticated = cloud.is_authenticated
         return CloudAuthStatus(
-            is_authenticated=bool(cloud and cloud.is_authenticated),
-            email=email if cloud and cloud.is_authenticated else None,
+            is_authenticated=authenticated,
+            email=email if authenticated else None,
+            region=region if authenticated else None,
         )
     finally:
-        if cloud is not None:
-            await cloud.close()
+        await cloud.close()
 
 
 @router.post("/login", response_model=CloudLoginResponse)

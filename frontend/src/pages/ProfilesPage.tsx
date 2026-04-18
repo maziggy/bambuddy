@@ -2922,6 +2922,13 @@ export function ProfilesPage() {
                 <div className="w-2 h-2 rounded-full bg-bambu-green animate-pulse" />
                 <span className="text-sm text-bambu-gray">
                   {t('profiles.connectedAs')} <span className="text-white">{status.email}</span>
+                  {status.region && (
+                    <span className="ml-2 px-2 py-0.5 text-xs rounded bg-bambu-dark-tertiary text-bambu-gray">
+                      {status.region === 'china'
+                        ? t('profiles.login.regionChina')
+                        : t('profiles.login.regionGlobal')}
+                    </span>
+                  )}
                 </span>
               </div>
               <Button

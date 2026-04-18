@@ -3030,9 +3030,7 @@ class TestOIDCIssuerUrlTrailingSlash:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_trailing_slash_issuer_url_fetches_correct_discovery_url(
-        self, async_client: AsyncClient
-    ):
+    async def test_trailing_slash_issuer_url_fetches_correct_discovery_url(self, async_client: AsyncClient):
         from unittest.mock import AsyncMock, MagicMock, patch
 
         issuer_with_slash = "https://authentik.example.com/application/o/bambuddy/"
@@ -3082,9 +3080,7 @@ class TestOIDCIssuerUrlTrailingSlash:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_iss_claim_trailing_slash_accepted(
-        self, async_client: AsyncClient, db_session: AsyncSession
-    ):
+    async def test_iss_claim_trailing_slash_accepted(self, async_client: AsyncClient, db_session: AsyncSession):
         """Provider configured without trailing slash, Authentik JWT iss has trailing slash.
 
         Both sides must be normalised before comparison so the login succeeds.
@@ -3197,3 +3193,40 @@ class TestOIDCIssuerUrlTrailingSlash:
             "Trailing slash mismatch in iss claim must not cause token_validation_failed"
         )
         assert "oidc_token=" in location, f"Expected oidc_token in redirect, got: {location}"
+
+
+class TestOIDCCallbackCodeLength:
+    """OIDC callback code query param must accept up to 2048 characters (OAuth spec)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_512_chars_accepted(self, async_client: AsyncClient):
+        """A 512-character code (old limit) must not be rejected with 422."""
+        code = "a" * 512
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code={code}&state=bogus-state",
+            follow_redirects=False,
+        )
+        assert resp.status_code != 422, "512-char code must not be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_2048_chars_accepted(self, async_client: AsyncClient):
+        """A 2048-character code must not be rejected with 422."""
+        code = "a" * 2048
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code={code}&state=bogus-state",
+            follow_redirects=False,
+        )
+        assert resp.status_code != 422, "2048-char code must not be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_2049_chars_rejected(self, async_client: AsyncClient):
+        """A 2049-character code must be rejected with 422."""
+        code = "a" * 2049
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code={code}&state=bogus-state",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 422, "2049-char code must be rejected by Pydantic"

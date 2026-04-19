@@ -495,7 +495,14 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   // Deep-link: open edit modal for ?spool=<id>
   // Prefer the already-loaded spool list (no extra API call); fall back to a
   // targeted fetch for the rare case where the full list hasn't arrived yet.
-  const deepLinkSpoolId = searchParams.get('spool') ? Number(searchParams.get('spool')) : null;
+  const _rawSpoolParam = searchParams.get('spool');
+  // Only accept strings of digits representing a positive integer — guards against
+  // NaN (Number('abc')), 0, negatives, and floats like '1.5' that would produce
+  // an invalid path parameter and trigger unnecessary 422 responses from the API.
+  const deepLinkSpoolId =
+    _rawSpoolParam && /^\d+$/.test(_rawSpoolParam) && Number(_rawSpoolParam) > 0
+      ? Number(_rawSpoolParam)
+      : null;
   const deepLinkInList = spools?.find((s) => s.id === deepLinkSpoolId) ?? null;
 
   useEffect(() => {

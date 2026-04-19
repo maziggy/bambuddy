@@ -34,6 +34,23 @@ def _safe_float(value: object, fallback: float) -> float:
     return fallback
 
 
+def _safe_optional_float(value: object) -> float | None:
+    """Convert value to finite float, or None if missing/NaN/Infinite/non-numeric.
+
+    Used for optional monetary fields (price) to prevent Infinity/NaN from
+    reaching JSON serialisation, which raises ValueError with allow_nan=False.
+    """
+    if value is None:
+        return None
+    try:
+        f = float(value)  # type: ignore[arg-type]
+        if math.isfinite(f):
+            return f
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
 def _map_spoolman_spool(spool: dict) -> dict:
     """Convert a raw Spoolman spool dict to the InventorySpool-compatible format.
 
@@ -115,7 +132,7 @@ def _map_spoolman_spool(spool: dict) -> dict:
         "archived_at": archived_at,
         "created_at": created_at,
         "updated_at": created_at,
-        "cost_per_kg": None if spool.get("price") is None else spool.get("price"),
+        "cost_per_kg": _safe_optional_float(spool.get("price")),
         "storage_location": spool.get("location") or None,
         "k_profiles": [],
     }

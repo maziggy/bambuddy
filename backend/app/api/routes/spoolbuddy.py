@@ -321,28 +321,76 @@ async def nfc_tag_scanned(
                 },
             }
         )
-        logger.info("SpoolBuddy tag matched: %s -> spool %d", req.tag_uid, spool.id)
-    else:
-        await ws_manager.broadcast(
-            {
-                "type": "spoolbuddy_unknown_tag",
-                "device_id": req.device_id,
-                "tag_uid": req.tag_uid,
-                "sak": req.sak,
-                "tag_type": req.tag_type,
-            }
-        )
-        logger.info(
-            "SpoolBuddy unknown tag: uid=%s (len=%d), tray_uuid=%s (len=%d), type=%s, sak=%s",
-            req.tag_uid,
-            len(req.tag_uid or ""),
-            req.tray_uuid,
-            len(req.tray_uuid or ""),
-            req.tag_type,
-            req.sak,
-        )
+        logger.info("SpoolBuddy tag matched (local): %s -> spool %d", req.tag_uid, spool.id)
+        return {"status": "ok", "matched": True, "spool_id": spool.id}
 
-    return {"status": "ok", "matched": spool is not None, "spool_id": spool.id if spool else None}
+    # Local DB miss — fall back to Spoolman when enabled
+    from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+    from backend.app.models.settings import Settings
+    from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+
+    settings_result = await db.execute(select(Settings))
+    settings_dict = {s.key: s.value for s in settings_result.scalars().all()}
+    spoolman_url = settings_dict.get("spoolman_url", "").strip()
+    spoolman_enabled = settings_dict.get("spoolman_enabled", "false").lower() == "true" and bool(spoolman_url)
+
+    if spoolman_enabled and urlparse(spoolman_url).scheme.lower() in ("http", "https"):
+        try:
+            client = await get_spoolman_client()
+            if not client or client.base_url != spoolman_url.rstrip("/"):
+                client = await init_spoolman_client(spoolman_url)
+
+            cached_spools = await client.get_spools()
+            sm_spool: dict | None = None
+            if req.tray_uuid:
+                sm_spool = await client.find_spool_by_tag(req.tray_uuid, cached_spools=cached_spools)
+            if sm_spool is None and req.tag_uid:
+                sm_spool = await client.find_spool_by_tag(req.tag_uid, cached_spools=cached_spools)
+
+            if sm_spool is not None:
+                mapped = _map_spoolman_spool(sm_spool)
+                await ws_manager.broadcast(
+                    {
+                        "type": "spoolbuddy_tag_matched",
+                        "device_id": req.device_id,
+                        "tag_uid": req.tag_uid,
+                        "spool": {
+                            "id": mapped["id"],
+                            "material": mapped["material"],
+                            "subtype": mapped["subtype"],
+                            "color_name": mapped["color_name"],
+                            "rgba": mapped["rgba"],
+                            "brand": mapped["brand"],
+                            "label_weight": mapped["label_weight"],
+                            "core_weight": mapped["core_weight"],
+                            "weight_used": mapped["weight_used"],
+                        },
+                    }
+                )
+                logger.info("SpoolBuddy tag matched (Spoolman): %s -> spool %d", req.tag_uid, mapped["id"])
+                return {"status": "ok", "matched": True, "spool_id": mapped["id"]}
+        except Exception as exc:
+            logger.warning("Spoolman tag lookup failed for %s: %s", req.tag_uid, exc)
+
+    await ws_manager.broadcast(
+        {
+            "type": "spoolbuddy_unknown_tag",
+            "device_id": req.device_id,
+            "tag_uid": req.tag_uid,
+            "sak": req.sak,
+            "tag_type": req.tag_type,
+        }
+    )
+    logger.info(
+        "SpoolBuddy unknown tag: uid=%s (len=%d), tray_uuid=%s (len=%d), type=%s, sak=%s",
+        req.tag_uid,
+        len(req.tag_uid or ""),
+        req.tray_uuid,
+        len(req.tray_uuid or ""),
+        req.tag_type,
+        req.sak,
+    )
+    return {"status": "ok", "matched": False, "spool_id": None}
 
 
 @router.post("/nfc/tag-removed")
@@ -504,10 +552,41 @@ async def update_spool_weight(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Update spool's used weight from scale reading."""
+    from backend.app.models.settings import Settings
+    from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+
+    settings_result = await db.execute(select(Settings))
+    settings_dict = {s.key: s.value for s in settings_result.scalars().all()}
+    spoolman_url = settings_dict.get("spoolman_url", "").strip()
+    spoolman_enabled = settings_dict.get("spoolman_enabled", "false").lower() == "true" and bool(spoolman_url)
+
+    if spoolman_enabled and urlparse(spoolman_url).scheme.lower() in ("http", "https"):
+        client = await get_spoolman_client()
+        if not client or client.base_url != spoolman_url.rstrip("/"):
+            client = await init_spoolman_client(spoolman_url)
+
+        # Spoolman tracks remaining_weight; subtract the standard core weight
+        _CORE_WEIGHT_G = 250.0
+        remaining_weight = max(0.0, req.weight_grams - _CORE_WEIGHT_G)
+        result = await client.update_spool(spool_id=req.spool_id, remaining_weight=remaining_weight)
+        if result is None:
+            raise HTTPException(status_code=502, detail="Failed to update spool weight in Spoolman")
+
+        label_weight = float((result.get("filament") or {}).get("weight") or 1000.0)
+        weight_used = max(0.0, label_weight - remaining_weight)
+        logger.info(
+            "SpoolBuddy updated Spoolman spool %d: %.1fg on scale → %.1fg remaining",
+            req.spool_id,
+            req.weight_grams,
+            remaining_weight,
+        )
+        return {"status": "ok", "weight_used": weight_used}
+
+    # Local DB mode
     from backend.app.models.spool import Spool
 
-    result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
-    spool = result.scalar_one_or_none()
+    db_result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
+    spool = db_result.scalar_one_or_none()
     if not spool:
         raise HTTPException(status_code=404, detail="Spool not found")
 

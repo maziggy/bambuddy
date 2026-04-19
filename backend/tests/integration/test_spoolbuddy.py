@@ -1215,3 +1215,273 @@ class TestSystemCommandEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["pending_command"] == "restart_browser"
+
+
+# ============================================================================
+# Spoolman-aware SpoolBuddy endpoints
+# ============================================================================
+
+
+@pytest.fixture
+async def spoolman_settings(db_session: AsyncSession):
+    """Create Spoolman settings in the database (enabled with URL)."""
+    from backend.app.models.settings import Settings
+
+    settings = [
+        Settings(key="spoolman_enabled", value="true"),
+        Settings(key="spoolman_url", value="http://spoolman.local:7912"),
+    ]
+    for s in settings:
+        db_session.add(s)
+    await db_session.commit()
+    return settings
+
+
+def _mock_spoolman_client(base_url: str = "http://spoolman.local:7912") -> MagicMock:
+    client = MagicMock()
+    client.base_url = base_url
+    client.get_spools = AsyncMock(return_value=[])
+    client.find_spool_by_tag = AsyncMock(return_value=None)
+    client.update_spool = AsyncMock(return_value=None)
+    return client
+
+
+class TestUpdateSpoolWeightSpoolman:
+    """update-spool-weight routes to Spoolman when Spoolman mode is active."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_mode_updates_remaining_weight(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        mock_client = _mock_spoolman_client()
+        mock_client.update_spool = AsyncMock(
+            return_value={"id": 42, "filament": {"weight": 1000.0}}
+        )
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/scale/update-spool-weight",
+                json={"spool_id": 42, "weight_grams": 750},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        # remaining = max(0, 750 - 250) = 500 → weight_used = 1000 - 500 = 500
+        assert data["weight_used"] == 500.0
+        mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=500.0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_mode_clamps_remaining_to_zero(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """Scale weight below core weight → remaining_weight = 0."""
+        mock_client = _mock_spoolman_client()
+        mock_client.update_spool = AsyncMock(
+            return_value={"id": 7, "filament": {"weight": 1000.0}}
+        )
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/scale/update-spool-weight",
+                json={"spool_id": 7, "weight_grams": 100},
+            )
+
+        assert resp.status_code == 200
+        mock_client.update_spool.assert_called_once_with(spool_id=7, remaining_weight=0.0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_mode_502_on_client_failure(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """502 is returned when Spoolman client update fails (returns None)."""
+        mock_client = _mock_spoolman_client()
+        mock_client.update_spool = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/scale/update-spool-weight",
+                json={"spool_id": 99, "weight_grams": 500},
+            )
+
+        assert resp.status_code == 502
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_local_mode_unchanged(self, async_client: AsyncClient, spool_factory):
+        """When Spoolman is NOT enabled, local DB update still works."""
+        spool = await spool_factory(label_weight=1000, core_weight=250, weight_used=0)
+
+        resp = await async_client.post(
+            f"{API}/scale/update-spool-weight",
+            json={"spool_id": spool.id, "weight_grams": 750},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["weight_used"] == 500
+
+
+class TestTagScannedSpoolmanFallback:
+    """nfc/tag-scanned falls back to Spoolman when local DB has no match."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_fallback_on_local_miss(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        raw_spool = {
+            "id": 5,
+            "filament": {
+                "material": "PETG",
+                "name": "PETG Basic",
+                "color_hex": "00FF00",
+                "weight": 1000,
+                "vendor": {"name": "Polymaker"},
+            },
+            "used_weight": 100.0,
+            "archived": False,
+            "registered": "2024-01-01T00:00:00+00:00",
+            "extra": {"tag": '"DEADBEEF12345678"'},
+        }
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spools = AsyncMock(return_value=[raw_spool])
+        mock_client.find_spool_by_tag = AsyncMock(return_value=raw_spool)
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.api.routes.spoolbuddy.get_spool_by_tag",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/tag-scanned",
+                json={"device_id": "sb-1", "tag_uid": "DEADBEEF12345678"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["matched"] is True
+        assert data["spool_id"] == 5
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_tag_matched"
+        assert msg["spool"]["id"] == 5
+        assert msg["spool"]["material"] == "PETG"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_fallback_unknown_when_no_spoolman_match(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """Unknown tag broadcast when both local DB and Spoolman miss."""
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spools = AsyncMock(return_value=[])
+        mock_client.find_spool_by_tag = AsyncMock(return_value=None)
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.api.routes.spoolbuddy.get_spool_by_tag",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/tag-scanned",
+                json={"device_id": "sb-1", "tag_uid": "UNKNOWN0000000FF"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["matched"] is False
+        assert data["spool_id"] is None
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_unknown_tag"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_local_match_skips_spoolman(
+        self, async_client: AsyncClient, spool_factory
+    ):
+        """When local DB matches, Spoolman is never queried."""
+        spool = await spool_factory(tag_uid="AABB1122", material="PLA")
+        mock_spool = MagicMock()
+        mock_spool.id = spool.id
+        mock_spool.material = spool.material
+        mock_spool.subtype = spool.subtype
+        mock_spool.color_name = spool.color_name
+        mock_spool.rgba = spool.rgba
+        mock_spool.brand = spool.brand
+        mock_spool.label_weight = spool.label_weight
+        mock_spool.core_weight = spool.core_weight
+        mock_spool.weight_used = spool.weight_used
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.api.routes.spoolbuddy.get_spool_by_tag",
+                new_callable=AsyncMock,
+                return_value=mock_spool,
+            ),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/tag-scanned",
+                json={"device_id": "sb-1", "tag_uid": "AABB1122"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["matched"] is True
+        assert data["spool_id"] == spool.id

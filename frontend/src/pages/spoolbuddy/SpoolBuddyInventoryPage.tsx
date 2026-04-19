@@ -66,9 +66,12 @@ export function SpoolBuddyInventoryPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const spoolmanMode = spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
+
   const { data: spools = [], isLoading, refetch: refetchSpools } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(false),
+    queryKey: spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'],
+    queryFn: () => spoolmanMode ? api.getSpoolmanInventorySpools(false) : api.getSpools(false),
+    enabled: spoolmanSettings !== undefined,
     refetchInterval: 30000,
   });
 
@@ -127,21 +130,6 @@ export function SpoolBuddyInventoryPage() {
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
   }, [activeSpools, filterMode, searchQuery, assignedSpoolIds]);
-
-  // Spoolman iframe mode
-  const spoolmanEnabled = spoolmanSettings?.spoolman_enabled === 'true' && spoolmanSettings?.spoolman_url;
-  if (spoolmanEnabled) {
-    return (
-      <div className="h-full flex flex-col">
-        <iframe
-          src={`${spoolmanSettings.spoolman_url.replace(/\/+$/, '')}/spool`}
-          className="flex-1 w-full border-0"
-          title="Spoolman"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="h-full flex flex-col">

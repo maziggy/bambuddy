@@ -4120,21 +4120,16 @@ async def lifespan(app: FastAPI):
         # Restore MQTT smart plug subscriptions
         if mqtt_settings.get("mqtt_enabled"):
             from backend.app.models.smart_plug import SmartPlug
+            from backend.app.services.mqtt_smart_plug import subscribe_plug_to_mqtt
 
             result = await db.execute(select(SmartPlug).where(SmartPlug.plug_type == "mqtt"))
             mqtt_plugs = result.scalars().all()
+            restored = 0
             for plug in mqtt_plugs:
-                if plug.mqtt_topic:
-                    mqtt_relay.smart_plug_service.subscribe(
-                        plug_id=plug.id,
-                        topic=plug.mqtt_topic,
-                        power_path=plug.mqtt_power_path,
-                        energy_path=plug.mqtt_energy_path,
-                        state_path=plug.mqtt_state_path,
-                        multiplier=plug.mqtt_multiplier or 1.0,
-                    )
-            if mqtt_plugs:
-                logging.info("Restored %s MQTT smart plug subscriptions", len(mqtt_plugs))
+                if subscribe_plug_to_mqtt(mqtt_relay.smart_plug_service, plug):
+                    restored += 1
+            if restored:
+                logging.info("Restored %s MQTT smart plug subscriptions", restored)
 
     # Connect to all active printers
     async with async_session() as db:

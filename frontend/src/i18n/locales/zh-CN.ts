@@ -3275,6 +3275,8 @@ export default {
     measuredWeight: '称量重量',
     spoolName: '线轴',
     costPerKg: '每公斤成本',
+    storageLocation: '存放位置',
+    storageLocationPlaceholder: '例如：货架A，抽屉1',
     measuredWeightError: '称量重量必须在 {{min}}g 到 {{max}}g 之间。',
     slicerFilament: '切片耗材',
     slicerFilamentName: '切片预设名称',

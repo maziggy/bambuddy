@@ -116,8 +116,6 @@ def _map_spoolman_spool(spool: dict) -> dict:
         "created_at": created_at,
         "updated_at": created_at,
         "cost_per_kg": None if spool.get("price") is None else spool.get("price"),
-        # spoolman_location is an extra field (not in the local InventorySpool
-        # schema) used to display the Spoolman location text in the UI.
-        "spoolman_location": spool.get("location") or None,
+        "storage_location": spool.get("location") or None,
         "k_profiles": [],
     }

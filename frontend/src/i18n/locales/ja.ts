@@ -3248,6 +3248,8 @@ export default {
     measuredWeight: '計測重量',
     spoolName: 'スプール',
     costPerKg: 'kgあたりのコスト',
+    storageLocation: '保管場所',
+    storageLocationPlaceholder: '例：棚A、引き出し1',
     measuredWeightError: '計測重量は{{min}}gから{{max}}gの間で入力してください。',
     slicerFilament: 'スライサーフィラメント',
     slicerFilamentName: 'スライサープリセット名',

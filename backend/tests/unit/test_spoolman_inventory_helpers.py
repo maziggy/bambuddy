@@ -198,3 +198,22 @@ class TestMapSpoolmanSpool:
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "vendor": None}}
         result = _map_spoolman_spool(spool)
         assert result["brand"] is None
+
+    def test_spoolman_location_mapped_to_storage_location(self):
+        spool = {**MINIMAL_SPOOL, "location": "Shelf A"}
+        result = _map_spoolman_spool(spool)
+        assert result["storage_location"] == "Shelf A"
+
+    def test_no_location_gives_none_storage_location(self):
+        result = _map_spoolman_spool(MINIMAL_SPOOL)
+        assert result["storage_location"] is None
+
+    def test_empty_location_gives_none_storage_location(self):
+        spool = {**MINIMAL_SPOOL, "location": ""}
+        result = _map_spoolman_spool(spool)
+        assert result["storage_location"] is None
+
+    def test_spoolman_location_key_not_in_result(self):
+        spool = {**MINIMAL_SPOOL, "location": "Shelf A"}
+        result = _map_spoolman_spool(spool)
+        assert "spoolman_location" not in result

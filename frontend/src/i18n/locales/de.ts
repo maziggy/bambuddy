@@ -3288,6 +3288,8 @@ export default {
     measuredWeight: 'Gemessenes Gewicht',
     spoolName: 'Spule',
     costPerKg: 'Kosten pro kg',
+    storageLocation: 'Lagerstandort',
+    storageLocationPlaceholder: 'z.B. Regal A, Schublade 1',
     measuredWeightError: 'Das gemessene Gewicht muss zwischen {{min}}g und {{max}}g liegen.',
     slicerFilament: 'Slicer-Filament',
     slicerFilamentName: 'Slicer-Preset-Name',

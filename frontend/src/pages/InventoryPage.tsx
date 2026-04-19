@@ -48,6 +48,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'brand', label: 'Brand', visible: true },
   { id: 'slicer_filament', label: 'Slicer Filament', visible: false },
   { id: 'location', label: 'Location', visible: true },
+  { id: 'storage_location', label: 'Storage Location', visible: false },
   { id: 'label_weight', label: 'Label', visible: true },
   { id: 'net', label: 'Net', visible: true },
   { id: 'gross', label: 'Gross', visible: false },
@@ -145,6 +146,7 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   brand: (t) => t('inventory.brand'),
   slicer_filament: (t) => t('inventory.slicerFilament'),
   location: () => 'Location',
+  storage_location: (t) => t('inventory.storageLocation'),
   label_weight: (t) => t('inventory.labelWeight'),
   net: (t) => t('inventory.net'),
   gross: () => 'Gross',
@@ -206,17 +208,7 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   ),
   location: ({ spool, assignmentMap }) => {
     const assignment = assignmentMap[spool.id];
-    if (!assignment) {
-      // For spools from Spoolman, show the text location stored in spoolman_location
-      if (spool.spoolman_location) {
-        return (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
-            {spool.spoolman_location}
-          </span>
-        );
-      }
-      return <span className="text-sm text-bambu-gray">-</span>;
-    }
+    if (!assignment) return <span className="text-sm text-bambu-gray">-</span>;
     const printerLabel = assignment.printer_name || `Printer ${assignment.printer_id}`;
     const isExternal = assignment.ams_id === 254 || assignment.ams_id === 255;
     const isHt = !isExternal && assignment.ams_id >= 128;
@@ -224,6 +216,14 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-500/20 text-purple-400">
         {printerLabel} {slotLabel}{assignment.ams_label ? ` (${assignment.ams_label})` : ''}
+      </span>
+    );
+  },
+  storage_location: ({ spool }) => {
+    if (!spool.storage_location) return <span className="text-sm text-bambu-gray">-</span>;
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
+        {spool.storage_location}
       </span>
     );
   },
@@ -379,6 +379,7 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
     const label = a.ams_label ? ` (${a.ams_label})` : '';
     return `${a.printer_name || ''} ${formatSlotLabel(a.ams_id, a.tray_id, isHt, isExt)}${label}`;
   },
+  storage_location: (s) => (s.storage_location || '').toLowerCase(),
   label_weight: (s) => s.label_weight,
   net: (s) => Math.max(0, s.label_weight - s.weight_used),
   gross: (s) => Math.max(0, s.label_weight - s.weight_used) + s.core_weight,

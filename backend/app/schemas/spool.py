@@ -26,6 +26,7 @@ class SpoolBase(BaseModel):
     weight_locked: bool = False
     last_scale_weight: int | None = None
     last_weighed_at: datetime | None = None
+    storage_location: str | None = Field(default=None, max_length=255)
 
 
 class SpoolCreate(SpoolBase):
@@ -58,6 +59,7 @@ class SpoolUpdate(BaseModel):
     tag_type: str | None = None
     cost_per_kg: float | None = Field(default=None, ge=0)
     weight_locked: bool | None = None
+    storage_location: str | None = Field(default=None, max_length=255)
 
 
 class SpoolKProfileBase(BaseModel):

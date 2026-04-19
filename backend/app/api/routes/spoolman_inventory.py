@@ -99,6 +99,7 @@ class SpoolmanInventoryCreate(BaseModel):
     weight_used: float = Field(0.0, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
+    storage_location: str | None = Field(None, max_length=255)
 
     @field_validator("rgba")
     @classmethod
@@ -118,6 +119,7 @@ class SpoolmanInventoryUpdate(BaseModel):
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
     tag_uid: str | None = Field(None, max_length=64)
     tray_uuid: str | None = Field(None, max_length=64)
+    storage_location: str | None = Field(None, max_length=255)
 
     @field_validator("rgba")
     @classmethod
@@ -195,6 +197,7 @@ async def create_spool(
         filament_id=filament_id,
         remaining_weight=remaining,
         comment=data.note or None,
+        location=data.storage_location or None,
     )
     if not spool:
         raise HTTPException(status_code=500, detail="Failed to create spool in Spoolman")
@@ -230,6 +233,7 @@ async def bulk_create_spools(
             filament_id=filament_id,
             remaining_weight=remaining,
             comment=data.note or None,
+            location=data.storage_location or None,
         )
         if spool:
             created.append(_map_spoolman_spool(spool))
@@ -272,6 +276,8 @@ async def update_spool(
     label_weight = data.label_weight if data.label_weight is not None else int(cur_filament.get("weight") or 1000)
     weight_used = data.weight_used if data.weight_used is not None else float(current.get("used_weight") or 0)
     note = data.note if data.note is not None else current.get("comment")
+    storage_location_changed = "storage_location" in data.model_fields_set
+    storage_location = data.storage_location if storage_location_changed else current.get("location")
 
     color_hex = rgba[:6]
     filament_id = await client.find_or_create_filament(
@@ -302,6 +308,8 @@ async def update_spool(
         comment=note or "",
         price=data.cost_per_kg,
         extra=extra,
+        location=storage_location or None,
+        clear_location=storage_location_changed and storage_location is None,
     )
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update spool in Spoolman")

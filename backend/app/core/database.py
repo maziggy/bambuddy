@@ -1099,6 +1099,9 @@ async def run_migrations(conn):
 
     # Migration: Add cost tracking fields to spool table
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN cost_per_kg REAL")
+
+    # Migration: Add user-editable storage location to spool table
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN storage_location VARCHAR(255)")
     # Migration: Add cost field to spool_usage_history table
     await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN cost REAL")
     # Migration: Add archive_id field to spool_usage_history table

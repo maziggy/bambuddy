@@ -2112,8 +2112,7 @@ export interface InventorySpool {
   last_scale_weight: number | null;
   last_weighed_at: string | null;
   k_profiles?: SpoolKProfile[];
-  // Present only on spools fetched from the Spoolman inventory proxy endpoints
-  spoolman_location?: string | null;
+  storage_location?: string | null;
 }
 
 export interface SpoolUsageRecord {
@@ -4224,13 +4223,13 @@ export const api = {
     request<InventorySpool[]>(`/spoolman/inventory/spools?include_archived=${includeArchived}`),
   getSpoolmanInventorySpool: (id: number) =>
     request<InventorySpool>(`/spoolman/inventory/spools/${id}`),
-  createSpoolmanInventorySpool: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'spoolman_location'>) =>
+  createSpoolmanInventorySpool: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'storage_location'>) =>
     request<InventorySpool>('/spoolman/inventory/spools', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   bulkCreateSpoolmanInventorySpools: (
-    data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'spoolman_location'>,
+    data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'storage_location'>,
     quantity: number,
   ) =>
     request<InventorySpool[]>('/spoolman/inventory/spools/bulk', {
@@ -4239,7 +4238,7 @@ export const api = {
     }),
   updateSpoolmanInventorySpool: (
     id: number,
-    data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'spoolman_location'>>,
+    data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'storage_location'>>,
   ) =>
     request<InventorySpool>(`/spoolman/inventory/spools/${id}`, {
       method: 'PATCH',

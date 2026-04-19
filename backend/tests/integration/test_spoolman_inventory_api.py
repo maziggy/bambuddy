@@ -108,8 +108,8 @@ class TestSpoolmanInventoryMapping:
         assert spool["tag_type"] == "spoolman"
         # RRGGBB + FF alpha
         assert spool["rgba"] == "FF0000FF"
-        # Spoolman location exposed
-        assert spool["spoolman_location"] == "Printer1 - AMS A1"
+        # Spoolman location mapped to storage_location
+        assert spool["storage_location"] == "Printer1 - AMS A1"
         # RFID tag: 32-char → tray_uuid
         assert spool["tray_uuid"] == "AABBCCDDEEFF0011AABBCCDDEEFF0011"
         assert spool["tag_uid"] is None
@@ -503,3 +503,119 @@ class TestSpoolmanInventoryInputValidation:
         response = await async_client.get("/api/v1/spoolman/inventory/spools")
         assert response.status_code == 400
         assert "http" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_rejects_storage_location_too_long(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """storage_location longer than 255 chars is rejected with 422."""
+        payload = {
+            "material": "PLA",
+            "label_weight": 1000,
+            "weight_used": 0,
+            "storage_location": "x" * 256,
+        }
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_rejects_storage_location_too_long(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """storage_location longer than 255 chars on PATCH is rejected with 422."""
+        payload = {"storage_location": "y" * 256}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 422
+
+
+class TestStorageLocationPassthrough:
+    """Tests that storage_location is correctly passed to and from Spoolman."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_spools_maps_spoolman_location_to_storage_location(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """Spoolman's location field is exposed as storage_location in the response."""
+        response = await async_client.get("/api/v1/spoolman/inventory/spools")
+        spool = response.json()[0]
+        assert spool["storage_location"] == "Printer1 - AMS A1"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_spools_null_location_gives_null_storage_location(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """A Spoolman spool with no location gives null storage_location."""
+        spool_no_loc = {**SAMPLE_SPOOLMAN_SPOOL, "location": None}
+        mock_spoolman_client.get_all_spools.return_value = [spool_no_loc]
+        response = await async_client.get("/api/v1/spoolman/inventory/spools")
+        spool = response.json()[0]
+        assert spool["storage_location"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_passes_storage_location_to_spoolman(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """storage_location is forwarded as location when creating a Spoolman spool."""
+        payload = {
+            "material": "PLA",
+            "label_weight": 1000,
+            "weight_used": 0,
+            "storage_location": "Shelf B",
+        }
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 200
+        mock_spoolman_client.create_spool.assert_called_once()
+        _, kwargs = mock_spoolman_client.create_spool.call_args
+        assert kwargs.get("location") == "Shelf B"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_passes_storage_location_to_spoolman(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """storage_location is forwarded as location when updating a Spoolman spool."""
+        payload = {"storage_location": "Drawer 3"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        mock_spoolman_client.update_spool_full.assert_called_once()
+        _, kwargs = mock_spoolman_client.update_spool_full.call_args
+        assert kwargs.get("location") == "Drawer 3"
+        assert kwargs.get("clear_location") is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_clears_storage_location_when_null_sent(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """Explicitly sending null storage_location clears the Spoolman location."""
+        payload = {"storage_location": None}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        _, kwargs = mock_spoolman_client.update_spool_full.call_args
+        assert kwargs.get("clear_location") is True

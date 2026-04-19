@@ -282,6 +282,7 @@ export function SpoolFormModal({
           slicer_filament: spool.slicer_filament || '',
           note: spool.note || '',
           cost_per_kg: spool.cost_per_kg ?? null,
+          storage_location: spool.storage_location || '',
         });
         setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
 
@@ -516,6 +517,7 @@ export function SpoolFormModal({
       nozzle_temp_max: null,
       note: formData.note || null,
       cost_per_kg: formData.cost_per_kg,
+      storage_location: formData.storage_location || null,
     };
 
     // Only send weight_used when creating or when explicitly changed by the user.

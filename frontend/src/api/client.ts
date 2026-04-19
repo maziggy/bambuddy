@@ -3606,7 +3606,7 @@ export const api = {
     let filename = 'bambuddy-backup.zip';
     if (contentDisposition) {
       const match = contentDisposition.match(/filename=([^;]+)/);
-      if (match) filename = match[1].trim();
+      if (match) filename = match[1].trim().replace(/^"(.*)"$/, '$1');
     }
 
     const blob = await response.blob();

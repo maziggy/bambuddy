@@ -4,6 +4,9 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.2.4b1] - Unreleased
 
+### Fixed
+- **Library File Print-Usage Tracking** ([#1008](https://github.com/maziggy/bambuddy/issues/1008)) — `LibraryFile.print_count` and `last_printed_at` are now updated on every successful queued print completion. Previously both fields were defined on the model and displayed in the File Manager, but nothing ever wrote to them — every file in every library showed as never printed. Now counts increment cumulatively and `last_printed_at` stamps the completion timestamp (UTC). Failed, cancelled and user-aborted prints are intentionally excluded, so the fields represent "successful usage" rather than "attempted usage." This unblocks sorting the File Manager by last-printed date and is a prerequisite for the scheduled-purge feature requested in #1008. Thanks to @cadtoolbox for the report.
+
 ### Improved
 - **File Manager: Collapse Folders by Default** ([#996](https://github.com/maziggy/bambuddy/issues/996)) — Added a **Collapse** toggle next to **Wrap** in the File Manager sidebar header. When enabled, the folder tree opens with only top-level folders visible on every page load; disabling it restores the previous fully-expanded default. Toggling the preference also immediately re-collapses/re-expands the current tree — no reload required. Persisted to localStorage under `library-collapse-folders`, matching the existing `library-*` preference pattern. Thanks to @AshieTashi for the request.
 

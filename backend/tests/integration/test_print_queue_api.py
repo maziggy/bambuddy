@@ -1483,6 +1483,146 @@ class TestAbortedStatusNormalisation:
         assert item.status == "completed"
 
     # ========================================================================
+    # Library file usage tracking on print completion (#1008)
+    #
+    # These exercise the _bump_library_file_usage_if_completed helper directly
+    # rather than invoking the whole on_print_complete handler — that path
+    # spawns background asyncio tasks (notifications, MQTT relay, smart-plug)
+    # that are expensive to mock and have nothing to do with the bump logic.
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bump_library_file_usage_on_completed(self, printer_factory, db_session):
+        """Successful completion increments print_count and stamps last_printed_at."""
+        from datetime import datetime, timezone
+
+        from backend.app.main import _bump_library_file_usage_if_completed
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        lib_file = LibraryFile(
+            filename="benchy.gcode.3mf",
+            file_path="/data/library/benchy.gcode.3mf",
+            file_type="gcode.3mf",
+            file_size=1024,
+            print_count=0,
+            last_printed_at=None,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        item = PrintQueueItem(
+            printer_id=printer.id,
+            library_file_id=lib_file.id,
+            status="printing",
+            position=1,
+        )
+
+        before = datetime.now(timezone.utc).replace(tzinfo=None)
+        await _bump_library_file_usage_if_completed(db_session, item, "completed")
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        assert lib_file.print_count == 1
+        assert lib_file.last_printed_at is not None
+        assert lib_file.last_printed_at >= before
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bump_library_file_usage_repeated_prints_increment_count(self, printer_factory, db_session):
+        """Each successful completion bumps print_count cumulatively."""
+        from backend.app.main import _bump_library_file_usage_if_completed
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        lib_file = LibraryFile(
+            filename="repeat.gcode.3mf",
+            file_path="/data/library/repeat.gcode.3mf",
+            file_type="gcode.3mf",
+            file_size=1024,
+            print_count=0,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        item = PrintQueueItem(
+            printer_id=printer.id,
+            library_file_id=lib_file.id,
+            status="printing",
+            position=1,
+        )
+
+        for _ in range(3):
+            await _bump_library_file_usage_if_completed(db_session, item, "completed")
+
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+        assert lib_file.print_count == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+    async def test_bump_library_file_usage_skips_non_completed(self, printer_factory, db_session, terminal_status):
+        """Failed and cancelled prints must NOT count as usage."""
+        from backend.app.main import _bump_library_file_usage_if_completed
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        lib_file = LibraryFile(
+            filename="broken.gcode.3mf",
+            file_path="/data/library/broken.gcode.3mf",
+            file_type="gcode.3mf",
+            file_size=1024,
+            print_count=0,
+            last_printed_at=None,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        item = PrintQueueItem(
+            printer_id=printer.id,
+            library_file_id=lib_file.id,
+            status="printing",
+            position=1,
+        )
+
+        await _bump_library_file_usage_if_completed(db_session, item, terminal_status)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        assert lib_file.print_count == 0
+        assert lib_file.last_printed_at is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bump_library_file_usage_skips_when_no_library_file_id(
+        self, printer_factory, archive_factory, db_session
+    ):
+        """Queue items without library_file_id (e.g. archive reprints) are a no-op."""
+        from backend.app.main import _bump_library_file_usage_if_completed
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        archive = await archive_factory()
+        item = PrintQueueItem(
+            printer_id=printer.id,
+            library_file_id=None,
+            archive_id=archive.id,
+            status="printing",
+            position=1,
+        )
+
+        # Must not raise.
+        await _bump_library_file_usage_if_completed(db_session, item, "completed")
+
+    # ========================================================================
     # Batch quantity tests
     # ========================================================================
 

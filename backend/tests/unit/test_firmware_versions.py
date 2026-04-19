@@ -50,6 +50,53 @@ async def test_wiki_extraction_returns_empty_for_unknown_api_key():
     assert await svc._fetch_all_versions_from_wiki("no-such-key") == []
 
 
+# P2S and X2D wiki pages publish anchor ids without a dash between the
+# version bytes and the date (e.g. h-0102000020260409). Regression for #1030
+# where the anchor regex required a dash and silently returned no versions,
+# causing the UI to fall back to the stale download-page "Latest" value.
+P2S_NODASH_ANCHOR_SAMPLE = """
+<h2 id="h-0102000020260409" class="toc-header">01.02.00.00（20260409）</h2>
+<h2 id="h-0101030020260209" class="toc-header">01.01.03.00（20260209）</h2>
+<h2 id="h-0101010020251208" class="toc-header">01.01.01.00（20251208）</h2>
+"""
+
+
+@pytest.mark.asyncio
+async def test_wiki_extraction_accepts_nodash_anchors():
+    """P2S/X2D anchors concatenate version+date with no dash — must still parse."""
+    svc = FirmwareCheckService()
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 200
+    mock_resp.text = P2S_NODASH_ANCHOR_SAMPLE
+    with patch.object(svc._client, "get", AsyncMock(return_value=mock_resp)):
+        versions = await svc._fetch_all_versions_from_wiki("p2s")
+
+    assert [v for v, _ in versions] == ["01.02.00.00", "01.01.03.00", "01.01.01.00"]
+    assert versions[0][1] == "20260409"
+
+
+# A1, A1-mini and P2S pages render dates in full-width parens （YYYYMMDD）
+# rather than ASCII parens (YYYYMMDD). Pages without version-anchors fall
+# through to the text-based regex, so it must accept both paren styles.
+FULLWIDTH_PAREN_FALLBACK_SAMPLE = """
+<h2>01.04.00.01 （20260401）</h2>
+<h2>01.03.00.00 （20260101）</h2>
+"""
+
+
+@pytest.mark.asyncio
+async def test_wiki_extraction_fallback_accepts_fullwidth_parens():
+    svc = FirmwareCheckService()
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 200
+    mock_resp.text = FULLWIDTH_PAREN_FALLBACK_SAMPLE
+    with patch.object(svc._client, "get", AsyncMock(return_value=mock_resp)):
+        versions = await svc._fetch_all_versions_from_wiki("a1")
+
+    assert [v for v, _ in versions] == ["01.04.00.01", "01.03.00.00"]
+    assert versions[0][1] == "20260401"
+
+
 @pytest.mark.asyncio
 async def test_get_available_versions_merges_sources():
     """

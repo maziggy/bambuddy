@@ -1189,8 +1189,8 @@ async def oidc_authorize(
 
 @router.get("/oidc/callback")
 async def oidc_callback(
-    code: str | None = Query(default=None, max_length=512),
-    state: str | None = Query(default=None, max_length=512),
+    code: str | None = Query(default=None, max_length=2048),
+    state: str | None = Query(default=None, max_length=2048),
     error: str | None = Query(default=None, max_length=256),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:

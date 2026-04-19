@@ -43,6 +43,12 @@ class PrintArchive(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # Printer-assigned subtask identifier from MQTT. Used to resume the same
+    # archive row across a backend restart during a long-running print (#972):
+    # if the same subtask_id reappears after restart, we know it's the same
+    # print and keep the original row instead of cancel-then-create.
+    subtask_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     # Extended metadata (JSON blob for flexibility)
     extra_data: Mapped[dict | None] = mapped_column(JSON)
 

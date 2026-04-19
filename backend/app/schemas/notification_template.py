@@ -260,14 +260,14 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     # User management notifications
     "user_created": {
         "username": "john_doe",
-        "password": "TempPass123!",
+        "password": "<generated-password>",
         "login_url": "https://bambuddy.example.com/login",
         "app_name": "Bambuddy",
         "timestamp": "2024-01-15 14:30",
     },
     "password_reset": {
         "username": "john_doe",
-        "password": "NewPass456!",
+        "password": "<new-password>",
         "login_url": "https://bambuddy.example.com/login",
         "app_name": "Bambuddy",
         "timestamp": "2024-01-15 14:30",

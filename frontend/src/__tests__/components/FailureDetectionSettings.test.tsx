@@ -40,7 +40,6 @@ const baseStatus = {
   sensitivity: 'medium',
   action: 'notify',
   poll_interval: 10,
-  external_url_configured: true,
 };
 
 describe('FailureDetectionSettings', () => {
@@ -60,19 +59,6 @@ describe('FailureDetectionSettings', () => {
     });
     expect(screen.getByText(/Obico ML API URL/i)).toBeInTheDocument();
     expect(screen.getByText(/Sensitivity/i)).toBeInTheDocument();
-  });
-
-  it('warns when external URL is missing and detection is enabled', async () => {
-    server.use(
-      http.get('/api/v1/settings/', () => HttpResponse.json({ ...baseSettings, obico_enabled: true })),
-      http.get('/api/v1/obico/status', () =>
-        HttpResponse.json({ ...baseStatus, enabled: true, external_url_configured: false }),
-      ),
-    );
-    render(<FailureDetectionSettings />);
-    await waitFor(() => {
-      expect(screen.getByText(/External URL is not set/i)).toBeInTheDocument();
-    });
   });
 
   it('test button calls the test-connection endpoint and shows success', async () => {

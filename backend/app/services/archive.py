@@ -855,6 +855,7 @@ class ArchiveService:
         created_by_id: int | None = None,
         original_filename: str | None = None,
         project_id: int | None = None,
+        subtask_id: str | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -867,6 +868,9 @@ class ArchiveService:
                 stored with UUID names)
             project_id: Project to associate this archive with (optional, set when triggered
                 from the project view)
+            subtask_id: MQTT-provided task identifier (optional). Used to match an
+                existing archive across a backend restart mid-print so the
+                original row can be resumed instead of cancelled (#972).
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -978,6 +982,7 @@ class ArchiveService:
             extra_data=metadata,
             created_by_id=created_by_id,
             project_id=project_id,
+            subtask_id=subtask_id,
         )
 
         self.db.add(archive)

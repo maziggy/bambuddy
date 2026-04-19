@@ -75,6 +75,22 @@ query-filters:
   - exclude:
       id: py/catch-base-exception
 
+  # LDAP injection: All user input is RFC 4515 escaped via
+  # _ldap_escape() (ldap_service.py:282) before interpolation
+  # into search filters. CodeQL does not trace through the
+  # escape replace-loop and reports false positives on lines
+  # 131 / 183 / 198 where escaped values are reused.
+  - exclude:
+      id: py/ldap-injection
+
+  # Incomplete URL substring sanitization: Only triggers in
+  # test assertions (test_cloud_auth.py) that verify the
+  # mocked HTTP client saw the right hostname
+  # (e.g. `"api.bambulab.cn" in captured_url`). URLs come
+  # from a mock's captured_urls list, not user input.
+  - exclude:
+      id: py/incomplete-url-substring-sanitization
+
   # ── JavaScript Accepted Risk ─────────────────────────────────
 
   # XSS through DOM: False positives —

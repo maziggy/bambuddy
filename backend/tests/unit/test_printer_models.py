@@ -2,7 +2,15 @@
 
 import pytest
 
-from backend.app.utils.printer_models import get_rod_type
+from backend.app.services.camera import get_camera_port, supports_rtsp
+from backend.app.utils.printer_models import (
+    CARBON_ROD_MODELS,
+    STEEL_ROD_MODELS,
+    get_rod_type,
+    has_ethernet,
+    normalize_printer_model,
+    normalize_printer_model_id,
+)
 
 
 class TestGetRodType:
@@ -46,3 +54,53 @@ class TestGetRodType:
     def test_strips_whitespace_and_dashes(self):
         assert get_rod_type(" P2S ") == "steel_rod"
         assert get_rod_type("A1-Mini") == "linear_rail"
+
+
+class TestX2DModel:
+    """X2D printer support (issue #988).
+
+    The X2D is a dual-nozzle enclosed printer launched April 2026. It shares
+    the hardened steel rod hardware with P2S (NOT carbon rods) and uses
+    RTSP on port 322 like other X/H series printers. Internal SSDP/MQTT
+    model code is "N6"; serial numbers begin with "20P9".
+    """
+
+    def test_x2d_is_steel_rod_display_name(self):
+        assert get_rod_type("X2D") == "steel_rod"
+
+    def test_x2d_is_steel_rod_internal_code(self):
+        assert get_rod_type("N6") == "steel_rod"
+
+    def test_x2d_model_id_map(self):
+        assert normalize_printer_model_id("N6") == "X2D"
+
+    def test_x2d_model_map(self):
+        assert normalize_printer_model("Bambu Lab X2D") == "X2D"
+
+    def test_x2d_has_ethernet_display_name(self):
+        assert has_ethernet("X2D") is True
+
+    def test_x2d_has_ethernet_internal_code(self):
+        assert has_ethernet("N6") is True
+
+    def test_x2d_supports_rtsp_display_name(self):
+        assert supports_rtsp("X2D") is True
+
+    def test_x2d_supports_rtsp_internal_code(self):
+        assert supports_rtsp("N6") is True
+
+    def test_x2d_camera_port_is_rtsp(self):
+        assert get_camera_port("N6") == 322
+        assert get_camera_port("X2D") == 322
+
+    def test_x2d_not_in_carbon_rod_set(self):
+        """Regression guard: X2D has hardened steel rods, not carbon (#988).
+
+        A prior PR classified X2D as carbon; the reporter confirmed it uses
+        the same stainless steel rod gantry as P2S. This assertion pins the
+        classification so a future change that reverts it will fail loudly.
+        """
+        assert "X2D" not in CARBON_ROD_MODELS
+        assert "N6" not in CARBON_ROD_MODELS
+        assert "X2D" in STEEL_ROD_MODELS
+        assert "N6" in STEEL_ROD_MODELS

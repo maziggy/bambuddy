@@ -1,4 +1,8 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+Region = Literal["global", "china"]
 
 
 class CloudLoginRequest(BaseModel):
@@ -6,7 +10,7 @@ class CloudLoginRequest(BaseModel):
 
     email: str = Field(..., description="Bambu Lab account email")
     password: str = Field(..., description="Account password")
-    region: str = Field(default="global", description="Region: 'global' or 'china'")
+    region: Region = Field(default="global", description="Region: 'global' or 'china'")
 
 
 class CloudVerifyRequest(BaseModel):
@@ -15,6 +19,7 @@ class CloudVerifyRequest(BaseModel):
     email: str = Field(..., description="Bambu Lab account email")
     code: str = Field(..., description="6-digit verification code")
     tfa_key: str | None = Field(None, description="TFA key for TOTP verification (from login response)")
+    region: Region = Field(default="global", description="Region: 'global' or 'china'")
 
 
 class CloudLoginResponse(BaseModel):
@@ -32,12 +37,14 @@ class CloudAuthStatus(BaseModel):
 
     is_authenticated: bool
     email: str | None = None
+    region: Region | None = None
 
 
 class CloudTokenRequest(BaseModel):
     """Request to set access token directly."""
 
     access_token: str = Field(..., description="Bambu Lab access token")
+    region: Region = Field(default="global", description="Region: 'global' or 'china'")
 
 
 class SlicerSetting(BaseModel):

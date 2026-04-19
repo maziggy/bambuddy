@@ -27,15 +27,41 @@ class BambuCloudAuthError(BambuCloudError):
     pass
 
 
+_shared_http_client: httpx.AsyncClient | None = None
+
+
+def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
+    """Register an app-scoped ``httpx.AsyncClient`` so per-request
+    ``BambuCloudService`` instances can reuse its connection pool.
+
+    Pass ``None`` during shutdown to unregister. The service only holds a
+    reference (never closes a client it does not own), so region + token
+    state still stays per-request — this only shares the transport pool.
+    """
+    global _shared_http_client
+    _shared_http_client = client
+
+
 class BambuCloudService:
     """Service for interacting with Bambu Lab Cloud API."""
 
-    def __init__(self, region: str = "global"):
+    def __init__(self, region: str = "global", client: httpx.AsyncClient | None = None):
         self.base_url = BAMBU_API_BASE if region == "global" else BAMBU_API_BASE_CN
         self.access_token: str | None = None
         self.refresh_token: str | None = None
         self.token_expiry: datetime | None = None
-        self._client = httpx.AsyncClient(timeout=30.0)
+        # Prefer an explicitly-injected client (tests), else fall back to the
+        # app-scoped shared client (production), and finally create our own so
+        # scripts / tests that skip the lifespan still get a working service.
+        if client is not None:
+            self._client = client
+            self._owns_client = False
+        elif _shared_http_client is not None:
+            self._client = _shared_http_client
+            self._owns_client = False
+        else:
+            self._client = httpx.AsyncClient(timeout=30.0)
+            self._owns_client = True
 
     @property
     def is_authenticated(self) -> bool:
@@ -511,17 +537,16 @@ class BambuCloudService:
             raise BambuCloudError(f"Request failed: {e}")
 
     async def close(self):
-        """Close the HTTP client."""
-        await self._client.aclose()
+        """Close the HTTP client we own. No-op when sharing an app-scoped client."""
+        if self._owns_client:
+            await self._client.aclose()
 
 
-# Singleton instance
-_cloud_service: BambuCloudService | None = None
-
-
-def get_cloud_service() -> BambuCloudService:
-    """Get the singleton cloud service instance."""
-    global _cloud_service
-    if _cloud_service is None:
-        _cloud_service = BambuCloudService()
-    return _cloud_service
+# Previously this module exposed a process-wide ``_cloud_service`` singleton
+# via ``get_cloud_service()`` / ``reset_cloud_service()``. That pattern leaked
+# region and token state across users (a China-region login would pin the
+# singleton to api.bambulab.cn until the next explicit reset), so the singleton
+# has been removed. Callers should construct a per-request
+# ``BambuCloudService(region=...)`` from the stored region and ``await
+# cloud.close()`` it when done. See ``routes.cloud.build_authenticated_cloud``
+# for the standard pattern.

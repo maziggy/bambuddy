@@ -786,7 +786,7 @@ async def list_assignments(
 async def assign_spool(
     data: SpoolAssignmentCreate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Assign a spool to an AMS slot and auto-configure via MQTT."""
     from backend.app.services.printer_manager import printer_manager
@@ -911,34 +911,39 @@ async def assign_spool(
                     # Use base_sf (version suffix stripped) for cloud API + MQTT
                     setting_id = base_sf
                     try:
-                        from backend.app.services.bambu_cloud import get_cloud_service
+                        from backend.app.api.routes.cloud import build_authenticated_cloud
 
-                        cloud = get_cloud_service()
-                        if cloud.is_authenticated:
-                            detail = await cloud.get_setting_detail(base_sf)
-                            if detail.get("filament_id"):
-                                tray_info_idx = detail["filament_id"]
-                                logger.info(
-                                    "Spool assign: resolved filament_id=%r from cloud for setting_id=%r",
-                                    tray_info_idx,
-                                    sf,
-                                )
-                                # Use cloud preset name for tray_sub_brands if available
-                                cloud_name = detail.get("name", "")
-                                if cloud_name:
-                                    tray_sub_brands = cloud_name.replace(r"@.*$", "").split("@")[0].strip()
-                            elif detail.get("base_id"):
-                                # Derive from base_id (e.g. "GFSL05" → "GFL05")
-                                bid = detail["base_id"].split("_")[0]
-                                if bid.startswith("GFS") and len(bid) >= 5:
-                                    tray_info_idx = f"GF{bid[3:]}"
-                                else:
-                                    tray_info_idx = bid
-                                logger.info(
-                                    "Spool assign: derived filament_id=%r from base_id=%r",
-                                    tray_info_idx,
-                                    detail["base_id"],
-                                )
+                        cloud = await build_authenticated_cloud(db, current_user)
+                        if cloud is not None and cloud.is_authenticated:
+                            try:
+                                detail = await cloud.get_setting_detail(base_sf)
+                                if detail.get("filament_id"):
+                                    tray_info_idx = detail["filament_id"]
+                                    logger.info(
+                                        "Spool assign: resolved filament_id=%r from cloud for setting_id=%r",
+                                        tray_info_idx,
+                                        sf,
+                                    )
+                                    # Use cloud preset name for tray_sub_brands if available
+                                    cloud_name = detail.get("name", "")
+                                    if cloud_name:
+                                        tray_sub_brands = cloud_name.replace(r"@.*$", "").split("@")[0].strip()
+                                elif detail.get("base_id"):
+                                    # Derive from base_id (e.g. "GFSL05" → "GFL05")
+                                    bid = detail["base_id"].split("_")[0]
+                                    if bid.startswith("GFS") and len(bid) >= 5:
+                                        tray_info_idx = f"GF{bid[3:]}"
+                                    else:
+                                        tray_info_idx = bid
+                                    logger.info(
+                                        "Spool assign: derived filament_id=%r from base_id=%r",
+                                        tray_info_idx,
+                                        detail["base_id"],
+                                    )
+                            finally:
+                                await cloud.close()
+                        elif cloud is not None:
+                            await cloud.close()
                     except Exception as e:
                         logger.warning("Spool assign: cloud lookup failed for %r: %s", sf, e)
 

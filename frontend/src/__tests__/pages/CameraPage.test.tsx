@@ -127,6 +127,56 @@ describe('CameraPage', () => {
     });
   });
 
+  describe('stream token handling (#979)', () => {
+    it('does not render image src until stream token arrives when auth is enabled', async () => {
+      let resolveToken!: (value: unknown) => void;
+      const tokenPromise = new Promise((resolve) => {
+        resolveToken = resolve;
+      });
+
+      server.use(
+        http.get('*/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.post('*/api/v1/printers/camera/stream-token', async () => {
+          await tokenPromise;
+          return HttpResponse.json({ token: 'tok-abc' });
+        })
+      );
+
+      renderCameraPage(1);
+
+      // Before the token resolves the <img> should not have a src pointing at
+      // the stream endpoint — otherwise the backend would 401 with the
+      // "Valid camera stream token required" error from #979.
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+      const img = document.querySelector('img') as HTMLImageElement | null;
+      expect(img).not.toBeNull();
+      expect(img?.getAttribute('src') || '').not.toContain('/camera/stream');
+
+      resolveToken(undefined);
+
+      // After the token resolves the image src picks it up as ?token=...
+      await waitFor(() => {
+        const src = (document.querySelector('img') as HTMLImageElement | null)?.getAttribute('src') || '';
+        expect(src).toContain('/camera/stream');
+        expect(src).toContain('token=tok-abc');
+      });
+    });
+
+    it('renders image src immediately when auth is disabled (no token required)', async () => {
+      renderCameraPage(1);
+
+      await waitFor(() => {
+        const src = (document.querySelector('img') as HTMLImageElement | null)?.getAttribute('src') || '';
+        expect(src).toContain(`/api/v1/printers/1/camera/stream`);
+        expect(src).not.toContain('token=');
+      });
+    });
+  });
+
   describe('invalid printer', () => {
     it('shows invalid printer message for ID 0', async () => {
       renderCameraPage(0);

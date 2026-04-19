@@ -128,7 +128,7 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
   });
 
   const verifyMutation = useMutation({
-    mutationFn: () => api.cloudVerify(email, code, tfaKey || undefined),
+    mutationFn: () => api.cloudVerify(email, code, tfaKey || undefined, region),
     onSuccess: (result) => {
       if (result.success) {
         showToast(t('profiles.login.toast.loggedIn'));
@@ -141,7 +141,7 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
   });
 
   const tokenMutation = useMutation({
-    mutationFn: () => api.cloudSetToken(token),
+    mutationFn: () => api.cloudSetToken(token, region),
     onSuccess: () => {
       showToast(t('profiles.login.toast.tokenSet'));
       onSuccess();
@@ -231,18 +231,31 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
           )}
 
           {step === 'token' && (
-            <div>
-              <label className="block text-sm text-bambu-gray mb-1">{t('profiles.login.accessToken')}</label>
-              <p className="text-xs text-bambu-gray mb-2">{t('profiles.login.accessTokenHint')}</p>
-              <textarea
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono placeholder-bambu-gray-dark focus:border-bambu-green focus:outline-none resize-none"
-                placeholder="eyJ..."
-                rows={4}
-                required
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">{t('profiles.login.accessToken')}</label>
+                <p className="text-xs text-bambu-gray mb-2">{t('profiles.login.accessTokenHint')}</p>
+                <textarea
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono placeholder-bambu-gray-dark focus:border-bambu-green focus:outline-none resize-none"
+                  placeholder="eyJ..."
+                  rows={4}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">{t('profiles.login.region')}</label>
+                <select
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value)}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                >
+                  <option value="global">{t('profiles.login.regionGlobal')}</option>
+                  <option value="china">{t('profiles.login.regionChina')}</option>
+                </select>
+              </div>
+            </>
           )}
 
           <div className="flex gap-2 max-[550px]:flex-wrap max-[550px]:items-center">
@@ -2909,6 +2922,13 @@ export function ProfilesPage() {
                 <div className="w-2 h-2 rounded-full bg-bambu-green animate-pulse" />
                 <span className="text-sm text-bambu-gray">
                   {t('profiles.connectedAs')} <span className="text-white">{status.email}</span>
+                  {status.region && (
+                    <span className="ml-2 px-2 py-0.5 text-xs rounded bg-bambu-dark-tertiary text-bambu-gray">
+                      {status.region === 'china'
+                        ? t('profiles.login.regionChina')
+                        : t('profiles.login.regionGlobal')}
+                    </span>
+                  )}
                 </span>
               </div>
               <Button

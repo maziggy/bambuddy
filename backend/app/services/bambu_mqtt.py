@@ -367,6 +367,12 @@ class BambuMQTTClient:
         # when the frontend polls status faster than paho can reconnect.
         self._last_stale_reconnect: float = 0.0
 
+        # Zombie session detection via ams_filament_setting response tracking (#887).
+        # The dev-mode probe only runs on first connect; this catches zombie sessions
+        # that develop later (telemetry flows but publishes silently fail).
+        self._last_ams_cmd_time: float = 0.0  # monotonic time of last published command
+        self._ams_cmd_unanswered: int = 0  # consecutive commands with no response
+
     @property
     def topic_subscribe(self) -> str:
         return f"device/{self.serial_number}/report"
@@ -457,6 +463,8 @@ class BambuMQTTClient:
             self._dev_mode_probe_time = 0.0
             self._dev_mode_probe_failures = 0
             self._connect_time = time.monotonic()
+            self._last_ams_cmd_time = 0.0
+            self._ams_cmd_unanswered = 0
             client.subscribe(self.topic_subscribe)
             # Subscribe to request topic for ams_mapping capture (if supported by broker)
             if self._request_topic_supported:
@@ -771,6 +779,10 @@ class BambuMQTTClient:
                     and print_data.get("sequence_id") == self._dev_mode_probe_seq
                 ):
                     self._handle_dev_mode_probe_response(print_data)
+                # Track user-initiated ams_filament_setting responses (#887 zombie detection)
+                elif cmd == "ams_filament_setting" and self._last_ams_cmd_time > 0:
+                    self._last_ams_cmd_time = 0.0
+                    self._ams_cmd_unanswered = 0
             if "command" in print_data and print_data.get("command") == "extrusion_cali_get":
                 self._handle_kprofile_response(print_data)
 
@@ -2549,6 +2561,23 @@ class BambuMQTTClient:
                     # Allow retry on next full status message
                     self._dev_mode_probed = False
 
+        # Zombie session detection: if an ams_filament_setting command has been
+        # pending for >10s with no response, the publish path is likely dead (#887).
+        if self._last_ams_cmd_time > 0:
+            elapsed = time.monotonic() - self._last_ams_cmd_time
+            if elapsed > 10.0:
+                self._ams_cmd_unanswered += 1
+                logger.warning(
+                    "[%s] ams_filament_setting unanswered for %.0fs (count=%d)",
+                    self.serial_number,
+                    elapsed,
+                    self._ams_cmd_unanswered,
+                )
+                self._last_ams_cmd_time = 0.0  # don't re-trigger on next push_status
+                if self._ams_cmd_unanswered >= 2:
+                    self.force_reconnect_stale_session("ams_filament_setting unanswered 2\u00d7")
+                    self._ams_cmd_unanswered = 0
+
         # Log mapping data when received (for usage tracking debugging)
         if "mapping" in data:
             logger.debug("[%s] MQTT mapping field: %s", self.serial_number, data["mapping"])
@@ -2927,7 +2956,7 @@ class BambuMQTTClient:
             # but use_ams MUST remain boolean — H2D Pro firmware interprets integer
             # values as nozzle index (1 = deputy nozzle), causing wrong extruder routing
             # Other printers (X1C, P1S, A1, etc.) require actual booleans for all fields
-            is_h2d = self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "H2S")
+            is_h2d = self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "H2S", "X2D")
 
             # Build ams_mapping2 from ams_mapping (detailed format with ams_id/slot_id)
             ams_mapping2 = []
@@ -2980,6 +3009,19 @@ class BambuMQTTClient:
                         self.serial_number,
                     )
 
+            # Unique per-submission identity fields. Hardcoded "0" values caused
+            # third-party MQTT observers (OctoEverywhere, etc.) to see reprints as
+            # continuations of the same job: the printer reuses gcode_start_time
+            # from the prior print with task_id=0, so observers latch onto a stale
+            # timestamp and report compounding durations on repeat replays (#1011).
+            # BambuStudio mints fresh IDs per submission; matching that behavior
+            # makes the printer emit a clean state-transition for each job.
+            # md5 is left empty — firmware historically accepts "" as "skip
+            # validation" (unlike Studio, we don't have the file's real md5 here
+            # without re-reading the upload, and sending a synthetic wrong digest
+            # risks activation of md5 verification on some firmwares).
+            submission_id = str(int(time.time() * 1000))
+
             command = {
                 "print": {
                     "sequence_id": "20000",
@@ -3002,9 +3044,9 @@ class BambuMQTTClient:
                     "nozzle_offset_cali": 2,
                     "subtask_name": filename.replace(".3mf", "").replace(".gcode", ""),
                     "profile_id": "0",
-                    "project_id": "0",
-                    "subtask_id": "0",
-                    "task_id": "0",
+                    "project_id": submission_id,
+                    "subtask_id": submission_id,
+                    "task_id": submission_id,
                 }
             }
 
@@ -3683,8 +3725,10 @@ class BambuMQTTClient:
         self._sequence_id += 1
 
         # Detect printer type by serial number prefix
-        # H2D series (dual nozzle): serial starts with "094"
-        is_dual_nozzle = self.serial_number.startswith("094")
+        # Dual-nozzle families:
+        #   H2D series: serial starts with "094"
+        #   X2D series: serial starts with "20P9"
+        is_dual_nozzle = self.serial_number.startswith(("094", "20P9"))
 
         if is_dual_nozzle:
             # H2D format: uses extruder_id, nozzle_id, nozzle_diameter
@@ -4326,6 +4370,7 @@ class BambuMQTTClient:
         )
         logger.debug("[%s] ams_filament_setting command: %s", self.serial_number, command_json)
         self._client.publish(self.topic_publish, command_json, qos=1)
+        self._last_ams_cmd_time = time.monotonic()
         return True
 
     def reset_ams_slot(self, ams_id: int, tray_id: int) -> bool:
@@ -4383,6 +4428,7 @@ class BambuMQTTClient:
         logger.info("[%s] Resetting AMS slot: AMS %s, tray %s", self.serial_number, ams_id, tray_id)
         logger.debug("[%s] reset_ams_slot command: %s", self.serial_number, command_json)
         self._client.publish(self.topic_publish, command_json, qos=1)
+        self._last_ams_cmd_time = time.monotonic()
         return True
 
     def extrusion_cali_sel(

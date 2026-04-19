@@ -236,3 +236,58 @@ class TestBambuCloudTOTPVerification:
             headers = call_args[1]["headers"]
             assert "User-Agent" in headers
             assert "Mozilla" in headers["User-Agent"]
+
+
+class TestBambuCloudRegion:
+    """Region routing — China-region instances must hit api.bambulab.cn."""
+
+    def test_global_region_uses_com_base(self):
+        """Default / 'global' region should use api.bambulab.com."""
+        cloud = BambuCloudService()  # default region
+        assert cloud.base_url == "https://api.bambulab.com"
+
+        cloud_explicit = BambuCloudService(region="global")
+        assert cloud_explicit.base_url == "https://api.bambulab.com"
+
+    def test_china_region_uses_cn_base(self):
+        """'china' region should use api.bambulab.cn."""
+        cloud = BambuCloudService(region="china")
+        assert cloud.base_url == "https://api.bambulab.cn"
+
+    @pytest.mark.asyncio
+    async def test_china_region_login_hits_cn_endpoint(self):
+        """A login_request from a China-region instance must POST to api.bambulab.cn."""
+        cloud = BambuCloudService(region="china")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"loginType": "verifyCode"}
+
+        with patch.object(cloud._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            await cloud.login_request("test@example.com", "password")
+
+            url = mock_post.call_args[0][0]
+            assert "api.bambulab.cn" in url
+            assert "api.bambulab.com" not in url
+
+    @pytest.mark.asyncio
+    async def test_china_region_totp_hits_cn_tfa_endpoint(self):
+        """TOTP verification from a China-region instance uses the CN TFA endpoint."""
+        cloud = BambuCloudService(region="china")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"token": "t"}'
+        mock_response.json.return_value = {"token": "t"}
+        mock_response.cookies = {}
+
+        with patch.object(cloud._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            await cloud.verify_totp("tfa-key", "123456")
+
+            url = mock_post.call_args[0][0]
+            assert "bambulab.cn/api/sign-in/tfa" in url
+            assert "bambulab.com" not in url

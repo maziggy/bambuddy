@@ -5059,7 +5059,7 @@ export default {
     pollInterval: 'Prüfintervall (Sekunden)',
     pollIntervalHint: 'Wie oft jeder Drucker während eines laufenden Drucks geprüft wird. Minimum 5 s, Maximum 120 s.',
     externalUrlMissing: 'Externe URL ist nicht gesetzt.',
-    externalUrlHint: 'Die ML-API lädt das Kamerabild per URL. Setze die Externe URL in den allgemeinen Einstellungen, damit der ML-API-Container Bambuddy erreichen kann.',
+    externalUrlHint: 'Die ML-API ruft das Kamera-Snapshot per URL ab. Setze die externe URL in den allgemeinen Einstellungen, damit der ML-API-Container Bambuddy erreichen kann.',
     perPrinterTitle: 'Überwachte Drucker',
     perPrinterHint: 'Wähle, welche Drucker vom Erkennungsdienst überwacht werden.',
     monitorAll: 'Alle verbundenen Drucker überwachen',

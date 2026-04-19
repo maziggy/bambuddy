@@ -46,6 +46,7 @@ MODEL_TO_API_KEY = {
     "H2S": "h2s",
     "P2S": "p2s",
     "X1E": "x1e",
+    "X2D": "x2d",
     "H2D Pro": "h2d-pro",
     "H2D-Pro": "h2d-pro",
     "H2DPRO": "h2d-pro",
@@ -64,6 +65,7 @@ MODEL_TO_API_KEY = {
     "C13": "p2s",
     "N2S": "a1",
     "N1": "a1-mini",
+    "N6": "x2d",
     "N7": "p2s",
 }
 
@@ -78,6 +80,7 @@ API_KEY_TO_DEV_MODEL = {
     "h2s": "O1S",
     "p2s": "N7",
     "x1e": "C13",
+    "x2d": "N6",
     "h2d-pro": "O1E",
 }
 
@@ -92,6 +95,7 @@ API_KEY_TO_WIKI_PATH = {
     "h2c": "/en/h2c/manual/h2c-firmware-release-history",
     "h2s": "/en/h2s/manual/h2s-firmware-release-history",
     "p2s": "/en/p2s/manual/p2s-firmware-release-history",
+    "x2d": "/en/x2d/manual/x2d-firmware-release-history",
     "h2d-pro": "/en/h2d-pro/manual/firmware-release-history",
 }
 

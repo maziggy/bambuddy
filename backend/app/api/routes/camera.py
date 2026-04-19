@@ -1376,6 +1376,11 @@ async def cleanup_orphaned_streams():
     # Collect PIDs that are legitimately in-use (active stream, process alive)
     active_pids = {proc.pid for proc in _active_streams.values() if proc.returncode is None}
 
+    # Also exclude PIDs from one-shot snapshot captures (Obico detection, finish photos, etc.)
+    from backend.app.services.camera import _active_capture_pids
+
+    active_pids |= _active_capture_pids
+
     # 1. /proc scan — catch ALL orphaned Bambu ffmpeg processes on the system.
     #    Any ffmpeg with rtsp(s)://bblp: that is NOT in an active stream is orphaned.
     for pid in _scan_bambu_ffmpeg_pids():

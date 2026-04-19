@@ -39,8 +39,8 @@ def _make_server(serial: str = "01P00A391800001") -> SimpleMQTTServer:
     return SimpleMQTTServer(
         serial=serial,
         access_code="deadbeef",
-        cert_path=Path("/tmp/unused.crt"),
-        key_path=Path("/tmp/unused.key"),
+        cert_path=Path("/tmp/unused.crt"),  # nosec B108
+        key_path=Path("/tmp/unused.key"),  # nosec B108
         model="C12",
     )
 
@@ -151,6 +151,29 @@ class TestPublishHandlerAdaptiveSerial:
         assert b"device/CUSTOMSERIAL123/report" in all_bytes
         assert b'"command": "push_status"' in all_bytes
         assert server._client_serials["c1"] == "CUSTOMSERIAL123"
+
+    def test_handle_publish_tolerates_null_terminated_payload(self):
+        """#927: OrcaSlicer on Linux appends the C-string \\0 to MQTT payloads.
+        The handler must still parse and respond rather than silently dropping."""
+        server = _make_server(serial="01P00A391800001")
+        server._client_serials["c1"] = server.serial
+
+        writer = MagicMock()
+        writer.write = MagicMock()
+        writer.drain = AsyncMock()
+
+        topic = "device/01P00A391800001/request"
+        topic_bytes = topic.encode("utf-8")
+        # Real-world bytes captured from EdwardChamberlain's support log: the
+        # JSON ends with an extra \x00 that strict json.loads rejects.
+        message_bytes = b'{"pushing":{"command":"pushall","sequence_id":"7"}}\x00'
+        payload = len(topic_bytes).to_bytes(2, "big") + topic_bytes + message_bytes
+
+        asyncio.run(server._handle_publish(0x30, payload, writer, "c1"))
+
+        all_bytes = b"".join(call.args[0] for call in writer.write.call_args_list)
+        assert b"device/01P00A391800001/report" in all_bytes
+        assert b'"command": "push_status"' in all_bytes
 
 
 class TestClientSerialLifecycle:

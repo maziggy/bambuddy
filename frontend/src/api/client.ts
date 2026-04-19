@@ -957,6 +957,7 @@ export interface MQTTStatus {
 export interface CloudAuthStatus {
   is_authenticated: boolean;
   email: string | null;
+  region?: 'global' | 'china' | null;
 }
 
 export interface CloudLoginResponse {
@@ -3605,7 +3606,7 @@ export const api = {
     let filename = 'bambuddy-backup.zip';
     if (contentDisposition) {
       const match = contentDisposition.match(/filename=([^;]+)/);
-      if (match) filename = match[1].trim();
+      if (match) filename = match[1].trim().replace(/^"(.*)"$/, '$1');
     }
 
     const blob = await response.blob();
@@ -3642,15 +3643,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, password, region }),
     }),
-  cloudVerify: (email: string, code: string, tfaKey?: string) =>
+  cloudVerify: (email: string, code: string, tfaKey?: string, region: string = 'global') =>
     request<CloudLoginResponse>('/cloud/verify', {
       method: 'POST',
-      body: JSON.stringify({ email, code, tfa_key: tfaKey }),
+      body: JSON.stringify({ email, code, tfa_key: tfaKey, region }),
     }),
-  cloudSetToken: (access_token: string) =>
+  cloudSetToken: (access_token: string, region: string = 'global') =>
     request<CloudAuthStatus>('/cloud/token', {
       method: 'POST',
-      body: JSON.stringify({ access_token }),
+      body: JSON.stringify({ access_token, region }),
     }),
   cloudLogout: () =>
     request<{ success: boolean }>('/cloud/logout', { method: 'POST' }),

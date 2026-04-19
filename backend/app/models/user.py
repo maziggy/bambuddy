@@ -42,6 +42,8 @@ class User(Base):
     # Per-user Bambu Cloud credentials (when auth is enabled, each user has their own)
     cloud_token: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     cloud_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    # "global" or "china"; NULL treated as "global" for legacy rows.
+    cloud_region: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
 
     # Relationship to groups through association table
     groups: Mapped[list[Group]] = relationship(

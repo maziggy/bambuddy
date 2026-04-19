@@ -52,7 +52,7 @@ class TestSJFScheduling:
             defaults = {
                 "filename": f"test_print_{counter}.3mf",
                 "print_name": f"Test Print {counter}",
-                "file_path": f"/tmp/test_print_{counter}.3mf",
+                "file_path": f"/tmp/test_print_{counter}.3mf",  # nosec B108
                 "file_size": 1024,
                 "content_hash": f"testhash{counter:08d}",
                 "status": "completed",

@@ -19,6 +19,7 @@ PRINTER_MODEL_MAP = {
     "Bambu Lab H2D Pro": "H2D Pro",
     "Bambu Lab H2C": "H2C",
     "Bambu Lab H2S": "H2S",
+    "Bambu Lab X2D": "X2D",
 }
 
 # Map from printer_model_id (internal codes in slice_info.config) to short names
@@ -33,6 +34,8 @@ PRINTER_MODEL_ID_MAP = {
     "P1S": "P1S",
     # P2 series
     "P2S": "P2S",
+    # X2 series
+    "N6": "X2D",
     # A1 series
     "A11": "A1",
     "A12": "A1 Mini",
@@ -51,7 +54,7 @@ PRINTER_MODEL_ID_MAP = {
 
 # Rod/rail type classification for maintenance tasks.
 # Carbon rods: X1, P1 series (CoreXY with carbon fiber rods)
-# Steel rods: P2S series (hardened steel linear shafts)
+# Steel rods: P2S, X2D series (hardened steel linear shafts)
 # Linear rails: A1, H2 series (linear rail motion system)
 # Values must be uppercase with spaces stripped for normalized comparison.
 CARBON_ROD_MODELS = frozenset(
@@ -73,8 +76,10 @@ STEEL_ROD_MODELS = frozenset(
     [
         # Display names (uppercase, no spaces)
         "P2S",
+        "X2D",
         # Internal codes
         "N7",  # P2S
+        "N6",  # X2D
     ]
 )
 
@@ -110,6 +115,7 @@ ETHERNET_MODELS = frozenset(
         # Display names (uppercase, no spaces)
         "X1C",
         "X1E",
+        "X2D",
         "P1S",
         "P2S",
         "H2D",
@@ -119,6 +125,7 @@ ETHERNET_MODELS = frozenset(
         # Internal codes
         "C11",  # X1C
         "C13",  # X1E
+        "N6",  # X2D
         "P1S",  # P1S
         "O1D",  # H2D
         "O1E",  # H2D Pro
@@ -143,7 +150,7 @@ def get_rod_type(model: str | None) -> str | None:
 
     Returns:
         "carbon" for X1/P1 series (carbon fiber rods),
-        "steel_rod" for P2S series (hardened steel rods),
+        "steel_rod" for P2S/X2D series (hardened steel rods),
         "linear_rail" for A1/H2 series (linear rails),
         None for unknown models.
     """

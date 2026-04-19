@@ -29,9 +29,11 @@ from backend.app.schemas.printer import (
     PrintOptionsResponse,
 )
 from backend.app.services.bambu_ftp import (
+    cache_3mf_download,
     delete_file_async,
     download_file_bytes_async,
     download_file_try_paths_async,
+    get_cached_3mf,
     get_storage_info_async,
     list_files_async,
 )
@@ -792,42 +794,60 @@ async def get_printer_cover(
     temp_path = settings.archive_dir / "temp" / f"cover_{printer_id}_{temp_filename}"
     temp_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info(
-        f"Trying to download cover for '{subtask_name}' from {printer.ip_address} (trying {len(remote_paths)} paths)"
-    )
-
-    # Retry logic for transient FTP failures
-    max_retries = 2
-    last_error = None
+    # Cache check (#972): the archive-metadata flow in main.py may have already
+    # downloaded this 3MF during the print-start handler. Reusing that file
+    # avoids a second 36MB transfer competing with the printer's single FTP
+    # socket (which produces the 425 errors that feed the retry storm).
     downloaded = False
-
-    for attempt in range(max_retries + 1):
-        try:
-            downloaded = await download_file_try_paths_async(
-                printer.ip_address,
-                printer.access_code,
-                remote_paths,
-                temp_path,
-                printer_model=printer.model,
-            )
-            if downloaded:
-                break
-        except Exception as e:
-            last_error = e
-            if attempt < max_retries:
-                logger.warning("FTP download attempt %s failed: %s, retrying...", attempt + 1, e)
-                await asyncio.sleep(0.5 * (attempt + 1))  # Brief backoff
-            else:
-                logger.error("FTP download failed after %s attempts: %s", max_retries + 1, e)
-
-    if last_error and not downloaded:
-        raise HTTPException(503, f"FTP download temporarily unavailable: {last_error}")
+    using_cached = False
+    for candidate_name in possible_filenames:
+        cached = get_cached_3mf(printer_id, candidate_name)
+        if cached:
+            logger.info("Cover using cached 3MF from %s (avoided duplicate FTP)", cached)
+            temp_path = cached
+            downloaded = True
+            using_cached = True
+            break
 
     if not downloaded:
-        raise HTTPException(
-            404,
-            f"Could not download 3MF file for '{subtask_name}' from printer {printer.ip_address}. Tried: {possible_filenames}",
+        logger.info(
+            f"Trying to download cover for '{subtask_name}' from {printer.ip_address} (trying {len(remote_paths)} paths)"
         )
+
+        # Retry logic for transient FTP failures
+        max_retries = 2
+        last_error = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                downloaded = await download_file_try_paths_async(
+                    printer.ip_address,
+                    printer.access_code,
+                    remote_paths,
+                    temp_path,
+                    printer_model=printer.model,
+                )
+                if downloaded:
+                    break
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    logger.warning("FTP download attempt %s failed: %s, retrying...", attempt + 1, e)
+                    await asyncio.sleep(0.5 * (attempt + 1))  # Brief backoff
+                else:
+                    logger.error("FTP download failed after %s attempts: %s", max_retries + 1, e)
+
+        if last_error and not downloaded:
+            raise HTTPException(503, f"FTP download temporarily unavailable: {last_error}")
+
+        if not downloaded:
+            raise HTTPException(
+                404,
+                f"Could not download 3MF file for '{subtask_name}' from printer {printer.ip_address}. Tried: {possible_filenames}",
+            )
+
+        # Share the fresh download with the archive flow.
+        cache_3mf_download(printer_id, temp_filename, temp_path)
 
     # Verify file actually exists and has content
     if not temp_path.exists():
@@ -837,7 +857,8 @@ async def get_printer_cover(
     logger.info("Downloaded file size: %s bytes", file_size)
 
     if file_size == 0:
-        temp_path.unlink()
+        if not using_cached:
+            temp_path.unlink()
         raise HTTPException(500, f"Downloaded file is empty for '{subtask_name}'")
 
     try:
@@ -900,7 +921,10 @@ async def get_printer_cover(
             zf.close()
 
     finally:
-        if temp_path.exists():
+        # Only delete when this invocation owns the file. A cached path is
+        # shared with the archive flow — removing it would force a refetch
+        # the next time either flow needs the 3MF.
+        if not using_cached and temp_path.exists():
             temp_path.unlink()
 
 

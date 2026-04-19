@@ -21,6 +21,7 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         "X1",
         "X1C",
         "X1E",  # X1 series
+        "X2D",  # X2 series
         "P2S",  # P2 series
         "H2C",
         "H2D",
@@ -29,6 +30,7 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         # Internal codes (from MQTT/SSDP)
         "BL-P001",  # X1/X1C
         "C13",  # X1E
+        "N6",  # X2D
         "O1D",  # H2D
         "O1C",  # H2C
         "O1C2",  # H2C (dual nozzle variant)
@@ -816,6 +818,8 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         "chamber_light": state.chamber_light,
         # Active extruder for dual-nozzle printers (0=right, 1=left)
         "active_extruder": state.active_extruder,
+        # Print speed mode (1=silent, 2=standard, 3=sport, 4=ludicrous)
+        "speed_level": state.speed_level,
         # H2C nozzle rack (tool-changer dock positions)
         # Map raw MQTT field names (type/diameter) to schema names (nozzle_type/nozzle_diameter)
         "nozzle_rack": [

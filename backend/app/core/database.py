@@ -1250,6 +1250,7 @@ async def run_migrations(conn):
         "X1C": "BL-P001",
         "X1": "BL-P002",
         "X1E": "C13",
+        "X2D": "N6",
         "P1P": "C11",
         "P1S": "C12",
         "P2S": "N7",
@@ -1272,6 +1273,7 @@ async def run_migrations(conn):
     # Migration: Add per-user Bambu Cloud credential columns
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_email VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_region VARCHAR(10)")
 
     # Cleanup: Remove obsolete settings keys that are no longer used
     obsolete_keys = ["slicer_binary_path"]
@@ -1426,6 +1428,12 @@ async def run_migrations(conn):
     # Persists the smart plug lifetime counter captured at print start, so per-print
     # energy tracking survives a backend restart mid-print.
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN energy_start_kwh REAL")
+
+    # Migration: Add subtask_id to print_archives (#972)
+    # MQTT-provided task identifier used to resume the same archive row across a
+    # backend restart mid-print. Without it, a long print (e.g. 13h) triggers
+    # stale-cancel + new-archive, losing started_at continuity.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN subtask_id VARCHAR(64)")
 
     # Migration: Create smart_plug_energy_snapshots table (#941)
     # Hourly snapshots of each plug's lifetime counter, so date-range queries in

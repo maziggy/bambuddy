@@ -3014,3 +3014,252 @@ class TestOIDCExpiredTokenRejection:
         )
         remaining = result.scalar_one_or_none()
         assert remaining is not None, "Expired exchange token must not be consumed by a rejected request"
+
+
+# ===========================================================================
+# Trailing slash in issuer_url — discovery URL must not contain double slash
+# ===========================================================================
+
+
+class TestOIDCIssuerUrlTrailingSlash:
+    """Providers like Authentik use issuer URLs with a trailing slash.
+
+    BamBuddy must strip the slash before appending /.well-known/openid-configuration
+    to avoid a double-slash that results in a 404.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trailing_slash_issuer_url_fetches_correct_discovery_url(self, async_client: AsyncClient):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        issuer_with_slash = "https://authentik.example.com/application/o/bambuddy/"
+
+        admin_token = await _setup_and_login(async_client, "oidcslashadm", "oidcslashadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "Authentik-Slash",
+                "issuer_url": issuer_with_slash,
+                "client_id": "bambuddy",
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        fake_discovery = {
+            "issuer": issuer_with_slash,
+            "authorization_endpoint": "https://authentik.example.com/application/o/bambuddy/authorize",
+        }
+        disc_resp = AsyncMock()
+        disc_resp.raise_for_status = MagicMock()
+        disc_resp.json = MagicMock(return_value=fake_discovery)
+
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=disc_resp)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            resp = await async_client.get(f"/api/v1/auth/oidc/authorize/{provider_id}")
+
+        assert resp.status_code == 200
+        called_url = mock_http.get.call_args_list[0][0][0]
+        assert "//" not in called_url.replace("https://", ""), (
+            f"Discovery URL must not contain double slash: {called_url}"
+        )
+        assert called_url.endswith("/.well-known/openid-configuration"), (
+            f"Expected discovery URL to end with /.well-known/openid-configuration, got: {called_url}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_iss_claim_trailing_slash_accepted(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Provider configured without trailing slash, Authentik JWT iss has trailing slash.
+
+        Both sides must be normalised before comparison so the login succeeds.
+        """
+        import time
+        from unittest.mock import patch
+
+        import jwt as pyjwt
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer_no_slash = "https://authentik.example.com/application/o/bambuddy"
+        issuer_with_slash = issuer_no_slash + "/"
+        client_id = "bambuddy-client"
+        nonce = secrets.token_urlsafe(16)
+
+        now = int(time.time())
+        id_token = pyjwt.encode(
+            {
+                "sub": "authentik-sub-123",
+                "iss": issuer_with_slash,
+                "aud": client_id,
+                "nonce": nonce,
+                "email": "authentik-user@example.com",
+                "email_verified": True,
+                "iat": now,
+                "exp": now + 300,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test-kid-1"},
+        )
+
+        admin_token = await _setup_and_login(async_client, "authentikadm", "authentikadm1")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "Authentik-ISS",
+                "issuer_url": issuer_no_slash,
+                "client_id": client_id,
+                "client_secret": "secret",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+            },
+            headers=_auth_header(admin_token),
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        state = secrets.token_urlsafe(32)
+        code_verifier = secrets.token_urlsafe(48)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider_id,
+                nonce=nonce,
+                code_verifier=code_verifier,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        await db_session.commit()
+
+        discovery_doc = {
+            "issuer": issuer_with_slash,
+            "authorization_endpoint": f"{issuer_no_slash}/authorize",
+            "token_endpoint": f"{issuer_no_slash}/token",
+            "jwks_uri": f"{issuer_no_slash}/.well-known/jwks.json",
+        }
+        token_response = {"access_token": "mock", "token_type": "Bearer", "id_token": id_token}
+
+        class _MockResp:
+            def __init__(self, data):
+                self._data = data
+                self.is_success = True
+                self.status_code = 200
+                self.text = str(data)
+
+            def json(self):
+                return self._data
+
+            def raise_for_status(self):
+                pass
+
+        class _MockHttpxClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                pass
+
+            async def get(self, url, **kw):
+                return _MockResp(jwks_data if "jwks" in url else discovery_doc)
+
+            async def post(self, url, **kw):
+                return _MockResp(token_response)
+
+        with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _MockHttpxClient):
+            resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        location = resp.headers.get("location", "")
+        assert resp.status_code == 302, f"Expected redirect, got {resp.status_code}"
+        assert "token_validation_failed" not in location, (
+            "Trailing slash mismatch in iss claim must not cause token_validation_failed"
+        )
+        assert "oidc_token=" in location, f"Expected oidc_token in redirect, got: {location}"
+
+
+class TestOIDCCallbackCodeLength:
+    """OIDC callback code/state query params must accept up to 2048 characters (OAuth spec)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_512_chars_accepted(self, async_client: AsyncClient):
+        """A 512-character code (old limit) must not be rejected with 422."""
+        code = "a" * 512
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code={code}&state=bogus-state",
+            follow_redirects=False,
+        )
+        assert resp.status_code != 422, "512-char code must not be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_2048_chars_accepted(self, async_client: AsyncClient):
+        """A 2048-character code must not be rejected with 422."""
+        code = "a" * 2048
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code={code}&state=bogus-state",
+            follow_redirects=False,
+        )
+        assert resp.status_code != 422, "2048-char code must not be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_code_2049_chars_rejected(self, async_client: AsyncClient):
+        """A 2049-character code must be rejected with 422."""
+        code = "a" * 2049
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code={code}&state=bogus-state",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 422, "2049-char code must be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_512_chars_accepted(self, async_client: AsyncClient):
+        """A 512-character state (old limit) must not be rejected with 422."""
+        state = "a" * 512
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=bogus-code&state={state}",
+            follow_redirects=False,
+        )
+        assert resp.status_code != 422, "512-char state must not be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_2048_chars_accepted(self, async_client: AsyncClient):
+        """A 2048-character state must not be rejected with 422."""
+        state = "a" * 2048
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=bogus-code&state={state}",
+            follow_redirects=False,
+        )
+        assert resp.status_code != 422, "2048-char state must not be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_2049_chars_rejected(self, async_client: AsyncClient):
+        """A 2049-character state must be rejected with 422."""
+        state = "a" * 2049
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=bogus-code&state={state}",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 422, "2049-char state must be rejected by Pydantic"

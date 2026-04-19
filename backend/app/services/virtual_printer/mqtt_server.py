@@ -21,6 +21,7 @@ MODEL_PRODUCT_NAMES = {
     "BL-P001": "X1 Carbon",
     "BL-P002": "X1",
     "C13": "X1E",
+    "N6": "X2D",
     "C11": "P1P",
     "C12": "P1S",
     "N7": "P2S",
@@ -842,9 +843,19 @@ class SimpleMQTTServer:
                 self._client_serials[client_id] = client_serial
 
             try:
-                data = json.loads(message)
-            except json.JSONDecodeError:
-                return  # Non-JSON payloads on request topic are safely ignored
+                # Some slicer builds (observed with OrcaSlicer on Linux, #927)
+                # include the C-string null terminator in the MQTT payload
+                # length, so the decoded message ends with \x00. Real brokers
+                # pass the bytes through; strict json.loads raises "Extra data"
+                # and every pushall/get_version/project_file silently dropped.
+                data = json.loads(message.rstrip("\x00 \r\n\t"))
+            except json.JSONDecodeError as e:
+                logger.debug(
+                    "MQTT publish JSON decode failed: %s (payload=%r)",
+                    e,
+                    message[:200],
+                )
+                return
 
             # Handle pushing command (status request)
             if "pushing" in data:

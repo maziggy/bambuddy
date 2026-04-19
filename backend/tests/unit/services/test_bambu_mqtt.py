@@ -5,6 +5,7 @@ These tests focus on timelapse tracking during prints.
 """
 
 import json
+import time
 
 import pytest
 
@@ -3354,6 +3355,223 @@ class TestStartPrintAmsMapping:
         assert "ams_mapping" not in cmd
         assert "ams_mapping2" not in cmd
 
+    def test_x2d_external_preserves_deputy_id(self, mqtt_client):
+        """X2D dual-nozzle (#988): 254 (deputy) stays 254, like H2D family.
+
+        X2D launched April 2026 and shares the H2D-style dual-extruder
+        firmware convention — external spool on the deputy (left) nozzle
+        is addressed as ams_id=254, not coerced to 255.
+        """
+        mqtt_client.model = "X2D"
+        mqtt_client.start_print("test.3mf", ams_mapping=[254, 255])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [-1, -1]
+        assert cmd["ams_mapping2"] == [
+            {"ams_id": 254, "slot_id": 0},
+            {"ams_id": 255, "slot_id": 0},
+        ]
+
+    def test_x2d_uses_integer_format_for_calibration_fields(self, mqtt_client):
+        """X2D must use H2D-style integer (0/1) format for calibration fields (#988).
+
+        The reporter's support bundle showed X2D running firmware in the same
+        family as H2D. Booleans in these fields are interpreted as nozzle
+        indexes by H2D firmware; X2D is treated identically until proven
+        otherwise.
+        """
+        mqtt_client.model = "X2D"
+        mqtt_client.start_print(
+            "test.3mf",
+            timelapse=True,
+            bed_levelling=False,
+            flow_cali=True,
+            vibration_cali=False,
+            layer_inspect=True,
+        )
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["timelapse"] == 1
+        assert cmd["bed_leveling"] == 0
+        assert cmd["flow_cali"] == 1
+        assert cmd["vibration_cali"] == 0
+        assert cmd["layer_inspect"] == 1
+
+    def test_p2s_still_uses_boolean_format(self, mqtt_client):
+        """Regression guard: P2S is NOT in the is_h2d gate — must still use booleans.
+
+        Adding X2D to the is_h2d set must not accidentally affect P2S, which
+        is single-nozzle and uses boolean format like X1C/A1/P1.
+        """
+        mqtt_client.model = "P2S"
+        mqtt_client.start_print("test.3mf", timelapse=True, flow_cali=False)
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["timelapse"] is True
+        assert cmd["flow_cali"] is False
+
+
+class TestStartPrintUniqueIdentityFields:
+    """Regression guard: project_id/subtask_id/task_id must be unique per submission (#1011).
+
+    Hardcoded "0" values caused third-party MQTT observers (e.g. OctoEverywhere)
+    to treat archive reprints as continuations of the same job and report
+    compounding durations on repeat replays. Each start_print call must produce
+    a distinct, non-zero identity triplet so the printer emits a fresh state
+    transition. md5 is deliberately left empty — historically firmware treats
+    "" as "skip validation" and we don't have the file's real digest here.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        client.state.connected = True
+        return client
+
+    def _get_published_command(self, mqtt_client):
+        call_args = mqtt_client._client.publish.call_args
+        return json.loads(call_args[0][1])["print"]
+
+    def test_identity_fields_are_non_zero(self, mqtt_client):
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["project_id"] != "0"
+        assert cmd["subtask_id"] != "0"
+        assert cmd["task_id"] != "0"
+
+    def test_identity_fields_are_all_equal_per_submission(self, mqtt_client):
+        """All three IDs come from the same submission timestamp — Studio also
+        uses a single identity per submission across the three fields."""
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["project_id"] == cmd["subtask_id"] == cmd["task_id"]
+
+    def test_md5_stays_empty(self, mqtt_client):
+        """Deliberate: synthetic md5 risks activating firmware validation."""
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["md5"] == ""
+
+    def test_identity_fields_change_between_submissions(self, mqtt_client):
+        """Two successive start_print calls must produce different IDs.
+
+        Without this, the printer can't tell replays apart and reuses
+        gcode_start_time from the prior job.
+        """
+        mqtt_client.start_print("test.3mf")
+        first = self._get_published_command(mqtt_client)
+
+        time.sleep(0.002)
+
+        mqtt_client.start_print("test.3mf")
+        second = self._get_published_command(mqtt_client)
+
+        assert first["task_id"] != second["task_id"]
+        assert first["subtask_id"] != second["subtask_id"]
+        assert first["project_id"] != second["project_id"]
+
+    def test_submission_id_is_numeric_string(self, mqtt_client):
+        """ID format: digits-only string (epoch millis). Studio uses cloud
+        task IDs that are also numeric-looking strings; the DB column is
+        VARCHAR(64) and Bambuddy's own subtask_id parser treats '0'/'' as
+        absent — any valid digit string that isn't '0' is fine."""
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["task_id"].isdigit()
+        assert int(cmd["task_id"]) > 0
+        # Must fit in VARCHAR(64); epoch-ms is 13 digits
+        assert len(cmd["task_id"]) <= 64
+
+    def test_unrelated_payload_fields_untouched(self, mqtt_client):
+        """Regression guard: fix only touches identity fields; everything else
+        (sequence_id, command verb, calibration defaults, profile_id) must be
+        unchanged to avoid silently breaking printer behavior."""
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["sequence_id"] == "20000"
+        assert cmd["command"] == "project_file"
+        assert cmd["param"] == "Metadata/plate_1.gcode"
+        assert cmd["url"] == "ftp://test.3mf"
+        assert cmd["file"] == "test.3mf"
+        assert cmd["profile_id"] == "0"
+        assert cmd["cfg"] == "0"
+        assert cmd["subtask_name"] == "test"
+
+
+class TestDeleteKProfileDualNozzleDetection:
+    """Regression guard: dual-nozzle detection by serial prefix (#988).
+
+    delete_kprofile branches on serial-prefix-derived dual-nozzle status.
+    H2D serials start with "094"; X2D serials start with "20P9". Non-dual
+    families (X1C "00M", P1S "01P", P2S "22E", A1 "039", etc.) must take
+    the single-nozzle branch.
+    """
+
+    def _make_client(self, serial: str):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number=serial,
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        client.state.connected = True
+        return client
+
+    def _published(self, client):
+        return json.loads(client._client.publish.call_args[0][1])["print"]
+
+    def test_h2d_serial_uses_dual_nozzle_format(self):
+        client = self._make_client("09400A000000001")
+        client.delete_kprofile(cali_idx=1, filament_id="GFA00", nozzle_id="HH00-0.4")
+        cmd = self._published(client)
+        # Dual-nozzle command omits setting_id.
+        assert "setting_id" not in cmd
+        assert cmd["extruder_id"] == 0
+
+    def test_x2d_serial_uses_dual_nozzle_format(self):
+        client = self._make_client("20P90A000000001")
+        client.delete_kprofile(cali_idx=1, filament_id="GFA00", nozzle_id="HH00-0.4")
+        cmd = self._published(client)
+        assert "setting_id" not in cmd
+        assert cmd["extruder_id"] == 0
+
+    def test_p2s_serial_uses_single_nozzle_format(self):
+        """P2S is single-nozzle — must NOT take the dual-nozzle branch."""
+        client = self._make_client("22E00A000000001")
+        client.delete_kprofile(
+            cali_idx=1,
+            filament_id="GFA00",
+            nozzle_id="HH00-0.4",
+            setting_id="PFB123",
+        )
+        cmd = self._published(client)
+        # Single-nozzle command includes setting_id.
+        assert cmd["setting_id"] == "PFB123"
+
+    def test_x1c_serial_uses_single_nozzle_format(self):
+        client = self._make_client("00M00A000000001")
+        client.delete_kprofile(
+            cali_idx=1,
+            filament_id="GFA00",
+            nozzle_id="HH00-0.4",
+            setting_id="PFB123",
+        )
+        cmd = self._published(client)
+        assert cmd["setting_id"] == "PFB123"
+
 
 class TestStaleReconnect:
     """Tests for stale connection detection and reconnect without UI bouncing."""
@@ -3616,3 +3834,171 @@ class TestSdCardParsing:
         assert client.state.sdcard is True
         client._update_state({"sdcard": False})
         assert client.state.sdcard is False
+
+
+class TestZombieSessionDetection:
+    """Tests for ams_filament_setting response tracking (#887).
+
+    When a printer's MQTT session degrades so that telemetry flows but
+    published commands never reach the printer, the zombie detector
+    counts consecutive unanswered ams_filament_setting commands and
+    force-reconnects after two.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        import time
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client.state.connected = True
+        mock_paho = MagicMock()
+        mock_paho.socket.return_value = MagicMock()
+        client._client = mock_paho
+        client._connect_time = time.monotonic() - 10.0
+        # Set developer_mode so the dev-mode probe branch doesn't interfere
+        client.state.developer_mode = True
+        return client
+
+    def test_initial_state_is_clean(self, mqtt_client):
+        """Tracking fields start at zero / no pending command."""
+        assert mqtt_client._last_ams_cmd_time == 0.0
+        assert mqtt_client._ams_cmd_unanswered == 0
+
+    def test_publish_sets_pending_time(self, mqtt_client):
+        """set_ams_filament_setting records the publish timestamp."""
+        import time
+
+        before = time.monotonic()
+        mqtt_client.ams_set_filament_setting(
+            ams_id=0,
+            tray_id=0,
+            tray_info_idx="GFL99",
+            tray_type="PLA",
+            tray_sub_brands="",
+            tray_color="FF0000FF",
+            nozzle_temp_min=190,
+            nozzle_temp_max=230,
+        )
+        assert mqtt_client._last_ams_cmd_time >= before
+
+    def test_reset_slot_sets_pending_time(self, mqtt_client):
+        """reset_ams_slot also records the publish timestamp."""
+        import time
+
+        before = time.monotonic()
+        mqtt_client.reset_ams_slot(ams_id=0, tray_id=0)
+        assert mqtt_client._last_ams_cmd_time >= before
+
+    def test_response_clears_pending(self, mqtt_client):
+        """An ams_filament_setting response clears the pending state."""
+        import time
+
+        mqtt_client._last_ams_cmd_time = time.monotonic()
+        mqtt_client._ams_cmd_unanswered = 1
+
+        # Simulate receiving a user-command response (sequence_id "0")
+        print_data = {
+            "command": "ams_filament_setting",
+            "sequence_id": "0",
+            "result": "success",
+        }
+        # Walk the same path as _on_message: command response check then _update_state
+        cmd = print_data.get("command")
+        if cmd == "ams_filament_setting" and mqtt_client._last_ams_cmd_time > 0:
+            mqtt_client._last_ams_cmd_time = 0.0
+            mqtt_client._ams_cmd_unanswered = 0
+
+        assert mqtt_client._last_ams_cmd_time == 0.0
+        assert mqtt_client._ams_cmd_unanswered == 0
+
+    def test_single_timeout_increments_counter(self, mqtt_client):
+        """One unanswered command increments the counter but does not reconnect."""
+        import time
+
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 11.0
+
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+
+        assert mqtt_client._ams_cmd_unanswered == 1
+        assert mqtt_client._last_ams_cmd_time == 0.0
+        # Should NOT force-reconnect after just one
+        assert mqtt_client.state.connected is True
+
+    def test_two_timeouts_force_reconnect(self, mqtt_client):
+        """Two consecutive unanswered commands trigger force_reconnect."""
+        import time
+
+        state_change_called = []
+        mqtt_client.on_state_change = lambda s: state_change_called.append(True)
+
+        # First unanswered command
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 11.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+        assert mqtt_client._ams_cmd_unanswered == 1
+        assert mqtt_client.state.connected is True
+
+        # Second unanswered command
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 11.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+
+        assert mqtt_client._ams_cmd_unanswered == 0  # reset after reconnect
+        assert mqtt_client.state.connected is False
+        assert mqtt_client._stale_reconnecting is True
+        mqtt_client._client.socket().close.assert_called()
+        assert len(state_change_called) > 0
+
+    def test_response_between_timeouts_resets_counter(self, mqtt_client):
+        """A successful response after one timeout resets the counter."""
+        import time
+
+        # First unanswered command
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 11.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+        assert mqtt_client._ams_cmd_unanswered == 1
+
+        # Now a response arrives — clear pending
+        mqtt_client._last_ams_cmd_time = time.monotonic()
+        mqtt_client._last_ams_cmd_time = 0.0
+        mqtt_client._ams_cmd_unanswered = 0
+
+        # Next unanswered command should be count=1, not count=2
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 11.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+        assert mqtt_client._ams_cmd_unanswered == 1
+        assert mqtt_client.state.connected is True  # no reconnect
+
+    def test_on_connect_resets_tracking(self, mqtt_client):
+        """_on_connect resets zombie tracking fields."""
+        import time
+
+        mqtt_client._last_ams_cmd_time = time.monotonic()
+        mqtt_client._ams_cmd_unanswered = 5
+
+        # subscribe() must return (result, mid) tuple
+        mqtt_client._client.subscribe.return_value = (0, 1)
+        mqtt_client._on_connect(mqtt_client._client, None, None, 0)
+
+        assert mqtt_client._last_ams_cmd_time == 0.0
+        assert mqtt_client._ams_cmd_unanswered == 0
+
+    def test_no_check_when_no_command_pending(self, mqtt_client):
+        """If no command was published, push_status does not trigger detection."""
+        assert mqtt_client._last_ams_cmd_time == 0.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+        assert mqtt_client._ams_cmd_unanswered == 0
+
+    def test_no_timeout_within_window(self, mqtt_client):
+        """A command published <10s ago should not trigger a timeout."""
+        import time
+
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 5.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+        assert mqtt_client._ams_cmd_unanswered == 0
+        assert mqtt_client._last_ams_cmd_time > 0  # still pending

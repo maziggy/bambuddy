@@ -2,7 +2,7 @@
  * Tests for the FileManagerPage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -857,6 +857,79 @@ describe('FileManagerPage', () => {
 
       // Username should be displayed in the column
       expect(screen.getByText('testuser')).toBeInTheDocument();
+    });
+  });
+
+  describe('folder tree collapse preference (#996)', () => {
+    // localStorage is globally mocked in setup.ts (returns undefined by default),
+    // so we program each test's getItem return value explicitly.
+    const getItemMock = localStorage.getItem as ReturnType<typeof vi.fn>;
+    const setItemMock = localStorage.setItem as ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      getItemMock.mockReset();
+      setItemMock.mockReset();
+    });
+
+    it('defaults to expanded (nested folders visible) when library-collapse-folders is unset', async () => {
+      getItemMock.mockReturnValue(null);
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+      });
+      expect(screen.getByText('Brackets')).toBeInTheDocument();
+    });
+
+    it('honors library-collapse-folders=true on load (nested folders hidden)', async () => {
+      getItemMock.mockImplementation((key: string) =>
+        key === 'library-collapse-folders' ? 'true' : null
+      );
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Brackets')).not.toBeInTheDocument();
+    });
+
+    it('collapses nested folders and persists preference when Collapse is clicked', async () => {
+      getItemMock.mockReturnValue(null);
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Brackets')).toBeInTheDocument();
+      });
+
+      // The Collapse button sits next to Wrap in the sidebar header.
+      // Its text content is "Collapse" (from fileManager.collapse).
+      await user.click(screen.getByRole('button', { name: 'Collapse' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Brackets')).not.toBeInTheDocument();
+      });
+      expect(setItemMock).toHaveBeenCalledWith('library-collapse-folders', 'true');
+    });
+
+    it('re-expands nested folders and persists preference when Collapse is toggled off', async () => {
+      getItemMock.mockImplementation((key: string) =>
+        key === 'library-collapse-folders' ? 'true' : null
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Brackets')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Collapse' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Brackets')).toBeInTheDocument();
+      });
+      expect(setItemMock).toHaveBeenCalledWith('library-collapse-folders', 'false');
     });
   });
 });

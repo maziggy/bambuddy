@@ -4,6 +4,9 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.2.4b1] - Unreleased
 
+### Improved
+- **File Manager: Collapse Folders by Default** ([#996](https://github.com/maziggy/bambuddy/issues/996)) — Added a **Collapse** toggle next to **Wrap** in the File Manager sidebar header. When enabled, the folder tree opens with only top-level folders visible on every page load; disabling it restores the previous fully-expanded default. Toggling the preference also immediately re-collapses/re-expands the current tree — no reload required. Persisted to localStorage under `library-collapse-folders`, matching the existing `library-*` preference pattern. Thanks to @AshieTashi for the request.
+
 ### Changed
 - **Docker runtime image on Debian Trixie** — The production Docker image now builds on `python:3.13-slim-trixie` instead of the Bookworm-based `python:3.13-slim`. Picks up ffmpeg 5 → 7 (HEVC/AV1 improvements for camera capture), OpenSSL 3.0 → 3.3, and two more years of APT package freshness. Frontend-builder stays on Bookworm until the Node.js image team publishes Trixie variants — users never see that stage.
 

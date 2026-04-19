@@ -14,3 +14,19 @@ CVE-2025-61145
 
 # iptables --syn flag bypass (LOW, no fix available, not relevant — container doesn't use iptables).
 CVE-2012-2663
+
+# ffmpeg DVD subtitle parser heap OOB write (MEDIUM). Debian Security Tracker
+# marks it "postponed" for both bookworm and trixie; no upstream fix yet.
+# Not reachable in Bambuddy — ffmpeg here only ingests printer-camera RTSP
+# and MJPEG/H.264/H.265 streams, never DVD/VOB files with subtitle tracks.
+CVE-2026-6385
+
+# ffmpeg AV1 decoder OOB read → DoS (MEDIUM, "minor issue" per Debian).
+# Same "postponed" status in bookworm and trixie; no upstream fix yet.
+# Not reachable — Bambu printer cameras emit H.264/H.265/MJPEG, not AV1.
+CVE-2026-30997
+
+# openjpeg JPEG 2000 integer overflow (LOW). No Debian fix available.
+# libopenjp2-7 is pulled in transitively by ffmpeg but Bambuddy never
+# decodes JPEG 2000 files (printer thumbnails are PNG, camera is MJPEG/H.264).
+CVE-2026-6192

@@ -671,8 +671,8 @@ export function SpoolFormModal({
                 />
               </div>
 
-              {/* Usage History (only when editing) */}
-              {isEditing && spool && (
+              {/* Usage History (only when editing internal inventory; Spoolman tracks its own) */}
+              {isEditing && spool && !spoolmanMode && (
                 <div>
                   <SpoolUsageHistory spoolId={spool.id} />
                 </div>

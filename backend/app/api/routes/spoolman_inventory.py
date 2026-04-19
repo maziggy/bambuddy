@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -28,90 +28,6 @@ from backend.app.services.spoolman import SpoolmanClient, get_spoolman_client, i
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/spoolman/inventory", tags=["spoolman-inventory"])
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _map_spoolman_spool(spool: dict) -> dict:
-    """Convert a raw Spoolman spool dict to the InventorySpool-compatible format.
-
-    Fields not supported by Spoolman (k_profiles, slicer_filament, …) are
-    returned as None / empty so the frontend can still render them without
-    errors.  The ``data_origin`` field is set to ``"spoolman"`` so UI code can
-    distinguish these spools from local ones.
-    """
-    filament: dict = spool.get("filament") or {}
-    vendor: dict = filament.get("vendor") or {}
-    extra: dict = spool.get("extra") or {}
-
-    # RFID tag stored as JSON-encoded string in Spoolman extra.tag
-    raw_tag: str = (extra.get("tag") or "").strip('"').upper()
-    tag_uid = raw_tag if len(raw_tag) == 16 else None
-    tray_uuid = raw_tag if len(raw_tag) == 32 else None
-
-    # Subtype = filament name with material prefix stripped
-    material: str = (filament.get("material") or "").strip()
-    filament_name: str = (filament.get("name") or "").strip()
-    if material and filament_name.upper().startswith(material.upper()):
-        subtype: str | None = filament_name[len(material) :].strip() or None
-    else:
-        subtype = filament_name or None
-
-    # Colour: Spoolman stores RRGGBB, Bambuddy uses RRGGBBAA
-    color_hex: str = (filament.get("color_hex") or "808080").upper().lstrip("#")
-    rgba: str = (color_hex + "FF")[:8]
-
-    label_weight: int = int(filament.get("weight") or 1000)
-    used_weight: float = float(spool.get("used_weight") or 0)
-
-    # Archived state – Spoolman uses a boolean ``archived`` field
-    archived: bool = spool.get("archived", False)
-    archived_at: str | None = None
-    if archived:
-        archived_at = spool.get("last_used") or spool.get("registered")
-        if not archived_at:
-            archived_at = datetime.now(timezone.utc).isoformat()
-
-    created_at: str = spool.get("registered") or datetime.now(timezone.utc).isoformat()
-
-    return {
-        "id": spool["id"],
-        "material": material,
-        "subtype": subtype,
-        "color_name": None,
-        "rgba": rgba,
-        "brand": vendor.get("name") or None,
-        "label_weight": label_weight,
-        "core_weight": 250,
-        "core_weight_catalog_id": None,
-        "weight_used": used_weight,
-        "weight_locked": False,
-        "last_scale_weight": None,
-        "last_weighed_at": None,
-        # slicer_filament_name carries the Spoolman filament name for display
-        "slicer_filament": None,
-        "slicer_filament_name": filament_name or None,
-        "nozzle_temp_min": None,
-        "nozzle_temp_max": None,
-        "note": spool.get("comment") or None,
-        "added_full": None,
-        "last_used": spool.get("last_used"),
-        "encode_time": spool.get("first_used"),
-        "tag_uid": tag_uid,
-        "tray_uuid": tray_uuid,
-        "data_origin": "spoolman",
-        "tag_type": "spoolman",
-        "archived_at": archived_at,
-        "created_at": created_at,
-        "updated_at": created_at,
-        "cost_per_kg": spool.get("price") or None,
-        # spoolman_location is an extra field (not in the local InventorySpool
-        # schema) used to display the Spoolman location text in the UI.
-        "spoolman_location": spool.get("location") or None,
-        "k_profiles": [],
-    }
 
 
 # Cache the last successful health-check timestamp to avoid a round-trip on
@@ -200,8 +116,8 @@ class SpoolmanInventoryUpdate(BaseModel):
     weight_used: float | None = Field(None, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
-    tag_uid: str | None = None
-    tray_uuid: str | None = None
+    tag_uid: str | None = Field(None, max_length=64)
+    tray_uuid: str | None = Field(None, max_length=64)
 
     @field_validator("rgba")
     @classmethod

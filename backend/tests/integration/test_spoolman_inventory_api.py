@@ -461,6 +461,32 @@ class TestSpoolmanInventoryInputValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_update_rejects_tag_uid_too_long(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """tag_uid longer than 64 chars is rejected with 422."""
+        payload = {"tag_uid": "A" * 65}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_rejects_tray_uuid_too_long(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """tray_uuid longer than 64 chars is rejected with 422."""
+        payload = {"tray_uuid": "B" * 65}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_invalid_spoolman_url_scheme_returns_400(
         self,
         async_client: AsyncClient,

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Verifies parity across locale files (en / zh-CN / zh-TW):
 //   1. Leaf-key sets are identical
 //   2. Each leaf's {{placeholder}} set is identical
@@ -99,76 +98,93 @@ function loadLocale(filePath) {
   return leaves;
 }
 
-const locales = {
-  en: loadLocale(path.join(localesDir, 'en.ts')),
-  'zh-CN': loadLocale(path.join(localesDir, 'zh-CN.ts')),
-  'zh-TW': loadLocale(path.join(localesDir, 'zh-TW.ts')),
-};
-
-let failed = false;
-const MAX_REPORT = 20;
-
-function reportList(label, items) {
-  if (items.length === 0) return;
-  failed = true;
-  console.error(`\n[${label}] (${items.length})`);
-  items.slice(0, MAX_REPORT).forEach((i) => console.error(`  ${i}`));
-  if (items.length > MAX_REPORT) console.error(`  ... and ${items.length - MAX_REPORT} more`);
-}
-
-// Check 1: key set equality
-const enKeys = new Set(locales.en.keys());
-for (const [code, map] of Object.entries(locales)) {
-  if (code === 'en') continue;
-  const keys = new Set(map.keys());
-  const missing = [...enKeys].filter((k) => !keys.has(k)).sort();
-  const extra = [...keys].filter((k) => !enKeys.has(k)).sort();
-  reportList(`${code}: missing keys vs en`, missing);
-  reportList(`${code}: extra keys vs en`, extra);
-}
-
-// Check 2: placeholder set equality per leaf
 const placeholderRe = /\{\{[^{}]+\}\}/g;
-for (const [code, map] of Object.entries(locales)) {
-  if (code === 'en') continue;
-  const mismatches = [];
-  for (const [key, enValue] of locales.en) {
-    const otherValue = map.get(key);
-    if (otherValue === undefined) continue;
-    const enPlaceholders = new Set((enValue.match(placeholderRe) ?? []));
-    const otherPlaceholders = new Set((otherValue.match(placeholderRe) ?? []));
-    const missingPh = [...enPlaceholders].filter((p) => !otherPlaceholders.has(p));
-    const extraPh = [...otherPlaceholders].filter((p) => !enPlaceholders.has(p));
-    if (missingPh.length || extraPh.length) {
-      mismatches.push(`${key}: en=${[...enPlaceholders].join(',') || '∅'} vs ${code}=${[...otherPlaceholders].join(',') || '∅'}`);
+
+// Pure comparison logic, exported so tests can verify each failure mode
+// without going through file IO or the TypeScript parser.
+// Input:  locales = { code: Map<leafKey, leafString> }  (must contain 'en')
+// Output: { failed, reports: Array<{ label, items }> }
+export function compareLocales(locales) {
+  if (!locales.en) throw new Error("compareLocales requires a locales.en entry");
+  const reports = [];
+  const add = (label, items) => {
+    if (items.length) reports.push({ label, items });
+  };
+
+  const enKeys = new Set(locales.en.keys());
+
+  // Check 1: key set equality
+  for (const [code, map] of Object.entries(locales)) {
+    if (code === 'en') continue;
+    const keys = new Set(map.keys());
+    const missing = [...enKeys].filter((k) => !keys.has(k)).sort();
+    const extra = [...keys].filter((k) => !enKeys.has(k)).sort();
+    add(`${code}: missing keys vs en`, missing);
+    add(`${code}: extra keys vs en`, extra);
+  }
+
+  // Check 2: placeholder set equality per leaf
+  for (const [code, map] of Object.entries(locales)) {
+    if (code === 'en') continue;
+    const mismatches = [];
+    for (const [key, enValue] of locales.en) {
+      const otherValue = map.get(key);
+      if (otherValue === undefined) continue;
+      const enPlaceholders = new Set((enValue.match(placeholderRe) ?? []));
+      const otherPlaceholders = new Set((otherValue.match(placeholderRe) ?? []));
+      const missingPh = [...enPlaceholders].filter((p) => !otherPlaceholders.has(p));
+      const extraPh = [...otherPlaceholders].filter((p) => !enPlaceholders.has(p));
+      if (missingPh.length || extraPh.length) {
+        mismatches.push(`${key}: en=${[...enPlaceholders].join(',') || '∅'} vs ${code}=${[...otherPlaceholders].join(',') || '∅'}`);
+      }
     }
+    add(`${code}: placeholder mismatch vs en`, mismatches);
   }
-  reportList(`${code}: placeholder mismatch vs en`, mismatches);
-}
 
-// Check 3: plural suffix presence + reverse _one guard
-for (const [code, map] of Object.entries(locales)) {
-  if (code === 'en') continue;
-  const pluralIssues = [];
-  for (const key of enKeys) {
-    if (key.endsWith('_plural') && !map.has(key)) pluralIssues.push(`missing _plural key: ${key}`);
-    if (key.endsWith('_one') && !map.has(key)) pluralIssues.push(`missing _one key: ${key}`);
-    if (key.endsWith('_other') && !map.has(key)) pluralIssues.push(`missing _other key: ${key}`);
-  }
-  for (const key of map.keys()) {
-    if (key.endsWith('_one') && !enKeys.has(key)) {
-      pluralIssues.push(`unexpected _one not present in en: ${key}`);
+  // Check 3: plural suffix presence + reverse _one guard
+  for (const [code, map] of Object.entries(locales)) {
+    if (code === 'en') continue;
+    const pluralIssues = [];
+    for (const key of enKeys) {
+      if (key.endsWith('_plural') && !map.has(key)) pluralIssues.push(`missing _plural key: ${key}`);
+      if (key.endsWith('_one') && !map.has(key)) pluralIssues.push(`missing _one key: ${key}`);
+      if (key.endsWith('_other') && !map.has(key)) pluralIssues.push(`missing _other key: ${key}`);
     }
+    for (const key of map.keys()) {
+      if (key.endsWith('_one') && !enKeys.has(key)) {
+        pluralIssues.push(`unexpected _one not present in en: ${key}`);
+      }
+    }
+    add(`${code}: plural key mismatch`, pluralIssues);
   }
-  reportList(`${code}: plural key mismatch`, pluralIssues);
+
+  return { failed: reports.length > 0, reports };
 }
 
-if (failed) {
-  console.error('\n❌ i18n parity check failed.');
-  process.exit(1);
-}
+// Skip file IO / process.exit when imported as a library (e.g. from tests).
+const isMainModule = import.meta.url === url.pathToFileURL(process.argv[1] ?? '').href;
+if (isMainModule) {
+  const locales = {
+    en: loadLocale(path.join(localesDir, 'en.ts')),
+    'zh-CN': loadLocale(path.join(localesDir, 'zh-CN.ts')),
+    'zh-TW': loadLocale(path.join(localesDir, 'zh-TW.ts')),
+  };
 
-console.log(`All locales in parity (en / zh-CN / zh-TW):`);
-for (const [code, map] of Object.entries(locales)) {
-  console.log(`  ${code}: ${map.size} leaves`);
+  const MAX_REPORT = 20;
+  const { failed, reports } = compareLocales(locales);
+  for (const { label, items } of reports) {
+    console.error(`\n[${label}] (${items.length})`);
+    items.slice(0, MAX_REPORT).forEach((i) => console.error(`  ${i}`));
+    if (items.length > MAX_REPORT) console.error(`  ... and ${items.length - MAX_REPORT} more`);
+  }
+
+  if (failed) {
+    console.error('\n❌ i18n parity check failed.');
+    process.exit(1);
+  }
+
+  console.log(`All locales in parity (en / zh-CN / zh-TW):`);
+  for (const [code, map] of Object.entries(locales)) {
+    console.log(`  ${code}: ${map.size} leaves`);
+  }
 }

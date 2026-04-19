@@ -356,3 +356,124 @@ class TestSpoolmanInventoryCRUD:
         # remaining = 850 - 250 core = 600; weight_used = 1000 - 600 = 400
         assert result["weight_used"] == 400.0
         mock_spoolman_client.update_spool_full.assert_called_once_with(spool_id=42, remaining_weight=600.0)
+
+
+class TestSpoolmanInventoryInputValidation:
+    """Tests for input validation added as security hardening."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_rejects_material_too_long(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """material longer than 64 chars is rejected with 422."""
+        payload = {"material": "A" * 65, "label_weight": 1000, "weight_used": 0}
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_rejects_note_too_long(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """note longer than 1000 chars is rejected with 422."""
+        payload = {
+            "material": "PLA",
+            "label_weight": 1000,
+            "weight_used": 0,
+            "note": "x" * 1001,
+        }
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_rejects_negative_weight_used(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """Negative weight_used is rejected with 422."""
+        payload = {"material": "PLA", "label_weight": 1000, "weight_used": -1.0}
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_rejects_zero_label_weight(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """label_weight of 0 is rejected (minimum is 1)."""
+        payload = {"material": "PLA", "label_weight": 0, "weight_used": 0}
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_rejects_invalid_rgba(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """Non-hex rgba string is rejected with 422."""
+        payload = {"material": "PLA", "label_weight": 1000, "weight_used": 0, "rgba": "GGGGGGFF"}
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_accepts_valid_6char_rgba(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """A valid 6-char hex rgba is accepted."""
+        payload = {"material": "PLA", "label_weight": 1000, "weight_used": 0, "rgba": "FF0000"}
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_weight_update_rejects_negative_grams(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """Negative weight_grams on weight sync endpoint is rejected with 422."""
+        response = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42/weight",
+            json={"weight_grams": -50.0},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_invalid_spoolman_url_scheme_returns_400(
+        self,
+        async_client: AsyncClient,
+        db_session,
+        mock_spoolman_client,
+    ):
+        """A spoolman_url with a non-http(s) scheme is rejected."""
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value="ftp://evil.internal/"))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/spoolman/inventory/spools")
+        assert response.status_code == 400
+        assert "http" in response.json()["detail"].lower()

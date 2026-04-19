@@ -8,10 +8,13 @@ regardless of whether data comes from the local database or Spoolman.
 from __future__ import annotations
 
 import logging
+import re
+import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,6 +114,12 @@ def _map_spoolman_spool(spool: dict) -> dict:
     }
 
 
+# Cache the last successful health-check timestamp to avoid a round-trip on
+# every request.  A failed check clears the cache immediately.
+_health_check_cache: dict[str, float] = {}
+_HEALTH_CHECK_TTL = 30.0  # seconds
+
+
 async def _get_client(db: AsyncSession) -> SpoolmanClient:
     """Return an authenticated Spoolman client or raise an HTTP error."""
     result = await db.execute(select(Settings))
@@ -124,12 +133,25 @@ async def _get_client(db: AsyncSession) -> SpoolmanClient:
     if not url:
         raise HTTPException(status_code=400, detail="Spoolman URL is not configured")
 
+    # Reject non-http(s) schemes to prevent SSRF via file://, ftp://, etc.
+    scheme = urlparse(url).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Spoolman URL must use http or https")
+
+    # Re-use the existing client when the URL is unchanged; reinitialise only
+    # when the URL was changed in settings (TOCTOU guard).
     client = await get_spoolman_client()
-    if not client:
+    if not client or client.base_url != url.rstrip("/"):
         client = await init_spoolman_client(url)
 
-    if not await client.health_check():
-        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
+    # Only call health_check() when the cached result has expired.
+    now = time.monotonic()
+    last_ok = _health_check_cache.get(url, 0.0)
+    if now - last_ok > _HEALTH_CHECK_TTL:
+        if not await client.health_check():
+            _health_check_cache.pop(url, None)
+            raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
+        _health_check_cache[url] = now
 
     return client
 
@@ -139,28 +161,52 @@ async def _get_client(db: AsyncSession) -> SpoolmanClient:
 # ---------------------------------------------------------------------------
 
 
+_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6,8}$")
+
+
+def _validate_rgba(v: str | None) -> str | None:
+    if v is None:
+        return v
+    clean = v.lstrip("#")
+    if not _HEX_RE.match(clean):
+        raise ValueError("rgba must be a 6 or 8 character hex string (RRGGBB or RRGGBBAA)")
+    return clean.upper()
+
+
 class SpoolmanInventoryCreate(BaseModel):
-    material: str
-    subtype: str | None = None
-    brand: str | None = None
-    rgba: str | None = None
-    label_weight: int = 1000
-    core_weight: int = 250
-    weight_used: float = 0.0
-    note: str | None = None
-    cost_per_kg: float | None = None
+    material: str = Field(..., min_length=1, max_length=64)
+    subtype: str | None = Field(None, max_length=64)
+    brand: str | None = Field(None, max_length=128)
+    rgba: str | None = Field(None, max_length=9)
+    label_weight: int = Field(1000, ge=1, le=100_000)
+    core_weight: int = Field(250, ge=0, le=10_000)
+    weight_used: float = Field(0.0, ge=0.0, le=100_000.0)
+    note: str | None = Field(None, max_length=1000)
+    cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
+
+    @field_validator("rgba")
+    @classmethod
+    def validate_rgba(cls, v: str | None) -> str | None:
+        return _validate_rgba(v)
 
 
 class SpoolmanInventoryUpdate(BaseModel):
-    material: str | None = None
-    subtype: str | None = None
-    brand: str | None = None
-    rgba: str | None = None
-    label_weight: int | None = None
-    core_weight: int | None = None
-    weight_used: float | None = None
-    note: str | None = None
-    cost_per_kg: float | None = None
+    material: str | None = Field(None, min_length=1, max_length=64)
+    subtype: str | None = Field(None, max_length=64)
+    brand: str | None = Field(None, max_length=128)
+    rgba: str | None = Field(None, max_length=9)
+    label_weight: int | None = Field(None, ge=1, le=100_000)
+    core_weight: int | None = Field(None, ge=0, le=10_000)
+    weight_used: float | None = Field(None, ge=0.0, le=100_000.0)
+    note: str | None = Field(None, max_length=1000)
+    cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
+    tag_uid: str | None = None
+    tray_uuid: str | None = None
+
+    @field_validator("rgba")
+    @classmethod
+    def validate_rgba(cls, v: str | None) -> str | None:
+        return _validate_rgba(v)
 
 
 class SpoolmanInventoryBulkCreate(BaseModel):
@@ -174,7 +220,7 @@ class SpoolmanInventoryBulkCreate(BaseModel):
 
 
 class SpoolWeightUpdate(BaseModel):
-    weight_grams: float
+    weight_grams: float = Field(..., ge=0.0, le=100_000.0)
 
 
 # ---------------------------------------------------------------------------
@@ -323,12 +369,23 @@ async def update_spool(
         raise HTTPException(status_code=500, detail="Failed to find or create filament in Spoolman")
 
     remaining = max(0.0, label_weight - weight_used)
+
+    # When the caller explicitly sets tag_uid/tray_uuid to null (i.e. tag removal),
+    # clear the extra.tag field stored in Spoolman.
+    tag_nulled = (
+        ("tag_uid" in data.model_fields_set or "tray_uuid" in data.model_fields_set)
+        and data.tag_uid is None
+        and data.tray_uuid is None
+    )
+    extra = {} if tag_nulled else None
+
     updated = await client.update_spool_full(
         spool_id=spool_id,
         filament_id=filament_id,
         remaining_weight=remaining,
         comment=note or "",
         price=data.cost_per_kg,
+        extra=extra,
     )
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update spool in Spoolman")

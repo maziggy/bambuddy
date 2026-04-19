@@ -59,7 +59,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -1645,9 +1645,33 @@ function PrinterCard({
     enabled: status?.connected && status?.state !== 'RUNNING',
   });
   const lastPrint = lastPrints?.[0];
-  const plateCleared = status?.plate_cleared ?? false;
-  const needsPlateClear = requirePlateClear && (status?.state === 'FINISH' || status?.state === 'FAILED') && !plateCleared;
-  const showClearPlateButton = status?.connected && needsPlateClear;
+  const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
+  const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
+  const showClearPlateButton = status?.connected && needsPlateClear && !isPrintingOrPaused;
+  const plateStatus = (() => {
+    if (!requirePlateClear || !status?.connected) return null;
+    if (isPrintingOrPaused) {
+      return {
+        label: t('printers.plateStatus.inUse'),
+        className: 'bg-blue-500/20 text-blue-400',
+      };
+    }
+    if (status.awaiting_plate_clear) {
+      return {
+        label: t('printers.plateStatus.notCleared'),
+        className: 'bg-yellow-500/20 text-yellow-400',
+      };
+    }
+    return {
+      label: t('printers.plateStatus.cleared'),
+      className: 'bg-status-ok/20 text-status-ok',
+    };
+  })();
+  const plateStatusPill = plateStatus ? (
+    <span className={`inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${plateStatus.className}`}>
+      {plateStatus.label}
+    </span>
+  ) : null;
 
   // Determine if this card should be hidden (use cached connected state to prevent flicker)
   const shouldHide = hideIfDisconnected && isConnected === false;
@@ -1771,7 +1795,7 @@ function PrinterCard({
     onSuccess: () => {
       showToast(t('queue.clearPlateSuccess'));
       queryClient.setQueryData(['printerStatus', printer.id], (old: PrinterStatus | undefined) =>
-        old ? { ...old, plate_cleared: true } : old
+        old ? { ...old, awaiting_plate_clear: false } : old
       );
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
       queryClient.invalidateQueries({ queryKey: ['queue', printer.id] });
@@ -2621,11 +2645,17 @@ function PrinterCard({
                         style={{ width: `${status.progress || 0}%` }}
                       />
                     </div>
-                    <span className="text-xs text-white">{Math.round(status.progress || 0)}%</span>
+                    <div className="flex flex-shrink-0 items-center gap-1.5">
+                      <span className="text-xs text-white">{Math.round(status.progress || 0)}%</span>
+                      {plateStatusPill}
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
-                    <p className="min-w-0 flex-1 truncate text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                    <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                      <p className="min-w-0 truncate text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                      {plateStatusPill}
+                    </div>
                     {showClearPlateButton && (
                       <button
                         type="button"
@@ -2687,7 +2717,10 @@ function PrinterCard({
                     <div className="flex-1 min-w-0">
                       {status.current_print && (status.state === 'RUNNING' || status.state === 'PAUSE') ? (
                         <>
-                          <p className="text-sm text-bambu-gray mb-1">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                          <div className="mb-1 flex items-center gap-2">
+                            <p className="text-sm text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                            {plateStatusPill}
+                          </div>
                           <p className="text-white text-sm mb-2 truncate">
                             {formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t)}
                           </p>
@@ -2729,9 +2762,12 @@ function PrinterCard({
                       ) : (
                         <>
                           <p className="text-sm text-bambu-gray mb-1">{t('printers.sort.status')}</p>
-                          <p className="text-white text-sm mb-2">
-                            {getStatusDisplay(status.state, status.stg_cur_name)}
-                          </p>
+                          <div className="mb-2 flex items-center gap-2">
+                            <p className="text-white text-sm">
+                              {getStatusDisplay(status.state, status.stg_cur_name)}
+                            </p>
+                            {plateStatusPill}
+                          </div>
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">
                               <div className="bg-bambu-dark-tertiary h-2 rounded-full" />
@@ -2850,23 +2886,25 @@ function PrinterCard({
                     <NozzleRackCard slots={status.nozzle_rack} filamentInfo={filamentInfo} />
                   )}
                 </div>
-                {showClearPlateButton && (
-                  <button
-                    onClick={() => clearPlateMutation.mutate()}
-                    disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
-                    className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
-                    title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : undefined}
-                  >
-                    {clearPlateMutation.isPending ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <PlateClearedIcon className="w-4 h-4" />
-                    )}
-                    {t('printers.plateStatus.markCleared')}
-                  </button>
-                )}
               );
             })()}
+
+            {viewMode === 'expanded' && showClearPlateButton && (
+              <button
+                type="button"
+                onClick={() => clearPlateMutation.mutate()}
+                disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+                className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
+                title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+              >
+                {clearPlateMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <PlateClearedIcon className="w-4 h-4" />
+                )}
+                {t('printers.plateStatus.markCleared')}
+              </button>
+            )}
 
             {/* Controls - Fans + Print Buttons */}
             {viewMode === 'expanded' && (() => {

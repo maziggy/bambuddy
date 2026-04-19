@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.3b4] - Unreleased
+## [0.2.3] - 2026-04-19
 
 ### New Features
 - **Move Build Plate from Printer Card** ([#791](https://github.com/maziggy/bambuddy/issues/791)) — The printer card controls row now has a Z-jog badge between the speed control and the stop/pause buttons. Click the up/down arrows to move the build plate; click the middle label to switch the step size (1 / 10 / 50 mm). When the printer is not homed (typical right after a print finishes), the first jog opens a Bambu Studio-style warning modal with **Home Z**, **Move anyway** (bypasses soft endstops for this move), or **Cancel**. After the first "Move anyway" in a session, subsequent jogs skip the dialog. Disabled while a print is running. Backed by new `POST /printers/{id}/bed-jog` and `POST /printers/{id}/home-axes` endpoints, both gated behind `printers:control`. Thanks to @cadtoolbox for the request.

@@ -491,17 +491,26 @@ function InventoryPage({ spoolmanMode = false }: { spoolmanMode?: boolean }) {
     refetchInterval: 30000,
   });
 
-  // Deep-link: open edit modal for ?spool=<id> when spools are loaded
+  // Deep-link: fetch target spool by ID directly for instant modal open
+  const deepLinkSpoolId = searchParams.get('spool') ? Number(searchParams.get('spool')) : null;
+  const { data: deepLinkSpool } = useQuery({
+    queryKey: spoolmanMode
+      ? ['spoolman-inventory-spool', deepLinkSpoolId]
+      : ['inventory-spool', deepLinkSpoolId],
+    queryFn: () =>
+      spoolmanMode
+        ? api.getSpoolmanInventorySpool(deepLinkSpoolId!)
+        : api.getSpool(deepLinkSpoolId!),
+    enabled: deepLinkSpoolId !== null,
+    staleTime: Infinity,
+  });
+
   useEffect(() => {
-    const targetId = searchParams.get('spool');
-    if (!targetId || deepLinkHandled.current || !spools) return;
-    const spool = spools.find((s) => s.id === Number(targetId));
-    if (spool) {
-      deepLinkHandled.current = true;
-      setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
-      setFormModal({ spool });
-    }
-  }, [searchParams, spools, setSearchParams]);
+    if (!deepLinkSpool || deepLinkHandled.current) return;
+    deepLinkHandled.current = true;
+    setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
+    setFormModal({ spool: deepLinkSpool });
+  }, [deepLinkSpool, setSearchParams]);
 
   const { data: assignments } = useQuery({
     queryKey: ['spool-assignments'],

@@ -3293,6 +3293,7 @@ export default {
     costPerKg: 'Cost per kg',
     storageLocation: 'Storage Location',
     storageLocationPlaceholder: 'e.g. Shelf A, Drawer 1',
+    openInInventory: 'Open in Inventory',
     measuredWeightError: 'Measured weight must be between {{min}}g and {{max}}g.',
     slicerFilament: 'Slicer Filament',
     slicerFilamentName: 'Slicer Preset Name',

@@ -3211,6 +3211,7 @@ export default {
     costPerKg: 'Costo per kg',
     storageLocation: 'Posizione di archiviazione',
     storageLocationPlaceholder: 'es. Scaffale A, Cassetto 1',
+    openInInventory: "Apri nell'inventario",
     measuredWeightError: 'Il peso misurato deve essere compreso tra {{min}}g e {{max}}g.',
     slicerFilament: 'Filamento Slicer',
     slicerFilamentName: 'Nome Preset Slicer',

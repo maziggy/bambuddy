@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -437,7 +438,9 @@ function InventoryPage({ spoolmanMode = false }: { spoolmanMode?: boolean }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null } | null>(null);
+  const deepLinkHandled = useRef(false);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
 
   // Filter state
@@ -487,6 +490,18 @@ function InventoryPage({ spoolmanMode = false }: { spoolmanMode?: boolean }) {
       spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
     refetchInterval: 30000,
   });
+
+  // Deep-link: open edit modal for ?spool=<id> when spools are loaded
+  useEffect(() => {
+    const targetId = searchParams.get('spool');
+    if (!targetId || deepLinkHandled.current || !spools) return;
+    const spool = spools.find((s) => s.id === Number(targetId));
+    if (spool) {
+      deepLinkHandled.current = true;
+      setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
+      setFormModal({ spool });
+    }
+  }, [searchParams, spools, setSearchParams]);
 
   const { data: assignments } = useQuery({
     queryKey: ['spool-assignments'],

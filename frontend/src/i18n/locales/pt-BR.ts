@@ -3225,6 +3225,7 @@ export default {
     costPerKg: 'Custo por kg',
     storageLocation: 'Local de armazenamento',
     storageLocationPlaceholder: 'ex. Prateleira A, Gaveta 1',
+    openInInventory: 'Abrir no inventário',
     measuredWeightError: 'O peso medido deve estar entre {{min}}g e {{max}}g.',
     slicerFilament: 'Filamento do Fatiador',
     slicerFilamentName: 'Nome do Predefinido do Fatiador',

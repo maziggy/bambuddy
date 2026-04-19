@@ -3212,6 +3212,7 @@ export default {
     costPerKg: 'Coût par kg',
     storageLocation: 'Emplacement de stockage',
     storageLocationPlaceholder: 'ex. Étagère A, Tiroir 1',
+    openInInventory: "Ouvrir dans l'inventaire",
     measuredWeightError: 'Le poids mesuré doit être entre {{min}}g et {{max}}g.',
     slicerFilament: 'Filament Slicer',
     slicerFilamentName: 'Nom du Preset Slicer',

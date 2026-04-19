@@ -421,6 +421,212 @@ class SpoolmanClient:
             logger.error("Failed to update spool in Spoolman: %s", e)
             return None
 
+    async def get_spool(self, spool_id: int) -> dict | None:
+        """Get a single spool by ID from Spoolman.
+
+        Args:
+            spool_id: Spoolman spool ID
+
+        Returns:
+            Spool dictionary or None on failure.
+        """
+        try:
+            client = await self._get_client()
+            response = await client.get(f"{self.api_url}/spool/{spool_id}")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error("Failed to get spool %s from Spoolman: %s", spool_id, e)
+            return None
+
+    async def get_all_spools(self, allow_archived: bool = False) -> list[dict]:
+        """Get all spools from Spoolman, optionally including archived ones.
+
+        Args:
+            allow_archived: If True, include archived spools in the result.
+
+        Returns:
+            List of spool dictionaries.
+        """
+        try:
+            client = await self._get_client()
+            params: dict = {}
+            if allow_archived:
+                params["allow_archived"] = "true"
+            response = await client.get(f"{self.api_url}/spool", params=params or None)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error("Failed to get all spools from Spoolman: %s", e)
+            return []
+
+    async def delete_spool(self, spool_id: int) -> bool:
+        """Delete a spool from Spoolman.
+
+        Args:
+            spool_id: Spoolman spool ID
+
+        Returns:
+            True on success, False on failure.
+        """
+        try:
+            client = await self._get_client()
+            response = await client.delete(f"{self.api_url}/spool/{spool_id}")
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error("Failed to delete spool %s from Spoolman: %s", spool_id, e)
+            return False
+
+    async def set_spool_archived(self, spool_id: int, archived: bool) -> dict | None:
+        """Archive or restore a spool in Spoolman.
+
+        Args:
+            spool_id: Spoolman spool ID
+            archived: True to archive, False to restore.
+
+        Returns:
+            Updated spool dictionary or None on failure.
+        """
+        try:
+            client = await self._get_client()
+            response = await client.patch(
+                f"{self.api_url}/spool/{spool_id}",
+                json={"archived": archived},
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error("Failed to set archived=%s for spool %s: %s", archived, spool_id, e)
+            return None
+
+    async def update_spool_full(
+        self,
+        spool_id: int,
+        *,
+        filament_id: int | None = None,
+        remaining_weight: float | None = None,
+        comment: str | None = None,
+        price: float | None = None,
+        location: str | None = None,
+        clear_location: bool = False,
+        extra: dict | None = None,
+    ) -> dict | None:
+        """Update a spool in Spoolman with comprehensive field support.
+
+        Unlike update_spool, this method does not auto-set last_used and
+        supports updating filament_id, comment, and price.
+
+        Args:
+            spool_id: Spoolman spool ID
+            filament_id: New filament type ID
+            remaining_weight: New remaining weight in grams
+            comment: New comment/note (pass empty string to clear)
+            price: Cost per unit (maps to cost_per_kg usage)
+            location: New location string
+            clear_location: If True, sets location to None
+            extra: Extra fields dict to merge
+
+        Returns:
+            Updated spool dictionary or None on failure.
+        """
+        try:
+            data: dict = {}
+            if filament_id is not None:
+                data["filament_id"] = filament_id
+            if remaining_weight is not None:
+                data["remaining_weight"] = remaining_weight
+            if comment is not None:
+                data["comment"] = comment if comment else None
+            if price is not None:
+                data["price"] = price
+            if clear_location:
+                data["location"] = None
+            elif location is not None:
+                data["location"] = location
+            if extra is not None:
+                data["extra"] = extra
+
+            client = await self._get_client()
+            response = await client.patch(f"{self.api_url}/spool/{spool_id}", json=data)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error("Failed to update spool %s in Spoolman: %s", spool_id, e)
+            return None
+
+    async def find_or_create_vendor(self, name: str) -> int | None:
+        """Find an existing vendor by name or create a new one.
+
+        Args:
+            name: Vendor name (case-insensitive match)
+
+        Returns:
+            Vendor ID or None on failure.
+        """
+        vendors = await self.get_vendors()
+        name_lower = name.strip().lower()
+        for vendor in vendors:
+            if vendor.get("name", "").strip().lower() == name_lower:
+                return vendor["id"]
+        created = await self.create_vendor(name.strip())
+        return created["id"] if created else None
+
+    async def find_or_create_filament(
+        self,
+        material: str,
+        subtype: str,
+        brand: str | None,
+        color_hex: str,
+        label_weight: int,
+    ) -> int | None:
+        """Find a matching filament in Spoolman or create a new one.
+
+        Matching uses material + full name + vendor + color_hex (normalised).
+        A new filament is created only when no exact match is found.
+
+        Args:
+            material: Filament material (e.g. "PLA")
+            subtype: Filament subtype (e.g. "Basic"); combined with material as name
+            brand: Vendor/brand name; None skips vendor matching
+            color_hex: 6-char hex colour string (RRGGBB, no #)
+            label_weight: Net spool weight in grams
+
+        Returns:
+            Filament ID or None on failure.
+        """
+        name = f"{material} {subtype}".strip() if subtype else material
+        color = color_hex[:6].upper() if len(color_hex) >= 6 else color_hex.upper()
+
+        vendor_id: int | None = None
+        if brand:
+            vendor_id = await self.find_or_create_vendor(brand)
+
+        filaments = await self.get_filaments()
+        for f in filaments:
+            f_material = (f.get("material") or "").upper()
+            f_name = (f.get("name") or "").strip()
+            f_color = (f.get("color_hex") or "").upper()[:6]
+            f_vendor = f.get("vendor") or {}
+            f_vendor_name = (f_vendor.get("name") or "").strip().lower()
+
+            material_match = f_material == material.upper()
+            name_match = f_name.lower() == name.lower()
+            color_match = f_color == color
+            vendor_match = (not brand) or f_vendor_name == (brand or "").strip().lower()
+
+            if material_match and name_match and color_match and vendor_match:
+                return f["id"]
+
+        filament = await self.create_filament(
+            name=name,
+            vendor_id=vendor_id,
+            material=material,
+            color_hex=color,
+            weight=float(label_weight),
+        )
+        return filament["id"] if filament else None
+
     async def use_spool(self, spool_id: int, used_weight: float) -> dict | None:
         """Record filament usage for a spool.
 

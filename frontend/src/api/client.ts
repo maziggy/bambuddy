@@ -2112,6 +2112,8 @@ export interface InventorySpool {
   last_scale_weight: number | null;
   last_weighed_at: string | null;
   k_profiles?: SpoolKProfile[];
+  // Present only on spools fetched from the Spoolman inventory proxy endpoints
+  spoolman_location?: string | null;
 }
 
 export interface SpoolUsageRecord {
@@ -4216,6 +4218,44 @@ export const api = {
     request<{ synced: number; skipped: number }>('/inventory/sync-ams-weights', { method: 'POST' }),
   getFilamentPresets: () =>
     request<SlicerSetting[]>('/cloud/filaments'),
+
+  // Spoolman Inventory proxy (unified UI when Spoolman is enabled)
+  getSpoolmanInventorySpools: (includeArchived = false) =>
+    request<InventorySpool[]>(`/spoolman/inventory/spools?include_archived=${includeArchived}`),
+  getSpoolmanInventorySpool: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}`),
+  createSpoolmanInventorySpool: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'spoolman_location'>) =>
+    request<InventorySpool>('/spoolman/inventory/spools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  bulkCreateSpoolmanInventorySpools: (
+    data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'spoolman_location'>,
+    quantity: number,
+  ) =>
+    request<InventorySpool[]>('/spoolman/inventory/spools/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ spool: data, quantity }),
+    }),
+  updateSpoolmanInventorySpool: (
+    id: number,
+    data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'spoolman_location'>>,
+  ) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteSpoolmanInventorySpool: (id: number) =>
+    request<{ status: string }>(`/spoolman/inventory/spools/${id}`, { method: 'DELETE' }),
+  archiveSpoolmanInventorySpool: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}/archive`, { method: 'POST' }),
+  restoreSpoolmanInventorySpool: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}/restore`, { method: 'POST' }),
+  syncSpoolmanSpoolWeight: (spoolId: number, weightGrams: number) =>
+    request<{ status: string; weight_used: number }>(`/spoolman/inventory/spools/${spoolId}/weight`, {
+      method: 'PATCH',
+      body: JSON.stringify({ weight_grams: weightGrams }),
+    }),
 
   // Updates
   getVersion: () => request<VersionInfo>('/updates/version'),

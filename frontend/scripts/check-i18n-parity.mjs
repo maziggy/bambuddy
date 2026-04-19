@@ -161,30 +161,63 @@ export function compareLocales(locales) {
   return { failed: reports.length > 0, reports };
 }
 
+// Strict locales fail CI when they drift from en. Everything else discovered
+// in the locales directory is reported informationally — promote a locale to
+// STRICT once its drift is caught up. en is implicitly the reference.
+const STRICT = ['de', 'zh-CN', 'zh-TW'];
+
 // Skip file IO / process.exit when imported as a library (e.g. from tests).
 const isMainModule = import.meta.url === url.pathToFileURL(process.argv[1] ?? '').href;
 if (isMainModule) {
-  const locales = {
-    en: loadLocale(path.join(localesDir, 'en.ts')),
-    'zh-CN': loadLocale(path.join(localesDir, 'zh-CN.ts')),
-    'zh-TW': loadLocale(path.join(localesDir, 'zh-TW.ts')),
-  };
-
-  const MAX_REPORT = 20;
-  const { failed, reports } = compareLocales(locales);
-  for (const { label, items } of reports) {
-    console.error(`\n[${label}] (${items.length})`);
-    items.slice(0, MAX_REPORT).forEach((i) => console.error(`  ${i}`));
-    if (items.length > MAX_REPORT) console.error(`  ... and ${items.length - MAX_REPORT} more`);
-  }
-
-  if (failed) {
-    console.error('\n❌ i18n parity check failed.');
+  const discovered = fs
+    .readdirSync(localesDir)
+    .filter((f) => f.endsWith('.ts'))
+    .map((f) => f.slice(0, -3))
+    .sort();
+  if (!discovered.includes('en')) {
+    console.error(`No en.ts found in ${localesDir} — cannot run parity check without a reference locale.`);
     process.exit(1);
   }
-
-  console.log(`All locales in parity (en / zh-CN / zh-TW):`);
-  for (const [code, map] of Object.entries(locales)) {
-    console.log(`  ${code}: ${map.size} leaves`);
+  const missingStrict = STRICT.filter((c) => !discovered.includes(c));
+  if (missingStrict.length) {
+    console.error(`STRICT locales declared but not found on disk: ${missingStrict.join(', ')}`);
+    process.exit(1);
   }
+  const codes = ['en', ...discovered.filter((c) => c !== 'en')];
+  const locales = Object.fromEntries(
+    codes.map((c) => [c, loadLocale(path.join(localesDir, `${c}.ts`))]),
+  );
+
+  const MAX_REPORT = 20;
+  const strictSet = new Set(STRICT);
+  const printReports = (reports, header) => {
+    if (!reports.length) return;
+    console.error(`\n${header}`);
+    for (const { label, items } of reports) {
+      console.error(`\n[${label}] (${items.length})`);
+      items.slice(0, MAX_REPORT).forEach((i) => console.error(`  ${i}`));
+      if (items.length > MAX_REPORT) console.error(`  ... and ${items.length - MAX_REPORT} more`);
+    }
+  };
+
+  // Label prefix is "${code}:" — route reports to strict vs informational.
+  const { reports } = compareLocales(locales);
+  const codeOf = (label) => label.split(':', 1)[0];
+  const strictReports = reports.filter((r) => strictSet.has(codeOf(r.label)));
+  const infoReports = reports.filter((r) => !strictSet.has(codeOf(r.label)));
+
+  printReports(strictReports, '=== STRICT locales (failures below fail CI) ===');
+  printReports(infoReports, '=== INFORMATIONAL locales (drift shown, does not fail CI) ===');
+
+  console.log('\nLocale leaf counts:');
+  for (const [code, map] of Object.entries(locales)) {
+    const tier = code === 'en' ? 'ref' : strictSet.has(code) ? 'strict' : 'info';
+    console.log(`  ${code.padEnd(6)} ${String(map.size).padEnd(6)} [${tier}]`);
+  }
+
+  if (strictReports.length > 0) {
+    console.error(`\n❌ i18n parity check failed (strict: ${STRICT.join(', ')}).`);
+    process.exit(1);
+  }
+  console.log(`\n✓ Strict locales in parity (en / ${STRICT.join(' / ')}).`);
 }

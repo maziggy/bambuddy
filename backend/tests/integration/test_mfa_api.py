@@ -3196,7 +3196,7 @@ class TestOIDCIssuerUrlTrailingSlash:
 
 
 class TestOIDCCallbackCodeLength:
-    """OIDC callback code query param must accept up to 2048 characters (OAuth spec)."""
+    """OIDC callback code/state query params must accept up to 2048 characters (OAuth spec)."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -3230,3 +3230,36 @@ class TestOIDCCallbackCodeLength:
             follow_redirects=False,
         )
         assert resp.status_code == 422, "2049-char code must be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_512_chars_accepted(self, async_client: AsyncClient):
+        """A 512-character state (old limit) must not be rejected with 422."""
+        state = "a" * 512
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=bogus-code&state={state}",
+            follow_redirects=False,
+        )
+        assert resp.status_code != 422, "512-char state must not be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_2048_chars_accepted(self, async_client: AsyncClient):
+        """A 2048-character state must not be rejected with 422."""
+        state = "a" * 2048
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=bogus-code&state={state}",
+            follow_redirects=False,
+        )
+        assert resp.status_code != 422, "2048-char state must not be rejected by Pydantic"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_2049_chars_rejected(self, async_client: AsyncClient):
+        """A 2049-character state must be rejected with 422."""
+        state = "a" * 2049
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=bogus-code&state={state}",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 422, "2049-char state must be rejected by Pydantic"

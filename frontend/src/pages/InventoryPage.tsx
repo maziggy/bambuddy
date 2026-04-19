@@ -428,13 +428,14 @@ export default function InventoryPageRouter() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const spoolmanModeReady = spoolmanSettings !== undefined;
   const spoolmanMode =
     spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
 
-  return <InventoryPage spoolmanMode={spoolmanMode} />;
+  return <InventoryPage spoolmanMode={spoolmanMode} spoolmanModeReady={spoolmanModeReady} />;
 }
 
-function InventoryPage({ spoolmanMode = false }: { spoolmanMode?: boolean }) {
+function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spoolmanMode?: boolean; spoolmanModeReady?: boolean }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -491,8 +492,20 @@ function InventoryPage({ spoolmanMode = false }: { spoolmanMode?: boolean }) {
     refetchInterval: 30000,
   });
 
-  // Deep-link: fetch target spool by ID directly for instant modal open
+  // Deep-link: open edit modal for ?spool=<id>
+  // Prefer the already-loaded spool list (no extra API call); fall back to a
+  // targeted fetch for the rare case where the full list hasn't arrived yet.
   const deepLinkSpoolId = searchParams.get('spool') ? Number(searchParams.get('spool')) : null;
+  const deepLinkInList = spools?.find((s) => s.id === deepLinkSpoolId) ?? null;
+
+  useEffect(() => {
+    if (!spoolmanModeReady || !deepLinkSpoolId || deepLinkHandled.current || !deepLinkInList) return;
+    deepLinkHandled.current = true;
+    setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
+    setFormModal({ spool: deepLinkInList });
+  }, [spoolmanModeReady, deepLinkSpoolId, deepLinkInList, setSearchParams]);
+
+  // Targeted fetch — only fires when mode is known and spool isn't in the list yet
   const { data: deepLinkSpool } = useQuery({
     queryKey: spoolmanMode
       ? ['spoolman-inventory-spool', deepLinkSpoolId]
@@ -501,7 +514,7 @@ function InventoryPage({ spoolmanMode = false }: { spoolmanMode?: boolean }) {
       spoolmanMode
         ? api.getSpoolmanInventorySpool(deepLinkSpoolId!)
         : api.getSpool(deepLinkSpoolId!),
-    enabled: deepLinkSpoolId !== null,
+    enabled: spoolmanModeReady && deepLinkSpoolId !== null && deepLinkInList === null,
     staleTime: Infinity,
   });
 

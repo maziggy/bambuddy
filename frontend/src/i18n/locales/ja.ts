@@ -3901,6 +3901,12 @@ export default {
       description: '仮想プリンター機能を使用するには追加のシステム設定が必要です。ポートフォワーディング、ファイアウォールルール、プラットフォーム固有の設定が含まれます。',
       readGuide: '有効にする前にセットアップガイドをお読みください',
     },
+    tailscale: {
+      connected: 'Tailscale 接続済み',
+      notAvailable: 'Tailscale 未接続',
+      trustedCert: "Let's Encrypt 証明書 — CA設定不要",
+      notAvailableHint: '信頼できるTLS証明書にはTailscaleをインストール',
+    },
     howItWorks: {
       title: '仕組み',
       step1: '同じLAN上では、仮想プリンターはスライサー（Bambu Studio / OrcaSlicer）に自動的に表示されます。他のネットワークからは、IPアドレスとアクセスコードで手動で追加してください。',

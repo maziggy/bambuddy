@@ -3936,6 +3936,12 @@ export default {
       description: 'Die virtuelle Druckerfunktion erfordert zusätzliche Systemkonfiguration, bevor sie funktioniert. Dies beinhaltet Portweiterleitung, Firewall-Regeln und plattformspezifische Einstellungen.',
       readGuide: 'Lese die Einrichtungsanleitung vor dem Aktivieren',
     },
+    tailscale: {
+      connected: 'Tailscale verbunden',
+      notAvailable: 'Tailscale nicht aktiv',
+      trustedCert: "Let's Encrypt-Zertifikat — keine CA-Einrichtung nötig",
+      notAvailableHint: 'Installiere Tailscale für vertrauenswürdige TLS-Zertifikate',
+    },
     howItWorks: {
       title: 'So funktioniert es',
       step1: 'Im selben LAN erscheinen virtuelle Drucker automatisch in deinem Slicer (Bambu Studio / OrcaSlicer). Aus anderen Netzwerken füge sie manuell per IP-Adresse und Zugangscode hinzu.',

@@ -5182,6 +5182,7 @@ export interface VirtualPrinterStatus {
   pending_files: number;
   target_printer_ip?: string;  // For proxy mode
   proxy?: VirtualPrinterProxyStatus;  // For proxy mode
+  tailscale_fqdn?: string;  // Set when Tailscale cert is active
 }
 
 export interface VirtualPrinterSettings {
@@ -5263,7 +5264,7 @@ export interface VirtualPrinterConfig {
   bind_ip: string | null;
   remote_interface_ip: string | null;
   position: number;
-  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus };
+  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus; tailscale_fqdn?: string };
 }
 
 export interface VirtualPrinterListResponse {
@@ -5312,7 +5313,19 @@ export const multiVirtualPrinterApi = {
     request<{ detail: string; id: number }>(`/virtual-printers/${id}`, {
       method: 'DELETE',
     }),
+
+  getTailscaleStatus: () =>
+    request<TailscaleStatusResponse>('/virtual-printers/tailscale-status'),
 };
+
+export interface TailscaleStatusResponse {
+  available: boolean;
+  fqdn: string;
+  hostname: string;
+  tailnet_name: string;
+  tailscale_ips: string[];
+  error: string | null;
+}
 
 // Pending Uploads API
 export const pendingUploadsApi = {

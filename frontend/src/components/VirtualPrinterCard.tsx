@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
   Loader2, Check, AlertTriangle, Eye, EyeOff, Info,
-  ChevronDown, ChevronRight, ArrowRightLeft, Trash2,
+  ChevronDown, ChevronRight, ArrowRightLeft, Trash2, ShieldCheck,
 } from 'lucide-react';
 import { api, multiVirtualPrinterApi } from '../api/client';
 import type { VirtualPrinterConfig } from '../api/client';
@@ -208,6 +208,12 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
           )}
           {localRemoteInterfaceIp && (
             <span className="text-[10px] text-bambu-gray flex-shrink-0 font-mono">{localRemoteInterfaceIp}</span>
+          )}
+          {printer.status?.tailscale_fqdn && (
+            <span className="flex items-center gap-1 text-xs text-green-400/70 flex-shrink-0">
+              <ShieldCheck className="w-3 h-3" />
+              <span className="font-mono text-[10px]">{printer.status.tailscale_fqdn}</span>
+            </span>
           )}
           <div className="ml-auto flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
             <button

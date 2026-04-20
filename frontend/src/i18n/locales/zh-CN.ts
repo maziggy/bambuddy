@@ -3928,6 +3928,12 @@ export default {
       description: '虚拟打印机功能需要额外的系统配置才能工作。包括端口转发、防火墙规则和平台特定设置。',
       readGuide: '启用前请阅读设置指南',
     },
+    tailscale: {
+      connected: 'Tailscale 已连接',
+      notAvailable: 'Tailscale 未激活',
+      trustedCert: "Let's Encrypt 证书 — 无需配置 CA",
+      notAvailableHint: '安装 Tailscale 以获取受信任的 TLS 证书',
+    },
     howItWorks: {
       title: '工作原理',
       step1: '在同一局域网中，虚拟打印机会通过发现机制自动出现在您的切片软件（Bambu Studio / OrcaSlicer）中。从其他网络，通过 IP 地址和访问码手动添加。',

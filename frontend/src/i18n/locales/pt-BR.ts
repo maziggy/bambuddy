@@ -3876,6 +3876,12 @@ export default {
       description: 'O recurso de impressora virtual requer configuração adicional do sistema antes de funcionar. Isso inclui encaminhamento de portas, regras de firewall e configurações específicas da plataforma.',
       readGuide: 'Leia o guia de configuração antes de ativar',
     },
+    tailscale: {
+      connected: 'Tailscale conectado',
+      notAvailable: 'Tailscale inativo',
+      trustedCert: "Certificado Let's Encrypt — sem configuração de CA necessária",
+      notAvailableHint: 'Instale o Tailscale para certificados TLS confiáveis',
+    },
     howItWorks: {
       title: 'Como funciona',
       step1: 'Complete o guia de configuração para sua plataforma',

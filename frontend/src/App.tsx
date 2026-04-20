@@ -24,6 +24,7 @@ import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { GCodeViewerPage } from './pages/GCodeViewerPage';
+import { MacrosPage } from './pages/MacrosPage';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useStreamTokenSync } from './hooks/useCameraStreamToken';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -218,6 +219,8 @@ function App() {
                   <Route path="system" element={<SystemInfoPage />} />
                   <Route path="notifications" element={<NotificationsPage />} />
                   <Route path="gcode-viewer" element={<GCodeViewerPage />} />
+                  <Route path="macros" element={<MacrosPage />} />
+                  <Route path="macros/:id" element={<MacrosPage />} />
                   <Route path="external/:id" element={<ExternalLinkPage />} />
                   <Route path="camera-tokens" element={<Navigate to="/settings?tab=apikeys#card-camera-tokens" replace />} />
                 </Route>

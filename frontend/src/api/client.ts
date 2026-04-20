@@ -6455,7 +6455,48 @@ export const api = {
     request<{ success: boolean }>(`/local-presets/${id}`, { method: 'DELETE' }),
   refreshBaseProfileCache: () =>
     request<{ refreshed: number; failed: number; total: number }>('/local-presets/base-cache/refresh', { method: 'POST' }),
+
+  // Macros
+  getMacros: () => request<Macro[]>('/macros'),
+  getMacro: (id: number) => request<Macro>(`/macros/${id}`),
+  createMacro: (data: Partial<Macro> & { script: string; name: string }) =>
+    request<Macro>('/macros', { method: 'POST', body: JSON.stringify(data) }),
+  updateMacro: (id: number, data: Partial<Macro>) =>
+    request<Macro>(`/macros/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteMacro: (id: number) =>
+    request<{ ok: boolean }>(`/macros/${id}`, { method: 'DELETE' }),
+  runMacro: (id: number, printer_id?: number) =>
+    request<MacroRun>(`/macros/${id}/run`, { method: 'POST', body: JSON.stringify({ printer_id: printer_id ?? null }) }),
+  getMacroRuns: (id: number) => request<MacroRun[]>(`/macros/${id}/runs`),
+  getMacroRun: (runId: number) => request<MacroRun>(`/macros/runs/${runId}`),
+  cancelMacroRun: (runId: number) => request<{ ok: boolean }>(`/macros/runs/${runId}/cancel`, { method: 'POST' }),
+  getGcodeWhitelist: () => request<string[]>('/macros/gcode-whitelist'),
 };
+
+// Macro types
+export interface Macro {
+  id: number;
+  name: string;
+  description: string | null;
+  script: string;
+  file_path: string;
+  trigger_type: 'manual' | 'webhook' | 'schedule';
+  cron_expression: string | null;
+  printer_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MacroRun {
+  id: number;
+  macro_id: number;
+  printer_id: number | null;
+  status: 'pending' | 'running' | 'success' | 'error';
+  trigger: 'manual' | 'webhook' | 'schedule' | 'gcode_embed';
+  started_at: string;
+  finished_at: string | null;
+  log: string;
+}
 
 // AMS History types
 export interface AMSHistoryPoint {

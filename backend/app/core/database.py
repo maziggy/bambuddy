@@ -183,6 +183,7 @@ async def init_db():
         local_preset,
         location,
         long_lived_token,
+        macro,
         maintenance,
         notification,
         notification_template,

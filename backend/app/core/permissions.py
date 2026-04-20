@@ -178,6 +178,13 @@ class Permission(StrEnum):
     GROUPS_UPDATE = "groups:update"
     GROUPS_DELETE = "groups:delete"
 
+    # Macros
+    MACROS_READ = "macros:read"
+    MACROS_CREATE = "macros:create"
+    MACROS_UPDATE = "macros:update"
+    MACROS_DELETE = "macros:delete"
+    MACROS_RUN = "macros:run"
+
     # Slicer Pipelines (#1425)
     PIPELINES_READ = "pipelines:read"  # View pipeline definitions and run history
     PIPELINES_WRITE = "pipelines:write"  # Create / edit / delete pipeline definitions
@@ -342,6 +349,13 @@ PERMISSION_CATEGORIES = {
         Permission.GROUPS_UPDATE,
         Permission.GROUPS_DELETE,
     ],
+    "Macros": [
+        Permission.MACROS_READ,
+        Permission.MACROS_CREATE,
+        Permission.MACROS_UPDATE,
+        Permission.MACROS_DELETE,
+        Permission.MACROS_RUN,
+    ],
     "Slicer Pipelines": [
         Permission.PIPELINES_READ,
         Permission.PIPELINES_WRITE,
@@ -462,6 +476,9 @@ DEFAULT_GROUPS = {
             Permission.SYSTEM_READ.value,
             # Settings - read only
             Permission.SETTINGS_READ.value,
+            # Macros - read and run
+            Permission.MACROS_READ.value,
+            Permission.MACROS_RUN.value,
             # Slicer Pipelines - full access
             Permission.PIPELINES_READ.value,
             Permission.PIPELINES_WRITE.value,

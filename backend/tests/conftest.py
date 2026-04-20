@@ -126,6 +126,7 @@ async def test_engine():
         filament,
         group,
         kprofile_note,
+        macro,
         maintenance,
         notification,
         notification_template,

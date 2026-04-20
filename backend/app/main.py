@@ -40,6 +40,7 @@ from backend.app.api.routes import (
     library_trash,
     local_backup,
     local_presets,
+    macros as macros_routes,
     maintenance,
     makerworld,
     metrics,
@@ -6216,6 +6217,11 @@ async def lifespan(app: FastAPI):
     # Resume any pending auto-offs that were interrupted by restart
     await smart_plug_manager.resume_pending_auto_offs()
 
+    # Start the macro scheduler
+    from backend.app.services.macro_runner import macro_runner
+
+    macro_runner.start_scheduler()
+
     # Start the notification digest scheduler
     notification_service.start_digest_scheduler()
 
@@ -6274,6 +6280,9 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    from backend.app.services.macro_runner import macro_runner
+
+    macro_runner.stop_scheduler()
     print_scheduler.stop()
     smart_plug_manager.stop_scheduler()
     notification_service.stop_digest_scheduler()
@@ -6756,6 +6765,7 @@ app.include_router(user_notifications.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman_inventory.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
+app.include_router(macros_routes.router, prefix=app_settings.api_prefix)
 app.include_router(sponsor_prompt.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
 app.include_router(camera.router, prefix=app_settings.api_prefix)

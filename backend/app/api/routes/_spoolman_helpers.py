@@ -66,6 +66,8 @@ def _map_spoolman_spool(spool: dict) -> dict:
         spool_id: int = int(raw_id)
     except (TypeError, ValueError):
         raise ValueError(f"Spoolman spool 'id' is not a valid integer: {raw_id!r}")
+    if spool_id <= 0:
+        raise ValueError(f"Spoolman spool 'id' must be a positive integer, got {spool_id}")
 
     filament: dict = spool.get("filament") or {}
     vendor: dict = filament.get("vendor") or {}

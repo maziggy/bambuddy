@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, _safe_float, _safe_int
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -368,8 +368,9 @@ async def sync_spool_weight(
 ) -> dict:
     """Update a spool's remaining weight from a measured gross weight.
 
-    Computes remaining = gross_weight - core_weight (250 g default) and
-    updates Spoolman accordingly.
+    Computes remaining = gross_weight - filament.spool_weight (empty-spool
+    weight from Spoolman; falls back to 250 g when unset) and updates
+    Spoolman accordingly.
     """
     client = await _get_client(db)
 
@@ -377,14 +378,15 @@ async def sync_spool_weight(
     if not current:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
 
-    core_weight = 250.0
+    cur_filament = current.get("filament") or {}
+    core_weight = _safe_float(cur_filament.get("spool_weight"), 250.0)
     remaining = max(0.0, data.weight_grams - core_weight)
 
     updated = await client.update_spool_full(spool_id=spool_id, remaining_weight=remaining)
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update spool weight in Spoolman")
 
-    cur_filament = updated.get("filament") or {}
-    label_weight = int(cur_filament.get("weight") or 1000)
+    upd_filament = updated.get("filament") or {}
+    label_weight = _safe_int(upd_filament.get("weight"), 1000)
     weight_used = max(0.0, label_weight - remaining)
     return {"status": "ok", "weight_used": weight_used}

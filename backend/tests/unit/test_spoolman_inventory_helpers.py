@@ -118,6 +118,14 @@ class TestMapSpoolmanSpool:
         with pytest.raises(ValueError, match="not a valid integer"):
             _map_spoolman_spool({**MINIMAL_SPOOL, "id": "abc"})
 
+    def test_zero_id_raises(self):
+        with pytest.raises(ValueError, match="positive integer"):
+            _map_spoolman_spool({**MINIMAL_SPOOL, "id": 0})
+
+    def test_negative_id_raises(self):
+        with pytest.raises(ValueError, match="positive integer"):
+            _map_spoolman_spool({**MINIMAL_SPOOL, "id": -5})
+
     def test_numeric_string_id_accepted(self):
         result = _map_spoolman_spool({**MINIMAL_SPOOL, "id": "42"})
         assert result["id"] == 42
@@ -217,3 +225,22 @@ class TestMapSpoolmanSpool:
         spool = {**MINIMAL_SPOOL, "location": "Shelf A"}
         result = _map_spoolman_spool(spool)
         assert "spoolman_location" not in result
+
+    def test_core_weight_from_filament_spool_weight(self):
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
+        result = _map_spoolman_spool(spool)
+        assert result["core_weight"] == 196
+
+    def test_core_weight_fallback_when_spool_weight_missing(self):
+        result = _map_spoolman_spool(MINIMAL_SPOOL)
+        assert result["core_weight"] == 250
+
+    def test_core_weight_fallback_when_spool_weight_none(self):
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": None}}
+        result = _map_spoolman_spool(spool)
+        assert result["core_weight"] == 250
+
+    def test_core_weight_float_truncated_to_int(self):
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 180.9}}
+        result = _map_spoolman_spool(spool)
+        assert result["core_weight"] == 180

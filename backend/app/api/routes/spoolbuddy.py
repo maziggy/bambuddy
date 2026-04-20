@@ -416,37 +416,71 @@ async def nfc_write_tag(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Queue an NFC tag write command for a SpoolBuddy device."""
-    import json
-
     from backend.app.models.spool import Spool
-    from backend.app.services.opentag3d import encode_opentag3d
+    from backend.app.services.opentag3d import encode_opentag3d, encode_opentag3d_from_mapped
 
-    # Find the spool
-    result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
-    spool = result.scalar_one_or_none()
-    if not spool:
-        raise HTTPException(status_code=404, detail="Spool not found")
-
-    # Find the device
+    # Find the device first (required regardless of spool source)
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == req.device_id))
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    # Encode OpenTag3D NDEF data
-    ndef_data = encode_opentag3d(spool)
+    # Try local DB first
+    result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
+    spool = result.scalar_one_or_none()
+
+    if spool:
+        ndef_data = encode_opentag3d(spool)
+        data_origin = "local"
+    else:
+        # Local DB miss — fall back to Spoolman when enabled
+        from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+        from backend.app.models.settings import Settings
+        from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+
+        settings_result = await db.execute(select(Settings))
+        settings_dict = {s.key: s.value for s in settings_result.scalars().all()}
+        spoolman_url = settings_dict.get("spoolman_url", "").strip()
+        spoolman_enabled = settings_dict.get("spoolman_enabled", "false").lower() == "true" and bool(spoolman_url)
+
+        if spoolman_enabled and urlparse(spoolman_url).scheme.lower() in ("http", "https"):
+            client = await get_spoolman_client()
+            if not client or client.base_url != spoolman_url.rstrip("/"):
+                client = await init_spoolman_client(spoolman_url)
+
+            sm_spool = await client.get_spool(req.spool_id)
+            if sm_spool is None:
+                raise HTTPException(status_code=404, detail="Spool not found")
+
+            try:
+                mapped = _map_spoolman_spool(sm_spool)
+            except ValueError as exc:
+                logger.warning("Spoolman returned invalid spool for write-tag: %s", exc)
+                raise HTTPException(status_code=404, detail="Spool not found")
+
+            ndef_data = encode_opentag3d_from_mapped(mapped)
+            data_origin = "spoolman"
+        else:
+            raise HTTPException(status_code=404, detail="Spool not found")
 
     # Store write payload and set pending command
     device.pending_write_payload = json.dumps(
         {
-            "spool_id": spool.id,
+            "spool_id": req.spool_id,
             "ndef_data_hex": ndef_data.hex(),
+            "data_origin": data_origin,
         }
     )
     device.pending_command = "write_tag"
     await db.commit()
 
-    logger.info("Write tag queued for device %s, spool %d (%d bytes)", req.device_id, spool.id, len(ndef_data))
+    logger.info(
+        "Write tag queued for device %s, spool %d (%s, %d bytes)",
+        req.device_id,
+        req.spool_id,
+        data_origin,
+        len(ndef_data),
+    )
     return {"status": "queued"}
 
 
@@ -457,27 +491,75 @@ async def nfc_write_result(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Handle NFC tag write result from SpoolBuddy daemon."""
-    # Find the device and clear pending state
+    # Find the device
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == req.device_id))
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
+    # Capture data_origin before clearing the payload
+    try:
+        payload_dict = json.loads(device.pending_write_payload or "{}")
+    except (json.JSONDecodeError, TypeError):
+        payload_dict = {}
+        logger.warning("Malformed pending_write_payload for device %s — treating as local", req.device_id)
+    data_origin = payload_dict.get("data_origin", "local")
+
     device.pending_command = None
     device.pending_write_payload = None
 
     if req.success:
-        # Link the tag to the spool
-        from backend.app.models.spool import Spool
+        if data_origin == "spoolman":
+            # Update Spoolman extra.tag with the written NFC UID.
+            # Spoolman operations run BEFORE db.commit() so that if they raise,
+            # the device state rollback leaves the DB untouched (no stale cleared
+            # pending_command that would confuse the daemon state machine).
+            from backend.app.models.settings import Settings
+            from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
 
-        result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
-        spool = result.scalar_one_or_none()
-        if spool:
-            spool.tag_uid = req.tag_uid.upper()
-            spool.tag_type = "ntag"
-            spool.data_origin = "opentag3d"
-            spool.encode_time = datetime.now(timezone.utc)
-            logger.info("Tag written and linked: spool %d -> tag %s", spool.id, req.tag_uid)
+            settings_result = await db.execute(select(Settings))
+            settings_dict = {s.key: s.value for s in settings_result.scalars().all()}
+            spoolman_url = settings_dict.get("spoolman_url", "").strip()
+
+            try:
+                client = await get_spoolman_client()
+                if not client or client.base_url != spoolman_url.rstrip("/"):
+                    client = await init_spoolman_client(spoolman_url)
+
+                tag_value = json.dumps(req.tag_uid.upper())
+                updated = await client.update_spool(
+                    spool_id=req.spool_id,
+                    extra={"tag": tag_value},
+                )
+                if updated:
+                    logger.info(
+                        "Spoolman tag written and linked: spool %d -> tag %s",
+                        req.spool_id,
+                        req.tag_uid,
+                    )
+                else:
+                    logger.warning(
+                        "Tag written to NFC but failed to persist to Spoolman: spool %d",
+                        req.spool_id,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Spoolman extra.tag update failed for spool %d: %s — device state still cleared",
+                    req.spool_id,
+                    exc,
+                )
+        else:
+            # Link the tag to the local DB spool
+            from backend.app.models.spool import Spool
+
+            result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
+            spool = result.scalar_one_or_none()
+            if spool:
+                spool.tag_uid = req.tag_uid.upper()
+                spool.tag_type = "ntag"
+                spool.data_origin = "opentag3d"
+                spool.encode_time = datetime.now(timezone.utc)
+                logger.info("Tag written and linked: spool %d -> tag %s", spool.id, req.tag_uid)
 
         await db.commit()
         await ws_manager.broadcast(
@@ -552,6 +634,7 @@ async def update_spool_weight(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Update spool's used weight from scale reading."""
+    from backend.app.api.routes._spoolman_helpers import _safe_float
     from backend.app.models.settings import Settings
     from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
 
@@ -570,8 +653,8 @@ async def update_spool_weight(
             raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
 
         filament = sm_spool.get("filament") or {}
-        core_weight = float(filament.get("spool_weight") or 250.0)
-        label_weight = float(filament.get("weight") or 1000.0)
+        core_weight = _safe_float(filament.get("spool_weight"), 250.0)
+        label_weight = _safe_float(filament.get("weight"), 1000.0)
         remaining_weight = max(0.0, req.weight_grams - core_weight)
 
         result = await client.update_spool(spool_id=req.spool_id, remaining_weight=remaining_weight)

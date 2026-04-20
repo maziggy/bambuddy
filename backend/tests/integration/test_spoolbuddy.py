@@ -1524,3 +1524,453 @@ class TestTagScannedSpoolmanFallback:
         data = resp.json()
         assert data["matched"] is True
         assert data["spool_id"] == spool.id
+
+
+# ============================================================================
+# NFC write-tag / write-result — Spoolman-aware
+# ============================================================================
+
+
+def _full_spoolman_spool(spool_id: int) -> dict:
+    """Complete Spoolman spool dict sufficient for NDEF encoding."""
+    return {
+        "id": spool_id,
+        "filament": {
+            "material": "PLA",
+            "name": "PLA Basic",
+            "color_hex": "FF0000",
+            "weight": 1000.0,
+            "spool_weight": 196.0,
+            "vendor": {"name": "Bambu Lab"},
+        },
+        "used_weight": 0.0,
+        "archived": False,
+        "registered": "2024-01-01T00:00:00Z",
+    }
+
+
+class TestNfcWriteTagSpoolman:
+    """nfc/write-tag falls back to Spoolman when local DB has no matching spool."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_spool_queued_when_local_miss(
+        self, async_client: AsyncClient, device_factory, spoolman_settings
+    ):
+        """write-tag encodes NDEF from Spoolman data when spool not in local DB."""
+        await device_factory(device_id="sb-write-sm")
+        sm_spool = _full_spoolman_spool(77)
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": "sb-write-sm", "spool_id": 77},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "queued"
+        mock_client.get_spool.assert_called_once_with(77)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_data_origin_spoolman_stored_in_payload(
+        self, async_client: AsyncClient, device_factory, db_session, spoolman_settings
+    ):
+        """Pending write payload records data_origin=spoolman for Spoolman spools."""
+        import json as _json
+
+        device = await device_factory(device_id="sb-origin")
+        sm_spool = _full_spoolman_spool(88)
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": "sb-origin", "spool_id": 88},
+            )
+
+        await db_session.refresh(device)
+        payload = _json.loads(device.pending_write_payload)
+        assert payload["data_origin"] == "spoolman"
+        assert payload["spool_id"] == 88
+        assert "ndef_data_hex" in payload
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_404_when_neither_local_nor_spoolman(
+        self, async_client: AsyncClient, device_factory, spoolman_settings
+    ):
+        """404 returned when spool is missing from both local DB and Spoolman."""
+        await device_factory(device_id="sb-miss")
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": "sb-miss", "spool_id": 9999},
+            )
+
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_local_spool_used_when_present(
+        self, async_client: AsyncClient, device_factory, spool_factory
+    ):
+        """Local DB spool is encoded directly without contacting Spoolman."""
+        await device_factory(device_id="sb-local-write")
+        spool = await spool_factory(material="PETG")
+
+        resp = await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": "sb-local-write", "spool_id": spool.id},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "queued"
+
+
+class TestNfcWriteResultSpoolman:
+    """nfc/write-result updates Spoolman extra.tag on success for Spoolman spools."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_success_updates_spoolman_extra_tag(
+        self, async_client: AsyncClient, device_factory, spoolman_settings
+    ):
+        """Successful write for a Spoolman spool calls update_spool with extra.tag."""
+        import json as _json
+
+        await device_factory(
+            device_id="sb-wr-sm",
+            pending_command="write_tag",
+            pending_write_payload=_json.dumps(
+                {"spool_id": 55, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}
+            ),
+        )
+        mock_client = _mock_spoolman_client()
+        mock_client.update_spool = AsyncMock(return_value={"id": 55})
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": "sb-wr-sm",
+                    "spool_id": 55,
+                    "tag_uid": "AABBCCDD11223344",
+                    "success": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        mock_client.update_spool.assert_called_once_with(
+            spool_id=55,
+            extra={"tag": '"AABBCCDD11223344"'},
+        )
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_tag_written"
+        assert msg["tag_uid"] == "AABBCCDD11223344"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_failure_does_not_call_spoolman(
+        self, async_client: AsyncClient, device_factory, spoolman_settings
+    ):
+        """Failed write never calls Spoolman update."""
+        import json as _json
+
+        await device_factory(
+            device_id="sb-wr-fail",
+            pending_command="write_tag",
+            pending_write_payload=_json.dumps(
+                {"spool_id": 66, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}
+            ),
+        )
+        mock_client = _mock_spoolman_client()
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": "sb-wr-fail",
+                    "spool_id": 66,
+                    "tag_uid": "AABBCCDD11223344",
+                    "success": False,
+                    "message": "write timeout",
+                },
+            )
+
+        assert resp.status_code == 200
+        mock_client.update_spool.assert_not_called()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_tag_write_failed"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_success_local_spool_writes_to_db(
+        self, async_client: AsyncClient, device_factory, spool_factory, db_session
+    ):
+        """Successful write for a local spool still updates local DB tag_uid."""
+        import json as _json
+
+        spool = await spool_factory()
+        await device_factory(
+            device_id="sb-wr-local",
+            pending_command="write_tag",
+            pending_write_payload=_json.dumps(
+                {"spool_id": spool.id, "ndef_data_hex": "deadbeef", "data_origin": "local"}
+            ),
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": "sb-wr-local",
+                    "spool_id": spool.id,
+                    "tag_uid": "DEADBEEF12345678",
+                    "success": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        await db_session.refresh(spool)
+        assert spool.tag_uid == "DEADBEEF12345678"
+        assert spool.tag_type == "ntag"
+
+
+# ============================================================================
+# Security fix tests — write-tag ValueError + write-result exception safety
+# ============================================================================
+
+
+class TestNfcWriteTagSpoolmanSecurityFixes:
+    """Regression tests for security fixes in nfc/write-tag Spoolman path."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_invalid_spoolman_spool_id_returns_404(
+        self, async_client: AsyncClient, device_factory, spoolman_settings
+    ):
+        """Malformed Spoolman spool (invalid id) raises 404, not 500."""
+        await device_factory(device_id="sb-invalid-id")
+        # Spoolman returns spool with id=0 (invalid — caught by _map_spoolman_spool guard)
+        bad_spool = {**_full_spoolman_spool(1), "id": 0}
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=bad_spool)
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": "sb-invalid-id", "spool_id": 99},
+            )
+
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_oversized_label_weight_does_not_crash(
+        self, async_client: AsyncClient, device_factory, spoolman_settings
+    ):
+        """label_weight > 65535 from Spoolman must not crash with struct.error."""
+        await device_factory(device_id="sb-overflow")
+        big_weight_spool = {
+            **_full_spoolman_spool(42),
+            "filament": {**_full_spoolman_spool(42)["filament"], "weight": 70000},
+        }
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=big_weight_spool)
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": "sb-overflow", "spool_id": 42},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "queued"
+
+
+class TestNfcWriteResultSpoolmanSecurityFixes:
+    """Regression tests for transaction safety in nfc/write-result Spoolman path."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_client_exception_still_clears_device_state(
+        self, async_client: AsyncClient, device_factory, db_session, spoolman_settings
+    ):
+        """If Spoolman client raises, device pending_command is still cleared in DB."""
+        import json as _json
+
+        device = await device_factory(
+            device_id="sb-exc-safe",
+            pending_command="write_tag",
+            pending_write_payload=_json.dumps(
+                {"spool_id": 77, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}
+            ),
+        )
+        mock_client = _mock_spoolman_client()
+        mock_client.update_spool = AsyncMock(side_effect=Exception("connection refused"))
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": "sb-exc-safe",
+                    "spool_id": 77,
+                    "tag_uid": "AABBCCDD11223344",
+                    "success": True,
+                },
+            )
+
+        # Should return 200 (tag was written to NFC, Spoolman update is best-effort)
+        assert resp.status_code == 200
+        # Device state must be cleared despite the exception
+        await db_session.refresh(device)
+        assert device.pending_command is None
+        assert device.pending_write_payload is None
+        # Broadcast still fires
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_tag_written"
+
+
+class TestNfcWriteResultInputValidation:
+    """Input validation and JSON safety for nfc/write-result."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tag_uid_too_long_rejected(
+        self, async_client: AsyncClient, device_factory
+    ):
+        """tag_uid longer than 64 chars must be rejected with 422."""
+        import json as _json
+
+        await device_factory(
+            device_id="sb-uid-long",
+            pending_command="write_tag",
+            pending_write_payload=_json.dumps(
+                {"spool_id": 1, "ndef_data_hex": "dead", "data_origin": "local"}
+            ),
+        )
+
+        resp = await async_client.post(
+            f"{API}/nfc/write-result",
+            json={
+                "device_id": "sb-uid-long",
+                "spool_id": 1,
+                "tag_uid": "A" * 65,
+                "success": True,
+            },
+        )
+
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_malformed_pending_payload_falls_back_to_local(
+        self, async_client: AsyncClient, device_factory, spool_factory, db_session
+    ):
+        """Corrupted pending_write_payload JSON falls back to local mode gracefully."""
+        spool = await spool_factory()
+        await device_factory(
+            device_id="sb-corrupt-json",
+            pending_command="write_tag",
+            pending_write_payload="{not valid json!!!",
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": "sb-corrupt-json",
+                    "spool_id": spool.id,
+                    "tag_uid": "DEADBEEF12345678",
+                    "success": True,
+                },
+            )
+
+        # Must return 200, not 500
+        assert resp.status_code == 200
+        # Falls back to local mode — tag written to DB
+        await db_session.refresh(spool)
+        assert spool.tag_uid == "DEADBEEF12345678"

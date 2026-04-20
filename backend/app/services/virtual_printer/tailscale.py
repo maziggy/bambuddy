@@ -10,6 +10,7 @@ Falls back gracefully when Tailscale is unavailable.
 import asyncio
 import json
 import logging
+import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -21,6 +22,12 @@ logger = logging.getLogger(__name__)
 
 # Renew when fewer than this many days remain on the LE cert (LE issues 90-day certs)
 TS_CERT_EXPIRY_THRESHOLD_DAYS = 14
+
+# Defensive FQDN validation before passing to subprocess
+_FQDN_RE = re.compile(
+    r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -91,7 +98,7 @@ class TailscaleService:
                 hostname="",
                 tailnet_name="",
                 fqdn="",
-                error=stderr.decode().strip(),
+                error=stderr.decode(errors="replace").strip(),
             )
 
         try:
@@ -125,7 +132,7 @@ class TailscaleService:
 
         tailscale_ips = self_info.get("TailscaleIPs", [])
 
-        logger.info("Tailscale available: fqdn=%s, ips=%s", fqdn, tailscale_ips)
+        logger.debug("Tailscale available: fqdn=%s, ips=%s", fqdn, tailscale_ips)
         return TailscaleStatus(
             available=True,
             hostname=hostname,
@@ -141,6 +148,10 @@ class TailscaleService:
 
         Returns True on success, False on any error.
         """
+        if not _FQDN_RE.match(fqdn):
+            logger.warning("provision_cert: invalid FQDN %r, skipping", fqdn)
+            return False
+
         logger.info("Provisioning Tailscale cert for %s -> %s", fqdn, cert_path)
         try:
             returncode, _, stderr = await self._run_tailscale(
@@ -154,7 +165,7 @@ class TailscaleService:
             logger.warning(
                 "tailscale cert failed (exit %d): %s",
                 returncode,
-                stderr.decode().strip(),
+                stderr.decode(errors="replace").strip(),
             )
             return False
 
@@ -167,11 +178,12 @@ class TailscaleService:
         logger.info("Tailscale cert provisioned: %s", cert_path)
         return True
 
-    def cert_needs_renewal(self, cert_path: Path) -> bool:
+    def cert_needs_renewal(self, cert_path: Path, fqdn: str | None = None) -> bool:
         """Check whether the certificate at cert_path needs to be renewed.
 
-        Returns True if the file is absent, unreadable, or expires within
-        TS_CERT_EXPIRY_THRESHOLD_DAYS days.
+        Returns True if the file is absent, unreadable, expires within
+        TS_CERT_EXPIRY_THRESHOLD_DAYS days, or if fqdn is given and does not
+        appear in the certificate's Subject Alternative Names.
         """
         if not cert_path.exists():
             return True
@@ -185,19 +197,37 @@ class TailscaleService:
             if days_remaining < TS_CERT_EXPIRY_THRESHOLD_DAYS:
                 logger.info("Tailscale cert expires in %d days, renewal needed", days_remaining)
                 return True
+
+            # Validate that the cert covers the requested FQDN (guards against stale
+            # cert after machine rename or tailnet migration)
+            if fqdn:
+                try:
+                    san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+                    dns_names = san.value.get_values_for_type(x509.DNSName)
+                    if fqdn not in dns_names:
+                        logger.info(
+                            "Tailscale cert SAN mismatch (cert has %s, need %s), renewal needed",
+                            dns_names,
+                            fqdn,
+                        )
+                        return True
+                except x509.ExtensionNotFound:
+                    logger.info("Tailscale cert has no SAN extension, renewal needed")
+                    return True
+
             logger.debug("Tailscale cert valid for %d more days", days_remaining)
             return False
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.warning("Could not read Tailscale cert %s: %s", cert_path, e)
             return True
 
     async def ensure_cert(self, fqdn: str, cert_path: Path, key_path: Path) -> bool:
         """Ensure a fresh certificate exists at cert_path.
 
-        Skips provisioning if the cert is present and not near expiry.
+        Skips provisioning if the cert is present, not near expiry, and covers fqdn.
         Returns True if a valid cert is now available.
         """
-        if not self.cert_needs_renewal(cert_path):
+        if not self.cert_needs_renewal(cert_path, fqdn=fqdn):
             logger.debug("Tailscale cert is fresh, skipping provision")
             return True
         return await self.provision_cert(fqdn, cert_path, key_path)

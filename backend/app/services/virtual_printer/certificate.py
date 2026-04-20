@@ -132,7 +132,10 @@ class CertificateService:
                 encryption_algorithm=serialization.NoEncryption(),
             )
         )
-        self.ca_key_path.chmod(0o600)
+        try:
+            self.ca_key_path.chmod(0o600)
+        except OSError as e:
+            logger.warning("Could not set CA key permissions on %s: %s", self.ca_key_path, e)
         self.ca_cert_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
 
         logger.info("Saved new CA certificate")
@@ -311,7 +314,10 @@ class CertificateService:
                 encryption_algorithm=serialization.NoEncryption(),
             )
         )
-        self.key_path.chmod(0o600)
+        try:
+            self.key_path.chmod(0o600)
+        except OSError as e:
+            logger.warning("Could not set printer key permissions on %s: %s", self.key_path, e)
 
         # Write printer certificate (include CA cert in chain for full chain)
         cert_chain = printer_cert.public_bytes(serialization.Encoding.PEM) + ca_cert.public_bytes(

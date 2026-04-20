@@ -6,10 +6,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequirePermission, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
+from backend.app.services.virtual_printer.tailscale import tailscale_service
 
 logger = logging.getLogger(__name__)
 
@@ -217,15 +218,13 @@ async def create_virtual_printer(
 
 @router.get("/tailscale-status")
 async def get_tailscale_status(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermission(Permission.SETTINGS_READ),
 ) -> dict:
     """Return current Tailscale availability and machine identity.
 
     Used by the frontend to indicate whether virtual printer TLS is backed
     by a trusted Let's Encrypt certificate or a self-signed CA.
     """
-    from backend.app.services.virtual_printer.tailscale import tailscale_service
-
     status = await tailscale_service.get_status()
     return {
         "available": status.available,

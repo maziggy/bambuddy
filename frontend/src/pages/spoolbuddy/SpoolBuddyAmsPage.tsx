@@ -291,7 +291,7 @@ export function SpoolBuddyAmsPage() {
   }, [effectiveTrayNow]);
 
   const handleAmsSlotClick = useCallback((amsId: number, trayId: number, tray: AMSTray | null) => {
-    const globalTrayId = amsId >= 128 ? (amsId - 128) * 4 + trayId + 64 : amsId * 4 + trayId;
+    const globalTrayId = getGlobalTrayId(amsId, trayId, false);
     const slotPreset = slotPresets?.[globalTrayId];
     const mappedExtruderId = amsExtruderMap[String(amsId)];
     const normalizedId = amsId >= 128 ? amsId - 128 : amsId;

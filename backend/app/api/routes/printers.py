@@ -1725,6 +1725,15 @@ async def start_calibration(
 # ============================================================================
 
 
+def _slot_preset_key(ams_id: int, tray_id: int) -> int:
+    # Mirrors frontend getGlobalTrayId (amsHelpers.ts): AMS-HT (128-135) is keyed
+    # by ams_id since each unit has a single slot and shares its global ID with
+    # the unit itself. Regular AMS and external (255) use ams_id*4+tray_id.
+    if 128 <= ams_id <= 135:
+        return ams_id
+    return ams_id * 4 + tray_id
+
+
 @router.get("/{printer_id}/slot-presets")
 async def get_slot_presets(
     printer_id: int,
@@ -1736,7 +1745,7 @@ async def get_slot_presets(
     mappings = result.scalars().all()
 
     return {
-        mapping.ams_id * 4 + mapping.tray_id: {
+        _slot_preset_key(mapping.ams_id, mapping.tray_id): {
             "ams_id": mapping.ams_id,
             "tray_id": mapping.tray_id,
             "preset_id": mapping.preset_id,

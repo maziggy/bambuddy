@@ -316,6 +316,12 @@ export default {
       connected: 'Connesso',
       offline: 'Offline',
     },
+    plateStatus: {
+      markCleared: 'Segna il piatto come liberato',
+      cleared: 'Piatto libero',
+      notCleared: 'Piatto non libero',
+      inUse: 'Piatto in uso',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} stampa in coda',
@@ -1687,7 +1693,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Conferma piatto libero',
     requirePlateClear: 'Richiedi conferma piatto libero',
-    requirePlateClearDescription: 'Quando abilitato, lo scheduler attende la conferma per stampante che il piatto è libero prima di avviare le stampe in coda su stampanti con lavori completati. Disabilitare per flussi di lavoro in farm dove i piatti vengono verificati fisicamente.',
+    requirePlateClearDescription: 'Quando questa opzione è abilitata, lo scheduler attende una conferma per stampante che il piatto sia libero prima di avviare le stampe in coda su stampanti con lavori completati. Disabilitandola vengono nascosti anche il badge di stato del piatto e il pulsante "Segna il piatto come liberato" sulle schede stampante.',
     gcodeInjection: 'Iniezione G-code',
     gcodeInjectionDescription: 'Configura G-code personalizzato da iniettare all\'inizio e/o alla fine delle stampe per sistemi di stampa automatica come Farmloop, SwapMod, AutoClear e Printflow 3D. Gli snippet sono configurati per modello di stampante e applicati quando "Inietta G-code" è abilitato su un elemento della coda.',
     gcodeInjectionNoPrinters: 'Nessuna stampante trovata. Aggiungi stampanti per configurare gli snippet G-code.',
@@ -2815,6 +2821,9 @@ export default {
     wrap: 'A capo',
     enableTextWrapping: 'Abilita a capo testo',
     disableTextWrapping: 'Disabilita a capo testo',
+    collapse: 'Comprimi',
+    collapseFoldersByDefault: 'Comprimi le cartelle per impostazione predefinita',
+    expandFoldersByDefault: 'Espandi le cartelle per impostazione predefinita',
     dragToResizeTooltip: 'Trascina per ridimensionare, doppio clic per reset',
     searchFiles: 'Cerca file...',
     allTypes: 'Tutti i tipi',

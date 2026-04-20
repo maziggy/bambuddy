@@ -3480,16 +3480,28 @@ class TestStartPrintUniqueIdentityFields:
         assert first["project_id"] != second["project_id"]
 
     def test_submission_id_is_numeric_string(self, mqtt_client):
-        """ID format: digits-only string (epoch millis). Studio uses cloud
-        task IDs that are also numeric-looking strings; the DB column is
-        VARCHAR(64) and Bambuddy's own subtask_id parser treats '0'/'' as
-        absent — any valid digit string that isn't '0' is fine."""
+        """ID format: digits-only string. Studio uses cloud task IDs that are
+        also numeric-looking strings; the DB column is VARCHAR(64) and
+        Bambuddy's own subtask_id parser treats '0'/'' as absent — any valid
+        digit string that isn't '0' is fine."""
         mqtt_client.start_print("test.3mf")
         cmd = self._get_published_command(mqtt_client)
         assert cmd["task_id"].isdigit()
         assert int(cmd["task_id"]) > 0
-        # Must fit in VARCHAR(64); epoch-ms is 13 digits
         assert len(cmd["task_id"]) <= 64
+
+    def test_submission_id_fits_signed_int32(self, mqtt_client):
+        """Regression for #1042: P1S firmware clamps oversized task identity
+        fields to signed int32 max (2**31-1 = 2147483647). If we send raw
+        epoch-ms (~1.7e12), the printer sees a saturated constant on every
+        submission and treats fresh dispatches as continuations of the last
+        FAILED job — never leaves IDLE. Keep below 2**31.
+        """
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert int(cmd["task_id"]) < 2**31
+        assert int(cmd["project_id"]) < 2**31
+        assert int(cmd["subtask_id"]) < 2**31
 
     def test_unrelated_payload_fields_untouched(self, mqtt_client):
         """Regression guard: fix only touches identity fields; everything else

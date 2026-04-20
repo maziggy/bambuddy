@@ -316,6 +316,12 @@ export default {
       connected: 'Conectado',
       offline: 'Offline',
     },
+    plateStatus: {
+      markCleared: 'Marcar placa como liberada',
+      cleared: 'Placa liberada',
+      notCleared: 'Placa não liberada',
+      inUse: 'Placa em uso',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} impressão na fila',
@@ -1687,7 +1693,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Confirmação de placa livre',
     requirePlateClear: 'Exigir confirmação de placa livre',
-    requirePlateClearDescription: 'Quando ativado, o agendador aguarda a confirmação de placa livre por impressora antes de iniciar impressões na fila em impressoras com trabalhos concluídos. Desative para fluxos de trabalho de fazenda onde as placas são verificadas fisicamente.',
+    requirePlateClearDescription: 'Quando ativado, o agendador aguarda uma confirmação de placa livre por impressora antes de iniciar impressões na fila em impressoras com trabalhos concluídos. Desativar isso também oculta o indicador de status da placa e o botão "Marcar placa como liberada" nos cartões das impressoras.',
     gcodeInjection: 'Injeção de G-code',
     gcodeInjectionDescription: 'Configure G-code personalizado para injetar no início e/ou no final das impressões para sistemas de impressão automática como Farmloop, SwapMod, AutoClear e Printflow 3D. Os snippets são configurados por modelo de impressora e aplicados quando "Injetar G-code" está ativado em um item da fila.',
     gcodeInjectionNoPrinters: 'Nenhuma impressora encontrada. Adicione impressoras para configurar snippets de G-code.',
@@ -2829,6 +2835,9 @@ export default {
     wrap: 'Quebrar texto',
     enableTextWrapping: 'Ativar quebra de texto',
     disableTextWrapping: 'Desativar quebra de texto',
+    collapse: 'Recolher',
+    collapseFoldersByDefault: 'Recolher pastas por padrão',
+    expandFoldersByDefault: 'Expandir pastas por padrão',
     dragToResizeTooltip: 'Arraste para redimensionar, clique duas vezes para redefinir',
     searchFiles: 'Pesquisar arquivos...',
     allTypes: 'Todos os tipos',

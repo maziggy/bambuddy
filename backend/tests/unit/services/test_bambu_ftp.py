@@ -820,6 +820,62 @@ class TestAsyncWrappers:
         assert result is False
 
     @pytest.mark.asyncio
+    async def test_download_file_async_timeout_waits_for_slow_zombie(self, tmp_path, monkeypatch):
+        """A zombie that completes within the 30s grace window is salvaged.
+
+        Regression for #1014: on slow WiFi, download_to_file can overshoot the
+        user's ftp_timeout by 10–30 s without being stuck. The old fixed 0.5 s
+        post-timeout sleep was too short — it gave up and started attempt 2
+        while attempt 1's zombie thread kept running, and by the time the zombie
+        wrote the file to disk with a success flag, attempt 2 had already
+        reported failure (its own completion dict was still False). The async
+        wrapper now waits up to min(timeout, 30 s) for the worker thread to
+        finish before returning, so a slow-but-progressing download salvages.
+        """
+        from backend.app.services import bambu_ftp
+
+        bambu_ftp.BambuFTPClient._mode_cache.pop("127.0.0.1", None)
+
+        local = tmp_path / "slow_zombie.bin"
+        expected_content = b"finished during grace window"
+
+        class FakeClient:
+            """Mimics a slow FTP: wait_for gives up at 1.0 s but RETR takes
+            1.5 s total. Old 0.5 s fixed sleep would have bailed (0.5 < 0.5
+            extra); new grace = max(min(1.0, 30), 0.5) = 1.0 s covers the
+            remaining 0.5 s so salvage succeeds."""
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                return True
+
+            def download_to_file(self, remote_path, local_path):
+                time.sleep(1.5)  # wait_for times out at 1.0 s; zombie finishes 0.5 s later
+                local_path.write_bytes(expected_content)
+                return True
+
+            def disconnect(self):
+                pass
+
+        monkeypatch.setattr(bambu_ftp, "BambuFTPClient", FakeClient)
+        monkeypatch.setattr(FakeClient, "_mode_cache", {}, raising=False)
+        monkeypatch.setattr(FakeClient, "A1_MODELS", set(), raising=False)
+        monkeypatch.setattr(FakeClient, "cache_mode", staticmethod(lambda ip, mode: None), raising=False)
+
+        result = await download_file_async(
+            "127.0.0.1",
+            "12345678",
+            "/cache/slow_zombie.bin",
+            local,
+            timeout=1.0,
+            printer_model="X1C",
+        )
+        assert result is True
+        assert local.read_bytes() == expected_content
+
+    @pytest.mark.asyncio
     async def test_download_file_try_paths_first_succeeds(self, patch_ftp_port, tmp_path):
         """download_file_try_paths_async succeeds on first path."""
         server = patch_ftp_port

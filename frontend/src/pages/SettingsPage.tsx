@@ -3724,7 +3724,7 @@ export function SettingsPage() {
                     {t('settings.requirePlateClear', 'Require plate-clear confirmation')}
                   </p>
                   <p className="text-xs text-bambu-gray mt-1">
-                    {t('settings.requirePlateClearDescription', 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disable for farm workflows where plates are verified physically.')}
+                    {t('settings.requirePlateClearDescription', 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">

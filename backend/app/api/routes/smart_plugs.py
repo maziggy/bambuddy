@@ -33,6 +33,7 @@ from backend.app.schemas.smart_plug import (
 from backend.app.services.discovery import tasmota_scanner
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.mqtt_relay import mqtt_relay
+from backend.app.services.mqtt_smart_plug import subscribe_plug_to_mqtt
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.rest_smart_plug import rest_smart_plug_service
@@ -124,30 +125,9 @@ async def create_smart_plug(
 
     # Subscribe MQTT plugs to their topics
     if plug.plug_type == "mqtt":
-        # Determine effective topics (new fields take priority, fall back to legacy)
-        power_topic = plug.mqtt_power_topic or plug.mqtt_topic
-        energy_topic = plug.mqtt_energy_topic
-        state_topic = plug.mqtt_state_topic
-
-        # Only subscribe if at least one topic is configured
-        if power_topic or energy_topic or state_topic:
-            mqtt_relay.smart_plug_service.subscribe(
-                plug_id=plug.id,
-                # Power source (path is optional)
-                power_topic=power_topic,
-                power_path=plug.mqtt_power_path,
-                power_multiplier=plug.mqtt_power_multiplier or plug.mqtt_multiplier or 1.0,
-                # Energy source (path is optional)
-                energy_topic=energy_topic,
-                energy_path=plug.mqtt_energy_path,
-                energy_multiplier=plug.mqtt_energy_multiplier or plug.mqtt_multiplier or 1.0,
-                # State source (path is optional)
-                state_topic=state_topic,
-                state_path=plug.mqtt_state_path,
-                state_on_value=plug.mqtt_state_on_value,
-            )
-            topics = [t for t in [power_topic, energy_topic, state_topic] if t]
-            logger.info("Created MQTT plug '%s' subscribed to %s", plug.name, ", ".join(set(topics)))
+        topics = subscribe_plug_to_mqtt(mqtt_relay.smart_plug_service, plug)
+        if topics:
+            logger.info("Created MQTT plug '%s' subscribed to %s", plug.name, ", ".join(topics))
     elif plug.plug_type == "homeassistant":
         logger.info("Created Home Assistant plug '%s' (%s)", plug.name, plug.ha_entity_id)
     else:
@@ -505,28 +485,9 @@ async def update_smart_plug(
             if old_plug_type == "mqtt":
                 mqtt_relay.smart_plug_service.unsubscribe(plug.id)
 
-            # Subscribe to new topics
-            power_topic = plug.mqtt_power_topic or plug.mqtt_topic
-            energy_topic = plug.mqtt_energy_topic
-            state_topic = plug.mqtt_state_topic
-
-            # Only subscribe if at least one topic is configured
-            if power_topic or energy_topic or state_topic:
-                mqtt_relay.smart_plug_service.subscribe(
-                    plug_id=plug.id,
-                    # Power source (path is optional)
-                    power_topic=power_topic,
-                    power_path=plug.mqtt_power_path,
-                    power_multiplier=plug.mqtt_power_multiplier or plug.mqtt_multiplier or 1.0,
-                    # Energy source (path is optional)
-                    energy_topic=energy_topic,
-                    energy_path=plug.mqtt_energy_path,
-                    energy_multiplier=plug.mqtt_energy_multiplier or plug.mqtt_multiplier or 1.0,
-                    # State source (path is optional)
-                    state_topic=state_topic,
-                    state_path=plug.mqtt_state_path,
-                    state_on_value=plug.mqtt_state_on_value,
-                )
+            # Subscribe via the shared helper (matches startup restore and
+            # create route) — keeps all three paths in lock-step.
+            subscribe_plug_to_mqtt(mqtt_relay.smart_plug_service, plug)
 
     logger.info("Updated smart plug '%s'", plug.name)
     return plug

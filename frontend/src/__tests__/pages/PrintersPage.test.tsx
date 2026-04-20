@@ -45,6 +45,7 @@ const mockPrinters = [
 const mockPrinterStatus = {
   connected: true,
   state: 'IDLE',
+  awaiting_plate_clear: false,
   progress: 0,
   layer_num: 0,
   total_layers: 0,
@@ -61,12 +62,31 @@ const mockPrinterStatus = {
 
 describe('PrintersPage', () => {
   beforeEach(() => {
+    localStorage.removeItem('printerCardSize');
+
     server.use(
       http.get('/api/v1/printers/', () => {
         return HttpResponse.json(mockPrinters);
       }),
       http.get('/api/v1/printers/:id/status', () => {
         return HttpResponse.json(mockPrinterStatus);
+      }),
+      http.post('/api/v1/printers/:id/clear-plate', () => {
+        return HttpResponse.json({ success: true, message: 'Plate cleared' });
+      }),
+      http.get('/api/v1/settings/', () => {
+        return HttpResponse.json({
+          auto_archive: true,
+          save_thumbnails: true,
+          capture_finish_photo: true,
+          default_filament_cost: 25.0,
+          currency: 'USD',
+          ams_humidity_good: 40,
+          ams_humidity_fair: 60,
+          ams_temp_good: 30,
+          ams_temp_fair: 35,
+          require_plate_clear: true,
+        });
       }),
       http.get('/api/v1/queue/', () => {
         return HttpResponse.json([]);
@@ -172,6 +192,181 @@ describe('PrintersPage', () => {
       // There should be some interactive elements for printer actions
       const buttons = screen.getAllByRole('button');
       expect(buttons.length).toBeGreaterThan(0);
+    });
+
+    it('shows plate clear status and action on finished printers when not cleared', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: true });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate not Clear').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.getAllByRole('button', { name: 'Mark plate as cleared' }).length).toBeGreaterThan(0);
+    });
+
+    it('shows plate clear status and action on failed printers when not cleared', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FAILED', awaiting_plate_clear: true });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate not Clear').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.getAllByRole('button', { name: 'Mark plate as cleared' }).length).toBeGreaterThan(0);
+    });
+
+    it('keeps the clear action available when an idle printer is still awaiting acknowledgment', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'IDLE', awaiting_plate_clear: true });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate not Clear').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.getAllByRole('button', { name: 'Mark plate as cleared' }).length).toBeGreaterThan(0);
+    });
+
+    it('updates the plate clear status after using the printer card action', async () => {
+      let awaitingPlateClear = true;
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([mockPrinters[0]]);
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: awaitingPlateClear });
+        }),
+        http.post('/api/v1/printers/:id/clear-plate', () => {
+          awaitingPlateClear = false;
+          return HttpResponse.json({ success: true, message: 'Plate cleared' });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate not Clear').length).toBeGreaterThan(0);
+      });
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Mark plate as cleared' })[0]);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Plate not Clear')).not.toBeInTheDocument();
+      });
+
+      expect(screen.getAllByText('Plate Clear').length).toBeGreaterThan(0);
+    });
+
+    it('shows an icon-only plate clear action in small card view', async () => {
+      let awaitingPlateClear = true;
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([mockPrinters[0]]);
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: awaitingPlateClear });
+        }),
+        http.post('/api/v1/printers/:id/clear-plate', () => {
+          awaitingPlateClear = false;
+          return HttpResponse.json({ success: true, message: 'Plate cleared' });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'S' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Mark plate as cleared')).not.toBeInTheDocument();
+      });
+
+      const clearButton = screen.getByRole('button', { name: 'Mark plate as cleared' });
+
+      fireEvent.click(clearButton);
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows plate clear status but no action while idle', async () => {
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate Clear').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
+    });
+
+    it('shows plate in use status while printing and hides the clear action', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'RUNNING', awaiting_plate_clear: false });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate in Use').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
+    });
+
+    it('hides plate status and action when plate-clear confirmation is disabled', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            auto_archive: true,
+            save_thumbnails: true,
+            capture_finish_photo: true,
+            default_filament_cost: 25.0,
+            currency: 'USD',
+            ams_humidity_good: 40,
+            ams_humidity_fair: 60,
+            ams_temp_good: 30,
+            ams_temp_fair: 35,
+            require_plate_clear: false,
+          });
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: true });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText('Plate not Clear')).not.toBeInTheDocument();
+      expect(screen.queryByText('Plate Clear')).not.toBeInTheDocument();
+      expect(screen.queryByText('Plate in Use')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
     });
   });
 

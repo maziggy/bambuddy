@@ -316,6 +316,12 @@ export default {
       connected: 'Verbunden',
       offline: 'Offline',
     },
+    plateStatus: {
+      markCleared: 'Platte als freigegeben markieren',
+      cleared: 'Platte freigegeben',
+      notCleared: 'Platte nicht freigegeben',
+      inUse: 'Platte in Benutzung',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} Druck in Warteschlange',
@@ -1738,7 +1744,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Druckplatte-Bestätigung',
     requirePlateClear: 'Druckplatte-Bestätigung erforderlich',
-    requirePlateClearDescription: 'Wenn aktiviert, wartet der Scheduler auf eine Druckplatte-Bestätigung pro Drucker, bevor geplante Drucke auf Druckern mit abgeschlossenen Aufträgen gestartet werden. Deaktivieren Sie dies für Farm-Workflows, bei denen die Platten physisch überprüft werden.',
+    requirePlateClearDescription: 'Wenn aktiviert, wartet der Scheduler auf eine Druckplatten-Bestätigung pro Drucker, bevor geplante Drucke auf Druckern mit abgeschlossenen Aufträgen gestartet werden. Wenn dies deaktiviert ist, werden auch das Druckplatten-Status-Badge und die Schaltfläche "Druckplatte als freigegeben markieren" auf den Druckerkarten ausgeblendet.',
     gcodeInjection: 'G-code Injection',
     gcodeInjectionDescription: 'Konfigurieren Sie benutzerdefinierten G-code, der am Anfang und/oder Ende von Drucken für Auto-Print-Systeme wie Farmloop, SwapMod, AutoClear und Printflow 3D eingefügt wird. Snippets werden pro Druckermodell konfiguriert und angewendet, wenn "G-code einfügen" bei einem Warteschlangen-Element aktiviert ist.',
     gcodeInjectionNoPrinters: 'Keine Drucker gefunden. Fügen Sie Drucker hinzu, um G-code-Snippets zu konfigurieren.',
@@ -2894,6 +2900,9 @@ export default {
     wrap: 'Umbrechen',
     enableTextWrapping: 'Textumbruch aktivieren',
     disableTextWrapping: 'Textumbruch deaktivieren',
+    collapse: 'Einklappen',
+    collapseFoldersByDefault: 'Ordner standardmäßig einklappen',
+    expandFoldersByDefault: 'Ordner standardmäßig ausklappen',
     dragToResizeTooltip: 'Ziehen zum Ändern der Größe, Doppelklick zum Zurücksetzen',
     searchFiles: 'Dateien suchen...',
     allTypes: 'Alle Typen',

@@ -316,6 +316,12 @@ export default {
       connected: 'Connected',
       offline: 'Offline',
     },
+    plateStatus: {
+      markCleared: 'Mark plate as cleared',
+      cleared: 'Plate Clear',
+      notCleared: 'Plate not Clear',
+      inUse: 'Plate in Use',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} print in queue',
@@ -1741,7 +1747,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Plate-Clear Confirmation',
     requirePlateClear: 'Require plate-clear confirmation',
-    requirePlateClearDescription: 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disable for farm workflows where plates are verified physically.',
+    requirePlateClearDescription: 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.',
     gcodeInjection: 'G-code Injection',
     gcodeInjectionDescription: 'Configure custom G-code to inject at the start and/or end of prints for auto-print systems like Farmloop, SwapMod, AutoClear, and Printflow 3D. Snippets are configured per printer model and applied when "Inject G-code" is enabled on a queue item.',
     gcodeInjectionNoPrinters: 'No printers found. Add printers to configure G-code snippets.',
@@ -2897,6 +2903,9 @@ export default {
     wrap: 'Wrap',
     enableTextWrapping: 'Enable text wrapping',
     disableTextWrapping: 'Disable text wrapping',
+    collapse: 'Collapse',
+    collapseFoldersByDefault: 'Collapse folders by default',
+    expandFoldersByDefault: 'Expand folders by default',
     dragToResizeTooltip: 'Drag to resize, double-click to reset',
     searchFiles: 'Search files...',
     allTypes: 'All types',

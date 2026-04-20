@@ -110,7 +110,7 @@ def _map_spoolman_spool(spool: dict) -> dict:
         "rgba": rgba,
         "brand": vendor.get("name") or None,
         "label_weight": label_weight,
-        "core_weight": 250,
+        "core_weight": _safe_int(filament.get("spool_weight"), 250),
         "core_weight_catalog_id": None,
         "weight_used": used_weight,
         "weight_locked": False,

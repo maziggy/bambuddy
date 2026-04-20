@@ -565,19 +565,25 @@ async def update_spool_weight(
         if not client or client.base_url != spoolman_url.rstrip("/"):
             client = await init_spoolman_client(spoolman_url)
 
-        # Spoolman tracks remaining_weight; subtract the standard core weight
-        _CORE_WEIGHT_G = 250.0
-        remaining_weight = max(0.0, req.weight_grams - _CORE_WEIGHT_G)
+        sm_spool = await client.get_spool(req.spool_id)
+        if sm_spool is None:
+            raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+
+        filament = sm_spool.get("filament") or {}
+        core_weight = float(filament.get("spool_weight") or 250.0)
+        label_weight = float(filament.get("weight") or 1000.0)
+        remaining_weight = max(0.0, req.weight_grams - core_weight)
+
         result = await client.update_spool(spool_id=req.spool_id, remaining_weight=remaining_weight)
         if result is None:
             raise HTTPException(status_code=502, detail="Failed to update spool weight in Spoolman")
 
-        label_weight = float((result.get("filament") or {}).get("weight") or 1000.0)
         weight_used = max(0.0, label_weight - remaining_weight)
         logger.info(
-            "SpoolBuddy updated Spoolman spool %d: %.1fg on scale → %.1fg remaining",
+            "SpoolBuddy updated Spoolman spool %d: %.1fg on scale, core=%.1fg → %.1fg remaining",
             req.spool_id,
             req.weight_grams,
+            core_weight,
             remaining_weight,
         )
         return {"status": "ok", "weight_used": weight_used}

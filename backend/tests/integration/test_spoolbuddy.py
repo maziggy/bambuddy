@@ -1241,9 +1241,19 @@ def _mock_spoolman_client(base_url: str = "http://spoolman.local:7912") -> Magic
     client = MagicMock()
     client.base_url = base_url
     client.get_spools = AsyncMock(return_value=[])
+    client.get_spool = AsyncMock(return_value=None)
     client.find_spool_by_tag = AsyncMock(return_value=None)
     client.update_spool = AsyncMock(return_value=None)
     return client
+
+
+def _spoolman_spool_fixture(spool_id: int, spool_weight: float = 196.0, filament_weight: float = 1000.0) -> dict:
+    """Build a minimal Spoolman spool dict with realistic core weight from filament.spool_weight."""
+    return {
+        "id": spool_id,
+        "filament": {"weight": filament_weight, "spool_weight": spool_weight},
+        "used_weight": 0.0,
+    }
 
 
 class TestUpdateSpoolWeightSpoolman:
@@ -1251,13 +1261,14 @@ class TestUpdateSpoolWeightSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spoolman_mode_updates_remaining_weight(
+    async def test_spoolman_mode_uses_filament_spool_weight(
         self, async_client: AsyncClient, spoolman_settings
     ):
+        """core_weight comes from filament.spool_weight, not a hardcoded constant."""
+        sm_spool = _spoolman_spool_fixture(42, spool_weight=196.0, filament_weight=1000.0)
         mock_client = _mock_spoolman_client()
-        mock_client.update_spool = AsyncMock(
-            return_value={"id": 42, "filament": {"weight": 1000.0}}
-        )
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
+        mock_client.update_spool = AsyncMock(return_value=sm_spool)
 
         with (
             patch(
@@ -1277,9 +1288,9 @@ class TestUpdateSpoolWeightSpoolman:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        # remaining = max(0, 750 - 250) = 500 → weight_used = 1000 - 500 = 500
-        assert data["weight_used"] == 500.0
-        mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=500.0)
+        # remaining = max(0, 750 - 196) = 554 → weight_used = 1000 - 554 = 446
+        assert data["weight_used"] == pytest.approx(446.0)
+        mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(554.0))
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1287,10 +1298,10 @@ class TestUpdateSpoolWeightSpoolman:
         self, async_client: AsyncClient, spoolman_settings
     ):
         """Scale weight below core weight → remaining_weight = 0."""
+        sm_spool = _spoolman_spool_fixture(7, spool_weight=196.0, filament_weight=1000.0)
         mock_client = _mock_spoolman_client()
-        mock_client.update_spool = AsyncMock(
-            return_value={"id": 7, "filament": {"weight": 1000.0}}
-        )
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
+        mock_client.update_spool = AsyncMock(return_value=sm_spool)
 
         with (
             patch(
@@ -1312,11 +1323,39 @@ class TestUpdateSpoolWeightSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_spoolman_mode_404_when_spool_not_found(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """404 when Spoolman doesn't know the spool."""
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/scale/update-spool-weight",
+                json={"spool_id": 9999, "weight_grams": 500},
+            )
+
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_spoolman_mode_502_on_client_failure(
         self, async_client: AsyncClient, spoolman_settings
     ):
         """502 is returned when Spoolman client update fails (returns None)."""
+        sm_spool = _spoolman_spool_fixture(99)
         mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
         mock_client.update_spool = AsyncMock(return_value=None)
 
         with (

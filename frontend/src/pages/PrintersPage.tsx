@@ -3552,7 +3552,7 @@ function PrinterCard({
                                       </FilamentHoverCard>
                                     ) : (
                                       <EmptySlotHoverCard
-                                        configureSlot={tray?.state === 10 ? {
+                                        configureSlot={{
                                           enabled: hasPermission('printers:control'),
                                           onConfigure: () => setConfigureSlotModal({
                                             amsId: ams.id,
@@ -3560,8 +3560,8 @@ function PrinterCard({
                                             trayCount: ams.tray.length,
                                             extruderId: mappedExtruderId,
                                           }),
-                                        } : undefined}
-                                        inventory={tray?.state === 10 && !spoolmanEnabled ? {
+                                        }}
+                                        inventory={spoolmanEnabled ? undefined : {
                                           onAssignSpool: () => setAssignSpoolModal({
                                             printerId: printer.id,
                                             amsId: ams.id,
@@ -3572,7 +3572,7 @@ function PrinterCard({
                                               location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
                                             },
                                           }),
-                                        } : undefined}
+                                        }}
                                       >
                                         {slotVisual}
                                       </EmptySlotHoverCard>
@@ -3870,7 +3870,7 @@ function PrinterCard({
                                   </FilamentHoverCard>
                                 ) : (
                                   <EmptySlotHoverCard
-                                    configureSlot={tray?.state === 10 ? {
+                                    configureSlot={{
                                       enabled: hasPermission('printers:control'),
                                       onConfigure: () => setConfigureSlotModal({
                                         amsId: ams.id,
@@ -3878,8 +3878,8 @@ function PrinterCard({
                                         trayCount: ams.tray.length,
                                         extruderId: mappedExtruderId,
                                       }),
-                                    } : undefined}
-                                    inventory={tray?.state === 10 && !spoolmanEnabled ? {
+                                    }}
+                                    inventory={spoolmanEnabled ? undefined : {
                                       onAssignSpool: () => setAssignSpoolModal({
                                         printerId: printer.id,
                                         amsId: ams.id,
@@ -3890,7 +3890,7 @@ function PrinterCard({
                                           location: getAmsLabel(ams.id, ams.tray.length),
                                         },
                                       }),
-                                    } : undefined}
+                                    }}
                                   >
                                     {slotVisual}
                                   </EmptySlotHoverCard>

@@ -12,11 +12,14 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 
-def _make_cert(tmp_path: Path, days_valid: int) -> Path:
-    """Write a self-signed cert valid for days_valid days and return its path."""
+def _make_cert(tmp_path: Path, days_valid: int, fqdn: str | None = None) -> Path:
+    """Write a self-signed cert valid for days_valid days and return its path.
+
+    If fqdn is provided the cert includes a SubjectAlternativeName DNS entry.
+    """
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     now = datetime.now(timezone.utc)
-    cert = (
+    builder = (
         x509.CertificateBuilder()
         .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test")]))
         .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test")]))
@@ -24,8 +27,13 @@ def _make_cert(tmp_path: Path, days_valid: int) -> Path:
         .serial_number(x509.random_serial_number())
         .not_valid_before(now)
         .not_valid_after(now + timedelta(days=days_valid))
-        .sign(key, hashes.SHA256())
     )
+    if fqdn:
+        builder = builder.add_extension(
+            x509.SubjectAlternativeName([x509.DNSName(fqdn)]),
+            critical=False,
+        )
+    cert = builder.sign(key, hashes.SHA256())
     path = tmp_path / "cert.crt"
     path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     return path
@@ -287,3 +295,121 @@ class TestVirtualPrinterInstanceTailscale:
         instance.tailscale_fqdn = None
         status = instance.get_status()
         assert "tailscale_fqdn" not in status
+
+
+# =============================================================================
+# cert_needs_renewal — FQDN SAN validation, exception narrowing, FQDN regex
+# =============================================================================
+
+
+class TestCertNeedsRenewalExtended:
+    """Extended tests for cert_needs_renewal() covering new FQDN and exception logic."""
+
+    def test_fqdn_match_fresh_cert_not_renewed(self, tmp_path):
+        """Fresh cert whose SAN matches the requested FQDN is not renewed."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        fqdn = "myhost.example.ts.net"
+        cert_path = _make_cert(tmp_path, days_valid=60, fqdn=fqdn)
+        svc = TailscaleService()
+        assert svc.cert_needs_renewal(cert_path, fqdn=fqdn) is False
+
+    def test_fqdn_mismatch_triggers_renewal(self, tmp_path):
+        """Fresh cert whose SAN does NOT match the requested FQDN triggers renewal."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        cert_path = _make_cert(tmp_path, days_valid=60, fqdn="oldhost.example.ts.net")
+        svc = TailscaleService()
+        assert svc.cert_needs_renewal(cert_path, fqdn="newhost.example.ts.net") is True
+
+    def test_cert_without_san_triggers_renewal_when_fqdn_given(self, tmp_path):
+        """Cert with no SAN extension triggers renewal when an FQDN is requested."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        cert_path = _make_cert(tmp_path, days_valid=60, fqdn=None)
+        svc = TailscaleService()
+        assert svc.cert_needs_renewal(cert_path, fqdn="myhost.example.ts.net") is True
+
+    def test_fqdn_not_checked_when_none(self, tmp_path):
+        """Fresh cert with no SAN is valid when no FQDN is requested (backward-compat)."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        cert_path = _make_cert(tmp_path, days_valid=60, fqdn=None)
+        svc = TailscaleService()
+        assert svc.cert_needs_renewal(cert_path, fqdn=None) is False
+
+    def test_narrow_exception_oserror_triggers_renewal(self, tmp_path):
+        """OSError while reading the cert file triggers renewal."""
+        from unittest.mock import patch
+
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        cert_path = _make_cert(tmp_path, days_valid=60)
+        svc = TailscaleService()
+        with patch("pathlib.Path.read_bytes", side_effect=OSError("permission denied")):
+            assert svc.cert_needs_renewal(cert_path) is True
+
+    def test_narrow_exception_valueerror_triggers_renewal(self, tmp_path):
+        """ValueError (bad PEM data) while loading the cert triggers renewal."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        cert_path = tmp_path / "bad.crt"
+        cert_path.write_bytes(b"not a valid pem")
+        svc = TailscaleService()
+        assert svc.cert_needs_renewal(cert_path) is True
+
+    def test_programming_error_propagates(self, tmp_path):
+        """Unexpected exceptions (not OSError/ValueError) are NOT silently swallowed."""
+        from unittest.mock import patch
+
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        cert_path = _make_cert(tmp_path, days_valid=60)
+        svc = TailscaleService()
+        with (
+            patch("pathlib.Path.read_bytes", side_effect=RuntimeError("unexpected")),
+            pytest.raises(RuntimeError, match="unexpected"),
+        ):
+            svc.cert_needs_renewal(cert_path)
+
+
+class TestProvisionCertFQDNValidation:
+    """Tests for FQDN input validation in provision_cert()."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_fqdn_rejected_without_subprocess(self, tmp_path):
+        """provision_cert() returns False immediately for an invalid FQDN."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        svc = TailscaleService()
+        with patch.object(svc, "_run_tailscale", new_callable=AsyncMock) as mock_run:
+            result = await svc.provision_cert("../evil", tmp_path / "c.crt", tmp_path / "k.key")
+
+        assert result is False
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_single_label_fqdn_rejected(self, tmp_path):
+        """A hostname without dots (no tailnet) is rejected."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        svc = TailscaleService()
+        with patch.object(svc, "_run_tailscale", new_callable=AsyncMock) as mock_run:
+            result = await svc.provision_cert("justhostname", tmp_path / "c.crt", tmp_path / "k.key")
+
+        assert result is False
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_valid_fqdn_passes_to_subprocess(self, tmp_path):
+        """A valid FQDN is forwarded to _run_tailscale."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        key_path = tmp_path / "k.key"
+        key_path.write_text("fake")
+        svc = TailscaleService()
+        with patch.object(svc, "_run_tailscale", new_callable=AsyncMock, return_value=(0, b"", b"")) as mock_run:
+            result = await svc.provision_cert("myhost.example.ts.net", tmp_path / "c.crt", key_path)
+
+        assert result is True
+        assert "myhost.example.ts.net" in mock_run.call_args[0]

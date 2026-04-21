@@ -803,6 +803,50 @@ class TestConfigureAMSSlotAPI:
             call_kwargs = mock_client.ams_set_filament_setting.call_args
             assert call_kwargs.kwargs["tray_info_idx"] == "GFG99"
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_pfus_preserves_setting_id_pair(self, async_client: AsyncClient, printer_factory):
+        """Both tray_info_idx=PFUS* and setting_id=PFUS* are forwarded untouched.
+
+        Pins the end-to-end contract the frontend #1053 fix relies on: when the
+        user configures a slot with a custom cloud preset whose cloud detail
+        has filament_id=null, the frontend sends the setting_id in BOTH fields
+        and the backend must not collapse either to a generic GF* ID.
+        """
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        mock_status = MagicMock()
+        mock_status.raw_data = {"ams": {"ams": []}}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/128/0/configure",
+                params={
+                    "tray_info_idx": "PFUSa8fb76f9733e3c",
+                    "tray_type": "ABS",
+                    "tray_sub_brands": "Sting3D ABS",
+                    "tray_color": "000000FF",
+                    "nozzle_temp_min": 240,
+                    "nozzle_temp_max": 280,
+                    "setting_id": "PFUSa8fb76f9733e3c",
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUSa8fb76f9733e3c"
+            assert call_kwargs.kwargs["setting_id"] == "PFUSa8fb76f9733e3c"
+            # Explicitly assert no generic-collapse happened for this HT slot.
+            assert call_kwargs.kwargs["tray_info_idx"] != "GFB99"
+
 
 class TestSkipObjectsAPI:
     """Integration tests for skip objects endpoints."""

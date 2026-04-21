@@ -861,6 +861,10 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         # current_archive_id is intentionally REST-only — it's stable for the life
         # of a print and needs a DB lookup the WebSocket path shouldn't pay for.
         "current_plate_id": parse_plate_id(state.gcode_file),
+        # Plate-clear gate (#939). Lives on the PrinterManager rather than PrinterState,
+        # so surface it here — without this, WebSocket merges drop the flag and the
+        # "Clear Plate" button only appears when the 30 s REST fallback poll runs.
+        "awaiting_plate_clear": printer_manager.is_awaiting_plate_clear(printer_id) if printer_id else False,
     }
     # Add cover URL if there's an active print and printer_id is provided
     # Include PAUSE state so skip objects modal can show cover

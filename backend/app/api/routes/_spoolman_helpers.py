@@ -87,7 +87,7 @@ def _map_spoolman_spool(spool: dict) -> dict:
         subtype = filament_name or None
 
     # Colour: validate as 6-char hex; fall back to neutral grey for invalid values
-    raw_color = (filament.get("color_hex") or "").upper().lstrip("#")
+    raw_color = (filament.get("color_hex") or "").upper().removeprefix("#")
     color_hex: str = raw_color if _COLOR_HEX_RE.match(raw_color) else "808080"
     rgba: str = color_hex + "FF"
 

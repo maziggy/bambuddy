@@ -1,5 +1,6 @@
 """Unit tests for TailscaleService and Tailscale-aware VirtualPrinterInstance."""
 
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -413,3 +414,211 @@ class TestProvisionCertFQDNValidation:
 
         assert result is True
         assert "myhost.example.ts.net" in mock_run.call_args[0]
+
+
+# =============================================================================
+# Additional coverage: OSError path, JSON error, CertificateService wrapper
+# =============================================================================
+
+
+class TestProvisionCertOSError:
+    """provision_cert returns False when _run_tailscale raises OSError."""
+
+    @pytest.mark.asyncio
+    async def test_oserror_returns_false(self, tmp_path):
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        svc = TailscaleService()
+        with patch.object(svc, "_run_tailscale", new_callable=AsyncMock, side_effect=OSError("no binary")):
+            result = await svc.provision_cert("myhost.ts.net", tmp_path / "c.crt", tmp_path / "k.key")
+
+        assert result is False
+
+
+class TestGetStatusJSONError:
+    """get_status returns available=False when tailscale outputs non-JSON."""
+
+    @pytest.mark.asyncio
+    async def test_bad_json_returns_unavailable(self):
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        svc = TailscaleService()
+        with (
+            patch("shutil.which", return_value="/usr/bin/tailscale"),
+            patch.object(svc, "_run_tailscale", new_callable=AsyncMock, return_value=(0, b"not json {{", b"")),
+        ):
+            status = await svc.get_status()
+
+        assert status.available is False
+        assert status.error is not None
+        assert "JSON" in status.error
+
+
+class TestUseTailscaleCertWrapper:
+    """CertificateService.use_tailscale_cert delegates to tailscale_svc.ensure_cert."""
+
+    @pytest.mark.asyncio
+    async def test_returns_paths_on_success(self, tmp_path):
+        from backend.app.services.virtual_printer.certificate import CertificateService
+
+        svc = CertificateService(cert_dir=tmp_path, serial="00M09A391800001")
+        mock_ts = MagicMock()
+        mock_ts.ensure_cert = AsyncMock(return_value=True)
+
+        result = await svc.use_tailscale_cert("myhost.ts.net", mock_ts)
+
+        assert result == (svc.ts_cert_path, svc.ts_key_path)
+        mock_ts.ensure_cert.assert_called_once_with("myhost.ts.net", svc.ts_cert_path, svc.ts_key_path)
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_failure(self, tmp_path):
+        from backend.app.services.virtual_printer.certificate import CertificateService
+
+        svc = CertificateService(cert_dir=tmp_path, serial="00M09A391800001")
+        mock_ts = MagicMock()
+        mock_ts.ensure_cert = AsyncMock(return_value=False)
+
+        result = await svc.use_tailscale_cert("myhost.ts.net", mock_ts)
+
+        assert result is None
+
+
+# =============================================================================
+# _cert_renewal_loop tests
+# =============================================================================
+
+
+class TestCertRenewalLoop:
+    """Tests for VirtualPrinterInstance._cert_renewal_loop."""
+
+    @pytest.fixture
+    def instance(self, tmp_path):
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        return VirtualPrinterInstance(
+            vp_id=99,
+            name="RenewalTestPrinter",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+
+    @pytest.mark.asyncio
+    async def test_loop_skips_when_fqdn_not_set(self, instance):
+        """Loop does nothing when tailscale_fqdn is None — just sleeps."""
+        instance.tailscale_fqdn = None
+        sleep_call_count = [0]
+
+        async def fast_sleep(n):
+            sleep_call_count[0] += 1
+            if sleep_call_count[0] >= 2:
+                raise asyncio.CancelledError()
+
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch.object(instance._cert_service, "use_tailscale_cert", new_callable=AsyncMock) as mock_use,
+        ):
+            task = asyncio.create_task(instance._cert_renewal_loop())
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        mock_use.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_loop_calls_renewal_when_cert_needs_it(self, instance):
+        """Loop calls use_tailscale_cert when fqdn is set and cert needs renewal."""
+        instance.tailscale_fqdn = "myhost.ts.net"
+
+        async def fast_sleep(n):
+            raise asyncio.CancelledError()
+
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch("backend.app.services.virtual_printer.manager.tailscale_service") as mock_ts,
+            patch.object(
+                instance._cert_service, "use_tailscale_cert", new_callable=AsyncMock, return_value=None
+            ) as mock_use,
+        ):
+            mock_ts.cert_needs_renewal.return_value = True
+            task = asyncio.create_task(instance._cert_renewal_loop())
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        mock_use.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_loop_cancelled_error_exits_cleanly(self, instance):
+        """CancelledError in the sleep breaks the loop without raising."""
+        instance.tailscale_fqdn = None
+
+        async def immediate_cancel(n):
+            raise asyncio.CancelledError()
+
+        with patch("asyncio.sleep", side_effect=immediate_cancel):
+            task = asyncio.create_task(instance._cert_renewal_loop())
+            await task  # must complete without raising
+
+    @pytest.mark.asyncio
+    async def test_loop_backs_off_on_unexpected_error(self, instance):
+        """Unexpected exceptions are logged and the loop backs off with a 3600 s sleep."""
+        instance.tailscale_fqdn = "myhost.ts.net"
+        sleep_args: list[float] = []
+
+        async def tracking_sleep(n):
+            sleep_args.append(n)
+            if len(sleep_args) >= 2:
+                raise asyncio.CancelledError()
+
+        with (
+            patch("asyncio.sleep", side_effect=tracking_sleep),
+            patch("backend.app.services.virtual_printer.manager.tailscale_service") as mock_ts,
+        ):
+            mock_ts.cert_needs_renewal.side_effect = RuntimeError("unexpected db error")
+            task = asyncio.create_task(instance._cert_renewal_loop())
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        assert 3600 in sleep_args
+
+    @pytest.mark.asyncio
+    async def test_loop_schedules_restart_after_renewal(self, instance):
+        """When a renewal succeeds, a restart task is scheduled and the loop exits."""
+        instance.tailscale_fqdn = "myhost.ts.net"
+        restart_scheduled = [False]
+        _real_create_task = asyncio.create_task
+
+        def tracking_create_task(coro, *, name=None):
+            if name and "cert_restart" in name:
+                restart_scheduled[0] = True
+                coro.close()
+                # Return a dummy completed task
+                fut = asyncio.get_event_loop().create_future()
+                fut.set_result(None)
+                return fut
+            return _real_create_task(coro, name=name)
+
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            patch.object(asyncio, "create_task", side_effect=tracking_create_task),
+            patch("backend.app.services.virtual_printer.manager.tailscale_service") as mock_ts,
+            patch.object(
+                instance._cert_service,
+                "use_tailscale_cert",
+                new_callable=AsyncMock,
+                return_value=(instance._cert_service.ts_cert_path, instance._cert_service.ts_key_path),
+            ),
+        ):
+            mock_ts.cert_needs_renewal.return_value = True
+            # Run the loop directly; it exits via break after scheduling the restart
+            task = _real_create_task(instance._cert_renewal_loop())
+            await task
+
+        assert restart_scheduled[0] is True

@@ -451,11 +451,21 @@ class VirtualPrinterInstance:
                     self.tailscale_fqdn = ts_status.fqdn
                     logger.info("[VP %s] Using Tailscale cert for %s", self.name, ts_status.fqdn)
                     return ts_result[0], ts_result[1], ts_status.fqdn
+                logger.warning(
+                    "[VP %s] Tailscale available (%s) but cert provisioning failed, falling back to self-signed cert",
+                    self.name,
+                    ts_status.fqdn,
+                )
+            else:
+                logger.info(
+                    "[VP %s] Tailscale not available (%s), using self-signed cert",
+                    self.name,
+                    ts_status.error or "not connected",
+                )
         except Exception as e:
             logger.warning("[VP %s] Tailscale cert check failed, falling back to self-signed: %s", self.name, e)
 
         self.tailscale_fqdn = None
-        logger.info("[VP %s] Tailscale unavailable, using self-signed cert", self.name)
         cert_path, key_path = self.generate_certificates()
         advertise = self.remote_interface_ip or self.bind_ip or ""
         return cert_path, key_path, advertise

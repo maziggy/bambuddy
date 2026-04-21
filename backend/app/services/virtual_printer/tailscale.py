@@ -31,6 +31,13 @@ _FQDN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Detect tailnets where HTTPS cert generation is disabled — common for company/school
+# tailnets where the user is not a Tailscale admin.
+_HTTPS_DISABLED_RE = re.compile(
+    r"(https? cert.*disabled|not enabled.*tailnet|cert.*not.*enabled)",
+    re.IGNORECASE,
+)
+
 # Minimal environment for tailscale subprocess — passes OS/shell variables that
 # tailscale needs to locate its socket and config, but strips application secrets
 # (JWT keys, DB URLs, SMTP passwords, etc.) that the subprocess has no need for.
@@ -213,11 +220,15 @@ class TailscaleService:
             return False
 
         if returncode is None or returncode != 0:
-            logger.warning(
-                "tailscale cert failed (exit %s): %s",
-                returncode,
-                stderr.decode(errors="replace").strip(),
-            )
+            err_text = stderr.decode(errors="replace").strip()
+            if _HTTPS_DISABLED_RE.search(err_text):
+                logger.warning(
+                    "Tailscale HTTPS certs are not enabled for this tailnet. "
+                    "Visit https://login.tailscale.com/admin/dns and enable HTTPS. "
+                    "Falling back to self-signed cert."
+                )
+            else:
+                logger.warning("tailscale cert failed (exit %s): %s", returncode, err_text)
             return False
 
         # Restrict private key permissions
@@ -225,6 +236,18 @@ class TailscaleService:
             key_path.chmod(0o600)
         except OSError as e:
             logger.warning("Could not set key permissions on %s: %s", key_path, e)
+
+        # Verify the files are readable by the current process — on bare-metal, the
+        # tailscale daemon or a prior sudo invocation may have left them root-owned.
+        if not os.access(cert_path, os.R_OK) or not os.access(key_path, os.R_OK):
+            logger.error(
+                "Tailscale cert files at %s are not readable by this process. "
+                "Fix with: sudo chown $(whoami):$(whoami) %s %s",
+                cert_path.parent,
+                cert_path,
+                key_path,
+            )
+            return False
 
         logger.info("Tailscale cert provisioned: %s", cert_path)
         return True

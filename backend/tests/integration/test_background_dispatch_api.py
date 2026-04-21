@@ -179,6 +179,69 @@ class TestBackgroundDispatchLibraryAPI:
         assert response.status_code == 409
         assert "queue conflict" in response.json()["detail"]
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_print_cleanup_flag_defaults_false(
+        self, async_client: AsyncClient, library_file_factory, printer_factory, db_session, tmp_path
+    ):
+        """Absent cleanup_library_after_dispatch in the request body ⇒ False reaches the dispatcher.
+        Guards the File Manager / Project Detail paths from accidental deletion."""
+        printer = await printer_factory()
+        lib_file = await library_file_factory(filename="filemgr_part.gcode.3mf")
+
+        disk_path = tmp_path / lib_file.file_path
+        disk_path.parent.mkdir(parents=True, exist_ok=True)
+        disk_path.write_bytes(b"library data")
+
+        with (
+            patch("backend.app.api.routes.library.app_settings.base_dir", tmp_path),
+            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
+            patch(
+                "backend.app.services.background_dispatch.background_dispatch.dispatch_print_library_file",
+                new=AsyncMock(return_value={"dispatch_job_id": 30, "dispatch_position": 1}),
+            ) as mock_dispatch,
+        ):
+            response = await async_client.post(
+                f"/api/v1/library/files/{lib_file.id}/print?printer_id={printer.id}",
+                json={},
+            )
+
+        assert response.status_code == 200
+        mock_dispatch.assert_awaited_once()
+        assert mock_dispatch.await_args.kwargs["cleanup_library_after_dispatch"] is False
+        # cleanup flag must never leak into the print-option dict forwarded to MQTT
+        assert "cleanup_library_after_dispatch" not in mock_dispatch.await_args.kwargs["options"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_print_forwards_cleanup_flag_true(
+        self, async_client: AsyncClient, library_file_factory, printer_factory, db_session, tmp_path
+    ):
+        """Direct-Print flow sends cleanup_library_after_dispatch=True, which must reach the dispatcher."""
+        printer = await printer_factory()
+        lib_file = await library_file_factory(filename="transient_part.gcode.3mf")
+
+        disk_path = tmp_path / lib_file.file_path
+        disk_path.parent.mkdir(parents=True, exist_ok=True)
+        disk_path.write_bytes(b"library data")
+
+        with (
+            patch("backend.app.api.routes.library.app_settings.base_dir", tmp_path),
+            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
+            patch(
+                "backend.app.services.background_dispatch.background_dispatch.dispatch_print_library_file",
+                new=AsyncMock(return_value={"dispatch_job_id": 31, "dispatch_position": 1}),
+            ) as mock_dispatch,
+        ):
+            response = await async_client.post(
+                f"/api/v1/library/files/{lib_file.id}/print?printer_id={printer.id}",
+                json={"cleanup_library_after_dispatch": True},
+            )
+
+        assert response.status_code == 200
+        mock_dispatch.assert_awaited_once()
+        assert mock_dispatch.await_args.kwargs["cleanup_library_after_dispatch"] is True
+
 
 class TestBackgroundDispatchCancelAPI:
     """Tests for /background-dispatch cancel endpoint."""

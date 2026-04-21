@@ -4645,6 +4645,7 @@ export const api = {
       timelapse?: boolean;
       use_ams?: boolean;
       project_id?: number;
+      cleanup_library_after_dispatch?: boolean;
     }
   ) =>
     request<BackgroundDispatchResponse>(

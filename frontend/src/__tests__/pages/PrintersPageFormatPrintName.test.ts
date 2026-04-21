@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { formatPrintName } from '../../pages/PrintersPage';
+import { formatPrintName } from '../../utils/printName';
 
 // Minimal translator stub: returns the fallback with the plate number interpolated
 // the same way i18next would. Keeps these tests independent of the i18n setup.

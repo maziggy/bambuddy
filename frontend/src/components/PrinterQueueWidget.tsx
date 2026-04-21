@@ -1,11 +1,8 @@
-import { useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Clock, Calendar, ChevronRight, Loader2, CircleCheck } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Clock, Calendar, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import { useAuth } from '../contexts/AuthContext';
-import { useToast } from '../contexts/ToastContext';
 import { formatRelativeTime } from '../utils/date';
 import { filterCompatibleQueueItems } from '../utils/printer';
 
@@ -20,97 +17,24 @@ interface PrinterQueueWidgetProps {
   loadedFilaments?: Set<string>;  // "TYPE:rrggbb" pairs for filament override color matching
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, awaitingPlateClear, requirePlateClear = false, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-  const { hasPermission } = useAuth();
   const { data: queue } = useQuery({
     queryKey: ['queue', printerId, 'pending', printerModel],
     queryFn: () => api.getQueue(printerId, 'pending', printerModel || undefined),
     refetchInterval: 30000,
   });
 
-  const clearPlateMutation = useMutation({
-    mutationFn: () => api.clearPlate(printerId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['queue', printerId] });
-      queryClient.invalidateQueries({ queryKey: ['printerStatus', printerId] });
-      showToast(t('queue.clearPlateSuccess'), 'success');
-    },
-    onError: (err: Error) => {
-      showToast(err.message, 'error');
-    },
-  });
-
-  // Reset mutation state when the awaiting flag clears so the button is clickable
-  // again after the next finished print (fixes #912). The flag is the authoritative
-  // signal — state alone is not reliable across power cycles (#961).
-  useEffect(() => {
-    if (!awaitingPlateClear) {
-      clearPlateMutation.reset();
-    }
-  }, [awaitingPlateClear, clearPlateMutation]);
-
   // Filter queue to items this printer can actually print (filament type + color check)
   const compatibleQueue = queue ? filterCompatibleQueueItems(queue, loadedFilamentTypes, loadedFilaments) : undefined;
 
-  // Split into auto-dispatchable vs staged (manual_start) items
-  const autoDispatchQueue = compatibleQueue?.filter(item => !item.manual_start) ?? [];
   const totalPending = compatibleQueue?.length || 0;
 
   if (totalPending === 0) {
     return null;
   }
 
-  const nextAutoItem = autoDispatchQueue[0];
   const nextItem = compatibleQueue?.[0];
-  // Prompt "Clear Plate & Start Next" whenever the backend flags the printer as awaiting
-  // acknowledgment. Don't gate on reported state: after Auto Off cycles the printer, it
-  // boots into IDLE while still awaiting — the prompt must survive that (#961). The flag
-  // is cleared by the backend on ack or when the next print dispatches.
-  const needsClearPlate = requirePlateClear && !!awaitingPlateClear && autoDispatchQueue.length > 0;
-
-  if (needsClearPlate) {
-    const displayItem = nextAutoItem || nextItem;
-    return (
-      <div className="mb-3 p-3 bg-bambu-dark rounded-lg border border-yellow-400/30">
-        <div className="flex items-center gap-3 mb-2">
-          <Calendar className="w-5 h-5 text-yellow-400 flex-shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-bambu-gray">{t('queue.nextInQueue')}</p>
-            <p className="text-sm text-white truncate">
-              {displayItem?.archive_name || displayItem?.library_file_name || `File #${displayItem?.archive_id || displayItem?.library_file_id}`}
-            </p>
-          </div>
-          {totalPending > 1 && (
-            <span className="text-xs px-1.5 py-0.5 bg-yellow-400/20 text-yellow-400 rounded flex-shrink-0">
-              +{totalPending - 1}
-            </span>
-          )}
-        </div>
-        {clearPlateMutation.isSuccess ? (
-          <div className="w-full py-2 px-3 rounded-lg bg-bambu-green/10 border border-bambu-green/20 text-bambu-green text-sm flex items-center justify-center gap-2">
-            <CircleCheck className="w-4 h-4" />
-            {t('queue.plateReady')}
-          </div>
-        ) : (
-          <button
-            onClick={() => clearPlateMutation.mutate()}
-            disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
-            className="w-full py-2 px-3 rounded-lg bg-bambu-green/20 border border-bambu-green/40 text-bambu-green hover:bg-bambu-green/30 transition-colors text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {clearPlateMutation.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <CircleCheck className="w-4 h-4" />
-            )}
-            {t('queue.clearPlate')}
-          </button>
-        )}
-      </div>
-    );
-  }
 
   return (
     <Link

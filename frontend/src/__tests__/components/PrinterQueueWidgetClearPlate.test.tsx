@@ -1,14 +1,11 @@
 /**
- * Tests for the PrinterQueueWidget clear plate behavior.
+ * Tests for PrinterQueueWidget queue-card behavior.
  *
- * When the printer is in FINISH or FAILED state and has pending queue items,
- * the widget shows a "Clear Plate & Start Next" button instead of the
- * passive queue link. After clicking, it shows a confirmation state.
+ * The queued clear-plate action lives on the printer card, not in this widget.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { PrinterQueueWidget } from '../../components/PrinterQueueWidget';
 import { http, HttpResponse } from 'msw';
@@ -56,21 +53,25 @@ describe('PrinterQueueWidget - Clear Plate', () => {
     );
   });
 
-  describe('clear plate button visibility', () => {
-    it('shows clear plate button when printer state is FINISH', async () => {
+  describe('queued clear plate button visibility', () => {
+    it('shows passive link when printer state is FINISH', async () => {
       render(<PrinterQueueWidget printerId={1} printerState="FINISH" awaitingPlateClear={true} requirePlateClear={true} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
+        const link = screen.getByRole('link');
+        expect(link).toHaveAttribute('href', '/queue');
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
-    it('shows clear plate button when printer state is FAILED', async () => {
+    it('shows passive link when printer state is FAILED', async () => {
       render(<PrinterQueueWidget printerId={1} printerState="FAILED" awaitingPlateClear={true} requirePlateClear={true} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
+        const link = screen.getByRole('link');
+        expect(link).toHaveAttribute('href', '/queue');
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
     it('shows passive link when printer state is IDLE', async () => {
@@ -124,24 +125,24 @@ describe('PrinterQueueWidget - Clear Plate', () => {
       expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
-    // Regression for #961: after Auto Off cycles the printer it boots into IDLE while
-    // still awaiting plate-clear ack. The prompt must still show — the ack state, not
-    // the reported printer state, is the authoritative signal.
-    it('shows clear plate button in IDLE state when awaitingPlateClear is true (#961)', async () => {
+    it('shows passive link in IDLE state when awaitingPlateClear is true (#961)', async () => {
       render(<PrinterQueueWidget printerId={1} printerState="IDLE" awaitingPlateClear={true} requirePlateClear={true} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
+        const link = screen.getByRole('link');
+        expect(link).toHaveAttribute('href', '/queue');
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
-    it('shows clear plate button with no printerState when awaitingPlateClear is true', async () => {
-      // State may be null briefly after a reconnect; the widget must still gate on the flag.
+    it('shows passive link with no printerState when awaitingPlateClear is true', async () => {
       render(<PrinterQueueWidget printerId={1} awaitingPlateClear={true} requirePlateClear={true} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
+        const link = screen.getByRole('link');
+        expect(link).toHaveAttribute('href', '/queue');
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
   });
 
@@ -163,56 +164,12 @@ describe('PrinterQueueWidget - Clear Plate', () => {
     });
   });
 
-  describe('clear plate action', () => {
-    it('shows confirmation state after clicking clear plate', async () => {
-      const user = userEvent.setup();
-      render(<PrinterQueueWidget printerId={1} printerState="FINISH" awaitingPlateClear={true} requirePlateClear={true} />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByText('Clear Plate & Start Next'));
-
-      await waitFor(() => {
-        // Both the widget confirmation and the toast show this text
-        const elements = screen.getAllByText('Plate cleared — ready for next print');
-        expect(elements.length).toBeGreaterThanOrEqual(1);
-      });
-    });
-
-    it('shows error toast on API failure', async () => {
-      server.use(
-        http.post('/api/v1/printers/:id/clear-plate', () => {
-          return HttpResponse.json(
-            { detail: 'Printer not connected' },
-            { status: 400 }
-          );
-        })
-      );
-
-      const user = userEvent.setup();
-      render(<PrinterQueueWidget printerId={1} printerState="FAILED" awaitingPlateClear={true} requirePlateClear={true} />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByText('Clear Plate & Start Next'));
-
-      // Button should remain visible (not transition to success state)
-      await waitFor(() => {
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
-      });
-    });
-  });
-
   describe('empty queue', () => {
     it('renders nothing in FINISH state with no queue items', async () => {
       const { container } = render(<PrinterQueueWidget printerId={999} printerState="FINISH" awaitingPlateClear={true} />);
 
       await waitFor(() => {
-        expect(container.querySelector('button')).not.toBeInTheDocument();
+        expect(container.querySelector('a')).not.toBeInTheDocument();
       });
     });
   });
@@ -249,7 +206,7 @@ describe('PrinterQueueWidget - Clear Plate', () => {
 
       // Wait for query to settle, then confirm widget is not rendered
       await waitFor(() => {
-        expect(container.querySelector('button')).not.toBeInTheDocument();
+        expect(container.querySelector('a')).not.toBeInTheDocument();
       });
       expect(screen.queryByText('PETG Print')).not.toBeInTheDocument();
     });
@@ -271,8 +228,8 @@ describe('PrinterQueueWidget - Clear Plate', () => {
 
       await waitFor(() => {
         expect(screen.getByText('PETG Print')).toBeInTheDocument();
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
     it('shows widget when queue item has no required_filament_types', async () => {
@@ -289,8 +246,8 @@ describe('PrinterQueueWidget - Clear Plate', () => {
 
       await waitFor(() => {
         expect(screen.getByText('First Print')).toBeInTheDocument();
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
     it('shows widget when loadedFilamentTypes prop is not provided', async () => {
@@ -304,8 +261,8 @@ describe('PrinterQueueWidget - Clear Plate', () => {
 
       await waitFor(() => {
         expect(screen.getByText('PETG Print')).toBeInTheDocument();
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
     it('skips incompatible first item and shows compatible second item', async () => {
@@ -387,8 +344,8 @@ describe('PrinterQueueWidget - Clear Plate', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Petg Print')).toBeInTheDocument();
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
   });
 
@@ -425,7 +382,7 @@ describe('PrinterQueueWidget - Clear Plate', () => {
       );
 
       await waitFor(() => {
-        expect(container.querySelector('button')).not.toBeInTheDocument();
+        expect(container.querySelector('a')).not.toBeInTheDocument();
       });
       expect(screen.queryByText('White PETG Print')).not.toBeInTheDocument();
     });
@@ -448,8 +405,8 @@ describe('PrinterQueueWidget - Clear Plate', () => {
 
       await waitFor(() => {
         expect(screen.getByText('White PETG Print')).toBeInTheDocument();
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
     it('normalizes override color format (strips # and lowercases)', async () => {
@@ -587,12 +544,14 @@ describe('PrinterQueueWidget - Clear Plate', () => {
       expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
-    it('shows clear plate button when requirePlateClear is true (explicit)', async () => {
+    it('shows passive link when requirePlateClear is true (explicit)', async () => {
       render(<PrinterQueueWidget printerId={1} printerState="FINISH" awaitingPlateClear={true} requirePlateClear={true} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
+        const link = screen.getByRole('link');
+        expect(link).toHaveAttribute('href', '/queue');
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
     it('shows passive link when requirePlateClear is not provided (defaults to false)', async () => {
@@ -635,7 +594,7 @@ describe('PrinterQueueWidget - Clear Plate', () => {
       expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
 
-    it('shows clear plate button when mix of staged and auto-dispatch items', async () => {
+    it('shows passive link when mix of staged and auto-dispatch items', async () => {
       const mixedItems = [
         { id: 10, printer_id: 1, archive_id: 1, position: 1, status: 'pending', archive_name: 'Staged Print', manual_start: true, scheduled_time: null },
         { id: 11, printer_id: 1, archive_id: 2, position: 2, status: 'pending', archive_name: 'Auto Print', manual_start: false, scheduled_time: null },
@@ -647,8 +606,9 @@ describe('PrinterQueueWidget - Clear Plate', () => {
       render(<PrinterQueueWidget printerId={1} printerState="FINISH" awaitingPlateClear={true} requirePlateClear={true} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
+        expect(screen.getByText('Staged Print')).toBeInTheDocument();
       });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
     });
   });
 });

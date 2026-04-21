@@ -1679,6 +1679,11 @@ function PrinterCard({
       {plateStatus.label}
     </span>
   ) : null;
+  const plateStatusBadge = plateStatus ? (
+    <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${plateStatus.className}`}>
+      {plateStatus.label}
+    </span>
+  ) : null;
 
   // Determine if this card should be hidden (use cached connected state to prevent flicker)
   const shouldHide = hideIfDisconnected && isConnected === false;
@@ -2458,6 +2463,7 @@ function PrinterCard({
                 )}
                 {status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
               </span>
+              {plateStatusBadge}
               {/* Network connection indicator */}
               {status?.connected && status?.wired_network && (
                 <span
@@ -2733,7 +2739,6 @@ function PrinterCard({
                         <>
                           <div className="mb-1 flex items-center gap-2">
                             <p className="text-sm text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
-                            {plateStatusPill}
                           </div>
                           <p className="text-white text-sm mb-2 truncate">
                             {formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t, activePlateLabel)}
@@ -2780,7 +2785,6 @@ function PrinterCard({
                             <p className="text-white text-sm">
                               {getStatusDisplay(status.state, status.stg_cur_name)}
                             </p>
-                            {plateStatusPill}
                           </div>
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">

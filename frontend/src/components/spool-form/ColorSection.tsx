@@ -298,8 +298,18 @@ export function ColorSection({
                 placeholder="RRGGBB"
                 value={currentHex.toUpperCase()}
                 onChange={(e) => {
-                  const val = e.target.value.replace('#', '').replace(/[^0-9A-Fa-f]/g, '');
-                  if (val.length <= 8) updateField('rgba', val.toUpperCase() + (val.length <= 6 ? 'FF' : ''));
+                  const val = e.target.value.replace('#', '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+                  if (val.length > 8) return;
+                  // Normalize to a valid 8-char RRGGBBAA on every keystroke so
+                  // the backend never receives a malformed rgba (#1055). 8-char
+                  // paste passes through; 7-char drops the stray typo; anything
+                  // shorter is right-padded with '0' to a full RGB triplet and
+                  // given FF alpha. Prior logic emitted 3/5/7-char strings mid-
+                  // typing that PATCH would accept (SpoolUpdate was unchecked)
+                  // and later 500 the list endpoint on response serialization.
+                  const rgba =
+                    val.length === 8 ? val : val.length === 7 ? val.substring(0, 6) + 'FF' : val.padEnd(6, '0') + 'FF';
+                  updateField('rgba', rgba);
                 }}
               />
             </div>

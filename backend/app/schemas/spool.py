@@ -41,7 +41,7 @@ class SpoolUpdate(BaseModel):
     material: str | None = None
     subtype: str | None = None
     color_name: str | None = None
-    rgba: str | None = None
+    rgba: str | None = Field(None, pattern=r"^[0-9A-Fa-f]{8}$")
     brand: str | None = None
     label_weight: int | None = None
     core_weight: int | None = None
@@ -82,6 +82,11 @@ class SpoolKProfileResponse(SpoolKProfileBase):
 
 class SpoolResponse(SpoolBase):
     id: int
+    # rgba is intentionally unconstrained on the response side: the write paths
+    # (SpoolCreate, SpoolUpdate) enforce the 8-char hex pattern, but legacy rows
+    # or data sourced from AMS firmware / backups may carry malformed values.
+    # A single bad row must not 500 the entire inventory list endpoint (#1055).
+    rgba: str | None = None
     added_full: bool | None = None
     last_used: datetime | None = None
     encode_time: datetime | None = None

@@ -55,6 +55,7 @@ class PrintDispatchJob:
     requested_by_user_id: int | None = None
     requested_by_username: str | None = None
     project_id: int | None = None
+    cleanup_library_after_dispatch: bool = False
 
 
 @dataclass(slots=True)
@@ -162,6 +163,7 @@ class BackgroundDispatchService:
         requested_by_user_id: int | None,
         requested_by_username: str | None,
         project_id: int | None = None,
+        cleanup_library_after_dispatch: bool = False,
     ) -> dict[str, Any]:
         return await self._dispatch(
             kind="print_library_file",
@@ -173,6 +175,7 @@ class BackgroundDispatchService:
             requested_by_user_id=requested_by_user_id,
             requested_by_username=requested_by_username,
             project_id=project_id,
+            cleanup_library_after_dispatch=cleanup_library_after_dispatch,
         )
 
     async def cancel_job(self, job_id: int) -> dict[str, Any]:
@@ -261,6 +264,7 @@ class BackgroundDispatchService:
         requested_by_user_id: int | None,
         requested_by_username: str | None,
         project_id: int | None = None,
+        cleanup_library_after_dispatch: bool = False,
     ) -> dict[str, Any]:
         async with self._lock:
             has_pending_for_printer = any(job.printer_id == printer_id for job in self._queued_jobs)
@@ -284,6 +288,7 @@ class BackgroundDispatchService:
                 requested_by_user_id=requested_by_user_id,
                 requested_by_username=requested_by_username,
                 project_id=project_id,
+                cleanup_library_after_dispatch=cleanup_library_after_dispatch,
             )
             self._next_job_id += 1
             self._batch_total += 1
@@ -728,6 +733,7 @@ class BackgroundDispatchService:
                 source_file=file_path,
                 original_filename=lib_file.filename,
                 project_id=job.project_id,
+                created_by_id=job.requested_by_user_id,
             )
             if not archive:
                 raise RuntimeError("Failed to create archive")
@@ -855,7 +861,34 @@ class BackgroundDispatchService:
                 if pre_state:
                     asyncio.create_task(self._verify_print_response(job.printer_id, printer_name, pre_state))
 
+                if job.requested_by_user_id and job.requested_by_username:
+                    printer_manager.set_current_print_user(
+                        job.printer_id,
+                        job.requested_by_user_id,
+                        job.requested_by_username,
+                    )
+
+                # Direct-Print flow only: archive_print copies, so deleting the
+                # transient library row + files here leaves archive intact. Disk
+                # deletes run only after commit so a rollback leaves no orphan.
+                cleanup_disk_paths: list[Path] = []
+                if job.cleanup_library_after_dispatch and not lib_file.is_external:
+                    cleanup_disk_paths.append(file_path)
+                    if lib_file.thumbnail_path:
+                        thumb_path = Path(lib_file.thumbnail_path)
+                        if not thumb_path.is_absolute():
+                            thumb_path = Path(settings.base_dir) / lib_file.thumbnail_path
+                        cleanup_disk_paths.append(thumb_path)
+                    await db.delete(lib_file)
+
                 await db.commit()
+
+                for cleanup_path in cleanup_disk_paths:
+                    try:
+                        if cleanup_path.exists():
+                            cleanup_path.unlink()
+                    except OSError as cleanup_err:
+                        logger.warning("Failed to delete transient library file %s: %s", cleanup_path, cleanup_err)
             except DispatchJobCancelled:
                 await db.rollback()
                 await self._set_active_message(job, f"Cancelled upload on {printer_name}.")

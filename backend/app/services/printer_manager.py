@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import traceback
 from collections.abc import Callable
 
@@ -622,6 +623,22 @@ def get_derived_status_name(state: PrinterState, model: str | None = None) -> st
     return None
 
 
+_PLATE_ID_RE = re.compile(r"plate_(\d+)\.gcode")
+
+
+def parse_plate_id(gcode_file: str | None) -> int | None:
+    """Extract the 1-indexed plate number from a Bambu gcode_file path.
+
+    Returns None when the path is missing or has no `plate_N.gcode` segment.
+    Shared by the REST status route and the WebSocket push path so both agree
+    on the value sent to the frontend (#881 follow-up).
+    """
+    if not gcode_file:
+        return None
+    match = _PLATE_ID_RE.search(gcode_file)
+    return int(match.group(1)) if match else None
+
+
 def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, model: str | None = None) -> dict:
     """Convert PrinterState to a JSON-serializable dict.
 
@@ -838,6 +855,12 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         ],
         # AMS drying support
         "supports_drying": supports_drying(model, state.firmware_version),
+        # 1-indexed plate number parsed from gcode_file (e.g. /Metadata/plate_2.gcode).
+        # Pushed via WebSocket so the printer card picks up plate transitions within
+        # a multi-plate 3MF without waiting for the 30 s REST poll (#881 follow-up).
+        # current_archive_id is intentionally REST-only — it's stable for the life
+        # of a print and needs a DB lookup the WebSocket path shouldn't pay for.
+        "current_plate_id": parse_plate_id(state.gcode_file),
     }
     # Add cover URL if there's an active print and printer_id is provided
     # Include PAUSE state so skip objects modal can show cover

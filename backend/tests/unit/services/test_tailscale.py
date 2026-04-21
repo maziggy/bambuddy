@@ -113,6 +113,7 @@ class TestTailscaleService:
 
         cert_path = tmp_path / "ts.crt"
         key_path = tmp_path / "ts.key"
+        cert_path.write_text("fake-cert")
         key_path.write_text("fake-key")
 
         svc = TailscaleService()
@@ -407,10 +408,12 @@ class TestProvisionCertFQDNValidation:
         from backend.app.services.virtual_printer.tailscale import TailscaleService
 
         key_path = tmp_path / "k.key"
+        cert_path = tmp_path / "c.crt"
+        cert_path.write_text("fake-cert")
         key_path.write_text("fake")
         svc = TailscaleService()
         with patch.object(svc, "_run_tailscale", new_callable=AsyncMock, return_value=(0, b"", b"")) as mock_run:
-            result = await svc.provision_cert("myhost.example.ts.net", tmp_path / "c.crt", key_path)
+            result = await svc.provision_cert("myhost.example.ts.net", cert_path, key_path)
 
         assert result is True
         assert "myhost.example.ts.net" in mock_run.call_args[0]
@@ -433,6 +436,77 @@ class TestProvisionCertOSError:
             result = await svc.provision_cert("myhost.ts.net", tmp_path / "c.crt", tmp_path / "k.key")
 
         assert result is False
+
+
+class TestProvisionCertHTTPSDisabled:
+    """provision_cert logs an actionable message when the tailnet has HTTPS certs disabled."""
+
+    @pytest.mark.asyncio
+    async def test_https_disabled_logs_admin_url(self, tmp_path, caplog):
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        svc = TailscaleService()
+        disabled_stderr = b"HTTPS cert generation is disabled for this tailnet"
+        with (
+            patch.object(
+                svc,
+                "_run_tailscale",
+                new_callable=AsyncMock,
+                return_value=(1, b"", disabled_stderr),
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            result = await svc.provision_cert("myhost.ts.net", tmp_path / "c.crt", tmp_path / "k.key")
+
+        assert result is False
+        assert "login.tailscale.com/admin/dns" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_generic_error_logs_exit_code(self, tmp_path, caplog):
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        svc = TailscaleService()
+        with (
+            patch.object(
+                svc,
+                "_run_tailscale",
+                new_callable=AsyncMock,
+                return_value=(1, b"", b"some other error"),
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            result = await svc.provision_cert("myhost.ts.net", tmp_path / "c.crt", tmp_path / "k.key")
+
+        assert result is False
+        assert "exit 1" in caplog.text
+        assert "login.tailscale.com" not in caplog.text
+
+
+class TestProvisionCertReadability:
+    """provision_cert returns False when cert files are not readable after provisioning."""
+
+    @pytest.mark.asyncio
+    async def test_unreadable_key_returns_false(self, tmp_path, caplog):
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        svc = TailscaleService()
+        cert_path = tmp_path / "c.crt"
+        key_path = tmp_path / "k.key"
+        with (
+            patch.object(
+                svc,
+                "_run_tailscale",
+                new_callable=AsyncMock,
+                return_value=(0, b"", b""),
+            ),
+            patch("os.access", return_value=False),
+            caplog.at_level("ERROR"),
+        ):
+            result = await svc.provision_cert("myhost.ts.net", cert_path, key_path)
+
+        assert result is False
+        assert "not readable" in caplog.text
+        assert "chown" in caplog.text
 
 
 class TestGetStatusJSONError:

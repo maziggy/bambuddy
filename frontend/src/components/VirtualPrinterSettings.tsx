@@ -69,7 +69,7 @@ export function VirtualPrinterSettings() {
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: (data: { enabled?: boolean; access_code?: string; mode?: LocalMode; model?: string; target_printer_id?: number; remote_interface_ip?: string }) =>
+    mutationFn: (data: { enabled?: boolean; access_code?: string; mode?: LocalMode; model?: string; target_printer_id?: number; remote_interface_ip?: string; tailscale_disabled?: boolean }) =>
       virtualPrinterApi.updateSettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['virtual-printer-settings'] });

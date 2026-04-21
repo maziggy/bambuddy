@@ -253,12 +253,22 @@ export function SpoolFormModal({
   useEffect(() => {
     if (isOpen) {
       if (spool) {
+        // Legacy rows may carry a malformed rgba (e.g. the 7-char 'FFFFFFF'
+        // from #1055 before the create/update pattern was enforced). The
+        // backend SpoolUpdate schema rejects non-8-char hex on PATCH, so
+        // re-submitting a malformed value would 422 every edit on that spool
+        // — even edits that don't touch color. Normalize on load: any value
+        // that isn't exactly 8 hex chars falls back to the default, so the
+        // user can save unrelated fields (weight, material, note) without
+        // first being forced to fix a color they may not even be aware is
+        // broken. Saving also purges the bad value from the DB.
+        const validRgba = spool.rgba && /^[0-9A-Fa-f]{8}$/.test(spool.rgba) ? spool.rgba : '808080FF';
         setFormData({
           material: spool.material || '',
           subtype: spool.subtype || '',
           brand: spool.brand || '',
           color_name: spool.color_name || '',
-          rgba: spool.rgba || '808080FF',
+          rgba: validRgba,
           label_weight: spool.label_weight || 1000,
           core_weight: spool.core_weight || 250,
           core_weight_catalog_id: spool.core_weight_catalog_id ?? null,

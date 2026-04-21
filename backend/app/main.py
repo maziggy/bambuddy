@@ -4341,7 +4341,7 @@ async def security_headers_middleware(request, call_next):
         "font-src 'self' data: https://fonts.gstatic.com; "
         "object-src 'none'; "
         "base-uri 'self'; "
-        "frame-src 'self' https:; "
+        "frame-src 'self' http: https:; "
         "frame-ancestors 'none';"
     )
     if request.url.scheme == "https":

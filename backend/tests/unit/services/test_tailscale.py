@@ -696,3 +696,224 @@ class TestCertRenewalLoop:
             await task
 
         assert restart_scheduled[0] is True
+
+
+# =============================================================================
+# New tests for PR #1067 review feedback fixes
+# =============================================================================
+
+
+class TestGetStatusTimeout:
+    """TimeoutError in get_status() returns unavailable instead of propagating."""
+
+    @pytest.mark.asyncio
+    async def test_get_status_timeout_returns_unavailable(self):
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        svc = TailscaleService()
+        with (
+            patch("shutil.which", return_value="/usr/bin/tailscale"),
+            patch.object(svc, "_run_tailscale", new_callable=AsyncMock, side_effect=asyncio.TimeoutError),
+        ):
+            status = await svc.get_status()
+
+        assert status.available is False
+        assert status.error is not None
+        assert "timed out" in status.error
+
+
+class TestProvisionCertTimeout:
+    """TimeoutError in provision_cert() returns False instead of propagating."""
+
+    @pytest.mark.asyncio
+    async def test_provision_cert_timeout_returns_false(self, tmp_path):
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        svc = TailscaleService()
+        with patch.object(svc, "_run_tailscale", new_callable=AsyncMock, side_effect=asyncio.TimeoutError):
+            result = await svc.provision_cert("myhost.ts.net", tmp_path / "ts.crt", tmp_path / "ts.key")
+
+        assert result is False
+
+
+class TestDockerSocketHint:
+    """Docker socket hint is logged when binary is absent inside a container."""
+
+    @pytest.mark.asyncio
+    async def test_docker_hint_logged_when_socket_absent(self, tmp_path, caplog):
+        import logging
+
+        from backend.app.services.virtual_printer.tailscale import TailscaleService
+
+        docker_env = tmp_path / ".dockerenv"
+        docker_env.touch()
+        # No tailscaled.sock file — don't create it
+
+        svc = TailscaleService()
+        with (
+            patch("shutil.which", return_value=None),
+            patch("backend.app.services.virtual_printer.tailscale.Path") as mock_path_cls,
+        ):
+
+            def path_side_effect(arg):
+                if arg == "/.dockerenv":
+                    return docker_env
+                if arg == "/var/run/tailscale/tailscaled.sock":
+                    return tmp_path / "missing_sock"  # does not exist
+                return Path(arg)
+
+            mock_path_cls.side_effect = path_side_effect
+
+            with caplog.at_level(logging.INFO, logger="backend.app.services.virtual_printer.tailscale"):
+                await svc.get_status()
+
+        assert any("volumes" in record.message for record in caplog.records)
+
+
+class TestProxyModeSkipsTailscale:
+    """Proxy-mode VP always uses self-signed cert regardless of Tailscale availability."""
+
+    @pytest.fixture
+    def proxy_instance(self, tmp_path):
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        return VirtualPrinterInstance(
+            vp_id=10,
+            name="ProxyPrinter",
+            mode="proxy",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            target_printer_ip="192.168.1.10",
+            target_printer_serial="01P00A391800001",
+            base_dir=tmp_path,
+        )
+
+    @pytest.mark.asyncio
+    async def test_proxy_mode_tailscale_fqdn_stays_none(self, proxy_instance):
+        """tailscale_fqdn is None after cert resolution in proxy mode."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleStatus
+
+        mock_ts = MagicMock()
+        mock_ts.get_status = AsyncMock(
+            return_value=TailscaleStatus(
+                available=True,
+                hostname="myhost",
+                tailnet_name="ts.net",
+                fqdn="myhost.ts.net",
+            )
+        )
+
+        with patch("backend.app.services.virtual_printer.manager.tailscale_service", mock_ts):
+            cert_path, key_path, advertise = await proxy_instance._resolve_cert_and_advertise()
+
+        assert proxy_instance.tailscale_fqdn is None
+        # Tailscale was never queried
+        mock_ts.get_status.assert_not_called()
+
+
+class TestCancelRenewalTaskLogsException:
+    """_cancel_renewal_task logs unexpected exceptions instead of silencing them."""
+
+    @pytest.fixture
+    def instance(self, tmp_path):
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        return VirtualPrinterInstance(
+            vp_id=2,
+            name="LogTestPrinter",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+
+    @pytest.mark.asyncio
+    async def test_unexpected_exception_is_logged(self, instance, caplog):
+        import logging
+
+        async def raise_runtime():
+            raise RuntimeError("unexpected bug")
+
+        instance._cert_renewal_task = asyncio.create_task(raise_runtime())
+        # Let the task fail
+        await asyncio.sleep(0)
+
+        with caplog.at_level(logging.WARNING, logger="backend.app.services.virtual_printer.manager"):
+            await instance._cancel_renewal_task()
+
+        assert any("unexpected" in r.message.lower() or "Unexpected" in r.message for r in caplog.records)
+        assert instance._cert_renewal_task is None
+
+
+class TestRestartFailureRespawnsRenewalLoop:
+    """_restart_for_cert_renewal re-spawns the renewal loop when start fails."""
+
+    @pytest.fixture
+    def instance(self, tmp_path):
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        return VirtualPrinterInstance(
+            vp_id=3,
+            name="RestartTestPrinter",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+
+    @pytest.mark.asyncio
+    async def test_renewal_task_respawned_after_failed_restart(self, instance):
+        with (
+            patch.object(instance, "stop_server", new_callable=AsyncMock),
+            patch.object(instance, "start_server", new_callable=AsyncMock, side_effect=RuntimeError("start failed")),
+        ):
+            instance._cert_renewal_task = None
+            await instance._restart_for_cert_renewal()
+
+        assert instance._cert_renewal_task is not None
+        instance._cert_renewal_task.cancel()
+        try:
+            await instance._cert_renewal_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
+class TestCertRestartTaskCancelledOnStop:
+    """VP deletion while restart is in-flight cancels the restart task cleanly."""
+
+    @pytest.fixture
+    def instance(self, tmp_path):
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        return VirtualPrinterInstance(
+            vp_id=4,
+            name="StopDuringRestartPrinter",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+
+    @pytest.mark.asyncio
+    async def test_restart_task_cancelled_on_stop(self, instance):
+        """_cancel_restart_task cancels an in-flight restart and clears the reference."""
+        cancelled = []
+
+        async def long_restart():
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                cancelled.append(True)
+                raise
+
+        instance._cert_restart_task = asyncio.create_task(long_restart())
+        await asyncio.sleep(0)  # let the task start
+
+        await instance._cancel_restart_task()
+
+        assert cancelled == [True]
+        assert instance._cert_restart_task is None

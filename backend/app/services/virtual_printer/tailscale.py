@@ -113,6 +113,16 @@ class TailscaleService:
             raise
         return process.returncode, stdout, stderr
 
+    @staticmethod
+    def _log_docker_socket_hint() -> None:
+        """Log a mount hint when running in Docker without the Tailscale socket."""
+        if Path("/.dockerenv").exists() and not Path("/var/run/tailscale/tailscaled.sock").exists():
+            logger.info(
+                "Docker environment detected — Tailscale socket not mounted. "
+                "To enable Tailscale certs in Docker, add to your compose service: "
+                "volumes: - /var/run/tailscale:/var/run/tailscale"
+            )
+
     async def get_status(self) -> TailscaleStatus:
         """Query Tailscale status and return machine identity.
 
@@ -122,6 +132,7 @@ class TailscaleService:
         the daemon is not running, or any other error occurs.
         """
         if not shutil.which("tailscale"):
+            self._log_docker_socket_hint()
             return TailscaleStatus(
                 available=False,
                 hostname="",
@@ -132,6 +143,14 @@ class TailscaleService:
 
         try:
             returncode, stdout, stderr = await self._run_tailscale("status", "--json", timeout=5.0)
+        except asyncio.TimeoutError:
+            return TailscaleStatus(
+                available=False,
+                hostname="",
+                tailnet_name="",
+                fqdn="",
+                error="tailscale status timed out",
+            )
         except OSError as e:
             return TailscaleStatus(
                 available=False,
@@ -215,6 +234,9 @@ class TailscaleService:
                 fqdn,
                 timeout=60.0,
             )
+        except asyncio.TimeoutError:
+            logger.warning("tailscale cert timed out for %s", fqdn)
+            return False
         except OSError as e:
             logger.warning("tailscale cert failed (OS error): %s", e)
             return False

@@ -162,6 +162,7 @@ class VirtualPrinterInstance:
         self._ssdp_proxy: SSDPProxy | None = None
         self._tasks: list[asyncio.Task] = []
         self._cert_renewal_task: asyncio.Task | None = None
+        self._cert_restart_task: asyncio.Task | None = None
 
     @property
     def serial(self) -> str:
@@ -377,9 +378,21 @@ class VirtualPrinterInstance:
             self._cert_renewal_task.cancel()
             try:
                 await self._cert_renewal_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning("[VP %s] Unexpected error in cert renewal task: %s", self.name, e)
+            self._cert_renewal_task = None
+
+    async def _cancel_restart_task(self) -> None:
+        """Cancel the in-flight cert restart task if the VP is stopped before it completes."""
+        if self._cert_restart_task and not self._cert_restart_task.done():
+            self._cert_restart_task.cancel()
+            try:
+                await self._cert_restart_task
             except (asyncio.CancelledError, Exception):
                 pass
-            self._cert_renewal_task = None
+        self._cert_restart_task = None
 
     async def _restart_for_cert_renewal(self) -> None:
         """Restart VP services to load the newly renewed Tailscale cert into TLS listeners."""
@@ -393,6 +406,11 @@ class VirtualPrinterInstance:
                 await self.start_server()
         except Exception as e:
             logger.error("[VP %s] Failed to restart after cert renewal: %s", self.name, e)
+            # Ensure the renewal loop keeps running so the next daily check still fires
+            if not self._cert_renewal_task or self._cert_renewal_task.done():
+                self._cert_renewal_task = asyncio.create_task(
+                    self._cert_renewal_loop(), name=f"vp_{self.id}_cert_renewal"
+                )
 
     async def _cert_renewal_loop(self) -> None:
         """Daily background check for Tailscale cert renewal while VP is running.
@@ -421,7 +439,7 @@ class VirtualPrinterInstance:
                             # Schedule restart in a separate task; this loop ends here
                             # so the restart can cleanly cancel _cert_renewal_task and
                             # create a fresh one via start_server/start_proxy.
-                            asyncio.create_task(
+                            self._cert_restart_task = asyncio.create_task(
                                 self._restart_for_cert_renewal(),
                                 name=f"vp_{self.id}_cert_restart",
                             )
@@ -442,7 +460,17 @@ class VirtualPrinterInstance:
 
         Falls back to the self-signed cert and IP-based advertising when
         Tailscale is absent or provisioning fails.
+
+        Proxy mode always uses self-signed certs: SSDP advertises the real
+        printer IP, so advertising a Tailscale FQDN would cause TLS
+        cert-name-validation failures in slicers.
         """
+        if self.is_proxy:
+            self.tailscale_fqdn = None
+            cert_path, key_path = self.generate_certificates()
+            advertise = self.remote_interface_ip or self.bind_ip or ""
+            return cert_path, key_path, advertise
+
         try:
             ts_status = await tailscale_service.get_status()
             if ts_status.available:
@@ -561,6 +589,7 @@ class VirtualPrinterInstance:
     async def stop_server(self) -> None:
         """Stop server-mode services."""
         await self._cancel_renewal_task()
+        await self._cancel_restart_task()
         if self._ftp:
             await self._ftp.stop()
             self._ftp = None
@@ -634,9 +663,8 @@ class VirtualPrinterInstance:
             )
         )
 
-        # Guard against double-start: cancel any orphaned task before creating a new one
-        await self._cancel_renewal_task()
-        self._cert_renewal_task = asyncio.create_task(self._cert_renewal_loop(), name=f"vp_{self.id}_cert_renewal")
+        # Proxy mode skips Tailscale certs entirely (SSDP/TLS hostname mismatch),
+        # so no cert renewal loop is needed.
 
     def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
         """Start single-interface SSDP server as fallback for proxy mode."""
@@ -657,6 +685,7 @@ class VirtualPrinterInstance:
     async def stop_proxy(self) -> None:
         """Stop proxy mode services for this instance."""
         await self._cancel_renewal_task()
+        await self._cancel_restart_task()
         if self._proxy:
             await self._proxy.stop()
             self._proxy = None

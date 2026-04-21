@@ -3868,6 +3868,9 @@ export default {
       notAvailable: 'Tailscale inactif',
       trustedCert: "Certificat Let's Encrypt — aucune configuration CA requise",
       notAvailableHint: 'Installez Tailscale pour des certificats TLS approuvés',
+      disableTitle: 'Désactiver l\'intégration Tailscale',
+      enabledHint: 'Détecter Tailscale automatiquement et utiliser le certificat Let\'s Encrypt si disponible',
+      disabledHint: 'Tailscale désactivé — certificat auto-signé utilisé',
     },
     howItWorks: {
       title: 'Fonctionnement',

@@ -113,6 +113,7 @@ class VirtualPrinterInstance:
         auto_dispatch: bool = True,
         bind_ip: str = "",
         remote_interface_ip: str = "",
+        tailscale_disabled: bool = False,
         base_dir: Path,
         session_factory: Callable | None = None,
     ):
@@ -128,6 +129,7 @@ class VirtualPrinterInstance:
         self.auto_dispatch = auto_dispatch
         self.bind_ip = bind_ip
         self.remote_interface_ip = remote_interface_ip
+        self.tailscale_disabled = tailscale_disabled
         self._session_factory = session_factory
 
         # Directories
@@ -443,27 +445,30 @@ class VirtualPrinterInstance:
         Falls back to the self-signed cert and IP-based advertising when
         Tailscale is absent or provisioning fails.
         """
-        try:
-            ts_status = await tailscale_service.get_status()
-            if ts_status.available:
-                ts_result = await self._cert_service.use_tailscale_cert(ts_status.fqdn, tailscale_service)
-                if ts_result:
-                    self.tailscale_fqdn = ts_status.fqdn
-                    logger.info("[VP %s] Using Tailscale cert for %s", self.name, ts_status.fqdn)
-                    return ts_result[0], ts_result[1], ts_status.fqdn
-                logger.warning(
-                    "[VP %s] Tailscale available (%s) but cert provisioning failed, falling back to self-signed cert",
-                    self.name,
-                    ts_status.fqdn,
-                )
-            else:
-                logger.info(
-                    "[VP %s] Tailscale not available (%s), using self-signed cert",
-                    self.name,
-                    ts_status.error or "not connected",
-                )
-        except Exception as e:
-            logger.warning("[VP %s] Tailscale cert check failed, falling back to self-signed: %s", self.name, e)
+        if self.tailscale_disabled:
+            logger.info("[VP %s] Tailscale integration disabled by user, using self-signed cert", self.name)
+        else:
+            try:
+                ts_status = await tailscale_service.get_status()
+                if ts_status.available:
+                    ts_result = await self._cert_service.use_tailscale_cert(ts_status.fqdn, tailscale_service)
+                    if ts_result:
+                        self.tailscale_fqdn = ts_status.fqdn
+                        logger.info("[VP %s] Using Tailscale cert for %s", self.name, ts_status.fqdn)
+                        return ts_result[0], ts_result[1], ts_status.fqdn
+                    logger.warning(
+                        "[VP %s] Tailscale available (%s) but cert provisioning failed, falling back to self-signed cert",
+                        self.name,
+                        ts_status.fqdn,
+                    )
+                else:
+                    logger.info(
+                        "[VP %s] Tailscale not available (%s), using self-signed cert",
+                        self.name,
+                        ts_status.error or "not connected",
+                    )
+            except Exception as e:
+                logger.warning("[VP %s] Tailscale cert check failed, falling back to self-signed: %s", self.name, e)
 
         self.tailscale_fqdn = None
         cert_path, key_path = self.generate_certificates()
@@ -778,6 +783,7 @@ class VirtualPrinterManager:
                 or instance.remote_interface_ip != (vp.remote_interface_ip or "")
                 or instance.target_printer_id != vp.target_printer_id
                 or instance.auto_dispatch != vp.auto_dispatch
+                or instance.tailscale_disabled != vp.tailscale_disabled
             )
 
             if changed:
@@ -812,6 +818,7 @@ class VirtualPrinterManager:
                     auto_dispatch=vp.auto_dispatch,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
+                    tailscale_disabled=vp.tailscale_disabled,
                     base_dir=self._base_dir,
                     session_factory=self._session_factory,
                 )
@@ -830,6 +837,7 @@ class VirtualPrinterManager:
                     auto_dispatch=vp.auto_dispatch,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
+                    tailscale_disabled=vp.tailscale_disabled,
                     base_dir=self._base_dir,
                     session_factory=self._session_factory,
                 )

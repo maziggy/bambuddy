@@ -3906,6 +3906,9 @@ export default {
       notAvailable: 'Tailscale 未接続',
       trustedCert: "Let's Encrypt 証明書 — CA設定不要",
       notAvailableHint: '信頼できるTLS証明書にはTailscaleをインストール',
+      disableTitle: 'Tailscale統合を無効にする',
+      enabledHint: 'Tailscaleを自動検出し、利用可能な場合はLet\'s Encrypt証明書を使用',
+      disabledHint: 'Tailscale無効 — 自己署名証明書を使用中',
     },
     howItWorks: {
       title: '仕組み',

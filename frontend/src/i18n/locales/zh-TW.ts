@@ -3933,6 +3933,9 @@ export default {
       notAvailable: 'Tailscale 未啟用',
       trustedCert: "Let's Encrypt 憑證 — 無需設定 CA",
       notAvailableHint: '安裝 Tailscale 以取得受信任的 TLS 憑證',
+      disableTitle: '停用 Tailscale 整合',
+      enabledHint: '自動偵測 Tailscale，可用時使用 Let\'s Encrypt 憑證',
+      disabledHint: 'Tailscale 已停用 — 使用自簽憑證',
     },
     howItWorks: {
       title: '工作原理',

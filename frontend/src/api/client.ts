@@ -5192,6 +5192,7 @@ export interface VirtualPrinterSettings {
   model: string;
   target_printer_id: number | null;  // For proxy mode
   remote_interface_ip: string | null;  // For SSDP proxy across networks
+  tailscale_disabled: boolean;
   status: VirtualPrinterStatus;
 }
 
@@ -5234,6 +5235,7 @@ export const virtualPrinterApi = {
     model?: string;
     target_printer_id?: number;
     remote_interface_ip?: string;
+    tailscale_disabled?: boolean;
   }) => {
     const params = new URLSearchParams();
     if (data.enabled !== undefined) params.set('enabled', String(data.enabled));
@@ -5242,6 +5244,7 @@ export const virtualPrinterApi = {
     if (data.model !== undefined) params.set('model', data.model);
     if (data.target_printer_id !== undefined) params.set('target_printer_id', String(data.target_printer_id));
     if (data.remote_interface_ip !== undefined) params.set('remote_interface_ip', data.remote_interface_ip);
+    if (data.tailscale_disabled !== undefined) params.set('tailscale_disabled', String(data.tailscale_disabled));
 
     return request<VirtualPrinterSettings>(`/settings/virtual-printer?${params.toString()}`, {
       method: 'PUT',

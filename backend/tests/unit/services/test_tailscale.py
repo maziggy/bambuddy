@@ -298,6 +298,67 @@ class TestVirtualPrinterInstanceTailscale:
         status = instance.get_status()
         assert "tailscale_fqdn" not in status
 
+    @pytest.mark.asyncio
+    async def test_tailscale_disabled_skips_tailscale_entirely(self, tmp_path):
+        """When tailscale_disabled=True, Tailscale is never queried and self-signed cert is used."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        self_cert = tmp_path / "cert.crt"
+        self_key = tmp_path / "cert.key"
+
+        instance = VirtualPrinterInstance(
+            vp_id=2,
+            name="NoTailscale",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            tailscale_disabled=True,
+            base_dir=tmp_path,
+        )
+
+        mock_ts = MagicMock()
+        mock_ts.get_status = AsyncMock()
+
+        with (
+            patch("backend.app.services.virtual_printer.manager.tailscale_service", mock_ts),
+            patch.object(instance, "generate_certificates", return_value=(self_cert, self_key)),
+        ):
+            cert_path, key_path, advertise = await instance._resolve_cert_and_advertise()
+
+        # Tailscale must never have been queried
+        mock_ts.get_status.assert_not_called()
+        assert cert_path == self_cert
+        assert key_path == self_key
+        assert instance.tailscale_fqdn is None
+
+    @pytest.mark.asyncio
+    async def test_tailscale_enabled_by_default_queries_tailscale(self, instance):
+        """When tailscale_disabled=False (default), Tailscale is queried as usual."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleStatus
+
+        mock_ts = MagicMock()
+        mock_ts.get_status = AsyncMock(
+            return_value=TailscaleStatus(
+                available=False,
+                hostname="",
+                tailnet_name="",
+                fqdn="",
+                error="not connected",
+            )
+        )
+
+        self_cert = instance.cert_dir / "cert.crt"
+        self_key = instance.cert_dir / "cert.key"
+
+        with (
+            patch("backend.app.services.virtual_printer.manager.tailscale_service", mock_ts),
+            patch.object(instance, "generate_certificates", return_value=(self_cert, self_key)),
+        ):
+            await instance._resolve_cert_and_advertise()
+
+        mock_ts.get_status.assert_called_once()
+
 
 # =============================================================================
 # cert_needs_renewal — FQDN SAN validation, exception narrowing, FQDN regex

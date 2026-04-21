@@ -51,6 +51,7 @@ class VirtualPrinterUpdate(BaseModel):
     auto_dispatch: bool | None = None
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
+    tailscale_disabled: bool | None = None
 
 
 def _resolve_printer_model(printer_model: str | None) -> str | None:
@@ -91,6 +92,7 @@ def _vp_to_dict(vp, status: dict | None = None) -> dict:
         "auto_dispatch": vp.auto_dispatch,
         "bind_ip": vp.bind_ip,
         "remote_interface_ip": vp.remote_interface_ip,
+        "tailscale_disabled": vp.tailscale_disabled,
         "position": vp.position,
         "status": status or {"running": False, "pending_files": 0},
     }
@@ -333,6 +335,8 @@ async def update_virtual_printer(
         vp.bind_ip = body.bind_ip
     if body.remote_interface_ip is not None:
         vp.remote_interface_ip = body.remote_interface_ip
+    if body.tailscale_disabled is not None:
+        vp.tailscale_disabled = body.tailscale_disabled
 
     # Auto-inherit model when switching to proxy mode with existing target printer
     if body.mode == "proxy" and body.model is None and body.target_printer_id is None and vp.target_printer_id:

@@ -20,8 +20,9 @@ export function VirtualPrinterSettings() {
   const [localModel, setLocalModel] = useState('BL-P001');
   const [localTargetPrinterId, setLocalTargetPrinterId] = useState<number | null>(null);
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState('');
+  const [localTailscaleDisabled, setLocalTailscaleDisabled] = useState(false);
   const [showAccessCode, setShowAccessCode] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'toggle' | 'accessCode' | 'mode' | 'model' | 'targetPrinter' | 'remoteInterface' | null>(null);
+  const [pendingAction, setPendingAction] = useState<'toggle' | 'accessCode' | 'mode' | 'model' | 'targetPrinter' | 'remoteInterface' | 'tailscaleDisabled' | null>(null);
 
   // Fetch current settings
   const { data: settings, isLoading } = useQuery({
@@ -62,6 +63,7 @@ export function VirtualPrinterSettings() {
       setLocalModel(settings.model);
       setLocalTargetPrinterId(settings.target_printer_id);
       setLocalRemoteInterfaceIp(settings.remote_interface_ip || '');
+      setLocalTailscaleDisabled(settings.tailscale_disabled ?? false);
     }
   }, [settings]);
 
@@ -161,6 +163,13 @@ export function VirtualPrinterSettings() {
     setLocalRemoteInterfaceIp(ip);
     setPendingAction('remoteInterface');
     updateMutation.mutate({ remote_interface_ip: ip });
+  };
+
+  const handleTailscaleDisabledToggle = () => {
+    const newValue = !localTailscaleDisabled;
+    setLocalTailscaleDisabled(newValue);
+    setPendingAction('tailscaleDisabled');
+    updateMutation.mutate({ tailscale_disabled: newValue });
   };
 
   if (isLoading) {
@@ -403,6 +412,31 @@ export function VirtualPrinterSettings() {
               </p>
             </div>
           )}
+
+          {/* Tailscale Integration Toggle */}
+          <div className="flex items-center justify-between py-3 border-t border-bambu-dark-tertiary">
+            <div>
+              <div className="text-white font-medium">{t('virtualPrinter.tailscale.disableTitle')}</div>
+              <div className="text-sm text-bambu-gray">
+                {localTailscaleDisabled
+                  ? t('virtualPrinter.tailscale.disabledHint')
+                  : t('virtualPrinter.tailscale.enabledHint')}
+              </div>
+            </div>
+            <button
+              onClick={handleTailscaleDisabledToggle}
+              disabled={pendingAction === 'tailscaleDisabled'}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                localTailscaleDisabled ? 'bg-yellow-500' : 'bg-bambu-green'
+              } ${pendingAction === 'tailscaleDisabled' ? 'opacity-50' : ''}`}
+            >
+              <span
+                className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                  localTailscaleDisabled ? 'translate-x-6' : ''
+                }`}
+              />
+            </button>
+          </div>
 
           {/* Mode */}
           <div className="py-3 border-t border-bambu-dark-tertiary">

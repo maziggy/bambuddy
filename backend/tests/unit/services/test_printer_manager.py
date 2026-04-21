@@ -966,6 +966,26 @@ class TestPrinterStateToDict:
         assert tray["drying_temp"] == 55
         assert tray["drying_time"] == 240
 
+    def test_awaiting_plate_clear_defaults_false(self, mock_state):
+        """Without a printer_id, awaiting_plate_clear is False (no lookup possible)."""
+        result = printer_state_to_dict(mock_state)
+        assert result["awaiting_plate_clear"] is False
+
+    def test_awaiting_plate_clear_surfaced_when_set(self, mock_state):
+        """With printer_id, awaiting_plate_clear reflects PrinterManager state.
+
+        Regression: PR #939 left this flag off the WebSocket payload, so the
+        "Clear Plate" button only appeared after the 30 s REST fallback poll.
+        """
+        from backend.app.services.printer_manager import printer_manager
+
+        printer_manager.set_awaiting_plate_clear(12345, True)
+        try:
+            result = printer_state_to_dict(mock_state, printer_id=12345)
+            assert result["awaiting_plate_clear"] is True
+        finally:
+            printer_manager.set_awaiting_plate_clear(12345, False)
+
 
 class TestStatusKeyDryingDedup:
     """Regression tests for WebSocket dedup including drying fields.

@@ -729,7 +729,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         s.color_name?.toLowerCase().includes(q) ||
         s.subtype?.toLowerCase().includes(q) ||
         s.note?.toLowerCase().includes(q) ||
-        s.slicer_filament_name?.toLowerCase().includes(q)
+        s.slicer_filament_name?.toLowerCase().includes(q) ||
+        s.storage_location?.toLowerCase().includes(q)
       );
     }
 

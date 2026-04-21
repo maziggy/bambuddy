@@ -3331,6 +3331,7 @@ export default {
     spoolUpdated: 'Spool updated',
     spoolDeleted: 'Spool deleted',
     deepLinkSpoolNotFound: 'Spool not found',
+    deepLinkFetchFailed: 'Could not load spool — try again',
     spoolArchived: 'Spool archived',
     spoolRestored: 'Spool restored',
     deleteConfirm: 'Are you sure you want to delete this spool? This cannot be undone.',

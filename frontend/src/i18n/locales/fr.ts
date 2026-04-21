@@ -3250,6 +3250,7 @@ export default {
     spoolUpdated: 'Bobine mise à jour',
     spoolDeleted: 'Bobine supprimée',
     deepLinkSpoolNotFound: 'Bobine introuvable',
+    deepLinkFetchFailed: 'Impossible de charger la bobine — réessayez',
     spoolArchived: 'Bobine archivée',
     spoolRestored: 'Bobine restaurée',
     deleteConfirm: 'Supprimer définitivement cette bobine ?',

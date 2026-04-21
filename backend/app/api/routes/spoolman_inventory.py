@@ -132,8 +132,8 @@ class SpoolmanInventoryUpdate(BaseModel):
     weight_used: float | None = Field(None, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
-    tag_uid: str | None = Field(None, max_length=64)
-    tray_uuid: str | None = Field(None, max_length=64)
+    tag_uid: str | None = Field(None, max_length=32)
+    tray_uuid: str | None = Field(None, max_length=32)
     storage_location: str | None = Field(None, max_length=255)
 
     @field_validator("rgba")

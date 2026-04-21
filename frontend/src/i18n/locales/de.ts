@@ -3328,6 +3328,7 @@ export default {
     spoolUpdated: 'Spule aktualisiert',
     spoolDeleted: 'Spule gelöscht',
     deepLinkSpoolNotFound: 'Spule nicht gefunden',
+    deepLinkFetchFailed: 'Spule konnte nicht geladen werden — bitte erneut versuchen',
     spoolArchived: 'Spule archiviert',
     spoolRestored: 'Spule wiederhergestellt',
     deleteConfirm: 'Möchten Sie diese Spule wirklich löschen? Dies kann nicht rückgängig gemacht werden.',

@@ -8,7 +8,7 @@ import {
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
   ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw,
 } from 'lucide-react';
-import { api, spoolbuddyApi } from '../api/client';
+import { api, spoolbuddyApi, ApiError } from '../api/client';
 import type { InventorySpool, SpoolAssignment, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
 import { SpoolFormModal } from '../components/SpoolFormModal';
@@ -513,7 +513,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   }, [spoolmanModeReady, deepLinkSpoolId, deepLinkInList, setSearchParams]);
 
   // Targeted fetch — only fires when mode is known and spool isn't in the list yet
-  const { data: deepLinkSpool, isError: deepLinkFetchFailed } = useQuery({
+  const { data: deepLinkSpool, isError: deepLinkFetchFailed, error: deepLinkError } = useQuery({
     queryKey: spoolmanMode
       ? ['spoolman-inventory-spool', deepLinkSpoolId]
       : ['inventory-spool', deepLinkSpoolId],
@@ -523,7 +523,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         : api.getSpool(deepLinkSpoolId!),
     enabled: spoolmanModeReady && deepLinkSpoolId !== null && deepLinkInList === null,
     staleTime: Infinity,
-    retry: false,
+    retry: (failureCount, error) =>
+      failureCount < 2 && !(error instanceof ApiError && error.status === 404),
   });
 
   useEffect(() => {
@@ -537,8 +538,9 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     if (!deepLinkFetchFailed || deepLinkHandled.current) return;
     deepLinkHandled.current = true;
     setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
-    showToast(t('inventory.deepLinkSpoolNotFound'), 'error');
-  }, [deepLinkFetchFailed, setSearchParams, showToast, t]);
+    const is404 = deepLinkError instanceof ApiError && deepLinkError.status === 404;
+    showToast(t(is404 ? 'inventory.deepLinkSpoolNotFound' : 'inventory.deepLinkFetchFailed'), 'error');
+  }, [deepLinkFetchFailed, deepLinkError, setSearchParams, showToast, t]);
 
   const { data: assignments } = useQuery({
     queryKey: ['spool-assignments'],

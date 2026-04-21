@@ -485,7 +485,7 @@ class TestSpoolmanInventoryInputValidation:
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """tag_uid longer than 64 chars is rejected with 422."""
+        """tag_uid longer than 32 chars is rejected with 422 (DB VARCHAR(32) cap)."""
         payload = {"tag_uid": "A" * 65}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 422
@@ -822,3 +822,198 @@ class TestSpoolmanInventoryAuth:
             f"{method} {path} should return 403 for read-only user "
             f"but got {response.status_code}: {response.json()}"
         )
+        # Error body must mention the permission string so a "banned-user middleware"
+        # regression (generic 403 with no permission context) doesn't pass silently.
+        detail = response.json().get("detail", "")
+        assert "inventory:update" in detail, (
+            f"Expected 'inventory:update' in 403 detail but got: {detail!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Additional regression tests for second-round review items
+# ---------------------------------------------------------------------------
+
+
+class TestSpoolmanInventorySecurityExtras:
+    """Additional security/validation tests added in second review round."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_rejects_double_hash_rgba(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """SEC-3: rgba like '##FF0000' (double hash) must be rejected with 422."""
+        payload = {"material": "PLA", "label_weight": 1000, "weight_used": 0, "rgba": "##FF0000"}
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("spool_id", [0, -1])
+    async def test_path_param_non_positive_spool_id_returns_422(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+        spool_id: int,
+    ):
+        """SEC-5: /spools/0 and /spools/-1 must be rejected with 422 (Path gt=0)."""
+        response = await async_client.get(f"/api/v1/spoolman/inventory/spools/{spool_id}")
+        assert response.status_code == 422, (
+            f"Expected 422 for spool_id={spool_id} but got {response.status_code}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "tag_uid,expected_status",
+        [
+            ("A" * 32, 200),            # exactly at DB VARCHAR(32) limit — valid
+            ("DEADBEEF12345678", 200),   # 16-char backward compat — valid
+            ("A" * 33, 422),            # one over limit — rejected by Pydantic max_length=32
+        ],
+    )
+    async def test_tag_uid_length_boundary(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+        tag_uid: str,
+        expected_status: int,
+    ):
+        """I11: tag_uid boundary — 32 chars valid (matches DB VARCHAR(32)), 33 rejected."""
+        payload = {"tag_uid": tag_uid}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == expected_status, (
+            f"tag_uid len={len(tag_uid)}: expected {expected_status} but got {response.status_code}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_create_partial_failure_returns_207(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """I9: bulk create with quantity=3 where middle call fails → 207 Multi-Status."""
+        results = [SAMPLE_SPOOLMAN_SPOOL, None, SAMPLE_SPOOLMAN_SPOOL]
+        mock_spoolman_client.create_spool.side_effect = results
+
+        payload = {
+            "spool": {"material": "PLA", "label_weight": 1000, "weight_used": 0},
+            "quantity": 3,
+        }
+        response = await async_client.post("/api/v1/spoolman/inventory/spools/bulk", json=payload)
+        assert response.status_code == 207, (
+            f"Expected 207 Multi-Status for partial failure but got {response.status_code}"
+        )
+        body = response.json()
+        assert isinstance(body, list)
+        assert len(body) == 2  # only the 2 successes
+
+
+class TestSpoolmanInventorySSRFSpoolBuddyPath:
+    """SSRF tests for _get_spoolman_client_or_none (nfc/* and scale/ endpoints)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "evil_url",
+        [
+            "file:///etc/passwd",
+            "http://169.254.169.254/latest/meta-data/",  # AWS IMDS
+            "http://[::1]:7912/",                         # IPv6 loopback
+            "http://0.0.0.0/",                            # unspecified
+            "http://10.0.0.1/",                           # RFC-1918 private
+            "http://[::ffff:169.254.169.254]/",            # IPv4-mapped IMDS bypass
+        ],
+    )
+    async def test_nfc_tag_scanned_with_ssrf_url_ignores_spoolman(
+        self,
+        async_client: AsyncClient,
+        db_session,
+        evil_url: str,
+    ):
+        """SSRF: _get_spoolman_client_or_none silently disables Spoolman for unsafe URLs
+        on the SpoolBuddy NFC path (tag-scanned broadcasts unknown_tag, not 400)."""
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value=evil_url))
+        await db_session.commit()
+
+        from unittest.mock import AsyncMock, patch
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                "/api/v1/spoolbuddy/nfc/tag-scanned",
+                json={"device_id": "sb-ssrf", "tag_uid": "AABBCCDD"},
+            )
+
+        # Must not crash or proxy the SSRF URL — unknown_tag is the safe degraded response
+        assert resp.status_code == 200
+        if mock_ws.broadcast.called:
+            msg = mock_ws.broadcast.call_args[0][0]
+            assert msg["type"] == "spoolbuddy_unknown_tag"
+
+
+class TestMergeSpoolExtraPreservesKeys:
+    """Unit-level test for merge_spool_extra key preservation (via mocked Spoolman)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_merge_preserves_unrelated_extra_keys(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """merge_spool_extra must deep-merge rather than overwrite the extra dict.
+
+        Seed extra={"custom_key": "keep_me", "tag": "old"}.
+        After merging {"tag": "new"}, the PATCH payload must still contain custom_key.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        existing_spool = {
+            **SAMPLE_SPOOLMAN_SPOOL,
+            "extra": {"custom_key": "keep_me", "tag": '"old"'},
+        }
+        updated_spool = {**existing_spool, "extra": {"custom_key": "keep_me", "tag": '"new"'}}
+
+        mock_client = mock_spoolman_client
+        mock_client.get_spool = AsyncMock(return_value=existing_spool)
+        mock_client.update_spool_full = AsyncMock(return_value=updated_spool)
+
+        # Call merge_spool_extra directly through the service
+        from backend.app.services.spoolman import SpoolmanClient
+
+        client = SpoolmanClient.__new__(SpoolmanClient)
+        client.base_url = "http://localhost:7912"
+        client.api_url = "http://localhost:7912/api/v1"
+
+        async def _mock_get(spool_id):
+            return existing_spool
+
+        async def _mock_update(spool_id, **kwargs):
+            # Capture what was actually sent
+            _mock_update.captured_extra = kwargs.get("extra")
+            return updated_spool
+
+        _mock_update.captured_extra = None
+        client.get_spool = _mock_get
+        client.update_spool_full = _mock_update
+
+        result = await client.merge_spool_extra(42, {"tag": '"new"'})
+
+        # The merged extra must include the unrelated key
+        assert _mock_update.captured_extra is not None
+        assert _mock_update.captured_extra.get("custom_key") == "keep_me"
+        assert _mock_update.captured_extra.get("tag") == '"new"'
+        assert result is not None

@@ -204,13 +204,9 @@ describe('InventoryPage - deep-link ?spool= flow', () => {
     it('shows an error notification when spool is not found', async () => {
       render(<InventoryPageRouter />);
 
-      await waitFor(() => {
-        // Toast renders somewhere in the DOM with the error message
-        expect(
-          screen.queryByText(/not found/i) !== null ||
-          document.querySelector('[role="alert"]') !== null
-        ).toBe(true);
-      });
+      // Must render the exact i18n string for deepLinkSpoolNotFound (en: 'Spool not found').
+      // Using findByText fails the test if the toast is absent or uses the wrong key.
+      await screen.findByText('Spool not found');
     });
   });
 });

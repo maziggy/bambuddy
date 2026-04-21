@@ -3320,6 +3320,7 @@ export default {
     spoolUpdated: '耗材已更新',
     spoolDeleted: '耗材已刪除',
     deepLinkSpoolNotFound: '找不到耗材',
+    deepLinkFetchFailed: '無法載入耗材 — 請重試',
     spoolArchived: '耗材已歸檔',
     spoolRestored: '耗材已恢復',
     deleteConfirm: '確定要刪除此耗材嗎？此操作無法復原。',

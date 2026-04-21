@@ -67,7 +67,12 @@ async def _get_spoolman_client_or_none(db: AsyncSession):
     # Full SSRF guard: scheme + localhost literal + private/loopback/multicast IPs.
     try:
         assert_safe_spoolman_url(spoolman_url)
-    except ValueError:
+    except ValueError as exc:
+        logger.warning(
+            "Spoolman integration disabled: URL %r rejected by SSRF guard: %s",
+            spoolman_url,
+            exc,
+        )
         return None
 
     client = await get_spoolman_client()
@@ -476,18 +481,30 @@ async def nfc_write_tag(
             mapped = _map_spoolman_spool(sm_spool)
         except ValueError as exc:
             logger.warning("Spoolman returned invalid spool for write-tag: %s", exc)
-            raise HTTPException(status_code=404, detail="Spool not found")
+            raise HTTPException(status_code=502, detail="Spoolman returned malformed spool data")
+
+        if not mapped.get("material"):
+            raise HTTPException(
+                status_code=400,
+                detail="Spoolman spool has no material set — cannot encode NFC tag",
+            )
 
         ndef_data = encode_opentag3d_from_mapped(mapped)
         data_origin = "spoolman"
 
         # Warn when fields that drive NFC content are absent in Spoolman.
-        # The tag will still be written but color_name encodes as 32 spaces and
-        # nozzle_temp encodes as 0 °C — both render as garbage on readers.
         if not mapped.get("color_name"):
             nfc_warnings.append("color_name not set in Spoolman — tag encodes empty color name")
         if not mapped.get("nozzle_temp_min"):
             nfc_warnings.append("nozzle_temp_min not set in Spoolman — tag encodes 0 °C")
+        if not mapped.get("subtype"):
+            nfc_warnings.append("subtype not set in Spoolman — tag encodes empty subtype")
+        if not mapped.get("brand"):
+            nfc_warnings.append("brand/vendor not set in Spoolman — tag encodes empty brand")
+        if not mapped.get("rgba"):
+            nfc_warnings.append("rgba not set in Spoolman — tag encodes default colour")
+        if not mapped.get("label_weight"):
+            nfc_warnings.append("label_weight not set in Spoolman — tag encodes 0 g")
         if nfc_warnings:
             logger.warning(
                 "NFC encode for Spoolman spool %d has incomplete data: %s",
@@ -608,7 +625,7 @@ async def nfc_write_result(
                     )
             except HTTPException:
                 raise
-            except (SpoolmanNotFoundError, SpoolmanUnavailableError, Exception) as exc:
+            except Exception as exc:
                 logger.warning(
                     "Spoolman extra.tag update failed for spool %d: %s", req.spool_id, exc
                 )
@@ -724,7 +741,7 @@ async def update_spool_weight(
         except SpoolmanNotFoundError:
             raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
         except SpoolmanUnavailableError:
-            raise HTTPException(status_code=502, detail="Spoolman server is not reachable")
+            raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
         filament = sm_spool.get("filament") or {}
         raw_spool_weight = filament.get("spool_weight")

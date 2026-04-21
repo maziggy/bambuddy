@@ -3249,6 +3249,7 @@ export default {
     spoolUpdated: 'Bobina aggiornata',
     spoolDeleted: 'Bobina eliminata',
     deepLinkSpoolNotFound: 'Bobina non trovata',
+    deepLinkFetchFailed: 'Impossibile caricare la bobina — riprova',
     spoolArchived: 'Bobina archiviata',
     spoolRestored: 'Bobina ripristinata',
     deleteConfirm: 'Sei sicuro di voler eliminare questa bobina? Questa azione non può essere annullata.',

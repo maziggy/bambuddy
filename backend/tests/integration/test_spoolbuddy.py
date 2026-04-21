@@ -1799,10 +1799,10 @@ class TestNfcWriteTagSpoolmanSecurityFixes:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_invalid_spoolman_spool_id_returns_404(
+    async def test_invalid_spoolman_spool_id_returns_502(
         self, async_client: AsyncClient, device_factory, spoolman_settings
     ):
-        """Malformed Spoolman spool (invalid id) raises 404, not 500."""
+        """Malformed Spoolman spool (invalid id=0) raises 502, not 404 — spool exists but is bad data."""
         await device_factory(device_id="sb-invalid-id")
         # Spoolman returns spool with id=0 (invalid — caught by _map_spoolman_spool guard)
         bad_spool = {**_full_spoolman_spool(1), "id": 0}
@@ -1824,7 +1824,8 @@ class TestNfcWriteTagSpoolmanSecurityFixes:
                 json={"device_id": "sb-invalid-id", "spool_id": 99},
             )
 
-        assert resp.status_code == 404
+        # 502: spool exists in Spoolman but its data is malformed — not a "not found"
+        assert resp.status_code == 502
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1974,3 +1975,163 @@ class TestNfcWriteResultInputValidation:
         # Falls back to local mode — tag written to DB
         await db_session.refresh(spool)
         assert spool.tag_uid == "DEADBEEF12345678"
+
+
+# ============================================================================
+# B1: NFC write-tag warnings appear in response body
+# ============================================================================
+
+
+class TestNfcWriteTagWarningsBody:
+    """B1: resp.json()['warnings'] is populated when Spoolman fields are absent."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_warnings_returned_for_missing_color_and_temp(
+        self, async_client: AsyncClient, device_factory, spoolman_settings
+    ):
+        """Both color_name=None and settings_extruder_temp=None produce 2 warnings."""
+        await device_factory(device_id="sb-warn-b1")
+        # Spoolman spool with no color_name or nozzle temp
+        sparse_spool = {
+            "id": 99,
+            "filament": {
+                "material": "PLA",
+                "name": "PLA Basic",
+                "color_hex": "808080",
+                # color_name absent → None after mapping
+                # settings_extruder_temp absent → nozzle_temp_min=None
+                "weight": 1000.0,
+                "vendor": {"name": "Bambu Lab"},
+            },
+            "used_weight": 0.0,
+            "archived": False,
+            "registered": "2024-01-01T00:00:00Z",
+        }
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=sparse_spool)
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": "sb-warn-b1", "spool_id": 99},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "warnings" in body, "Response should contain 'warnings' key when fields are absent"
+        warnings = body["warnings"]
+        assert len(warnings) >= 2, (
+            f"Expected at least 2 warnings for missing color_name + nozzle_temp, got: {warnings}"
+        )
+        # Confirm the specific fields are mentioned
+        warn_text = " ".join(warnings)
+        assert "color_name" in warn_text
+        assert "nozzle_temp" in warn_text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_warnings_key_when_all_fields_present(
+        self, async_client: AsyncClient, device_factory, spoolman_settings
+    ):
+        """No 'warnings' key in response when all fields are populated."""
+        await device_factory(device_id="sb-nowarn")
+        full_spool = _full_spoolman_spool(100)
+        # Add color_name and extruder temp
+        full_spool["filament"]["color_name"] = "Red"
+        full_spool["filament"]["settings_extruder_temp"] = 220
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=full_spool)
+
+        with (
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            resp = await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": "sb-nowarn", "spool_id": 100},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "warnings" not in body or body["warnings"] == []
+
+
+# ============================================================================
+# B5: Exception text scrubbed from WebSocket broadcast message
+# ============================================================================
+
+
+class TestNfcWriteResultExceptionScrubbing:
+    """B5: Internal exception details must not appear in WebSocket 'message' field."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_exception_text_not_leaked_in_ws_message(
+        self, async_client: AsyncClient, device_factory, db_session, spoolman_settings
+    ):
+        """When Spoolman merge raises, WS message is generic; 'connection refused' absent."""
+        import json as _json
+
+        device = await device_factory(
+            device_id="sb-scrub-b5",
+            pending_command="write_tag",
+            pending_write_payload=_json.dumps(
+                {"spool_id": 77, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}
+            ),
+        )
+        mock_client = _mock_spoolman_client()
+        mock_client.merge_spool_extra = AsyncMock(
+            side_effect=Exception("connection refused to 192.168.1.1:7912")
+        )
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.services.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": "sb-scrub-b5",
+                    "spool_id": 77,
+                    "tag_uid": "AABBCCDD11223344",
+                    "success": True,
+                },
+            )
+
+        assert resp.status_code == 502
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_tag_link_failed"
+        # Generic message — no internal exception details leaked
+        assert msg["message"] == "Spoolman link failed", (
+            f"Expected generic message but got: {msg['message']!r}"
+        )
+        assert "connection refused" not in str(msg), (
+            f"Exception text must not appear in WS message: {msg}"
+        )
+        assert "192.168.1" not in str(msg), (
+            f"Internal IP must not appear in WS message: {msg}"
+        )

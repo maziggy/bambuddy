@@ -2,6 +2,15 @@ import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/
 
 const API_BASE = '/api/v1';
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 // Auth token storage
 // By default tokens are stored in sessionStorage (tab-scoped, cleared on close).
 // When the token originates from the ?token= URL param (kiosk bootstrap), it is
@@ -100,7 +109,7 @@ async function request<T>(
       }
     }
 
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   // Handle empty responses (204 No Content, etc.)

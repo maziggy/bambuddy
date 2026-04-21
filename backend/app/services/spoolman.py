@@ -593,7 +593,12 @@ class SpoolmanClient:
         current = await self.get_spool(spool_id)  # raises on error
         current_extra: dict = current.get("extra") or {}
         merged = {**current_extra, **new_fields}
-        return await self.update_spool_full(spool_id=spool_id, extra=merged)
+        updated = await self.update_spool_full(spool_id=spool_id, extra=merged)
+        if updated is None:
+            raise SpoolmanUnavailableError(
+                f"Spoolman PATCH for spool {spool_id} failed (server error or spool deleted)"
+            )
+        return updated
 
     async def find_or_create_vendor(self, name: str) -> int | None:
         """Find an existing vendor by name or create a new one.

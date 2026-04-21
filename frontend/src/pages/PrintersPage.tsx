@@ -6486,7 +6486,11 @@ export function PrintersPage() {
             <div className="relative w-full sm:max-w-sm mt-3">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50" />
               <input
-                type="text"
+                type="search"
+                name="printer-search"
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('printers.search')}

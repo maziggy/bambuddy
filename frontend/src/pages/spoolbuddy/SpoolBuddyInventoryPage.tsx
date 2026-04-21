@@ -52,6 +52,13 @@ function SpoolCircle({ color, size = 56 }: { color: string; size?: number }) {
   );
 }
 
+// Renders inventory directly via React instead of embedding Spoolman's own UI in an
+// iframe. The iframe approach was dropped because this component lives inside the
+// SpoolBuddy shell and already has direct access to the same auth/query context,
+// making the iframe an unnecessary dependency on the Spoolman server being reachable
+// from the browser. No feature flag guards this: the internal UI is strictly superior
+// (works offline, supports local spools) and the raw Spoolman URL remains accessible
+// directly from the Settings page for users who want it.
 export function SpoolBuddyInventoryPage() {
   const { sbState, selectedPrinterId } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();

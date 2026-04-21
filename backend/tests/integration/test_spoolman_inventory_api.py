@@ -53,6 +53,7 @@ async def spoolman_settings(db_session):
 def mock_spoolman_client():
     """Mock the Spoolman client with a sample spool."""
     mock_client = MagicMock()
+    mock_client.base_url = "http://localhost:7912"
     mock_client.health_check = AsyncMock(return_value=True)
     mock_client.get_all_spools = AsyncMock(return_value=[SAMPLE_SPOOLMAN_SPOOL])
     mock_client.get_spool = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
@@ -62,6 +63,7 @@ def mock_spoolman_client():
         side_effect=lambda spool_id, archived: {**SAMPLE_SPOOLMAN_SPOOL, "archived": archived}
     )
     mock_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
+    mock_client.merge_spool_extra = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
     mock_client.find_or_create_filament = AsyncMock(return_value=7)
 
     with (
@@ -238,21 +240,35 @@ class TestSpoolmanInventoryCRUD:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_bulk_create_quantity_clamped_to_50(
+    async def test_bulk_create_quantity_out_of_range_returns_422(
         self,
         async_client: AsyncClient,
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """Bulk create quantity is clamped to a maximum of 50."""
+        """Bulk create quantity outside 1-50 is rejected with 422 (not silently clamped)."""
         payload = {
             "spool": {"material": "ABS", "label_weight": 1000, "weight_used": 0},
             "quantity": 999,
         }
         response = await async_client.post("/api/v1/spoolman/inventory/spools/bulk", json=payload)
+        assert response.status_code == 422
 
-        assert response.status_code == 200
-        assert mock_spoolman_client.create_spool.call_count == 50
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_create_quantity_zero_returns_422(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """Bulk create quantity of 0 is rejected with 422."""
+        payload = {
+            "spool": {"material": "ABS", "label_weight": 1000, "weight_used": 0},
+            "quantity": 0,
+        }
+        response = await async_client.post("/api/v1/spoolman/inventory/spools/bulk", json=payload)
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -278,7 +294,9 @@ class TestSpoolmanInventoryCRUD:
         mock_spoolman_client,
     ):
         """PATCH returns 404 when Spoolman spool does not exist."""
-        mock_spoolman_client.get_spool.return_value = None
+        from backend.app.services.spoolman import SpoolmanNotFoundError
+
+        mock_spoolman_client.get_spool.side_effect = SpoolmanNotFoundError("spool not found")
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/999", json={"note": "x"})
         assert response.status_code == 404
 
@@ -506,6 +524,43 @@ class TestSpoolmanInventoryInputValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "evil_url",
+        [
+            "file:///etc/passwd",
+            "gopher://127.0.0.1:70/",
+            "dict://internal.corp/",
+            "http://169.254.169.254/latest/meta-data/",  # AWS IMDS (link-local)
+            "http://[::1]:7912/",  # IPv6 loopback
+            "http://0.0.0.0/",  # unspecified
+            "javascript:alert(1)",
+            "http://224.0.0.1/",  # IPv4 multicast
+            "http://[ff02::1]/",  # IPv6 multicast
+            "http://127.1.2.3/",  # 127.x.x.x loopback range
+            "http://[::ffff:169.254.169.254]/",  # IPv4-mapped IPv6 IMDS bypass
+        ],
+    )
+    async def test_ssrf_blocked_schemes_and_addresses(
+        self,
+        async_client: AsyncClient,
+        db_session,
+        mock_spoolman_client,
+        evil_url: str,
+    ):
+        """SSRF: any Spoolman URL that is not http(s) must be rejected with 400."""
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value=evil_url))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/spoolman/inventory/spools")
+        assert response.status_code == 400, (
+            f"Expected 400 for SSRF URL {evil_url!r} but got {response.status_code}: {response.json()}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_create_rejects_storage_location_too_long(
         self,
         async_client: AsyncClient,
@@ -619,3 +674,151 @@ class TestStorageLocationPassthrough:
         assert response.status_code == 200
         _, kwargs = mock_spoolman_client.update_spool_full.call_args
         assert kwargs.get("clear_location") is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_clears_storage_location_when_empty_string_sent(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """Sending an empty string for storage_location also clears the Spoolman location."""
+        payload = {"storage_location": ""}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        _, kwargs = mock_spoolman_client.update_spool_full.call_args
+        assert kwargs.get("clear_location") is True
+
+
+class TestSpoolmanInventoryAuth:
+    """Write/delete endpoints require INVENTORY_UPDATE when auth is enabled."""
+
+    @pytest.fixture
+    async def auth_and_spoolman_settings(self, db_session):
+        """Enable both Spoolman and auth."""
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value="http://localhost:7912"))
+        db_session.add(Settings(key="auth_enabled", value="true"))
+        await db_session.commit()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "method,path,payload",
+        [
+            ("POST", "/api/v1/spoolman/inventory/spools", {"material": "PLA", "label_weight": 1000, "weight_used": 0}),
+            (
+                "POST",
+                "/api/v1/spoolman/inventory/spools/bulk",
+                {"spool": {"material": "PLA", "label_weight": 1000, "weight_used": 0}, "quantity": 1},
+            ),
+            ("PATCH", "/api/v1/spoolman/inventory/spools/42", {"note": "x"}),
+            ("DELETE", "/api/v1/spoolman/inventory/spools/42", None),
+            ("POST", "/api/v1/spoolman/inventory/spools/42/archive", None),
+            ("POST", "/api/v1/spoolman/inventory/spools/42/restore", None),
+            ("PATCH", "/api/v1/spoolman/inventory/spools/42/weight", {"weight_grams": 100.0}),
+        ],
+    )
+    async def test_write_endpoints_require_auth(
+        self,
+        async_client: AsyncClient,
+        auth_and_spoolman_settings,
+        method: str,
+        path: str,
+        payload: dict | None,
+    ):
+        """All write/delete endpoints return 401 when auth is enabled and no token is provided."""
+        response = await async_client.request(method, path, json=payload)
+        assert response.status_code == 401, (
+            f"{method} {path} should require auth but got {response.status_code}: {response.json()}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "method,path",
+        [
+            ("GET", "/api/v1/spoolman/inventory/spools"),
+            ("GET", "/api/v1/spoolman/inventory/spools/42"),
+        ],
+    )
+    async def test_read_endpoints_require_auth(
+        self,
+        async_client: AsyncClient,
+        auth_and_spoolman_settings,
+        method: str,
+        path: str,
+    ):
+        """Read endpoints also require auth when auth is enabled."""
+        response = await async_client.request(method, path)
+        assert response.status_code == 401, (
+            f"{method} {path} should require auth but got {response.status_code}: {response.json()}"
+        )
+
+    @pytest.fixture
+    async def viewer_token(self, db_session):
+        """Create a Viewer-group user (INVENTORY_READ only, no INVENTORY_UPDATE)."""
+        from backend.app.core.auth import create_access_token, get_password_hash
+        from backend.app.models.group import Group
+        from backend.app.models.settings import Settings
+        from backend.app.models.user import User
+        from sqlalchemy import select
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value="http://localhost:7912"))
+        db_session.add(Settings(key="auth_enabled", value="true"))
+        await db_session.commit()
+
+        viewer_group = (
+            await db_session.execute(select(Group).where(Group.name == "Viewers"))
+        ).scalar_one()
+        viewer = User(
+            username="sm_inv_viewer",
+            password_hash=get_password_hash("pw"),
+            is_active=True,
+        )
+        viewer.groups.append(viewer_group)
+        db_session.add(viewer)
+        await db_session.commit()
+        return create_access_token(data={"sub": viewer.username})
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "method,path,payload",
+        [
+            ("POST", "/api/v1/spoolman/inventory/spools", {"material": "PLA", "label_weight": 1000, "weight_used": 0}),
+            (
+                "POST",
+                "/api/v1/spoolman/inventory/spools/bulk",
+                {"spool": {"material": "PLA", "label_weight": 1000, "weight_used": 0}, "quantity": 1},
+            ),
+            ("PATCH", "/api/v1/spoolman/inventory/spools/42", {"note": "x"}),
+            ("DELETE", "/api/v1/spoolman/inventory/spools/42", None),
+            ("POST", "/api/v1/spoolman/inventory/spools/42/archive", None),
+            ("POST", "/api/v1/spoolman/inventory/spools/42/restore", None),
+            ("PATCH", "/api/v1/spoolman/inventory/spools/42/weight", {"weight_grams": 100.0}),
+        ],
+    )
+    async def test_write_endpoints_return_403_for_viewer(
+        self,
+        async_client: AsyncClient,
+        viewer_token,
+        method: str,
+        path: str,
+        payload: dict | None,
+    ):
+        """Viewer-group users (INVENTORY_READ, no INVENTORY_UPDATE) get 403 on write endpoints."""
+        response = await async_client.request(
+            method,
+            path,
+            json=payload,
+            headers={"Authorization": f"Bearer {viewer_token}"},
+        )
+        assert response.status_code == 403, (
+            f"{method} {path} should return 403 for read-only user "
+            f"but got {response.status_code}: {response.json()}"
+        )

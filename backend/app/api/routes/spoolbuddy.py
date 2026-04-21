@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +48,32 @@ OFFLINE_THRESHOLD_SECONDS = 30
 ONLINE_BROADCAST_INTERVAL_SECONDS = 10
 _spoolbuddy_online_last_broadcast: dict[str, float] = {}
 _diagnostic_results: dict[tuple[str, str], dict] = {}
+
+
+async def _get_spoolman_client_or_none(db: AsyncSession):
+    """Return a SpoolmanClient if Spoolman is enabled with a safe URL, else None."""
+    from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
+    from backend.app.models.settings import Settings
+    from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+
+    settings_result = await db.execute(select(Settings))
+    settings_dict = {s.key: s.value for s in settings_result.scalars().all()}
+    spoolman_url = settings_dict.get("spoolman_url", "").strip()
+    spoolman_enabled = settings_dict.get("spoolman_enabled", "false").lower() == "true" and bool(spoolman_url)
+
+    if not spoolman_enabled:
+        return None
+
+    # Full SSRF guard: scheme + localhost literal + private/loopback/multicast IPs.
+    try:
+        assert_safe_spoolman_url(spoolman_url)
+    except ValueError:
+        return None
+
+    client = await get_spoolman_client()
+    if not client or client.base_url != spoolman_url.rstrip("/"):
+        client = await init_spoolman_client(spoolman_url)
+    return client
 
 
 def _is_online(device: SpoolBuddyDevice) -> bool:
@@ -326,20 +353,10 @@ async def nfc_tag_scanned(
 
     # Local DB miss — fall back to Spoolman when enabled
     from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
-    from backend.app.models.settings import Settings
-    from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
 
-    settings_result = await db.execute(select(Settings))
-    settings_dict = {s.key: s.value for s in settings_result.scalars().all()}
-    spoolman_url = settings_dict.get("spoolman_url", "").strip()
-    spoolman_enabled = settings_dict.get("spoolman_enabled", "false").lower() == "true" and bool(spoolman_url)
-
-    if spoolman_enabled and urlparse(spoolman_url).scheme.lower() in ("http", "https"):
+    client = await _get_spoolman_client_or_none(db)
+    if client is not None:
         try:
-            client = await get_spoolman_client()
-            if not client or client.base_url != spoolman_url.rstrip("/"):
-                client = await init_spoolman_client(spoolman_url)
-
             cached_spools = await client.get_spools()
             sm_spool: dict | None = None
             if req.tray_uuid:
@@ -369,8 +386,14 @@ async def nfc_tag_scanned(
                 )
                 logger.info("SpoolBuddy tag matched (Spoolman): %s -> spool %d", req.tag_uid, mapped["id"])
                 return {"status": "ok", "matched": True, "spool_id": mapped["id"]}
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            logger.warning("Spoolman unreachable during tag lookup for %s: %s", req.tag_uid, exc)
+            # Don't broadcast unknown_tag on network outage — caller cannot tell outage from
+            # "spool not registered", which triggers duplicate-registration flows in the UI.
+            return {"status": "ok", "matched": False, "spool_id": None}
         except Exception as exc:
-            logger.warning("Spoolman tag lookup failed for %s: %s", req.tag_uid, exc)
+            logger.warning("Spoolman tag lookup failed unexpectedly for %s: %s", req.tag_uid, exc)
+            return {"status": "ok", "matched": False, "spool_id": None}
 
     await ws_manager.broadcast(
         {
@@ -429,39 +452,48 @@ async def nfc_write_tag(
     result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
     spool = result.scalar_one_or_none()
 
+    nfc_warnings: list[str] = []
     if spool:
         ndef_data = encode_opentag3d(spool)
         data_origin = "local"
     else:
         # Local DB miss — fall back to Spoolman when enabled
         from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
-        from backend.app.models.settings import Settings
-        from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+        from backend.app.services.spoolman import SpoolmanNotFoundError, SpoolmanUnavailableError
 
-        settings_result = await db.execute(select(Settings))
-        settings_dict = {s.key: s.value for s in settings_result.scalars().all()}
-        spoolman_url = settings_dict.get("spoolman_url", "").strip()
-        spoolman_enabled = settings_dict.get("spoolman_enabled", "false").lower() == "true" and bool(spoolman_url)
-
-        if spoolman_enabled and urlparse(spoolman_url).scheme.lower() in ("http", "https"):
-            client = await get_spoolman_client()
-            if not client or client.base_url != spoolman_url.rstrip("/"):
-                client = await init_spoolman_client(spoolman_url)
-
-            sm_spool = await client.get_spool(req.spool_id)
-            if sm_spool is None:
-                raise HTTPException(status_code=404, detail="Spool not found")
-
-            try:
-                mapped = _map_spoolman_spool(sm_spool)
-            except ValueError as exc:
-                logger.warning("Spoolman returned invalid spool for write-tag: %s", exc)
-                raise HTTPException(status_code=404, detail="Spool not found")
-
-            ndef_data = encode_opentag3d_from_mapped(mapped)
-            data_origin = "spoolman"
-        else:
+        sm_client = await _get_spoolman_client_or_none(db)
+        if sm_client is None:
             raise HTTPException(status_code=404, detail="Spool not found")
+
+        try:
+            sm_spool = await sm_client.get_spool(req.spool_id)
+        except SpoolmanNotFoundError:
+            raise HTTPException(status_code=404, detail="Spool not found")
+        except SpoolmanUnavailableError:
+            raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
+
+        try:
+            mapped = _map_spoolman_spool(sm_spool)
+        except ValueError as exc:
+            logger.warning("Spoolman returned invalid spool for write-tag: %s", exc)
+            raise HTTPException(status_code=404, detail="Spool not found")
+
+        ndef_data = encode_opentag3d_from_mapped(mapped)
+        data_origin = "spoolman"
+
+        # Warn when fields that drive NFC content are absent in Spoolman.
+        # The tag will still be written but color_name encodes as 32 spaces and
+        # nozzle_temp encodes as 0 °C — both render as garbage on readers.
+        if not mapped.get("color_name"):
+            nfc_warnings.append("color_name not set in Spoolman — tag encodes empty color name")
+        if not mapped.get("nozzle_temp_min"):
+            nfc_warnings.append("nozzle_temp_min not set in Spoolman — tag encodes 0 °C")
+        if nfc_warnings:
+            logger.warning(
+                "NFC encode for Spoolman spool %d has incomplete data: %s",
+                req.spool_id,
+                "; ".join(nfc_warnings),
+            )
 
     # Store write payload and set pending command
     device.pending_write_payload = json.dumps(
@@ -481,7 +513,10 @@ async def nfc_write_tag(
         data_origin,
         len(ndef_data),
     )
-    return {"status": "queued"}
+    result: dict = {"status": "queued"}
+    if nfc_warnings:
+        result["warnings"] = nfc_warnings
+    return result
 
 
 @router.post("/nfc/write-result")
@@ -510,43 +545,88 @@ async def nfc_write_result(
 
     if req.success:
         if data_origin == "spoolman":
-            # Update Spoolman extra.tag with the written NFC UID.
-            # Spoolman operations run BEFORE db.commit() so that if they raise,
-            # the device state rollback leaves the DB untouched (no stale cleared
-            # pending_command that would confuse the daemon state machine).
-            from backend.app.models.settings import Settings
-            from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+            # Update Spoolman extra.tag with the written NFC UID using a safe merge
+            # (fetches current extra first to avoid overwriting other custom fields).
+            from backend.app.services.spoolman import SpoolmanNotFoundError, SpoolmanUnavailableError
 
-            settings_result = await db.execute(select(Settings))
-            settings_dict = {s.key: s.value for s in settings_result.scalars().all()}
-            spoolman_url = settings_dict.get("spoolman_url", "").strip()
+            sm_client = await _get_spoolman_client_or_none(db)
+            if sm_client is None:
+                logger.warning(
+                    "Spoolman not configured; cannot persist tag link for spool %d", req.spool_id
+                )
+                await db.commit()
+                await ws_manager.broadcast(
+                    {
+                        "type": "spoolbuddy_tag_link_failed",
+                        "device_id": req.device_id,
+                        "spool_id": req.spool_id,
+                        "tag_uid": req.tag_uid,
+                        "message": "Spoolman not configured",
+                    }
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="Tag written to NFC but Spoolman is not configured; link not persisted",
+                )
 
             try:
-                client = await get_spoolman_client()
-                if not client or client.base_url != spoolman_url.rstrip("/"):
-                    client = await init_spoolman_client(spoolman_url)
-
                 tag_value = json.dumps(req.tag_uid.upper())
-                updated = await client.update_spool(
-                    spool_id=req.spool_id,
-                    extra={"tag": tag_value},
-                )
+                updated = await sm_client.merge_spool_extra(req.spool_id, {"tag": tag_value})
                 if updated:
                     logger.info(
                         "Spoolman tag written and linked: spool %d -> tag %s",
                         req.spool_id,
                         req.tag_uid,
                     )
+                    await db.commit()
+                    await ws_manager.broadcast(
+                        {
+                            "type": "spoolbuddy_tag_written",
+                            "device_id": req.device_id,
+                            "spool_id": req.spool_id,
+                            "tag_uid": req.tag_uid,
+                        }
+                    )
                 else:
                     logger.warning(
-                        "Tag written to NFC but failed to persist to Spoolman: spool %d",
+                        "Tag written to NFC but Spoolman failed to persist link: spool %d",
                         req.spool_id,
                     )
-            except Exception as exc:
+                    await db.commit()
+                    await ws_manager.broadcast(
+                        {
+                            "type": "spoolbuddy_tag_link_failed",
+                            "device_id": req.device_id,
+                            "spool_id": req.spool_id,
+                            "tag_uid": req.tag_uid,
+                            "message": "Spoolman did not confirm the update",
+                        }
+                    )
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Tag written to NFC but Spoolman did not confirm the link",
+                    )
+            except HTTPException:
+                raise
+            except (SpoolmanNotFoundError, SpoolmanUnavailableError, Exception) as exc:
                 logger.warning(
-                    "Spoolman extra.tag update failed for spool %d: %s — device state still cleared",
-                    req.spool_id,
-                    exc,
+                    "Spoolman extra.tag update failed for spool %d: %s", req.spool_id, exc
+                )
+                await db.commit()
+                await ws_manager.broadcast(
+                    {
+                        "type": "spoolbuddy_tag_link_failed",
+                        "device_id": req.device_id,
+                        "spool_id": req.spool_id,
+                        "tag_uid": req.tag_uid,
+                        # Generic message — full exception (may contain internal URLs/hostnames)
+                        # is logged server-side only to prevent information leakage via WebSocket.
+                        "message": "Spoolman link failed",
+                    }
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="Tag written to NFC but Spoolman link failed",
                 )
         else:
             # Link the tag to the local DB spool
@@ -561,15 +641,15 @@ async def nfc_write_result(
                 spool.encode_time = datetime.now(timezone.utc)
                 logger.info("Tag written and linked: spool %d -> tag %s", spool.id, req.tag_uid)
 
-        await db.commit()
-        await ws_manager.broadcast(
-            {
-                "type": "spoolbuddy_tag_written",
-                "device_id": req.device_id,
-                "spool_id": req.spool_id,
-                "tag_uid": req.tag_uid,
-            }
-        )
+            await db.commit()
+            await ws_manager.broadcast(
+                {
+                    "type": "spoolbuddy_tag_written",
+                    "device_id": req.device_id,
+                    "spool_id": req.spool_id,
+                    "tag_uid": req.tag_uid,
+                }
+            )
     else:
         await db.commit()
         await ws_manager.broadcast(
@@ -635,29 +715,29 @@ async def update_spool_weight(
 ):
     """Update spool's used weight from scale reading."""
     from backend.app.api.routes._spoolman_helpers import _safe_float
-    from backend.app.models.settings import Settings
-    from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+    from backend.app.services.spoolman import SpoolmanNotFoundError, SpoolmanUnavailableError
 
-    settings_result = await db.execute(select(Settings))
-    settings_dict = {s.key: s.value for s in settings_result.scalars().all()}
-    spoolman_url = settings_dict.get("spoolman_url", "").strip()
-    spoolman_enabled = settings_dict.get("spoolman_enabled", "false").lower() == "true" and bool(spoolman_url)
-
-    if spoolman_enabled and urlparse(spoolman_url).scheme.lower() in ("http", "https"):
-        client = await get_spoolman_client()
-        if not client or client.base_url != spoolman_url.rstrip("/"):
-            client = await init_spoolman_client(spoolman_url)
-
-        sm_spool = await client.get_spool(req.spool_id)
-        if sm_spool is None:
+    sm_client = await _get_spoolman_client_or_none(db)
+    if sm_client is not None:
+        try:
+            sm_spool = await sm_client.get_spool(req.spool_id)
+        except SpoolmanNotFoundError:
             raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+        except SpoolmanUnavailableError:
+            raise HTTPException(status_code=502, detail="Spoolman server is not reachable")
 
         filament = sm_spool.get("filament") or {}
-        core_weight = _safe_float(filament.get("spool_weight"), 250.0)
+        raw_spool_weight = filament.get("spool_weight")
+        if not raw_spool_weight:
+            logger.warning(
+                "Spoolman spool %d has no spool_weight set; using 250g fallback for tare",
+                req.spool_id,
+            )
+        core_weight = _safe_float(raw_spool_weight, 250.0)
         label_weight = _safe_float(filament.get("weight"), 1000.0)
         remaining_weight = max(0.0, req.weight_grams - core_weight)
 
-        result = await client.update_spool(spool_id=req.spool_id, remaining_weight=remaining_weight)
+        result = await sm_client.update_spool(spool_id=req.spool_id, remaining_weight=remaining_weight)
         if result is None:
             raise HTTPException(status_code=502, detail="Failed to update spool weight in Spoolman")
 

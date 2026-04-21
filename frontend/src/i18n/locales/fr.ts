@@ -3249,6 +3249,7 @@ export default {
     spoolCreated: 'Bobine créée',
     spoolUpdated: 'Bobine mise à jour',
     spoolDeleted: 'Bobine supprimée',
+    deepLinkSpoolNotFound: 'Bobine introuvable',
     spoolArchived: 'Bobine archivée',
     spoolRestored: 'Bobine restaurée',
     deleteConfirm: 'Supprimer définitivement cette bobine ?',

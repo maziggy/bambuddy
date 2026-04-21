@@ -1102,6 +1102,10 @@ async def run_migrations(conn):
 
     # Migration: Add user-editable storage location to spool table
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN storage_location VARCHAR(255)")
+    # Migration: Widen tag_uid column from VARCHAR(16) to VARCHAR(32) to accommodate 7-byte NFC
+    # UIDs (14 hex chars) in addition to 8-byte Bambu Lab UIDs (16 hex chars).
+    # SQLite ignores VARCHAR sizes; this is a no-op there but needed for PostgreSQL.
+    await _safe_execute(conn, "ALTER TABLE spool ALTER COLUMN tag_uid TYPE VARCHAR(32)")
     # Migration: Add cost field to spool_usage_history table
     await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN cost REAL")
     # Migration: Add archive_id field to spool_usage_history table

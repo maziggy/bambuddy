@@ -13,12 +13,25 @@ NDEF structure:
 """
 
 import struct
+from typing import TypedDict
 
 from backend.app.models.spool import Spool
 
 OPENTAG3D_MIME_TYPE = b"application/opentag3d"
 PAYLOAD_SIZE = 102
 TAG_VERSION = 1000  # v1.000
+
+
+class MappedSpoolFields(TypedDict, total=False):
+    """Fields consumed by the OpenTag3D encoder from a mapped Spoolman spool dict."""
+
+    material: str | None
+    subtype: str | None
+    brand: str | None
+    color_name: str | None
+    rgba: str | None
+    label_weight: int | None
+    nozzle_temp_min: int | None
 
 
 def _build_payload_from_dict(data: dict) -> bytes:
@@ -122,7 +135,7 @@ def encode_opentag3d(spool: Spool) -> bytes:
     return _encode_ndef(_build_payload(spool))
 
 
-def encode_opentag3d_from_mapped(mapped: dict) -> bytes:
+def encode_opentag3d_from_mapped(mapped: MappedSpoolFields) -> bytes:
     """Encode a Spoolman-mapped spool dict as OpenTag3D NDEF message.
 
     Accepts the dict produced by ``_map_spoolman_spool`` (or any dict

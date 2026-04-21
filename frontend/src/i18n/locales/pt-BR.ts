@@ -3262,6 +3262,7 @@ export default {
     spoolCreated: 'Carretel criado',
     spoolUpdated: 'Carretel atualizado',
     spoolDeleted: 'Carretel excluído',
+    deepLinkSpoolNotFound: 'Carretel não encontrado',
     spoolArchived: 'Carretel arquivado',
     spoolRestored: 'Carretel restaurado',
     deleteConfirm: 'Tem certeza de que deseja excluir este carretel? Esta ação não pode ser desfeita.',

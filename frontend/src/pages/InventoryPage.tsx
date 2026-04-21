@@ -513,7 +513,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   }, [spoolmanModeReady, deepLinkSpoolId, deepLinkInList, setSearchParams]);
 
   // Targeted fetch — only fires when mode is known and spool isn't in the list yet
-  const { data: deepLinkSpool } = useQuery({
+  const { data: deepLinkSpool, isError: deepLinkFetchFailed } = useQuery({
     queryKey: spoolmanMode
       ? ['spoolman-inventory-spool', deepLinkSpoolId]
       : ['inventory-spool', deepLinkSpoolId],
@@ -523,6 +523,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         : api.getSpool(deepLinkSpoolId!),
     enabled: spoolmanModeReady && deepLinkSpoolId !== null && deepLinkInList === null,
     staleTime: Infinity,
+    retry: false,
   });
 
   useEffect(() => {
@@ -531,6 +532,13 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
     setFormModal({ spool: deepLinkSpool });
   }, [deepLinkSpool, setSearchParams]);
+
+  useEffect(() => {
+    if (!deepLinkFetchFailed || deepLinkHandled.current) return;
+    deepLinkHandled.current = true;
+    setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
+    showToast(t('inventory.deepLinkSpoolNotFound'), 'error');
+  }, [deepLinkFetchFailed, setSearchParams, showToast, t]);
 
   const { data: assignments } = useQuery({
     queryKey: ['spool-assignments'],
@@ -581,8 +589,9 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       const spoolName = [spool.brand, spool.material, spool.color_name].filter(Boolean).join(' ');
       showToast(`Synced "${spoolName}" to scale weight`, 'success');
-    } catch {
-      showToast('Failed to sync weight', 'error');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to sync weight';
+      showToast(msg, 'error');
     }
   };
 

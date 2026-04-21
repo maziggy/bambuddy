@@ -7,9 +7,11 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import backend.app.services.spoolbuddy_ssh  # noqa: F401 — ensures patch() can resolve the dotted path
 from backend.app.api.routes import spoolbuddy as spoolbuddy_routes
 from backend.app.models.spool import Spool
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
+from backend.app.services.spoolman import SpoolmanNotFoundError, SpoolmanUnavailableError
 
 API = "/api/v1/spoolbuddy"
 
@@ -1241,9 +1243,10 @@ def _mock_spoolman_client(base_url: str = "http://spoolman.local:7912") -> Magic
     client = MagicMock()
     client.base_url = base_url
     client.get_spools = AsyncMock(return_value=[])
-    client.get_spool = AsyncMock(return_value=None)
+    client.get_spool = AsyncMock(return_value={})
     client.find_spool_by_tag = AsyncMock(return_value=None)
     client.update_spool = AsyncMock(return_value=None)
+    client.merge_spool_extra = AsyncMock(return_value={"id": 0})
     return client
 
 
@@ -1328,7 +1331,7 @@ class TestUpdateSpoolWeightSpoolman:
     ):
         """404 when Spoolman doesn't know the spool."""
         mock_client = _mock_spoolman_client()
-        mock_client.get_spool = AsyncMock(return_value=None)
+        mock_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("Spool 9999 not found"))
 
         with (
             patch(
@@ -1624,7 +1627,7 @@ class TestNfcWriteTagSpoolman:
         """404 returned when spool is missing from both local DB and Spoolman."""
         await device_factory(device_id="sb-miss")
         mock_client = _mock_spoolman_client()
-        mock_client.get_spool = AsyncMock(return_value=None)
+        mock_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("Spool 9999 not found"))
 
         with (
             patch(
@@ -1669,7 +1672,7 @@ class TestNfcWriteResultSpoolman:
     async def test_success_updates_spoolman_extra_tag(
         self, async_client: AsyncClient, device_factory, spoolman_settings
     ):
-        """Successful write for a Spoolman spool calls update_spool with extra.tag."""
+        """Successful write for a Spoolman spool calls merge_spool_extra with extra.tag."""
         import json as _json
 
         await device_factory(
@@ -1680,7 +1683,7 @@ class TestNfcWriteResultSpoolman:
             ),
         )
         mock_client = _mock_spoolman_client()
-        mock_client.update_spool = AsyncMock(return_value={"id": 55})
+        mock_client.merge_spool_extra = AsyncMock(return_value={"id": 55})
 
         with (
             patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
@@ -1705,10 +1708,7 @@ class TestNfcWriteResultSpoolman:
             )
 
         assert resp.status_code == 200
-        mock_client.update_spool.assert_called_once_with(
-            spool_id=55,
-            extra={"tag": '"AABBCCDD11223344"'},
-        )
+        mock_client.merge_spool_extra.assert_called_once_with(55, {"tag": '"AABBCCDD11223344"'})
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_tag_written"
         assert msg["tag_uid"] == "AABBCCDD11223344"
@@ -1878,7 +1878,7 @@ class TestNfcWriteResultSpoolmanSecurityFixes:
             ),
         )
         mock_client = _mock_spoolman_client()
-        mock_client.update_spool = AsyncMock(side_effect=Exception("connection refused"))
+        mock_client.merge_spool_extra = AsyncMock(side_effect=Exception("connection refused"))
 
         with (
             patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
@@ -1902,15 +1902,15 @@ class TestNfcWriteResultSpoolmanSecurityFixes:
                 },
             )
 
-        # Should return 200 (tag was written to NFC, Spoolman update is best-effort)
-        assert resp.status_code == 200
-        # Device state must be cleared despite the exception
+        # 502: tag written to NFC but Spoolman link failed (not best-effort — caller must retry)
+        assert resp.status_code == 502
+        # Device state must be cleared despite the exception (no spurious re-write)
         await db_session.refresh(device)
         assert device.pending_command is None
         assert device.pending_write_payload is None
-        # Broadcast still fires
+        # Failure broadcast fires so the UI can show the error
         msg = mock_ws.broadcast.call_args[0][0]
-        assert msg["type"] == "spoolbuddy_tag_written"
+        assert msg["type"] == "spoolbuddy_tag_link_failed"
 
 
 class TestNfcWriteResultInputValidation:

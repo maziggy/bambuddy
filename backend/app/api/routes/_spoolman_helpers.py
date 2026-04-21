@@ -5,9 +5,62 @@ No heavy dependencies — importable in unit tests without the full backend stac
 
 from __future__ import annotations
 
+import ipaddress
+import logging
 import math
 import re
 from datetime import datetime, timezone
+from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
+
+
+def assert_safe_spoolman_url(url: str) -> None:
+    """Raise ValueError if *url* should be blocked as an SSRF risk.
+
+    Checks performed:
+    - Scheme must be http or https.
+    - Bare numeric IP hosts in loopback (127.x, ::1), link-local (169.254.x,
+      fe80::), private (RFC-1918), multicast (224.x, ff::/8), or unspecified
+      (0.0.0.0, ::) ranges are rejected.
+    - IPv4-mapped IPv6 addresses (::ffff:x.x.x.x) are unwrapped to their IPv4
+      equivalent and subject to the same checks.
+
+    Hostname-based addresses ("localhost", "internal.corp") require DNS resolution
+    and are outside the scope of this guard — they are mitigated by network-level
+    controls in the deployment environment.  "localhost" is intentionally *not*
+    blocked here because running Spoolman on the same host is a common and
+    supported topology.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in ("http", "https"):
+        raise ValueError("Spoolman URL must use http or https")
+
+    hostname = (parsed.hostname or "").lower()
+
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        # Not a bare IP — hostname-based addresses are out of scope.
+        return
+
+    # Unwrap IPv4-mapped IPv6 (::ffff:169.254.x.x etc.) so their IPv4
+    # properties are evaluated correctly.
+    effective: ipaddress.IPv4Address | ipaddress.IPv6Address = addr
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        effective = addr.ipv4_mapped
+
+    if (
+        effective.is_loopback
+        or effective.is_link_local
+        or effective.is_private
+        or effective.is_multicast
+        or effective.is_unspecified
+    ):
+        raise ValueError(
+            "Spoolman URL must not point to a private, loopback, link-local, "
+            "multicast, or unspecified address"
+        )
 
 _COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
 
@@ -70,13 +123,23 @@ def _map_spoolman_spool(spool: dict) -> dict:
         raise ValueError(f"Spoolman spool 'id' must be a positive integer, got {spool_id}")
 
     filament: dict = spool.get("filament") or {}
+    if not filament:
+        logger.warning(
+            "Spoolman spool %s has no filament data — all filament fields will use defaults",
+            spool_id,
+        )
     vendor: dict = filament.get("vendor") or {}
     extra: dict = spool.get("extra") or {}
 
-    # RFID tag stored as JSON-encoded string in Spoolman extra.tag
+    # RFID tag stored as JSON-encoded string in Spoolman extra.tag.
+    # 32-char hex → Bambu Lab tray UUID; 8–30-char hex → NFC tag UID.
+    # Accepting the full realistic UID range (4-byte = 8 chars, 7-byte = 14 chars,
+    # 10-byte = 20 chars) avoids silently dropping valid SpoolBuddy-written tags.
+    _HEX = frozenset("0123456789ABCDEF")
     raw_tag: str = (extra.get("tag") or "").strip('"').upper()
-    tag_uid = raw_tag if len(raw_tag) == 16 else None
-    tray_uuid = raw_tag if len(raw_tag) == 32 else None
+    _raw_is_hex = bool(raw_tag) and all(c in _HEX for c in raw_tag)
+    tag_uid = raw_tag if _raw_is_hex and 8 <= len(raw_tag) <= 30 else None
+    tray_uuid = raw_tag if _raw_is_hex and len(raw_tag) == 32 else None
 
     # Subtype = filament name with material prefix stripped
     material: str = (filament.get("material") or "").strip()
@@ -104,11 +167,16 @@ def _map_spoolman_spool(spool: dict) -> dict:
 
     created_at: str = spool.get("registered") or datetime.now(timezone.utc).isoformat()
 
+    color_name: str | None = filament.get("color_name") or None
+
+    nozzle_temp_raw = filament.get("settings_extruder_temp")
+    nozzle_temp_min: int | None = _safe_int(nozzle_temp_raw, 0) or None
+
     return {
         "id": spool_id,
         "material": material,
         "subtype": subtype,
-        "color_name": None,
+        "color_name": color_name,
         "rgba": rgba,
         "brand": vendor.get("name") or None,
         "label_weight": label_weight,
@@ -121,7 +189,7 @@ def _map_spoolman_spool(spool: dict) -> dict:
         # slicer_filament_name carries the Spoolman filament name for display
         "slicer_filament": None,
         "slicer_filament_name": filament_name or None,
-        "nozzle_temp_min": None,
+        "nozzle_temp_min": nozzle_temp_min,
         "nozzle_temp_max": None,
         "note": spool.get("comment") or None,
         "added_full": None,
@@ -133,6 +201,7 @@ def _map_spoolman_spool(spool: dict) -> dict:
         "tag_type": "spoolman",
         "archived_at": archived_at,
         "created_at": created_at,
+        # Spoolman has no updated_at field; use registered timestamp as best available proxy
         "updated_at": created_at,
         "cost_per_kg": _safe_optional_float(spool.get("price")),
         "storage_location": spool.get("location") or None,

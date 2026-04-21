@@ -3287,6 +3287,7 @@ export default {
     spoolCreated: 'スプールを作成しました',
     spoolUpdated: 'スプールを更新しました',
     spoolDeleted: 'スプールを削除しました',
+    deepLinkSpoolNotFound: 'スプールが見つかりません',
     spoolArchived: 'スプールをアーカイブしました',
     spoolRestored: 'スプールを復元しました',
     deleteConfirm: 'このスプールを削除しますか？この操作は元に戻せません。',

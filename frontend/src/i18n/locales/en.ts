@@ -3330,6 +3330,7 @@ export default {
     spoolCreated: 'Spool created',
     spoolUpdated: 'Spool updated',
     spoolDeleted: 'Spool deleted',
+    deepLinkSpoolNotFound: 'Spool not found',
     spoolArchived: 'Spool archived',
     spoolRestored: 'Spool restored',
     deleteConfirm: 'Are you sure you want to delete this spool? This cannot be undone.',

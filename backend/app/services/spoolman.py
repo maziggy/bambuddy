@@ -56,6 +56,14 @@ class AMSTray:
     tray_weight: int  # Spool weight in grams (usually 1000)
 
 
+class SpoolmanNotFoundError(Exception):
+    """Raised when a spool ID does not exist in Spoolman (HTTP 404)."""
+
+
+class SpoolmanUnavailableError(Exception):
+    """Raised when Spoolman is unreachable or returns a server/network error."""
+
+
 class SpoolmanClient:
     """Client for interacting with Spoolman API."""
 
@@ -421,23 +429,34 @@ class SpoolmanClient:
             logger.error("Failed to update spool in Spoolman: %s", e)
             return None
 
-    async def get_spool(self, spool_id: int) -> dict | None:
+    async def get_spool(self, spool_id: int) -> dict:
         """Get a single spool by ID from Spoolman.
 
         Args:
             spool_id: Spoolman spool ID
 
         Returns:
-            Spool dictionary or None on failure.
+            Spool dictionary.
+
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist (HTTP 404).
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
         """
         try:
             client = await self._get_client()
             response = await client.get(f"{self.api_url}/spool/{spool_id}")
+            if response.status_code == 404:
+                raise SpoolmanNotFoundError(f"Spool {spool_id} not found in Spoolman")
             response.raise_for_status()
             return response.json()
+        except SpoolmanNotFoundError:
+            raise
+        except httpx.HTTPStatusError as e:
+            logger.error("Spoolman returned HTTP error for spool %s: %s", spool_id, e)
+            raise SpoolmanUnavailableError(f"Spoolman server error for spool {spool_id}") from e
         except Exception as e:
             logger.error("Failed to get spool %s from Spoolman: %s", spool_id, e)
-            return None
+            raise SpoolmanUnavailableError(f"Cannot reach Spoolman: {e}") from e
 
     async def get_all_spools(self, allow_archived: bool = False) -> list[dict]:
         """Get all spools from Spoolman, optionally including archived ones.
@@ -554,6 +573,27 @@ class SpoolmanClient:
         except Exception as e:
             logger.error("Failed to update spool %s in Spoolman: %s", spool_id, e)
             return None
+
+    async def merge_spool_extra(self, spool_id: int, new_fields: dict) -> dict | None:
+        """Fetch current extra dict, merge new_fields in, then PATCH back to Spoolman.
+
+        Safe merge — never blindly overwrites other custom Spoolman extra fields.
+
+        Args:
+            spool_id: Spoolman spool ID
+            new_fields: Fields to add/update in the extra dict
+
+        Returns:
+            Updated spool dictionary or None on failure.
+
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist.
+            SpoolmanUnavailableError: If Spoolman is unreachable.
+        """
+        current = await self.get_spool(spool_id)  # raises on error
+        current_extra: dict = current.get("extra") or {}
+        merged = {**current_extra, **new_fields}
+        return await self.update_spool_full(spool_id=spool_id, extra=merged)
 
     async def find_or_create_vendor(self, name: str) -> int | None:
         """Find an existing vendor by name or create a new one.

@@ -4223,13 +4223,13 @@ export const api = {
     request<InventorySpool[]>(`/spoolman/inventory/spools?include_archived=${includeArchived}`),
   getSpoolmanInventorySpool: (id: number) =>
     request<InventorySpool>(`/spoolman/inventory/spools/${id}`),
-  createSpoolmanInventorySpool: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'storage_location'>) =>
+  createSpoolmanInventorySpool: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>) =>
     request<InventorySpool>('/spoolman/inventory/spools', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   bulkCreateSpoolmanInventorySpools: (
-    data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'storage_location'>,
+    data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>,
     quantity: number,
   ) =>
     request<InventorySpool[]>('/spoolman/inventory/spools/bulk', {
@@ -4238,7 +4238,7 @@ export const api = {
     }),
   updateSpoolmanInventorySpool: (
     id: number,
-    data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles' | 'storage_location'>>,
+    data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>,
   ) =>
     request<InventorySpool>(`/spoolman/inventory/spools/${id}`, {
       method: 'PATCH',

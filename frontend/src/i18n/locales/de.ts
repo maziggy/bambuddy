@@ -3327,6 +3327,7 @@ export default {
     spoolCreated: 'Spule erstellt',
     spoolUpdated: 'Spule aktualisiert',
     spoolDeleted: 'Spule gelöscht',
+    deepLinkSpoolNotFound: 'Spule nicht gefunden',
     spoolArchived: 'Spule archiviert',
     spoolRestored: 'Spule wiederhergestellt',
     deleteConfirm: 'Möchten Sie diese Spule wirklich löschen? Dies kann nicht rückgängig gemacht werden.',

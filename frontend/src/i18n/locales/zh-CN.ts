@@ -3319,6 +3319,7 @@ export default {
     spoolCreated: '耗材已创建',
     spoolUpdated: '耗材已更新',
     spoolDeleted: '耗材已删除',
+    deepLinkSpoolNotFound: '未找到耗材',
     spoolArchived: '耗材已归档',
     spoolRestored: '耗材已恢复',
     deleteConfirm: '确定要删除此耗材吗？此操作无法撤销。',

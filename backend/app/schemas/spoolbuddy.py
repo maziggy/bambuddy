@@ -81,7 +81,7 @@ class HeartbeatResponse(BaseModel):
 
 class TagScannedRequest(BaseModel):
     device_id: str
-    tag_uid: str
+    tag_uid: str = Field(..., max_length=32)
     tray_uuid: str | None = None
     sak: int | None = None
     tag_type: str | None = None
@@ -90,7 +90,7 @@ class TagScannedRequest(BaseModel):
 
 class TagRemovedRequest(BaseModel):
     device_id: str
-    tag_uid: str
+    tag_uid: str = Field(..., max_length=32)
 
 
 # --- Scale schemas ---
@@ -104,7 +104,7 @@ class ScaleReadingRequest(BaseModel):
 
 
 class UpdateSpoolWeightRequest(BaseModel):
-    spool_id: int
+    spool_id: int = Field(..., gt=0)
     weight_grams: float
 
 
@@ -131,13 +131,13 @@ class CalibrationResponse(BaseModel):
 
 class WriteTagRequest(BaseModel):
     device_id: str
-    spool_id: int
+    spool_id: int = Field(..., gt=0)
 
 
 class WriteTagResultRequest(BaseModel):
     device_id: str
     spool_id: int
-    tag_uid: str = Field(..., max_length=64)
+    tag_uid: str = Field(..., max_length=32)
     success: bool
     message: str | None = None
 

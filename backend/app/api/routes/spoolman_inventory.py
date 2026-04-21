@@ -10,20 +10,30 @@ from __future__ import annotations
 import logging
 import re
 import time
-from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, _safe_float, _safe_int
+from backend.app.api.routes._spoolman_helpers import (
+    _map_spoolman_spool,
+    _safe_float,
+    _safe_int,
+    assert_safe_spoolman_url,
+)
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-from backend.app.services.spoolman import SpoolmanClient, get_spoolman_client, init_spoolman_client
+from backend.app.services.spoolman import (
+    SpoolmanClient,
+    SpoolmanNotFoundError,
+    SpoolmanUnavailableError,
+    get_spoolman_client,
+    init_spoolman_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +59,12 @@ async def _get_client(db: AsyncSession) -> SpoolmanClient:
     if not url:
         raise HTTPException(status_code=400, detail="Spoolman URL is not configured")
 
-    # Reject non-http(s) schemes to prevent SSRF via file://, ftp://, etc.
-    scheme = urlparse(url).scheme.lower()
-    if scheme not in ("http", "https"):
-        raise HTTPException(status_code=400, detail="Spoolman URL must use http or https")
+    # SSRF guard: reject dangerous schemes, localhost, and bare private/loopback/
+    # multicast IPs. Raises ValueError with a descriptive message on any violation.
+    try:
+        assert_safe_spoolman_url(url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Re-use the existing client when the URL is unchanged; reinitialise only
     # when the URL was changed in settings (TOCTOU guard).
@@ -61,6 +73,9 @@ async def _get_client(db: AsyncSession) -> SpoolmanClient:
         client = await init_spoolman_client(url)
 
     # Only call health_check() when the cached result has expired.
+    # Evict stale entries when URL changes (only one Spoolman URL is active at a time).
+    if url not in _health_check_cache and _health_check_cache:
+        _health_check_cache.clear()
     now = time.monotonic()
     last_ok = _health_check_cache.get(url, 0.0)
     if now - last_ok > _HEALTH_CHECK_TTL:
@@ -77,13 +92,13 @@ async def _get_client(db: AsyncSession) -> SpoolmanClient:
 # ---------------------------------------------------------------------------
 
 
-_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6,8}$")
+_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")
 
 
 def _validate_rgba(v: str | None) -> str | None:
     if v is None:
         return v
-    clean = v.lstrip("#")
+    clean = v.removeprefix("#")
     if not _HEX_RE.match(clean):
         raise ValueError("rgba must be a 6 or 8 character hex string (RRGGBB or RRGGBBAA)")
     return clean.upper()
@@ -133,8 +148,10 @@ class SpoolmanInventoryBulkCreate(BaseModel):
 
     @field_validator("quantity")
     @classmethod
-    def clamp_quantity(cls, v: int) -> int:
-        return max(1, min(v, 50))
+    def validate_quantity(cls, v: int) -> int:
+        if v < 1 or v > 50:
+            raise ValueError("quantity must be between 1 and 50")
+        return v
 
 
 class SpoolWeightUpdate(BaseModel):
@@ -160,15 +177,18 @@ async def list_spools(
 
 @router.get("/spools/{spool_id}")
 async def get_spool(
-    spool_id: int,
+    spool_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> dict:
     """Return a single Spoolman spool in the InventorySpool format."""
     client = await _get_client(db)
-    spool = await client.get_spool(spool_id)
-    if not spool:
+    try:
+        spool = await client.get_spool(spool_id)
+    except SpoolmanNotFoundError:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanUnavailableError:
+        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
     return _map_spoolman_spool(spool)
 
 
@@ -241,12 +261,20 @@ async def bulk_create_spools(
     if not created:
         raise HTTPException(status_code=500, detail="Failed to create any spools in Spoolman")
 
+    if len(created) < payload.quantity:
+        # Some spool creations failed — return 207 Multi-Status so the caller
+        # can distinguish a full success from a partial one.
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(status_code=207, content=created)
+
     return created
 
 
 @router.patch("/spools/{spool_id}")
 async def update_spool(
-    spool_id: int,
+    *,
+    spool_id: int = Path(..., gt=0),
     data: SpoolmanInventoryUpdate,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
@@ -254,9 +282,12 @@ async def update_spool(
     """Update an existing Spoolman spool, re-linking the filament if metadata changed."""
     client = await _get_client(db)
 
-    current = await client.get_spool(spool_id)
-    if not current:
+    try:
+        current = await client.get_spool(spool_id)
+    except SpoolmanNotFoundError:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanUnavailableError:
+        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
     cur_filament: dict = current.get("filament") or {}
     cur_vendor: dict = cur_filament.get("vendor") or {}
@@ -271,7 +302,7 @@ async def update_spool(
     material = data.material if data.material is not None else cur_mat
     subtype = data.subtype if data.subtype is not None else cur_subtype
     brand = data.brand if data.brand is not None else (cur_vendor.get("name") or None)
-    cur_color = (cur_filament.get("color_hex") or "808080").upper().lstrip("#")
+    cur_color = (cur_filament.get("color_hex") or "808080").upper().removeprefix("#")
     rgba = data.rgba if data.rgba is not None else (cur_color + "FF")
     label_weight = data.label_weight if data.label_weight is not None else int(cur_filament.get("weight") or 1000)
     weight_used = data.weight_used if data.weight_used is not None else float(current.get("used_weight") or 0)
@@ -309,7 +340,7 @@ async def update_spool(
         price=data.cost_per_kg,
         extra=extra,
         location=storage_location or None,
-        clear_location=storage_location_changed and storage_location is None,
+        clear_location=storage_location_changed and not storage_location,
     )
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update spool in Spoolman")
@@ -319,7 +350,7 @@ async def update_spool(
 
 @router.delete("/spools/{spool_id}")
 async def delete_spool(
-    spool_id: int,
+    spool_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
@@ -333,7 +364,7 @@ async def delete_spool(
 
 @router.post("/spools/{spool_id}/archive")
 async def archive_spool(
-    spool_id: int,
+    spool_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
@@ -347,7 +378,7 @@ async def archive_spool(
 
 @router.post("/spools/{spool_id}/restore")
 async def restore_spool(
-    spool_id: int,
+    spool_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
@@ -361,7 +392,8 @@ async def restore_spool(
 
 @router.patch("/spools/{spool_id}/weight")
 async def sync_spool_weight(
-    spool_id: int,
+    *,
+    spool_id: int = Path(..., gt=0),
     data: SpoolWeightUpdate,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
@@ -374,9 +406,12 @@ async def sync_spool_weight(
     """
     client = await _get_client(db)
 
-    current = await client.get_spool(spool_id)
-    if not current:
+    try:
+        current = await client.get_spool(spool_id)
+    except SpoolmanNotFoundError:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanUnavailableError:
+        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
     cur_filament = current.get("filament") or {}
     core_weight = _safe_float(cur_filament.get("spool_weight"), 250.0)

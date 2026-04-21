@@ -348,6 +348,73 @@ describe('SpoolFormModal weightTouched', () => {
     expect(payload).toHaveProperty('cost_per_kg', null);
   });
 
+  it('normalizes a malformed legacy rgba on edit-form load so PATCH is not rejected (#1055)', async () => {
+    // #1055 regression guard: a spool with a legacy 7-char rgba (e.g. 'FFFFFFF')
+    // was editable in the UI but any save 422'd because SpoolUpdate now enforces
+    // the 8-char pattern. The form must sanitize the loaded value to a valid
+    // default so users can edit unrelated fields without being forced to fix
+    // a color they may not even have noticed was broken.
+    const spoolWithBadRgba: InventorySpool = {
+      ...existingSpool,
+      rgba: 'FFFFFFF', // 7 chars — the exact #1055 trigger pattern
+    };
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolWithBadRgba}
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [, payload] = vi.mocked(api.updateSpool).mock.calls[0];
+    // The PATCH payload must carry a valid 8-char rgba — never the raw 7-char
+    // value loaded from the stale DB row.
+    expect(payload).toHaveProperty('rgba');
+    expect(typeof (payload as { rgba: unknown }).rgba).toBe('string');
+    expect((payload as { rgba: string }).rgba).toMatch(/^[0-9A-Fa-f]{8}$/);
+  });
+
+  it('preserves a valid existing rgba on edit (no forced default)', async () => {
+    // Sanity: the normalization only kicks in for malformed values. A valid
+    // 8-char rgba must round-trip untouched so untouched edits don't quietly
+    // reset a user's chosen color.
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={existingSpool} // rgba = 'FF0000FF' (valid)
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [, payload] = vi.mocked(api.updateSpool).mock.calls[0];
+    expect((payload as { rgba: string }).rgba).toBe('FF0000FF');
+  });
+
   it('displays correct catalog name when duplicates exist', async () => {
     const spoolWithCatalogId: InventorySpool = {
       ...existingSpool,

@@ -75,10 +75,7 @@ These installs have no `.git` directory, so neither `update.sh` nor a plain
 
 ```bash
 # 1. Back up your stateful data
-sudo systemctl stop bambuddy
-sudo tar czf ~/bambuddy-backup.tgz -C /opt/bambuddy \
-  data bambuddy.db bambuddy.db-shm bambuddy.db-wal \
-  virtual_printer archive projects icons .env 2>/dev/null || true
+Create and download a backup via Bambuddy Settings -> Backup -> Local Backup
 
 # 2. Remove the old install and reinstall via install.sh
 sudo rm -rf /opt/bambuddy
@@ -86,9 +83,10 @@ curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/install/insta
   -o /tmp/install.sh && sudo bash /tmp/install.sh --path /opt/bambuddy
 
 # 3. Restore your data
-sudo systemctl stop bambuddy
-sudo tar xzf ~/bambuddy-backup.tgz -C /opt/bambuddy
-sudo systemctl start bambuddy
+Restore your backup via Bambuddy -> Settings -> Backup -> Local Backup
+
+# 4. Restart Bambuddy
+sudo systemctl restart bambuddy
 ```
 
 ---

@@ -34,6 +34,9 @@ export interface PrintModalProps {
   onSuccess?: () => void;
   /** Project ID to associate the resulting archive with (only when triggered from project view) */
   projectId?: number;
+  /** Delete the LibraryFile after dispatch — used by the Printers-page Direct-Print flow
+   *  so transient uploads don't linger in File Manager. Only applies to library-file prints. */
+  cleanupLibraryAfterDispatch?: boolean;
 }
 
 /**

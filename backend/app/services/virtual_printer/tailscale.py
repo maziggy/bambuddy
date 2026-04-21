@@ -10,6 +10,7 @@ Falls back gracefully when Tailscale is unavailable.
 import asyncio
 import json
 import logging
+import os
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -20,14 +21,45 @@ from cryptography import x509
 
 logger = logging.getLogger(__name__)
 
-# Renew when fewer than this many days remain on the LE cert (LE issues 90-day certs)
-TS_CERT_EXPIRY_THRESHOLD_DAYS = 14
+# Renew when fewer than this many days remain on the LE cert (LE issues 90-day certs;
+# Let's Encrypt recommends renewing at 30 days remaining)
+TS_CERT_EXPIRY_THRESHOLD_DAYS = 30
 
 # Defensive FQDN validation before passing to subprocess
 _FQDN_RE = re.compile(
     r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$",
     re.IGNORECASE,
 )
+
+# Minimal environment for tailscale subprocess — passes OS/shell variables that
+# tailscale needs to locate its socket and config, but strips application secrets
+# (JWT keys, DB URLs, SMTP passwords, etc.) that the subprocess has no need for.
+_SUBPROCESS_ENV: dict[str, str] = {
+    k: v
+    for k, v in os.environ.items()
+    if k
+    in {
+        "PATH",
+        "HOME",
+        "USER",
+        "USERNAME",
+        "LOGNAME",
+        # Windows equivalents
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "SYSTEMROOT",
+        "WINDIR",
+        "COMPUTERNAME",
+        "TEMP",
+        "TMP",
+        # Linux XDG dirs used by tailscale for socket/config
+        "XDG_RUNTIME_DIR",
+        "XDG_CONFIG_HOME",
+    }
+}
 
 
 @dataclass
@@ -49,19 +81,29 @@ class TailscaleService:
     sensible defaults and never raise exceptions.
     """
 
-    async def _run_tailscale(self, *args: str) -> tuple[int, bytes, bytes]:
+    async def _run_tailscale(self, *args: str, timeout: float = 30.0) -> tuple[int | None, bytes, bytes]:
         """Run a tailscale subcommand and return (returncode, stdout, stderr).
 
-        Extracted to allow easy mocking in tests without patching asyncio internals.
-        Raises OSError if the binary cannot be launched.
+        Resolves the binary to an absolute path to guard against PATH hijacking.
+        Raises OSError if the binary cannot be found or launched.
+        Raises asyncio.TimeoutError if the subprocess exceeds the timeout.
         """
+        binary = shutil.which("tailscale")
+        if not binary:
+            raise OSError("tailscale binary not found")
         process = await asyncio.create_subprocess_exec(
-            "tailscale",
+            binary,
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=_SUBPROCESS_ENV,
         )
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            raise
         return process.returncode, stdout, stderr
 
     async def get_status(self) -> TailscaleStatus:
@@ -82,7 +124,7 @@ class TailscaleService:
             )
 
         try:
-            returncode, stdout, stderr = await self._run_tailscale("status", "--json")
+            returncode, stdout, stderr = await self._run_tailscale("status", "--json", timeout=5.0)
         except OSError as e:
             return TailscaleStatus(
                 available=False,
@@ -92,7 +134,7 @@ class TailscaleService:
                 error=str(e),
             )
 
-        if returncode != 0:
+        if returncode is None or returncode != 0:
             return TailscaleStatus(
                 available=False,
                 hostname="",
@@ -152,18 +194,27 @@ class TailscaleService:
             logger.warning("provision_cert: invalid FQDN %r, skipping", fqdn)
             return False
 
+        # Ensure the target directory exists before tailscale cert writes to it
+        cert_path.parent.mkdir(parents=True, exist_ok=True)
+
         logger.info("Provisioning Tailscale cert for %s -> %s", fqdn, cert_path)
         try:
             returncode, _, stderr = await self._run_tailscale(
-                "cert", "--cert-file", str(cert_path), "--key-file", str(key_path), fqdn
+                "cert",
+                "--cert-file",
+                str(cert_path),
+                "--key-file",
+                str(key_path),
+                fqdn,
+                timeout=60.0,
             )
         except OSError as e:
             logger.warning("tailscale cert failed (OS error): %s", e)
             return False
 
-        if returncode != 0:
+        if returncode is None or returncode != 0:
             logger.warning(
-                "tailscale cert failed (exit %d): %s",
+                "tailscale cert failed (exit %s): %s",
                 returncode,
                 stderr.decode(errors="replace").strip(),
             )
@@ -199,12 +250,12 @@ class TailscaleService:
                 return True
 
             # Validate that the cert covers the requested FQDN (guards against stale
-            # cert after machine rename or tailnet migration)
+            # cert after machine rename or tailnet migration). Case-insensitive per RFC 4343.
             if fqdn:
                 try:
                     san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
                     dns_names = san.value.get_values_for_type(x509.DNSName)
-                    if fqdn not in dns_names:
+                    if fqdn.lower() not in {n.lower() for n in dns_names}:
                         logger.info(
                             "Tailscale cert SAN mismatch (cert has %s, need %s), renewal needed",
                             dns_names,

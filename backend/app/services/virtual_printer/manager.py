@@ -371,21 +371,62 @@ class VirtualPrinterInstance:
 
     # -- Service lifecycle --
 
+    async def _cancel_renewal_task(self) -> None:
+        """Cancel the cert renewal task and await its completion."""
+        if self._cert_renewal_task:
+            self._cert_renewal_task.cancel()
+            try:
+                await self._cert_renewal_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._cert_renewal_task = None
+
+    async def _restart_for_cert_renewal(self) -> None:
+        """Restart VP services to load the newly renewed Tailscale cert into TLS listeners."""
+        logger.info("[VP %s] Restarting services to apply renewed Tailscale cert", self.name)
+        try:
+            if self.is_proxy:
+                await self.stop_proxy()
+                await self.start_proxy()
+            else:
+                await self.stop_server()
+                await self.start_server()
+        except Exception as e:
+            logger.error("[VP %s] Failed to restart after cert renewal: %s", self.name, e)
+
     async def _cert_renewal_loop(self) -> None:
         """Daily background check for Tailscale cert renewal while VP is running.
 
-        Only acts when Tailscale is in use (tailscale_fqdn is set). The renewed
-        cert is written to disk and picked up on the next VP restart — the running
-        TLS listeners are not hot-reloaded, but the cert remains valid for at least
-        TS_CERT_EXPIRY_THRESHOLD_DAYS more days after renewal is triggered.
+        Checks first, then sleeps, so a cert that was just barely renewed at startup
+        is not re-checked for another 24 h. When a renewal actually happens the loop
+        schedules a VP restart so the new cert is loaded into the running TLS listeners.
+
+        _cert_renewal_task is tracked separately from _tasks because it has a different
+        lifecycle: it runs for the entire lifetime of the VP, not just during service start.
         """
         while True:
             try:
-                await asyncio.sleep(86400)  # check once per day
                 if self.tailscale_fqdn:
-                    renewed = await self._cert_service.use_tailscale_cert(self.tailscale_fqdn, tailscale_service)
-                    if renewed:
-                        logger.info("[VP %s] Tailscale cert renewed for %s", self.name, self.tailscale_fqdn)
+                    needs_renewal = tailscale_service.cert_needs_renewal(
+                        self._cert_service.ts_cert_path, fqdn=self.tailscale_fqdn
+                    )
+                    if needs_renewal:
+                        renewed = await self._cert_service.use_tailscale_cert(self.tailscale_fqdn, tailscale_service)
+                        if renewed:
+                            logger.info(
+                                "[VP %s] Tailscale cert renewed for %s, scheduling restart",
+                                self.name,
+                                self.tailscale_fqdn,
+                            )
+                            # Schedule restart in a separate task; this loop ends here
+                            # so the restart can cleanly cancel _cert_renewal_task and
+                            # create a fresh one via start_server/start_proxy.
+                            asyncio.create_task(
+                                self._restart_for_cert_renewal(),
+                                name=f"vp_{self.id}_cert_restart",
+                            )
+                            break
+                await asyncio.sleep(86400)  # check once per day
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -402,13 +443,16 @@ class VirtualPrinterInstance:
         Falls back to the self-signed cert and IP-based advertising when
         Tailscale is absent or provisioning fails.
         """
-        ts_status = await tailscale_service.get_status()
-        if ts_status.available:
-            ts_result = await self._cert_service.use_tailscale_cert(ts_status.fqdn, tailscale_service)
-            if ts_result:
-                self.tailscale_fqdn = ts_status.fqdn
-                logger.info("[VP %s] Using Tailscale cert for %s", self.name, ts_status.fqdn)
-                return ts_result[0], ts_result[1], ts_status.fqdn
+        try:
+            ts_status = await tailscale_service.get_status()
+            if ts_status.available:
+                ts_result = await self._cert_service.use_tailscale_cert(ts_status.fqdn, tailscale_service)
+                if ts_result:
+                    self.tailscale_fqdn = ts_status.fqdn
+                    logger.info("[VP %s] Using Tailscale cert for %s", self.name, ts_status.fqdn)
+                    return ts_result[0], ts_result[1], ts_status.fqdn
+        except Exception as e:
+            logger.warning("[VP %s] Tailscale cert check failed, falling back to self-signed: %s", self.name, e)
 
         self.tailscale_fqdn = None
         logger.info("[VP %s] Tailscale unavailable, using self-signed cert", self.name)
@@ -498,15 +542,15 @@ class VirtualPrinterInstance:
             )
         )
 
+        # Guard against double-start: cancel any orphaned task before creating a new one
+        await self._cancel_renewal_task()
         self._cert_renewal_task = asyncio.create_task(self._cert_renewal_loop(), name=f"vp_{self.id}_cert_renewal")
 
         logger.info("[VP %s] Server-mode services started on %s", self.name, bind_addr)
 
     async def stop_server(self) -> None:
         """Stop server-mode services."""
-        if self._cert_renewal_task:
-            self._cert_renewal_task.cancel()
-            self._cert_renewal_task = None
+        await self._cancel_renewal_task()
         if self._ftp:
             await self._ftp.stop()
             self._ftp = None
@@ -580,6 +624,8 @@ class VirtualPrinterInstance:
             )
         )
 
+        # Guard against double-start: cancel any orphaned task before creating a new one
+        await self._cancel_renewal_task()
         self._cert_renewal_task = asyncio.create_task(self._cert_renewal_loop(), name=f"vp_{self.id}_cert_renewal")
 
     def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
@@ -600,9 +646,7 @@ class VirtualPrinterInstance:
 
     async def stop_proxy(self) -> None:
         """Stop proxy mode services for this instance."""
-        if self._cert_renewal_task:
-            self._cert_renewal_task.cancel()
-            self._cert_renewal_task = None
+        await self._cancel_renewal_task()
         if self._proxy:
             await self._proxy.stop()
             self._proxy = None

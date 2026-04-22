@@ -38,11 +38,26 @@
         return token ? { Authorization: 'Bearer ' + token } : {};
     }
 
+    // When auth is enabled and the user has no valid token, every API call
+    // returns 401 and the viewer chrome stays on screen showing empty state.
+    // Intercept the first 401 and hand control back to the SPA, which owns
+    // the login flow and will redirect to /login when appropriate.
+    let _authRedirectFired = false;
     function apiFetch(path, opts) {
         return fetch(API_BASE + path, {
             ...opts,
             headers: { ...authHeaders(), ...(opts && opts.headers) },
             cache: 'no-store',
+        }).then((response) => {
+            if (response.status === 401 && !_authRedirectFired) {
+                _authRedirectFired = true;
+                try {
+                    sessionStorage.removeItem('auth_token');
+                    localStorage.removeItem('auth_token');
+                } catch (e) { /* storage unavailable */ }
+                window.top.location.replace('/');
+            }
+            return response;
         });
     }
 

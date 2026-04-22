@@ -214,6 +214,7 @@ export default {
     chamberLightOff: 'Turn off chamber light',
     // Files
     files: 'Files',
+    gcodeViewer: 'GCode Viewer',
     browseFiles: 'Browse printer files',
     // Smart plug
     autoOffAfterPrint: 'Auto power-off after print',
@@ -2895,6 +2896,7 @@ export default {
     lowDiskSpaceWarning: 'Low disk space warning',
     lowDiskSpaceDetails: 'Only {{free}} free of {{total}} total. Threshold is set to {{threshold}} GB in settings.',
     files: 'Files',
+    gcodeViewer: 'GCode Viewer',
     folders: 'Folders',
     size: 'Size',
     free: 'Free',
@@ -2998,6 +3000,7 @@ export default {
     createFirstButton: 'Create Your First Project',
     create: 'Create',
     files: 'Files',
+    gcodeViewer: 'GCode Viewer',
     prints: 'Prints',
     plates: 'plates',
     parts: 'parts',

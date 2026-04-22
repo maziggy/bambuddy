@@ -14,10 +14,10 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _call(relative_path, base_dir):
     """Call to_absolute_path with base_dir patched to *base_dir*."""
@@ -32,6 +32,7 @@ def _call(relative_path, base_dir):
 # None / empty guard
 # ---------------------------------------------------------------------------
 
+
 class TestNullInputs:
     def test_none_returns_none(self, tmp_path):
         assert _call(None, tmp_path) is None
@@ -43,6 +44,7 @@ class TestNullInputs:
 # ---------------------------------------------------------------------------
 # Relative path traversal guard
 # ---------------------------------------------------------------------------
+
 
 class TestRelativePathTraversal:
     def test_normal_relative_path_resolves(self, tmp_path):
@@ -89,6 +91,7 @@ class TestRelativePathTraversal:
 # Legacy absolute path pass-through
 # ---------------------------------------------------------------------------
 
+
 class TestLegacyAbsolutePaths:
     def test_absolute_path_inside_base_is_returned(self, tmp_path):
         """An absolute path that happens to be inside base_dir is returned as-is."""
@@ -110,4 +113,3 @@ class TestLegacyAbsolutePaths:
         outside = tmp_path / "old_archive" / "legacy.3mf"
         result = _call(str(outside), base)
         assert result == outside.resolve()
-

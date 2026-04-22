@@ -134,8 +134,20 @@ class PrintScheduler:
                 [(i.id, i.printer_id, i.archive_id, i.library_file_id) for i in items],
             )
 
-            # Track busy printers to avoid assigning multiple items to same printer
-            busy_printers: set[int] = set()
+            # Seed busy_printers with printers that already have an item in 'printing'
+            # status. _is_printer_idle() alone is not sufficient as a dispatch gate —
+            # on H2D / P1 series the MQTT state transition from IDLE to RUNNING can
+            # lag several seconds behind the print command, so the next check_queue
+            # tick still sees IDLE and would double-dispatch onto the same printer.
+            # Without this guard, two pending items targeting the same printer
+            # (e.g. a batch with quantity>1) both end up in 'printing' status —
+            # surfaced via the "BUG: Multiple queue items" warning in on_print_complete.
+            busy_result = await db.execute(
+                select(PrintQueueItem.printer_id)
+                .where(PrintQueueItem.status == "printing")
+                .where(PrintQueueItem.printer_id.is_not(None))
+            )
+            busy_printers: set[int] = {pid for (pid,) in busy_result.all() if pid is not None}
 
             # Log skip reasons once per queue check (not per item)
             skip_reasons: dict[str, int] = {}

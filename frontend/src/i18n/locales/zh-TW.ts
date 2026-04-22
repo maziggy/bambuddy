@@ -904,9 +904,7 @@ export default {
     },
     addedBy: '由 {{name}} 新增',
     nextInQueue: '佇列中的下一個',
-    clearPlate: '清理列印板並開始下一個',
     clearPlateSuccess: '列印板已清理 — 準備進行下一個列印',
-    plateReady: '列印板已清理 — 準備進行下一個列印',
     plateNumber: '板 {{index}}',
     // Batch / quantity
     quantity: '數量',

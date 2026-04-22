@@ -897,9 +897,7 @@ export default {
     },
     addedBy: 'Adicionado por {{name}}',
     nextInQueue: 'Próximo na fila',
-    clearPlate: 'Limpar Placa e Iniciar Próximo',
     clearPlateSuccess: 'Placa limpa — pronta para a próxima impressão',
-    plateReady: 'Placa limpa — pronta para a próxima impressão',
     plateNumber: 'Placa {{index}}',
     // Batch / quantity
     quantity: 'Quantidade',

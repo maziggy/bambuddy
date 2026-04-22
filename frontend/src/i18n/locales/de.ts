@@ -10,7 +10,6 @@ export default {
     projects: 'Projekte',
     inventory: 'Filament',
     files: 'Dateimanager',
-    gcodeViewer: 'GCode-Viewer',
     notifications: 'Benachrichtigungen',
     settings: 'Einstellungen',
     system: 'System',
@@ -214,7 +213,6 @@ export default {
     chamberLightOff: 'Kammerbeleuchtung ausschalten',
     // Files
     files: 'Dateien',
-    gcodeViewer: 'GCode-Viewer',
     browseFiles: 'Druckerdateien durchsuchen',
     // Smart plug
     autoOffAfterPrint: 'Automatisches Ausschalten nach Druck',
@@ -735,6 +733,14 @@ export default {
       noCopyLink: 'Sie haben keine Berechtigung, Download-Links zu kopieren',
       noDelete: 'Sie haben keine Berechtigung, dieses Archiv zu löschen',
       noCreate: 'Sie haben keine Berechtigung, Archive zu erstellen',
+    },
+    platePicker: {
+      title: 'Platte zur Vorschau auswählen',
+      hint: 'Dieses Archiv enthält mehrere Platten. Wähle eine, um sie im GCode-Viewer zu öffnen.',
+      plateLabel: 'Platte {{index}}',
+      objectCount: '{{count}} Objekt',
+      objectCount_plural: '{{count}} Objekte',
+      noGcode: 'Dieses Archiv enthält keinen geschnittenen G-Code zur Vorschau. Öffne es zuerst in Bambu Studio zum Slicen.',
     },
     card: {
       previousPlate: 'Vorherige Platte',
@@ -2893,7 +2899,6 @@ export default {
     lowDiskSpaceWarning: 'Warnung: Wenig Speicherplatz',
     lowDiskSpaceDetails: 'Nur {{free}} frei von {{total}} gesamt. Schwellenwert ist auf {{threshold}} GB eingestellt.',
     files: 'Dateien',
-    gcodeViewer: 'GCode-Viewer',
     folders: 'Ordner',
     size: 'Größe',
     free: 'Frei',
@@ -2997,7 +3002,6 @@ export default {
     createFirstButton: 'Erstes Projekt erstellen',
     create: 'Erstellen',
     files: 'Dateien',
-    gcodeViewer: 'GCode-Viewer',
     prints: 'Drucke',
     plates: 'Platten',
     parts: 'Teile',

@@ -10,7 +10,6 @@ export default {
     projects: '项目',
     inventory: '耗材',
     files: '文件管理器',
-    gcodeViewer: 'GCode查看器',
     notifications: '通知',
     settings: '设置',
     system: '系统',
@@ -214,7 +213,6 @@ export default {
     chamberLightOff: '关闭腔室灯',
     // Files
     files: '文件',
-    gcodeViewer: 'GCode查看器',
     browseFiles: '浏览打印机文件',
     // Smart plug
     autoOffAfterPrint: '打印后自动关机',
@@ -735,6 +733,14 @@ export default {
       noCopyLink: '您没有复制下载链接的权限',
       noDelete: '您没有删除此归档的权限',
       noCreate: '您没有创建归档的权限',
+    },
+    platePicker: {
+      title: '选择要预览的打印板',
+      hint: '此存档包含多个打印板。选择一个在 GCode 查看器中打开。',
+      plateLabel: '打印板 {{index}}',
+      objectCount: '{{count}} 个对象',
+      objectCount_plural: '{{count}} 个对象',
+      noGcode: '此存档没有可预览的已切片 G 代码。请先在 Bambu Studio 中打开并切片。',
     },
     card: {
       previousPlate: '上一个板',
@@ -2880,7 +2886,6 @@ export default {
     lowDiskSpaceWarning: '磁盘空间不足警告',
     lowDiskSpaceDetails: '仅剩 {{free}}（总共 {{total}}）。阈值设置为 {{threshold}} GB。',
     files: '文件',
-    gcodeViewer: 'GCode查看器',
     folders: '文件夹',
     size: '大小',
     free: '剩余',
@@ -2984,7 +2989,6 @@ export default {
     createFirstButton: '创建您的第一个项目',
     create: '创建',
     files: '文件',
-    gcodeViewer: 'GCode查看器',
     prints: '打印',
     plates: '板',
     parts: '零件',

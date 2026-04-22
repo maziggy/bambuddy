@@ -872,6 +872,16 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         result["cover_url"] = f"/api/v1/printers/{printer_id}/cover"
     else:
         result["cover_url"] = None
+    # Surface the display name + model so WS consumers (gcode viewer printer
+    # selector) can render proper labels on the initial snapshot without racing
+    # a separate /api/v1/printers fetch (#963 follow-up). PrinterInfo only
+    # carries name/serial_number; the model comes through via the `model` arg.
+    if printer_id:
+        _printer_info = printer_manager.get_printer(printer_id)
+        if _printer_info is not None:
+            result["name"] = _printer_info.name
+    if model:
+        result["model"] = model
     return result
 
 

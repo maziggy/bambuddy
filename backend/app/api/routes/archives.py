@@ -2568,10 +2568,17 @@ async def get_archive_capabilities(
 @router.get("/{archive_id}/gcode")
 async def get_gcode(
     archive_id: int,
+    plate: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
-    """Extract and return G-code from the 3MF file."""
+    """Extract and return G-code from the 3MF file.
+
+    When *plate* is provided, returns the G-code for that specific plate
+    (e.g. ``?plate=2`` returns ``Metadata/plate_2.gcode``). If omitted, falls
+    back to the first plate found in the archive (preserving the original
+    behaviour for callers that predate the multi-plate viewer).
+    """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
     if not archive:
@@ -2580,6 +2587,9 @@ async def get_gcode(
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
         raise HTTPException(404, "File not found")
+
+    if plate is not None and plate < 1:
+        raise HTTPException(400, "Plate index must be >= 1")
 
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
@@ -2591,8 +2601,28 @@ async def get_gcode(
                     "No G-code found. This file hasn't been sliced yet - G-code is only available after slicing in Bambu Studio.",
                 )
 
-            # Get the first plate's G-code (usually plate_1.gcode)
-            gcode_content = zf.read(gcode_files[0]).decode("utf-8")
+            if plate is not None:
+                # Resolve plate → filename via the same parsing the plates
+                # endpoint uses (int() on the suffix), so zero-padded names
+                # like plate_01.gcode are found when the plates endpoint
+                # reported index 1.
+                selected = None
+                for gf in gcode_files:
+                    if not gf.startswith("Metadata/plate_"):
+                        continue
+                    suffix = gf[len("Metadata/plate_") : -len(".gcode")]
+                    try:
+                        if int(suffix) == plate:
+                            selected = gf
+                            break
+                    except ValueError:
+                        continue
+                if selected is None:
+                    raise HTTPException(404, f"Plate {plate} not found in this archive")
+            else:
+                selected = gcode_files[0]
+
+            gcode_content = zf.read(selected).decode("utf-8")
             return Response(content=gcode_content, media_type="text/plain")
     except zipfile.BadZipFile:
         raise HTTPException(400, "Invalid 3MF file")
@@ -3028,11 +3058,17 @@ async def get_archive_plates(
     except Exception as e:
         logger.warning("Failed to parse plates from archive %s: %s", archive_id, e)
 
+    # Has gcode iff the plate list was built from .gcode filenames (as opposed
+    # to the JSON/PNG fallback for source-only 3MF projects). Callers that need
+    # to preview gcode — the viewer, skip-objects — can gate on this instead of
+    # 404-ing on every plate request.
+    has_gcode = bool(gcode_files)
     return {
         "archive_id": archive_id,
         "filename": archive.filename,
         "plates": plates,
         "is_multi_plate": len(plates) > 1,
+        "has_gcode": has_gcode,
     }
 
 

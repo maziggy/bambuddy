@@ -4628,9 +4628,12 @@ def _gcode_viewer_response(rel: str) -> FileResponse:
     raise _HTTPException(status_code=404)
 
 
-@app.get("/gcode-viewer")
 @app.get("/gcode-viewer/")
 async def serve_gcode_viewer_index() -> FileResponse:
+    """Raw PrettyGCode viewer for the iframe. The bare ``/gcode-viewer``
+    (no trailing slash) intentionally falls through to the SPA catch-all so a
+    full-page reload re-enters the React layout instead of serving the iframe
+    contents standalone."""
     return _gcode_viewer_response("index.html")
 
 

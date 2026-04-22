@@ -114,15 +114,8 @@
     };
 
     // Bed sizes for common Bambu models (mm)
-    var BAMBU_BED_SIZES = {
-        'X1':       { width: 256, depth: 256, height: 256 },
-        'X1C':      { width: 256, depth: 256, height: 256 },
-        'X1E':      { width: 256, depth: 256, height: 256 },
-        'P1S':      { width: 256, depth: 256, height: 256 },
-        'P1P':      { width: 256, depth: 256, height: 256 },
-        'A1':       { width: 300, depth: 300, height: 300 },
-        'A1 Mini':  { width: 180, depth: 180, height: 180 },
-    };
+    // Fallback bed size used until loadArchiveById() fetches the archive's
+    // actual build_volume from /api/v1/archives/{id}/capabilities.
     var DEFAULT_BED = { width: 256, depth: 256, height: 256 };
 
     var currentBed = Object.assign({}, DEFAULT_BED);
@@ -177,6 +170,16 @@
                 /^\/?downloads\/files\/local\/__bambuddy_file_(\d+)$/,
                 API_BASE + '/library/files/$1/download'
             );
+            // OctoPrint file download  →  Bambuddy archive gcode (specific plate)
+            newPath = newPath.replace(
+                /^\/?downloads\/files\/local\/__bambuddy_archive_(\d+)_plate(\d+)$/,
+                API_BASE + '/archives/$1/gcode?plate=$2'
+            );
+            // OctoPrint file download  →  Bambuddy archive gcode (first plate)
+            newPath = newPath.replace(
+                /^\/?downloads\/files\/local\/__bambuddy_archive_(\d+)$/,
+                API_BASE + '/archives/$1/gcode'
+            );
             // OctoPrint plugin static assets  →  gcode-viewer static files
             newPath = newPath.replace(
                 /^\/?plugin\/prettygcode\/static\//,
@@ -199,7 +202,7 @@
         var promise = _originalFetch(resource, init);
 
         // Tee GCode downloads to build the layer map for sync + nozzle animation
-        if (url && url.match(/\/library\/files\/\d+\/download/)) {
+        if (url && (url.match(/\/library\/files\/\d+\/download/) || url.match(/\/archives\/\d+\/gcode/))) {
             promise = promise.then(function (response) {
                 var clone = response.clone();
                 clone.text().then(function (text) {
@@ -333,215 +336,40 @@
     var currentFileId = null;
     var currentFilename = null;
     var currentFileDate = 0; // stable epoch — only changes when a new file is loaded
-    var ws = null;
-    var wsReconnectTimer = null;
-    var printers = [];            // [{id, name, model, state, progress, subtask_name}]
-    var selectedPrinterId = null;
     var gcodeLayerMap = null;     // parsed layer data: {layerOffsets, layerCmds, totalBytes}
     var lastFedLayer = -1;        // last layer_num whose commands we fed to printHeadSim
 
-    // -------------------------------------------------------------------------
-    // 9. Bambuddy WebSocket
-    // -------------------------------------------------------------------------
-    function connectWebSocket() {
-        var token = localStorage.getItem('auth_token');
-        var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // Do NOT put the token in the URL — it would appear in server logs.
-        // The WebSocket endpoint is currently unauthenticated server-side;
-        // all sensitive calls go through authenticated fetch() instead.
-        var wsUrl = proto + '//' + location.host + API_BASE + '/ws';
+    // The viewer is scoped to previewing a specific archive (/gcode-viewer?archive=<id>).
+    // It no longer observes live printer state, so the WebSocket connection, the
+    // printer selector, auto-load-currently-printing, and library file picker are all
+    // intentionally absent. Bed size is derived from the archive's sliced_for_model.
 
-        ws = new WebSocket(wsUrl);
-
-        ws.onopen = function () {
-            console.log('[PrettyGCode] Connected to Bambuddy WebSocket');
-        };
-
-        ws.onmessage = function (event) {
-            try {
-                var msg = JSON.parse(event.data);
-                if (msg.type === 'printer_status') {
-                    handlePrinterStatus(msg.printer_id, msg.data);
-                }
-            } catch (e) {}
-        };
-
-        ws.onclose = function () {
-            clearTimeout(wsReconnectTimer);
-            wsReconnectTimer = setTimeout(connectWebSocket, 3000);
-        };
-
-        ws.onerror = function () {
-            ws.close();
-        };
-    }
-
-    function bambuStateToOctoState(bambuState) {
-        var map = {
-            RUNNING:  'Printing',
-            PAUSE:    'Paused',
-            FAILED:   'Error',
-            FINISH:   'Operational',
-            IDLE:     'Operational',
-        };
-        return map[bambuState] || 'Operational';
-    }
-
-    function handlePrinterStatus(printerId, data) {
-        // Update printer list entry
-        var found = false;
-        for (var i = 0; i < printers.length; i++) {
-            if (printers[i].id === printerId) {
-                // Allowlist to prevent prototype pollution from crafted WS messages
-                var allowed2 = ['name', 'state', 'progress', 'layer_num', 'subtask_name', 'gcode_file', 'camera_url', 'model'];
-                allowed2.forEach(function (k) { if (k in data) printers[i][k] = data[k]; });
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            // Only copy known, safe keys — avoids prototype pollution from a crafted WS message
-            var allowed = ['name', 'state', 'progress', 'layer_num', 'subtask_name', 'gcode_file', 'camera_url', 'model'];
-            var entry = { id: printerId };
-            allowed.forEach(function (k) { if (k in data) entry[k] = data[k]; });
-            printers.push(entry);
-        }
-
-        updatePrinterSelector();
-
-        // Only feed data for the selected printer
-        if (selectedPrinterId !== null && printerId !== selectedPrinterId) return;
-        if (selectedPrinterId === null && printers.length > 0) {
-            selectedPrinterId = printers[0].id;
-        }
-
-        if (!viewModel) return;
-
-        var printer = null;
-        for (var j = 0; j < printers.length; j++) {
-            if (printers[j].id === printerId) { printer = printers[j]; break; }
-        }
-        if (!printer) return;
-
-        // Update bed size from printer model
-        var bedKey = (printer.model || '').toUpperCase();
-        for (var modelName in BAMBU_BED_SIZES) {
-            if (bedKey.indexOf(modelName.toUpperCase()) !== -1) {
-                currentBed = BAMBU_BED_SIZES[modelName];
-                break;
-            }
-        }
-        // Replace the entire profile data so the subscribe() fires
-        fakePrinterProfiles.currentProfileData(makeFakeProfileData(currentBed));
-
-        // Auto-load currently printing file if it changed
-        var subtask = printer.subtask_name || printer.gcode_file || '';
-        if (subtask && subtask !== currentFilename) {
-            currentFilename = subtask;
-            tryAutoLoadPrintingFile(subtask);
-        }
-
-        // Update webcam URL
-        if (printer.camera_url) {
-            fakeSettings.webcam.streamUrl(printer.camera_url);
-        }
-
-        feedCurrentData(printer);
-    }
-
-    function feedCurrentData(printer) {
-        if (!viewModel || !viewModel.fromCurrentData) return;
-        var octoState = bambuStateToOctoState(printer.state || 'IDLE');
-        var isPrinting = octoState === 'Printing' || octoState === 'Paused';
-
-        // --- Layer sync via filepos -------------------------------------------
-        // prettygcode.js calls gcodeProxy.syncGcodeObjToFilePos(curPrintFilePos) each
-        // animation frame when printing + syncToProgress is on.  Pass the byte offset
-        // of the current layer so the highlight advances correctly.
-        var filepos = null;
-        var logs = [];
-
-        if (gcodeLayerMap && isPrinting) {
-            // Bambu layer_num is 1-based; our layerOffsets array is 0-based.
-            var layerIdx = Math.max(0, (printer.layer_num || 1) - 1);
-            layerIdx = Math.min(layerIdx, gcodeLayerMap.layerOffsets.length - 1);
-            filepos = gcodeLayerMap.layerOffsets[layerIdx] || 0;
-
-            // --- Nozzle animation via synthetic Send: commands -------------------
-            // PrintHeadSimulator.addCommand() expects "Send: G1 X... Y... Z..." entries.
-            // Feed the movement commands for the current layer once per layer change.
-            // The simulator interpolates them over real time, animating the nozzle model.
-            if (layerIdx !== lastFedLayer && gcodeLayerMap.layerCmds[layerIdx]) {
-                lastFedLayer = layerIdx;
-                var cmds = gcodeLayerMap.layerCmds[layerIdx];
-                // PrintHeadSimulator buffer is capped at 1000; feed at most 400 commands
-                // so there's room for the sim to drain before more arrive.
-                logs = cmds.slice(0, 400).map(function (c) { return 'Send:' + c; });
-            }
-        }
-
-        viewModel.fromCurrentData({
-            job: {
-                file: {
-                    path: currentFileId ? ('__bambuddy_file_' + currentFileId) : null,
-                    date: currentFileDate,
-                },
-                estimatedPrintTime: null,
-            },
-            state: {
-                text: octoState,
-                flags: { printing: octoState === 'Printing', paused: octoState === 'Paused' },
-            },
-            progress: {
-                filepos: filepos,
-                completion: (printer.progress || 0) / 100,
-                printTime: null,
-            },
-            currentZ: null,
-            logs: logs,
-        });
+    function updateFilenameDisplay(filename) {
+        var el = document.getElementById('bb-current-file');
+        if (el) el.textContent = filename || '— no file loaded —';
     }
 
     // -------------------------------------------------------------------------
-    // 8. Auto-load file when printer starts printing
+    // 10. Archive loader — invoked via /gcode-viewer/?archive=<id>
     // -------------------------------------------------------------------------
-    function tryAutoLoadPrintingFile(filename) {
-        // Search the library for a matching .gcode file
-        apiFetch('/library/files?sort_by=updated_at&sort_dir=desc', {})
-            .then(function (r) { return r.json(); })
-            .then(function (files) {
-                if (!Array.isArray(files)) return;
-                var match = files.find(function (f) {
-                    return f.filename === filename ||
-                           f.filename === filename + '.gcode' ||
-                           f.filename.replace(/\.gcode$/, '') === filename.replace(/\.gcode$/, '');
-                });
-                if (match) loadFileById(match.id, match.filename, match.file_size);
-            })
-            .catch(function () {});
-    }
-
-    // -------------------------------------------------------------------------
-    // 9. File loading
-    // -------------------------------------------------------------------------
-    function loadFileById(fileId, filename, fileSize) {
-        currentFileId = fileId;
-        currentFilename = filename;
-        currentFileDate = Date.now(); // new stable date so prettygcode loads exactly once
-        gcodeLayerMap = null;   // cleared here; re-populated when fetch() intercept fires
+    function loadArchiveById(archiveId, plate) {
+        // Pretygcode downloads /downloads/files/local/__bambuddy_archive_<id>(_plate<N>)
+        // and the fetch intercept rewrites it to /api/v1/archives/<id>/gcode[?plate=N].
+        var plateSuffix = (typeof plate === 'number' && plate >= 1) ? ('_plate' + plate) : '';
+        currentFileId = 'archive_' + archiveId + plateSuffix;
+        currentFilename = 'Archive #' + archiveId + (plateSuffix ? (' (plate ' + plate + ')') : '');
+        currentFileDate = Date.now();
+        gcodeLayerMap = null;
         lastFedLayer = -1;
         stopPlayback(true);
-        updateFilenameDisplay(filename);
-        // Enable play button once a file is loaded
+        updateFilenameDisplay(currentFilename);
         var playBtn = document.getElementById('bb-play-btn');
         if (playBtn) playBtn.disabled = false;
-        // Trigger prettygcode.js's updateJob — date must match currentFileDate exactly
-        // so subsequent feedCurrentData calls don't re-trigger the download
         if (viewModel && viewModel.fromCurrentData) {
             viewModel.fromCurrentData({
                 job: {
                     file: {
-                        path: '__bambuddy_file_' + fileId,
+                        path: '__bambuddy_archive_' + archiveId + plateSuffix,
                         date: currentFileDate,
                     },
                     estimatedPrintTime: null,
@@ -552,107 +380,39 @@
                 logs: [],
             });
         }
-    }
 
-    function updateFilenameDisplay(filename) {
-        var el = document.getElementById('bb-current-file');
-        if (el) el.textContent = filename || '— no file loaded —';
-    }
+        // Fetch metadata (for the filename display) and capabilities (for the
+        // bed size) in parallel. Capabilities extracts the actual build_volume
+        // from the 3MF's slicer config (printable_area / printable_height), so
+        // the bed matches whatever hardware the archive was sliced for — no
+        // hardcoded per-model map, correct for H2D (350×320×325), H-family
+        // machines, and any future model.
+        apiFetch('/archives/' + archiveId, {})
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (meta) {
+                if (meta && (meta.print_name || meta.filename)) {
+                    currentFilename = (meta.print_name || meta.filename) +
+                        (plateSuffix ? (' (plate ' + plate + ')') : '');
+                    updateFilenameDisplay(currentFilename);
+                }
+            })
+            .catch(function () { /* best-effort — filename stays "Archive #N" */ });
 
-    // -------------------------------------------------------------------------
-    // 10. File picker
-    // -------------------------------------------------------------------------
-    function buildFilePicker() {
-        var container = document.getElementById('bb-file-picker');
-        if (!container) return;
-
-        var input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = 'Search .gcode files…';
-        input.className = 'bb-search';
-        input.style.cssText = 'width:100%;padding:4px 8px;background:#333;border:1px solid #555;color:#fff;border-radius:4px;margin-bottom:4px;box-sizing:border-box;';
-
-        var list = document.createElement('div');
-        list.style.cssText = 'max-height:180px;overflow-y:auto;';
-
-        container.appendChild(input);
-        container.appendChild(list);
-
-        var allFiles = [];
-
-        function render(files) {
-            list.innerHTML = '';
-            if (!files.length) {
-                list.innerHTML = '<div style="color:#888;padding:4px 6px;font-size:12px;">No .gcode files found in library</div>';
-                return;
-            }
-            files.forEach(function (f) {
-                var row = document.createElement('div');
-                row.textContent = f.filename;
-                row.title = f.filename;
-                row.style.cssText = 'padding:4px 6px;cursor:pointer;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:3px;';
-                row.addEventListener('mouseenter', function () { row.style.background = '#444'; });
-                row.addEventListener('mouseleave', function () { row.style.background = ''; });
-                row.addEventListener('click', function () {
-                    loadFileById(f.id, f.filename, f.file_size);
-                    // Close picker
-                    container.classList.toggle('bb-open', false);
-                });
-                list.appendChild(row);
-            });
-        }
-
-        function loadFiles() {
-            list.innerHTML = '<div style="color:#aaa;padding:4px 6px;font-size:12px;">Loading files…</div>';
-            // include_root=false returns files from ALL folders, not just root level
-            apiFetch('/library/files?include_root=false', {})
-                .then(function (r) { return r.json(); })
-                .then(function (files) {
-                    if (!Array.isArray(files)) {
-                        list.innerHTML = '<div style="color:#f88;padding:4px 6px;font-size:12px;">Failed to load files</div>';
-                        return;
-                    }
-                    allFiles = files.filter(function (f) {
-                        return f.filename && f.filename.toLowerCase().endsWith('.gcode');
-                    });
-                    render(allFiles);
-                })
-                .catch(function () {
-                    list.innerHTML = '<div style="color:#f88;padding:4px 6px;font-size:12px;">Failed to load files — check auth token</div>';
-                });
-        }
-
-        input.addEventListener('input', function () {
-            var q = input.value.toLowerCase();
-            render(q ? allFiles.filter(function (f) { return f.filename.toLowerCase().indexOf(q) !== -1; }) : allFiles);
-        });
-
-        loadFiles();
+        apiFetch('/archives/' + archiveId + '/capabilities', {})
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (caps) {
+                if (!caps || !caps.build_volume) return;
+                var bv = caps.build_volume;
+                if (bv.x > 0 && bv.y > 0 && bv.z > 0) {
+                    currentBed = { width: bv.x, depth: bv.y, height: bv.z };
+                    fakePrinterProfiles.currentProfileData(makeFakeProfileData(currentBed));
+                }
+            })
+            .catch(function () { /* best-effort — default bed stays */ });
     }
 
     // -------------------------------------------------------------------------
-    // 11. Printer selector
-    // -------------------------------------------------------------------------
-    function updatePrinterSelector() {
-        var sel = document.getElementById('bb-printer-select');
-        if (!sel) return;
-        var current = sel.value;
-        sel.innerHTML = '';
-        printers.forEach(function (p) {
-            var opt = document.createElement('option');
-            opt.value = p.id;
-            opt.textContent = (p.name || ('Printer ' + p.id)) + (p.state ? ' [' + p.state + ']' : '');
-            sel.appendChild(opt);
-        });
-        if (current) sel.value = current;
-        if (!sel.value && printers.length) {
-            sel.value = printers[0].id;
-            selectedPrinterId = printers[0].id;
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // 13. Initialise after DOM + scripts are ready
+    // 11. Initialise after DOM + scripts are ready
     // -------------------------------------------------------------------------
     function init() {
         // Find the ViewModel registration that prettygcode.js pushed
@@ -691,51 +451,6 @@
                 console.error('[PrettyGCode] onTabChange failed:', e);
             }
         }
-
-        connectWebSocket();
-
-        // Wire up printer selector
-        var sel = document.getElementById('bb-printer-select');
-        if (sel) {
-            sel.addEventListener('change', function () {
-                selectedPrinterId = parseInt(sel.value, 10) || null;
-            });
-        }
-
-        // Load initial printer list
-        apiFetch('/printers', {})
-            .then(function (r) { return r.json(); })
-            .then(function (list) {
-                if (!Array.isArray(list)) return;
-                list.forEach(function (p) {
-                    // Find existing entry (WS may have pushed one before API returned)
-                    var existing = null;
-                    for (var i = 0; i < printers.length; i++) {
-                        if (printers[i].id === p.id) { existing = printers[i]; break; }
-                    }
-                    if (existing) {
-                        // Fill in name/model that WS status messages don't carry
-                        if (p.name)  existing.name  = p.name;
-                        if (p.model) existing.model = p.model;
-                    } else {
-                        printers.push({ id: p.id, name: p.name, model: p.model, state: 'IDLE', progress: 0 });
-                    }
-                });
-                updatePrinterSelector();
-                // Try to get bed size from first printer model
-                if (list.length > 0 && list[0].model) {
-                    var m = list[0].model.toUpperCase();
-                    for (var modelName in BAMBU_BED_SIZES) {
-                        if (m.indexOf(modelName.toUpperCase()) !== -1) {
-                            currentBed = BAMBU_BED_SIZES[modelName];
-                            fakePrinterProfiles.currentProfileData(makeFakeProfileData(currentBed));
-                            break;
-                        }
-                    }
-                }
-                if (list.length > 0) selectedPrinterId = list[0].id;
-            })
-            .catch(function () {});
 
         console.log('[PrettyGCode] Bambuddy adapter initialised');
 
@@ -828,34 +543,27 @@
         if (btn) btn.textContent = isPlaying ? '⏸' : '▶';
     }
 
-    // Run after all scripts have loaded.
-    // buildFilePicker() runs immediately at DOM-ready — independent of viewmodel
-    // init so the file picker is always functional even if prettygcode fails.
-    // init() (viewmodel + 3D canvas) runs 200 ms later to let prettygcode.js
-    // finish its own synchronous setup first.
+    // Run after all scripts have loaded. init() (viewmodel + 3D canvas) runs
+    // 200 ms later to let prettygcode.js finish its own synchronous setup first.
     function onDomReady() {
-        // Wire file-picker button — MUST be here (not an inline <script>) because
-        // the CSP on this page allows script-src 'self' but NOT 'unsafe-inline',
-        // so inline <script> blocks are blocked by the browser.
-        var fileBtn = document.getElementById('bb-file-btn');
-        var picker  = document.getElementById('bb-file-picker');
-        if (fileBtn && picker) {
-            fileBtn.addEventListener('click', function (e) {
-                picker.classList.toggle('bb-open');
-                e.stopPropagation();
-            });
-            // Clicking outside the picker closes it
-            document.addEventListener('click', function () {
-                picker.classList.remove('bb-open');
-            });
-            // Clicks inside the picker don't close it
-            picker.addEventListener('click', function (e) {
-                e.stopPropagation();
-            });
-        }
-
-        buildFilePicker();
-        setTimeout(init, 200);
+        setTimeout(function () {
+            init();
+            // If the viewer was opened with ?archive=<id>[&plate=<N>], load that
+            // archive's gcode for the requested plate once the viewmodel is ready.
+            try {
+                var params = new URLSearchParams(window.location.search);
+                var archiveParam = params.get('archive');
+                var plateParam = params.get('plate');
+                if (archiveParam && /^[1-9][0-9]*$/.test(archiveParam)) {
+                    var archiveId = parseInt(archiveParam, 10);
+                    var plateId = (plateParam && /^[1-9][0-9]*$/.test(plateParam))
+                        ? parseInt(plateParam, 10)
+                        : undefined;
+                    // Allow a tick for init() to finish wiring viewModel.fromCurrentData
+                    setTimeout(function () { loadArchiveById(archiveId, plateId); }, 50);
+                }
+            } catch (e) { /* URLSearchParams unsupported — skip */ }
+        }, 200);
     }
 
     if (document.readyState === 'loading') {
@@ -868,7 +576,7 @@
     // Public API
     // -------------------------------------------------------------------------
     window.BambuddyPrettyGCode = {
-        loadFile: loadFileById,
+        loadArchive: loadArchiveById,
         getViewModel: function () { return viewModel; },
         play: startPlayback,
         stop: stopPlayback,

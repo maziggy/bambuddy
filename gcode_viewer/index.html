@@ -33,18 +33,6 @@
       flex-shrink: 0;
       flex-wrap: wrap;
     }
-    #bb-toolbar label { color: #aaa; font-size: 12px; white-space: nowrap; }
-    #bb-printer-select {
-      background: #222; color: #ddd;
-      border: 1px solid #444; border-radius: 4px;
-      padding: 3px 6px; font-size: 12px;
-    }
-    #bb-file-btn {
-      background: #2a6496; color: #fff;
-      border: none; border-radius: 4px;
-      padding: 4px 10px; cursor: pointer; font-size: 12px;
-    }
-    #bb-file-btn:hover { background: #1c4d72; }
     #bb-current-file {
       color: #9ecfff; font-size: 12px;
       max-width: 300px; overflow: hidden;
@@ -72,19 +60,6 @@
       border: 1px solid #444; border-radius: 4px;
       padding: 3px 5px; font-size: 12px;
     }
-
-    /* File picker dropdown */
-    #bb-file-picker {
-      display: none;
-      position: fixed;   /* fixed so it's never clipped by viewer overflow */
-      top: 38px; left: 10px;
-      width: 320px;
-      background: #222; border: 1px solid #444;
-      border-radius: 6px; padding: 6px;
-      z-index: 9999;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
-    }
-    #bb-file-picker.bb-open { display: block; }
 
     /* Main layout */
     #bb-layout {
@@ -194,10 +169,6 @@
 
   <!-- Toolbar -->
   <div id="bb-toolbar">
-    <label for="bb-printer-select">Printer:</label>
-    <select id="bb-printer-select"><option value="">Loading…</option></select>
-
-    <button id="bb-file-btn">&#128196; Load file</button>
     <span id="bb-current-file">— no file loaded —</span>
 
     <button id="bb-play-btn" title="Play layer animation" disabled>&#9654;</button>
@@ -209,9 +180,6 @@
     </select>
 
   </div>
-
-  <!-- File picker (positioned relative to toolbar) -->
-  <div id="bb-file-picker"></div>
 
   <!-- Viewer area -->
   <div id="bb-viewer-wrap">

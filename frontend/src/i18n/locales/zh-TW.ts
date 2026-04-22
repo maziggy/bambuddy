@@ -10,7 +10,6 @@ export default {
     projects: '專案',
     inventory: '耗材',
     files: '檔案管理器',
-    gcodeViewer: 'GCode 檢視器',
     notifications: '通知',
     settings: '設定',
     system: '系統',
@@ -214,7 +213,6 @@ export default {
     chamberLightOff: '關閉腔室燈',
     // Files
     files: '檔案',
-    gcodeViewer: 'GCode 檢視器',
     browseFiles: '瀏覽印表機檔案',
     // Smart plug
     autoOffAfterPrint: '列印後自動關機',
@@ -735,6 +733,14 @@ export default {
       noCopyLink: '您沒有複製下載連結的權限',
       noDelete: '您沒有刪除此歸檔的權限',
       noCreate: '您沒有建立歸檔的權限',
+    },
+    platePicker: {
+      title: '選擇要預覽的列印板',
+      hint: '此存檔包含多個列印板。選擇一個在 GCode 檢視器中開啟。',
+      plateLabel: '列印板 {{index}}',
+      objectCount: '{{count}} 個物件',
+      objectCount_plural: '{{count}} 個物件',
+      noGcode: '此存檔沒有可預覽的已切片 G 代碼。請先在 Bambu Studio 中開啟並切片。',
     },
     card: {
       previousPlate: '上一個板',
@@ -2880,7 +2886,6 @@ export default {
     lowDiskSpaceWarning: '磁碟空間不足警告',
     lowDiskSpaceDetails: '僅剩 {{free}}（總共 {{total}}）。閾值設定為 {{threshold}} GB。',
     files: '檔案',
-    gcodeViewer: 'GCode 檢視器',
     folders: '資料夾',
     size: '大小',
     free: '剩餘',
@@ -2984,7 +2989,6 @@ export default {
     createFirstButton: '建立您的第一個項目',
     create: '建立',
     files: '檔案',
-    gcodeViewer: 'GCode 檢視器',
     prints: '列印',
     plates: '板',
     parts: '零件',

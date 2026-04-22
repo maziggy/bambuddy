@@ -10,7 +10,6 @@ export default {
     projects: 'Progetti',
     inventory: 'Filamento',
     files: 'File',
-    gcodeViewer: 'Visualizzatore GCode',
     notifications: 'Notifiche',
     settings: 'Impostazioni',
     system: 'Sistema',
@@ -214,7 +213,6 @@ export default {
     chamberLightOff: 'Spegni luce camera',
     // Files
     files: 'File',
-    gcodeViewer: 'Visualizzatore GCode',
     browseFiles: 'Sfoglia file stampante',
     // Smart plug
     autoOffAfterPrint: 'Spegnimento automatico dopo stampa',
@@ -728,6 +726,14 @@ export default {
       noCopyLink: 'Non hai il permesso di copiare link download',
       noDelete: 'Non hai il permesso di eliminare questo archivio',
       noCreate: 'Non hai il permesso di creare archivi',
+    },
+    platePicker: {
+      title: 'Seleziona la piastra da visualizzare',
+      hint: 'Questo archivio contiene più piastre. Scegline una da aprire nel visualizzatore GCode.',
+      plateLabel: 'Piastra {{index}}',
+      objectCount: '{{count}} oggetto',
+      objectCount_plural: '{{count}} oggetti',
+      noGcode: 'Questo archivio non contiene G-code generato da visualizzare. Aprilo prima in Bambu Studio per sezionarlo.',
     },
     card: {
       previousPlate: 'Piatto precedente',
@@ -2814,7 +2820,6 @@ export default {
     lowDiskSpaceWarning: 'Avviso spazio disco basso',
     lowDiskSpaceDetails: 'Solo {{free}} liberi su {{total}} totali. La soglia e {{threshold}} GB nelle impostazioni.',
     files: 'File',
-    gcodeViewer: 'Visualizzatore GCode',
     folders: 'Cartelle',
     size: 'Dimensione',
     free: 'Libero',
@@ -2918,7 +2923,6 @@ export default {
     createFirstButton: 'Crea il tuo primo progetto',
     create: 'Crea',
     files: 'File',
-    gcodeViewer: 'Visualizzatore GCode',
     prints: 'Stampe',
     plates: 'piatti',
     parts: 'parti',

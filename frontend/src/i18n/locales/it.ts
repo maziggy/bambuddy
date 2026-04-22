@@ -897,9 +897,7 @@ export default {
     },
     addedBy: 'Aggiunto da {{name}}',
     nextInQueue: 'Prossimo in coda',
-    clearPlate: 'Libera piatto e avvia il prossimo',
     clearPlateSuccess: 'Piatto liberato — pronto per la prossima stampa',
-    plateReady: 'Piatto liberato — pronto per la prossima stampa',
     plateNumber: 'Piatto {{index}}',
     // Batch / quantity
     quantity: 'Quantità',

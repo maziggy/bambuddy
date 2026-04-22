@@ -904,9 +904,7 @@ export default {
     },
     addedBy: 'Hinzugefügt von {{name}}',
     nextInQueue: 'Nächster in der Warteschlange',
-    clearPlate: 'Druckplatte freigeben & Nächsten starten',
     clearPlateSuccess: 'Druckplatte freigegeben — bereit für nächsten Druck',
-    plateReady: 'Druckplatte freigegeben — bereit für nächsten Druck',
     plateNumber: 'Platte {{index}}',
     // Batch / quantity
     quantity: 'Menge',

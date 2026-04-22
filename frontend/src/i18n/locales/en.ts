@@ -904,9 +904,7 @@ export default {
     },
     addedBy: 'Added by {{name}}',
     nextInQueue: 'Next in queue',
-    clearPlate: 'Clear Plate & Start Next',
     clearPlateSuccess: 'Plate cleared — ready for next print',
-    plateReady: 'Plate cleared — ready for next print',
     plateNumber: 'Plate {{index}}',
     // Batch / quantity
     quantity: 'Quantity',

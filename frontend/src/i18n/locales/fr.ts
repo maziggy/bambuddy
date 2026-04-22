@@ -10,6 +10,7 @@ export default {
     projects: 'Projets',
     inventory: 'Filament',
     files: 'Gestionnaire de fichiers',
+    gcodeViewer: 'Visionneuse GCode',
     notifications: 'Notifications',
     settings: 'Paramètres',
     system: 'Système',
@@ -213,6 +214,7 @@ export default {
     chamberLightOff: 'Éteindre la lumière de la chambre',
     // Files
     files: 'Fichiers',
+    gcodeViewer: 'Visionneuse GCode',
     browseFiles: 'Parcourir les fichiers de l\'imprimante',
     // Smart plug
     autoOffAfterPrint: 'Extinction auto après impression',
@@ -2813,6 +2815,7 @@ export default {
     lowDiskSpaceWarning: 'Espace disque faible',
     lowDiskSpaceDetails: '{{free}} libre sur {{total}}. Seuil : {{threshold}} Go.',
     files: 'Fichiers',
+    gcodeViewer: 'Visionneuse GCode',
     folders: 'Dossiers',
     size: 'Taille',
     free: 'Libre',
@@ -2916,6 +2919,7 @@ export default {
     createFirstButton: 'Créer votre premier projet',
     create: 'Créer',
     files: 'Fichiers',
+    gcodeViewer: 'Visionneuse GCode',
     prints: 'Impressions',
     plates: 'plateaux',
     parts: 'pièces',

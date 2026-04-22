@@ -104,11 +104,20 @@ def to_absolute_path(relative_path: str | None) -> Path | None:
     """Convert a relative path (from database) to an absolute path for file operations."""
     if not relative_path:
         return None
-    # Handle already-absolute paths (for backwards compatibility during migration)
     path = Path(relative_path)
+    # Handle already-absolute paths verbatim (backwards compatibility during migration).
+    # Legacy DB rows may store absolute paths that predate the base_dir layout; the
+    # traversal guard below only applies to relative paths coming from user input.
     if path.is_absolute():
-        return path
-    return Path(app_settings.base_dir) / relative_path
+        return path.resolve()
+    base = Path(app_settings.base_dir).resolve()
+    resolved = (base / relative_path).resolve()
+    # Guard against path traversal — resolved path must stay inside base_dir.
+    # Use is_relative_to() to avoid the /data/app vs /data/app_evil prefix confusion
+    # that a plain startswith(str(base)) check would miss.
+    if not resolved.is_relative_to(base):
+        raise ValueError(f"Path escapes base directory: {relative_path!r}")
+    return resolved
 
 
 def calculate_file_hash(file_path: Path) -> str:

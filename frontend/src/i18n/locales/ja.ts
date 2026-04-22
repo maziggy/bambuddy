@@ -10,6 +10,7 @@ export default {
     projects: 'プロジェクト',
     inventory: 'フィラメント',
     files: 'ファイル管理',
+    gcodeViewer: 'GCodeビューア',
     notifications: '通知',
     settings: '設定',
     system: 'システム',
@@ -212,6 +213,7 @@ export default {
     chamberLightOff: 'チャンバーライトをオフにしました',
     // Files
     files: 'ファイル',
+    gcodeViewer: 'GCodeビューア',
     browseFiles: 'プリンターのファイルを参照',
     // Smart plug
     autoOffAfterPrint: '印刷後に自動電源オフ',
@@ -2851,6 +2853,7 @@ export default {
     lowDiskSpaceWarning: 'ディスク容量不足の警告',
     lowDiskSpaceDetails: '{{total}}中{{free}}の空き容量のみ。しきい値は設定で{{threshold}}GBに設定されています。',
     files: 'ファイル',
+    gcodeViewer: 'GCodeビューア',
     folders: 'フォルダ',
     size: 'サイズ',
     free: '空き:',
@@ -2954,6 +2957,7 @@ export default {
     createFirstButton: '最初のプロジェクトを作成',
     create: '作成',
     files: 'ファイル',
+    gcodeViewer: 'GCodeビューア',
     prints: '印刷',
     plates: 'プレート',
     parts: 'パーツ',

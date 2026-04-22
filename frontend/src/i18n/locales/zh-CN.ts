@@ -10,6 +10,7 @@ export default {
     projects: '项目',
     inventory: '耗材',
     files: '文件管理器',
+    gcodeViewer: 'GCode查看器',
     notifications: '通知',
     settings: '设置',
     system: '系统',
@@ -213,6 +214,7 @@ export default {
     chamberLightOff: '关闭腔室灯',
     // Files
     files: '文件',
+    gcodeViewer: 'GCode查看器',
     browseFiles: '浏览打印机文件',
     // Smart plug
     autoOffAfterPrint: '打印后自动关机',
@@ -2878,6 +2880,7 @@ export default {
     lowDiskSpaceWarning: '磁盘空间不足警告',
     lowDiskSpaceDetails: '仅剩 {{free}}（总共 {{total}}）。阈值设置为 {{threshold}} GB。',
     files: '文件',
+    gcodeViewer: 'GCode查看器',
     folders: '文件夹',
     size: '大小',
     free: '剩余',
@@ -2981,6 +2984,7 @@ export default {
     createFirstButton: '创建您的第一个项目',
     create: '创建',
     files: '文件',
+    gcodeViewer: 'GCode查看器',
     prints: '打印',
     plates: '板',
     parts: '零件',

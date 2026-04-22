@@ -10,6 +10,7 @@ export default {
     projects: '專案',
     inventory: '耗材',
     files: '檔案管理器',
+    gcodeViewer: 'GCode 檢視器',
     notifications: '通知',
     settings: '設定',
     system: '系統',
@@ -213,6 +214,7 @@ export default {
     chamberLightOff: '關閉腔室燈',
     // Files
     files: '檔案',
+    gcodeViewer: 'GCode 檢視器',
     browseFiles: '瀏覽印表機檔案',
     // Smart plug
     autoOffAfterPrint: '列印後自動關機',
@@ -2878,6 +2880,7 @@ export default {
     lowDiskSpaceWarning: '磁碟空間不足警告',
     lowDiskSpaceDetails: '僅剩 {{free}}（總共 {{total}}）。閾值設定為 {{threshold}} GB。',
     files: '檔案',
+    gcodeViewer: 'GCode 檢視器',
     folders: '資料夾',
     size: '大小',
     free: '剩餘',
@@ -2981,6 +2984,7 @@ export default {
     createFirstButton: '建立您的第一個項目',
     create: '建立',
     files: '檔案',
+    gcodeViewer: 'GCode 檢視器',
     prints: '列印',
     plates: '板',
     parts: '零件',

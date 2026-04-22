@@ -10,6 +10,7 @@ export default {
     projects: 'Progetti',
     inventory: 'Filamento',
     files: 'File',
+    gcodeViewer: 'Visualizzatore GCode',
     notifications: 'Notifiche',
     settings: 'Impostazioni',
     system: 'Sistema',
@@ -213,6 +214,7 @@ export default {
     chamberLightOff: 'Spegni luce camera',
     // Files
     files: 'File',
+    gcodeViewer: 'Visualizzatore GCode',
     browseFiles: 'Sfoglia file stampante',
     // Smart plug
     autoOffAfterPrint: 'Spegnimento automatico dopo stampa',
@@ -2812,6 +2814,7 @@ export default {
     lowDiskSpaceWarning: 'Avviso spazio disco basso',
     lowDiskSpaceDetails: 'Solo {{free}} liberi su {{total}} totali. La soglia e {{threshold}} GB nelle impostazioni.',
     files: 'File',
+    gcodeViewer: 'Visualizzatore GCode',
     folders: 'Cartelle',
     size: 'Dimensione',
     free: 'Libero',
@@ -2915,6 +2918,7 @@ export default {
     createFirstButton: 'Crea il tuo primo progetto',
     create: 'Crea',
     files: 'File',
+    gcodeViewer: 'Visualizzatore GCode',
     prints: 'Stampe',
     plates: 'piatti',
     parts: 'parti',

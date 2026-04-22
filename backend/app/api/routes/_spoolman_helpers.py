@@ -58,9 +58,9 @@ def assert_safe_spoolman_url(url: str) -> None:
         or effective.is_unspecified
     ):
         raise ValueError(
-            "Spoolman URL must not point to a private, loopback, link-local, "
-            "multicast, or unspecified address"
+            "Spoolman URL must not point to a private, loopback, link-local, multicast, or unspecified address"
         )
+
 
 _COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
 

@@ -1264,9 +1264,7 @@ class TestUpdateSpoolWeightSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spoolman_mode_uses_filament_spool_weight(
-        self, async_client: AsyncClient, spoolman_settings
-    ):
+    async def test_spoolman_mode_uses_filament_spool_weight(self, async_client: AsyncClient, spoolman_settings):
         """core_weight comes from filament.spool_weight, not a hardcoded constant."""
         sm_spool = _spoolman_spool_fixture(42, spool_weight=196.0, filament_weight=1000.0)
         mock_client = _mock_spoolman_client()
@@ -1297,9 +1295,7 @@ class TestUpdateSpoolWeightSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spoolman_mode_clamps_remaining_to_zero(
-        self, async_client: AsyncClient, spoolman_settings
-    ):
+    async def test_spoolman_mode_clamps_remaining_to_zero(self, async_client: AsyncClient, spoolman_settings):
         """Scale weight below core weight → remaining_weight = 0."""
         sm_spool = _spoolman_spool_fixture(7, spool_weight=196.0, filament_weight=1000.0)
         mock_client = _mock_spoolman_client()
@@ -1326,9 +1322,7 @@ class TestUpdateSpoolWeightSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spoolman_mode_404_when_spool_not_found(
-        self, async_client: AsyncClient, spoolman_settings
-    ):
+    async def test_spoolman_mode_404_when_spool_not_found(self, async_client: AsyncClient, spoolman_settings):
         """404 when Spoolman doesn't know the spool."""
         mock_client = _mock_spoolman_client()
         mock_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("Spool 9999 not found"))
@@ -1352,9 +1346,7 @@ class TestUpdateSpoolWeightSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spoolman_mode_502_on_client_failure(
-        self, async_client: AsyncClient, spoolman_settings
-    ):
+    async def test_spoolman_mode_502_on_client_failure(self, async_client: AsyncClient, spoolman_settings):
         """502 is returned when Spoolman client update fails (returns None)."""
         sm_spool = _spoolman_spool_fixture(99)
         mock_client = _mock_spoolman_client()
@@ -1398,9 +1390,7 @@ class TestTagScannedSpoolmanFallback:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spoolman_fallback_on_local_miss(
-        self, async_client: AsyncClient, spoolman_settings
-    ):
+    async def test_spoolman_fallback_on_local_miss(self, async_client: AsyncClient, spoolman_settings):
         raw_spool = {
             "id": 5,
             "filament": {
@@ -1453,9 +1443,7 @@ class TestTagScannedSpoolmanFallback:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spoolman_fallback_unknown_when_no_spoolman_match(
-        self, async_client: AsyncClient, spoolman_settings
-    ):
+    async def test_spoolman_fallback_unknown_when_no_spoolman_match(self, async_client: AsyncClient, spoolman_settings):
         """Unknown tag broadcast when both local DB and Spoolman miss."""
         mock_client = _mock_spoolman_client()
         mock_client.get_spools = AsyncMock(return_value=[])
@@ -1493,9 +1481,7 @@ class TestTagScannedSpoolmanFallback:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_local_match_skips_spoolman(
-        self, async_client: AsyncClient, spool_factory
-    ):
+    async def test_local_match_skips_spoolman(self, async_client: AsyncClient, spool_factory):
         """When local DB matches, Spoolman is never queried."""
         spool = await spool_factory(tag_uid="AABB1122", material="PLA")
         mock_spool = MagicMock()
@@ -1648,9 +1634,7 @@ class TestNfcWriteTagSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_local_spool_used_when_present(
-        self, async_client: AsyncClient, device_factory, spool_factory
-    ):
+    async def test_local_spool_used_when_present(self, async_client: AsyncClient, device_factory, spool_factory):
         """Local DB spool is encoded directly without contacting Spoolman."""
         await device_factory(device_id="sb-local-write")
         spool = await spool_factory(material="PETG")
@@ -1678,9 +1662,7 @@ class TestNfcWriteResultSpoolman:
         await device_factory(
             device_id="sb-wr-sm",
             pending_command="write_tag",
-            pending_write_payload=_json.dumps(
-                {"spool_id": 55, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}
-            ),
+            pending_write_payload=_json.dumps({"spool_id": 55, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}),
         )
         mock_client = _mock_spoolman_client()
         mock_client.merge_spool_extra = AsyncMock(return_value={"id": 55})
@@ -1715,18 +1697,14 @@ class TestNfcWriteResultSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_failure_does_not_call_spoolman(
-        self, async_client: AsyncClient, device_factory, spoolman_settings
-    ):
+    async def test_failure_does_not_call_spoolman(self, async_client: AsyncClient, device_factory, spoolman_settings):
         """Failed write never calls Spoolman update."""
         import json as _json
 
         await device_factory(
             device_id="sb-wr-fail",
             pending_command="write_tag",
-            pending_write_payload=_json.dumps(
-                {"spool_id": 66, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}
-            ),
+            pending_write_payload=_json.dumps({"spool_id": 66, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}),
         )
         mock_client = _mock_spoolman_client()
 
@@ -1874,9 +1852,7 @@ class TestNfcWriteResultSpoolmanSecurityFixes:
         device = await device_factory(
             device_id="sb-exc-safe",
             pending_command="write_tag",
-            pending_write_payload=_json.dumps(
-                {"spool_id": 77, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}
-            ),
+            pending_write_payload=_json.dumps({"spool_id": 77, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}),
         )
         mock_client = _mock_spoolman_client()
         mock_client.merge_spool_extra = AsyncMock(side_effect=Exception("connection refused"))
@@ -1919,18 +1895,14 @@ class TestNfcWriteResultInputValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_tag_uid_too_long_rejected(
-        self, async_client: AsyncClient, device_factory
-    ):
+    async def test_tag_uid_too_long_rejected(self, async_client: AsyncClient, device_factory):
         """tag_uid longer than 64 chars must be rejected with 422."""
         import json as _json
 
         await device_factory(
             device_id="sb-uid-long",
             pending_command="write_tag",
-            pending_write_payload=_json.dumps(
-                {"spool_id": 1, "ndef_data_hex": "dead", "data_origin": "local"}
-            ),
+            pending_write_payload=_json.dumps({"spool_id": 1, "ndef_data_hex": "dead", "data_origin": "local"}),
         )
 
         resp = await async_client.post(
@@ -2030,9 +2002,7 @@ class TestNfcWriteTagWarningsBody:
         body = resp.json()
         assert "warnings" in body, "Response should contain 'warnings' key when fields are absent"
         warnings = body["warnings"]
-        assert len(warnings) >= 2, (
-            f"Expected at least 2 warnings for missing color_name + nozzle_temp, got: {warnings}"
-        )
+        assert len(warnings) >= 2, f"Expected at least 2 warnings for missing color_name + nozzle_temp, got: {warnings}"
         # Confirm the specific fields are mentioned
         warn_text = " ".join(warnings)
         assert "color_name" in warn_text
@@ -2088,17 +2058,13 @@ class TestNfcWriteResultExceptionScrubbing:
         """When Spoolman merge raises, WS message is generic; 'connection refused' absent."""
         import json as _json
 
-        device = await device_factory(
+        await device_factory(
             device_id="sb-scrub-b5",
             pending_command="write_tag",
-            pending_write_payload=_json.dumps(
-                {"spool_id": 77, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}
-            ),
+            pending_write_payload=_json.dumps({"spool_id": 77, "ndef_data_hex": "deadbeef", "data_origin": "spoolman"}),
         )
         mock_client = _mock_spoolman_client()
-        mock_client.merge_spool_extra = AsyncMock(
-            side_effect=Exception("connection refused to 192.168.1.1:7912")
-        )
+        mock_client.merge_spool_extra = AsyncMock(side_effect=Exception("connection refused to 192.168.1.1:7912"))
 
         with (
             patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
@@ -2126,12 +2092,6 @@ class TestNfcWriteResultExceptionScrubbing:
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_tag_link_failed"
         # Generic message — no internal exception details leaked
-        assert msg["message"] == "Spoolman link failed", (
-            f"Expected generic message but got: {msg['message']!r}"
-        )
-        assert "connection refused" not in str(msg), (
-            f"Exception text must not appear in WS message: {msg}"
-        )
-        assert "192.168.1" not in str(msg), (
-            f"Internal IP must not appear in WS message: {msg}"
-        )
+        assert msg["message"] == "Spoolman link failed", f"Expected generic message but got: {msg['message']!r}"
+        assert "connection refused" not in str(msg), f"Exception text must not appear in WS message: {msg}"
+        assert "192.168.1" not in str(msg), f"Internal IP must not appear in WS message: {msg}"

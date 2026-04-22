@@ -61,12 +61,16 @@ class TestGetSpool:
         mock_http.get.assert_called_once_with("http://localhost:7912/api/v1/spool/42")
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_http_error(self, client):
+    async def test_raises_unavailable_on_http_error(self, client):
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+
         mock_http = AsyncMock()
         mock_http.get = AsyncMock(side_effect=Exception("not found"))
-        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
-            result = await client.get_spool(99)
-        assert result is None
+        with (
+            patch.object(client, "_get_client", AsyncMock(return_value=mock_http)),
+            pytest.raises(SpoolmanUnavailableError),
+        ):
+            await client.get_spool(99)
 
 
 # ---------------------------------------------------------------------------

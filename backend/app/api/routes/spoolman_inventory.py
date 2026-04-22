@@ -263,10 +263,17 @@ async def bulk_create_spools(
 
     if len(created) < payload.quantity:
         # Some spool creations failed — return 207 Multi-Status so the caller
-        # can distinguish a full success from a partial one.
+        # can distinguish a full success from a partial one and show a useful message.
         from fastapi.responses import JSONResponse
 
-        return JSONResponse(status_code=207, content=created)
+        return JSONResponse(
+            status_code=207,
+            content={
+                "created": created,
+                "requested_count": payload.quantity,
+                "failed_count": payload.quantity - len(created),
+            },
+        )
 
     return created
 

@@ -761,20 +761,19 @@ class TestSpoolmanInventoryAuth:
     @pytest.fixture
     async def viewer_token(self, db_session):
         """Create a Viewer-group user (INVENTORY_READ only, no INVENTORY_UPDATE)."""
+        from sqlalchemy import select
+
         from backend.app.core.auth import create_access_token, get_password_hash
         from backend.app.models.group import Group
         from backend.app.models.settings import Settings
         from backend.app.models.user import User
-        from sqlalchemy import select
 
         db_session.add(Settings(key="spoolman_enabled", value="true"))
         db_session.add(Settings(key="spoolman_url", value="http://localhost:7912"))
         db_session.add(Settings(key="auth_enabled", value="true"))
         await db_session.commit()
 
-        viewer_group = (
-            await db_session.execute(select(Group).where(Group.name == "Viewers"))
-        ).scalar_one()
+        viewer_group = (await db_session.execute(select(Group).where(Group.name == "Viewers"))).scalar_one()
         viewer = User(
             username="sm_inv_viewer",
             password_hash=get_password_hash("pw"),
@@ -819,15 +818,12 @@ class TestSpoolmanInventoryAuth:
             headers={"Authorization": f"Bearer {viewer_token}"},
         )
         assert response.status_code == 403, (
-            f"{method} {path} should return 403 for read-only user "
-            f"but got {response.status_code}: {response.json()}"
+            f"{method} {path} should return 403 for read-only user but got {response.status_code}: {response.json()}"
         )
         # Error body must mention the permission string so a "banned-user middleware"
         # regression (generic 403 with no permission context) doesn't pass silently.
         detail = response.json().get("detail", "")
-        assert "inventory:update" in detail, (
-            f"Expected 'inventory:update' in 403 detail but got: {detail!r}"
-        )
+        assert "inventory:update" in detail, f"Expected 'inventory:update' in 403 detail but got: {detail!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -863,18 +859,16 @@ class TestSpoolmanInventorySecurityExtras:
     ):
         """SEC-5: /spools/0 and /spools/-1 must be rejected with 422 (Path gt=0)."""
         response = await async_client.get(f"/api/v1/spoolman/inventory/spools/{spool_id}")
-        assert response.status_code == 422, (
-            f"Expected 422 for spool_id={spool_id} but got {response.status_code}"
-        )
+        assert response.status_code == 422, f"Expected 422 for spool_id={spool_id} but got {response.status_code}"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     @pytest.mark.parametrize(
         "tag_uid,expected_status",
         [
-            ("A" * 32, 200),            # exactly at DB VARCHAR(32) limit — valid
-            ("DEADBEEF12345678", 200),   # 16-char backward compat — valid
-            ("A" * 33, 422),            # one over limit — rejected by Pydantic max_length=32
+            ("A" * 32, 200),  # exactly at DB VARCHAR(32) limit — valid
+            ("DEADBEEF12345678", 200),  # 16-char backward compat — valid
+            ("A" * 33, 422),  # one over limit — rejected by Pydantic max_length=32
         ],
     )
     async def test_tag_uid_length_boundary(
@@ -913,8 +907,10 @@ class TestSpoolmanInventorySecurityExtras:
             f"Expected 207 Multi-Status for partial failure but got {response.status_code}"
         )
         body = response.json()
-        assert isinstance(body, list)
-        assert len(body) == 2  # only the 2 successes
+        assert isinstance(body, dict)
+        assert body["requested_count"] == 3
+        assert body["failed_count"] == 1
+        assert len(body["created"]) == 2
 
 
 class TestSpoolmanInventorySSRFSpoolBuddyPath:
@@ -927,10 +923,10 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
         [
             "file:///etc/passwd",
             "http://169.254.169.254/latest/meta-data/",  # AWS IMDS
-            "http://[::1]:7912/",                         # IPv6 loopback
-            "http://0.0.0.0/",                            # unspecified
-            "http://10.0.0.1/",                           # RFC-1918 private
-            "http://[::ffff:169.254.169.254]/",            # IPv4-mapped IMDS bypass
+            "http://[::1]:7912/",  # IPv6 loopback
+            "http://0.0.0.0/",  # unspecified
+            "http://10.0.0.1/",  # RFC-1918 private
+            "http://[::ffff:169.254.169.254]/",  # IPv4-mapped IMDS bypass
         ],
     )
     async def test_nfc_tag_scanned_with_ssrf_url_ignores_spoolman(

@@ -564,13 +564,9 @@ async def nfc_write_result(
         if data_origin == "spoolman":
             # Update Spoolman extra.tag with the written NFC UID using a safe merge
             # (fetches current extra first to avoid overwriting other custom fields).
-            from backend.app.services.spoolman import SpoolmanNotFoundError, SpoolmanUnavailableError
-
             sm_client = await _get_spoolman_client_or_none(db)
             if sm_client is None:
-                logger.warning(
-                    "Spoolman not configured; cannot persist tag link for spool %d", req.spool_id
-                )
+                logger.warning("Spoolman not configured; cannot persist tag link for spool %d", req.spool_id)
                 await db.commit()
                 await ws_manager.broadcast(
                     {
@@ -588,47 +584,25 @@ async def nfc_write_result(
 
             try:
                 tag_value = json.dumps(req.tag_uid.upper())
-                updated = await sm_client.merge_spool_extra(req.spool_id, {"tag": tag_value})
-                if updated:
-                    logger.info(
-                        "Spoolman tag written and linked: spool %d -> tag %s",
-                        req.spool_id,
-                        req.tag_uid,
-                    )
-                    await db.commit()
-                    await ws_manager.broadcast(
-                        {
-                            "type": "spoolbuddy_tag_written",
-                            "device_id": req.device_id,
-                            "spool_id": req.spool_id,
-                            "tag_uid": req.tag_uid,
-                        }
-                    )
-                else:
-                    logger.warning(
-                        "Tag written to NFC but Spoolman failed to persist link: spool %d",
-                        req.spool_id,
-                    )
-                    await db.commit()
-                    await ws_manager.broadcast(
-                        {
-                            "type": "spoolbuddy_tag_link_failed",
-                            "device_id": req.device_id,
-                            "spool_id": req.spool_id,
-                            "tag_uid": req.tag_uid,
-                            "message": "Spoolman did not confirm the update",
-                        }
-                    )
-                    raise HTTPException(
-                        status_code=502,
-                        detail="Tag written to NFC but Spoolman did not confirm the link",
-                    )
+                await sm_client.merge_spool_extra(req.spool_id, {"tag": tag_value})
+                logger.info(
+                    "Spoolman tag written and linked: spool %d -> tag %s",
+                    req.spool_id,
+                    req.tag_uid,
+                )
+                await db.commit()
+                await ws_manager.broadcast(
+                    {
+                        "type": "spoolbuddy_tag_written",
+                        "device_id": req.device_id,
+                        "spool_id": req.spool_id,
+                        "tag_uid": req.tag_uid,
+                    }
+                )
             except HTTPException:
                 raise
             except Exception as exc:
-                logger.warning(
-                    "Spoolman extra.tag update failed for spool %d: %s", req.spool_id, exc
-                )
+                logger.warning("Spoolman extra.tag update failed for spool %d: %s", req.spool_id, exc)
                 await db.commit()
                 await ws_manager.broadcast(
                     {

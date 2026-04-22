@@ -4,6 +4,8 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.2.4b1] - Unreleased
 
+### Added
+- **MakerWorld Integration** — Paste any `makerworld.com/models/…` URL on the new MakerWorld sidebar page to pull the full model metadata, plate list, and creator/license info, then one-click "Import to Library" or "Print Now" (the latter opens the existing plate-picker + AMS-mapping dispatch flow). Closes the last workflow gap for LAN-only users who still had to keep the Bambu Handy app installed solely to send MakerWorld models to their printers. Reuses the existing Bambu Cloud login token for download authentication — no separate OAuth flow, no companion browser extension. `LibraryFile` now tracks `source_type` + `source_url`, so re-importing the same MakerWorld model from a different URL variant (or across users) dedupes to the existing library entry rather than downloading a second copy. Search / browse-catalogue is intentionally out of scope because MakerWorld's public search endpoint isn't reachable from a server-originated request; the URL-paste flow covers the actual discovery pattern (Reddit / YouTube / shared links).
 
 ## [0.2.3.2] - 2020-04-22
 

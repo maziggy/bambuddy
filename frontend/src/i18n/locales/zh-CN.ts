@@ -10,6 +10,7 @@ export default {
     projects: '项目',
     inventory: '耗材',
     files: '文件管理器',
+    makerworld: 'MakerWorld',
     notifications: '通知',
     settings: '设置',
     system: '系统',

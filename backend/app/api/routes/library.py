@@ -129,6 +129,109 @@ def calculate_file_hash(file_path: Path) -> str:
     return sha256_hash.hexdigest()
 
 
+def _clean_3mf_metadata(obj):
+    """Strip bytes and thumbnail-carrier keys so the payload is JSON-storable.
+
+    Shared by ``upload_file`` and :func:`save_3mf_bytes_to_library` — the
+    ``ThreeMFParser`` output embeds the thumbnail bytes under
+    ``_thumbnail_data``/``_thumbnail_ext`` and may also include raw bytes in
+    other fields, none of which can be JSON-encoded.
+    """
+    if isinstance(obj, dict):
+        return {
+            k: _clean_3mf_metadata(v)
+            for k, v in obj.items()
+            if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
+        }
+    if isinstance(obj, list):
+        return [_clean_3mf_metadata(i) for i in obj if not isinstance(i, bytes)]
+    if isinstance(obj, bytes):
+        return None
+    return obj
+
+
+async def save_3mf_bytes_to_library(
+    db: AsyncSession,
+    *,
+    file_bytes: bytes,
+    filename: str,
+    folder_id: int | None = None,
+    source_type: str | None = None,
+    source_url: str | None = None,
+    owner_id: int | None = None,
+) -> tuple[LibraryFile, bool]:
+    """Save a 3MF blob into the library and return ``(library_file, was_existing)``.
+
+    Used by routes that receive a 3MF in-process rather than as a multipart
+    upload (currently: MakerWorld import; reusable for any future source that
+    fetches bytes server-side). Deduplicates by ``source_url`` when provided —
+    if a LibraryFile with the same source_url already exists, the existing
+    row is returned and the bytes are NOT re-saved (MakerWorld signed URLs
+    change each download, so hash-based dedupe alone would miss re-imports).
+
+    Parses 3MF metadata + thumbnail the same way the multipart upload route
+    does, via :class:`ThreeMFParser`. Paths are stored as relative so the
+    library is portable across installs.
+    """
+    # Source-URL-based dedupe: return the existing row untouched.
+    if source_url:
+        existing = await db.execute(select(LibraryFile).where(LibraryFile.source_url == source_url).limit(1))
+        existing_row = existing.scalar_one_or_none()
+        if existing_row is not None:
+            return existing_row, True
+
+    # Persist bytes to disk under a UUID-scoped filename; keep the original
+    # extension so downstream logic (ThreeMFParser, thumbnail viewer) works.
+    ext = os.path.splitext(filename)[1].lower() or ".3mf"
+    unique_filename = f"{uuid.uuid4().hex}{ext}"
+    file_path = get_library_files_dir() / unique_filename
+    with open(file_path, "wb") as fh:
+        fh.write(file_bytes)
+
+    file_hash = calculate_file_hash(file_path)
+
+    # Extract metadata + thumbnail from the 3MF.
+    metadata: dict | None = None
+    thumbnail_path: str | None = None
+    if ext == ".3mf":
+        try:
+            parser = ThreeMFParser(str(file_path))
+            raw_metadata = parser.parse()
+            thumb_data = raw_metadata.get("_thumbnail_data")
+            thumb_ext = raw_metadata.get("_thumbnail_ext", ".png")
+            if thumb_data:
+                thumbs_dir = get_library_thumbnails_dir()
+                thumb_filename = f"{uuid.uuid4().hex}{thumb_ext}"
+                thumb_path = thumbs_dir / thumb_filename
+                with open(thumb_path, "wb") as fh:
+                    fh.write(thumb_data)
+                thumbnail_path = str(thumb_path)
+            metadata = _clean_3mf_metadata(raw_metadata) or None
+        except Exception as exc:
+            # Matches the multipart upload route's behaviour — a bad 3MF should
+            # still land in the library so the user can see / delete it rather
+            # than failing the whole request.
+            logger.warning("Failed to parse 3MF %s: %s", filename, exc)
+
+    library_file = LibraryFile(
+        folder_id=folder_id,
+        filename=filename,
+        file_path=to_relative_path(file_path),
+        file_type=ext[1:] if ext else "unknown",
+        file_size=len(file_bytes),
+        file_hash=file_hash,
+        thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
+        file_metadata=metadata,
+        source_type=source_type,
+        source_url=source_url,
+        created_by_id=owner_id,
+    )
+    db.add(library_file)
+    await db.commit()
+    await db.refresh(library_file)
+    return library_file, False
+
+
 def extract_gcode_thumbnail(file_path: Path) -> bytes | None:
     """Extract embedded thumbnail from gcode file.
 

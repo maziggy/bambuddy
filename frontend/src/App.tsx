@@ -102,25 +102,28 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { authEnabled, loading, user, isAdmin } = useAuth();
+function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+  // Permission-gated route: any user with the given permission can enter, not
+  // just admins. Individual components below this guard apply their own
+  // per-action permission checks. Used for pages where delegation is supported
+  // (e.g. settings:read grants read-only access to Settings; specific tabs
+  // require their own permissions like users:read, groups:update, etc.).
+  const { authEnabled, loading, user, hasPermission } = useAuth();
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
-  // If auth is not enabled, allow access (backward compatibility)
+  // Auth disabled → open access (backward compatibility)
   if (!authEnabled) {
     return <>{children}</>;
   }
 
-  // If auth is enabled but no user, redirect to login
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  // If user is not admin, redirect to home
-  if (!isAdmin) {
+  if (!hasPermission(permission as Parameters<typeof hasPermission>[0])) {
     return <Navigate to="/" replace />;
   }
 
@@ -189,9 +192,9 @@ function App() {
                   <Route path="projects/:id" element={<ProjectDetailPage />} />
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="files" element={<FileManagerPage />} />
-                  <Route path="settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
-                  <Route path="groups/new" element={<AdminRoute><GroupEditPage /></AdminRoute>} />
-                  <Route path="groups/:id/edit" element={<AdminRoute><GroupEditPage /></AdminRoute>} />
+                  <Route path="settings" element={<PermissionRoute permission="settings:read"><SettingsPage /></PermissionRoute>} />
+                  <Route path="groups/new" element={<PermissionRoute permission="groups:create"><GroupEditPage /></PermissionRoute>} />
+                  <Route path="groups/:id/edit" element={<PermissionRoute permission="groups:update"><GroupEditPage /></PermissionRoute>} />
                   <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="system" element={<SystemInfoPage />} />

@@ -805,6 +805,13 @@ export function SettingsPage() {
     },
     onError: (error: Error) => {
       showToast(`Failed to save: ${error.message}`, 'error');
+      // No localSettings rollback here — the existing comment above (see
+      // onSuccess) already flags that overwriting localSettings would discard
+      // in-progress user input (e.g. typing a hostname). The no-permission
+      // loop is already prevented by the up-front guards in updateSetting and
+      // in the debounced-save effect, so this onError path now only fires for
+      // genuine server/network failures where preserving typed-in values is
+      // the right call.
     },
     onSettled: () => {
       // Reset saving flag when mutation completes (success or error)
@@ -828,6 +835,14 @@ export function SettingsPage() {
   useEffect(() => {
     // Skip if initial load or no settings
     if (isInitialLoadRef.current || !localSettings || !settings) {
+      return;
+    }
+
+    // Safety net: skip auto-save entirely when the user lacks settings:update.
+    // The actual user feedback (toast + revert) lives in updateSetting below,
+    // which runs once per click. Doing it here as well would fire on every
+    // React render since the debounced-save effect depends on non-stable refs.
+    if (authEnabled && !hasPermission('settings:update')) {
       return;
     }
 
@@ -981,11 +996,18 @@ export function SettingsPage() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [localSettings, settings, updateMutation]);
+  }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t]);
 
   const updateSetting = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    // Gate at the point of user interaction (not in the debounced-save effect —
+    // that runs on every render and would fire the toast repeatedly). One toast
+    // per attempt; no local state divergence for a read-only delegated user.
+    if (authEnabled && !hasPermission('settings:update')) {
+      showToast(t('settings.toast.noPermissionUpdate'), 'error');
+      return;
+    }
     setLocalSettings(prev => prev ? { ...prev, [key]: value } : null);
-  }, []);
+  }, [authEnabled, hasPermission, showToast, t]);
 
   const handleTestExternalCamera = async (printerId: number, url: string, cameraType: string) => {
     if (!url) {
@@ -1333,7 +1355,18 @@ export function SettingsPage() {
                 <div className="relative">
                   <select
                     value={i18n.language}
-                    onChange={(e) => { i18n.changeLanguage(e.target.value); api.updateSettings({ language: e.target.value }); showToast(t('settings.toast.settingsSaved'), 'success'); }}
+                    onChange={(e) => {
+                      const newLang = e.target.value;
+                      // Block server persist if the user lacks settings:update —
+                      // without this guard the fire-and-forget api.updateSettings
+                      // call below would 403 silently while a success toast flashed.
+                      if (authEnabled && !hasPermission('settings:update')) {
+                        showToast(t('settings.toast.noPermissionUpdate'), 'error');
+                        return;
+                      }
+                      i18n.changeLanguage(newLang);
+                      updateMutation.mutate({ language: newLang });
+                    }}
                     className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                   >
                     {availableLanguages.map((lang) => (

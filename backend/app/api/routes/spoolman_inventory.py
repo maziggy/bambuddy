@@ -12,7 +12,7 @@ import re
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,6 +104,12 @@ def _validate_rgba(v: str | None) -> str | None:
     return clean.upper()
 
 
+def _validate_storage_location(v: str | None) -> str | None:
+    if v is not None and any(c in v for c in ("\r", "\n", "\x00")):
+        raise ValueError("storage_location must not contain control characters")
+    return v
+
+
 class SpoolmanInventoryCreate(BaseModel):
     material: str = Field(..., min_length=1, max_length=64)
     subtype: str | None = Field(None, max_length=64)
@@ -121,6 +127,17 @@ class SpoolmanInventoryCreate(BaseModel):
     def validate_rgba(cls, v: str | None) -> str | None:
         return _validate_rgba(v)
 
+    @field_validator("storage_location")
+    @classmethod
+    def validate_storage_location(cls, v: str | None) -> str | None:
+        return _validate_storage_location(v)
+
+    @model_validator(mode="after")
+    def validate_weight_consistency(self) -> SpoolmanInventoryCreate:
+        if self.weight_used > self.label_weight:
+            raise ValueError("weight_used must not exceed label_weight")
+        return self
+
 
 class SpoolmanInventoryUpdate(BaseModel):
     material: str | None = Field(None, min_length=1, max_length=64)
@@ -132,14 +149,26 @@ class SpoolmanInventoryUpdate(BaseModel):
     weight_used: float | None = Field(None, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
-    tag_uid: str | None = Field(None, max_length=32)
-    tray_uuid: str | None = Field(None, max_length=32)
+    tag_uid: str | None = Field(None, max_length=32, pattern=r"^[0-9A-Fa-f]+$")
+    tray_uuid: str | None = Field(None, max_length=32, pattern=r"^[0-9A-Fa-f]+$")
     storage_location: str | None = Field(None, max_length=255)
 
     @field_validator("rgba")
     @classmethod
     def validate_rgba(cls, v: str | None) -> str | None:
         return _validate_rgba(v)
+
+    @field_validator("storage_location")
+    @classmethod
+    def validate_storage_location(cls, v: str | None) -> str | None:
+        return _validate_storage_location(v)
+
+    @model_validator(mode="after")
+    def validate_weight_consistency(self) -> SpoolmanInventoryUpdate:
+        if self.weight_used is not None and self.label_weight is not None:
+            if self.weight_used > self.label_weight:
+                raise ValueError("weight_used must not exceed label_weight")
+        return self
 
 
 class SpoolmanInventoryBulkCreate(BaseModel):
@@ -336,14 +365,17 @@ async def update_spool(
 
     remaining = max(0.0, label_weight - weight_used)
 
-    # When the caller explicitly sets tag_uid/tray_uuid to null (i.e. tag removal),
-    # fetch the current extra dict, drop only the "tag" key, and PATCH the remainder.
-    # Sending extra={} wholesale would destroy any other custom Spoolman extra fields
-    # the user has set outside Bambuddy.
+    # When the caller explicitly sets tag_uid/tray_uuid to null or empty string
+    # (i.e. tag removal), fetch the current extra dict, drop only the "tag" key,
+    # and PATCH the remainder.  Sending extra={} wholesale would destroy any other
+    # custom Spoolman extra fields the user has set outside Bambuddy.
+    def _tag_cleared(val: str | None) -> bool:
+        return val is None or val == ""
+
     tag_nulled = (
         ("tag_uid" in data.model_fields_set or "tray_uuid" in data.model_fields_set)
-        and data.tag_uid is None
-        and data.tray_uuid is None
+        and _tag_cleared(data.tag_uid)
+        and _tag_cleared(data.tray_uuid)
     )
     if tag_nulled:
         cur_extra = dict(current.get("extra") or {})

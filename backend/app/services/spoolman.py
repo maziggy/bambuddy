@@ -77,6 +77,8 @@ class SpoolmanClient:
         self.api_url = f"{self.base_url}/api/v1"
         self._client: httpx.AsyncClient | None = None
         self._connected = False
+        # Per-spool locks for atomic read-modify-write in merge_spool_extra.
+        self._extra_locks: dict[int, asyncio.Lock] = {}
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client with connection pooling limits.
@@ -88,7 +90,9 @@ class SpoolmanClient:
         """
         if self._client is None:
             self._client = httpx.AsyncClient(
-                timeout=10.0,
+                timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
+                follow_redirects=False,
+                verify=True,
                 limits=httpx.Limits(
                     max_keepalive_connections=5,
                     max_connections=10,
@@ -586,10 +590,20 @@ class SpoolmanClient:
             logger.error("Failed to update spool %s in Spoolman: %s", spool_id, e)
             return None
 
+    def _extra_lock(self, spool_id: int) -> asyncio.Lock:
+        """Return (creating if needed) the per-spool lock used by merge_spool_extra."""
+        if not hasattr(self, "_extra_locks"):
+            self._extra_locks = {}
+        if spool_id not in self._extra_locks:
+            self._extra_locks[spool_id] = asyncio.Lock()
+        return self._extra_locks[spool_id]
+
     async def merge_spool_extra(self, spool_id: int, new_fields: dict) -> dict | None:
         """Fetch current extra dict, merge new_fields in, then PATCH back to Spoolman.
 
         Safe merge — never blindly overwrites other custom Spoolman extra fields.
+        The operation is serialised per spool_id with an asyncio.Lock to prevent
+        concurrent calls from clobbering each other's writes.
 
         Args:
             spool_id: Spoolman spool ID
@@ -602,15 +616,16 @@ class SpoolmanClient:
             SpoolmanNotFoundError: If the spool does not exist.
             SpoolmanUnavailableError: If Spoolman is unreachable.
         """
-        current = await self.get_spool(spool_id)  # raises on error
-        current_extra: dict = current.get("extra") or {}
-        merged = {**current_extra, **new_fields}
-        updated = await self.update_spool_full(spool_id=spool_id, extra=merged)
-        if updated is None:
-            raise SpoolmanUnavailableError(
-                f"Spoolman PATCH for spool {spool_id} failed (server error or spool deleted)"
-            )
-        return updated
+        async with self._extra_lock(spool_id):
+            current = await self.get_spool(spool_id)  # raises on error
+            current_extra: dict = current.get("extra") or {}
+            merged = {**current_extra, **new_fields}
+            updated = await self.update_spool_full(spool_id=spool_id, extra=merged)
+            if updated is None:
+                raise SpoolmanUnavailableError(
+                    f"Spoolman PATCH for spool {spool_id} failed (server error or spool deleted)"
+                )
+            return updated
 
     async def find_or_create_vendor(self, name: str) -> int | None:
         """Find an existing vendor by name or create a new one.

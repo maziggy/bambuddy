@@ -20,6 +20,10 @@ def assert_safe_spoolman_url(url: str) -> None:
 
     Checks performed:
     - Scheme must be http or https.
+    - Numeric-encoded IP addresses in decimal (e.g. ``2130706433``) or hex
+      (e.g. ``0x7f000001``) are rejected — Python's ``ipaddress`` module raises
+      ``ValueError`` for these forms so they would otherwise bypass the IP-range
+      guard, but libc resolves them as valid IPv4 addresses.
     - Bare numeric IP hosts in loopback (127.x, ::1), link-local (169.254.x,
       fe80::), private (RFC-1918), multicast (224.x, ff::/8), or unspecified
       (0.0.0.0, ::) ranges are rejected.
@@ -37,6 +41,13 @@ def assert_safe_spoolman_url(url: str) -> None:
         raise ValueError("Spoolman URL must use http or https")
 
     hostname = (parsed.hostname or "").lower()
+
+    # Reject decimal- and hex-encoded IPs (e.g. http://2130706433/ or
+    # http://0x7f000001/).  Python's ipaddress.ip_address() raises ValueError for
+    # these forms so they slip past the except-clause below, but the C library
+    # (and browsers) parse them as valid IPv4 addresses.
+    if re.match(r"^(0x[0-9a-f]+|[0-9]+)$", hostname, re.I):
+        raise ValueError("Spoolman URL must not use numeric-encoded IP addresses; use standard dotted-decimal notation")
 
     try:
         addr = ipaddress.ip_address(hostname)

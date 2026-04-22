@@ -1244,4 +1244,106 @@ describe('PrintModal', () => {
       });
     });
   });
+
+  describe('cleanup_library_after_dispatch forwarding (#730)', () => {
+    // The Printers-page Direct-Print flow passes cleanupLibraryAfterDispatch so the
+    // transient LibraryFile created by FileUploadModal is deleted once the archive
+    // owns its own copy. File Manager / Project Detail flows leave the prop unset so
+    // their deliberately-added library entries survive the print.
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/library/files/:id', () => {
+          return HttpResponse.json({
+            id: 5,
+            filename: 'benchy.gcode.3mf',
+            file_type: '3mf',
+            folder_id: null,
+            project_id: null,
+            file_hash: null,
+            file_size_bytes: 1024,
+            thumbnail_path: null,
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          });
+        }),
+        http.get('/api/v1/library/files/:id/plates', () => {
+          return HttpResponse.json({ is_multi_plate: false, plates: [] });
+        }),
+        http.get('/api/v1/library/files/:id/filament-requirements', () => {
+          return HttpResponse.json({ file_id: 5, filename: 'benchy.gcode.3mf', filaments: [] });
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] });
+        }),
+      );
+    });
+
+    it('forwards cleanup_library_after_dispatch=true when the Direct-Print prop is set', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post('/api/v1/library/files/:id/print', async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ status: 'dispatched', dispatch_job_id: 'abc', dispatch_position: 0 });
+        })
+      );
+      const user = userEvent.setup();
+
+      render(
+        <PrintModal
+          mode="reprint"
+          libraryFileId={5}
+          archiveName="Benchy"
+          cleanupLibraryAfterDispatch
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^print$/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /^print$/i }));
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull();
+        expect(capturedBody?.cleanup_library_after_dispatch).toBe(true);
+      });
+    });
+
+    it('defaults to omitting cleanup_library_after_dispatch (File Manager / Project flows survive)', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post('/api/v1/library/files/:id/print', async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ status: 'dispatched', dispatch_job_id: 'abc', dispatch_position: 0 });
+        })
+      );
+      const user = userEvent.setup();
+
+      render(
+        <PrintModal
+          mode="reprint"
+          libraryFileId={5}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^print$/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /^print$/i }));
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull();
+      });
+      // Either omitted entirely or explicitly undefined — both interpret as "keep file"
+      expect(capturedBody?.cleanup_library_after_dispatch).toBeUndefined();
+    });
+  });
 });

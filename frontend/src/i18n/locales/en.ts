@@ -317,6 +317,12 @@ export default {
       connected: 'Connected',
       offline: 'Offline',
     },
+    plateStatus: {
+      markCleared: 'Mark plate as cleared',
+      cleared: 'Plate Clear',
+      notCleared: 'Plate not Clear',
+      inUse: 'Plate in Use',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} print in queue',
@@ -336,10 +342,10 @@ export default {
       down: 'Move plate down',
       disabledWhilePrinting: 'Disabled while printing',
       notHomedTitle: 'Printer is not homed',
-      notHomedMessage: 'The Z axis has not been homed since the last print. Home Z first for safe positioning, or move anyway — soft endstops will be bypassed.',
-      homeZ: 'Home Z',
+      notHomedMessage: 'The printer has not been homed since the last print. Run auto-home first for safe positioning (parks the toolhead, then homes X, Y, and Z), or move anyway — soft endstops will be bypassed.',
+      homeZ: 'Auto Home',
       moveAnyway: 'Move anyway',
-      homingStarted: 'Homing Z axis…',
+      homingStarted: 'Auto-homing printer…',
     },
     // Permissions
     permission: {
@@ -899,9 +905,7 @@ export default {
     },
     addedBy: 'Added by {{name}}',
     nextInQueue: 'Next in queue',
-    clearPlate: 'Clear Plate & Start Next',
     clearPlateSuccess: 'Plate cleared — ready for next print',
-    plateReady: 'Plate cleared — ready for next print',
     plateNumber: 'Plate {{index}}',
     // Batch / quantity
     quantity: 'Quantity',
@@ -1742,7 +1746,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Plate-Clear Confirmation',
     requirePlateClear: 'Require plate-clear confirmation',
-    requirePlateClearDescription: 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disable for farm workflows where plates are verified physically.',
+    requirePlateClearDescription: 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.',
     gcodeInjection: 'G-code Injection',
     gcodeInjectionDescription: 'Configure custom G-code to inject at the start and/or end of prints for auto-print systems like Farmloop, SwapMod, AutoClear, and Printflow 3D. Snippets are configured per printer model and applied when "Inject G-code" is enabled on a queue item.',
     gcodeInjectionNoPrinters: 'No printers found. Add printers to configure G-code snippets.',

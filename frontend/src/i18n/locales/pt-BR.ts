@@ -318,6 +318,12 @@ export default {
       connected: 'Conectado',
       offline: 'Offline',
     },
+    plateStatus: {
+      markCleared: 'Marcar placa como liberada',
+      cleared: 'Placa liberada',
+      notCleared: 'Placa não liberada',
+      inUse: 'Placa em uso',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} impressão na fila',
@@ -337,10 +343,10 @@ export default {
       down: 'Mover mesa para baixo',
       disabledWhilePrinting: 'Desativado durante a impressão',
       notHomedTitle: 'Impressora não referenciada',
-      notHomedMessage: 'O eixo Z não foi referenciado desde a última impressão. Referencie Z primeiro para um posicionamento seguro, ou mova assim mesmo — os fins de curso de software serão ignorados.',
-      homeZ: 'Referenciar Z',
+      notHomedMessage: 'A impressora não foi referenciada desde a última impressão. Execute a referência automática primeiro para um posicionamento seguro (estaciona o cabeçote, depois referencia X, Y e Z), ou mova assim mesmo — os fins de curso de software serão ignorados.',
+      homeZ: 'Referência automática',
       moveAnyway: 'Mover assim mesmo',
-      homingStarted: 'Referenciando eixo Z…',
+      homingStarted: 'Referenciando impressora automaticamente…',
     },
     // Permissions
     permission: {
@@ -893,9 +899,7 @@ export default {
     },
     addedBy: 'Adicionado por {{name}}',
     nextInQueue: 'Próximo na fila',
-    clearPlate: 'Limpar Placa e Iniciar Próximo',
     clearPlateSuccess: 'Placa limpa — pronta para a próxima impressão',
-    plateReady: 'Placa limpa — pronta para a próxima impressão',
     plateNumber: 'Placa {{index}}',
     // Batch / quantity
     quantity: 'Quantidade',
@@ -1689,7 +1693,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Confirmação de placa livre',
     requirePlateClear: 'Exigir confirmação de placa livre',
-    requirePlateClearDescription: 'Quando ativado, o agendador aguarda a confirmação de placa livre por impressora antes de iniciar impressões na fila em impressoras com trabalhos concluídos. Desative para fluxos de trabalho de fazenda onde as placas são verificadas fisicamente.',
+    requirePlateClearDescription: 'Quando ativado, o agendador aguarda uma confirmação de placa livre por impressora antes de iniciar impressões na fila em impressoras com trabalhos concluídos. Desativar isso também oculta o indicador de status da placa e o botão "Marcar placa como liberada" nos cartões das impressoras.',
     gcodeInjection: 'Injeção de G-code',
     gcodeInjectionDescription: 'Configure G-code personalizado para injetar no início e/ou no final das impressões para sistemas de impressão automática como Farmloop, SwapMod, AutoClear e Printflow 3D. Os snippets são configurados por modelo de impressora e aplicados quando "Injetar G-code" está ativado em um item da fila.',
     gcodeInjectionNoPrinters: 'Nenhuma impressora encontrada. Adicione impressoras para configurar snippets de G-code.',

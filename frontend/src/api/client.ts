@@ -220,6 +220,8 @@ export interface PrinterStatus {
   state: string | null;
   current_print: string | null;
   subtask_name: string | null;
+  current_archive_id: number | null;
+  current_plate_id: number | null;
   gcode_file: string | null;
   progress: number | null;
   remaining_time: number | null;
@@ -4643,6 +4645,7 @@ export const api = {
       timelapse?: boolean;
       use_ams?: boolean;
       project_id?: number;
+      cleanup_library_after_dispatch?: boolean;
     }
   ) =>
     request<BackgroundDispatchResponse>(

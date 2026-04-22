@@ -318,6 +318,12 @@ export default {
       connected: 'Connecté',
       offline: 'Hors ligne',
     },
+    plateStatus: {
+      markCleared: 'Marquer le plateau comme dégagé',
+      cleared: 'Plateau dégagé',
+      notCleared: 'Plateau non dégagé',
+      inUse: 'Plateau en cours d\'utilisation',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} impression en file',
@@ -337,10 +343,10 @@ export default {
       down: 'Descendre le plateau',
       disabledWhilePrinting: 'Désactivé pendant l\'impression',
       notHomedTitle: 'Imprimante non référencée',
-      notHomedMessage: 'L\'axe Z n\'a pas été référencé depuis la dernière impression. Référencez Z d\'abord pour un positionnement sûr, ou déplacez quand même — les butées logicielles seront ignorées.',
-      homeZ: 'Référencer Z',
+      notHomedMessage: 'L\'imprimante n\'a pas été référencée depuis la dernière impression. Lancez la référence automatique d\'abord pour un positionnement sûr (parque la tête d\'outil, puis référence X, Y et Z), ou déplacez quand même — les butées logicielles seront ignorées.',
+      homeZ: 'Référence automatique',
       moveAnyway: 'Déplacer quand même',
-      homingStarted: 'Référencement de l\'axe Z…',
+      homingStarted: 'Référencement automatique en cours…',
     },
     // Permissions
     permission: {
@@ -893,9 +899,7 @@ export default {
     },
     addedBy: 'Ajouté par {{name}}',
     nextInQueue: 'Prochain en file',
-    clearPlate: 'Vider plateau & lancer suivant',
     clearPlateSuccess: 'Plateau vidé — prêt pour l\'impression suivante',
-    plateReady: 'Plateau vidé — prêt pour l\'impression suivante',
     plateNumber: 'Plateau {{index}}',
     // Batch / quantity
     quantity: 'Quantité',
@@ -1689,7 +1693,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Confirmation de plateau libre',
     requirePlateClear: 'Exiger la confirmation de plateau libre',
-    requirePlateClearDescription: 'Lorsque activé, le planificateur attend la confirmation de plateau libre par imprimante avant de lancer les impressions en file d\'attente sur les imprimantes ayant terminé. Désactivez pour les workflows de ferme où les plateaux sont vérifiés physiquement.',
+    requirePlateClearDescription: 'Lorsque cette option est activée, le planificateur attend une confirmation de plateau libre par imprimante avant de lancer les impressions en file d\'attente sur les imprimantes ayant terminé. La désactiver masque également le badge d\'état du plateau et le bouton « Marquer le plateau comme dégagé » sur les cartes d\'imprimante.',
     gcodeInjection: 'Injection de G-code',
     gcodeInjectionDescription: 'Configurez du G-code personnalisé à injecter au début et/ou à la fin des impressions pour les systèmes d\'auto-impression comme Farmloop, SwapMod, AutoClear et Printflow 3D. Les snippets sont configurés par modèle d\'imprimante et appliqués lorsque « Injecter le G-code » est activé sur un élément de file d\'attente.',
     gcodeInjectionNoPrinters: 'Aucune imprimante trouvée. Ajoutez des imprimantes pour configurer les snippets G-code.',

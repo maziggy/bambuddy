@@ -134,4 +134,109 @@ describe('AssignSpoolModal', () => {
       expect(screen.getByText(/No manually added spools/i)).toBeInTheDocument();
     });
   });
+
+  it('lists spool with no slicer profile when material matches the tray (#1047)', async () => {
+    const spoolWithoutSlicerProfile = {
+      id: 10,
+      material: 'PLA',
+      subtype: 'Basic',
+      brand: 'Devil Design',
+      color_name: 'Red',
+      rgba: 'FF0000FF',
+      label_weight: 1000,
+      weight_used: 0,
+      tag_uid: null,
+      tray_uuid: null,
+      slicer_filament_name: null,
+      slicer_filament: null,
+    };
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([spoolWithoutSlicerProfile]);
+
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        trayInfo={{
+          type: 'PLA',
+          material: 'PLA',
+          profile: 'Devil Design PLA Basic',
+          color: 'FF0000',
+          location: 'AMS 1 - Slot 1',
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Devil Design/)).toBeInTheDocument();
+    });
+  });
+
+  it('lists spool with shorter material when tray advertises a qualified variant (#1047)', async () => {
+    // Spool.material = "PLA", tray material = "PLA Basic" — partial match in either direction.
+    const shortMaterialSpool = {
+      id: 11,
+      material: 'PLA',
+      subtype: 'Basic',
+      brand: 'Devil Design',
+      color_name: 'Red',
+      rgba: 'FF0000FF',
+      label_weight: 1000,
+      weight_used: 0,
+      tag_uid: null,
+      tray_uuid: null,
+      slicer_filament_name: null,
+      slicer_filament: null,
+    };
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([shortMaterialSpool]);
+
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        trayInfo={{
+          type: 'PLA Basic',
+          material: 'PLA Basic',
+          color: 'FF0000',
+          location: 'AMS 1 - Slot 1',
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Devil Design/)).toBeInTheDocument();
+    });
+  });
+
+  it('lists spool whose slicer profile has an @printer qualifier that strips to the tray profile (#1047)', async () => {
+    const qualifiedProfileSpool = {
+      id: 12,
+      material: 'PLA',
+      subtype: 'Basic',
+      brand: 'Devil Design',
+      color_name: 'Red',
+      rgba: 'FF0000FF',
+      label_weight: 1000,
+      weight_used: 0,
+      tag_uid: null,
+      tray_uuid: null,
+      slicer_filament_name: 'Devil Design PLA Basic @Bambu Lab H2D 0.4 nozzle (Custom)',
+    };
+    // Use a non-matching material to force the filter to rely on the profile path only.
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([qualifiedProfileSpool]);
+
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        trayInfo={{
+          type: 'ABS',
+          material: 'ABS',
+          profile: 'Devil Design PLA Basic',
+          color: 'FF0000',
+          location: 'AMS 1 - Slot 1',
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Devil Design/)).toBeInTheDocument();
+    });
+  });
 });

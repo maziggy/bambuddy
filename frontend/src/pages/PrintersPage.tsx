@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { compareFwVersions } from '../utils/firmwareVersion';
+import { formatPrintName } from '../utils/printName';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -59,7 +60,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -76,6 +77,7 @@ import { AssignSpoolModal } from '../components/AssignSpoolModal';
 import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
+import { PlateClearedIcon } from '../components/icons/PlateClearedIcon';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
 import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
@@ -88,17 +90,6 @@ import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors'
 
 // Color names resolve via getColorName() which reads the backend color_catalog
 // (loaded once by ColorCatalogProvider). No hardcoded tables here — see #857.
-
-// Extract plate number from gcode_file path and append to print name
-function formatPrintName(name: string | null, gcodeFile: string | null | undefined, t: (key: string, fallback: string, opts?: Record<string, unknown>) => string): string {
-  if (!name) return '';
-  if (!gcodeFile) return name;
-  const match = gcodeFile.match(/plate_(\d+)\.gcode/);
-  if (match && parseInt(match[1], 10) > 1) {
-    return `${name} — ${t('printers.plateNumber', 'Plate {{number}}', { number: match[1] })}`;
-  }
-  return name;
-}
 
 // Format K value with 3 decimal places, default to 0.020 if null
 function formatKValue(k: number | null | undefined): string {
@@ -1527,6 +1518,23 @@ function PrinterCard({
     staleTime: 2 * 60 * 1000, // 2 minutes
   });
 
+  // Fetch plate list for the archive linked to the active print (#881 follow-up).
+  // Only queried when there's a running print backed by an archive; shared
+  // React Query cache with the Queue / Archives pages keeps it cheap.
+  const activeArchiveId =
+    (status?.state === 'RUNNING' || status?.state === 'PAUSE') ? status?.current_archive_id ?? null : null;
+  const { data: activeArchivePlates } = useQuery({
+    queryKey: ['archive-plates', activeArchiveId],
+    queryFn: () => api.getArchivePlates(activeArchiveId!),
+    enabled: activeArchiveId != null,
+    staleTime: 5 * 60 * 1000,
+  });
+  const activePlateLabel = (() => {
+    if (!activeArchivePlates?.is_multi_plate || status?.current_plate_id == null) return null;
+    const plate = activeArchivePlates.plates.find(p => p.index === status.current_plate_id);
+    return plate?.name || t('printers.plateNumber', 'Plate {{number}}', { number: status.current_plate_id });
+  })();
+
   // Fetch user-defined AMS friendly names from the database
   const { data: amsLabels, refetch: refetchAmsLabels } = useQuery({
     queryKey: ['amsLabels', printer.id],
@@ -1644,6 +1652,33 @@ function PrinterCard({
     enabled: status?.connected && status?.state !== 'RUNNING',
   });
   const lastPrint = lastPrints?.[0];
+  const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
+  const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
+  const showClearPlateButton = status?.connected && needsPlateClear && !isPrintingOrPaused;
+  const plateStatus = (() => {
+    if (!requirePlateClear || !status?.connected) return null;
+    if (isPrintingOrPaused) {
+      return {
+        label: t('printers.plateStatus.inUse'),
+        className: 'bg-blue-500/20 text-blue-400',
+      };
+    }
+    if (status.awaiting_plate_clear) {
+      return {
+        label: t('printers.plateStatus.notCleared'),
+        className: 'bg-yellow-500/20 text-yellow-400',
+      };
+    }
+    return {
+      label: t('printers.plateStatus.cleared'),
+      className: 'bg-status-ok/20 text-status-ok',
+    };
+  })();
+  const plateStatusPill = plateStatus ? (
+    <span className={`inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${plateStatus.className}`}>
+      {plateStatus.label}
+    </span>
+  ) : null;
 
   // Determine if this card should be hidden (use cached connected state to prevent flicker)
   const shouldHide = hideIfDisconnected && isConnected === false;
@@ -1762,6 +1797,19 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToResumePrint'), 'error'),
   });
 
+  const clearPlateMutation = useMutation({
+    mutationFn: () => api.clearPlate(printer.id),
+    onSuccess: () => {
+      showToast(t('queue.clearPlateSuccess'));
+      queryClient.setQueryData(['printerStatus', printer.id], (old: PrinterStatus | undefined) =>
+        old ? { ...old, awaiting_plate_clear: false } : old
+      );
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+      queryClient.invalidateQueries({ queryKey: ['queue', printer.id] });
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
+  });
+
   // Chamber light mutation with optimistic update
   const chamberLightMutation = useMutation({
     mutationFn: (on: boolean) => api.setChamberLight(printer.id, on),
@@ -1837,7 +1885,14 @@ function PrinterCard({
 
   const homeAxesMutation = useMutation({
     mutationFn: (axes: 'z' | 'xy' | 'all') => api.homeAxes(printer.id, axes),
-    onSuccess: () => showToast(t('printers.bedJog.homingStarted')),
+    onSuccess: () => {
+      // Flip the session-scoped "warned" flag so the next bed-jog click doesn't re-prompt
+      // the not-homed modal. The flag is the same one "Move anyway" sets; after a successful
+      // auto-home request the printer is (or will shortly be) in a known-homed state, so
+      // prompting again in the same session is noise — #1052 follow-up.
+      try { sessionStorage.setItem(`bambuddy.bedJog.warned.${printer.id}`, '1'); } catch { /* ignore */ }
+      showToast(t('printers.bedJog.homingStarted'));
+    },
     onError: (error: Error) =>
       showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
@@ -2604,10 +2659,34 @@ function PrinterCard({
                         style={{ width: `${status.progress || 0}%` }}
                       />
                     </div>
-                    <span className="text-xs text-white">{Math.round(status.progress || 0)}%</span>
+                    <div className="flex flex-shrink-0 items-center gap-1.5">
+                      <span className="text-xs text-white">{Math.round(status.progress || 0)}%</span>
+                      {plateStatusPill}
+                    </div>
                   </div>
                 ) : (
-                  <p className="text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                      <p className="min-w-0 truncate text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                      {plateStatusPill}
+                    </div>
+                    {showClearPlateButton && (
+                      <button
+                        type="button"
+                        onClick={() => clearPlateMutation.mutate()}
+                        disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+                        aria-label={t('printers.plateStatus.markCleared')}
+                        className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
+                        title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+                      >
+                        {clearPlateMutation.isPending ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <PlateClearedIcon className="w-3 h-3" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             ) : (
@@ -2646,15 +2725,18 @@ function PrinterCard({
                     {/* Cover Image */}
                     <CoverImage
                       url={(status.state === 'RUNNING' || status.state === 'PAUSE') ? status.cover_url : null}
-                      printName={(status.state === 'RUNNING' || status.state === 'PAUSE') ? (formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t) || undefined) : undefined}
+                      printName={(status.state === 'RUNNING' || status.state === 'PAUSE') ? (formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t, activePlateLabel) || undefined) : undefined}
                     />
                     {/* Print Info */}
                     <div className="flex-1 min-w-0">
                       {status.current_print && (status.state === 'RUNNING' || status.state === 'PAUSE') ? (
                         <>
-                          <p className="text-sm text-bambu-gray mb-1">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                          <div className="mb-1 flex items-center gap-2">
+                            <p className="text-sm text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                            {plateStatusPill}
+                          </div>
                           <p className="text-white text-sm mb-2 truncate">
-                            {formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t)}
+                            {formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t, activePlateLabel)}
                           </p>
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">
@@ -2694,9 +2776,12 @@ function PrinterCard({
                       ) : (
                         <>
                           <p className="text-sm text-bambu-gray mb-1">{t('printers.sort.status')}</p>
-                          <p className="text-white text-sm mb-2">
-                            {getStatusDisplay(status.state, status.stg_cur_name)}
-                          </p>
+                          <div className="mb-2 flex items-center gap-2">
+                            <p className="text-white text-sm">
+                              {getStatusDisplay(status.state, status.stg_cur_name)}
+                            </p>
+                            {plateStatusPill}
+                          </div>
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">
                               <div className="bg-bambu-dark-tertiary h-2 rounded-full" />
@@ -2722,7 +2807,7 @@ function PrinterCard({
                 </div>
 
                 {/* Queue Widget - always visible when there are pending items */}
-                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} printerState={status.state} awaitingPlateClear={status.awaiting_plate_clear} requirePlateClear={requirePlateClear} loadedFilamentTypes={loadedFilamentTypes} loadedFilaments={loadedFilaments} />
+                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} loadedFilamentTypes={loadedFilamentTypes} loadedFilaments={loadedFilaments} />
               </>
             )}
 
@@ -2818,6 +2903,23 @@ function PrinterCard({
               );
             })()}
 
+            {viewMode === 'expanded' && showClearPlateButton && (
+              <button
+                type="button"
+                onClick={() => clearPlateMutation.mutate()}
+                disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+                className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
+                title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+              >
+                {clearPlateMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <PlateClearedIcon className="w-4 h-4" />
+                )}
+                {t('printers.plateStatus.markCleared')}
+              </button>
+            )}
+
             {/* Controls - Fans + Print Buttons */}
             {viewMode === 'expanded' && (() => {
               // Determine print state for control buttons
@@ -2841,9 +2943,9 @@ function PrinterCard({
                     <div className="flex-1 h-px bg-bambu-dark-tertiary/30" />
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 max-[550px]:items-start">
+                  <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-2">
                     {/* Left: Fan Status - always visible, dynamic coloring */}
-                    <div className="flex items-center gap-2 min-w-0 max-[550px]:flex-wrap max-[550px]:items-start max-[550px]:gap-1.5">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
                       {/* Part Cooling Fan */}
                       <div
                         className={`flex items-center gap-1 px-1.5 py-1 rounded ${partFan && partFan > 0 ? 'bg-cyan-500/10' : 'bg-bambu-dark'}`}
@@ -3464,7 +3566,7 @@ function PrinterCard({
                                       </FilamentHoverCard>
                                     ) : (
                                       <EmptySlotHoverCard
-                                        configureSlot={tray?.state === 10 ? {
+                                        configureSlot={{
                                           enabled: hasPermission('printers:control'),
                                           onConfigure: () => setConfigureSlotModal({
                                             amsId: ams.id,
@@ -3472,8 +3574,8 @@ function PrinterCard({
                                             trayCount: ams.tray.length,
                                             extruderId: mappedExtruderId,
                                           }),
-                                        } : undefined}
-                                        inventory={tray?.state === 10 && !spoolmanEnabled ? {
+                                        }}
+                                        inventory={spoolmanEnabled ? undefined : {
                                           onAssignSpool: () => setAssignSpoolModal({
                                             printerId: printer.id,
                                             amsId: ams.id,
@@ -3484,7 +3586,7 @@ function PrinterCard({
                                               location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
                                             },
                                           }),
-                                        } : undefined}
+                                        }}
                                       >
                                         {slotVisual}
                                       </EmptySlotHoverCard>
@@ -3782,7 +3884,7 @@ function PrinterCard({
                                   </FilamentHoverCard>
                                 ) : (
                                   <EmptySlotHoverCard
-                                    configureSlot={tray?.state === 10 ? {
+                                    configureSlot={{
                                       enabled: hasPermission('printers:control'),
                                       onConfigure: () => setConfigureSlotModal({
                                         amsId: ams.id,
@@ -3790,8 +3892,8 @@ function PrinterCard({
                                         trayCount: ams.tray.length,
                                         extruderId: mappedExtruderId,
                                       }),
-                                    } : undefined}
-                                    inventory={tray?.state === 10 && !spoolmanEnabled ? {
+                                    }}
+                                    inventory={spoolmanEnabled ? undefined : {
                                       onAssignSpool: () => setAssignSpoolModal({
                                         printerId: printer.id,
                                         amsId: ams.id,
@@ -3802,7 +3904,7 @@ function PrinterCard({
                                           location: getAmsLabel(ams.id, ams.tray.length),
                                         },
                                       }),
-                                    } : undefined}
+                                    }}
                                   >
                                     {slotVisual}
                                   </EmptySlotHoverCard>
@@ -4296,6 +4398,7 @@ function PrinterCard({
           initialSelectedPrinterIds={[printer.id]}
           onClose={() => setPrintAfterUpload(null)}
           onSuccess={() => setPrintAfterUpload(null)}
+          cleanupLibraryAfterDispatch
         />
       )}
 
@@ -4680,7 +4783,7 @@ function PrinterCard({
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => {
-                  homeAxesMutation.mutate('z');
+                  homeAxesMutation.mutate('all');
                   setShowNotHomedModal(null);
                 }}
                 className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30 transition-colors"
@@ -6383,7 +6486,11 @@ export function PrintersPage() {
             <div className="relative w-full sm:max-w-sm mt-3">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50" />
               <input
-                type="text"
+                type="search"
+                name="printer-search"
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('printers.search')}

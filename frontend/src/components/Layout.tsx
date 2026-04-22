@@ -1031,6 +1031,16 @@ export function Layout() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
+                <input
+                  type="text"
+                  name="username"
+                  autoComplete="username"
+                  value={user?.username ?? ''}
+                  readOnly
+                  hidden
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
                     {t('changePassword.currentPassword')}

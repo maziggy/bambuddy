@@ -318,6 +318,12 @@ export default {
       connected: 'Connesso',
       offline: 'Offline',
     },
+    plateStatus: {
+      markCleared: 'Segna il piatto come liberato',
+      cleared: 'Piatto libero',
+      notCleared: 'Piatto non libero',
+      inUse: 'Piatto in uso',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} stampa in coda',
@@ -337,10 +343,10 @@ export default {
       down: 'Sposta piano giù',
       disabledWhilePrinting: 'Disabilitato durante la stampa',
       notHomedTitle: 'Stampante non azzerata',
-      notHomedMessage: 'L\'asse Z non è stato azzerato dall\'ultima stampa. Azzera Z prima per un posizionamento sicuro, oppure muovi comunque — i finecorsa software verranno ignorati.',
-      homeZ: 'Azzera Z',
+      notHomedMessage: 'La stampante non è stata azzerata dall\'ultima stampa. Esegui prima l\'azzeramento automatico per un posizionamento sicuro (parcheggia la testa di stampa, poi azzera X, Y e Z), oppure muovi comunque — i finecorsa software verranno ignorati.',
+      homeZ: 'Azzeramento automatico',
       moveAnyway: 'Muovi comunque',
-      homingStarted: 'Azzeramento asse Z…',
+      homingStarted: 'Azzeramento automatico in corso…',
     },
     // Permissions
     permission: {
@@ -893,9 +899,7 @@ export default {
     },
     addedBy: 'Aggiunto da {{name}}',
     nextInQueue: 'Prossimo in coda',
-    clearPlate: 'Libera piatto e avvia il prossimo',
     clearPlateSuccess: 'Piatto liberato — pronto per la prossima stampa',
-    plateReady: 'Piatto liberato — pronto per la prossima stampa',
     plateNumber: 'Piatto {{index}}',
     // Batch / quantity
     quantity: 'Quantità',
@@ -1689,7 +1693,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Conferma piatto libero',
     requirePlateClear: 'Richiedi conferma piatto libero',
-    requirePlateClearDescription: 'Quando abilitato, lo scheduler attende la conferma per stampante che il piatto è libero prima di avviare le stampe in coda su stampanti con lavori completati. Disabilitare per flussi di lavoro in farm dove i piatti vengono verificati fisicamente.',
+    requirePlateClearDescription: 'Quando questa opzione è abilitata, lo scheduler attende una conferma per stampante che il piatto sia libero prima di avviare le stampe in coda su stampanti con lavori completati. Disabilitandola vengono nascosti anche il badge di stato del piatto e il pulsante "Segna il piatto come liberato" sulle schede stampante.',
     gcodeInjection: 'Iniezione G-code',
     gcodeInjectionDescription: 'Configura G-code personalizzato da iniettare all\'inizio e/o alla fine delle stampe per sistemi di stampa automatica come Farmloop, SwapMod, AutoClear e Printflow 3D. Gli snippet sono configurati per modello di stampante e applicati quando "Inietta G-code" è abilitato su un elemento della coda.',
     gcodeInjectionNoPrinters: 'Nessuna stampante trovata. Aggiungi stampanti per configurare gli snippet G-code.',

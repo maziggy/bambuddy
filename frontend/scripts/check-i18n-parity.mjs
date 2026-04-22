@@ -207,7 +207,20 @@ if (isMainModule) {
   const infoReports = reports.filter((r) => !strictSet.has(codeOf(r.label)));
 
   printReports(strictReports, '=== STRICT locales (failures below fail CI) ===');
-  printReports(infoReports, '=== INFORMATIONAL locales (drift shown, does not fail CI) ===');
+  // Informational locales: show per-category drift counts only, not the
+  // full key lists — the leaf-count table below already gives the overall
+  // picture. Flip VERBOSE_INFO=1 to dump the full missing-key/placeholder
+  // reports when actually working on translations.
+  if (infoReports.length) {
+    if (process.env.VERBOSE_INFO === '1') {
+      printReports(infoReports, '=== INFORMATIONAL locales (drift shown, does not fail CI) ===');
+    } else {
+      console.error('\n=== INFORMATIONAL locales (drift summary; VERBOSE_INFO=1 for detail) ===');
+      for (const { label, items } of infoReports) {
+        console.error(`  ${label}: ${items.length}`);
+      }
+    }
+  }
 
   console.log('\nLocale leaf counts:');
   for (const [code, map] of Object.entries(locales)) {

@@ -317,6 +317,12 @@ export default {
       connected: '接続中',
       offline: 'オフライン',
     },
+    plateStatus: {
+      markCleared: 'プレートをクリア済みにする',
+      cleared: 'プレートクリア済み',
+      notCleared: 'プレート未クリア',
+      inUse: 'プレート使用中',
+    },
     // Queue info
     queue: {
       inQueue: 'キュー内',
@@ -336,10 +342,10 @@ export default {
       down: 'プレートを下へ',
       disabledWhilePrinting: '印刷中は無効',
       notHomedTitle: 'プリンターがホーミングされていません',
-      notHomedMessage: '前回の印刷以降、Z軸がホーミングされていません。安全な位置決めのためにまずZをホーミングするか、このまま移動してください — ソフトエンドストップはバイパスされます。',
-      homeZ: 'Zをホーミング',
+      notHomedMessage: '前回の印刷以降、プリンターがホーミングされていません。安全な位置決めのためにまずオートホーミングを実行するか（ツールヘッドをパークしてからX・Y・Zをホーミングします）、このまま移動してください — ソフトエンドストップはバイパスされます。',
+      homeZ: 'オートホーミング',
       moveAnyway: 'このまま移動',
-      homingStarted: 'Z軸をホーミング中…',
+      homingStarted: 'プリンターをオートホーミング中…',
     },
     // Permissions
     permission: {
@@ -892,9 +898,7 @@ export default {
     },
     addedBy: '{{username}}が追加',
     nextInQueue: '次のキュー',
-    clearPlate: 'プレートをクリアして次を開始',
     clearPlateSuccess: 'プレートをクリアしました — 次の印刷の準備完了',
-    plateReady: 'プレートをクリアしました — 次の印刷の準備完了',
     plateNumber: 'プレート {{index}}',
     // Batch / quantity
     quantity: '数量',
@@ -1714,7 +1718,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'プレートクリア確認',
     requirePlateClear: 'プレートクリア確認を必須にする',
-    requirePlateClearDescription: '有効にすると、スケジューラーは完了したプリンターでキューの印刷を開始する前に、プリンターごとのプレートクリア確認を待ちます。プレートを物理的に確認するファームワークフローでは無効にしてください。',
+    requirePlateClearDescription: '有効にすると、スケジューラーは完了したプリンターでキューの印刷を開始する前に、プリンターごとのプレートクリア確認を待ちます。無効にすると、プリンターカード上のプレート状態バッジと「プレートをクリア済みにする」ボタンも非表示になります。',
     gcodeInjection: 'G-codeインジェクション',
     gcodeInjectionDescription: 'Farmloop、SwapMod、AutoClear、Printflow 3Dなどの自動印刷システム用に、印刷の開始と終了時にカスタムG-codeを挿入します。スニペットはプリンターモデルごとに設定し、キューアイテム��「G-codeを挿入」を有効にすると適用されます。',
     gcodeInjectionNoPrinters: 'プリンターが見つかりません。G-codeスニペットを設定するにはプリンターを追加してください。',

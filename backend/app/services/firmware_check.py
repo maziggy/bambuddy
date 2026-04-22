@@ -161,8 +161,11 @@ class FirmwareCheckService:
         Fetch all firmware versions from the wiki release history page.
 
         Only extracts versions that appear in section-heading anchors
-        (e.g. `id="h-01030000-20260303"`) — this excludes version-like
-        numbers mentioned incidentally in release-note text.
+        (e.g. `id="h-01030000-20260303"` or `id="h-0102000020260409"`) —
+        this excludes version-like numbers mentioned incidentally in
+        release-note text. The dash separator between version and date is
+        optional: H2D/X1/H2C/H2S still use it, but P2S and X2D publish
+        anchors without the dash.
 
         Returns list of (version, release_date_YYYYMMDD | None) tuples, newest first.
         """
@@ -176,8 +179,9 @@ class FirmwareCheckService:
             if response.status_code != 200:
                 return []
 
-            # Primary: heading anchor ids like id="h-01030000-20260303"
-            anchor_matches = re.findall(r'id="h-(\d{2})(\d{2})(\d{2})(\d{2})-(\d{8})"', response.text)
+            # Primary: heading anchor ids like id="h-01030000-20260303" (dash)
+            # or id="h-0102000020260409" (no dash, P2S/X2D-style).
+            anchor_matches = re.findall(r'id="h-(\d{2})(\d{2})(\d{2})(\d{2})-?(\d{8})"', response.text)
             seen: set[str] = set()
             versions: list[tuple[str, str | None]] = []
             for a, b, c, d, date in anchor_matches:
@@ -190,8 +194,13 @@ class FirmwareCheckService:
             if versions:
                 return versions
 
-            # Fallback: heading text with "XX.XX.XX.XX (YYYYMMDD)"
-            text_matches = re.findall(r"(\d{2}\.\d{2}\.\d{2}\.\d{2})\s*\((\d{8})\)", response.text)
+            # Fallback: heading text with "XX.XX.XX.XX (YYYYMMDD)" —
+            # accept both ASCII "()" and full-width "（）" (U+FF08/U+FF09)
+            # which some pages (A1, A1-mini, P2S) use.
+            text_matches = re.findall(
+                r"(\d{2}\.\d{2}\.\d{2}\.\d{2})\s*[(\uff08](\d{8})[)\uff09]",
+                response.text,
+            )
             for v, date in text_matches:
                 if v in seen:
                     continue

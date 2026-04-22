@@ -1833,9 +1833,12 @@ class PrintScheduler:
         logger.info("Queue item %s: Status set to 'printing', sending print command...", item.id)
 
         # Capture state before dispatch so the watchdog can detect whether the
-        # printer actually transitioned (#967).
+        # printer actually transitioned (#967). Also capture subtask_id so the
+        # watchdog can recognise "command landed but state hasn't flipped yet"
+        # on slow H2D transitions (#1078).
         pre_status = printer_manager.get_status(item.printer_id)
         pre_state = getattr(pre_status, "state", None) if pre_status else None
+        pre_subtask_id = getattr(pre_status, "subtask_id", None) if pre_status else None
 
         # Start the print with AMS mapping, plate_id and print options
         started = printer_manager.start_print(
@@ -1854,12 +1857,23 @@ class PrintScheduler:
         if started:
             logger.info("Queue item %s: Print started successfully - %s", item.id, filename)
 
-            # Watchdog: if the printer never transitions out of pre_state, the MQTT
-            # publish was accepted locally but didn't reach the printer (half-broken
-            # session — same shape as #887/#936). Revert the queue item so the next
-            # dispatch can pick it up instead of leaving it stuck in "printing" (#967).
+            # Watchdog: if the printer never transitions out of pre_state AND
+            # never advances subtask_id, the MQTT publish was accepted locally but
+            # didn't reach the printer (half-broken session — same shape as
+            # #887/#936). Revert the queue item so the next dispatch can pick it
+            # up instead of leaving it stuck in "printing" (#967). subtask_id
+            # check avoids false reverts on slow H2D FINISH→PREPARE transitions
+            # that would otherwise cause the item to re-dispatch as a reprint
+            # of the just-finished job (#1078).
             if pre_state:
-                asyncio.create_task(self._watchdog_print_start(item.id, item.printer_id, pre_state))
+                asyncio.create_task(
+                    self._watchdog_print_start(
+                        item.id,
+                        item.printer_id,
+                        pre_state,
+                        pre_subtask_id,
+                    )
+                )
 
             # Get estimated time for notification
             estimated_time = None
@@ -1930,7 +1944,8 @@ class PrintScheduler:
         queue_item_id: int,
         printer_id: int,
         pre_state: str,
-        timeout: float = 45.0,
+        pre_subtask_id: str | None = None,
+        timeout: float = 90.0,
         poll_interval: float = 3.0,
     ) -> None:
         """Revert a queue item if the printer never acknowledges the start command.
@@ -1939,6 +1954,20 @@ class PrintScheduler:
         MQTT project_file publish succeeds locally. If the printer drops/ignores the
         command (half-broken MQTT session — #887/#936), the state never transitions
         and the item would otherwise stay stuck in "printing" forever (#967).
+
+        Exit paths (printer picked up the job — no revert):
+          - gcode_state changed from pre_state, OR
+          - subtask_id advanced past pre_subtask_id — the printer echoes our
+            per-dispatch identity back on push_status, so a subtask_id change is
+            a definitive "command landed" signal even while state is still FINISH.
+            H2D can sit at FINISH for ~50 s after accepting project_file before
+            transitioning to PREPARE, which used to trip the state-only watchdog
+            and caused the scheduler to revert + re-dispatch the item; the next
+            successful dispatch then looked like a reprint of the just-finished
+            job (#1078).
+
+        Timeout raised from 45 s → 90 s as belt-and-braces for slow transitions
+        that also don't emit an early subtask_id tick.
         """
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -1947,7 +1976,9 @@ class PrintScheduler:
             if not status:
                 return  # Printer disconnected — don't mess with the DB
             if status.state != pre_state:
-                return  # Printer picked up the job
+                return  # Printer picked up the job (state transition)
+            if pre_subtask_id is not None and status.subtask_id is not None and status.subtask_id != pre_subtask_id:
+                return  # Printer picked up the job (subtask_id advanced)
 
         # No transition. Revert the item so the scheduler can retry.
         async with async_session() as db:
@@ -1959,11 +1990,13 @@ class PrintScheduler:
             await db.commit()
             logger.warning(
                 "Queue item %s: printer %d did not respond to print command within "
-                "%.0fs (state still %s) — reverted to 'pending' for retry (#967)",
+                "%.0fs (state still %s, subtask_id still %s) — reverted to 'pending' "
+                "for retry (#967)",
                 queue_item_id,
                 printer_id,
                 timeout,
                 pre_state,
+                pre_subtask_id,
             )
 
         # Same half-broken-session recovery as background_dispatch: force the

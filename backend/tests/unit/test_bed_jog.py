@@ -95,11 +95,11 @@ class TestHomeAxesAPI:
         assert response.status_code == 400
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "axes,expected",
-        [("z", "G28 Z"), ("xy", "G28 X Y"), ("all", "G28")],
-    )
-    async def test_home_axes_success(self, async_client: AsyncClient, printer_factory, axes, expected):
+    @pytest.mark.parametrize("axes", ["z", "xy", "all"])
+    async def test_home_axes_always_runs_full_home(self, async_client: AsyncClient, printer_factory, axes):
+        # Regression for #1052: regardless of the axes argument, the endpoint must send a bare
+        # `G28` so the printer's safe auto-home sequence (toolhead park → XY home → Z home) runs.
+        # Sending `G28 Z` alone on H2C/H2D/H2S/X1 can crash the bed into the toolhead.
         printer = await printer_factory(name="P1")
         mock_client = MagicMock()
         mock_client.send_gcode.return_value = True
@@ -107,7 +107,7 @@ class TestHomeAxesAPI:
             mock_pm.get_client.return_value = mock_client
             response = await async_client.post(f"/api/v1/printers/{printer.id}/home-axes?axes={axes}")
             assert response.status_code == 200
-            mock_client.send_gcode.assert_called_once_with(expected)
+            mock_client.send_gcode.assert_called_once_with("G28")
 
     @pytest.mark.asyncio
     async def test_home_axes_not_connected(self, async_client: AsyncClient, printer_factory):

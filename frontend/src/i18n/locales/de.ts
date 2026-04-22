@@ -318,6 +318,12 @@ export default {
       connected: 'Verbunden',
       offline: 'Offline',
     },
+    plateStatus: {
+      markCleared: 'Platte als freigegeben markieren',
+      cleared: 'Platte freigegeben',
+      notCleared: 'Platte nicht freigegeben',
+      inUse: 'Platte in Benutzung',
+    },
     // Queue info
     queue: {
       inQueue: '{{count}} Druck in Warteschlange',
@@ -337,10 +343,10 @@ export default {
       down: 'Platte runter',
       disabledWhilePrinting: 'Während des Drucks deaktiviert',
       notHomedTitle: 'Drucker ist nicht referenziert',
-      notHomedMessage: 'Die Z-Achse wurde seit dem letzten Druck nicht referenziert. Referenzieren Sie Z zuerst für eine sichere Positionierung oder bewegen Sie trotzdem — die Software-Endschalter werden dabei umgangen.',
-      homeZ: 'Z referenzieren',
+      notHomedMessage: 'Der Drucker wurde seit dem letzten Druck nicht referenziert. Führen Sie zuerst die automatische Referenzfahrt aus (parkt den Werkzeugkopf und referenziert dann X, Y und Z) oder bewegen Sie trotzdem — die Software-Endschalter werden dabei umgangen.',
+      homeZ: 'Automatische Referenzfahrt',
       moveAnyway: 'Trotzdem bewegen',
-      homingStarted: 'Z-Achse wird referenziert…',
+      homingStarted: 'Drucker wird automatisch referenziert…',
     },
     // Permissions
     permission: {
@@ -900,9 +906,7 @@ export default {
     },
     addedBy: 'Hinzugefügt von {{name}}',
     nextInQueue: 'Nächster in der Warteschlange',
-    clearPlate: 'Druckplatte freigeben & Nächsten starten',
     clearPlateSuccess: 'Druckplatte freigegeben — bereit für nächsten Druck',
-    plateReady: 'Druckplatte freigegeben — bereit für nächsten Druck',
     plateNumber: 'Platte {{index}}',
     // Batch / quantity
     quantity: 'Menge',
@@ -1740,7 +1744,7 @@ export default {
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Druckplatte-Bestätigung',
     requirePlateClear: 'Druckplatte-Bestätigung erforderlich',
-    requirePlateClearDescription: 'Wenn aktiviert, wartet der Scheduler auf eine Druckplatte-Bestätigung pro Drucker, bevor geplante Drucke auf Druckern mit abgeschlossenen Aufträgen gestartet werden. Deaktivieren Sie dies für Farm-Workflows, bei denen die Platten physisch überprüft werden.',
+    requirePlateClearDescription: 'Wenn aktiviert, wartet der Scheduler auf eine Druckplatten-Bestätigung pro Drucker, bevor geplante Drucke auf Druckern mit abgeschlossenen Aufträgen gestartet werden. Wenn dies deaktiviert ist, werden auch das Druckplatten-Status-Badge und die Schaltfläche "Druckplatte als freigegeben markieren" auf den Druckerkarten ausgeblendet.',
     gcodeInjection: 'G-code Injection',
     gcodeInjectionDescription: 'Konfigurieren Sie benutzerdefinierten G-code, der am Anfang und/oder Ende von Drucken für Auto-Print-Systeme wie Farmloop, SwapMod, AutoClear und Printflow 3D eingefügt wird. Snippets werden pro Druckermodell konfiguriert und angewendet, wenn "G-code einfügen" bei einem Warteschlangen-Element aktiviert ist.',
     gcodeInjectionNoPrinters: 'Keine Drucker gefunden. Fügen Sie Drucker hinzu, um G-code-Snippets zu konfigurieren.',

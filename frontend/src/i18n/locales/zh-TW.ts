@@ -316,6 +316,12 @@ export default {
       connected: '已連線',
       offline: '離線',
     },
+    plateStatus: {
+      markCleared: '將列印板標記為已清理',
+      cleared: '列印板已清理',
+      notCleared: '列印板未清理',
+      inUse: '列印板使用中',
+    },
     // Queue info
     queue: {
       inQueue: '佇列中有 {{count}} 個列印任務',
@@ -335,10 +341,10 @@ export default {
       down: '熱床下移',
       disabledWhilePrinting: '列印中已停用',
       notHomedTitle: '印表機未歸零',
-      notHomedMessage: '自上次列印以來 Z 軸尚未歸零。請先歸零 Z 以確保安全定位，或者直接移動 — 軟限位將被繞過。',
-      homeZ: '歸零 Z',
+      notHomedMessage: '印表機自上次列印以來尚未歸零。請先執行自動歸零以確保安全定位（先停放噴頭，然後歸零 X、Y 和 Z），或者直接移動 — 軟限位將被繞過。',
+      homeZ: '自動歸零',
       moveAnyway: '強制移動',
-      homingStarted: 'Z 軸歸零中…',
+      homingStarted: '印表機自動歸零中…',
     },
     // Permissions
     permission: {
@@ -898,9 +904,7 @@ export default {
     },
     addedBy: '由 {{name}} 新增',
     nextInQueue: '佇列中的下一個',
-    clearPlate: '清理列印板並開始下一個',
     clearPlateSuccess: '列印板已清理 — 準備進行下一個列印',
-    plateReady: '列印板已清理 — 準備進行下一個列印',
     plateNumber: '板 {{index}}',
     // Batch / quantity
     quantity: '數量',
@@ -1739,7 +1743,7 @@ export default {
     staggeredStartDescription: '多台印表機批次啟動時的預設群組大小與間隔。可在列印對話框中逐批覆寫。',
     plateClear: '熱床清空確認',
     requirePlateClear: '需要熱床清空確認',
-    requirePlateClearDescription: '啟用後，排程器會在已完成列印的印表機上啟動佇列列印之前，等待每臺印表機的熱床清空確認。對於物理驗證熱床的農場工作流，請停用此選項。',
+    requirePlateClearDescription: '啟用後，排程器會在已完成列印的印表機上啟動佇列列印之前，等待每臺印表機的熱床清空確認。停用後，也會隱藏印表機卡片上的列印板狀態標記和「將列印板標記為已清理」按鈕。',
     gcodeInjection: 'G-code注入',
     gcodeInjectionDescription: '為Farmloop、SwapMod、AutoClear和Printflow 3D等自動列印系統設定自訂G-code，在列印開始和/或結束時注入。程式碼片段按印表機型號設定，在佇列項目上啟用"注入G-code"時套用。',
     gcodeInjectionNoPrinters: '未找到印表機。新增印表機以設定G-code程式碼片段。',

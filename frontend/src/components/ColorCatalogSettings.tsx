@@ -13,7 +13,7 @@ export function ColorCatalogSettings() {
   const [catalog, setCatalog] = useState<ColorCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterManufacturer, setFilterManufacturer] = useState<string>('Bambu Lab');
+  const [filterManufacturer, setFilterManufacturer] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Add/Edit form state

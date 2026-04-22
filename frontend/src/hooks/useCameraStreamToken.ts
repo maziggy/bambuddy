@@ -4,6 +4,31 @@ import { api, setStreamToken, getStreamToken, withStreamToken } from '../api/cli
 import { useAuth } from '../contexts/AuthContext';
 
 /**
+ * Walks the DOM and updates every <img>/<video> pointing at /api/v1/ so its
+ * src carries the current stream token. Exported for unit testing; called
+ * from useStreamTokenSync when the token arrives after first render.
+ */
+export function rewriteMediaSrcWithToken(root: ParentNode, token: string): number {
+  const tokenParam = `token=${encodeURIComponent(token)}`;
+  let updated = 0;
+  root
+    .querySelectorAll<HTMLImageElement | HTMLVideoElement>(
+      'img[src*="/api/v1/"], video[src*="/api/v1/"]'
+    )
+    .forEach((el) => {
+      const src = el.getAttribute('src') || '';
+      if (src.includes(tokenParam)) return;
+      const withoutToken = src.replace(/([?&])token=[^&]*(&|$)/, (_m, pre, post) =>
+        post === '&' ? pre : pre === '?' ? '' : ''
+      );
+      const sep = withoutToken.includes('?') ? '&' : '?';
+      el.src = `${withoutToken}${sep}${tokenParam}`;
+      updated += 1;
+    });
+  return updated;
+}
+
+/**
  * Fetches and caches a stream token for <img>/<video> src URLs.
  * Stores the token globally via setStreamToken() so URL generators
  * in client.ts can use withStreamToken() automatically.
@@ -16,20 +41,31 @@ import { useAuth } from '../contexts/AuthContext';
  * Components that need token-protected URLs can import withStreamToken directly.
  */
 export function useStreamTokenSync() {
-  const { authEnabled } = useAuth();
+  const { authEnabled, user } = useAuth();
   const queryClient = useQueryClient();
   const refreshingRef = useRef(false);
 
+  // Key the token by user id so a login/logout invalidates the cache
+  // automatically — otherwise a failed anonymous fetch on the login page
+  // would be cached and never retried after sign-in.
   const { data } = useQuery({
-    queryKey: ['camera-stream-token'],
+    queryKey: ['camera-stream-token', user?.id ?? null],
     queryFn: () => api.getCameraStreamToken(),
-    enabled: authEnabled,
+    enabled: authEnabled ? !!user : true,
     staleTime: 50 * 60 * 1000, // refresh at 50 min (tokens expire at 60)
     refetchInterval: 50 * 60 * 1000,
   });
 
   useEffect(() => {
-    setStreamToken(data?.token ?? null);
+    const newToken = data?.token ?? null;
+    setStreamToken(newToken);
+
+    // Images/videos that rendered before the token arrived have src URLs
+    // without ?token=…; update them in place so they reload with auth.
+    if (newToken) {
+      rewriteMediaSrcWithToken(document, newToken);
+    }
+
     return () => setStreamToken(null);
   }, [data?.token]);
 

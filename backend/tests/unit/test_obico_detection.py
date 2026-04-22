@@ -430,3 +430,42 @@ class TestCheckPrinterUsesCachedFrameUrl:
         mock_client.get.assert_not_called()
         assert svc._last_error is not None
         assert "external_url" in svc._last_error
+
+    @pytest.mark.asyncio
+    async def test_successful_cycle_clears_previous_error(self):
+        """A cold-start RTSP timeout sets _last_error; the next successful poll must clear it.
+
+        Regression for #172: the Status card banner ("Failed to capture snapshot for
+        printer 1") stuck around after a one-off cold-start failure even though every
+        subsequent poll captured + detected successfully.
+        """
+        svc = ObicoDetectionService()
+        settings = {
+            "enabled": True,
+            "ml_url": "http://obico:3333",
+            "sensitivity": "medium",
+            "action": "notify",
+            "poll_interval": 10,
+            "enabled_printers": None,
+            "external_url": "http://bambuddy:8000",
+        }
+        status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
+
+        # Seed a prior transient error, as would be left by a cold-start capture timeout.
+        svc._last_error = "Failed to capture snapshot for printer 1"
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"detections": []}
+        mock_response.raise_for_status = MagicMock()
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client),
+            patch.object(svc, "_capture_frame", new=AsyncMock(return_value=FAKE_JPEG)),
+        ):
+            await svc._check_printer(1, status, settings)
+
+        assert svc._last_error is None

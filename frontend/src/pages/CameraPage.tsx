@@ -19,7 +19,7 @@ export function CameraPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission, authEnabled } = useAuth();
+  const { hasPermission, authEnabled, user } = useAuth();
   const { printerId } = useParams<{ printerId: string }>();
   const id = parseInt(printerId || '0', 10);
 
@@ -28,9 +28,9 @@ export function CameraPage() {
   // useQuery call dedupes via the shared key and just reads the cached value.
   useStreamTokenSync();
   const { data: streamTokenData } = useQuery({
-    queryKey: ['camera-stream-token'],
+    queryKey: ['camera-stream-token', user?.id ?? null],
     queryFn: () => api.getCameraStreamToken(),
-    enabled: authEnabled,
+    enabled: authEnabled ? !!user : true,
     staleTime: 50 * 60 * 1000,
   });
   const streamTokenValue = streamTokenData?.token ?? getStreamToken();

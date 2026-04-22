@@ -3020,7 +3020,14 @@ class BambuMQTTClient:
             # validation" (unlike Studio, we don't have the file's real md5 here
             # without re-reading the upload, and sending a synthetic wrong digest
             # risks activation of md5 verification on some firmwares).
-            submission_id = str(int(time.time() * 1000))
+            # Cap at signed int32 max: P1S firmware (01.10.00.00) clamps oversized
+            # task identity fields to 2**31-1, so raw epoch-ms (13 digits, ~1.7e12)
+            # overflows and every submission ends up with the same task_id from
+            # the printer's perspective — the printer then treats a fresh dispatch
+            # as a continuation of the last FAILED job and never leaves IDLE (#1042).
+            # Modulo keeps uniqueness within a ~24-day wrap window; `or 1` guards
+            # the (astronomically unlikely) zero case since task_id=0 is rejected.
+            submission_id = str(int(time.time() * 1000) % 2_147_483_647 or 1)
 
             command = {
                 "print": {
@@ -4072,17 +4079,15 @@ class BambuMQTTClient:
         return True
 
     def home_axes(self, axes: str = "XYZ") -> bool:
-        """Home the specified axes.
+        """Run the printer's full auto-home sequence.
 
-        Args:
-            axes: Axes to home (e.g., "XYZ", "X", "XY", "Z")
-
-        Returns:
-            True if command was sent, False otherwise
+        The ``axes`` argument is ignored: a bare ``G28`` is always sent so
+        Bambu firmware runs its safe multi-step routine (park toolhead →
+        home XY → home Z). Partial-axis variants like ``G28 Z`` skip the
+        toolhead-park step and can crash the bed into the toolhead on H2C
+        / H2D / H2S / X1 where Z-home moves the bed UP — see #1052.
         """
-        # G28 homes all axes, G28 X Y Z homes specific axes
-        axes_param = " ".join(axes.upper())
-        return self.send_gcode(f"G28 {axes_param}")
+        return self.send_gcode("G28")
 
     def move_axis(self, axis: str, distance: float, speed: int = 3000) -> bool:
         """Move an axis by a relative distance.

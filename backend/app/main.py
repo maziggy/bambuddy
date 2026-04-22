@@ -432,6 +432,23 @@ def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | No
     return stored_ams_mapping
 
 
+async def _bump_library_file_usage_if_completed(db, item, queue_status: str) -> None:
+    """Increment LibraryFile.print_count and stamp last_printed_at when a queued
+    print completes successfully. Gated to status=='completed': failed, cancelled
+    and aborted prints do not count as usage. Caller is responsible for committing
+    the session. No-op when the queue item has no linked library file (e.g. reprints
+    from an archive). See #1008."""
+    if queue_status != "completed" or item.library_file_id is None:
+        return
+    from backend.app.models.library import LibraryFile
+
+    lib_file = await db.scalar(select(LibraryFile).where(LibraryFile.id == item.library_file_id))
+    if lib_file is None:
+        return
+    lib_file.print_count = (lib_file.print_count or 0) + 1
+    lib_file.last_printed_at = datetime.now(timezone.utc)
+
+
 def mark_printer_stopped_by_user(printer_id: int) -> None:
     """Mark that the active print on this printer was stopped by the user from the queue UI.
 
@@ -2650,6 +2667,12 @@ async def on_print_complete(printer_id: int, data: dict):
                     queue_status = "cancelled"
                 item.status = queue_status
                 item.completed_at = datetime.now(timezone.utc)
+
+                # Bump usage counters on the source library file so admins can
+                # sort by "last printed" and (eventually) auto-purge stale
+                # files — #1008.
+                await _bump_library_file_usage_if_completed(db, item, queue_status)
+
                 await db.commit()
                 queue_item_id = item.id
                 queue_auto_off = item.auto_off_after
@@ -4098,21 +4121,16 @@ async def lifespan(app: FastAPI):
         # Restore MQTT smart plug subscriptions
         if mqtt_settings.get("mqtt_enabled"):
             from backend.app.models.smart_plug import SmartPlug
+            from backend.app.services.mqtt_smart_plug import subscribe_plug_to_mqtt
 
             result = await db.execute(select(SmartPlug).where(SmartPlug.plug_type == "mqtt"))
             mqtt_plugs = result.scalars().all()
+            restored = 0
             for plug in mqtt_plugs:
-                if plug.mqtt_topic:
-                    mqtt_relay.smart_plug_service.subscribe(
-                        plug_id=plug.id,
-                        topic=plug.mqtt_topic,
-                        power_path=plug.mqtt_power_path,
-                        energy_path=plug.mqtt_energy_path,
-                        state_path=plug.mqtt_state_path,
-                        multiplier=plug.mqtt_multiplier or 1.0,
-                    )
-            if mqtt_plugs:
-                logging.info("Restored %s MQTT smart plug subscriptions", len(mqtt_plugs))
+                if subscribe_plug_to_mqtt(mqtt_relay.smart_plug_service, plug):
+                    restored += 1
+            if restored:
+                logging.info("Restored %s MQTT smart plug subscriptions", restored)
 
     # Connect to all active printers
     async with async_session() as db:
@@ -4328,7 +4346,7 @@ async def security_headers_middleware(request, call_next):
             "font-src 'self' data: https://fonts.gstatic.com; "
             "object-src 'none'; "
             "base-uri 'self'; "
-            "frame-src 'self' https:; "
+            "frame-src 'self' http: https:; "
             "frame-ancestors 'self';"
         )
     else:
@@ -4342,7 +4360,7 @@ async def security_headers_middleware(request, call_next):
             "font-src 'self' data: https://fonts.gstatic.com; "
             "object-src 'none'; "
             "base-uri 'self'; "
-            "frame-src 'self' https:; "
+            "frame-src 'self' http: https:; "
             "frame-ancestors 'none';"
         )
     if request.url.scheme == "https":

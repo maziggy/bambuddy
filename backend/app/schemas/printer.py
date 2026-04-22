@@ -273,3 +273,11 @@ class PrinterStatus(BaseModel):
     awaiting_plate_clear: bool = False
     # AMS drying support
     supports_drying: bool = False
+    # Linked archive for the active print (resolved via subtask_id). Frontend uses
+    # this to fetch plate metadata and show the plate name when the source 3MF is
+    # multi-plate (#881 follow-up).
+    current_archive_id: int | None = None
+    # 1-indexed plate number parsed from gcode_file (e.g. /Metadata/plate_2.gcode).
+    # Set for every active print regardless of plate count; the frontend decides
+    # whether to render it based on current_archive_id's is_multi_plate flag.
+    current_plate_id: int | None = None

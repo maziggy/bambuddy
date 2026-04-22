@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.4b1] - Unreleased
+## [0.2.3.2] - 2020-04-22
 
 ### Improved
 - **Printer Card Shows Plate Name on Multi-Plate Prints** ([#881](https://github.com/maziggy/bambuddy/issues/881)) — When two printers were running different plates of the same multi-plate 3MF, the Printers page cards displayed the same file name on both and gave no visual way to tell them apart. The Queue view already showed the plate name by querying the archive's plate list; the Printers page didn't have that linkage. The `GET /printers/{id}/status` endpoint now returns `current_archive_id` (resolved by matching the MQTT `subtask_id` against `PrintArchive.subtask_id`, the same bridge introduced in #972 for restart-resume) and `current_plate_id` (parsed from the MQTT `gcode_file` path by a new shared `parse_plate_id` helper that's also used by the WebSocket push path, so plate transitions within a running print reflect immediately instead of waiting 30 s for the next REST poll). The card fetches plate metadata via the same `api.getArchivePlates()` call the Queue page uses — shared React Query cache keeps it cheap across polls — and renders the actual plate name (or a "Plate N" fallback) only when the source 3MF is multi-plate, so single-plate prints stay noise-free. Falls back to the previous `plate_(\d+).gcode` regex when there's no archive linkage (e.g. prints started directly from the printer LCD). Regression tests cover the plate-id extraction across Bambu Studio path shapes and the label-override precedence in `formatPrintName`. Thanks to @stringham for the follow-up and screenshot.

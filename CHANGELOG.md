@@ -53,7 +53,22 @@ All notable changes to Bambuddy will be documented in this file.
 - **Skip Objects: Enlarged Preview Image Fails to Load on Auth-Enabled Instances** ([#1046](https://github.com/maziggy/bambuddy/issues/1046)) — Clicking the mini print-pr
 
 
-## [0.2.3.1] - 2020-04-20
+## [0.2.3.2] - 2026-04-22
+
+### Added
+- **Spoolman Unified Inventory UI** — Replaced the Spoolman iframe with a native inventory UI that matches the local spool experience exactly. The Filament Inventory page auto-detects the active backend (local DB or Spoolman) and renders spools, filters, deep-links, and NFC write flows identically regardless of source. Spoolman spools are fully editable — material, weight, colour, storage location, cost — via a PATCH proxy that re-links the Spoolman filament on metadata changes. Bulk-create, archive, restore, and delete are all supported. A 207 Multi-Status response on partial bulk-create includes `requested_count` and `failed_count` so the UI can surface a useful "Created N of M" message.
+- **Storage Location field** — Spoolman's `location` field is now exposed as `storage_location` in the unified inventory schema and editable from the spool detail panel.
+- **Deep-link from AMS slot hover card** — Clicking the filament chip on an AMS slot hover card deep-links directly to the matching spool in the inventory, whether it lives in the local DB or Spoolman. The link resolves by spool ID so it survives list reloads; a 404 shows a "Spool not found" toast instead of a generic error.
+- **Spoolman-aware NFC write** — The SpoolBuddy Write Tag flow now falls back to Spoolman when a spool is not in the local DB. The NDEF payload is built from the Spoolman filament metadata; incomplete fields (missing `color_name`, `nozzle_temp_min`, etc.) produce per-field warnings surfaced as a UI toast. After a successful NFC write the tag UID is persisted back to Spoolman's `extra.tag` via a safe key-merge that preserves all other custom extra fields.
+- **Spoolman-aware scale weight sync** — The SpoolBuddy scale endpoint reads `filament.spool_weight` from Spoolman to compute the tare, falling back to 250 g when unset. Weight is written back to Spoolman's `remaining_weight`.
+
+### Fixed
+- **Tag-clear preserves other Spoolman extra keys** — Clearing a tag UID from the inventory PATCH endpoint previously sent `extra: {}`, destroying any custom Spoolman extra fields. The endpoint now fetches the current extra dict, drops only the `tag` key, and PATCHes the remainder.
+- **Malformed Spoolman spool no longer 500s the entire inventory list** — A spool with a missing or non-positive `id` field caused `_map_spoolman_spool` to raise `ValueError`, crashing `GET /spoolman/inventory/spools` with HTTP 500. The list endpoint now logs-and-skips individual bad rows so the rest of the list is returned normally.
+- **delete / archive / restore correctly return 404 on missing spool** — Previously these endpoints returned HTTP 500 when Spoolman responded with 404. The service layer now raises `SpoolmanNotFoundError` on 404 and `SpoolmanUnavailableError` on other failures; routes map them to 404 and 503 respectively.
+- **SSRF guard applied to all SpoolBuddy Spoolman paths** — `_get_spoolman_client_or_none` now runs `assert_safe_spoolman_url` before initialising the client; unsafe URLs are silently ignored with a warning log so devices continue operating.
+
+## [0.2.3.1] - 2026-04-20
 
 ### Fixed
 - **Skip Objects: Enlarged Preview Image Fails to Load on Auth-Enabled Instances** ([#1046](https://github.com/maziggy/bambuddy/issues/1046)) — Clicking the mini print-preview thumbnail inside the Skip Objects modal opened a lightbox that showed a broken-image icon instead of the full-size plate preview. The thumbnail `<img>` wrapped its `src` with `withStreamToken()` (which appends the short-lived camera-stream token to `/api/v1/` URLs that `<img>` tags can't attach an `Authorization` header to), but the enlarged lightbox `<img>` used a bare `${status.cover_url}?view=top` so the browser's unauthenticated request was rejected by the backend. Both images now go through `withStreamToken()`. Thanks to @elit3ge for the report and screenshot.

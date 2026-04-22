@@ -136,7 +136,7 @@ class WriteTagRequest(BaseModel):
 
 class WriteTagResultRequest(BaseModel):
     device_id: str
-    spool_id: int
+    spool_id: int = Field(..., gt=0)
     tag_uid: str = Field(..., max_length=32)
     success: bool
     message: str | None = None

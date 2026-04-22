@@ -5775,7 +5775,7 @@ export const spoolbuddyApi = {
     request<{ public_key: string }>('/spoolbuddy/ssh/public-key'),
 
   writeTag: (deviceId: string, spoolId: number) =>
-    request<{ status: string }>('/spoolbuddy/nfc/write-tag', {
+    request<{ status: string; warnings?: string[] }>('/spoolbuddy/nfc/write-tag', {
       method: 'POST',
       body: JSON.stringify({ device_id: deviceId, spool_id: spoolId }),
     }),

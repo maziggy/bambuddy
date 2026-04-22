@@ -5001,6 +5001,7 @@ export default {
       creating: '创建中...',
       spoolCreated: '耗材已创建！准备写入。',
       createFailed: '创建耗材失败',
+      incompleteDataWarning: '已使用不完整的Spoolman数据写入标签',
     },
     quickMenu: {
       printerPower: '打印机电源',

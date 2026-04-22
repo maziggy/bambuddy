@@ -209,4 +209,25 @@ describe('InventoryPage - deep-link ?spool= flow', () => {
       await screen.findByText('Spool not found');
     });
   });
+
+  describe('scenario 4: targeted fetch returns 5xx server error', () => {
+    beforeEach(() => {
+      window.history.pushState({}, '', '/?spool=42');
+      setupCommonHandlers([]);
+      server.use(
+        http.get('/api/v1/inventory/spools/:id', () =>
+          HttpResponse.json({ detail: 'Internal Server Error' }, { status: 500 })
+        )
+      );
+    });
+
+    it('shows the deepLinkFetchFailed toast on 5xx', async () => {
+      render(<InventoryPageRouter />);
+
+      // The deep-link query has a custom retry callback (up to 2 retries with
+      // exponential backoff) that overrides the test QueryClient's retry:false.
+      // Allow up to 6 s for the retries to exhaust before the toast appears.
+      await screen.findByText('Could not load spool — try again', {}, { timeout: 6000 });
+    });
+  });
 });

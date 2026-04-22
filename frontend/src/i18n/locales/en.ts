@@ -5018,6 +5018,7 @@ export default {
       creating: 'Creating...',
       spoolCreated: 'Spool created! Ready to write.',
       createFailed: 'Failed to create spool',
+      incompleteDataWarning: 'Tag written with incomplete Spoolman data',
     },
     quickMenu: {
       printerPower: 'Printer Power',

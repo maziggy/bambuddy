@@ -4924,6 +4924,7 @@ export default {
       creating: 'Création...',
       spoolCreated: 'Bobine créée ! Prêt à écrire.',
       createFailed: 'Impossible de créer la bobine',
+      incompleteDataWarning: 'Tag écrit avec des données Spoolman incomplètes',
     },
     quickMenu: {
       printerPower: 'Alimentation imprimante',

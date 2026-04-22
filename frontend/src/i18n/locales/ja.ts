@@ -4962,6 +4962,7 @@ export default {
       creating: '作成中...',
       spoolCreated: 'スプール作成完了！書込み準備ができました。',
       createFailed: 'スプールの作成に失敗しました',
+      incompleteDataWarning: '不完全なSpoolmanデータでタグを書き込みました',
     },
     quickMenu: {
       printerPower: 'プリンター電源',

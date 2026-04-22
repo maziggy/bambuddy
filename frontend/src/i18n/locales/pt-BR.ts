@@ -4937,6 +4937,7 @@ export default {
       creating: 'Criando...',
       spoolCreated: 'Bobina criada! Pronto para gravar.',
       createFailed: 'Falha ao criar bobina',
+      incompleteDataWarning: 'Tag gravada com dados Spoolman incompletos',
     },
     quickMenu: {
       printerPower: 'Energia da impressora',

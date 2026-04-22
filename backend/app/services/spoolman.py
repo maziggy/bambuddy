@@ -479,25 +479,29 @@ class SpoolmanClient:
             logger.error("Failed to get all spools from Spoolman: %s", e)
             return []
 
-    async def delete_spool(self, spool_id: int) -> bool:
+    async def delete_spool(self, spool_id: int) -> None:
         """Delete a spool from Spoolman.
 
         Args:
             spool_id: Spoolman spool ID
 
-        Returns:
-            True on success, False on failure.
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist (HTTP 404).
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
         """
         try:
             client = await self._get_client()
             response = await client.delete(f"{self.api_url}/spool/{spool_id}")
+            if response.status_code == 404:
+                raise SpoolmanNotFoundError(f"Spool {spool_id} not found in Spoolman")
             response.raise_for_status()
-            return True
+        except SpoolmanNotFoundError:
+            raise
         except Exception as e:
             logger.error("Failed to delete spool %s from Spoolman: %s", spool_id, e)
-            return False
+            raise SpoolmanUnavailableError(f"Failed to delete spool {spool_id}") from e
 
-    async def set_spool_archived(self, spool_id: int, archived: bool) -> dict | None:
+    async def set_spool_archived(self, spool_id: int, archived: bool) -> dict:
         """Archive or restore a spool in Spoolman.
 
         Args:
@@ -505,7 +509,11 @@ class SpoolmanClient:
             archived: True to archive, False to restore.
 
         Returns:
-            Updated spool dictionary or None on failure.
+            Updated spool dictionary.
+
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist (HTTP 404).
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
         """
         try:
             client = await self._get_client()
@@ -513,11 +521,15 @@ class SpoolmanClient:
                 f"{self.api_url}/spool/{spool_id}",
                 json={"archived": archived},
             )
+            if response.status_code == 404:
+                raise SpoolmanNotFoundError(f"Spool {spool_id} not found in Spoolman")
             response.raise_for_status()
             return response.json()
+        except SpoolmanNotFoundError:
+            raise
         except Exception as e:
             logger.error("Failed to set archived=%s for spool %s: %s", archived, spool_id, e)
-            return None
+            raise SpoolmanUnavailableError(f"Failed to archive/restore spool {spool_id}") from e
 
     async def update_spool_full(
         self,

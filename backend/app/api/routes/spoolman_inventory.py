@@ -172,7 +172,13 @@ async def list_spools(
     """Return all Spoolman spools in the InventorySpool format."""
     client = await _get_client(db)
     spools = await client.get_all_spools(allow_archived=include_archived)
-    return [_map_spoolman_spool(s) for s in spools]
+    result = []
+    for s in spools:
+        try:
+            result.append(_map_spoolman_spool(s))
+        except ValueError as exc:
+            logger.warning("Skipping malformed Spoolman spool (id=%r): %s", s.get("id"), exc)
+    return result
 
 
 @router.get("/spools/{spool_id}")
@@ -331,13 +337,20 @@ async def update_spool(
     remaining = max(0.0, label_weight - weight_used)
 
     # When the caller explicitly sets tag_uid/tray_uuid to null (i.e. tag removal),
-    # clear the extra.tag field stored in Spoolman.
+    # fetch the current extra dict, drop only the "tag" key, and PATCH the remainder.
+    # Sending extra={} wholesale would destroy any other custom Spoolman extra fields
+    # the user has set outside Bambuddy.
     tag_nulled = (
         ("tag_uid" in data.model_fields_set or "tray_uuid" in data.model_fields_set)
         and data.tag_uid is None
         and data.tray_uuid is None
     )
-    extra = {} if tag_nulled else None
+    if tag_nulled:
+        cur_extra = dict(current.get("extra") or {})
+        cur_extra.pop("tag", None)
+        extra: dict | None = cur_extra
+    else:
+        extra = None
 
     updated = await client.update_spool_full(
         spool_id=spool_id,
@@ -363,9 +376,12 @@ async def delete_spool(
 ) -> dict:
     """Permanently delete a spool from Spoolman."""
     client = await _get_client(db)
-    success = await client.delete_spool(spool_id)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to delete spool from Spoolman")
+    try:
+        await client.delete_spool(spool_id)
+    except SpoolmanNotFoundError:
+        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanUnavailableError:
+        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
     return {"status": "deleted"}
 
 
@@ -377,9 +393,12 @@ async def archive_spool(
 ) -> dict:
     """Archive a spool in Spoolman (soft-delete)."""
     client = await _get_client(db)
-    spool = await client.set_spool_archived(spool_id, archived=True)
-    if not spool:
-        raise HTTPException(status_code=500, detail="Failed to archive spool in Spoolman")
+    try:
+        spool = await client.set_spool_archived(spool_id, archived=True)
+    except SpoolmanNotFoundError:
+        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanUnavailableError:
+        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
     return _map_spoolman_spool(spool)
 
 
@@ -391,9 +410,12 @@ async def restore_spool(
 ) -> dict:
     """Restore an archived spool in Spoolman."""
     client = await _get_client(db)
-    spool = await client.set_spool_archived(spool_id, archived=False)
-    if not spool:
-        raise HTTPException(status_code=500, detail="Failed to restore spool in Spoolman")
+    try:
+        spool = await client.set_spool_archived(spool_id, archived=False)
+    except SpoolmanNotFoundError:
+        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanUnavailableError:
+        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
     return _map_spoolman_spool(spool)
 
 

@@ -13,6 +13,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, Outlet } from 'react-router-dom';
+import { ToastProvider } from '../../contexts/ToastContext';
 import { SpoolBuddyWriteTagPage } from '../../pages/spoolbuddy/SpoolBuddyWriteTagPage';
 
 // Mock the API modules
@@ -68,13 +69,15 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/spoolbuddy/write-tag']}>
-        <Routes>
-          <Route element={<OutletWrapper />}>
-            <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/spoolbuddy/write-tag']}>
+          <Routes>
+            <Route element={<OutletWrapper />}>
+              <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

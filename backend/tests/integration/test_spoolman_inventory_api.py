@@ -165,6 +165,25 @@ class TestSpoolmanInventoryMapping:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_malformed_spool_skipped_in_list(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """A spool with an invalid id (e.g. 0) is silently skipped; others still appear."""
+        bad_spool = {**SAMPLE_SPOOLMAN_SPOOL, "id": 0}
+        mock_spoolman_client.get_all_spools.return_value = [bad_spool, SAMPLE_SPOOLMAN_SPOOL]
+
+        response = await async_client.get("/api/v1/spoolman/inventory/spools")
+        assert response.status_code == 200
+        spools = response.json()
+        # bad_spool is dropped; the valid one survives
+        assert len(spools) == 1
+        assert spools[0]["id"] == 42
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_tag_uid_16char_maps_correctly(
         self,
         async_client: AsyncClient,
@@ -323,10 +342,57 @@ class TestSpoolmanInventoryCRUD:
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """DELETE returns 500 when Spoolman deletion fails."""
-        mock_spoolman_client.delete_spool.return_value = False
+        """DELETE returns 503 when Spoolman is unreachable."""
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+
+        mock_spoolman_client.delete_spool.side_effect = SpoolmanUnavailableError("unreachable")
         response = await async_client.delete("/api/v1/spoolman/inventory/spools/42")
-        assert response.status_code == 500
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_spool_not_found(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """DELETE returns 404 when Spoolman reports the spool does not exist."""
+        from backend.app.services.spoolman import SpoolmanNotFoundError
+
+        mock_spoolman_client.delete_spool.side_effect = SpoolmanNotFoundError("gone")
+        response = await async_client.delete("/api/v1/spoolman/inventory/spools/42")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_spool_not_found(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """POST /archive returns 404 when Spoolman reports the spool does not exist."""
+        from backend.app.services.spoolman import SpoolmanNotFoundError
+
+        mock_spoolman_client.set_spool_archived.side_effect = SpoolmanNotFoundError("gone")
+        response = await async_client.post("/api/v1/spoolman/inventory/spools/42/archive")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restore_spool_not_found(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """POST /restore returns 404 when Spoolman reports the spool does not exist."""
+        from backend.app.services.spoolman import SpoolmanNotFoundError
+
+        mock_spoolman_client.set_spool_archived.side_effect = SpoolmanNotFoundError("gone")
+        response = await async_client.post("/api/v1/spoolman/inventory/spools/42/restore")
+        assert response.status_code == 404
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -913,6 +979,39 @@ class TestSpoolmanInventorySecurityExtras:
         assert len(body["created"]) == 2
 
 
+class TestTagClearPreservesExtraKeys:
+    """Regression test: clearing tag_uid must not wipe unrelated Spoolman extra fields."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tag_clear_preserves_custom_extra_key(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """PATCH tag_uid='' must preserve unrelated keys in Spoolman extra dict."""
+        spool_with_extra = {
+            **SAMPLE_SPOOLMAN_SPOOL,
+            "extra": {"tag": '"AABBCCDDEEFF0011AABBCCDDEEFF0011"', "custom_key": "keep_me"},
+        }
+        mock_spoolman_client.get_spool = AsyncMock(return_value=spool_with_extra)
+        mock_spoolman_client.update_spool_full = AsyncMock(return_value=spool_with_extra)
+
+        response = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42",
+            json={"tag_uid": None},
+        )
+        assert response.status_code == 200
+
+        mock_spoolman_client.update_spool_full.assert_called_once()
+        _, kwargs = mock_spoolman_client.update_spool_full.call_args
+        sent_extra = kwargs.get("extra")
+        assert sent_extra is not None, "extra must be sent when tag is cleared"
+        assert "tag" not in sent_extra, "tag key must be removed when tag_uid is cleared"
+        assert sent_extra.get("custom_key") == "keep_me", "unrelated extra keys must survive"
+
+
 class TestSpoolmanInventorySSRFSpoolBuddyPath:
     """SSRF tests for _get_spoolman_client_or_none (nfc/* and scale/ endpoints)."""
 
@@ -957,6 +1056,88 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
         if mock_ws.broadcast.called:
             msg = mock_ws.broadcast.call_args[0][0]
             assert msg["type"] == "spoolbuddy_unknown_tag"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "evil_url",
+        [
+            "http://169.254.169.254/latest/meta-data/",  # AWS IMDS
+            "http://10.0.0.1/",  # RFC-1918 private
+            "http://[::ffff:169.254.169.254]/",  # IPv4-mapped IMDS bypass
+        ],
+    )
+    async def test_nfc_write_result_with_ssrf_url_degrades_gracefully(
+        self,
+        async_client: AsyncClient,
+        db_session,
+        evil_url: str,
+    ):
+        """SSRF: write-result with unsafe Spoolman URL must not proxy to the evil host.
+
+        write-result calls Spoolman to write-back the tag UID when data_origin='spoolman'.
+        With an SSRF URL, _get_spoolman_client_or_none returns None so the call is skipped.
+        """
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value=evil_url))
+        await db_session.commit()
+
+        from unittest.mock import AsyncMock, patch
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=None)),
+            patch("backend.app.services.spoolman.init_spoolman_client", AsyncMock(return_value=None)),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                "/api/v1/spoolbuddy/nfc/write-result",
+                json={
+                    "device_id": "sb-ssrf-wr",
+                    "spool_id": 99,
+                    "tag_uid": "AABBCCDD",
+                    "success": True,
+                },
+            )
+
+        # Must not crash or attempt to contact the SSRF host
+        assert resp.status_code in (200, 404)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "evil_url",
+        [
+            "http://169.254.169.254/latest/meta-data/",  # AWS IMDS
+            "http://10.0.0.1/",  # RFC-1918 private
+        ],
+    )
+    async def test_scale_update_weight_with_ssrf_url_degrades_gracefully(
+        self,
+        async_client: AsyncClient,
+        db_session,
+        evil_url: str,
+    ):
+        """SSRF: scale weight update with unsafe Spoolman URL must not proxy to the evil host."""
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value=evil_url))
+        await db_session.commit()
+
+        from unittest.mock import AsyncMock, patch
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                "/api/v1/spoolbuddy/scale/update-spool-weight",
+                json={"device_id": "sb-ssrf-scale", "spool_id": 1, "weight_grams": 500.0},
+            )
+
+        # Must not crash or proxy to an SSRF host
+        assert resp.status_code in (200, 404, 422)
 
 
 class TestMergeSpoolExtraPreservesKeys:

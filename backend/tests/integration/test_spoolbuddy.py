@@ -1896,7 +1896,7 @@ class TestNfcWriteResultInputValidation:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_tag_uid_too_long_rejected(self, async_client: AsyncClient, device_factory):
-        """tag_uid longer than 64 chars must be rejected with 422."""
+        """tag_uid longer than 32 chars must be rejected with 422."""
         import json as _json
 
         await device_factory(

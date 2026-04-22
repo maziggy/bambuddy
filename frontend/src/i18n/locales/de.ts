@@ -5010,6 +5010,7 @@ export default {
       creating: 'Wird erstellt...',
       spoolCreated: 'Spule erstellt! Bereit zum Schreiben.',
       createFailed: 'Spule konnte nicht erstellt werden',
+      incompleteDataWarning: 'Tag mit unvollständigen Spoolman-Daten geschrieben',
     },
     quickMenu: {
       printerPower: 'Drucker-Strom',

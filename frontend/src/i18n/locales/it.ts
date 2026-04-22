@@ -4923,6 +4923,7 @@ export default {
       creating: 'Creazione...',
       spoolCreated: 'Bobina creata! Pronto per la scrittura.',
       createFailed: 'Impossibile creare la bobina',
+      incompleteDataWarning: 'Tag scritto con dati Spoolman incompleti',
     },
     quickMenu: {
       printerPower: 'Alimentazione stampante',

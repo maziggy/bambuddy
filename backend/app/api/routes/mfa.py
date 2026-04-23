@@ -374,6 +374,18 @@ def _assert_totp_not_replayed(totp_obj: pyotp.TOTP, totp_record: UserTOTP, code:
 
 
 # ---------------------------------------------------------------------------
+# OIDC helpers
+# ---------------------------------------------------------------------------
+def _is_valid_email_shaped(value: str | None) -> bool:
+    # SEC-2: minimal email-shape check for non-standard claims (upn, preferred_username).
+    # Rejects None, "", "@", "x@", "@domain" that a bare '"@" in value' check would accept.
+    if not value:
+        return False
+    parts = value.split("@")
+    return len(parts) == 2 and len(parts[0]) > 0 and len(parts[1]) > 0 and len(value) <= 255
+
+
+# ---------------------------------------------------------------------------
 # Settings helpers (email 2FA flag)
 # ---------------------------------------------------------------------------
 async def _get_email_2fa_enabled(db: AsyncSession, user_id: int) -> bool:
@@ -1056,6 +1068,9 @@ async def create_oidc_provider(
         scopes=body.scopes,
         is_enabled=body.is_enabled,
         auto_create_users=body.auto_create_users,
+        auto_link_existing_accounts=body.auto_link_existing_accounts,
+        email_claim=body.email_claim,
+        require_email_verified=body.require_email_verified,
         icon_url=body.icon_url,
     )
     db.add(provider)
@@ -1081,6 +1096,17 @@ async def update_oidc_provider(
         if field == "issuer_url" and value:
             value = value.rstrip("/")
         setattr(provider, field, value)
+
+    # SEC-1 + SEC-6: Combined-State-Guard after setattr loop.
+    # Checks the final in-memory state (DB values + newly set values combined) to catch
+    # partial updates that each pass schema validation individually but are unsafe together.
+    if provider.auto_link_existing_accounts and (
+        not provider.require_email_verified or provider.email_claim != "email"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="auto_link_existing_accounts requires require_email_verified=True and email_claim='email'",
+        )
 
     await db.commit()
     await db.refresh(provider)
@@ -1370,23 +1396,68 @@ async def oidc_callback(
         if not provider_sub:
             return RedirectResponse(url=f"{frontend_error_url}missing_sub_claim", status_code=302)
 
-        # C1: Only trust the email claim when the provider explicitly marks it verified.
-        # Treating absent email_verified as verified enables account-takeover: an attacker
-        # could register an unverified email with an IdP and auto-link to an existing account.
-        # Fail closed: require email_verified == True; absent/False both drop the email.
-        raw_email: str | None = claims.get("email")
-        email_verified = claims.get("email_verified")
-        if email_verified is not True:
-            if raw_email:
-                logger.info(
-                    "OIDC provider %d: ignoring email for sub=%r because email_verified=%r",
-                    provider_id,
-                    provider_sub,
-                    email_verified,
-                )
-            provider_email: str | None = None
+        # SEC-3: normalise all paths to lowercase+strip so get_user_by_email (func.lower)
+        # and stored provider_email stay consistent across case-variant UPNs / emails.
+        raw_claim_value = claims.get(provider.email_claim)
+        if raw_claim_value is not None and not isinstance(raw_claim_value, str):
+            # C1: IdP returned a non-string for the email claim (e.g. list, int).
+            # Drop it to avoid AttributeError from .lower(); log with claim context.
+            logger.warning(
+                "OIDC provider %d: email_claim %r has unexpected type %s for sub=%r, ignoring",
+                provider_id,
+                provider.email_claim,
+                type(raw_claim_value).__name__,
+                provider_sub,
+            )
+            raw_claim_value = None
+        raw_email: str | None = raw_claim_value.lower().strip() if raw_claim_value else None
+
+        if provider.email_claim == "email" and provider.require_email_verified:
+            # Fall A: standard C1-Guard (require_email_verified=True).
+            # Email is normalised via SEC-3 (lowercase+stripped). Functionally equivalent
+            # to the previous guard for new logins; existing mixed-case provider_email
+            # records are not retroactively updated.
+            email_verified = claims.get("email_verified")
+            if email_verified is not True:
+                if raw_email:
+                    logger.info(
+                        "OIDC provider %d: ignoring email for sub=%r because email_verified=%r",
+                        provider_id,
+                        provider_sub,
+                        email_verified,
+                    )
+                provider_email: str | None = None
+            else:
+                provider_email = raw_email
+
+        elif provider.email_claim == "email" and not provider.require_email_verified:
+            # Fall B: permissive — explicit False drops email, absent keeps it.
+            # Required for Azure Entra ID which never sends email_verified.
+            email_verified = claims.get("email_verified")
+            if email_verified is False:
+                provider_email = None
+            else:
+                if email_verified is not True:
+                    # SEC-5: log only when the permissive path actually fires (ev absent/None),
+                    # not on every successful login. Use INFO — this is expected behaviour for
+                    # providers like Azure Entra ID that never send email_verified.
+                    logger.info(
+                        "OIDC provider %r (%d): accepting email for sub=%r "
+                        "without email_verified claim (permissive mode)",
+                        provider.name,
+                        provider.id,
+                        provider_sub,
+                    )
+                provider_email = raw_email
+
         else:
-            provider_email = raw_email
+            # Fall C: custom claim (preferred_username, upn, …) — no email_verified check.
+            # SEC-2: _is_valid_email_shaped instead of bare '"@" in value'.
+            # Recommended for Azure Entra ID: set email_claim="preferred_username".
+            if raw_email and _is_valid_email_shaped(raw_email):
+                provider_email = raw_email
+            else:
+                provider_email = None
 
         # ── Step 4: Resolve / create user ────────────────────────────────────
         try:

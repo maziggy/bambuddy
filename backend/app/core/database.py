@@ -224,8 +224,10 @@ async def _safe_execute(conn, sql):
     try:
         async with conn.begin_nested():
             await conn.execute(text(sql))
-    except (OperationalError, ProgrammingError):
-        pass
+    except (OperationalError, ProgrammingError) as exc:
+        msg = str(exc).lower()
+        if not any(k in msg for k in ("already exists", "duplicate column", "duplicate key")):
+            logger.warning("Migration statement may have failed (ignored): %s | SQL: %.120s", exc, sql)
 
 
 async def run_migrations(conn):
@@ -1483,7 +1485,19 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE auth_ephemeral_tokens ADD COLUMN challenge_id VARCHAR(128)")
 
     # Migration: Add auto_link_existing_accounts column to oidc_providers (M-4)
-    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT 1")
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT 0")
+
+    # Migration: Azure Entra ID support — configurable email claim and verification requirement
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN email_claim VARCHAR(64) DEFAULT 'email'")
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT 1")
+    # SEC-1/SEC-6: Add DB-level CHECK constraint for existing PostgreSQL installs.
+    # SQLite does not support ALTER TABLE ADD CONSTRAINT — handled by __table_args__ at creation.
+    if not is_sqlite():
+        await _safe_execute(
+            conn,
+            "ALTER TABLE oidc_providers ADD CONSTRAINT ck_auto_link_requires_verified_email_claim "
+            "CHECK (auto_link_existing_accounts = FALSE OR (require_email_verified = TRUE AND email_claim = 'email'))",
+        )
 
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat

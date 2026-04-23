@@ -2137,6 +2137,13 @@ export default {
         autoLinkDesc: 'Collega gli account locali esistenti tramite email al primo accesso.',
         secretHint: 'lascia vuoto per mantenere',
         secretPlaceholder: 'nuovo segreto',
+        emailClaim: 'Claim email',
+        emailClaimDesc: "Claim JWT usato come identità email. Usare 'preferred_username' o 'upn' per Azure Entra ID (che non invia email_verified). Usare solo nomi di claim affidabili.",
+        emailClaimPlaceholder: 'email',
+        requireEmailVerified: 'Richiedi verifica email',
+        requireEmailVerifiedDesc: "Accetta il claim email solo se il provider lo contrassegna come verificato.",
+        requireEmailVerifiedWarning: 'Attenzione: l\'email sarà accettata senza verifica. Usare solo con provider affidabili.',
+        requireEmailVerifiedAutoLink: 'Disabilitare prima il collegamento automatico per modificare questa impostazione.',
       },
     },
 

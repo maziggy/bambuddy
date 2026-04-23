@@ -1,0 +1,200 @@
+2026-04-23 13:12:32,058 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,060 INFO [sqlalchemy.engine.Engine] SELECT users.id, users.username, users.email, users.password_hash, users.role, users.auth_source, users.is_active, users.created_at, users.updated_at, users.password_changed_at, users.cloud_token, users.cloud_email, users.cloud_region 
+FROM users 
+WHERE lower(users.username) = lower(?)
+2026-04-23 13:12:32,060 INFO [sqlalchemy.engine.Engine] [cached since 507.2s ago] ('[USER]',)
+2026-04-23 13:12:32,065 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,069 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,071 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-23 13:12:32,071 INFO [sqlalchemy.engine.Engine] [cached since 512s ago] ('auth_enabled',)
+2026-04-23 13:12:32,079 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,083 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,086 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ? AND auth_ephemeral_tokens.expires_at > ?
+2026-04-23 13:12:32,087 INFO [sqlalchemy.engine.Engine] [cached since 487.5s ago] ('Lhi9a70nBDAATMDyf0KZboK6Dh0Cx-mi', 'camera_stream', '2026-04-23 17:12:32.081839')
+2026-04-23 13:12:32,094 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,101 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,103 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ? AND auth_ephemeral_tokens.expires_at > ?
+2026-04-23 13:12:32,105 INFO [sqlalchemy.engine.Engine] [cached since 487.5s ago] ('Lhi9a70nBDAATMDyf0KZboK6Dh0Cx-mi', 'camera_stream', '2026-04-23 17:12:32.100236')
+2026-04-23 13:12:32,109 INFO [sqlalchemy.engine.Engine] SELECT users_1.id AS users_1_id, groups.id AS groups_id, groups.name AS groups_name, groups.description AS groups_description, groups.permissions AS groups_permissions, groups.is_system AS groups_is_system, groups.created_at AS groups_created_at, groups.updated_at AS groups_updated_at 
+FROM users AS users_1 JOIN user_groups AS user_groups_1 ON users_1.id = user_groups_1.user_id JOIN groups ON groups.id = user_groups_1.group_id 
+WHERE users_1.id IN (?)
+2026-04-23 13:12:32,111 INFO [sqlalchemy.engine.Engine] [cached since 506.6s ago] (2,)
+2026-04-23 13:12:32,113 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,115 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,118 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,120 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id, print_archives.printer_id, print_archives.project_id, print_archives.filename, print_archives.file_path, print_archives.file_size, print_archives.content_hash, print_archives.thumbnail_path, print_archives.timelapse_path, print_archives.source_3mf_path, print_archives.f3d_path, print_archives.print_name, print_archives.print_time_seconds, print_archives.filament_used_grams, print_archives.filament_type, print_archives.filament_color, print_archives.layer_height, print_archives.total_layers, print_archives.nozzle_diameter, print_archives.bed_temperature, print_archives.nozzle_temperature, print_archives.sliced_for_model, print_archives.status, print_archives.started_at, print_archives.completed_at, print_archives.subtask_id, print_archives.extra_data, print_archives.makerworld_url, print_archives.designer, print_archives.external_url, print_archives.is_favorite, print_archives.tags, print_archives.notes, print_archives.cost, print_archives.photos, print_archives.failure_reason, print_archives.quantity, print_archives.energy_kwh, print_archives.energy_cost, print_archives.energy_start_kwh, print_archives.created_at, print_archives.created_by_id 
+FROM print_archives 
+WHERE print_archives.id = ?
+2026-04-23 13:12:32,121 INFO [sqlalchemy.engine.Engine] [cached since 479.8s ago] (114,)
+2026-04-23 13:12:32,122 INFO [sqlalchemy.engine.Engine] COMMIT
+2026-04-23 13:12:32,125 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,126 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ? AND auth_ephemeral_tokens.expires_at > ?
+2026-04-23 13:12:32,126 INFO [sqlalchemy.engine.Engine] [cached since 487.5s ago] ('Lhi9a70nBDAATMDyf0KZboK6Dh0Cx-mi', 'camera_stream', '2026-04-23 17:12:32.124411')
+2026-04-23 13:12:32,128 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,132 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,134 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id, print_archives.printer_id, print_archives.project_id, print_archives.filename, print_archives.file_path, print_archives.file_size, print_archives.content_hash, print_archives.thumbnail_path, print_archives.timelapse_path, print_archives.source_3mf_path, print_archives.f3d_path, print_archives.print_name, print_archives.print_time_seconds, print_archives.filament_used_grams, print_archives.filament_type, print_archives.filament_color, print_archives.layer_height, print_archives.total_layers, print_archives.nozzle_diameter, print_archives.bed_temperature, print_archives.nozzle_temperature, print_archives.sliced_for_model, print_archives.status, print_archives.started_at, print_archives.completed_at, print_archives.subtask_id, print_archives.extra_data, print_archives.makerworld_url, print_archives.designer, print_archives.external_url, print_archives.is_favorite, print_archives.tags, print_archives.notes, print_archives.cost, print_archives.photos, print_archives.failure_reason, print_archives.quantity, print_archives.energy_kwh, print_archives.energy_cost, print_archives.energy_start_kwh, print_archives.created_at, print_archives.created_by_id 
+FROM print_archives 
+WHERE print_archives.id = ?
+2026-04-23 13:12:32,134 INFO [sqlalchemy.engine.Engine] [cached since 479.8s ago] (113,)
+2026-04-23 13:12:32,135 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,139 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,140 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-23 13:12:32,140 INFO [sqlalchemy.engine.Engine] [cached since 512.1s ago] ('auth_enabled',)
+2026-04-23 13:12:32,144 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,146 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id, print_archives.printer_id, print_archives.project_id, print_archives.filename, print_archives.file_path, print_archives.file_size, print_archives.content_hash, print_archives.thumbnail_path, print_archives.timelapse_path, print_archives.source_3mf_path, print_archives.f3d_path, print_archives.print_name, print_archives.print_time_seconds, print_archives.filament_used_grams, print_archives.filament_type, print_archives.filament_color, print_archives.layer_height, print_archives.total_layers, print_archives.nozzle_diameter, print_archives.bed_temperature, print_archives.nozzle_temperature, print_archives.sliced_for_model, print_archives.status, print_archives.started_at, print_archives.completed_at, print_archives.subtask_id, print_archives.extra_data, print_archives.makerworld_url, print_archives.designer, print_archives.external_url, print_archives.is_favorite, print_archives.tags, print_archives.notes, print_archives.cost, print_archives.photos, print_archives.failure_reason, print_archives.quantity, print_archives.energy_kwh, print_archives.energy_cost, print_archives.energy_start_kwh, print_archives.created_at, print_archives.created_by_id 
+FROM print_archives 
+WHERE print_archives.id = ?
+2026-04-23 13:12:32,148 INFO [sqlalchemy.engine.Engine] [cached since 479.9s ago] (112,)
+2026-04-23 13:12:32,157 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,159 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-23 13:12:32,159 INFO [sqlalchemy.engine.Engine] [cached since 512.1s ago] ('auth_enabled',)
+2026-04-23 13:12:32,161 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,170 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,176 INFO [sqlalchemy.engine.Engine] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.password_hash AS users_password_hash, users.role AS users_role, users.auth_source AS users_auth_source, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.password_changed_at AS users_password_changed_at, users.cloud_token AS users_cloud_token, users.cloud_email AS users_cloud_email, users.cloud_region AS users_cloud_region 
+FROM users 
+WHERE users.id IN (?)
+2026-04-23 13:12:32,177 INFO [sqlalchemy.engine.Engine] [cached since 421.9s ago] (1,)
+2026-04-23 13:12:32,180 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,181 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ?
+2026-04-23 13:12:32,182 INFO [sqlalchemy.engine.Engine] [cached since 507.5s ago] ('1caa411c27108fc625ea0ae0a308c087', 'revoked_jti')
+2026-04-23 13:12:32,185 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,187 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id, print_archives.printer_id, print_archives.project_id, print_archives.filename, print_archives.file_path, print_archives.file_size, print_archives.content_hash, print_archives.thumbnail_path, print_archives.timelapse_path, print_archives.source_3mf_path, print_archives.f3d_path, print_archives.print_name, print_archives.print_time_seconds, print_archives.filament_used_grams, print_archives.filament_type, print_archives.filament_color, print_archives.layer_height, print_archives.total_layers, print_archives.nozzle_diameter, print_archives.bed_temperature, print_archives.nozzle_temperature, print_archives.sliced_for_model, print_archives.status, print_archives.started_at, print_archives.completed_at, print_archives.subtask_id, print_archives.extra_data, print_archives.makerworld_url, print_archives.designer, print_archives.external_url, print_archives.is_favorite, print_archives.tags, print_archives.notes, print_archives.cost, print_archives.photos, print_archives.failure_reason, print_archives.quantity, print_archives.energy_kwh, print_archives.energy_cost, print_archives.energy_start_kwh, print_archives.created_at, print_archives.created_by_id 
+FROM print_archives 
+WHERE print_archives.id = ?
+2026-04-23 13:12:32,188 INFO [sqlalchemy.engine.Engine] [cached since 479.9s ago] (111,)
+2026-04-23 13:12:32,193 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,195 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ? AND auth_ephemeral_tokens.expires_at > ?
+2026-04-23 13:12:32,198 INFO [sqlalchemy.engine.Engine] [cached since 487.6s ago] ('Lhi9a70nBDAATMDyf0KZboK6Dh0Cx-mi', 'camera_stream', '2026-04-23 17:12:32.192224')
+2026-04-23 13:12:32,202 INFO [sqlalchemy.engine.Engine] COMMIT
+2026-04-23 13:12:32,207 INFO [sqlalchemy.engine.Engine] SELECT users_1.id AS users_1_id, groups.id AS groups_id, groups.name AS groups_name, groups.description AS groups_description, groups.permissions AS groups_permissions, groups.is_system AS groups_is_system, groups.created_at AS groups_created_at, groups.updated_at AS groups_updated_at 
+FROM users AS users_1 JOIN user_groups AS user_groups_1 ON users_1.id = user_groups_1.user_id JOIN groups ON groups.id = user_groups_1.group_id 
+WHERE users_1.id IN (?)
+2026-04-23 13:12:32,208 INFO [sqlalchemy.engine.Engine] [cached since 421.7s ago] (1,)
+2026-04-23 13:12:32,208 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,213 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,215 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-23 13:12:32,216 INFO [sqlalchemy.engine.Engine] [cached since 512.2s ago] ('auth_enabled',)
+2026-04-23 13:12:32,222 INFO [sqlalchemy.engine.Engine] COMMIT
+2026-04-23 13:12:32,226 INFO [sqlalchemy.engine.Engine] SELECT users.id, users.username, users.email, users.password_hash, users.role, users.auth_source, users.is_active, users.created_at, users.updated_at, users.password_changed_at, users.cloud_token, users.cloud_email, users.cloud_region 
+FROM users 
+WHERE lower(users.username) = lower(?)
+2026-04-23 13:12:32,227 INFO [sqlalchemy.engine.Engine] [cached since 507.4s ago] ('[USER]',)
+2026-04-23 13:12:32,228 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,237 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,238 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-23 13:12:32,239 INFO [sqlalchemy.engine.Engine] [cached since 512.2s ago] ('auth_enabled',)
+2026-04-23 13:12:32,245 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,249 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id, print_archives.printer_id, print_archives.project_id, print_archives.filename, print_archives.file_path, print_archives.file_size, print_archives.content_hash, print_archives.thumbnail_path, print_archives.timelapse_path, print_archives.source_3mf_path, print_archives.f3d_path, print_archives.print_name, print_archives.print_time_seconds, print_archives.filament_used_grams, print_archives.filament_type, print_archives.filament_color, print_archives.layer_height, print_archives.total_layers, print_archives.nozzle_diameter, print_archives.bed_temperature, print_archives.nozzle_temperature, print_archives.sliced_for_model, print_archives.status, print_archives.started_at, print_archives.completed_at, print_archives.subtask_id, print_archives.extra_data, print_archives.makerworld_url, print_archives.designer, print_archives.external_url, print_archives.is_favorite, print_archives.tags, print_archives.notes, print_archives.cost, print_archives.photos, print_archives.failure_reason, print_archives.quantity, print_archives.energy_kwh, print_archives.energy_cost, print_archives.energy_start_kwh, print_archives.created_at, print_archives.created_by_id 
+FROM print_archives 
+WHERE print_archives.id = ?
+2026-04-23 13:12:32,250 INFO [sqlalchemy.engine.Engine] [cached since 480s ago] (110,)
+2026-04-23 13:12:32,252 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,258 INFO [sqlalchemy.engine.Engine] SELECT users_1.id AS users_1_id, groups.id AS groups_id, groups.name AS groups_name, groups.description AS groups_description, groups.permissions AS groups_permissions, groups.is_system AS groups_is_system, groups.created_at AS groups_created_at, groups.updated_at AS groups_updated_at 
+FROM users AS users_1 JOIN user_groups AS user_groups_1 ON users_1.id = user_groups_1.user_id JOIN groups ON groups.id = user_groups_1.group_id 
+WHERE users_1.id IN (?)
+2026-04-23 13:12:32,259 INFO [sqlalchemy.engine.Engine] [cached since 506.7s ago] (2,)
+2026-04-23 13:12:32,263 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,269 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,271 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ? AND auth_ephemeral_tokens.expires_at > ?
+2026-04-23 13:12:32,272 INFO [sqlalchemy.engine.Engine] [cached since 487.6s ago] ('Lhi9a70nBDAATMDyf0KZboK6Dh0Cx-mi', 'camera_stream', '2026-04-23 17:12:32.268569')
+2026-04-23 13:12:32,274 INFO [sqlalchemy.engine.Engine] COMMIT
+2026-04-23 13:12:32,278 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,279 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-23 13:12:32,280 INFO [sqlalchemy.engine.Engine] [cached since 512.3s ago] ('auth_enabled',)
+2026-04-23 13:12:32,281 INFO [sqlalchemy.engine.Engine] COMMIT
+2026-04-23 13:12:32,283 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,284 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ? AND auth_ephemeral_tokens.expires_at > ?
+2026-04-23 13:12:32,285 INFO [sqlalchemy.engine.Engine] [cached since 487.7s ago] ('Lhi9a70nBDAATMDyf0KZboK6Dh0Cx-mi', 'camera_stream', '2026-04-23 17:12:32.282488')
+2026-04-23 13:12:32,292 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,294 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-23 13:12:32,294 INFO [sqlalchemy.engine.Engine] [cached since 512.3s ago] ('auth_enabled',)
+2026-04-23 13:12:32,299 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,304 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,307 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,308 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,310 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,312 INFO [sqlalchemy.engine.Engine] SELECT printers.name, printers.serial_number, printers.ip_address, printers.access_code 
+FROM printers
+2026-04-23 13:12:32,313 INFO [sqlalchemy.engine.Engine] [generated in 0.00083s] ()
+2026-04-23 13:12:32,315 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,319 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,320 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ? AND auth_ephemeral_tokens.expires_at > ?
+2026-04-23 13:12:32,321 INFO [sqlalchemy.engine.Engine] [cached since 487.7s ago] ('Lhi9a70nBDAATMDyf0KZboK6Dh0Cx-mi', 'camera_stream', '2026-04-23 17:12:32.317933')
+2026-04-23 13:12:32,323 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,324 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id, print_archives.printer_id, print_archives.project_id, print_archives.filename, print_archives.file_path, print_archives.file_size, print_archives.content_hash, print_archives.thumbnail_path, print_archives.timelapse_path, print_archives.source_3mf_path, print_archives.f3d_path, print_archives.print_name, print_archives.print_time_seconds, print_archives.filament_used_grams, print_archives.filament_type, print_archives.filament_color, print_archives.layer_height, print_archives.total_layers, print_archives.nozzle_diameter, print_archives.bed_temperature, print_archives.nozzle_temperature, print_archives.sliced_for_model, print_archives.status, print_archives.started_at, print_archives.completed_at, print_archives.subtask_id, print_archives.extra_data, print_archives.makerworld_url, print_archives.designer, print_archives.external_url, print_archives.is_favorite, print_archives.tags, print_archives.notes, print_archives.cost, print_archives.photos, print_archives.failure_reason, print_archives.quantity, print_archives.energy_kwh, print_archives.energy_cost, print_archives.energy_start_kwh, print_archives.created_at, print_archives.created_by_id 
+FROM print_archives 
+WHERE print_archives.id = ?
+2026-04-23 13:12:32,324 INFO [sqlalchemy.engine.Engine] [cached since 480s ago] (109,)
+2026-04-23 13:12:32,327 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,328 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id, print_archives.printer_id, print_archives.project_id, print_archives.filename, print_archives.file_path, print_archives.file_size, print_archives.content_hash, print_archives.thumbnail_path, print_archives.timelapse_path, print_archives.source_3mf_path, print_archives.f3d_path, print_archives.print_name, print_archives.print_time_seconds, print_archives.filament_used_grams, print_archives.filament_type, print_archives.filament_color, print_archives.layer_height, print_archives.total_layers, print_archives.nozzle_diameter, print_archives.bed_temperature, print_archives.nozzle_temperature, print_archives.sliced_for_model, print_archives.status, print_archives.started_at, print_archives.completed_at, print_archives.subtask_id, print_archives.extra_data, print_archives.makerworld_url, print_archives.designer, print_archives.external_url, print_archives.is_favorite, print_archives.tags, print_archives.notes, print_archives.cost, print_archives.photos, print_archives.failure_reason, print_archives.quantity, print_archives.energy_kwh, print_archives.energy_cost, print_archives.energy_start_kwh, print_archives.created_at, print_archives.created_by_id 
+FROM print_archives 
+WHERE print_archives.id = ?
+2026-04-23 13:12:32,329 INFO [sqlalchemy.engine.Engine] [cached since 480s ago] (108,)
+2026-04-23 13:12:32,331 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,333 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ? AND auth_ephemeral_tokens.expires_at > ?
+2026-04-23 13:12:32,334 INFO [sqlalchemy.engine.Engine] [cached since 487.7s ago] ('Lhi9a70nBDAATMDyf0KZboK6Dh0Cx-mi', 'camera_stream', '2026-04-23 17:12:32.330572')
+2026-04-23 13:12:32,335 INFO [sqlalchemy.engine.Engine] COMMIT
+2026-04-23 13:12:32,339 INFO [sqlalchemy.engine.Engine] SELECT users.username 
+FROM users
+2026-04-23 13:12:32,340 INFO [sqlalchemy.engine.Engine] [generated in 0.00139s] ()
+2026-04-23 13:12:32,345 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,348 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-23 13:12:32,348 INFO [sqlalchemy.engine.Engine] [cached since 512.3s ago] ('auth_enabled',)
+2026-04-23 13:12:32,357 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,363 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,368 INFO [sqlalchemy.engine.Engine] SELECT settings.value 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-23 13:12:32,369 INFO [sqlalchemy.engine.Engine] [generated in 0.00099s] ('bambu_cloud_email',)
+2026-04-23 13:12:32,372 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,373 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id, print_archives.printer_id, print_archives.project_id, print_archives.filename, print_archives.file_path, print_archives.file_size, print_archives.content_hash, print_archives.thumbnail_path, print_archives.timelapse_path, print_archives.source_3mf_path, print_archives.f3d_path, print_archives.print_name, print_archives.print_time_seconds, print_archives.filament_used_grams, print_archives.filament_type, print_archives.filament_color, print_archives.layer_height, print_archives.total_layers, print_archives.nozzle_diameter, print_archives.bed_temperature, print_archives.nozzle_temperature, print_archives.sliced_for_model, print_archives.status, print_archives.started_at, print_archives.completed_at, print_archives.subtask_id, print_archives.extra_data, print_archives.makerworld_url, print_archives.designer, print_archives.external_url, print_archives.is_favorite, print_archives.tags, print_archives.notes, print_archives.cost, print_archives.photos, print_archives.failure_reason, print_archives.quantity, print_archives.energy_kwh, print_archives.energy_cost, print_archives.energy_start_kwh, print_archives.created_at, print_archives.created_by_id 
+FROM print_archives 
+WHERE print_archives.id = ?
+2026-04-23 13:12:32,374 INFO [sqlalchemy.engine.Engine] [cached since 480.1s ago] (107,)
+2026-04-23 13:12:32,378 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,381 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,382 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id, print_archives.printer_id, print_archives.project_id, print_archives.filename, print_archives.file_path, print_archives.file_size, print_archives.content_hash, print_archives.thumbnail_path, print_archives.timelapse_path, print_archives.source_3mf_path, print_archives.f3d_path, print_archives.print_name, print_archives.print_time_seconds, print_archives.filament_used_grams, print_archives.filament_type, print_archives.filament_color, print_archives.layer_height, print_archives.total_layers, print_archives.nozzle_diameter, print_archives.bed_temperature, print_archives.nozzle_temperature, print_archives.sliced_for_model, print_archives.status, print_archives.started_at, print_archives.completed_at, print_archives.subtask_id, print_archives.extra_data, print_archives.makerworld_url, print_archives.designer, print_archives.external_url, print_archives.is_favorite, print_archives.tags, print_archives.notes, print_archives.cost, print_archives.photos, print_archives.failure_reason, print_archives.quantity, print_archives.energy_kwh, print_archives.energy_cost, print_archives.energy_start_kwh, print_archives.created_at, print_archives.created_by_id 
+FROM print_archives 
+WHERE print_archives.id = ?
+2026-04-23 13:12:32,383 INFO [sqlalchemy.engine.Engine] [cached since 480.1s ago] (106,)
+2026-04-23 13:12:32,386 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-23 13:12:32,388 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ? AND auth_ephemeral_tokens.expires_at > ?
+2026-04-23 13:12:32,389 INFO [sqlalchemy.engine.Engine] [cached since 487.8s ago] ('Lhi9a70nBDAATMDyf0KZboK6Dh0Cx-mi', 'camera_stream', '2026-04-23 17:12:32.385869')
+2026-04-23 13:12:32,390 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-23 13:12:32,392 INFO [sqlalchemy.engine.Engine] COMMIT

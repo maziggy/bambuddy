@@ -138,6 +138,10 @@ class Permission(StrEnum):
     # Cloud Auth (admin-level)
     CLOUD_AUTH = "cloud:auth"
 
+    # MakerWorld Integration
+    MAKERWORLD_VIEW = "makerworld:view"  # Resolve MakerWorld URLs and view model metadata
+    MAKERWORLD_IMPORT = "makerworld:import"  # Download 3MFs from MakerWorld into the library
+
     # API Keys (admin-level)
     API_KEYS_READ = "api_keys:read"
     API_KEYS_CREATE = "api_keys:create"
@@ -283,6 +287,10 @@ PERMISSION_CATEGORIES = {
     "Cloud": [
         Permission.CLOUD_AUTH,
     ],
+    "MakerWorld": [
+        Permission.MAKERWORLD_VIEW,
+        Permission.MAKERWORLD_IMPORT,
+    ],
     "API Keys": [
         Permission.API_KEYS_READ,
         Permission.API_KEYS_CREATE,
@@ -345,6 +353,9 @@ DEFAULT_GROUPS = {
             Permission.LIBRARY_UPLOAD.value,
             Permission.LIBRARY_UPDATE_OWN.value,
             Permission.LIBRARY_DELETE_OWN.value,
+            # MakerWorld integration
+            Permission.MAKERWORLD_VIEW.value,
+            Permission.MAKERWORLD_IMPORT.value,
             # Projects - full access
             Permission.PROJECTS_READ.value,
             Permission.PROJECTS_CREATE.value,
@@ -432,6 +443,8 @@ DEFAULT_GROUPS = {
             Permission.SYSTEM_READ.value,
             Permission.SETTINGS_READ.value,
             Permission.WEBSOCKET_CONNECT.value,
+            # MakerWorld browsing only (no import — that writes to library)
+            Permission.MAKERWORLD_VIEW.value,
         ],
         "is_system": True,
     },

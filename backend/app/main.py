@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import mimetypes as _mimetypes
 import posixpath
 import time
 from contextlib import asynccontextmanager
@@ -32,6 +33,7 @@ from backend.app.api.routes import (
     local_backup,
     local_presets,
     maintenance,
+    makerworld,
     metrics,
     mfa,
     notification_templates,
@@ -3017,6 +3019,17 @@ async def on_print_complete(printer_id: int, data: dict):
 
             archive = await db.get(PrintArchive, archive_id)
             if archive:
+                # Back-fill created_by_id on reprint (#730): reprint reuses the
+                # source archive row rather than creating a new one, so an
+                # archive that was auto-created from a printer-initiated
+                # print (created_by_id=NULL) would otherwise stay unattributed
+                # forever. When we have a print-session user AND the archive
+                # has no attribution yet, credit the current user. Never
+                # overwrite an existing attribution — the original uploader
+                # keeps ownership.
+                _print_user_id = _print_user_info.get("user_id") if _print_user_info else None
+                if archive.created_by_id is None and _print_user_id is not None:
+                    archive.created_by_id = _print_user_id
                 p_info = printer_manager.get_printer(printer_id)
                 await write_log_entry(
                     db,
@@ -3997,9 +4010,15 @@ async def lifespan(app: FastAPI):
     import httpx as _httpx
 
     from backend.app.services.bambu_cloud import set_shared_http_client
+    from backend.app.services.makerworld import (
+        set_shared_http_client as set_shared_makerworld_http_client,
+    )
 
     _shared_cloud_http_client = _httpx.AsyncClient(timeout=30.0)
     set_shared_http_client(_shared_cloud_http_client)
+    # Reuse the same connection pool for MakerWorld — different host, same
+    # keep-alive pool saves a TLS handshake per request.
+    set_shared_makerworld_http_client(_shared_cloud_http_client)
 
     # Fix queue items stuck with invalid "aborted" status (should be "cancelled").
     # This can happen when a print was cancelled mid-print on versions before this fix.
@@ -4233,6 +4252,7 @@ async def lifespan(app: FastAPI):
 
     # Drop the shared Bambu Cloud HTTP client we registered at startup.
     set_shared_http_client(None)
+    set_shared_makerworld_http_client(None)
     await _shared_cloud_http_client.aclose()
 
     # Checkpoint WAL (SQLite only) and close all database connections
@@ -4331,19 +4351,37 @@ async def security_headers_middleware(request, call_next):
     #   - img-src data: / blob:: base64 thumbnails and Blob-URL timelapse previews.
     #   - media-src blob:: timelapse video player uses Blob URLs.
     #   - font-src data:: some icon fonts are embedded as data URIs.
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "img-src 'self' data: blob:; "
-        "media-src 'self' blob:; "
-        "connect-src 'self' ws: wss:; "
-        "font-src 'self' data: https://fonts.gstatic.com; "
-        "object-src 'none'; "
-        "base-uri 'self'; "
-        "frame-src 'self' http: https:; "
-        "frame-ancestors 'none';"
-    )
+    if request.url.path.startswith("/gcode-viewer"):
+        # The gcode viewer is embedded in an iframe served by this same origin,
+        # so frame-ancestors must allow 'self'.  prettygcode.js also uses eval()
+        # internally, so script-src needs 'unsafe-eval'.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "img-src 'self' data: blob:; "
+            "media-src 'self' blob:; "
+            "connect-src 'self' ws: wss:; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-src 'self' http: https:; "
+            "frame-ancestors 'self';"
+        )
+    else:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "img-src 'self' data: blob:; "
+            "media-src 'self' blob:; "
+            "connect-src 'self' ws: wss:; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-src 'self' http: https:; "
+            "frame-ancestors 'none';"
+        )
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -4499,6 +4537,7 @@ app.include_router(camera.router, prefix=app_settings.api_prefix)
 app.include_router(external_links.router, prefix=app_settings.api_prefix)
 app.include_router(projects.router, prefix=app_settings.api_prefix)
 app.include_router(library.router, prefix=app_settings.api_prefix)
+app.include_router(makerworld.router, prefix=app_settings.api_prefix)
 app.include_router(api_keys.router, prefix=app_settings.api_prefix)
 app.include_router(webhook.router, prefix=app_settings.api_prefix)
 app.include_router(ams_history.router, prefix=app_settings.api_prefix)
@@ -4589,6 +4628,38 @@ async def serve_sw_register():
     if reg_file.exists():
         return FileResponse(reg_file, media_type="application/javascript")
     return {"error": "sw-register.js not found"}
+
+
+# ── GCode viewer static files ────────────────────────────────────────────────
+# Served via explicit routes so ordering is guaranteed (app.mount() loses
+# to the /{full_path:path} catch-all in some Starlette versions).
+_gcode_viewer_dir = (app_settings.static_dir.parent / "gcode_viewer").resolve()
+
+
+def _gcode_viewer_response(rel: str) -> FileResponse:
+    from fastapi import HTTPException as _HTTPException
+
+    safe = (_gcode_viewer_dir / rel).resolve()
+    if not safe.is_relative_to(_gcode_viewer_dir):
+        raise _HTTPException(status_code=403)
+    if safe.is_file():
+        mt, _ = _mimetypes.guess_type(str(safe))
+        return FileResponse(str(safe), media_type=mt or "application/octet-stream")
+    raise _HTTPException(status_code=404)
+
+
+@app.get("/gcode-viewer/")
+async def serve_gcode_viewer_index() -> FileResponse:
+    """Raw PrettyGCode viewer for the iframe. The bare ``/gcode-viewer``
+    (no trailing slash) intentionally falls through to the SPA catch-all so a
+    full-page reload re-enters the React layout instead of serving the iframe
+    contents standalone."""
+    return _gcode_viewer_response("index.html")
+
+
+@app.get("/gcode-viewer/{file_path:path}")
+async def serve_gcode_viewer_file(file_path: str) -> FileResponse:
+    return _gcode_viewer_response(file_path)
 
 
 # Catch-all route for React Router (must be last)

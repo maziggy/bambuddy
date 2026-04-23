@@ -970,6 +970,39 @@ export interface CloudLoginResponse {
   tfa_key?: string | null;
 }
 
+// MakerWorld integration. Full metadata/instance shapes come back as
+// Record<string, unknown> — MakerWorld's API adds fields over time, so we
+// pass them through verbatim rather than maintaining a brittle mirror.
+export interface MakerworldStatus {
+  has_cloud_token: boolean;
+  can_download: boolean;
+}
+
+export interface MakerworldResolvedModel {
+  model_id: number;
+  profile_id: number | null;
+  design: Record<string, unknown>;
+  instances: Array<Record<string, unknown>>;
+  already_imported_library_ids: number[];
+}
+
+export interface MakerworldImportResponse {
+  library_file_id: number;
+  filename: string;
+  folder_id: number | null;
+  profile_id: number | null;
+  was_existing: boolean;
+}
+
+export interface MakerworldRecentImport {
+  library_file_id: number;
+  filename: string;
+  folder_id: number | null;
+  thumbnail_path: string | null;
+  source_url: string | null;
+  created_at: string;
+}
+
 export interface SlicerSetting {
   setting_id: string;
   name: string;
@@ -2289,6 +2322,7 @@ export type Permission =
   | 'settings:read' | 'settings:update' | 'settings:backup' | 'settings:restore'
   | 'github:backup' | 'github:restore'
   | 'cloud:auth'
+  | 'makerworld:view' | 'makerworld:import'
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
   | 'users:read' | 'users:create' | 'users:update' | 'users:delete'
   | 'groups:read' | 'groups:create' | 'groups:update' | 'groups:delete'
@@ -3663,6 +3697,32 @@ export const api = {
     request<BuiltinFilament[]>('/cloud/builtin-filaments'),
   getFilamentIdMap: () =>
     request<Record<string, string>>('/cloud/filament-id-map'),
+
+  // MakerWorld URL-paste import flow.
+  getMakerworldStatus: () =>
+    request<MakerworldStatus>('/makerworld/status'),
+  resolveMakerworldUrl: (url: string) =>
+    request<MakerworldResolvedModel>('/makerworld/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
+  getMakerworldRecentImports: (limit = 10) =>
+    request<MakerworldRecentImport[]>(`/makerworld/recent-imports?limit=${limit}`),
+  importMakerworldInstance: (
+    model_id: number,
+    instance_id: number | null,
+    profile_id?: number | null,
+    folder_id?: number | null,
+  ) =>
+    request<MakerworldImportResponse>('/makerworld/import', {
+      method: 'POST',
+      body: JSON.stringify({
+        model_id,
+        instance_id: instance_id ?? null,
+        profile_id: profile_id ?? null,
+        folder_id: folder_id ?? null,
+      }),
+    }),
   getCloudSettingDetail: (settingId: string) =>
     request<SlicerSettingDetail>(`/cloud/settings/${settingId}`),
   createCloudSetting: (data: SlicerSettingCreate) =>

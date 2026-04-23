@@ -23,6 +23,7 @@ export interface ArchivePlatesResponse {
   filename: string;
   plates: PlateMetadata[];
   is_multi_plate: boolean;
+  has_gcode?: boolean;
 }
 
 export interface LibraryFilePlatesResponse {

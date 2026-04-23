@@ -19,9 +19,12 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^static/
+        # Exclude static/ (build output) and gcode_viewer/ (vendored third-party
+        # assets — see gcode_viewer/VENDORED.md) so whitespace normalisation
+        # doesn't drift the files away from upstream.
+        exclude: ^(static/|gcode_viewer/)
       - id: end-of-file-fixer
-        exclude: ^static/
+        exclude: ^(static/|gcode_viewer/)
       - id: check-yaml
       - id: check-json
         exclude: ^(static/|frontend/tsconfig\.)

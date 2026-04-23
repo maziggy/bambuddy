@@ -1498,6 +1498,16 @@ async def run_migrations(conn):
         "UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL",
     )
 
+    # Migration: Provenance columns on library_files for MakerWorld imports.
+    # source_url is indexed so "already imported" dedupe lookups stay O(log N)
+    # as the library grows.
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN source_type VARCHAR(32)")
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN source_url VARCHAR(512)")
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_library_files_source_url ON library_files(source_url)",
+    )
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),
@@ -1671,6 +1681,32 @@ async def seed_default_groups():
             ):
                 group.permissions = [*group.permissions, "printers:clear_plate"]
                 logger.info("Added printers:clear_plate to group '%s' (has printers:control)", group.name)
+        await session.commit()
+
+        # Migrate new permissions for MakerWorld integration: groups that
+        # already have library:upload (i.e. can write to the library) are
+        # the correct audience for makerworld:view + makerworld:import, and
+        # groups that only have library:read get makerworld:view (browse
+        # only). Matches the intent of DEFAULT_GROUPS without clobbering
+        # any user-customised permission lists.
+        result = await session.execute(select(Group))
+        for group in result.scalars().all():
+            if not group.permissions:
+                continue
+            perms = list(group.permissions)
+            changed = False
+            if "library:upload" in perms:
+                for new_perm in ("makerworld:view", "makerworld:import"):
+                    if new_perm not in perms:
+                        perms.append(new_perm)
+                        changed = True
+                        logger.info("Added %s to group '%s' (has library:upload)", new_perm, group.name)
+            elif "library:read" in perms and "makerworld:view" not in perms:
+                perms.append("makerworld:view")
+                changed = True
+                logger.info("Added makerworld:view to group '%s' (has library:read)", group.name)
+            if changed:
+                group.permissions = perms
         await session.commit()
 
         # Migrate existing users to groups if they're not already in any group

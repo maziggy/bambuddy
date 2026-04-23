@@ -146,7 +146,7 @@ jobs:
           retention-days: 30
 
       - name: Create or close pip security issue
-        if: always()
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         uses: actions/github-script@v7
         with:
           script: |
@@ -321,7 +321,7 @@ jobs:
           retention-days: 30
 
       - name: Create or close npm security issue
-        if: always()
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         uses: actions/github-script@v7
         with:
           script: |

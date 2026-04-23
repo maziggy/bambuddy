@@ -215,4 +215,69 @@ describe('GroupEditPage', () => {
       });
     });
   });
+
+  describe('cache invalidation after save (#1083)', () => {
+    it('primes the single-group detail cache with the update response body', async () => {
+      // Regression for #1083: before the fix, onSuccess only invalidated the
+      // ['groups'] list query. The ['group', id] detail cache stayed stale
+      // under the global 60s staleTime, so reopening the editor showed the
+      // pre-update snapshot. The fix invalidates the detail key AND primes the
+      // cache with the server response so a re-mount sees fresh data.
+      const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+      const { MemoryRouter, Routes, Route } = await import('react-router-dom');
+      const { AuthProvider } = await import('../../contexts/AuthContext');
+      const { ToastProvider } = await import('../../contexts/ToastContext');
+      const { ThemeProvider } = await import('../../contexts/ThemeContext');
+      const { render: rtlRender } = await import('@testing-library/react');
+
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { staleTime: 60_000, retry: false } },
+      });
+      const user = userEvent.setup();
+
+      const wrapper = (
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <ToastProvider>
+              <AuthProvider>
+                <MemoryRouter initialEntries={['/groups/2/edit']}>
+                  <Routes>
+                    <Route path="/groups/:id/edit" element={<GroupEditPage />} />
+                    <Route path="/settings" element={<div>Settings</div>} />
+                  </Routes>
+                </MemoryRouter>
+              </AuthProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      );
+      rtlRender(wrapper);
+
+      // Wait for the group to load
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Operators')).toBeInTheDocument();
+      });
+
+      // Change permissions then save
+      await waitFor(() => {
+        expect(screen.getByText('Read Archives')).toBeInTheDocument();
+      });
+      const archivesCheckbox = screen.getByText('Read Archives').closest('label')!.querySelector('input')!;
+      await user.click(archivesCheckbox);
+
+      await user.click(screen.getByText('Save'));
+
+      // Wait for navigation (redirect to /settings)
+      await waitFor(() => {
+        expect(screen.getByText('Settings')).toBeInTheDocument();
+      });
+
+      // After save, the detail cache must have been primed with the server
+      // response (mocked PATCH returns mockGroup + body). The next mount
+      // should read the cached body, not the stale pre-update payload.
+      const cached = queryClient.getQueryData(['group', '2']) as { permissions: string[] } | undefined;
+      expect(cached).toBeDefined();
+      expect(cached!.permissions).toContain('archives:read');
+    });
+  });
 });

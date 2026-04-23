@@ -168,6 +168,16 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Duplicate detection via file hash
 - Mobile-friendly with always-visible action buttons
 
+### 🌍 MakerWorld Integration
+- Paste any `makerworld.com/models/…` URL → preview, plate picker, and import without leaving Bambuddy
+- Per-plate **Save** or **Save & Slice in Bambu Studio / OrcaSlicer** (your preferred slicer from Settings)
+- **Import all plates** button for multi-plate models
+- Auto-creates a "MakerWorld" folder in File Manager; override with any existing folder via the picker
+- Per-plate image gallery with keyboard-navigable lightbox
+- Recent imports sidebar — last 10 MakerWorld imports with one-click jump to File Manager or slicer
+- Remove-from-library for imported plates with confirm modal (no LAN cookie paste, no browser extension)
+- Reuses your existing Bambu Cloud login — no separate OAuth flow or browser extension to install
+
 ### 📁 Projects
 - Group related prints (e.g., "Voron Build")
 - Track plates (print jobs) and parts separately

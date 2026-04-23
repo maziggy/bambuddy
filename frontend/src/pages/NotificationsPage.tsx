@@ -34,7 +34,7 @@ export function NotificationsPage() {
     queryFn: api.getSettings,
     staleTime: 5 * 60 * 1000,
   });
-  
+
   // Fetch current preferences
   const { data: preferences, isLoading } = useQuery({
     queryKey: ['user-email-preferences'],

@@ -986,6 +986,51 @@ class TestPrinterStateToDict:
         finally:
             printer_manager.set_awaiting_plate_clear(12345, False)
 
+    def test_name_and_model_surfaced_when_registered(self, mock_state):
+        """Registered PrinterInfo name + model arg should land in the WS payload.
+
+        Regression for #963 follow-up: without this, the gcode viewer's printer
+        selector had to wait on a /printers fetch before it could render real
+        names, and the initial WS snapshot showed "Printer 1" fallbacks.
+        """
+        from backend.app.services.printer_manager import PrinterInfo, printer_manager
+
+        # Register a stub PrinterInfo; the real manager writes this on connect.
+        printer_manager._printer_info[98765] = PrinterInfo(name="My X1C", serial_number="01S00-0")
+        try:
+            result = printer_state_to_dict(mock_state, printer_id=98765, model="X1C")
+            assert result["name"] == "My X1C"
+            assert result["model"] == "X1C"
+        finally:
+            printer_manager._printer_info.pop(98765, None)
+
+    def test_name_and_model_absent_when_no_printer_id(self, mock_state):
+        """Without a printer_id (unusual callsites), name/model keys stay absent.
+
+        The consumers (gcode viewer, frontend card) tolerate missing keys; what
+        they can't tolerate is an unrelated printer's name accidentally leaking
+        into a status meant for a different one.
+        """
+        result = printer_state_to_dict(mock_state)
+        assert "name" not in result
+        assert "model" not in result
+
+    def test_model_absent_when_arg_is_none(self, mock_state):
+        """`model` arg=None must not plant a `model` key at all.
+
+        If the arg is None, callers didn't know the model yet; emitting a
+        `model: null` field would overwrite a good value cached client-side.
+        """
+        from backend.app.services.printer_manager import PrinterInfo, printer_manager
+
+        printer_manager._printer_info[55555] = PrinterInfo(name="N", serial_number="S")
+        try:
+            result = printer_state_to_dict(mock_state, printer_id=55555, model=None)
+            assert "model" not in result
+            assert result["name"] == "N"
+        finally:
+            printer_manager._printer_info.pop(55555, None)
+
 
 class TestStatusKeyDryingDedup:
     """Regression tests for WebSocket dedup including drying fields.

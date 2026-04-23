@@ -164,6 +164,7 @@ class VirtualPrinterInstance:
         self._ssdp_proxy: SSDPProxy | None = None
         self._tasks: list[asyncio.Task] = []
         self._cert_renewal_task: asyncio.Task | None = None
+        self._cert_restart_task: asyncio.Task | None = None
 
     @property
     def serial(self) -> str:
@@ -379,9 +380,23 @@ class VirtualPrinterInstance:
             self._cert_renewal_task.cancel()
             try:
                 await self._cert_renewal_task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
+            except Exception as e:
+                logger.warning("[VP %s] Unexpected error in cert renewal task: %s", self.name, e)
             self._cert_renewal_task = None
+
+    async def _cancel_restart_task(self) -> None:
+        """Cancel the cert restart task and await its completion."""
+        if self._cert_restart_task and not self._cert_restart_task.done():
+            self._cert_restart_task.cancel()
+            try:
+                await self._cert_restart_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning("[VP %s] Unexpected error in cert restart task: %s", self.name, e)
+        self._cert_restart_task = None
 
     async def _restart_for_cert_renewal(self) -> None:
         """Restart VP services to load the newly renewed Tailscale cert into TLS listeners."""
@@ -393,6 +408,8 @@ class VirtualPrinterInstance:
             else:
                 await self.stop_server()
                 await self.start_server()
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.error("[VP %s] Failed to restart after cert renewal: %s", self.name, e)
 
@@ -423,7 +440,7 @@ class VirtualPrinterInstance:
                             # Schedule restart in a separate task; this loop ends here
                             # so the restart can cleanly cancel _cert_renewal_task and
                             # create a fresh one via start_server/start_proxy.
-                            asyncio.create_task(
+                            self._cert_restart_task = asyncio.create_task(
                                 self._restart_for_cert_renewal(),
                                 name=f"vp_{self.id}_cert_restart",
                             )
@@ -566,6 +583,7 @@ class VirtualPrinterInstance:
     async def stop_server(self) -> None:
         """Stop server-mode services."""
         await self._cancel_renewal_task()
+        await self._cancel_restart_task()
         if self._ftp:
             await self._ftp.stop()
             self._ftp = None
@@ -662,6 +680,7 @@ class VirtualPrinterInstance:
     async def stop_proxy(self) -> None:
         """Stop proxy mode services for this instance."""
         await self._cancel_renewal_task()
+        await self._cancel_restart_task()
         if self._proxy:
             await self._proxy.stop()
             self._proxy = None

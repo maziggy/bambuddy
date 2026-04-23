@@ -3931,6 +3931,10 @@ export default {
       title: 'Automatisch starten',
       description: 'Drucke automatisch starten, wenn sie zur Warteschlange hinzugefügt werden. Wenn deaktiviert, warten Drucke auf manuellen Start.',
     },
+    tailscaleDisabled: {
+      title: 'Tailscale-Integration',
+      description: 'Wenn aktiviert, werden Tailscale-zertifizierte TLS-Zertifikate verwendet. Deaktivieren für selbstsignierte Zertifikate.',
+    },
     setupRequired: {
       title: 'Einrichtung erforderlich',
       description: 'Die virtuelle Druckerfunktion erfordert zusätzliche Systemkonfiguration, bevor sie funktioniert. Dies beinhaltet Portweiterleitung, Firewall-Regeln und plattformspezifische Einstellungen.',

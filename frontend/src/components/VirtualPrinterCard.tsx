@@ -43,6 +43,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState(printer.remote_interface_ip || '');
   const [localModel, setLocalModel] = useState(printer.model || '');
   const [localAutoDispatch, setLocalAutoDispatch] = useState(printer.auto_dispatch ?? true);
+  const [localTailscaleDisabled, setLocalTailscaleDisabled] = useState(printer.tailscale_disabled ?? false);
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -58,6 +59,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalRemoteInterfaceIp(printer.remote_interface_ip || '');
       setLocalModel(printer.model || '');
       setLocalAutoDispatch(printer.auto_dispatch ?? true);
+      setLocalTailscaleDisabled(printer.tailscale_disabled ?? false);
     }
   }, [printer, pendingAction]);
 
@@ -315,6 +317,34 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 </div>
               </div>
             )}
+
+            {/* Tailscale toggle */}
+            <div className="pt-2 border-t border-bambu-dark-tertiary">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-white text-sm font-medium">{t('virtualPrinter.tailscaleDisabled.title')}</div>
+                  <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.tailscaleDisabled.description')}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newVal = !localTailscaleDisabled;
+                    setLocalTailscaleDisabled(newVal);
+                    setPendingAction('tailscaleDisabled');
+                    updateMutation.mutate({ tailscale_disabled: newVal });
+                  }}
+                  disabled={pendingAction === 'tailscaleDisabled'}
+                  className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${
+                    !localTailscaleDisabled ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                  } ${pendingAction === 'tailscaleDisabled' ? 'opacity-50' : ''}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                      !localTailscaleDisabled ? 'translate-x-5' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
 
             {/* Printer Model - for non-proxy modes */}
             {localMode !== 'proxy' && (

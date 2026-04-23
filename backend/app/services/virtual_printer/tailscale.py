@@ -88,6 +88,20 @@ class TailscaleService:
     sensible defaults and never raise exceptions.
     """
 
+    _docker_hint_logged: bool = False
+
+    @classmethod
+    def _log_docker_socket_hint(cls) -> None:
+        """Log a one-time hint when running in Docker without the Tailscale socket mounted."""
+        if cls._docker_hint_logged:
+            return
+        if Path("/.dockerenv").exists() and not Path("/var/run/tailscale/tailscaled.sock").exists():
+            logger.info(
+                "Running in Docker but Tailscale socket not found. "
+                "Mount /var/run/tailscale/tailscaled.sock to enable Tailscale."
+            )
+            cls._docker_hint_logged = True
+
     async def _run_tailscale(self, *args: str, timeout: float = 30.0) -> tuple[int | None, bytes, bytes]:
         """Run a tailscale subcommand and return (returncode, stdout, stderr).
 
@@ -122,6 +136,7 @@ class TailscaleService:
         the daemon is not running, or any other error occurs.
         """
         if not shutil.which("tailscale"):
+            self._log_docker_socket_hint()
             return TailscaleStatus(
                 available=False,
                 hostname="",

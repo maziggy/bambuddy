@@ -3939,6 +3939,10 @@ export default {
       title: 'Auto-dispatch',
       description: 'Automatically start prints when added to queue. When off, prints wait for manual dispatch.',
     },
+    tailscaleDisabled: {
+      title: 'Tailscale integration',
+      description: 'When enabled, uses Tailscale for trusted TLS certs. Disable to use self-signed cert only.',
+    },
     setupRequired: {
       title: 'Setup Required',
       description: 'The virtual printer feature requires additional system configuration before it will work. This includes port forwarding, firewall rules, and platform-specific settings.',

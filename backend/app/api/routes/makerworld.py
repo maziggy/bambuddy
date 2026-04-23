@@ -13,6 +13,7 @@ requests (see memory/makerworld-integration.md for the investigation).
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -29,6 +30,7 @@ from backend.app.models.user import User
 from backend.app.schemas.makerworld import (
     MakerWorldImportRequest,
     MakerWorldImportResponse,
+    MakerWorldRecentImport,
     MakerWorldResolvedModel,
     MakerWorldResolveRequest,
     MakerWorldStatus,
@@ -61,14 +63,22 @@ async def _build_service(db: AsyncSession, user: User | None) -> MakerWorldServi
     return MakerWorldService(auth_token=token)
 
 
-def _canonical_url(model_id: int) -> str:
+def _canonical_url(model_id: int, profile_id: int | None = None) -> str:
     """Build a stable source_url we use for dedupe.
 
-    MakerWorld URLs vary (``/en/models/``, ``/de/models/``, slug suffixes,
-    ``#profileId-`` fragments), so we canonicalise to the locale-free
-    ID-only form so all variants of the same model dedupe to a single
-    library row.
+    Dedupe is keyed per *plate* (profile) rather than per model, since the
+    ``/iot-service/.../profile/{profileId}`` download returns a specific
+    plate — not the full multi-plate zip — so two different plates of the
+    same design should become two separate library entries. Canonical
+    shape uses the locale-free path with the ``#profileId-`` fragment so
+    all URL variants of the same plate still collapse (e.g. ``/en/models/
+    123-slug?from=search#profileId-456`` and ``/de/models/123#profileId-
+    456`` both map to ``https://makerworld.com/models/123#profileId-
+    456``). Plate-less imports (legacy or whole-design) keep the old
+    model-only shape for backwards compatibility with existing rows.
     """
+    if profile_id:
+        return f"https://makerworld.com/models/{model_id}#profileId-{profile_id}"
     return f"https://makerworld.com/models/{model_id}"
 
 
@@ -172,8 +182,16 @@ async def resolve_url(
     if not isinstance(instances, list):
         instances = []
 
-    canonical = _canonical_url(model_id)
-    existing_q = await db.execute(select(LibraryFile.id).where(LibraryFile.source_url == canonical))
+    # Find every library row whose source_url is either the model-level
+    # canonical URL (legacy whole-model imports) or any plate-level URL
+    # (``...#profileId-{n}``) under this model. The frontend surfaces this
+    # to mark imported plates in the instance picker.
+    model_prefix = _canonical_url(model_id)
+    existing_q = await db.execute(
+        select(LibraryFile.id).where(
+            (LibraryFile.source_url == model_prefix) | (LibraryFile.source_url.like(f"{model_prefix}#profileId-%"))
+        )
+    )
     already_imported = [row[0] for row in existing_q.all()]
 
     return MakerWorldResolvedModel(
@@ -208,35 +226,94 @@ async def import_instance(
                 status_code=403,
                 detail="Cannot import into a read-only external folder",
             )
+        effective_folder_id: int | None = body.folder_id
+    else:
+        # Default destination: a dedicated top-level "MakerWorld" folder. Keeps
+        # imports out of the library root so power users can still organise
+        # manually in subfolders, and auto-creates the folder on the first
+        # import so users don't have to set it up themselves.
+        mw_folder_q = await db.execute(
+            select(LibraryFolder).where(
+                LibraryFolder.name == "MakerWorld",
+                LibraryFolder.parent_id.is_(None),
+                LibraryFolder.is_external.is_(False),
+            )
+        )
+        mw_folder = mw_folder_q.scalar_one_or_none()
+        if mw_folder is None:
+            mw_folder = LibraryFolder(name="MakerWorld", parent_id=None)
+            db.add(mw_folder)
+            await db.flush()
+        effective_folder_id = mw_folder.id
 
     service = await _build_service(db, current_user)
+
+    # YASTL#51's iot-service endpoint needs the *alphanumeric* modelId
+    # (e.g. "US2bb73b106683e5"), not the integer design id from /models/{N}.
+    # Fetch design metadata to resolve it, and — in the same call — pick a
+    # default profileId from the response if the frontend didn't specify one.
     try:
-        manifest = await service.get_instance_download(body.instance_id)
+        design = await service.get_design(body.model_id)
+    except MakerWorldError as exc:
+        await service.close()
+        raise _map_service_error(exc) from exc
+
+    alphanumeric_model_id = design.get("modelId")
+    if not isinstance(alphanumeric_model_id, str) or not alphanumeric_model_id:
+        await service.close()
+        raise HTTPException(
+            status_code=502,
+            detail="MakerWorld design metadata missing the modelId field",
+        )
+
+    profile_id = body.profile_id
+    if profile_id is None:
+        for instance in design.get("instances") or []:
+            pid = instance.get("profileId")
+            if isinstance(pid, int) and pid > 0:
+                profile_id = pid
+                break
+        if profile_id is None:
+            try:
+                envelope = await service.get_design_instances(body.model_id)
+            except MakerWorldError as exc:
+                await service.close()
+                raise _map_service_error(exc) from exc
+            for hit in envelope.get("hits") or []:
+                pid = hit.get("profileId")
+                if isinstance(pid, int) and pid > 0:
+                    profile_id = pid
+                    break
+        if profile_id is None:
+            await service.close()
+            raise HTTPException(
+                status_code=502,
+                detail="MakerWorld returned no instances for this model",
+            )
+
+    # Canonical URL includes profile_id so each plate gets its own library
+    # entry (see ``_canonical_url`` docstring).
+    source_url = _canonical_url(body.model_id, profile_id)
+
+    try:
+        manifest = await service.get_profile_download(profile_id, alphanumeric_model_id)
     except MakerWorldError as exc:
         await service.close()
         raise _map_service_error(exc) from exc
 
     signed_url = manifest.get("url")
-    suggested_name = manifest.get("name") or f"makerworld-{body.instance_id}.3mf"
+    # Basename-strip any path components from the upstream filename so a
+    # malicious response (``name: "../../evil.3mf"``) can't persist a suspect
+    # string into the library row or the UI. On-disk storage uses a UUID
+    # filename regardless (see library.py), so this is defence-in-depth.
+    raw_name = manifest.get("name")
+    if isinstance(raw_name, str) and raw_name.strip():
+        suggested_name = os.path.basename(raw_name.strip()) or f"makerworld-{body.model_id}.3mf"
+    else:
+        suggested_name = f"makerworld-{body.model_id}.3mf"
     if not signed_url or not isinstance(signed_url, str):
         await service.close()
         raise HTTPException(status_code=502, detail="MakerWorld did not return a download URL")
-
-    # Resolve the profile so we know which parent model this instance belongs
-    # to — that's what goes into source_url (canonical, locale-free) so all
-    # plates of the same model dedupe together.
-    try:
-        profile = await service.get_profile(body.instance_id)
-    except MakerWorldNotFoundError:
-        # Some instances don't have a profile endpoint hit; fall back to the
-        # instance id for source_url.
-        profile = {}
-    except MakerWorldError as exc:
-        await service.close()
-        raise _map_service_error(exc) from exc
-
-    design_id = profile.get("designId")
-    source_url = _canonical_url(int(design_id)) if isinstance(design_id, int) else None
 
     # Dedupe check upfront so we don't burn bandwidth re-downloading.
     if source_url:
@@ -247,6 +324,8 @@ async def import_instance(
             return MakerWorldImportResponse(
                 library_file_id=existing_row.id,
                 filename=existing_row.filename,
+                folder_id=existing_row.folder_id,
+                profile_id=profile_id,
                 was_existing=True,
             )
 
@@ -266,7 +345,7 @@ async def import_instance(
         db,
         file_bytes=file_bytes,
         filename=filename,
-        folder_id=body.folder_id,
+        folder_id=effective_folder_id,
         source_type=_SOURCE_TYPE,
         source_url=source_url,
         owner_id=current_user.id if current_user else None,
@@ -275,5 +354,41 @@ async def import_instance(
     return MakerWorldImportResponse(
         library_file_id=library_file.id,
         filename=library_file.filename,
+        folder_id=library_file.folder_id,
+        profile_id=profile_id,
         was_existing=was_existing,
     )
+
+
+@router.get("/recent-imports", response_model=list[MakerWorldRecentImport])
+async def recent_imports(
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_VIEW),
+):
+    """Last N MakerWorld imports, newest first.
+
+    Surfaces files whose ``source_type`` is ``"makerworld"`` so the MakerWorld
+    page can show a 'Recent imports' sidebar that persists across resolves.
+    ``limit`` is clamped to ``[1, 50]`` to keep payloads sensible.
+    """
+    _ = current_user  # permission gate only
+    capped = max(1, min(50, int(limit)))
+    result = await db.execute(
+        select(LibraryFile)
+        .where(LibraryFile.source_type == _SOURCE_TYPE)
+        .order_by(LibraryFile.created_at.desc())
+        .limit(capped)
+    )
+    rows = result.scalars().all()
+    return [
+        MakerWorldRecentImport(
+            library_file_id=row.id,
+            filename=row.filename,
+            folder_id=row.folder_id,
+            thumbnail_path=row.thumbnail_path,
+            source_url=row.source_url,
+            created_at=row.created_at.isoformat() if row.created_at else "",
+        )
+        for row in rows
+    ]

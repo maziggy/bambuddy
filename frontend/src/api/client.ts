@@ -989,7 +989,18 @@ export interface MakerworldResolvedModel {
 export interface MakerworldImportResponse {
   library_file_id: number;
   filename: string;
+  folder_id: number | null;
+  profile_id: number | null;
   was_existing: boolean;
+}
+
+export interface MakerworldRecentImport {
+  library_file_id: number;
+  filename: string;
+  folder_id: number | null;
+  thumbnail_path: string | null;
+  source_url: string | null;
+  created_at: string;
 }
 
 export interface SlicerSetting {
@@ -3695,10 +3706,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ url }),
     }),
-  importMakerworldInstance: (instance_id: number, folder_id?: number | null) =>
+  getMakerworldRecentImports: (limit = 10) =>
+    request<MakerworldRecentImport[]>(`/makerworld/recent-imports?limit=${limit}`),
+  importMakerworldInstance: (
+    model_id: number,
+    instance_id: number | null,
+    profile_id?: number | null,
+    folder_id?: number | null,
+  ) =>
     request<MakerworldImportResponse>('/makerworld/import', {
       method: 'POST',
-      body: JSON.stringify({ instance_id, folder_id: folder_id ?? null }),
+      body: JSON.stringify({
+        model_id,
+        instance_id: instance_id ?? null,
+        profile_id: profile_id ?? null,
+        folder_id: folder_id ?? null,
+      }),
     }),
   getCloudSettingDetail: (settingId: string) =>
     request<SlicerSettingDetail>(`/cloud/settings/${settingId}`),

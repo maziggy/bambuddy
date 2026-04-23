@@ -28,24 +28,29 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-MAKERWORLD_API_BASE = "https://makerworld.com/api/v1/design-service"
-MAKERWORLD_HOST = "makerworld.com"
+# API base: ``api.bambulab.com/v1/design-service`` — the same Bambu Cloud
+# backend that the MakerWorld web UI talks to, but not behind Cloudflare
+# (the website ``makerworld.com`` is, and plain httpx requests there get
+# fingerprinted as bot traffic and served "Please log in"). Confirmed by
+# Pr0zak/YASTL#51 and verified with direct curl.
+MAKERWORLD_API_BASE = "https://api.bambulab.com/v1/design-service"
+MAKERWORLD_HOST = "makerworld.com"  # Used only for URL parsing (input validation)
 MAKERWORLD_CDN_HOSTS = ("makerworld.bblmw.com", "public-cdn.bblmw.com")
 
-# MakerWorld returns empty/generic responses without these client-identification
-# headers; more importantly Cloudflare fingerprints unusual User-Agents as
-# bot traffic and responds with HTTP 418. Matching the exact header set the
-# ``kloshi-io/makerworld-api-reverse`` library uses (tested at scale by that
-# project) avoids the fingerprint hit. Attribution to Bambuddy lives in the
-# ``x-bbl-*`` headers instead of a distinctive User-Agent.
+# Hosts that the iot-service download endpoint may return presigned URLs
+# for. Besides MakerWorld's own CDN, Bambu Cloud also issues AWS S3
+# presigned URLs (e.g. ``s3.us-west-2.amazonaws.com``) — confirmed by
+# Pr0zak/YASTL#52. The suffix check matches any regional S3 endpoint.
+_ALLOWED_DOWNLOAD_SUFFIXES = (".amazonaws.com",)
+
+# Browser-like headers. ``api.bambulab.com`` accepts minimal headers cleanly;
+# the Referer is kept so MakerWorld origin checks don't fail anywhere the
+# same client hits ``makerworld.com``.
 _CLIENT_HEADERS = {
-    "User-Agent": "3d-printing-service/1.0",
-    "Accept": "application/json,text/plain,*/*",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0",
+    "Accept": "text/html,application/json,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://makerworld.com/",
-    "x-bbl-client-type": "web",
-    "x-bbl-client-version": "00.00.00.01",
-    "x-bbl-app-source": "makerworld",
-    "x-bbl-client-name": "MakerWorld",
 }
 
 _MODEL_ID_RE = re.compile(r"/models/(\d+)")
@@ -103,6 +108,53 @@ class MakerWorldUnavailableError(MakerWorldError):
 
 class MakerWorldUrlError(MakerWorldError):
     """Raised when a URL isn't a makerworld.com model page."""
+
+
+async def _download_s3_urllib(url: str, filename_fallback: str) -> tuple[bytes, str]:
+    """Fetch an AWS S3 presigned URL without touching the query string.
+
+    ``urllib.request`` passes the URL to the transport verbatim — which is
+    essential for S3 presigned URLs where the signature is computed over
+    the exact query-string bytes. httpx's ``URL`` class and curl_cffi's
+    libcurl layer both normalise encodings and produce
+    ``SignatureDoesNotMatch`` 400s from S3.
+
+    Runs the blocking urllib call in a thread executor so we don't stall
+    the event loop.
+    """
+    from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+    # Don't follow redirects: the host allowlist above is only enforced on
+    # the initial URL. A 302 from S3 to any other host would otherwise
+    # transparently bypass the allowlist — so insist S3 resolve directly.
+    class _NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):  # type: ignore[override]
+            return None
+
+    opener = build_opener(_NoRedirect)
+
+    def _blocking_fetch() -> bytes:
+        req = Request(url, headers={"User-Agent": _CLIENT_HEADERS["User-Agent"]})
+        with opener.open(req, timeout=60.0) as resp:
+            if resp.status != 200:
+                raise MakerWorldUnavailableError(f"3MF download returned HTTP {resp.status}")
+            data = b""
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                data += chunk
+                if len(data) > _MAX_3MF_BYTES:
+                    raise MakerWorldUnavailableError(f"3MF exceeds {_MAX_3MF_BYTES // (1024 * 1024)} MB cap")
+            return data
+
+    try:
+        data = await asyncio.to_thread(_blocking_fetch)
+    except MakerWorldUnavailableError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — urllib throws a zoo of exceptions
+        raise MakerWorldUnavailableError(f"S3 download failed: {exc}") from exc
+    return data, filename_fallback
 
 
 def _extract_upstream_error(response: httpx.Response) -> str | None:
@@ -308,24 +360,72 @@ class MakerWorldService:
         """
         return await self._get_json(f"/profile/{int(profile_id)}")
 
-    async def get_instance_download(self, instance_id: int) -> dict[str, Any]:
-        """Fetch the 3MF download manifest for a specific instance.
+    async def get_profile_download(self, profile_id: int, model_id: str) -> dict[str, Any]:
+        """Fetch the signed 3MF download URL for a specific MakerWorld profile.
 
-        Returns ``{"name": "foo.3mf", "url": "https://makerworld.bblmw.com/...
-        ?exp=<unix>&key=<hmac>&uid=<int>"}``. The ``url`` is short-lived
-        (~5 min); download immediately — never cache.
+        Note on ``model_id`` — this is MakerWorld's internal alphanumeric
+        identifier (e.g. ``"US2bb73b106683e5"``), **not** the integer
+        ``designId`` that appears in the ``/models/{N}`` URL. Callers must
+        fetch the design first (``get_design(design_id)``) and pass the
+        ``modelId`` field from the response.
 
-        **Requires a Bambu Cloud auth token.** Returns 403 otherwise.
 
-        The ``?type=download`` query param signals legitimate download
-        intent to MakerWorld's anti-abuse layer (the community userscripts
-        at github.com/JMcrafter26/makerworld-enhancements and
-        bambu-research-group's tooling both use this). Omitting it appears
-        to bias toward more aggressive CAPTCHA challenges.
+        Returns ``{"url": "https://makerworld.bblmw.com/...?at=<unix>
+        &exp=<unix>&key=<hmac>&uid=<int>", ...}``. URL is short-lived (~5
+        min); download immediately.
+
+        Hits ``api.bambulab.com/v1/iot-service/api/user/profile/{profileId}
+        ?model_id={modelId}`` with the stored Bambu Cloud bearer. This is the
+        endpoint Pr0zak/YASTL#51 reverse-engineered — it lives on the
+        ``api.bambulab.com`` backend (not Cloudflare-protected
+        ``makerworld.com``), accepts the same long-lived bearer users already
+        sign in with, and mints the signed CDN URL that the browser would
+        otherwise fetch via session cookies. This is the only known non-
+        cookie path to a download URL, after ruling out ``/design-service/``
+        endpoints on ``makerworld.com`` (cookie-gated) and the now-dead
+        ``/instance/{id}/f3mf?type=download`` shape.
         """
         if not self._auth_token:
-            raise MakerWorldAuthError("Downloading 3MF files from MakerWorld requires a Bambu Cloud login")
-        return await self._get_json(f"/instance/{int(instance_id)}/f3mf?type=download")
+            raise MakerWorldAuthError("Downloading files from MakerWorld requires a Bambu Cloud login")
+
+        url = f"https://api.bambulab.com/v1/iot-service/api/user/profile/{int(profile_id)}"
+        headers = dict(_CLIENT_HEADERS)
+        headers["Authorization"] = f"Bearer {self._auth_token}"
+
+        try:
+            response = await self._client.get(
+                url,
+                headers=headers,
+                params={"model_id": str(model_id)},
+                timeout=30.0,
+            )
+        except httpx.TimeoutException as exc:
+            raise MakerWorldUnavailableError(f"Bambu Lab API request timed out: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise MakerWorldUnavailableError(f"Bambu Lab API request failed: {exc}") from exc
+
+        if response.status_code == 401:
+            upstream = _extract_upstream_error(response)
+            raise MakerWorldAuthError(
+                upstream or "Bambu Lab rejected the token — sign in again in Settings → Bambu Cloud"
+            )
+        if response.status_code == 403:
+            upstream = _extract_upstream_error(response)
+            raise MakerWorldForbiddenError(upstream or f"Bambu Lab refused access to profile {profile_id}")
+        if response.status_code == 404:
+            raise MakerWorldNotFoundError(f"MakerWorld profile not found: {profile_id}")
+        if response.status_code != 200:
+            raise MakerWorldUnavailableError(
+                f"Bambu Lab API unexpected status {response.status_code} for profile {profile_id}"
+            )
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise MakerWorldUnavailableError(f"Bambu Lab API returned non-JSON for profile {profile_id}") from exc
+        if not isinstance(data, dict):
+            raise MakerWorldUnavailableError(f"Bambu Lab API returned unexpected JSON shape for profile {profile_id}")
+        return data
 
     async def download_3mf(self, signed_url: str) -> tuple[bytes, str]:
         """Fetch the 3MF bytes from a signed MakerWorld CDN URL.
@@ -342,14 +442,31 @@ class MakerWorldService:
             raise MakerWorldUrlError(f"Invalid download URL: {exc}") from exc
 
         host = (parsed.hostname or "").lower()
-        if host not in MAKERWORLD_CDN_HOSTS:
+        is_allowed = host in MAKERWORLD_CDN_HOSTS or any(host.endswith(suffix) for suffix in _ALLOWED_DOWNLOAD_SUFFIXES)
+        if not is_allowed:
             raise MakerWorldUrlError(f"Refusing to download from non-MakerWorld host: {host!r}")
 
         # Filename fallback from the signed path (before query string)
         path_tail = parsed.path.rsplit("/", 1)[-1] or "model.3mf"
 
+        # Presigned S3 URLs (``s3.<region>.amazonaws.com``) compute the
+        # signature over exact query-string bytes. Both httpx and curl_cffi
+        # re-serialize the URL through ``urllib.parse.urlencode`` which
+        # normalises encodings — breaks the signature and yields HTTP 400
+        # ``SignatureDoesNotMatch`` (confirmed, and matches Pr0zak/YASTL#52's
+        # analysis). ``urllib.request`` transmits the URL verbatim, so we
+        # use it for S3 hosts and keep httpx for MakerWorld's own CDN.
+        if host.endswith(".amazonaws.com"):
+            return await _download_s3_urllib(signed_url, path_tail)
+
+        # The signed URL's query-string IS the credential — don't send the
+        # Bambu Cloud bearer to the CDN too. Strips Authorization/x-bbl-* and
+        # keeps only User-Agent, matching what ``_download_s3_urllib`` does.
+        cdn_headers = {"User-Agent": _CLIENT_HEADERS["User-Agent"]}
         try:
-            async with self._client.stream("GET", signed_url, headers=self._headers(), timeout=60.0) as response:
+            async with self._client.stream(
+                "GET", signed_url, headers=cdn_headers, timeout=60.0, follow_redirects=False
+            ) as response:
                 if response.status_code != 200:
                     raise MakerWorldUnavailableError(f"3MF download returned HTTP {response.status_code}")
                 chunks: list[bytes] = []
@@ -387,8 +504,14 @@ class MakerWorldService:
         if host not in MAKERWORLD_CDN_HOSTS:
             raise MakerWorldUrlError(f"Refusing to fetch thumbnail from non-MakerWorld host: {host!r}")
 
+        # ``follow_redirects=False``: the host allowlist above is only
+        # meaningful on the initial URL. A 302 from the CDN to any other host
+        # would otherwise be followed transparently (including RFC1918 /
+        # metadata endpoints), so we insist upstream resolve the asset
+        # directly. A redirect response surfaces as ``MakerWorldUnavailable``
+        # below.
         try:
-            response = await self._client.get(url, headers=self._headers(), timeout=20.0, follow_redirects=True)
+            response = await self._client.get(url, headers=self._headers(), timeout=20.0, follow_redirects=False)
         except httpx.TimeoutException as exc:
             raise MakerWorldUnavailableError(f"Thumbnail request timed out: {exc}") from exc
         except httpx.HTTPError as exc:

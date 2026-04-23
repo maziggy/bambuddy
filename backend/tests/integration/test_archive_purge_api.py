@@ -66,6 +66,27 @@ async def test_preview_counts_old_archives(async_client: AsyncClient, archive_fa
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_preview_ignores_recently_reprinted_archives(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """Reprints update completed_at but leave created_at pinned; purge must honour that."""
+    printer = await printer_factory()
+    reprinted = await archive_factory(printer.id, print_name="Reprinted", file_size=1000)
+
+    # Originally printed 400 days ago, but a reprint last week refreshed completed_at.
+    reprinted.created_at = datetime.now(timezone.utc) - timedelta(days=400)
+    reprinted.started_at = datetime.now(timezone.utc) - timedelta(days=7)
+    reprinted.completed_at = datetime.now(timezone.utc) - timedelta(days=7)
+    await db_session.commit()
+
+    resp = await async_client.get("/api/v1/archives/purge/preview?older_than_days=365")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_manual_purge_deletes_old_archives(
     async_client: AsyncClient, archive_factory, printer_factory, db_session
 ):

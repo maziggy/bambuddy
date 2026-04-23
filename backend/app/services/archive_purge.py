@@ -41,6 +41,20 @@ def _age_cutoff(now: datetime, older_than_days: int) -> datetime:
     return now - timedelta(days=older_than_days)
 
 
+def _last_activity_expr():
+    """Most-recent timestamp on an archive row.
+
+    Reprints reuse the archive row and update ``completed_at``/``started_at`` but
+    leave ``created_at`` pinned to the first print, so purging on ``created_at``
+    would evict recently-reprinted archives. Use the latest of the three instead.
+    """
+    return func.coalesce(
+        PrintArchive.completed_at,
+        PrintArchive.started_at,
+        PrintArchive.created_at,
+    )
+
+
 class ArchivePurgeService:
     """Manages archive auto-purge sweeper + admin-triggered manual purges."""
 
@@ -161,7 +175,8 @@ class ArchivePurgeService:
             }
         now = datetime.now(timezone.utc)
         cutoff = _age_cutoff(now, older_than_days)
-        clause = PrintArchive.created_at < cutoff
+        last_activity = _last_activity_expr()
+        clause = last_activity < cutoff
 
         count_result = await db.execute(select(func.count(PrintArchive.id)).where(clause))
         count = int(count_result.scalar() or 0)
@@ -170,7 +185,7 @@ class ArchivePurgeService:
         total_bytes = int(size_result.scalar() or 0)
 
         sample_result = await db.execute(
-            select(PrintArchive.filename).where(clause).order_by(PrintArchive.created_at).limit(sample_limit)
+            select(PrintArchive.filename).where(clause).order_by(last_activity).limit(sample_limit)
         )
         samples = [row[0] for row in sample_result.all()]
 
@@ -195,7 +210,7 @@ class ArchivePurgeService:
         now = datetime.now(timezone.utc)
         cutoff = _age_cutoff(now, older_than_days)
 
-        id_result = await db.execute(select(PrintArchive.id).where(PrintArchive.created_at < cutoff))
+        id_result = await db.execute(select(PrintArchive.id).where(_last_activity_expr() < cutoff))
         ids = [row[0] for row in id_result.all()]
         if not ids:
             return 0

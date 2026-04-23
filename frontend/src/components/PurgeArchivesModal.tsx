@@ -99,6 +99,18 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
             </div>
           </div>
 
+          <div className="rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 mb-2">
+              {t('archivePurge.effectsTitle')}
+            </div>
+            <ul className="text-xs text-gray-700 dark:text-gray-300 space-y-1 list-disc pl-4">
+              <li>{t('archivePurge.effect1')}</li>
+              <li>{t('archivePurge.effect2')}</li>
+              <li>{t('archivePurge.effect3')}</li>
+              <li>{t('archivePurge.effect4')}</li>
+            </ul>
+          </div>
+
           <div className="rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3">
             {previewQuery.isLoading || previewQuery.isFetching ? (
               <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">

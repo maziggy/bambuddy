@@ -352,20 +352,25 @@ export function SpoolFormModal({
     },
   });
 
-  const bulkCreateMutation = useMutation({
-    mutationFn: ({ data, qty }: { data: Record<string, unknown>; qty: number }) =>
+  const bulkCreateMutation = useMutation<
+    SpoolmanBulkCreateResult | InventorySpool[],
+    Error,
+    { data: Record<string, unknown>; qty: number }
+  >({
+    mutationFn: ({ data, qty }) =>
       spoolmanMode
         ? api.bulkCreateSpoolmanInventorySpools(data as Parameters<typeof api.bulkCreateSpoolmanInventorySpools>[0], qty)
         : api.bulkCreateSpools(data as Parameters<typeof api.bulkCreateSpools>[0], qty),
     onSuccess: async (result) => {
-      // Spoolman bulk-create returns SpoolmanBulkCreateResult (207); local returns InventorySpool[]
-      const isSpoolmanResult = spoolmanMode && result !== null && 'created' in result;
-      const createdSpools: InventorySpool[] = isSpoolmanResult
-        ? (result as SpoolmanBulkCreateResult).created
+      // Spoolman bulk-create returns SpoolmanBulkCreateResult (207); local returns InventorySpool[].
+      // Cast via unknown to satisfy strict TypeScript — the runtime shape is guaranteed by
+      // the duck-type check ('created' in result) before any property access.
+      const spoolmanResult = (spoolmanMode && 'created' in result)
+        ? (result as unknown as SpoolmanBulkCreateResult)
+        : null;
+      const createdSpools: InventorySpool[] = spoolmanResult
+        ? spoolmanResult.created
         : (result as InventorySpool[]);
-      const failedCount: number = isSpoolmanResult
-        ? (result as SpoolmanBulkCreateResult).failed_count
-        : 0;
 
       if (!spoolmanMode && selectedProfiles.size > 0) {
         for (const s of createdSpools) {
@@ -374,11 +379,11 @@ export function SpoolFormModal({
       }
       await queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       if (onSpoolsCreated) onSpoolsCreated(createdSpools);
-      if (failedCount > 0) {
+      if (spoolmanResult && spoolmanResult.failed_count > 0) {
         showToast(
           t('inventory.spoolsPartiallyCreated', {
             created: createdSpools.length,
-            total: (result as SpoolmanBulkCreateResult).requested_count,
+            total: spoolmanResult.requested_count,
           }),
           'warning',
         );

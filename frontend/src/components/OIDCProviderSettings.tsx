@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit2, Trash2, Globe, Check, X, RefreshCw, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -55,6 +55,19 @@ function ProviderForm({
     }
     onSave(payload);
   };
+
+  const autoLinkOn = form.auto_link_existing_accounts === true;
+  const emailVerifiedOn = form.require_email_verified ?? true;
+  let requireEmailVerifiedDesc: ReactNode;
+  if (autoLinkOn) {
+    requireEmailVerifiedDesc = t('settings.oidc.form.requireEmailVerifiedAutoLink');
+  } else if (emailVerifiedOn) {
+    requireEmailVerifiedDesc = t('settings.oidc.form.requireEmailVerifiedDesc');
+  } else {
+    requireEmailVerifiedDesc = (
+      <span className="text-red-400">{t('settings.oidc.form.requireEmailVerifiedWarning')}</span>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -119,23 +132,13 @@ function ProviderForm({
         </label>
         <label className="flex items-center gap-3 cursor-pointer">
           <Toggle
-            checked={form.require_email_verified ?? true}
+            checked={emailVerifiedOn}
             onChange={(v) => set('require_email_verified', v)}
-            disabled={form.auto_link_existing_accounts === true}
+            disabled={autoLinkOn}
           />
           <div>
             <p className="text-white text-sm">{t('settings.oidc.form.requireEmailVerified')}</p>
-            <p className="text-bambu-gray text-xs">
-              {(() => {
-                if (form.auto_link_existing_accounts === true) {
-                  return t('settings.oidc.form.requireEmailVerifiedAutoLink');
-                }
-                if (form.require_email_verified ?? true) {
-                  return t('settings.oidc.form.requireEmailVerifiedDesc');
-                }
-                return <span className="text-red-400">{t('settings.oidc.form.requireEmailVerifiedWarning')}</span>;
-              })()}
-            </p>
+            <p className="text-bambu-gray text-xs">{requireEmailVerifiedDesc}</p>
           </div>
         </label>
       </div>

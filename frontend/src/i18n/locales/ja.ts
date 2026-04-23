@@ -896,9 +896,7 @@ export default {
     },
     addedBy: '{{username}}が追加',
     nextInQueue: '次のキュー',
-    clearPlate: 'プレートをクリアして次を開始',
     clearPlateSuccess: 'プレートをクリアしました — 次の印刷の準備完了',
-    plateReady: 'プレートをクリアしました — 次の印刷の準備完了',
     plateNumber: 'プレート {{index}}',
     // Batch / quantity
     quantity: '数量',

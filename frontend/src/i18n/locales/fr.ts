@@ -897,9 +897,7 @@ export default {
     },
     addedBy: 'Ajouté par {{name}}',
     nextInQueue: 'Prochain en file',
-    clearPlate: 'Vider plateau & lancer suivant',
     clearPlateSuccess: 'Plateau vidé — prêt pour l\'impression suivante',
-    plateReady: 'Plateau vidé — prêt pour l\'impression suivante',
     plateNumber: 'Plateau {{index}}',
     // Batch / quantity
     quantity: 'Quantité',

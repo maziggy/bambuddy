@@ -2137,6 +2137,13 @@ export default {
         autoLinkDesc: 'Vincula contas locais existentes por e-mail no primeiro login.',
         secretHint: 'deixe em branco para manter',
         secretPlaceholder: 'novo segredo',
+        emailClaim: 'Claim de e-mail',
+        emailClaimDesc: "Claim JWT usado como identidade de e-mail. Use 'preferred_username' ou 'upn' para Azure Entra ID (que não envia email_verified). Use apenas nomes de claim confiáveis.",
+        emailClaimPlaceholder: 'email',
+        requireEmailVerified: 'Exigir e-mail verificado',
+        requireEmailVerifiedDesc: 'Aceitar o claim de e-mail apenas quando o provedor o marcar como verificado.',
+        requireEmailVerifiedWarning: 'Aviso: o e-mail será aceito sem verificação. Use apenas com provedores confiáveis.',
+        requireEmailVerifiedAutoLink: 'Desabilite o vínculo automático primeiro para alterar esta configuração.',
       },
     },
 

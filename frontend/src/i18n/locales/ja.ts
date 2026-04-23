@@ -2176,6 +2176,13 @@ export default {
         autoLinkDesc: '初回ログイン時にメールアドレスで既存のローカルアカウントにリンクします。',
         secretHint: '空白のままで現在のものを維持',
         secretPlaceholder: '新しいシークレット',
+        emailClaim: 'メールクレーム',
+        emailClaimDesc: "メールIDとして使用するJWTクレーム。Azure Entra IDには'preferred_username'または'upn'を使用（email_verifiedを送信しない）。信頼できるクレーム名のみ使用してください。",
+        emailClaimPlaceholder: 'email',
+        requireEmailVerified: 'メール確認を要求',
+        requireEmailVerifiedDesc: 'プロバイダーが確認済みとしてマークした場合にのみメールクレームを受け入れます。',
+        requireEmailVerifiedWarning: '警告：確認なしでメールが受け入れられます。信頼できるプロバイダーのみで使用してください。',
+        requireEmailVerifiedAutoLink: 'この設定を変更するには、まず自動リンクを無効にしてください。',
       },
     },
 

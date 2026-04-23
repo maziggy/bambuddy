@@ -2202,6 +2202,13 @@ export default {
         autoLinkDesc: 'Verknüpft beim ersten Login vorhandene lokale Konten anhand der E-Mail-Adresse.',
         secretHint: 'leer lassen zum Beibehalten',
         secretPlaceholder: 'neues Secret',
+        emailClaim: 'E-Mail-Claim',
+        emailClaimDesc: "JWT-Claim für die E-Mail-Identität. Für Azure Entra ID 'preferred_username' oder 'upn' verwenden (sendet kein email_verified). Nur vertrauenswürdige Claim-Namen verwenden.",
+        emailClaimPlaceholder: 'email',
+        requireEmailVerified: 'E-Mail-Verifizierung erforderlich',
+        requireEmailVerifiedDesc: 'E-Mail-Claim nur akzeptieren, wenn der Provider ihn als verifiziert markiert.',
+        requireEmailVerifiedWarning: 'Warnung: E-Mail wird auch ohne Verifizierung akzeptiert. Nur bei vertrauenswürdigen Providern verwenden.',
+        requireEmailVerifiedAutoLink: 'Auto-Verknüpfung zuerst deaktivieren, um diese Einstellung zu ändern.',
       },
     },
 

@@ -2503,6 +2503,8 @@ export interface OIDCProvider {
   is_enabled: boolean;
   auto_create_users: boolean;
   auto_link_existing_accounts: boolean;
+  email_claim: string;
+  require_email_verified: boolean;
   icon_url?: string | null;
 }
 
@@ -2515,6 +2517,8 @@ export interface OIDCProviderCreate {
   is_enabled?: boolean;
   auto_create_users?: boolean;
   auto_link_existing_accounts?: boolean;
+  email_claim?: string;
+  require_email_verified?: boolean;
   icon_url?: string | null;
 }
 

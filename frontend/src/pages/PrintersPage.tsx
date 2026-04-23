@@ -766,18 +766,9 @@ function isBambuLabSpool(tray: {
   tag_uid?: string | null;
 } | null | undefined): boolean {
   if (!tray) return false;
-
-  // Check tray_uuid (32 hex chars, non-zero)
-  if (tray.tray_uuid && tray.tray_uuid !== '00000000000000000000000000000000') {
-    return true;
-  }
-
-  // Check tag_uid (16 hex chars, non-zero)
-  if (tray.tag_uid && tray.tag_uid !== '0000000000000000') {
-    return true;
-  }
-
-  return false;
+  // Only tray_uuid (32 hex chars) is a reliable Bambu Lab indicator.
+  // tag_uid is synthesised by firmware for every third-party spool and must not be used.
+  return !!(tray.tray_uuid && tray.tray_uuid !== '00000000000000000000000000000000');
 }
 
 

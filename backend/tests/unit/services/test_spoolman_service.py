@@ -23,16 +23,32 @@ class TestIsBambuLabSpool:
         """A non-zero 32-char hex tray_uuid identifies a BL spool."""
         assert client.is_bambu_lab_spool("A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4") is True
 
-    def test_valid_tag_uid_returns_true(self, client):
-        """A non-zero 16-char hex tag_uid identifies a BL spool (fallback)."""
-        assert client.is_bambu_lab_spool("", tag_uid="A1B2C3D4E5F6A1B2") is True
+    def test_synthetic_ams_uid_returns_false(self, client):
+        """Firmware-generated 16-char tag_uid must NOT be treated as a BL spool.
+
+        Bambu printers synthesise tag_uid = serial_hash(4B) + slot(4B) for every
+        third-party spool that has no NFC chip. A non-zero 16-char hex value is
+        therefore no evidence of a Bambu Lab RFID tag.
+        """
+        assert client.is_bambu_lab_spool("", tag_uid="A1B2C3D4E5F6A1B2") is False
+
+    def test_sunlu_synthetic_uid_returns_false(self, client):
+        """Exact synthetic UIDs from the SUNLU spool report in issue #1068."""
+        assert client.is_bambu_lab_spool("", tag_uid="6319B70A00000000") is False
+        assert client.is_bambu_lab_spool("", tag_uid="6319B70A00000001") is False
+        assert client.is_bambu_lab_spool("", tag_uid="6319B70A00000002") is False
+        assert client.is_bambu_lab_spool("", tag_uid="6319B70A00000003") is False
+
+    def test_tag_uid_ignored_even_with_preset(self, client):
+        """tag_uid is ignored regardless of tray_info_idx."""
+        assert client.is_bambu_lab_spool("", tag_uid="6319B70A00000001", tray_info_idx="GFA00") is False
 
     def test_zero_tray_uuid_returns_false(self, client):
         """All-zero tray_uuid means no RFID tag read."""
         assert client.is_bambu_lab_spool("00000000000000000000000000000000") is False
 
     def test_zero_tag_uid_returns_false(self, client):
-        """All-zero tag_uid means no RFID tag read."""
+        """All-zero tag_uid is ignored — already excluded by parse_ams_tray."""
         assert client.is_bambu_lab_spool("", tag_uid="0000000000000000") is False
 
     def test_empty_identifiers_returns_false(self, client):
@@ -43,7 +59,6 @@ class TestIsBambuLabSpool:
     def test_tray_info_idx_ignored(self, client):
         """tray_info_idx is NOT a reliable BL indicator — third-party spools
         using Bambu generic presets also have GF-prefixed tray_info_idx values."""
-        # Third-party spool with Bambu preset but no RFID identifiers
         assert client.is_bambu_lab_spool("", tray_info_idx="GFA00") is False
         assert client.is_bambu_lab_spool("", tray_info_idx="GFB00") is False
         assert client.is_bambu_lab_spool("", tray_info_idx="GFSA02_04") is False
@@ -58,12 +73,12 @@ class TestIsBambuLabSpool:
             is True
         )
 
-    def test_tray_uuid_preferred_over_tag_uid(self, client):
-        """tray_uuid is checked before tag_uid (both valid)."""
+    def test_valid_tray_uuid_takes_precedence_over_tag_uid(self, client):
+        """When tray_uuid is valid, spool is identified by it — tag_uid is irrelevant."""
         assert (
             client.is_bambu_lab_spool(
                 "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
-                tag_uid="A1B2C3D4E5F6A1B2",
+                tag_uid="6319B70A00000001",
             )
             is True
         )
@@ -75,6 +90,14 @@ class TestIsBambuLabSpool:
     def test_non_hex_tray_uuid_returns_false(self, client):
         """UUID must be valid hex."""
         assert client.is_bambu_lab_spool("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ") is False
+
+    def test_ntag215_uid_without_tray_uuid_returns_false(self, client):
+        """Real NTAG215 hardware UID (7 bytes = 14 hex chars) without tray_uuid is skipped.
+
+        NTAG215 UIDs are 14 hex chars, not 16, so they never matched the old fallback
+        either. Confirmed unchanged behaviour post-fix.
+        """
+        assert client.is_bambu_lab_spool("", tag_uid="0412F308C72A81") is False
 
 
 class TestSpoolmanClient:

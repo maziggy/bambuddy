@@ -704,40 +704,29 @@ class SpoolmanClient:
     def is_bambu_lab_spool(self, tray_uuid: str, tag_uid: str = "", tray_info_idx: str = "") -> bool:
         """Check if a tray has a valid Bambu Lab spool.
 
-        Bambu Lab spools are identified by hardware RFID identifiers only:
-        1. tray_uuid: 32-character hex string (preferred, consistent across printers)
-        2. tag_uid: 16-character hex string (RFID tag, varies between readers)
+        Only tray_uuid (32-char hex) is a reliable indicator. Bambu Lab NFC chips
+        always expose a 32-char UUID via the AMS reader.
 
-        Note: tray_info_idx (e.g. "GFA00") is NOT a reliable indicator — third-party
-        spools using Bambu generic presets also have GF-prefixed tray_info_idx values.
-        The tray_info_idx parameter is kept for API compatibility but ignored.
+        tag_uid is NOT used: Bambu firmware synthesises a 16-char value
+        (printer serial hash + slot number) for every third-party spool that has no
+        NFC chip, so a non-zero 16-char tag_uid does not imply a Bambu Lab spool.
+
+        tray_info_idx (e.g. "GFA00") is also NOT used: third-party spools that select
+        a Bambu generic preset share the same GF-prefixed values.
 
         Args:
             tray_uuid: The tray UUID to check (32 hex chars)
-            tag_uid: The RFID tag UID to check as fallback (16 hex chars)
+            tag_uid: Ignored (kept for API compatibility)
             tray_info_idx: Ignored (kept for API compatibility)
 
         Returns:
-            True if the spool has valid Bambu Lab RFID identifiers, False otherwise.
+            True only when tray_uuid is a valid non-zero 32-char hex string.
         """
-        # Check tray_uuid (preferred - consistent across printer models)
         if tray_uuid:
             uuid = tray_uuid.strip()
             if len(uuid) == 32 and uuid != "00000000000000000000000000000000":
                 try:
                     int(uuid, 16)
-                    return True
-                except ValueError:
-                    pass
-
-        # Fallback: check tag_uid (RFID tag - varies between printer readers)
-        # Bambu Lab RFID tags are 16 hex characters (8 bytes)
-        if tag_uid:
-            tag = tag_uid.strip()
-            if len(tag) == 16 and tag != "0000000000000000":
-                try:
-                    int(tag, 16)
-                    logger.debug("Identified Bambu Lab spool via tag_uid fallback: %s", tag)
                     return True
                 except ValueError:
                     pass

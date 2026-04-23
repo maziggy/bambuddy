@@ -280,14 +280,10 @@ async def sync_printer_ams(
                 )
                 continue
 
-            # Track this spool tag as currently present in the AMS (prefer tray_uuid, fallback to tag_uid)
-            spool_tag = (
-                tray.tray_uuid
-                if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000"
-                else tray.tag_uid
-            )
-            if spool_tag:
-                current_tray_uuids.add(spool_tag.upper())
+            # is_bambu_lab_spool() only passes trays with a valid tray_uuid, so
+            # tray.tray_uuid is always set here — no tag_uid fallback needed.
+            if tray.tray_uuid:
+                current_tray_uuids.add(tray.tray_uuid.upper())
 
             try:
                 inv_remaining = inv_weights.get((ams_id, tray.tray_id))
@@ -461,14 +457,10 @@ async def sync_all_printers(
                     )
                     continue
 
-                # Track this spool tag as currently present in the AMS (prefer tray_uuid, fallback to tag_uid)
-                spool_tag = (
-                    tray.tray_uuid
-                    if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000"
-                    else tray.tag_uid
-                )
-                if spool_tag:
-                    printer_tray_uuids[printer.name].add(spool_tag.upper())
+                # is_bambu_lab_spool() only passes trays with a valid tray_uuid, so
+                # tray.tray_uuid is always set here — no tag_uid fallback needed.
+                if tray.tray_uuid:
+                    printer_tray_uuids[printer.name].add(tray.tray_uuid.upper())
 
                 try:
                     # Look up inventory weight as fallback when AMS data is invalid

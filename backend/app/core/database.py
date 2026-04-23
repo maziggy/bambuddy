@@ -1726,6 +1726,24 @@ async def seed_default_groups():
                 group.permissions = perms
         await session.commit()
 
+        # Backfill library:purge + archives:purge for the Administrators group
+        # on existing installs. Both permissions were added after Administrators
+        # was first seeded, so upgrading users miss them even though the default
+        # config (ALL_PERMISSIONS) includes them for fresh installs.
+        result = await session.execute(select(Group).where(Group.name == "Administrators"))
+        admin_group = result.scalar_one_or_none()
+        if admin_group and admin_group.permissions is not None:
+            perms = list(admin_group.permissions)
+            added = False
+            for new_perm in ("library:purge", "archives:purge"):
+                if new_perm not in perms:
+                    perms.append(new_perm)
+                    added = True
+                    logger.info("Added %s to Administrators group (backfill)", new_perm)
+            if added:
+                admin_group.permissions = perms
+        await session.commit()
+
         # Migrate existing users to groups if they're not already in any group
         if groups_created:
             # Refresh to get newly created groups

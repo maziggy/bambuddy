@@ -2298,7 +2298,7 @@ export type Permission =
   | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files' | 'printers:ams_rfid' | 'printers:clear_plate'
   | 'archives:read' | 'archives:create'
   | 'archives:update_own' | 'archives:update_all' | 'archives:delete_own' | 'archives:delete_all'
-  | 'archives:reprint_own' | 'archives:reprint_all'
+  | 'archives:reprint_own' | 'archives:reprint_all' | 'archives:purge'
   | 'queue:read' | 'queue:create'
   | 'queue:update_own' | 'queue:update_all' | 'queue:delete_own' | 'queue:delete_all'
   | 'queue:reorder'
@@ -3078,6 +3078,23 @@ export const api = {
     request<Archive>(`/archives/${id}/favorite`, { method: 'POST' }),
   deleteArchive: (id: number) =>
     request<void>(`/archives/${id}`, { method: 'DELETE' }),
+
+  // ========== Archive auto-purge (#1008 follow-up) ==========
+  previewArchivePurge: (olderThanDays: number) =>
+    request<ArchivePurgePreview>(`/archives/purge/preview?older_than_days=${olderThanDays}`),
+  executeArchivePurge: (olderThanDays: number) =>
+    request<{ deleted: number }>('/archives/purge', {
+      method: 'POST',
+      body: JSON.stringify({ older_than_days: olderThanDays }),
+    }),
+  getArchivePurgeSettings: () =>
+    request<ArchivePurgeSettings>('/archives/purge/settings'),
+  updateArchivePurgeSettings: (body: ArchivePurgeSettings) =>
+    request<ArchivePurgeSettings>('/archives/purge/settings', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
   getArchiveStats: (options?: { dateFrom?: string; dateTo?: string; createdById?: number }) => {
     const params = new URLSearchParams();
     if (options?.dateFrom) params.set('date_from', options.dateFrom);
@@ -5154,6 +5171,18 @@ export interface LibraryTrashSettings {
   auto_purge_enabled: boolean;
   auto_purge_days: number;
   auto_purge_include_never_printed: boolean;
+}
+
+export interface ArchivePurgePreview {
+  count: number;
+  total_bytes: number;
+  sample_filenames: string[];
+  older_than_days: number;
+}
+
+export interface ArchivePurgeSettings {
+  enabled: boolean;
+  days: number;
 }
 
 export interface LibraryFileUploadResponse {

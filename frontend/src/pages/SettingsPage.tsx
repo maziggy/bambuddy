@@ -493,6 +493,34 @@ export function SettingsPage() {
     });
   };
 
+  // Archive auto-purge (#1008 follow-up). Gated on the dedicated archives:purge
+  // permission so admins can delegate bulk-delete to a role without granting
+  // per-archive delete on other users' rows.
+  const canPurgeArchives = !authEnabled || hasPermission('archives:purge');
+  const { data: archivePurgeSettings } = useQuery({
+    queryKey: ['archive-purge-settings'],
+    queryFn: () => api.getArchivePurgeSettings(),
+    enabled: canPurgeArchives,
+  });
+
+  const updateArchivePurgeSettingsMutation = useMutation({
+    mutationFn: (body: { enabled: boolean; days: number }) => api.updateArchivePurgeSettings(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archive-purge-settings'] });
+      showToast(t('settings.toast.settingsSaved'), 'success');
+    },
+    onError: (e: Error) => showToast(e.message || t('archiveAutoPurge.saveFailed'), 'error'),
+  });
+
+  const saveArchivePurgeSettings = (patch: Partial<{ enabled: boolean; days: number }>) => {
+    if (!archivePurgeSettings) return;
+    updateArchivePurgeSettingsMutation.mutate({
+      enabled: archivePurgeSettings.enabled,
+      days: archivePurgeSettings.days,
+      ...patch,
+    });
+  };
+
   const { data: updateCheck, refetch: refetchUpdateCheck, isRefetching: isCheckingUpdate } = useQuery({
     queryKey: ['updateCheck'],
     queryFn: api.checkForUpdates,
@@ -1733,6 +1761,55 @@ export function SettingsPage() {
                       {t('settings.ffmpegRequired')}
                     </p>
                   </div>
+                </div>
+              )}
+
+              {/* Archive auto-purge (#1008 follow-up). Admin-only — gated on
+                  archives:delete_all. Hard-deletes archives older than the
+                  configured age threshold once per 24h. */}
+              {canPurgeArchives && archivePurgeSettings && (
+                <div className="border-t border-bambu-dark-tertiary pt-3 mt-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white">{t('archiveAutoPurge.enableLabel')}</p>
+                      <p className="text-sm text-bambu-gray">{t('archiveAutoPurge.enableDescription')}</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={archivePurgeSettings.enabled}
+                        onChange={(e) => saveArchivePurgeSettings({ enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">
+                      {t('archiveAutoPurge.ageLabel')}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={7}
+                        max={3650}
+                        disabled={!archivePurgeSettings.enabled}
+                        value={archivePurgeSettings.days}
+                        onChange={(e) =>
+                          saveArchivePurgeSettings({
+                            days: Math.max(7, Math.min(3650, parseInt(e.target.value || '0', 10) || 0)),
+                          })
+                        }
+                        className="w-24 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
+                      />
+                      <span className="text-bambu-gray">{t('archiveAutoPurge.days')}</span>
+                    </div>
+                    <p className="text-xs text-bambu-gray mt-1">
+                      {t('archiveAutoPurge.ageDescription')}
+                    </p>
+                  </div>
+
                 </div>
               )}
             </CardContent>

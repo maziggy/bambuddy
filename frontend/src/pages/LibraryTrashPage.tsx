@@ -138,7 +138,7 @@ export function LibraryTrashPage() {
     onError: (e: Error) => showToast(e.message || t('libraryTrash.toast.purgeFailed'), 'error'),
   });
 
-  const items = trashQuery.data?.items ?? [];
+  const items = useMemo(() => trashQuery.data?.items ?? [], [trashQuery.data?.items]);
   const retentionDays = trashQuery.data?.retention_days ?? 30;
   const totalBytes = useMemo(() => items.reduce((sum, i) => sum + i.file_size, 0), [items]);
   const allSelected = items.length > 0 && items.every((i) => selected.has(i.id));

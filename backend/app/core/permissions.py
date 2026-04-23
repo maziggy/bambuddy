@@ -33,6 +33,7 @@ class Permission(StrEnum):
     ARCHIVES_DELETE_ALL = "archives:delete_all"
     ARCHIVES_REPRINT_OWN = "archives:reprint_own"
     ARCHIVES_REPRINT_ALL = "archives:reprint_all"
+    ARCHIVES_PURGE = "archives:purge"
 
     # Queue
     QUEUE_READ = "queue:read"
@@ -189,6 +190,7 @@ PERMISSION_CATEGORIES = {
         Permission.ARCHIVES_DELETE_ALL,
         Permission.ARCHIVES_REPRINT_OWN,
         Permission.ARCHIVES_REPRINT_ALL,
+        Permission.ARCHIVES_PURGE,
     ],
     "Queue": [
         Permission.QUEUE_READ,

@@ -112,6 +112,18 @@ export function PurgeOldFilesModal({ onClose }: PurgeOldFilesModalProps) {
             {t('libraryPurge.includeNeverPrinted')}
           </label>
 
+          <div className="rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 mb-2">
+              {t('libraryPurge.effectsTitle')}
+            </div>
+            <ul className="text-xs text-gray-700 dark:text-gray-300 space-y-1 list-disc pl-4">
+              <li>{t('libraryPurge.effect1')}</li>
+              <li>{t('libraryPurge.effect2')}</li>
+              <li>{t('libraryPurge.effect3')}</li>
+              <li>{t('libraryPurge.effect4')}</li>
+            </ul>
+          </div>
+
           <div className="rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3">
             {previewQuery.isLoading || previewQuery.isFetching ? (
               <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">

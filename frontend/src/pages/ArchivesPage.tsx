@@ -64,6 +64,7 @@ import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { PrintModal } from '../components/PrintModal';
 import { UploadModal } from '../components/UploadModal';
+import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { EditArchiveModal } from '../components/EditArchiveModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
@@ -2432,6 +2433,7 @@ export function ArchivesPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showTagManagement, setShowTagManagement] = useState(false);
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
   const [pendingNavigationArchiveId, setPendingNavigationArchiveId] = useState<number | null>(null);
 
@@ -3118,6 +3120,16 @@ export function ArchivesPage() {
             <Upload className="w-4 h-4" />
             Upload 3MF
           </Button>
+          {hasPermission('archives:purge') && (
+            <Button
+              variant="secondary"
+              onClick={() => setShowPurgeModal(true)}
+              title={t('archivePurge.headerTooltip')}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              {t('archivePurge.headerButton')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -3669,6 +3681,11 @@ export function ArchivesPage() {
           }}
           initialFiles={uploadFiles}
         />
+      )}
+
+      {/* Archive bulk-purge modal (#1008 follow-up) */}
+      {showPurgeModal && (
+        <PurgeArchivesModal onClose={() => setShowPurgeModal(false)} />
       )}
 
       {/* Bulk Delete Confirmation */}

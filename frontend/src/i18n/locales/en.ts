@@ -2205,6 +2205,13 @@ export default {
         autoLinkDesc: 'Link existing local accounts by matching email on first login.',
         secretHint: 'leave blank to keep current',
         secretPlaceholder: 'new secret',
+        emailClaim: 'Email Claim',
+        emailClaimDesc: "JWT claim used as email identity. Use 'preferred_username' or 'upn' for Azure Entra ID (which does not send email_verified). Only use trusted claim names.",
+        emailClaimPlaceholder: 'email',
+        requireEmailVerified: 'Require email verified',
+        requireEmailVerifiedDesc: 'Only accept the email claim when the provider marks it as verified.',
+        requireEmailVerifiedWarning: 'Warning: email will be accepted even without verification. Use only with trusted providers.',
+        requireEmailVerifiedAutoLink: 'Disable auto-link first to change this setting.',
       },
     },
 

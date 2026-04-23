@@ -98,7 +98,8 @@ class TestAuthSetupAPI:
 
         existing = User(
             username="existing_admin",
-            password_hash=get_password_hash("DoesNotMatter1!"),
+            # pragma: allowlist secret — test fixture only, not a real credential
+            password_hash=get_password_hash("DoesNotMatter1!"),  # noqa: S106
             role="admin",
             is_active=True,
         )

@@ -108,12 +108,11 @@ class SetupRequest(BaseModel):
     admin_username: str | None = Field(default=None, max_length=150)
     admin_password: str | None = Field(default=None, max_length=256)
 
-    @field_validator("admin_password")
-    @classmethod
-    def validate_admin_password(cls, v: str | None) -> str | None:
-        if v is not None:
-            _validate_password_complexity(v)
-        return v
+    # Password complexity is NOT validated at the schema layer. When re-enabling auth
+    # with an existing admin user (or when LDAP is the auth backend), the frontend
+    # still sends whatever is in the password field but the route ignores it.
+    # Enforcing complexity here would reject those legitimate flows. The route body
+    # applies the check only when a brand-new local admin is actually being created.
 
 
 class SetupResponse(BaseModel):

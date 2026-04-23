@@ -1883,6 +1883,7 @@ export default {
       passwordTooShort: '密碼至少需要 6 個字元',
       enterGroupName: '請輸入群組名稱',
       settingsSaved: '設定已儲存',
+      noPermissionUpdate: '您沒有權限變更設定',
       cameraSettingsSaved: '攝影機設定已儲存',
       enterCameraUrl: '請輸入攝影機 URL',
       passwordChanged: '密碼修改成功',

@@ -20,11 +20,13 @@
 #   trivy-config    Trivy Dockerfile/IaC scan only
 #   pip-audit       Python dependency vulnerability audit
 #   npm-audit       Frontend dependency vulnerability audit
+#   gitleaks        Secrets scan across full git history (slow — only in --full or by name)
 #
 # Prerequisites:
 #   pip install bandit[sarif] pip-audit     # Python tools
 #   gh extension install github/gh-codeql   # CodeQL CLI
 #   curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh  # Trivy
+#   go install github.com/zricethezav/gitleaks/v8@latest  # gitleaks (ensure ~/go/bin on PATH)
 #
 
 set -uo pipefail
@@ -208,6 +210,56 @@ scan_npm_audit() {
     (cd frontend && npm audit --audit-level=high) 2>&1
 }
 
+scan_gitleaks() {
+    local bin
+    if check_command gitleaks; then
+        bin="gitleaks"
+    elif [ -x "$HOME/go/bin/gitleaks" ]; then
+        bin="$HOME/go/bin/gitleaks"
+    else
+        echo "SKIP: 'gitleaks' not found. Install: go install github.com/zricethezav/gitleaks/v8@latest"
+        return 2
+    fi
+
+    local report="$PROJECT_ROOT/gitleaks-report.json"
+
+    echo "Scanning full git history (can take several minutes on large repos)..."
+    "$bin" detect --source . --redact --no-banner \
+        --max-target-megabytes=5 \
+        --report-format=json --report-path="$report" 2>&1
+    local exit_code=$?
+
+    if [ -f "$report" ]; then
+        python3 - "$report" << 'PYEOF'
+import json, sys, collections
+from pathlib import Path
+
+path = Path(sys.argv[1])
+findings = json.loads(path.read_text() or "[]")
+if not findings:
+    print()
+    print("No findings.")
+    sys.exit(0)
+
+by_rule = collections.Counter(f.get("RuleID", "?") for f in findings)
+by_file = collections.Counter(f.get("File", "?") for f in findings)
+
+print()
+print(f"{len(findings)} findings  (full details: {path.name})")
+print()
+print("By rule:")
+for rule, n in by_rule.most_common():
+    print(f"  {n:6d}  {rule}")
+print()
+print("Top 10 files by hit count:")
+for fp, n in by_file.most_common(10):
+    print(f"  {n:6d}  {fp}")
+PYEOF
+    fi
+
+    return $exit_code
+}
+
 # ── Job launcher (streams output live with prefix, captures to log) ──────
 
 launch_scan() {
@@ -363,13 +415,13 @@ SCANS_TO_RUN=()
 if [ $# -eq 0 ]; then
     SCANS_TO_RUN=(bandit pip-audit npm-audit)
 elif [ "$1" = "--full" ]; then
-    SCANS_TO_RUN=(bandit pip-audit npm-audit codeql-actions codeql-python codeql-js trivy-image trivy-config)
+    SCANS_TO_RUN=(bandit pip-audit npm-audit codeql-actions codeql-python codeql-js trivy-image trivy-config gitleaks)
 else
     for scan in "$@"; do
         case "$scan" in
             codeql) SCANS_TO_RUN+=(codeql-actions codeql-python codeql-js) ;;
             trivy)  SCANS_TO_RUN+=(trivy-image trivy-config) ;;
-            bandit|codeql-actions|codeql-python|codeql-js|trivy-image|trivy-config|pip-audit|npm-audit)
+            bandit|codeql-actions|codeql-python|codeql-js|trivy-image|trivy-config|pip-audit|npm-audit|gitleaks)
                 SCANS_TO_RUN+=("$scan") ;;
             *)
                 echo -e "${RED}Unknown scan: $scan${NC}"
@@ -391,6 +443,7 @@ for scan in "${SCANS_TO_RUN[@]}"; do
         trivy-config)   launch_scan "trivy-config"   scan_trivy_config ;;
         pip-audit)      launch_scan "pip-audit"      scan_pip_audit ;;
         npm-audit)      launch_scan "npm-audit"      scan_npm_audit ;;
+        gitleaks)       launch_scan "gitleaks"       scan_gitleaks ;;
     esac
 done
 

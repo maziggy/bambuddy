@@ -1856,6 +1856,7 @@ export default {
       passwordTooShort: 'パスワードは6文字以上必要です',
       enterGroupName: 'グループ名を入力',
       settingsSaved: '設定を保存しました',
+      noPermissionUpdate: '設定を変更する権限がありません',
       cameraSettingsSaved: 'カメラ設定を保存しました',
       enterCameraUrl: 'カメラURLを入力してください',
       passwordChanged: 'パスワードが正常に変更されました',

@@ -1831,6 +1831,7 @@ export default {
       passwordTooShort: 'A senha deve ter pelo menos 6 caracteres',
       enterGroupName: 'Por favor, insira um nome de grupo',
       settingsSaved: 'Configurações salvas',
+      noPermissionUpdate: 'Você não tem permissão para alterar as configurações',
       cameraSettingsSaved: 'Configurações da câmera salvas',
       enterCameraUrl: 'Por favor, insira a URL da câmera',
       passwordChanged: 'Senha alterada com sucesso',

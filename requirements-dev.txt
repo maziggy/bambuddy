@@ -6,6 +6,7 @@ pytest-xdist>=3.5.0
 pytest-timeout>=2.4.0
 httpx>=0.27.0
 ruff>=0.8.0
+pre-commit>=4.0
 
 # Required by pyftpdlib TLS_FTPHandler for mock FTP server tests
 pyOpenSSL>=26.0.0
@@ -13,3 +14,5 @@ pyOpenSSL>=26.0.0
 # Security scanning
 bandit[sarif]>=1.7.0
 pip-audit>=2.7.0
+# Secrets scan: gitleaks (Go binary, not a Python package).
+# Install: go install github.com/zricethezav/gitleaks/v8@latest

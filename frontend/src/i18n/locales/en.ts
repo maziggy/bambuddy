@@ -1885,6 +1885,7 @@ export default {
       passwordTooShort: 'Password must be at least 6 characters',
       enterGroupName: 'Please enter a group name',
       settingsSaved: 'Settings saved',
+      noPermissionUpdate: 'You do not have permission to change settings',
       cameraSettingsSaved: 'Camera settings saved',
       enterCameraUrl: 'Please enter a camera URL',
       passwordChanged: 'Password changed successfully',

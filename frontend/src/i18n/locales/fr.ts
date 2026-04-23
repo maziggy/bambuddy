@@ -1831,6 +1831,7 @@ export default {
       passwordTooShort: 'Minimum 6 caractères',
       enterGroupName: 'Entrez un nom de groupe',
       settingsSaved: 'Paramètres enregistrés',
+      noPermissionUpdate: "Vous n'avez pas l'autorisation de modifier les paramètres",
       cameraSettingsSaved: 'Réglages caméra enregistrés',
       enterCameraUrl: 'Entrez une URL caméra',
       passwordChanged: 'Mot de passe modifié',

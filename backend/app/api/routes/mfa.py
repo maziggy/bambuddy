@@ -58,6 +58,7 @@ from backend.app.models.user import User
 from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
 from backend.app.schemas.auth import (
+    AUTO_LINK_REQUIREMENTS_ERROR,
     AdminDisable2FARequest,
     BackupCodesResponse,
     EmailOTPDisableRequest,
@@ -378,7 +379,8 @@ def _assert_totp_not_replayed(totp_obj: pyotp.TOTP, totp_record: UserTOTP, code:
 # ---------------------------------------------------------------------------
 def _is_valid_email_shaped(value: str | None) -> bool:
     # SEC-2: minimal email-shape check for non-standard claims (upn, preferred_username).
-    # Rejects None, "", "@", "x@", "@domain" that a bare '"@" in value' check would accept.
+    # Rejects "@", "x@", and "@domain" that a bare '"@" in value' check would accept,
+    # and enforces max length of 255. None and "" are rejected by the early return.
     if not value:
         return False
     parts = value.split("@")
@@ -1073,6 +1075,15 @@ async def create_oidc_provider(
         require_email_verified=body.require_email_verified,
         icon_url=body.icon_url,
     )
+    # SEC-1 + SEC-6: runtime guard mirrors the schema model_validator.
+    # Catches any future path that bypasses Pydantic validation (direct ORM, scripts).
+    if provider.auto_link_existing_accounts and (
+        not provider.require_email_verified or provider.email_claim != "email"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=AUTO_LINK_REQUIREMENTS_ERROR,
+        )
     db.add(provider)
     await db.commit()
     await db.refresh(provider)
@@ -1105,7 +1116,7 @@ async def update_oidc_provider(
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="auto_link_existing_accounts requires require_email_verified=True and email_claim='email'",
+            detail=AUTO_LINK_REQUIREMENTS_ERROR,
         )
 
     await db.commit()
@@ -1400,7 +1411,7 @@ async def oidc_callback(
         # and stored provider_email stay consistent across case-variant UPNs / emails.
         raw_claim_value = claims.get(provider.email_claim)
         if raw_claim_value is not None and not isinstance(raw_claim_value, str):
-            # C1: IdP returned a non-string for the email claim (e.g. list, int).
+            # TYPE-GUARD: IdP returned a non-string for the email claim (e.g. list, int).
             # Drop it to avoid AttributeError from .lower(); log with claim context.
             logger.warning(
                 "OIDC provider %d: email_claim %r has unexpected type %s for sub=%r, ignoring",
@@ -1412,52 +1423,58 @@ async def oidc_callback(
             raw_claim_value = None
         raw_email: str | None = raw_claim_value.lower().strip() if raw_claim_value else None
 
-        if provider.email_claim == "email" and provider.require_email_verified:
-            # Fall A: standard C1-Guard (require_email_verified=True).
-            # Email is normalised via SEC-3 (lowercase+stripped). Functionally equivalent
-            # to the previous guard for new logins; existing mixed-case provider_email
-            # records are not retroactively updated.
-            email_verified = claims.get("email_verified")
-            if email_verified is not True:
-                if raw_email:
-                    logger.info(
-                        "OIDC provider %d: ignoring email for sub=%r because email_verified=%r",
-                        provider_id,
-                        provider_sub,
-                        email_verified,
-                    )
-                provider_email: str | None = None
-            else:
-                provider_email = raw_email
-
-        elif provider.email_claim == "email" and not provider.require_email_verified:
-            # Fall B: permissive — explicit False drops email, absent keeps it.
-            # Required for Azure Entra ID which never sends email_verified.
-            email_verified = claims.get("email_verified")
-            if email_verified is False:
-                provider_email = None
-            else:
-                if email_verified is not True:
-                    # SEC-5: log only when the permissive path actually fires (ev absent/None),
-                    # not on every successful login. Use INFO — this is expected behaviour for
-                    # providers like Azure Entra ID that never send email_verified.
-                    logger.info(
-                        "OIDC provider %r (%d): accepting email for sub=%r "
-                        "without email_verified claim (permissive mode)",
-                        provider.name,
-                        provider.id,
-                        provider_sub,
-                    )
-                provider_email = raw_email
-
-        else:
+        provider_email: str | None
+        if provider.email_claim != "email":
             # Fall C: custom claim (preferred_username, upn, …) — no email_verified check.
             # SEC-2: _is_valid_email_shaped instead of bare '"@" in value'.
             # Recommended for Azure Entra ID: set email_claim="preferred_username".
             if raw_email and _is_valid_email_shaped(raw_email):
                 provider_email = raw_email
             else:
+                if raw_email:
+                    logger.info(
+                        "OIDC provider %d: email_claim %r value %r failed shape check for sub=%r, ignoring",
+                        provider_id,
+                        provider.email_claim,
+                        raw_email,
+                        provider_sub,
+                    )
                 provider_email = None
+        else:
+            email_verified = claims.get("email_verified")
+            if provider.require_email_verified:
+                # Fall A: standard C1-Guard — fail closed unless email_verified is True.
+                # SEC-3 normalisation applies; existing mixed-case provider_email records
+                # are not retroactively updated.
+                if email_verified is True:
+                    provider_email = raw_email
+                else:
+                    if raw_email:
+                        logger.info(
+                            "OIDC provider %d: ignoring email for sub=%r because email_verified=%r",
+                            provider_id,
+                            provider_sub,
+                            email_verified,
+                        )
+                    provider_email = None
+            else:
+                # Fall B: permissive — explicit False drops email, absent/None keeps it.
+                # Required for Azure Entra ID which never sends email_verified.
+                if email_verified is False:
+                    provider_email = None
+                else:
+                    if email_verified is not True:
+                        # SEC-5: log only when the permissive path actually fires (ev absent/None),
+                        # not on every successful login. INFO — expected behaviour for providers
+                        # like Azure Entra ID that never send email_verified.
+                        logger.info(
+                            "OIDC provider %r (%d): accepting email for sub=%r "
+                            "without email_verified claim (permissive mode)",
+                            provider.name,
+                            provider.id,
+                            provider_sub,
+                        )
+                    provider_email = raw_email
 
         # ── Step 4: Resolve / create user ────────────────────────────────────
         try:
@@ -1620,7 +1637,8 @@ async def oidc_callback(
         logger.error("Unexpected error in OIDC callback (%s): %s", type(exc).__name__, exc, exc_info=True)
         try:
             return RedirectResponse(url=f"{frontend_error_url}internal_error", status_code=302)
-        except Exception:
+        except Exception as redirect_exc:
+            logger.error("Failed to construct error redirect in OIDC callback: %s", redirect_exc, exc_info=True)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OIDC callback failed")
 
 

@@ -296,10 +296,15 @@ class AdminDisable2FARequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+AUTO_LINK_REQUIREMENTS_ERROR = (
+    "auto_link_existing_accounts requires require_email_verified=True and email_claim='email'"
+)
+
+
 def _validate_email_claim_name(v: str) -> str:
     # Accepts only alphanumeric/underscore/hyphen claim names starting with a letter —
     # prevents log injection and limits the attack surface of operator-supplied claim names.
-    if not re.match(r"^[a-zA-Z][a-zA-Z0-9_\-]{0,63}$", v):
+    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_\-]{0,63}", v):
         raise ValueError("Invalid claim name")
     return v
 
@@ -399,7 +404,7 @@ class OIDCProviderCreate(BaseModel):
     @model_validator(mode="after")
     def check_auto_link_requires_verified(self) -> "OIDCProviderCreate":
         if self.auto_link_existing_accounts and (not self.require_email_verified or self.email_claim != "email"):
-            raise ValueError("auto_link_existing_accounts requires require_email_verified=True and email_claim='email'")
+            raise ValueError(AUTO_LINK_REQUIREMENTS_ERROR)
         return self
 
 
@@ -444,11 +449,10 @@ class OIDCProviderUpdate(BaseModel):
     # Combined-State-Guard in the route handler after the setattr loop.
     @model_validator(mode="after")
     def check_auto_link_requires_verified(self) -> "OIDCProviderUpdate":
-        auto_link = self.auto_link_existing_accounts
-        req_ev = self.require_email_verified
-        ec = self.email_claim
-        if auto_link is True and (req_ev is False or (ec is not None and ec != "email")):
-            raise ValueError("auto_link_existing_accounts requires require_email_verified=True and email_claim='email'")
+        if self.auto_link_existing_accounts is True and (
+            self.require_email_verified is False or (self.email_claim is not None and self.email_claim != "email")
+        ):
+            raise ValueError(AUTO_LINK_REQUIREMENTS_ERROR)
         return self
 
 

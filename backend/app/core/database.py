@@ -213,10 +213,13 @@ async def init_db():
 
 
 async def _safe_execute(conn, sql):
-    """Execute a migration statement, ignoring 'already exists' errors.
+    """Execute a migration statement, silently ignoring idempotency errors.
 
-    Uses a savepoint so that a failed statement doesn't poison the
-    surrounding transaction (required for PostgreSQL).
+    'already exists', 'duplicate column', and 'duplicate key' are swallowed
+    so that re-running migrations is safe. Any other error is logged at WARNING
+    level and then swallowed to keep the migration sequence running.
+    Uses a savepoint so that a failed statement doesn't poison the surrounding
+    transaction (required for PostgreSQL).
     """
     from sqlalchemy import text
 
@@ -226,7 +229,9 @@ async def _safe_execute(conn, sql):
     except (OperationalError, ProgrammingError) as exc:
         msg = str(exc).lower()
         if not any(k in msg for k in ("already exists", "duplicate column", "duplicate key")):
-            logger.warning("Migration statement may have failed (ignored): %s | SQL: %.120s", exc, sql)
+            logger.warning(
+                "Migration statement FAILED (non-idempotency error, execution continues): %s | SQL: %.120s", exc, sql
+            )
 
 
 async def run_migrations(conn):
@@ -1492,11 +1497,22 @@ async def run_migrations(conn):
     # SEC-1/SEC-6: Add DB-level CHECK constraint for existing PostgreSQL installs.
     # SQLite does not support ALTER TABLE ADD CONSTRAINT — handled by __table_args__ at creation.
     if not is_sqlite():
-        await _safe_execute(
-            conn,
-            "ALTER TABLE oidc_providers ADD CONSTRAINT ck_auto_link_requires_verified_email_claim "
-            "CHECK (auto_link_existing_accounts = FALSE OR (require_email_verified = TRUE AND email_claim = 'email'))",
-        )
+        try:
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "ALTER TABLE oidc_providers ADD CONSTRAINT ck_auto_link_requires_verified_email_claim "
+                        "CHECK (auto_link_existing_accounts = FALSE OR (require_email_verified = TRUE AND email_claim = 'email'))"
+                    )
+                )
+        except (OperationalError, ProgrammingError) as exc:
+            msg = str(exc).lower()
+            if "already exists" not in msg:
+                logger.error(
+                    "Security constraint migration FAILED — auto_link safety constraint may not be enforced: %s",
+                    exc,
+                    exc_info=True,
+                )
 
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat

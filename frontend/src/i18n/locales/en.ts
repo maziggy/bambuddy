@@ -3264,6 +3264,11 @@ export default {
   // Inventory
   inventory: {
     title: 'Spool Inventory',
+    spoolmanMixedContentTitle: 'Spoolman can\'t load over HTTPS — mixed-content blocked by your browser',
+    spoolmanMixedContentBody: 'Bambuddy is served over HTTPS (via your reverse proxy), but your Spoolman URL is still plain HTTP. Browsers block mixed content for security, so the embedded Spoolman UI can\'t render. Spoolman needs to be reachable over HTTPS for this to work.',
+    spoolmanMixedContentFixReverseProxy: 'Put Spoolman behind the same reverse proxy as Bambuddy (Traefik / Nginx / Caddy) with HTTPS, then update the Spoolman URL in Settings to the new HTTPS address.',
+    spoolmanMixedContentFixOpenNewTab: 'As a workaround, open Spoolman in a new browser tab over HTTP — mixed-content rules only apply to embedded frames, so a standalone tab still works.',
+    spoolmanOpenInNewTab: 'Open Spoolman in a new tab',
     addSpool: 'Add Spool',
     editSpool: 'Edit Spool',
     material: 'Material',

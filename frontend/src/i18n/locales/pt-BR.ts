@@ -3196,6 +3196,11 @@ export default {
   // Inventory
   inventory: {
     title: 'Inventário de Carretéis',
+    spoolmanMixedContentTitle: 'Spoolman não pode carregar em HTTPS — conteúdo misto bloqueado pelo navegador',
+    spoolmanMixedContentBody: 'O Bambuddy é servido via HTTPS (pelo seu reverse proxy), mas a URL do Spoolman ainda é HTTP. Os navegadores bloqueiam conteúdo misto por segurança, então a interface embutida do Spoolman não consegue carregar. O Spoolman também precisa estar acessível via HTTPS.',
+    spoolmanMixedContentFixReverseProxy: 'Coloque o Spoolman atrás do mesmo reverse proxy do Bambuddy (Traefik / Nginx / Caddy) com HTTPS e atualize a URL do Spoolman em Configurações com o novo endereço HTTPS.',
+    spoolmanMixedContentFixOpenNewTab: 'Como alternativa, abra o Spoolman em uma nova aba via HTTP — as regras de conteúdo misto só se aplicam a frames embutidos, uma aba independente funciona normalmente.',
+    spoolmanOpenInNewTab: 'Abrir Spoolman em nova aba',
     addSpool: 'Adicionar Carretel',
     editSpool: 'Editar Carretel',
     material: 'Material',

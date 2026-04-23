@@ -3248,6 +3248,11 @@ export default {
   // Inventory
   inventory: {
     title: '耗材库存',
+    spoolmanMixedContentTitle: 'Spoolman 无法通过 HTTPS 加载 — 浏览器已阻止混合内容',
+    spoolmanMixedContentBody: 'Bambuddy 通过您的反向代理以 HTTPS 提供服务，但您的 Spoolman 地址仍为 HTTP。出于安全考虑，浏览器会阻止混合内容，因此嵌入式 Spoolman 界面无法加载。Spoolman 也必须通过 HTTPS 访问。',
+    spoolmanMixedContentFixReverseProxy: '请将 Spoolman 置于与 Bambuddy 相同的反向代理（Traefik / Nginx / Caddy）之后并启用 HTTPS，然后在设置中将 Spoolman URL 更新为新的 HTTPS 地址。',
+    spoolmanMixedContentFixOpenNewTab: '作为变通方案，可在新标签页中通过 HTTP 打开 Spoolman — 混合内容规则仅适用于嵌入式框架，独立标签页仍可正常使用。',
+    spoolmanOpenInNewTab: '在新标签页中打开 Spoolman',
     addSpool: '添加耗材',
     editSpool: '编辑耗材',
     material: '材料',

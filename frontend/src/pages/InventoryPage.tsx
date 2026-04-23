@@ -409,6 +409,7 @@ function saveSortState(state: SortState) {
 
 // Wrapper: when Spoolman is enabled, embed its UI; otherwise show internal inventory
 export default function InventoryPageRouter() {
+  const { t } = useTranslation();
   const { data: spoolmanSettings } = useQuery({
     queryKey: ['spoolman-settings'],
     queryFn: api.getSpoolmanSettings,
@@ -416,9 +417,49 @@ export default function InventoryPageRouter() {
   });
 
   if (spoolmanSettings?.spoolman_enabled === 'true' && spoolmanSettings?.spoolman_url) {
+    const spoolmanUrl = spoolmanSettings.spoolman_url.replace(/\/+$/, '');
+    // Browsers block HTTP iframes inside HTTPS parents (mixed-content rule,
+    // independent of CSP). Spoolman must be reachable over the same protocol
+    // as Bambuddy. Surfacing a targeted error here beats the silent blank
+    // iframe users otherwise see. See issue #1096.
+    const bambuddyIsHttps = window.location.protocol === 'https:';
+    const spoolmanIsHttp = spoolmanUrl.toLowerCase().startsWith('http://');
+    if (bambuddyIsHttps && spoolmanIsHttp) {
+      return (
+        <div className="p-6 max-w-3xl mx-auto">
+          <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0 space-y-2 text-sm">
+                <p className="font-semibold text-amber-900 dark:text-amber-100">
+                  {t('inventory.spoolmanMixedContentTitle')}
+                </p>
+                <p className="text-amber-800 dark:text-amber-200">
+                  {t('inventory.spoolmanMixedContentBody')}
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-amber-800 dark:text-amber-200">
+                  <li>{t('inventory.spoolmanMixedContentFixReverseProxy')}</li>
+                  <li>{t('inventory.spoolmanMixedContentFixOpenNewTab')}</li>
+                </ul>
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <a
+                    href={`${spoolmanUrl}/spool`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded bg-amber-600 hover:bg-amber-700 text-white"
+                  >
+                    {t('inventory.spoolmanOpenInNewTab')}
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <iframe
-        src={`${spoolmanSettings.spoolman_url.replace(/\/+$/, '')}/spool`}
+        src={`${spoolmanUrl}/spool`}
         className="h-full w-full border-0"
         title="Spoolman"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"

@@ -454,6 +454,45 @@ export function SettingsPage() {
     queryFn: api.getVersion,
   });
 
+  // Library trash settings (#1008). Separate endpoint from the generic
+  // /settings — persists retention window + auto-purge config. Admin-only.
+  const canPurge = !authEnabled || hasPermission('library:purge');
+  const { data: trashSettings } = useQuery({
+    queryKey: ['library-trash-settings'],
+    queryFn: () => api.getLibraryTrashSettings(),
+    enabled: canPurge,
+  });
+
+  const updateTrashSettingsMutation = useMutation({
+    mutationFn: (body: {
+      retention_days: number;
+      auto_purge_enabled: boolean;
+      auto_purge_days: number;
+      auto_purge_include_never_printed: boolean;
+    }) => api.updateLibraryTrashSettings(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library-trash-settings'] });
+      showToast(t('settings.toast.settingsSaved'), 'success');
+    },
+    onError: (e: Error) => showToast(e.message || t('libraryAutoPurge.saveFailed'), 'error'),
+  });
+
+  const saveTrashSettings = (patch: Partial<{
+    retention_days: number;
+    auto_purge_enabled: boolean;
+    auto_purge_days: number;
+    auto_purge_include_never_printed: boolean;
+  }>) => {
+    if (!trashSettings) return;
+    updateTrashSettingsMutation.mutate({
+      retention_days: trashSettings.retention_days,
+      auto_purge_enabled: trashSettings.auto_purge_enabled,
+      auto_purge_days: trashSettings.auto_purge_days,
+      auto_purge_include_never_printed: trashSettings.auto_purge_include_never_printed,
+      ...patch,
+    });
+  };
+
   const { data: updateCheck, refetch: refetchUpdateCheck, isRefetching: isCheckingUpdate } = useQuery({
     queryKey: ['updateCheck'],
     queryFn: api.checkForUpdates,
@@ -1958,6 +1997,65 @@ export function SettingsPage() {
                   {t('settings.lowDiskSpaceDescription')}
                 </p>
               </div>
+
+              {/* Auto-purge (#1008). Admin-only — users without library:purge
+                  don't see this section since they can't trigger a bulk purge
+                  even manually. */}
+              {canPurge && trashSettings && (
+                <div className="border-t border-bambu-dark-tertiary pt-3 mt-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white">{t('libraryAutoPurge.enableLabel')}</p>
+                      <p className="text-sm text-bambu-gray">{t('libraryAutoPurge.enableDescription')}</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={trashSettings.auto_purge_enabled}
+                        onChange={(e) => saveTrashSettings({ auto_purge_enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">
+                      {t('libraryAutoPurge.ageLabel')}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={7}
+                        max={3650}
+                        disabled={!trashSettings.auto_purge_enabled}
+                        value={trashSettings.auto_purge_days}
+                        onChange={(e) =>
+                          saveTrashSettings({
+                            auto_purge_days: Math.max(7, Math.min(3650, parseInt(e.target.value || '0', 10) || 0)),
+                          })
+                        }
+                        className="w-24 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
+                      />
+                      <span className="text-bambu-gray">{t('libraryAutoPurge.days')}</span>
+                    </div>
+                    <p className="text-xs text-bambu-gray mt-1">
+                      {t('libraryAutoPurge.ageDescription')}
+                    </p>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
+                    <input
+                      type="checkbox"
+                      disabled={!trashSettings.auto_purge_enabled}
+                      checked={trashSettings.auto_purge_include_never_printed}
+                      onChange={(e) => saveTrashSettings({ auto_purge_include_never_printed: e.target.checked })}
+                      className="rounded border-gray-300 disabled:opacity-50"
+                    />
+                    {t('libraryAutoPurge.includeNeverPrinted')}
+                  </label>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

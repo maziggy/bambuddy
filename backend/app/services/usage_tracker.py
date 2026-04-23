@@ -611,7 +611,7 @@ async def _resolve_3mf_fallback(archive, db: AsyncSession, base_dir):
     # 1. Try library files matching the name (match base name at file boundary)
     try:
         lib_result = await db.execute(
-            select(LibraryFile)
+            LibraryFile.active()
             .where(LibraryFile.file_path.ilike(f"%/{search_base}.%") | LibraryFile.file_path.ilike(f"{search_base}.%"))
             .where(LibraryFile.file_path.ilike("%.3mf"))
             .order_by(LibraryFile.created_at.desc())
@@ -679,7 +679,7 @@ async def _find_3mf_by_filename(
     # 1. Try library files matching the name
     try:
         lib_result = await db.execute(
-            select(LibraryFile)
+            LibraryFile.active()
             .where(LibraryFile.file_path.ilike(f"%/{search_base}.%") | LibraryFile.file_path.ilike(f"{search_base}.%"))
             .where(LibraryFile.file_path.ilike("%.3mf"))
             .order_by(LibraryFile.created_at.desc())

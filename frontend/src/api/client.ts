@@ -2304,6 +2304,7 @@ export type Permission =
   | 'queue:reorder'
   | 'library:read' | 'library:upload'
   | 'library:update_own' | 'library:update_all' | 'library:delete_own' | 'library:delete_all'
+  | 'library:purge'
   | 'projects:read' | 'projects:create' | 'projects:update' | 'projects:delete'
   | 'filaments:read' | 'filaments:create' | 'filaments:update' | 'filaments:delete'
   | 'inventory:read' | 'inventory:create' | 'inventory:update' | 'inventory:delete' | 'inventory:view_assignments'
@@ -4634,7 +4635,32 @@ export const api = {
       body: JSON.stringify(data),
     }),
   deleteLibraryFile: (id: number) =>
-    request<{ status: string; message: string }>(`/library/files/${id}`, { method: 'DELETE' }),
+    request<{ status: string; message: string; trashed: boolean }>(`/library/files/${id}`, { method: 'DELETE' }),
+
+  // ========== Library Trash (#1008) ==========
+  previewLibraryPurge: (olderThanDays: number, includeNeverPrinted: boolean = true) =>
+    request<LibraryPurgePreview>(
+      `/library/purge/preview?older_than_days=${olderThanDays}&include_never_printed=${includeNeverPrinted}`,
+    ),
+  executeLibraryPurge: (olderThanDays: number, includeNeverPrinted: boolean = true) =>
+    request<{ moved_to_trash: number }>('/library/purge', {
+      method: 'POST',
+      body: JSON.stringify({ older_than_days: olderThanDays, include_never_printed: includeNeverPrinted }),
+    }),
+  listLibraryTrash: (limit: number = 100, offset: number = 0) =>
+    request<LibraryTrashListResponse>(`/library/trash?limit=${limit}&offset=${offset}`),
+  restoreLibraryTrash: (fileId: number) =>
+    request<{ status: string; id: number }>(`/library/trash/${fileId}/restore`, { method: 'POST' }),
+  hardDeleteLibraryTrash: (fileId: number) =>
+    request<{ status: string }>(`/library/trash/${fileId}`, { method: 'DELETE' }),
+  emptyLibraryTrash: () => request<{ deleted: number }>('/library/trash', { method: 'DELETE' }),
+  getLibraryTrashSettings: () =>
+    request<LibraryTrashSettings>('/library/trash/settings'),
+  updateLibraryTrashSettings: (body: LibraryTrashSettings) =>
+    request<LibraryTrashSettings>('/library/trash/settings', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
   getLibraryFileDownloadUrl: (id: number) => `${API_BASE}/library/files/${id}/download`,
   createLibrarySlicerToken: (fileId: number) =>
     request<{ token: string }>(`/library/files/${fileId}/slicer-token`, { method: 'POST' }),
@@ -5093,6 +5119,41 @@ export interface LibraryFileUpdate {
   folder_id?: number | null;
   project_id?: number | null;
   notes?: string | null;
+}
+
+// Library trash (#1008)
+export interface LibraryTrashItem {
+  id: number;
+  filename: string;
+  file_size: number;
+  thumbnail_path: string | null;
+  folder_id: number | null;
+  folder_name: string | null;
+  created_by_id: number | null;
+  created_by_username: string | null;
+  deleted_at: string;
+  auto_purge_at: string;
+}
+
+export interface LibraryTrashListResponse {
+  items: LibraryTrashItem[];
+  total: number;
+  retention_days: number;
+}
+
+export interface LibraryPurgePreview {
+  count: number;
+  total_bytes: number;
+  sample_filenames: string[];
+  older_than_days: number;
+  include_never_printed: boolean;
+}
+
+export interface LibraryTrashSettings {
+  retention_days: number;
+  auto_purge_enabled: boolean;
+  auto_purge_days: number;
+  auto_purge_include_never_printed: boolean;
 }
 
 export interface LibraryFileUploadResponse {

@@ -30,6 +30,7 @@ from backend.app.api.routes import (
     inventory,
     kprofiles,
     library,
+    library_trash,
     local_backup,
     local_presets,
     maintenance,
@@ -77,6 +78,7 @@ from backend.app.services.bambu_ftp import (
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.homeassistant import homeassistant_service
+from backend.app.services.library_trash import library_trash_service
 from backend.app.services.local_backup import local_backup_service
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
@@ -4195,6 +4197,9 @@ async def lifespan(app: FastAPI):
     await local_backup_service.start_scheduler()
     await obico_detection_service.start()
 
+    # Start the library trash sweeper (#1008)
+    await library_trash_service.start_scheduler()
+
     # Start AMS history recording
     start_ams_history_recording()
 
@@ -4233,6 +4238,7 @@ async def lifespan(app: FastAPI):
     notification_service.stop_digest_scheduler()
     github_backup_service.stop_scheduler()
     local_backup_service.stop_scheduler()
+    library_trash_service.stop_scheduler()
     obico_detection_service.stop()
     stop_ams_history_recording()
     stop_runtime_tracking()
@@ -4537,6 +4543,7 @@ app.include_router(camera.router, prefix=app_settings.api_prefix)
 app.include_router(external_links.router, prefix=app_settings.api_prefix)
 app.include_router(projects.router, prefix=app_settings.api_prefix)
 app.include_router(library.router, prefix=app_settings.api_prefix)
+app.include_router(library_trash.router, prefix=app_settings.api_prefix)
 app.include_router(makerworld.router, prefix=app_settings.api_prefix)
 app.include_router(api_keys.router, prefix=app_settings.api_prefix)
 app.include_router(webhook.router, prefix=app_settings.api_prefix)

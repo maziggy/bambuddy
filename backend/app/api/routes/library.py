@@ -9,6 +9,7 @@ import re
 import shutil
 import uuid
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
@@ -175,7 +176,7 @@ async def save_3mf_bytes_to_library(
     """
     # Source-URL-based dedupe: return the existing row untouched.
     if source_url:
-        existing = await db.execute(select(LibraryFile).where(LibraryFile.source_url == source_url).limit(1))
+        existing = await db.execute(LibraryFile.active().where(LibraryFile.source_url == source_url).limit(1))
         existing_row = existing.scalar_one_or_none()
         if existing_row is not None:
             return existing_row, True
@@ -374,7 +375,7 @@ async def list_folders(
     # Get file counts per folder
     file_counts_result = await db.execute(
         select(LibraryFile.folder_id, func.count(LibraryFile.id))
-        .where(LibraryFile.folder_id.isnot(None))
+        .where(LibraryFile.folder_id.isnot(None), LibraryFile.deleted_at.is_(None))
         .group_by(LibraryFile.folder_id)
     )
     file_counts = dict(file_counts_result.all())
@@ -430,7 +431,10 @@ async def get_folders_by_project(
     for folder, project_name in rows:
         # Get file count
         file_count_result = await db.execute(
-            select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == folder.id)
+            select(func.count(LibraryFile.id)).where(
+                LibraryFile.folder_id == folder.id,
+                LibraryFile.deleted_at.is_(None),
+            )
         )
         file_count = file_count_result.scalar() or 0
 
@@ -475,7 +479,10 @@ async def get_folders_by_archive(
     for folder, archive_name in rows:
         # Get file count
         file_count_result = await db.execute(
-            select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == folder.id)
+            select(func.count(LibraryFile.id)).where(
+                LibraryFile.folder_id == folder.id,
+                LibraryFile.deleted_at.is_(None),
+            )
         )
         file_count = file_count_result.scalar() or 0
 
@@ -582,7 +589,12 @@ async def get_folder(
     folder, project_name, archive_name = row
 
     # Get file count
-    file_count_result = await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == folder_id))
+    file_count_result = await db.execute(
+        select(func.count(LibraryFile.id)).where(
+            LibraryFile.folder_id == folder_id,
+            LibraryFile.deleted_at.is_(None),
+        )
+    )
     file_count = file_count_result.scalar() or 0
 
     return FolderResponse(
@@ -668,7 +680,12 @@ async def update_folder(
     await db.refresh(folder)
 
     # Get file count and names
-    file_count_result = await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == folder_id))
+    file_count_result = await db.execute(
+        select(func.count(LibraryFile.id)).where(
+            LibraryFile.folder_id == folder_id,
+            LibraryFile.deleted_at.is_(None),
+        )
+    )
     file_count = file_count_result.scalar() or 0
 
     # Get project and archive names
@@ -917,7 +934,7 @@ async def scan_external_folder(
 
     # Get existing DB files across root and all subfolders
     existing_result = await db.execute(
-        select(LibraryFile).where(
+        LibraryFile.active().where(
             LibraryFile.folder_id.in_(all_folder_ids),
             LibraryFile.is_external.is_(True),
         )
@@ -1131,7 +1148,12 @@ async def scan_external_folder(
         if rel_path in seen_rel_dirs:
             continue  # Directory still exists on disk
         # Check if subfolder has any remaining files
-        file_count_result = await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == sub_fid))
+        file_count_result = await db.execute(
+            select(func.count(LibraryFile.id)).where(
+                LibraryFile.folder_id == sub_fid,
+                LibraryFile.deleted_at.is_(None),
+            )
+        )
         if (file_count_result.scalar() or 0) == 0:
             # Check if it has any remaining child folders
             child_count_result = await db.execute(
@@ -1169,7 +1191,7 @@ async def list_files(
         include_root: If True and folder_id is None, returns files at root level.
                      If False and folder_id is None, returns all files.
     """
-    query = select(LibraryFile).options(selectinload(LibraryFile.created_by))
+    query = LibraryFile.active().options(selectinload(LibraryFile.created_by))
 
     if folder_id is not None:
         query = query.where(LibraryFile.folder_id == folder_id)
@@ -1191,7 +1213,7 @@ async def list_files(
         if hashes:
             dup_result = await db.execute(
                 select(LibraryFile.file_hash, func.count(LibraryFile.id))
-                .where(LibraryFile.file_hash.in_(hashes))
+                .where(LibraryFile.file_hash.in_(hashes), LibraryFile.deleted_at.is_(None))
                 .group_by(LibraryFile.file_hash)
             )
             hash_counts = {h: c - 1 for h, c in dup_result.all()}  # -1 to exclude self
@@ -1277,7 +1299,9 @@ async def upload_file(
         file_hash = calculate_file_hash(file_path)
 
         # Check for duplicates
-        dup_result = await db.execute(select(LibraryFile.id).where(LibraryFile.file_hash == file_hash).limit(1))
+        dup_result = await db.execute(
+            select(LibraryFile.id).where(LibraryFile.file_hash == file_hash, LibraryFile.deleted_at.is_(None)).limit(1)
+        )
         duplicate_of = dup_result.scalar()
 
         # Extract metadata and thumbnail
@@ -1659,7 +1683,7 @@ async def batch_generate_stl_thumbnails(
     results: list[BatchThumbnailResult] = []
 
     # Build query based on request
-    query = select(LibraryFile).where(LibraryFile.file_type == "stl")
+    query = LibraryFile.active().where(LibraryFile.file_type == "stl")
 
     if request.file_ids:
         # Specific files
@@ -1782,7 +1806,7 @@ async def add_files_to_queue(
     errors: list[AddToQueueError] = []
 
     # Get all requested files
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id.in_(request.file_ids)))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id.in_(request.file_ids)))
     files = {f.id: f for f in result.scalars().all()}
 
     # Get max position for queue ordering
@@ -1862,7 +1886,7 @@ async def get_library_file_plates(
     import defusedxml.ElementTree as ET
 
     # Get the library file
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     lib_file = result.scalar_one_or_none()
 
     if not lib_file:
@@ -2120,7 +2144,7 @@ async def get_library_file_plate_thumbnail(
     """Get the thumbnail image for a specific plate from a library file."""
     from starlette.responses import Response
 
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     lib_file = result.scalar_one_or_none()
 
     if not lib_file:
@@ -2161,7 +2185,7 @@ async def get_library_file_filament_requirements(
     import defusedxml.ElementTree as ET
 
     # Get the library file
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     lib_file = result.scalar_one_or_none()
 
     if not lib_file:
@@ -2299,7 +2323,7 @@ async def print_library_file(
         body = FilePrintRequest()
 
     # Get the library file
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     lib_file = result.scalar_one_or_none()
 
     if not lib_file:
@@ -2378,7 +2402,7 @@ async def get_file(
 ):
     """Get a file by ID with full details."""
     result = await db.execute(
-        select(LibraryFile).options(selectinload(LibraryFile.created_by)).where(LibraryFile.id == file_id)
+        LibraryFile.active().options(selectinload(LibraryFile.created_by)).where(LibraryFile.id == file_id)
     )
     file = result.scalar_one_or_none()
 
@@ -2404,7 +2428,11 @@ async def get_file(
         dup_result = await db.execute(
             select(LibraryFile, LibraryFolder.name)
             .outerjoin(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
-            .where(LibraryFile.file_hash == file.file_hash, LibraryFile.id != file.id)
+            .where(
+                LibraryFile.file_hash == file.file_hash,
+                LibraryFile.id != file.id,
+                LibraryFile.deleted_at.is_(None),
+            )
         )
         for dup_file, dup_folder_name in dup_result.all():
             duplicates.append(
@@ -2473,7 +2501,7 @@ async def update_file(
     """Update a file's metadata."""
     user, can_modify_all = auth_result
 
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
@@ -2534,10 +2562,17 @@ async def delete_file(
         )
     ),
 ):
-    """Delete a file."""
+    """Move a file to the trash (soft-delete).
+
+    The file's bytes and thumbnail stay on disk until the trash sweeper
+    hard-deletes the row after the retention window (see #1008). External
+    files skip the trash entirely — they can't be restored from disk and the
+    underlying file is outside Bambuddy's control, so we just drop the DB
+    record and thumbnail.
+    """
     user, can_modify_all = auth_result
 
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
@@ -2548,23 +2583,22 @@ async def delete_file(
         if file.created_by_id != user.id:
             raise HTTPException(status_code=403, detail="You can only delete your own files")
 
-    # External files: only remove DB entry and thumbnail, never delete the actual file
-    try:
-        if not file.is_external:
-            abs_file_path = to_absolute_path(file.file_path)
-            if abs_file_path and abs_file_path.exists():
-                abs_file_path.unlink()
-        # Always clean up thumbnails we generated
+    if file.is_external:
+        # External files bypass the trash — just drop the DB row + our thumbnail.
         abs_thumb_path = to_absolute_path(file.thumbnail_path)
         if abs_thumb_path and abs_thumb_path.exists():
-            abs_thumb_path.unlink()
-    except OSError as e:
-        logger.warning("Failed to delete file from disk: %s", e)
+            try:
+                abs_thumb_path.unlink()
+            except OSError as e:
+                logger.warning("Failed to delete thumbnail from disk: %s", e)
+        await db.delete(file)
+        await db.commit()
+        return {"status": "success", "message": "File deleted", "trashed": False}
 
-    await db.delete(file)
+    # Managed file: soft-delete. Sweeper removes bytes + thumbnail after retention.
+    file.deleted_at = datetime.now(timezone.utc)
     await db.commit()
-
-    return {"status": "success", "message": "File deleted"}
+    return {"status": "success", "message": "File moved to trash", "trashed": True}
 
 
 # ============ File Content Endpoints ============
@@ -2577,7 +2611,7 @@ async def download_file(
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
     """Download a file."""
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
@@ -2607,7 +2641,7 @@ async def create_library_slicer_token(
     """
     from backend.app.core.auth import create_slicer_download_token
 
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
@@ -2634,7 +2668,7 @@ async def download_library_file_for_slicer(
     if not await verify_slicer_download_token(token, "library", file_id):
         raise HTTPException(status_code=403, detail="Invalid or expired download token")
 
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
@@ -2657,7 +2691,7 @@ async def get_thumbnail(
     _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get a file's thumbnail."""
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
@@ -2688,7 +2722,7 @@ async def get_gcode(
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
     """Get gcode for a file (for preview)."""
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
@@ -2751,7 +2785,7 @@ async def move_files(
     moved = 0
     skipped = 0
     for file_id in data.file_ids:
-        result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+        result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
         file = result.scalar_one_or_none()
         if file:
             # Ownership check
@@ -2788,28 +2822,30 @@ async def bulk_delete(
     deleted_folders = 0
     skipped_files = 0
 
-    # Delete files first
+    # Delete files first. Managed files go to trash (sweeper hard-deletes bytes
+    # later); external files bypass trash since their disk state is outside our
+    # control and can't be restored from trash anyway.
+    now = datetime.now(timezone.utc)
     for file_id in data.file_ids:
-        result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+        result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
         file = result.scalar_one_or_none()
-        if file:
-            # Ownership check
-            if not can_modify_all and file.created_by_id != user.id:
-                skipped_files += 1
-                continue
+        if not file:
+            continue
+        if not can_modify_all and file.created_by_id != user.id:
+            skipped_files += 1
+            continue
 
-            try:
-                if not file.is_external:
-                    abs_file_path = to_absolute_path(file.file_path)
-                    if abs_file_path and abs_file_path.exists():
-                        abs_file_path.unlink()
-                abs_thumb_path = to_absolute_path(file.thumbnail_path)
-                if abs_thumb_path and abs_thumb_path.exists():
+        if file.is_external:
+            abs_thumb_path = to_absolute_path(file.thumbnail_path)
+            if abs_thumb_path and abs_thumb_path.exists():
+                try:
                     abs_thumb_path.unlink()
-            except OSError as e:
-                logger.warning("Failed to delete file from disk: %s", e)
+                except OSError as e:
+                    logger.warning("Failed to delete thumbnail from disk: %s", e)
             await db.delete(file)
-            deleted_files += 1
+        else:
+            file.deleted_at = now
+        deleted_files += 1
 
     # Delete folders (cascade will handle contents)
     # Note: Folders don't have ownership tracking currently, require *_all permission
@@ -2823,7 +2859,10 @@ async def bulk_delete(
         if folder:
             # Count files that will be deleted
             file_count_result = await db.execute(
-                select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == folder_id)
+                select(func.count(LibraryFile.id)).where(
+                    LibraryFile.folder_id == folder_id,
+                    LibraryFile.deleted_at.is_(None),
+                )
             )
             deleted_files += file_count_result.scalar() or 0
             await db.delete(folder)
@@ -2843,8 +2882,11 @@ async def get_library_stats(
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
     """Get library statistics."""
+    # Stats exclude trashed files — users see counts/sizes for what's actually in the library.
+    active_only = LibraryFile.deleted_at.is_(None)
+
     # Total files
-    total_files_result = await db.execute(select(func.count(LibraryFile.id)))
+    total_files_result = await db.execute(select(func.count(LibraryFile.id)).where(active_only))
     total_files = total_files_result.scalar() or 0
 
     # Total folders
@@ -2852,17 +2894,17 @@ async def get_library_stats(
     total_folders = total_folders_result.scalar() or 0
 
     # Total size
-    total_size_result = await db.execute(select(func.sum(LibraryFile.file_size)))
+    total_size_result = await db.execute(select(func.sum(LibraryFile.file_size)).where(active_only))
     total_size = total_size_result.scalar() or 0
 
     # Files by type
     type_result = await db.execute(
-        select(LibraryFile.file_type, func.count(LibraryFile.id)).group_by(LibraryFile.file_type)
+        select(LibraryFile.file_type, func.count(LibraryFile.id)).where(active_only).group_by(LibraryFile.file_type)
     )
     files_by_type = dict(type_result.all())
 
     # Total prints
-    total_prints_result = await db.execute(select(func.sum(LibraryFile.print_count)))
+    total_prints_result = await db.execute(select(func.sum(LibraryFile.print_count)).where(active_only))
     total_prints = total_prints_result.scalar() or 0
 
     # Disk space info

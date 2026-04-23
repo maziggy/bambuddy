@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Select, String, Text, func, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -93,6 +93,11 @@ class LibraryFile(Base):
     # User tracking (Issue #206)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
+    # Soft-delete / trash bin (Issue #1008). When non-null, the file is in the
+    # trash and should not appear in normal listings. A background sweeper
+    # hard-deletes rows whose deleted_at is older than the retention window.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -101,6 +106,17 @@ class LibraryFile(Base):
     folder: Mapped["LibraryFolder | None"] = relationship(back_populates="files")
     project: Mapped["Project | None"] = relationship()
     created_by: Mapped["User | None"] = relationship()
+
+    @classmethod
+    def active(cls) -> "Select[tuple[LibraryFile]]":
+        """Select statement that excludes trashed (soft-deleted) files.
+
+        Use this in place of ``select(LibraryFile)`` for any user-facing listing
+        or lookup so trashed files don't leak into normal flows. Endpoints that
+        specifically operate on trashed rows (trash list, restore, sweeper)
+        must use ``select(LibraryFile)`` directly.
+        """
+        return select(cls).where(cls.deleted_at.is_(None))
 
 
 from backend.app.models.archive import PrintArchive  # noqa: E402, F811

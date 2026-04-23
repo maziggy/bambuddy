@@ -189,7 +189,8 @@ async def resolve_url(
     model_prefix = _canonical_url(model_id)
     existing_q = await db.execute(
         select(LibraryFile.id).where(
-            (LibraryFile.source_url == model_prefix) | (LibraryFile.source_url.like(f"{model_prefix}#profileId-%"))
+            (LibraryFile.source_url == model_prefix) | (LibraryFile.source_url.like(f"{model_prefix}#profileId-%")),
+            LibraryFile.deleted_at.is_(None),
         )
     )
     already_imported = [row[0] for row in existing_q.all()]
@@ -317,7 +318,7 @@ async def import_instance(
 
     # Dedupe check upfront so we don't burn bandwidth re-downloading.
     if source_url:
-        existing_q = await db.execute(select(LibraryFile).where(LibraryFile.source_url == source_url).limit(1))
+        existing_q = await db.execute(LibraryFile.active().where(LibraryFile.source_url == source_url).limit(1))
         existing_row = existing_q.scalar_one_or_none()
         if existing_row is not None:
             await service.close()
@@ -375,7 +376,7 @@ async def recent_imports(
     _ = current_user  # permission gate only
     capped = max(1, min(50, int(limit)))
     result = await db.execute(
-        select(LibraryFile)
+        LibraryFile.active()
         .where(LibraryFile.source_type == _SOURCE_TYPE)
         .order_by(LibraryFile.created_at.desc())
         .limit(capped)

@@ -702,7 +702,7 @@ class BackgroundDispatchService:
         from backend.app.main import register_expected_print
 
         async with async_session() as db:
-            lib_file = await db.scalar(select(LibraryFile).where(LibraryFile.id == job.source_id))
+            lib_file = await db.scalar(LibraryFile.active().where(LibraryFile.id == job.source_id))
             if not lib_file:
                 raise RuntimeError("File not found")
 

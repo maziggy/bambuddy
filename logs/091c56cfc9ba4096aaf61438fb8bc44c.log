@@ -1,0 +1,200 @@
+2026-04-23 01:55:00,778 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 11, None)]
+2026-04-23 01:55:00,778 INFO [backend.app.services.print_scheduler] Queue skip summary: {'scheduled_future': 1}
+2026-04-23 01:55:30,782 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 11, None)]
+2026-04-23 01:55:30,783 INFO [backend.app.services.print_scheduler] Queue skip summary: {'scheduled_future': 1}
+2026-04-23 01:56:00,786 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 11, None)]
+2026-04-23 01:56:00,787 INFO [backend.app.services.print_scheduler] Queue skip summary: {'scheduled_future': 1}
+2026-04-23 01:56:30,791 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 11, None)]
+2026-04-23 01:56:30,792 INFO [backend.app.services.print_scheduler] Queue skip summary: {'scheduled_future': 1}
+2026-04-23 01:56:31,866 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-23 01:56:31,867 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-23 01:56:31,867 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-23 01:56:32,417 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:56:34,454 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:56:36,483 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:56:40,579 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:56:42,570 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:56:43,623 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-23 01:56:43,624 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 2
+2026-04-23 01:56:43,625 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-04-23 01:56:43,625 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 2
+2026-04-23 01:56:44,603 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:56:46,104 INFO [backend.app.api.routes.archives] Dispatched reprint archive 17 for printer 1 (dispatch_job_id=17, dispatch_position=1)
+2026-04-23 01:56:46,113 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-04-23 01:56:46,889 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-23 01:56:46,906 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-23 01:56:46,927 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-23 01:56:46,928 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-23 01:56:46,975 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=P1S, mode=prot_p, socket_timeout=30.0s)...
+2026-04-23 01:56:46,977 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-04-23 01:56:47,738 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-23 01:56:47,755 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-23 01:56:47,780 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-23 01:56:47,780 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-23 01:56:47,780 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-23 01:56:47,780 INFO [backend.app.services.bambu_ftp] FTP uploading /app/data/archive/unassigned/20260423_015404_SpeedBoatRace_Bambu_Pla_Basic(A1).gcode/SpeedBoatRace_Bambu_Pla_Basic(A1).gcode.3mf (944740 bytes) to /SpeedBoatRace_Bambu_Pla_Basic(A1).3mf
+2026-04-23 01:56:47,781 DEBUG [backend.app.services.bambu_ftp] FTP STOR command starting for /SpeedBoatRace_Bambu_Pla_Basic(A1).3mf
+2026-04-23 01:56:47,839 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-04-23 01:56:47,849 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 65536/944740 bytes
+2026-04-23 01:56:47,916 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 131072/944740 bytes
+2026-04-23 01:56:47,924 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 196608/944740 bytes
+2026-04-23 01:56:48,047 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 262144/944740 bytes
+2026-04-23 01:56:48,271 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 327680/944740 bytes
+2026-04-23 01:56:48,547 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 393216/944740 bytes
+2026-04-23 01:56:48,823 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 458752/944740 bytes
+2026-04-23 01:56:49,101 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 524288/944740 bytes
+2026-04-23 01:56:49,378 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 589824/944740 bytes
+2026-04-23 01:56:49,653 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 655360/944740 bytes
+2026-04-23 01:56:49,925 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 720896/944740 bytes
+2026-04-23 01:56:50,201 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 786432/944740 bytes
+2026-04-23 01:56:50,473 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 851968/944740 bytes
+2026-04-23 01:56:50,753 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 917504/944740 bytes
+2026-04-23 01:56:51,027 DEBUG [backend.app.services.bambu_ftp] FTP upload progress: 944740/944740 bytes
+2026-04-23 01:56:51,027 DEBUG [backend.app.services.bambu_ftp] FTP upload: final chunk reached
+2026-04-23 01:56:51,852 INFO [backend.app.services.bambu_ftp] FTP STOR confirmed for /SpeedBoatRace_Bambu_Pla_Basic(A1).3mf: 226
+2026-04-23 01:56:51,852 INFO [backend.app.services.bambu_ftp] FTP upload complete: /SpeedBoatRace_Bambu_Pla_Basic(A1).3mf (944740 bytes in 4.1s, 227 KB/s)
+2026-04-23 01:56:51,853 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-23 01:56:51,869 INFO [backend.app.main] Registered expected print: printer=1, file=SpeedBoatRace_Bambu_Pla_Basic(A1).3mf, archive=17, ams_mapping=[2]
+2026-04-23 01:56:51,870 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=SpeedBoatRace_Bambu_Pla_Basic(A1).3mf, caller=background_dispatch.py:539:_process_job
+2026-04-23 01:56:51,870 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://SpeedBoatRace_Bambu_Pla_Basic(A1).3mf", "file": "SpeedBoatRace_Bambu_Pla_Basic(A1).3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": true, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "SpeedBoatRace_Bambu_Pla_Basic(A1)", "profile_id": "0", "project_id": "965635801", "subtask_id": "965635801", "task_id": "965635801", "ams_mapping": [2], "ams_mapping2": [{"ams_id": 0, "slot_id": 2}]}}
+2026-04-23 01:56:51,918 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:56:51,919 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -36dBm
+2026-04-23 01:56:53,963 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:56:53,964 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -35dBm
+2026-04-23 01:56:56,002 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:56:58,042 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:00,091 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-23 01:57:00,091 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-23 01:57:00,091 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-23 01:57:00,091 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:00,797 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 11, None)]
+2026-04-23 01:57:00,797 INFO [backend.app.services.print_scheduler] Queue skip summary: {'scheduled_future': 1}
+2026-04-23 01:57:04,139 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-23 01:57:04,140 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-23 01:57:04,140 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-23 01:57:04,141 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:06,179 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:06,875 WARNING [backend.app.services.background_dispatch] Printer [PRINTER] (1) did not respond to print command within 15s (state still IDLE) — printer may need restart
+2026-04-23 01:57:06,875 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Forcing MQTT reconnect: print command unacknowledged after 15s (state still IDLE)
+2026-04-23 01:57:07,181 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Unspecified error
+2026-04-23 01:57:09,650 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting firmware version info
+2026-04-23 01:57:09,651 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Sending K-profile priming request
+2026-04-23 01:57:14,047 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: P1S_Bed_scraper_by_JernejP_PLA.gcode.3mf, subtask_name: SpeedBoatRace_Bambu_Pla_Basic(A1)
+2026-04-23 01:57:14,047 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'd', 'tray_tar': '2', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 26, 'insert_flag': True, 'power_on_flag': True}
+2026-04-23 01:57:14,048 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 2
+2026-04-23 01:57:14,048 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-23 01:57:14,048 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-23 01:57:14,049 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-23 01:57:14,049 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-04-23 01:57:14,049 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:14,050 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-23 01:57:14,050 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-23 01:57:14,050 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-23 01:57:14,051 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-23 01:57:14,051 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-23 01:57:14,052 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-23 01:57:14,052 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -35dBm
+2026-04-23 01:57:14,052 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-04-23 01:57:14,053 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: P1S_Bed_scraper_by_JernejP_PLA.gcode.3mf, subtask: SpeedBoatRace_Bambu_Pla_Basic(A1)
+2026-04-23 01:57:14,054 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:14,054 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:14,054 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:14,054 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:14,055 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: ams_filament_setting
+2026-04-23 01:57:14,055 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_filament_setting response: {'command': 'ams_filament_setting', 'ams_id': 255, 'tray_id': 0, 'slot_id': 0, 'tray_info_idx': '', 'tray_type': '', 'tray_sub_brands': '', 'tray_color': '00000000', 'nozzle_temp_min': '0', 'nozzle_temp_max': '0', 'sequence_id': '3', 'reason': 'success', 'result': 'success'}
+2026-04-23 01:57:14,055 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:14,055 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:14,055 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:14,055 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:14,056 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:14,056 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:14,057 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:14,058 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:14,058 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:14,058 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:14,058 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: stop
+2026-04-23 01:57:14,058 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: stop
+2026-04-23 01:57:14,058 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: stop
+2026-04-23 01:57:14,059 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: stop
+2026-04-23 01:57:14,059 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:14,059 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:14,059 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: gcode_line
+2026-04-23 01:57:14,059 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:14,059 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:14,060 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:14,060 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:14,064 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:14,064 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:14,065 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:14,065 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:14,065 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:14,065 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:15,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:15,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:15,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: gcode_line
+2026-04-23 01:57:15,516 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: gcode_line
+2026-04-23 01:57:15,525 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:15,526 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:15,527 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:15,528 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:15,529 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:15,529 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:15,530 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:15,531 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:15,532 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:15,533 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:15,534 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:15,534 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:15,535 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: pause
+2026-04-23 01:57:15,536 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:15,537 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:15,537 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:15,539 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:15,539 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:15,540 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:15,543 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:15,544 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:15,545 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: clean_print_error
+2026-04-23 01:57:15,546 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: pause
+2026-04-23 01:57:15,546 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:15,547 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:15,547 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: clean_print_error
+2026-04-23 01:57:15,547 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:15,547 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:15,547 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:15,547 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:15,548 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 firmware: 01.00.06.83
+2026-04-23 01:57:15,548 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-23 01:57:15,548 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: project_file
+2026-04-23 01:57:15,548 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] timelapse field: False
+2026-04-23 01:57:15,556 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: P1S_Bed_scraper_by_JernejP_PLA.gcode.3mf, subtask_name: SpeedBoatRace_Bambu_Pla_Basic(A1)
+2026-04-23 01:57:15,556 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'd', 'tray_tar': '2', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 26, 'insert_flag': True, 'power_on_flag': True}
+2026-04-23 01:57:15,556 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 2
+2026-04-23 01:57:15,556 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] print_error: 83902467 (0x05004003) -> short_code=0500_4003
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -34dBm
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-04-23 01:57:15,557 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: P1S_Bed_scraper_by_JernejP_PLA.gcode.3mf, subtask: SpeedBoatRace_Bambu_Pla_Basic(A1)
+2026-04-23 01:57:16,807 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:17,464 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: clean_print_error
+2026-04-23 01:57:17,464 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] print_error: 83902467 (0x05004003) -> short_code=0500_4003
+2026-04-23 01:57:20,881 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:22,916 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:24,961 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:24,962 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -35dBm
+2026-04-23 01:57:29,011 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:29,012 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -34dBm
+2026-04-23 01:57:30,802 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(1, 1, 11, None)]
+2026-04-23 01:57:30,803 INFO [backend.app.services.print_scheduler] Queue skip summary: {'scheduled_future': 1}
+2026-04-23 01:57:31,033 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-23 01:57:31,033 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -35dBm

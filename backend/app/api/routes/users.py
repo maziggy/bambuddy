@@ -325,7 +325,12 @@ async def get_user_items_count(
     queue_items_count = queue_result.scalar() or 0
 
     # Count library files
-    library_result = await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.created_by_id == user_id))
+    library_result = await db.execute(
+        select(func.count(LibraryFile.id)).where(
+            LibraryFile.created_by_id == user_id,
+            LibraryFile.deleted_at.is_(None),
+        )
+    )
     library_files_count = library_result.scalar() or 0
 
     return {

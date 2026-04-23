@@ -1414,7 +1414,7 @@ async def export_project(
     for folder in linked_folders:
         # Get files in this folder
         files_result = await db.execute(
-            select(LibraryFile).where(LibraryFile.folder_id == folder.id).order_by(LibraryFile.filename)
+            LibraryFile.active().where(LibraryFile.folder_id == folder.id).order_by(LibraryFile.filename)
         )
         files = files_result.scalars().all()
 

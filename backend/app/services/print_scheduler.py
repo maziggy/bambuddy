@@ -806,7 +806,7 @@ class PrintScheduler:
             if archive:
                 file_path = settings.base_dir / archive.file_path
         elif item.library_file_id:
-            result = await db.execute(select(LibraryFile).where(LibraryFile.id == item.library_file_id))
+            result = await db.execute(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
             library_file = result.scalar_one_or_none()
             if library_file:
                 lib_path = Path(library_file.file_path)
@@ -1565,7 +1565,7 @@ class PrintScheduler:
             if archive:
                 return archive.filename.replace(".gcode.3mf", "").replace(".3mf", "")
         if item.library_file_id:
-            result = await db.execute(select(LibraryFile).where(LibraryFile.id == item.library_file_id))
+            result = await db.execute(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
             library_file = result.scalar_one_or_none()
             if library_file:
                 return library_file.filename.replace(".gcode.3mf", "").replace(".3mf", "")
@@ -1631,7 +1631,7 @@ class PrintScheduler:
 
         elif item.library_file_id:
             # Print from library file (file manager)
-            result = await db.execute(select(LibraryFile).where(LibraryFile.id == item.library_file_id))
+            result = await db.execute(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
             library_file = result.scalar_one_or_none()
             if not library_file:
                 item.status = "failed"

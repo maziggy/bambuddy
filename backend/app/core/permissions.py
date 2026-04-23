@@ -50,6 +50,10 @@ class Permission(StrEnum):
     LIBRARY_UPDATE_ALL = "library:update_all"
     LIBRARY_DELETE_OWN = "library:delete_own"
     LIBRARY_DELETE_ALL = "library:delete_all"
+    # Admin-only: bulk purge of old files + trash retention settings (#1008).
+    # Routine per-user trash management (restore-own, hard-delete-own) is
+    # gated by the existing LIBRARY_DELETE_* permissions instead.
+    LIBRARY_PURGE = "library:purge"
 
     # Projects
     PROJECTS_READ = "projects:read"
@@ -202,6 +206,7 @@ PERMISSION_CATEGORIES = {
         Permission.LIBRARY_UPDATE_ALL,
         Permission.LIBRARY_DELETE_OWN,
         Permission.LIBRARY_DELETE_ALL,
+        Permission.LIBRARY_PURGE,
     ],
     "Projects": [
         Permission.PROJECTS_READ,

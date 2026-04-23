@@ -71,6 +71,7 @@ def _resolve_spool_tag(tray_info: dict, printer_serial: str = "", global_tray_id
     """
     tray_uuid = str(tray_info.get("tray_uuid", "") or "")
     tag_uid = str(tray_info.get("tag_uid", "") or "")
+
     if tray_uuid and tray_uuid != _ZERO_UUID and _is_non_zero_identifier(tray_uuid):
         return tray_uuid
     if tag_uid and tag_uid != _ZERO_TAG_UID and _is_non_zero_identifier(tag_uid):
@@ -314,11 +315,14 @@ async def _get_spoolman_client_with_fallback():
             if spoolman_url:
                 try:
                     client = await init_spoolman_client(spoolman_url)
-                except ValueError:
-                    logger.warning("Spoolman URL rejected by SSRF guard: %s", spoolman_url)
+                except ValueError as exc:
+                    logger.warning("Spoolman URL %r rejected by SSRF guard: %s", spoolman_url, exc)
                     return None
 
-    if not client or not await client.health_check():
+    if not client:
+        return None
+    if not await client.health_check():
+        logger.warning("Spoolman health check failed; skipping usage reporting")
         return None
 
     return client

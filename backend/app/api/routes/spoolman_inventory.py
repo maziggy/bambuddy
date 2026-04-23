@@ -10,8 +10,10 @@ from __future__ import annotations
 import logging
 import re
 import time
+from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +31,7 @@ from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services.spoolman import (
     SpoolmanClient,
+    SpoolmanClientError,
     SpoolmanNotFoundError,
     SpoolmanUnavailableError,
     get_spoolman_client,
@@ -64,18 +67,20 @@ async def _get_client(db: AsyncSession) -> SpoolmanClient:
     if not url:
         raise HTTPException(status_code=400, detail="Spoolman URL is not configured")
 
-    # SSRF guard: reject dangerous schemes, localhost, and bare private/loopback/
-    # multicast IPs. Raises ValueError with a descriptive message on any violation.
+    # SSRF guard: reject dangerous schemes and bare private/loopback/link-local/multicast IPs.
+    # Raises ValueError with a descriptive message on any violation.
     try:
         assert_safe_spoolman_url(url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Re-use the existing client when the URL is unchanged; reinitialise only
-    # when the URL was changed in settings (TOCTOU guard).
+    # Re-use the cached client when URL is unchanged; reinitialise on URL change (cache invalidation).
     client = await get_spoolman_client()
     if not client or client.base_url != url.rstrip("/"):
-        client = await init_spoolman_client(url)
+        try:
+            client = await init_spoolman_client(url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Only call health_check() when the cached result has expired.
     # Evict stale entries when URL changes (only one Spoolman URL is active at a time).
@@ -90,6 +95,44 @@ async def _get_client(db: AsyncSession) -> SpoolmanClient:
         _health_check_cache[url] = now
 
     return client
+
+
+@asynccontextmanager
+async def _translate_spoolman_errors():
+    """Translate Spoolman exceptions to HTTP responses for all inventory endpoints.
+
+    Maps SpoolmanNotFoundError → 404 and SpoolmanUnavailableError → 503.
+    Add new SpoolmanClient exception mappings here rather than in individual handlers.
+    """
+    try:
+        yield
+    except SpoolmanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Spool not found in Spoolman") from exc
+    except SpoolmanClientError as exc:
+        raise HTTPException(status_code=exc.status_code, detail="Spoolman rejected the request") from exc
+    except SpoolmanUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Spoolman server is not reachable") from exc
+
+
+async def _apply_price_if_set(client: SpoolmanClient, spool: dict, cost_per_kg: float | None) -> dict:
+    """Patch the spool's price via a follow-up update when cost_per_kg is provided.
+
+    Bambuddy's SpoolmanClient.create_spool() does not forward price to Spoolman's POST /spool
+    endpoint, so a follow-up PATCH via update_spool_full is needed to set it.
+    On failure, logs an error and returns the original spool (caller gets HTTP 200 without price).
+    """
+    if cost_per_kg is None:
+        return spool
+    try:
+        async with _translate_spoolman_errors():
+            return await client.update_spool_full(spool["id"], price=cost_per_kg)
+    except HTTPException:
+        logger.error(
+            "Price update failed for spool %d; spool created without price (cost_per_kg=%s)",
+            spool["id"],
+            cost_per_kg,
+        )
+        return spool
 
 
 # ---------------------------------------------------------------------------
@@ -120,9 +163,11 @@ class SpoolmanInventoryCreate(BaseModel):
     subtype: str | None = Field(None, max_length=64)
     brand: str | None = Field(None, max_length=128)
     color_name: str | None = Field(None, max_length=64)
-    rgba: str | None = Field(None, max_length=9)
+    rgba: str | None = Field(None, max_length=8)
     label_weight: int = Field(1000, ge=1, le=100_000)
-    core_weight: int = Field(250, ge=0, le=10_000)
+    core_weight: int = Field(
+        250, ge=0, le=10_000
+    )  # Accepted for schema parity but not persisted to Spoolman (stored on filament type, not spool)
     weight_used: float = Field(0.0, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
@@ -150,14 +195,16 @@ class SpoolmanInventoryUpdate(BaseModel):
     subtype: str | None = Field(None, max_length=64)
     brand: str | None = Field(None, max_length=128)
     color_name: str | None = Field(None, max_length=64)
-    rgba: str | None = Field(None, max_length=9)
+    rgba: str | None = Field(None, max_length=8)
     label_weight: int | None = Field(None, ge=1, le=100_000)
-    core_weight: int | None = Field(None, ge=0, le=10_000)
+    core_weight: int | None = Field(
+        None, ge=0, le=10_000
+    )  # Accepted for schema parity but not persisted to Spoolman (stored on filament type, not spool)
     weight_used: float | None = Field(None, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
-    tag_uid: str | None = Field(None, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
-    tray_uuid: str | None = Field(None, max_length=32, pattern=r"^[0-9A-Fa-f]+$")
+    tag_uid: str | None = Field(None, min_length=8, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
+    tray_uuid: str | None = Field(None, min_length=32, max_length=32, pattern=r"^[0-9A-Fa-f]+$")
     storage_location: str | None = Field(None, max_length=255)
 
     @field_validator("rgba")
@@ -180,14 +227,7 @@ class SpoolmanInventoryUpdate(BaseModel):
 
 class SpoolmanInventoryBulkCreate(BaseModel):
     spool: SpoolmanInventoryCreate
-    quantity: int = 1
-
-    @field_validator("quantity")
-    @classmethod
-    def validate_quantity(cls, v: int) -> int:
-        if v < 1 or v > 50:
-            raise ValueError("quantity must be between 1 and 50")
-        return v
+    quantity: int = Field(1, ge=1, le=50)
 
 
 class SpoolWeightUpdate(BaseModel):
@@ -207,7 +247,8 @@ async def list_spools(
 ) -> list[dict]:
     """Return all Spoolman spools in the InventorySpool format."""
     client = await _get_client(db)
-    spools = await client.get_all_spools(allow_archived=include_archived)
+    async with _translate_spoolman_errors():
+        spools = await client.get_all_spools(allow_archived=include_archived)
     result = []
     for s in spools:
         try:
@@ -225,13 +266,13 @@ async def get_spool(
 ) -> dict:
     """Return a single Spoolman spool in the InventorySpool format."""
     client = await _get_client(db)
-    try:
+    async with _translate_spoolman_errors():
         spool = await client.get_spool(spool_id)
-    except SpoolmanNotFoundError:
-        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-    except SpoolmanUnavailableError:
-        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
-    return _map_spoolman_spool(spool)
+    try:
+        return _map_spoolman_spool(spool)
+    except ValueError as exc:
+        logger.warning("Malformed Spoolman spool (id=%r): %s", spool_id, exc)
+        raise HTTPException(status_code=502, detail="Spoolman returned malformed spool data") from exc
 
 
 @router.post("/spools")
@@ -244,14 +285,15 @@ async def create_spool(
     client = await _get_client(db)
 
     color_hex = (data.rgba or "808080FF")[:6]
-    filament_id = await client.find_or_create_filament(
-        material=data.material,
-        subtype=data.subtype or "",
-        brand=data.brand,
-        color_hex=color_hex,
-        label_weight=data.label_weight,
-        color_name=data.color_name,
-    )
+    async with _translate_spoolman_errors():
+        filament_id = await client.find_or_create_filament(
+            material=data.material,
+            subtype=data.subtype or "",
+            brand=data.brand,
+            color_hex=color_hex,
+            label_weight=data.label_weight,
+            color_name=data.color_name,
+        )
     if not filament_id:
         raise HTTPException(status_code=500, detail="Failed to find or create filament in Spoolman")
 
@@ -265,6 +307,7 @@ async def create_spool(
     if not spool:
         raise HTTPException(status_code=500, detail="Failed to create spool in Spoolman")
 
+    spool = await _apply_price_if_set(client, spool, data.cost_per_kg)
     return _map_spoolman_spool(spool)
 
 
@@ -273,19 +316,20 @@ async def bulk_create_spools(
     payload: SpoolmanInventoryBulkCreate,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
-) -> list[dict]:
+) -> Response:
     """Create multiple identical spools in Spoolman."""
     client = await _get_client(db)
     data = payload.spool
 
     color_hex = (data.rgba or "808080FF")[:6]
-    filament_id = await client.find_or_create_filament(
-        material=data.material,
-        subtype=data.subtype or "",
-        brand=data.brand,
-        color_hex=color_hex,
-        label_weight=data.label_weight,
-    )
+    async with _translate_spoolman_errors():
+        filament_id = await client.find_or_create_filament(
+            material=data.material,
+            subtype=data.subtype or "",
+            brand=data.brand,
+            color_hex=color_hex,
+            label_weight=data.label_weight,
+        )
     if not filament_id:
         raise HTTPException(status_code=500, detail="Failed to find or create filament in Spoolman")
 
@@ -299,6 +343,7 @@ async def bulk_create_spools(
             location=data.storage_location or None,
         )
         if spool:
+            spool = await _apply_price_if_set(client, spool, data.cost_per_kg)
             created.append(_map_spoolman_spool(spool))
 
     if not created:
@@ -307,8 +352,6 @@ async def bulk_create_spools(
     if len(created) < payload.quantity:
         # Some spool creations failed — return 207 Multi-Status so the caller
         # can distinguish a full success from a partial one and show a useful message.
-        from fastapi.responses import JSONResponse
-
         return JSONResponse(
             status_code=207,
             content={
@@ -318,7 +361,7 @@ async def bulk_create_spools(
             },
         )
 
-    return created
+    return JSONResponse(status_code=200, content=created)
 
 
 @router.patch("/spools/{spool_id}")
@@ -332,12 +375,8 @@ async def update_spool(
     """Update an existing Spoolman spool, re-linking the filament if metadata changed."""
     client = await _get_client(db)
 
-    try:
+    async with _translate_spoolman_errors():
         current = await client.get_spool(spool_id)
-    except SpoolmanNotFoundError:
-        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-    except SpoolmanUnavailableError:
-        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
     cur_filament: dict = current.get("filament") or {}
     cur_vendor: dict = cur_filament.get("vendor") or {}
@@ -362,14 +401,15 @@ async def update_spool(
     storage_location = data.storage_location if storage_location_changed else current.get("location")
 
     color_hex = rgba[:6]
-    filament_id = await client.find_or_create_filament(
-        material=material,
-        subtype=subtype or "",
-        brand=brand,
-        color_hex=color_hex,
-        label_weight=label_weight,
-        color_name=color_name,
-    )
+    async with _translate_spoolman_errors():
+        filament_id = await client.find_or_create_filament(
+            material=material,
+            subtype=subtype or "",
+            brand=brand,
+            color_hex=color_hex,
+            label_weight=label_weight,
+            color_name=color_name,
+        )
     if not filament_id:
         raise HTTPException(status_code=500, detail="Failed to find or create filament in Spoolman")
 
@@ -386,22 +426,18 @@ async def update_spool(
     # Serialise tag-clear + PATCH under the per-spool extra lock to prevent a
     # concurrent merge_spool_extra call (e.g. NFC write-back) from overwriting
     # the tag key between our read and our write.
-    async with client._extra_lock(spool_id):
+    async with client.extra_lock(spool_id):
         if tag_nulled:
             # Re-fetch inside the lock so we work with fresh extra data.
-            try:
+            async with _translate_spoolman_errors():
                 fresh = await client.get_spool(spool_id)
-            except SpoolmanNotFoundError:
-                raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-            except SpoolmanUnavailableError:
-                raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
             cur_extra = dict(fresh.get("extra") or {})
             cur_extra.pop("tag", None)
             extra: dict | None = cur_extra
         else:
             extra = None
 
-        try:
+        async with _translate_spoolman_errors():
             updated = await client.update_spool_full(
                 spool_id=spool_id,
                 filament_id=filament_id,
@@ -412,10 +448,6 @@ async def update_spool(
                 location=storage_location or None,
                 clear_location=storage_location_changed and not storage_location,
             )
-        except SpoolmanNotFoundError:
-            raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-        except SpoolmanUnavailableError:
-            raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
     return _map_spoolman_spool(updated)
 
@@ -428,12 +460,8 @@ async def delete_spool(
 ) -> dict:
     """Permanently delete a spool from Spoolman."""
     client = await _get_client(db)
-    try:
+    async with _translate_spoolman_errors():
         await client.delete_spool(spool_id)
-    except SpoolmanNotFoundError:
-        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-    except SpoolmanUnavailableError:
-        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
     return {"status": "deleted"}
 
 
@@ -445,13 +473,13 @@ async def archive_spool(
 ) -> dict:
     """Archive a spool in Spoolman (soft-delete)."""
     client = await _get_client(db)
-    try:
+    async with _translate_spoolman_errors():
         spool = await client.set_spool_archived(spool_id, archived=True)
-    except SpoolmanNotFoundError:
-        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-    except SpoolmanUnavailableError:
-        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
-    return _map_spoolman_spool(spool)
+    try:
+        return _map_spoolman_spool(spool)
+    except ValueError as exc:
+        logger.warning("Malformed Spoolman spool (id=%r): %s", spool_id, exc)
+        raise HTTPException(status_code=502, detail="Spoolman returned malformed spool data") from exc
 
 
 @router.post("/spools/{spool_id}/restore")
@@ -462,13 +490,13 @@ async def restore_spool(
 ) -> dict:
     """Restore an archived spool in Spoolman."""
     client = await _get_client(db)
-    try:
+    async with _translate_spoolman_errors():
         spool = await client.set_spool_archived(spool_id, archived=False)
-    except SpoolmanNotFoundError:
-        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-    except SpoolmanUnavailableError:
-        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
-    return _map_spoolman_spool(spool)
+    try:
+        return _map_spoolman_spool(spool)
+    except ValueError as exc:
+        logger.warning("Malformed Spoolman spool (id=%r): %s", spool_id, exc)
+        raise HTTPException(status_code=502, detail="Spoolman returned malformed spool data") from exc
 
 
 @router.patch("/spools/{spool_id}/weight")
@@ -487,23 +515,15 @@ async def sync_spool_weight(
     """
     client = await _get_client(db)
 
-    try:
+    async with _translate_spoolman_errors():
         current = await client.get_spool(spool_id)
-    except SpoolmanNotFoundError:
-        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-    except SpoolmanUnavailableError:
-        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
     cur_filament = current.get("filament") or {}
     core_weight = _safe_float(cur_filament.get("spool_weight"), 250.0)
     remaining = max(0.0, data.weight_grams - core_weight)
 
-    try:
+    async with _translate_spoolman_errors():
         updated = await client.update_spool_full(spool_id=spool_id, remaining_weight=remaining)
-    except SpoolmanNotFoundError:
-        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-    except SpoolmanUnavailableError:
-        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
     upd_filament = updated.get("filament") or {}
     label_weight = _safe_int(upd_filament.get("weight"), 1000)

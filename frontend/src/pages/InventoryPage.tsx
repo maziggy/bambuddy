@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -505,12 +505,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       : null;
   const deepLinkInList = spools?.find((s) => s.id === deepLinkSpoolId) ?? null;
 
-  useEffect(() => {
-    if (!spoolmanModeReady || !deepLinkSpoolId || deepLinkHandled.current || !deepLinkInList) return;
+  const clearDeepLinkParam = useCallback(() => {
     deepLinkHandled.current = true;
     setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
-    setFormModal({ spool: deepLinkInList });
-  }, [spoolmanModeReady, deepLinkSpoolId, deepLinkInList, setSearchParams]);
+  }, [setSearchParams]);
 
   // Targeted fetch — only fires when mode is known and spool isn't in the list yet
   const { data: deepLinkSpool, isError: deepLinkFetchFailed, error: deepLinkError } = useQuery({
@@ -528,19 +526,39 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   });
 
   useEffect(() => {
-    if (!deepLinkSpool || deepLinkHandled.current) return;
-    deepLinkHandled.current = true;
-    setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
-    setFormModal({ spool: deepLinkSpool });
-  }, [deepLinkSpool, setSearchParams]);
+    if (deepLinkHandled.current) return;
 
-  useEffect(() => {
-    if (!deepLinkFetchFailed || deepLinkHandled.current) return;
-    deepLinkHandled.current = true;
-    setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
-    const is404 = deepLinkError instanceof ApiError && deepLinkError.status === 404;
-    showToast(t(is404 ? 'inventory.deepLinkSpoolNotFound' : 'inventory.deepLinkFetchFailed'), 'error');
-  }, [deepLinkFetchFailed, deepLinkError, setSearchParams, showToast, t]);
+    // Case 1: spool is already in the fetched list
+    if (spoolmanModeReady && deepLinkSpoolId && deepLinkInList) {
+      clearDeepLinkParam();
+      setFormModal({ spool: deepLinkInList });
+      return;
+    }
+
+    // Case 2: spool was fetched individually
+    if (deepLinkSpool) {
+      clearDeepLinkParam();
+      setFormModal({ spool: deepLinkSpool });
+      return;
+    }
+
+    // Case 3: fetch failed
+    if (deepLinkFetchFailed) {
+      clearDeepLinkParam();
+      const is404 = deepLinkError instanceof ApiError && deepLinkError.status === 404;
+      showToast(t(is404 ? 'inventory.deepLinkSpoolNotFound' : 'inventory.deepLinkFetchFailed'), 'error');
+    }
+  }, [
+    spoolmanModeReady,
+    deepLinkSpoolId,
+    deepLinkInList,
+    deepLinkSpool,
+    deepLinkFetchFailed,
+    deepLinkError,
+    clearDeepLinkParam,
+    showToast,
+    t,
+  ]);
 
   const { data: assignments } = useQuery({
     queryKey: ['spool-assignments'],
@@ -560,6 +578,15 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       showToast(t('inventory.spoolDeleted'), 'success');
     },
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        showToast(t('inventory.deleteSpoolNotFound'), 'error');
+      } else if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.deleteFailed'), 'error');
+      }
+    },
   });
 
   const archiveMutation = useMutation({
@@ -569,6 +596,15 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       showToast(t('inventory.spoolArchived'), 'success');
     },
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        showToast(t('inventory.archiveSpoolNotFound'), 'error');
+      } else if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.archiveFailed'), 'error');
+      }
+    },
   });
 
   const restoreMutation = useMutation({
@@ -577,6 +613,15 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       showToast(t('inventory.spoolRestored'), 'success');
+    },
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        showToast(t('inventory.restoreSpoolNotFound'), 'error');
+      } else if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.restoreFailed'), 'error');
+      }
     },
   });
 
@@ -592,8 +637,11 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       const spoolName = [spool.brand, spool.material, spool.color_name].filter(Boolean).join(' ');
       showToast(`Synced "${spoolName}" to scale weight`, 'success');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to sync weight';
-      showToast(msg, 'error');
+      const is404 = e instanceof ApiError && e.status === 404;
+      const is503 = e instanceof ApiError && e.status === 503;
+      if (is404) showToast(t('inventory.syncWeightSpoolNotFound'), 'error');
+      else if (is503) showToast(t('inventory.syncWeightSpoolmanUnreachable'), 'error');
+      else showToast(t('inventory.syncWeightFailed'), 'error');
     }
   };
 

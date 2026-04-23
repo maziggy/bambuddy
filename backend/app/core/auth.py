@@ -25,6 +25,45 @@ from backend.app.models.user import User
 
 logger = logging.getLogger(__name__)
 
+# Permissions that cannot be accessed via API key.
+# API keys are limited to device/inventory operations. The following capabilities
+# are restricted to fully-authenticated users: user/group/API-key management,
+# settings read/backup/restore, firmware updates, and GitHub-backed backup/restore.
+_APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
+    {
+        Permission.SETTINGS_READ,
+        Permission.SETTINGS_UPDATE,
+        Permission.SETTINGS_BACKUP,
+        Permission.SETTINGS_RESTORE,
+        Permission.USERS_READ,
+        Permission.USERS_CREATE,
+        Permission.USERS_UPDATE,
+        Permission.USERS_DELETE,
+        Permission.GROUPS_READ,
+        Permission.GROUPS_CREATE,
+        Permission.GROUPS_UPDATE,
+        Permission.GROUPS_DELETE,
+        Permission.API_KEYS_CREATE,
+        Permission.API_KEYS_UPDATE,
+        Permission.API_KEYS_DELETE,
+        Permission.API_KEYS_READ,
+        Permission.GITHUB_BACKUP,
+        Permission.GITHUB_RESTORE,
+        Permission.FIRMWARE_UPDATE,
+    }
+)
+
+
+def _check_apikey_permissions(perm_strings: list[str]) -> None:
+    """Raise 403 if any required permission is admin-only (not accessible via API key)."""
+    denied = _APIKEY_DENIED_PERMISSIONS.intersection(perm_strings)
+    if denied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API keys cannot be used for administrative operations",
+        )
+
+
 # Password hashing
 # Use pbkdf2_sha256 instead of bcrypt to avoid 72-byte limit and passlib initialization issues
 # pbkdf2_sha256 is a secure password hashing algorithm without bcrypt's limitations
@@ -631,8 +670,7 @@ async def get_api_key(
             detail="API key required. Provide 'X-API-Key' header or 'Authorization: Bearer <key>'",
         )
 
-    # M-NEW-2: Pre-filter by key_prefix (first 8 chars) to avoid O(n) pbkdf2 over all
-    # enabled keys — same fix as in _validate_api_key (L-1 from previous review).
+    # Pre-filter by key_prefix to avoid O(n) pbkdf2 hashes across all enabled keys.
     key_lookup = api_key_value[:8] if len(api_key_value) >= 8 else api_key_value
     result = await db.execute(
         select(APIKey).where(
@@ -756,6 +794,7 @@ def require_permission(*permissions: str | Permission):
             if x_api_key:
                 api_key = await _validate_api_key(db, x_api_key)
                 if api_key:
+                    _check_apikey_permissions(perm_strings)
                     return None  # API key valid, allow access
 
             credentials_exception = HTTPException(
@@ -772,6 +811,7 @@ def require_permission(*permissions: str | Permission):
             if token.startswith("bb_"):
                 api_key = await _validate_api_key(db, token)
                 if api_key:
+                    _check_apikey_permissions(perm_strings)
                     return None  # API key valid, allow access
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -837,6 +877,7 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
             if x_api_key:
                 api_key = await _validate_api_key(db, x_api_key)
                 if api_key:
+                    _check_apikey_permissions(perm_strings)
                     return None  # API key valid, allow access
 
             # Check for Bearer token (could be JWT or API key)
@@ -846,6 +887,7 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
                 if token.startswith("bb_"):
                     api_key = await _validate_api_key(db, token)
                     if api_key:
+                        _check_apikey_permissions(perm_strings)
                         return None  # API key valid, allow access
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,

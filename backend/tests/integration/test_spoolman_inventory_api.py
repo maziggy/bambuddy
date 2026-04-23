@@ -184,6 +184,22 @@ class TestSpoolmanInventoryMapping:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_list_spools_returns_503_when_spoolman_unavailable(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """GET /spoolman/inventory/spools returns 503 when Spoolman is unreachable (H10)."""
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+
+        mock_spoolman_client.get_all_spools.side_effect = SpoolmanUnavailableError("down")
+
+        response = await async_client.get("/api/v1/spoolman/inventory/spools")
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_tag_uid_16char_maps_correctly(
         self,
         async_client: AsyncClient,
@@ -502,6 +518,51 @@ class TestSpoolmanInventoryCRUD:
         assert response.status_code == 503
 
 
+class TestSpoolmanInventoryCostPerKg:
+    """Tests for the two-step cost_per_kg create path (PT-C2)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_spool_with_cost_per_kg_calls_price_update(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """POST with cost_per_kg calls update_spool_full with price= after creation."""
+        from unittest.mock import AsyncMock
+
+        mock_spoolman_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
+
+        payload = {
+            "material": "PLA",
+            "brand": "Bambu Lab",
+            "label_weight": 1000,
+            "cost_per_kg": 24.99,
+        }
+        resp = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert resp.status_code == 200
+        # update_spool_full must have been called with price=24.99
+        calls = [
+            c
+            for c in mock_spoolman_client.update_spool_full.call_args_list
+            if c.kwargs.get("price") == 24.99 or (c.args and 24.99 in c.args)
+        ]
+        assert len(calls) >= 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_spool_without_cost_per_kg_skips_price_update(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """POST without cost_per_kg does not call update_spool_full."""
+        from unittest.mock import AsyncMock
+
+        mock_spoolman_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
+
+        payload = {"material": "PLA", "brand": "Bambu Lab", "label_weight": 1000}
+        resp = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert resp.status_code == 200
+        mock_spoolman_client.update_spool_full.assert_not_called()
+
+
 class TestSpoolmanInventoryInputValidation:
     """Tests for input validation added as security hardening."""
 
@@ -628,6 +689,47 @@ class TestSpoolmanInventoryInputValidation:
         payload = {"tray_uuid": "B" * 65}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("uuid_len", [16, 31])
+    async def test_update_rejects_tray_uuid_too_short(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+        uuid_len: int,
+    ):
+        """tray_uuid shorter than 32 chars is rejected (min_length=max_length=32)."""
+        payload = {"tray_uuid": "A" * uuid_len}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_rejects_rgba_nine_chars(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """rgba must be max 8 hex chars; 9-char value is rejected with 422."""
+        payload = {"rgba": "FF0000FFA"}  # 9 chars
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tag_uid_below_min_length_rejected(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """tag_uid shorter than 8 hex chars is rejected with 422 (PT-I5)."""
+        payload = {"tag_uid": "AABBCC"}  # 6 chars, below min_length=8
+        resp = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert resp.status_code == 422
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1343,6 +1445,7 @@ class TestMergeSpoolExtraPreservesKeys:
         client = SpoolmanClient.__new__(SpoolmanClient)
         client.base_url = "http://localhost:7912"
         client.api_url = "http://localhost:7912/api/v1"
+        client._extra_locks = {}
 
         async def _mock_get(spool_id):
             return existing_spool
@@ -1363,3 +1466,59 @@ class TestMergeSpoolExtraPreservesKeys:
         assert _mock_update.captured_extra.get("custom_key") == "keep_me"
         assert _mock_update.captured_extra.get("tag") == '"new"'
         assert result is not None
+
+
+class TestGetClientValueError:
+    """Test the ValueError branch in _get_client when init_spoolman_client fails (Gap 5)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_returns_400_when_init_spoolman_client_raises_value_error(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """If init_spoolman_client raises ValueError after SSRF check passes, return HTTP 400."""
+        with (
+            patch(
+                "backend.app.api.routes.spoolman_inventory.get_spoolman_client",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "backend.app.api.routes.spoolman_inventory.init_spoolman_client",
+                AsyncMock(side_effect=ValueError("unsupported scheme")),
+            ),
+        ):
+            resp = await async_client.get("/api/v1/spoolman/inventory/spools")
+        assert resp.status_code == 400
+        assert "unsupported scheme" in resp.json()["detail"]
+
+
+class TestBulkCreateWithPriceFailure:
+    """Test that bulk create succeeds even when price update fails (Gap 6)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_create_succeeds_when_price_update_fails(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Bulk create returns 200 even if update_spool_full (price) raises SpoolmanUnavailableError."""
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+
+        mock_spoolman_client.update_spool_full = AsyncMock(side_effect=SpoolmanUnavailableError("price server down"))
+        mock_spoolman_client.create_spool = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
+
+        payload = {
+            "spool": {
+                "material": "PLA",
+                "brand": "Bambu Lab",
+                "label_weight": 1000,
+                "cost_per_kg": 19.99,
+            },
+            "quantity": 2,
+        }
+        resp = await async_client.post("/api/v1/spoolman/inventory/spools/bulk", json=payload)
+        # Price update failure must not abort the bulk create
+        assert resp.status_code in (200, 207)
+        # Both spools must have been created
+        assert mock_spoolman_client.create_spool.call_count == 2
+        # Price update was attempted for each
+        assert mock_spoolman_client.update_spool_full.call_count == 2

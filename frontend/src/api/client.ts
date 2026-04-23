@@ -4247,7 +4247,7 @@ export const api = {
     data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>,
     quantity: number,
   ) =>
-    request<SpoolmanBulkCreateResult>('/spoolman/inventory/spools/bulk', {
+    request<SpoolmanBulkCreateResult | InventorySpool[]>('/spoolman/inventory/spools/bulk', {
       method: 'POST',
       body: JSON.stringify({ spool: data, quantity }),
     }),

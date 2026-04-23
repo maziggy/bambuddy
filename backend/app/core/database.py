@@ -1205,6 +1205,9 @@ async def run_migrations(conn):
     # Migration: Add system_stats JSON blob column to spoolbuddy_devices
     await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN system_stats TEXT")
 
+    # Migration: Add SSH host key for TOFU verification (H1 security fix)
+    await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN ssh_host_key VARCHAR(500)")
+
     # Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
     # Labels are now keyed by AMS serial number so they persist when the AMS is moved to another printer.
     # PostgreSQL gets the correct schema from create_all(), so skip this

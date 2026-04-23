@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Unlink } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, SpoolmanBulkCreateResult } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
@@ -17,6 +17,8 @@ import { PAProfileSection } from './spool-form/PAProfileSection';
 import { SpoolUsageHistory } from './SpoolUsageHistory';
 
 type TabId = 'filament' | 'pa-profile';
+
+const CLEAR_TAG_PAYLOAD = { tag_uid: null, tray_uuid: null, tag_type: null, data_origin: null };
 
 interface SpoolFormModalProps {
   isOpen: boolean;
@@ -84,9 +86,7 @@ export function SpoolFormModal({
     : fetchedCalibrations;
 
   // Count selected PA profiles for tab badge
-  const selectedProfileCount = useMemo(() => {
-    return selectedProfiles.size;
-  }, [selectedProfiles]);
+  const selectedProfileCount = selectedProfiles.size;
 
   // Load recent colors on mount
   useEffect(() => {
@@ -348,7 +348,11 @@ export function SpoolFormModal({
       onClose();
     },
     onError: (error: Error) => {
-      showToast(error.message, 'error');
+      if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.saveFailed'), 'error');
+      }
     },
   });
 
@@ -393,7 +397,11 @@ export function SpoolFormModal({
       onClose();
     },
     onError: (error: Error) => {
-      showToast(error.message, 'error');
+      if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.saveFailed'), 'error');
+      }
     },
   });
 
@@ -411,16 +419,20 @@ export function SpoolFormModal({
       onClose();
     },
     onError: (error: Error) => {
-      showToast(error.message, 'error');
+      if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.saveFailed'), 'error');
+      }
     },
   });
 
   const deleteTagMutation = useMutation({
     mutationFn: () => {
       if (spoolmanMode) {
-        return api.updateSpoolmanInventorySpool(spool!.id, { tag_uid: null, tray_uuid: null, tag_type: null, data_origin: null } as Parameters<typeof api.updateSpoolmanInventorySpool>[1]);
+        return api.updateSpoolmanInventorySpool(spool!.id, CLEAR_TAG_PAYLOAD as Parameters<typeof api.updateSpoolmanInventorySpool>[1]);
       }
-      return api.updateSpool(spool!.id, { tag_uid: null, tray_uuid: null, tag_type: null, data_origin: null } as Parameters<typeof api.updateSpool>[1]);
+      return api.updateSpool(spool!.id, CLEAR_TAG_PAYLOAD as Parameters<typeof api.updateSpool>[1]);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
@@ -428,7 +440,11 @@ export function SpoolFormModal({
       onClose();
     },
     onError: (error: Error) => {
-      showToast(error.message, 'error');
+      if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.tagClearFailed'), 'error');
+      }
     },
   });
 
@@ -461,8 +477,9 @@ export function SpoolFormModal({
       // Clear existing K-profiles
       try {
         await api.saveSpoolKProfiles(spoolId, []);
-      } catch {
-        // Ignore
+      } catch (e) {
+        console.error('Failed to save K-profiles:', e);
+        showToast(t('inventory.kProfileSaveFailed'), 'warning');
       }
       return;
     }
@@ -497,6 +514,7 @@ export function SpoolFormModal({
         await api.saveSpoolKProfiles(spoolId, profiles);
       } catch (e) {
         console.error('Failed to save K-profiles:', e);
+        showToast(t('inventory.kProfileSaveFailed'), 'warning');
       }
     }
   };

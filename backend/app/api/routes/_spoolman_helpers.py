@@ -74,6 +74,7 @@ def assert_safe_spoolman_url(url: str) -> None:
 
 
 _COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
+_TAG_HEX_RE = re.compile(r"^[0-9A-F]+$")
 
 
 def _safe_int(value: object, fallback: int) -> int:
@@ -146,9 +147,8 @@ def _map_spoolman_spool(spool: dict) -> dict:
     # 32-char hex → Bambu Lab tray UUID; 8–30-char hex → NFC tag UID.
     # Accepting the full realistic UID range (4-byte = 8 chars, 7-byte = 14 chars,
     # 10-byte = 20 chars) avoids silently dropping valid SpoolBuddy-written tags.
-    _HEX = frozenset("0123456789ABCDEF")
     raw_tag: str = (extra.get("tag") or "").strip('"').upper()
-    _raw_is_hex = bool(raw_tag) and all(c in _HEX for c in raw_tag)
+    _raw_is_hex = bool(_TAG_HEX_RE.match(raw_tag))
     tag_uid = raw_tag if _raw_is_hex and 8 <= len(raw_tag) <= 30 else None
     tray_uuid = raw_tag if _raw_is_hex and len(raw_tag) == 32 else None
 
@@ -205,6 +205,8 @@ def _map_spoolman_spool(spool: dict) -> dict:
         "note": spool.get("comment") or None,
         "added_full": None,
         "last_used": spool.get("last_used"),
+        # encode_time semantics differ: local records NFC write time; Spoolman first_used
+        # records first print use — different events; using first_used as best available proxy.
         "encode_time": spool.get("first_used"),
         "tag_uid": tag_uid,
         "tray_uuid": tray_uuid,

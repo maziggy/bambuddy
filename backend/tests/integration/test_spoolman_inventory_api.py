@@ -441,6 +441,66 @@ class TestSpoolmanInventoryCRUD:
         assert result["weight_used"] == 400.0
         mock_spoolman_client.update_spool_full.assert_called_once_with(spool_id=42, remaining_weight=600.0)
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_spool_returns_404_on_not_found(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """PATCH returns 404 when update_spool_full raises SpoolmanNotFoundError (I2)."""
+        from backend.app.services.spoolman import SpoolmanNotFoundError
+
+        mock_spoolman_client.update_spool_full.side_effect = SpoolmanNotFoundError("gone")
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json={"note": "x"})
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_spool_returns_503_on_unavailable(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """PATCH returns 503 when update_spool_full raises SpoolmanUnavailableError (I2)."""
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+
+        mock_spoolman_client.update_spool_full.side_effect = SpoolmanUnavailableError("down")
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json={"note": "x"})
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_weight_returns_404_on_not_found(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """PATCH /weight returns 404 when update_spool_full raises SpoolmanNotFoundError (I2)."""
+        from backend.app.services.spoolman import SpoolmanNotFoundError
+
+        mock_spoolman_client.update_spool_full.side_effect = SpoolmanNotFoundError("gone")
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42/weight", json={"weight_grams": 500.0})
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_weight_returns_503_on_unavailable(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """PATCH /weight returns 503 when update_spool_full raises SpoolmanUnavailableError (I2)."""
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+
+        mock_spoolman_client.update_spool_full.side_effect = SpoolmanUnavailableError("down")
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42/weight", json={"weight_grams": 500.0})
+        assert response.status_code == 503
+
 
 class TestSpoolmanInventoryInputValidation:
     """Tests for input validation added as security hardening."""
@@ -551,7 +611,7 @@ class TestSpoolmanInventoryInputValidation:
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """tag_uid longer than 32 chars is rejected with 422 (DB VARCHAR(32) cap)."""
+        """tag_uid longer than 30 chars is rejected with 422 (NFC UID max 10 bytes = 20 hex chars, capped at 30)."""
         payload = {"tag_uid": "A" * 65}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 422
@@ -564,7 +624,7 @@ class TestSpoolmanInventoryInputValidation:
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """tray_uuid longer than 64 chars is rejected with 422."""
+        """tray_uuid longer than 32 chars is rejected with 422."""
         payload = {"tray_uuid": "B" * 65}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 422
@@ -757,6 +817,63 @@ class TestStorageLocationPassthrough:
         assert kwargs.get("clear_location") is True
 
 
+class TestColorNamePassthrough:
+    """color_name is forwarded to find_or_create_filament on create and update (B6 / T5)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_passes_color_name_to_filament(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """color_name from the create payload is forwarded to find_or_create_filament."""
+        payload = {
+            "material": "PLA",
+            "label_weight": 1000,
+            "weight_used": 0,
+            "color_name": "Bambu Green",
+        }
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 200
+        mock_spoolman_client.find_or_create_filament.assert_called_once()
+        _, kwargs = mock_spoolman_client.find_or_create_filament.call_args
+        assert kwargs.get("color_name") == "Bambu Green"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_passes_color_name_to_filament(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """color_name from the update payload is forwarded to find_or_create_filament."""
+        payload = {"color_name": "Jade White"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        mock_spoolman_client.find_or_create_filament.assert_called_once()
+        _, kwargs = mock_spoolman_client.find_or_create_filament.call_args
+        assert kwargs.get("color_name") == "Jade White"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_omits_color_name_when_not_provided(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """When color_name is not in the PATCH payload, the existing filament color_name is used."""
+        payload = {"note": "no color_name here"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        _, kwargs = mock_spoolman_client.find_or_create_filament.call_args
+        # color_name falls back to current filament's color_name (which is None in test fixture)
+        assert kwargs.get("color_name") is None
+
+
 class TestSpoolmanInventoryAuth:
     """Write/delete endpoints require INVENTORY_UPDATE when auth is enabled."""
 
@@ -932,9 +1049,10 @@ class TestSpoolmanInventorySecurityExtras:
     @pytest.mark.parametrize(
         "tag_uid,expected_status",
         [
-            ("A" * 32, 200),  # exactly at DB VARCHAR(32) limit — valid
+            ("A" * 30, 200),  # exactly at NFC UID cap — valid
             ("DEADBEEF12345678", 200),  # 16-char backward compat — valid
-            ("A" * 33, 422),  # one over limit — rejected by Pydantic max_length=32
+            ("A" * 31, 422),  # one over limit — rejected by Pydantic max_length=30
+            ("A" * 32, 422),  # tray_uuid-length value rejected in tag_uid field
         ],
     )
     async def test_tag_uid_length_boundary(
@@ -945,7 +1063,7 @@ class TestSpoolmanInventorySecurityExtras:
         tag_uid: str,
         expected_status: int,
     ):
-        """I11: tag_uid boundary — 32 chars valid (matches DB VARCHAR(32)), 33 rejected."""
+        """tag_uid boundary — 30 chars valid (NFC UID max), 31+ rejected."""
         payload = {"tag_uid": tag_uid}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == expected_status, (
@@ -1010,6 +1128,46 @@ class TestTagClearPreservesExtraKeys:
         assert sent_extra is not None, "extra must be sent when tag is cleared"
         assert "tag" not in sent_extra, "tag key must be removed when tag_uid is cleared"
         assert sent_extra.get("custom_key") == "keep_me", "unrelated extra keys must survive"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tag_clear_refetches_spool_inside_lock(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """B7: tag-clear does a fresh get_spool() re-fetch inside the lock, not the stale one.
+
+        Simulates a write that changes extra between the initial get_spool (used for
+        other field resolution) and the lock acquisition.  The extra sent to
+        update_spool_full must come from the second (in-lock) fetch, not the first.
+        """
+        stale_extra = {"tag": '"AABBCCDD"', "custom_key": "stale_value"}
+        fresh_extra = {"tag": '"AABBCCDD"', "custom_key": "fresh_value"}
+
+        stale_spool = {**SAMPLE_SPOOLMAN_SPOOL, "extra": stale_extra}
+        fresh_spool = {**SAMPLE_SPOOLMAN_SPOOL, "extra": fresh_extra}
+
+        # First call returns stale; second call (inside lock) returns fresh
+        mock_spoolman_client.get_spool = AsyncMock(side_effect=[stale_spool, fresh_spool])
+        mock_spoolman_client.update_spool_full = AsyncMock(return_value=fresh_spool)
+
+        response = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42",
+            json={"tag_uid": None, "tray_uuid": None},
+        )
+        assert response.status_code == 200
+
+        # get_spool called twice: once for field resolution, once for fresh extra fetch
+        assert mock_spoolman_client.get_spool.call_count == 2
+
+        _, kwargs = mock_spoolman_client.update_spool_full.call_args
+        sent_extra = kwargs.get("extra")
+        assert sent_extra is not None
+        assert "tag" not in sent_extra
+        # custom_key must come from the fresh re-fetch, not the stale first fetch
+        assert sent_extra.get("custom_key") == "fresh_value"
 
 
 class TestSpoolmanInventorySSRFSpoolBuddyPath:
@@ -1076,21 +1234,31 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
         """SSRF: write-result with unsafe Spoolman URL must not proxy to the evil host.
 
         write-result calls Spoolman to write-back the tag UID when data_origin='spoolman'.
-        With an SSRF URL, _get_spoolman_client_or_none returns None so the call is skipped.
+        With an SSRF URL, _get_spoolman_client_or_none returns None so the call is skipped
+        and the route returns 502 (tag written but link not persisted — not a server crash).
         """
+        import json as _json
+
         from backend.app.models.settings import Settings
+        from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
 
         db_session.add(Settings(key="spoolman_enabled", value="true"))
         db_session.add(Settings(key="spoolman_url", value=evil_url))
+        # Register the device so the route doesn't 404 before reaching the SSRF guard.
+        db_session.add(
+            SpoolBuddyDevice(
+                device_id="sb-ssrf-wr",
+                hostname="sb-ssrf-wr.local",
+                ip_address="127.0.0.1",
+                pending_command="write_tag",
+                pending_write_payload=_json.dumps({"spool_id": 99, "ndef_data_hex": "DEAD", "data_origin": "spoolman"}),
+            )
+        )
         await db_session.commit()
 
         from unittest.mock import AsyncMock, patch
 
-        with (
-            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
-            patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=None)),
-            patch("backend.app.services.spoolman.init_spoolman_client", AsyncMock(return_value=None)),
-        ):
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
             resp = await async_client.post(
                 "/api/v1/spoolbuddy/nfc/write-result",
@@ -1102,8 +1270,9 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
                 },
             )
 
-        # Must not crash or attempt to contact the SSRF host
-        assert resp.status_code in (200, 404)
+        # 502 = tag written to NFC but Spoolman link not persisted (SSRF guard blocked it).
+        # Must not be 500 (crash) and must not have proxied to the evil host.
+        assert resp.status_code == 502
 
     @pytest.mark.asyncio
     @pytest.mark.integration

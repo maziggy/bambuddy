@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Unlink } from 'lucide-react';
 import { api } from '../api/client';
-import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset } from '../api/client';
+import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, SpoolmanBulkCreateResult } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
@@ -357,15 +357,34 @@ export function SpoolFormModal({
       spoolmanMode
         ? api.bulkCreateSpoolmanInventorySpools(data as Parameters<typeof api.bulkCreateSpoolmanInventorySpools>[0], qty)
         : api.bulkCreateSpools(data as Parameters<typeof api.bulkCreateSpools>[0], qty),
-    onSuccess: async (newSpools) => {
+    onSuccess: async (result) => {
+      // Spoolman bulk-create returns SpoolmanBulkCreateResult (207); local returns InventorySpool[]
+      const isSpoolmanResult = spoolmanMode && result !== null && 'created' in result;
+      const createdSpools: InventorySpool[] = isSpoolmanResult
+        ? (result as SpoolmanBulkCreateResult).created
+        : (result as InventorySpool[]);
+      const failedCount: number = isSpoolmanResult
+        ? (result as SpoolmanBulkCreateResult).failed_count
+        : 0;
+
       if (!spoolmanMode && selectedProfiles.size > 0) {
-        for (const s of newSpools) {
+        for (const s of createdSpools) {
           await saveKProfiles(s.id);
         }
       }
       await queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
-      if (onSpoolsCreated) onSpoolsCreated(newSpools);
-      showToast(t('inventory.spoolsCreated', { count: newSpools.length }), 'success');
+      if (onSpoolsCreated) onSpoolsCreated(createdSpools);
+      if (failedCount > 0) {
+        showToast(
+          t('inventory.spoolsPartiallyCreated', {
+            created: createdSpools.length,
+            total: (result as SpoolmanBulkCreateResult).requested_count,
+          }),
+          'warning',
+        );
+      } else {
+        showToast(t('inventory.spoolsCreated', { count: createdSpools.length }), 'success');
+      }
       onClose();
     },
     onError: (error: Error) => {

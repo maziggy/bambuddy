@@ -3246,6 +3246,7 @@ export default {
     stock: 'Stock',
     configured: 'Configuré',
     spoolsCreated: '{{count}} bobines créées',
+    spoolsPartiallyCreated: '{{created}} sur {{total}} bobines créées (certaines ont échoué)',
     spoolCreated: 'Bobine créée',
     spoolUpdated: 'Bobine mise à jour',
     spoolDeleted: 'Bobine supprimée',

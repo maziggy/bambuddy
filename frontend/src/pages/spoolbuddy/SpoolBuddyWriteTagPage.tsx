@@ -167,7 +167,9 @@ export function SpoolBuddyWriteTagPage() {
     try {
       const resp = await spoolbuddyApi.writeTag(device.device_id, selectedSpool.id);
       if (resp?.warnings?.length) {
-        showToast(t('spoolbuddy.writeTag.incompleteDataWarning', 'Tag written with incomplete Spoolman data'), 'warning');
+        for (const w of resp.warnings) {
+          showToast(w, 'warning');
+        }
       }
     } catch {
       setWriteStatus('error');

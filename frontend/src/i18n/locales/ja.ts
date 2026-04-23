@@ -3284,6 +3284,7 @@ export default {
     stock: '在庫',
     configured: '設定済み',
     spoolsCreated: '{{count}}本のスプールを作成しました',
+    spoolsPartiallyCreated: '{{total}}本中{{created}}本のスプールを作成しました（一部失敗）',
     spoolCreated: 'スプールを作成しました',
     spoolUpdated: 'スプールを更新しました',
     spoolDeleted: 'スプールを削除しました',

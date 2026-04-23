@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.app.services.spoolman import SpoolmanClient
+from backend.app.services.spoolman import SpoolmanClient, SpoolmanUnavailableError
 
 
 @pytest.fixture
@@ -112,21 +112,23 @@ class TestGetAllSpools:
 
 class TestDeleteSpool:
     @pytest.mark.asyncio
-    async def test_returns_true_on_success(self, client):
+    async def test_returns_none_on_success(self, client):
         mock_http = AsyncMock()
         mock_http.delete = AsyncMock(return_value=_make_response(None))
         with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
             result = await client.delete_spool(42)
-        assert result is True
+        assert result is None
         mock_http.delete.assert_called_once_with("http://localhost:7912/api/v1/spool/42")
 
     @pytest.mark.asyncio
-    async def test_returns_false_on_error(self, client):
+    async def test_raises_unavailable_on_error(self, client):
         mock_http = AsyncMock()
         mock_http.delete = AsyncMock(side_effect=Exception("server error"))
-        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
-            result = await client.delete_spool(42)
-        assert result is False
+        with (
+            patch.object(client, "_get_client", AsyncMock(return_value=mock_http)),
+            pytest.raises(SpoolmanUnavailableError),
+        ):
+            await client.delete_spool(42)
 
 
 # ---------------------------------------------------------------------------
@@ -162,12 +164,14 @@ class TestSetSpoolArchived:
         )
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_error(self, client):
+    async def test_raises_unavailable_on_error(self, client):
         mock_http = AsyncMock()
         mock_http.patch = AsyncMock(side_effect=Exception("timeout"))
-        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
-            result = await client.set_spool_archived(42, archived=True)
-        assert result is None
+        with (
+            patch.object(client, "_get_client", AsyncMock(return_value=mock_http)),
+            pytest.raises(SpoolmanUnavailableError),
+        ):
+            await client.set_spool_archived(42, archived=True)
 
 
 # ---------------------------------------------------------------------------
@@ -213,12 +217,14 @@ class TestUpdateSpoolFull:
         assert call_json == {"comment": None}
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_error(self, client):
+    async def test_raises_unavailable_on_error(self, client):
         mock_http = AsyncMock()
         mock_http.patch = AsyncMock(side_effect=Exception("network"))
-        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
-            result = await client.update_spool_full(42, remaining_weight=500.0)
-        assert result is None
+        with (
+            patch.object(client, "_get_client", AsyncMock(return_value=mock_http)),
+            pytest.raises(SpoolmanUnavailableError),
+        ):
+            await client.update_spool_full(42, remaining_weight=500.0)
 
 
 # ---------------------------------------------------------------------------

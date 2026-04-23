@@ -3259,6 +3259,7 @@ export default {
     stock: 'Estoque',
     configured: 'Configurado',
     spoolsCreated: '{{count}} carretéis criados',
+    spoolsPartiallyCreated: '{{created}} de {{total}} carretéis criados (alguns falharam)',
     spoolCreated: 'Carretel criado',
     spoolUpdated: 'Carretel atualizado',
     spoolDeleted: 'Carretel excluído',

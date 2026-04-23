@@ -3316,6 +3316,7 @@ export default {
     stock: '库存',
     configured: '已配置',
     spoolsCreated: '已创建 {{count}} 个耗材',
+    spoolsPartiallyCreated: '已创建 {{created}} / {{total}} 个耗材（部分失败）',
     spoolCreated: '耗材已创建',
     spoolUpdated: '耗材已更新',
     spoolDeleted: '耗材已删除',

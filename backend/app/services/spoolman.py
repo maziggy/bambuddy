@@ -286,6 +286,7 @@ class SpoolmanClient:
         vendor_id: int | None = None,
         material: str | None = None,
         color_hex: str | None = None,
+        color_name: str | None = None,
         weight: float | None = None,
         diameter: float = 1.75,
         density: float | None = None,
@@ -297,6 +298,7 @@ class SpoolmanClient:
             vendor_id: Vendor ID
             material: Material type (PLA, PETG, etc.)
             color_hex: Color in hex format (without #)
+            color_name: Human-readable colour name (e.g. "Bambu Green")
             weight: Net weight in grams
             diameter: Filament diameter in mm (default 1.75)
             density: Filament density in g/cm³ (auto-calculated if not provided)
@@ -327,6 +329,8 @@ class SpoolmanClient:
                 # Strip alpha channel if present (RRGGBBAA -> RRGGBB)
                 color_hex = color_hex[:6] if len(color_hex) >= 6 else color_hex
                 data["color_hex"] = color_hex
+            if color_name:
+                data["color_name"] = color_name
             if weight:
                 data["weight"] = weight
 
@@ -546,7 +550,7 @@ class SpoolmanClient:
         location: str | None = None,
         clear_location: bool = False,
         extra: dict | None = None,
-    ) -> dict | None:
+    ) -> dict:
         """Update a spool in Spoolman with comprehensive field support.
 
         Unlike update_spool, this method does not auto-set last_used and
@@ -563,32 +567,40 @@ class SpoolmanClient:
             extra: Extra fields dict to merge
 
         Returns:
-            Updated spool dictionary or None on failure.
-        """
-        try:
-            data: dict = {}
-            if filament_id is not None:
-                data["filament_id"] = filament_id
-            if remaining_weight is not None:
-                data["remaining_weight"] = remaining_weight
-            if comment is not None:
-                data["comment"] = comment if comment else None
-            if price is not None:
-                data["price"] = price
-            if clear_location:
-                data["location"] = None
-            elif location is not None:
-                data["location"] = location
-            if extra is not None:
-                data["extra"] = extra
+            Updated spool dictionary.
 
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist (HTTP 404).
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
+        """
+        data: dict = {}
+        if filament_id is not None:
+            data["filament_id"] = filament_id
+        if remaining_weight is not None:
+            data["remaining_weight"] = remaining_weight
+        if comment is not None:
+            data["comment"] = comment if comment else None
+        if price is not None:
+            data["price"] = price
+        if clear_location:
+            data["location"] = None
+        elif location is not None:
+            data["location"] = location
+        if extra is not None:
+            data["extra"] = extra
+
+        try:
             client = await self._get_client()
             response = await client.patch(f"{self.api_url}/spool/{spool_id}", json=data)
+            if response.status_code == 404:
+                raise SpoolmanNotFoundError(f"Spool {spool_id} not found in Spoolman")
             response.raise_for_status()
             return response.json()
+        except SpoolmanNotFoundError:
+            raise
         except Exception as e:
             logger.error("Failed to update spool %s in Spoolman: %s", spool_id, e)
-            return None
+            raise SpoolmanUnavailableError(f"Failed to update spool {spool_id}") from e
 
     def _extra_lock(self, spool_id: int) -> asyncio.Lock:
         """Return (creating if needed) the per-spool lock used by merge_spool_extra."""
@@ -620,12 +632,7 @@ class SpoolmanClient:
             current = await self.get_spool(spool_id)  # raises on error
             current_extra: dict = current.get("extra") or {}
             merged = {**current_extra, **new_fields}
-            updated = await self.update_spool_full(spool_id=spool_id, extra=merged)
-            if updated is None:
-                raise SpoolmanUnavailableError(
-                    f"Spoolman PATCH for spool {spool_id} failed (server error or spool deleted)"
-                )
-            return updated
+            return await self.update_spool_full(spool_id=spool_id, extra=merged)
 
     async def find_or_create_vendor(self, name: str) -> int | None:
         """Find an existing vendor by name or create a new one.
@@ -651,6 +658,7 @@ class SpoolmanClient:
         brand: str | None,
         color_hex: str,
         label_weight: int,
+        color_name: str | None = None,
     ) -> int | None:
         """Find a matching filament in Spoolman or create a new one.
 
@@ -663,6 +671,7 @@ class SpoolmanClient:
             brand: Vendor/brand name; None skips vendor matching
             color_hex: 6-char hex colour string (RRGGBB, no #)
             label_weight: Net spool weight in grams
+            color_name: Human-readable colour name passed to create_filament when creating
 
         Returns:
             Filament ID or None on failure.
@@ -695,6 +704,7 @@ class SpoolmanClient:
             vendor_id=vendor_id,
             material=material,
             color_hex=color,
+            color_name=color_name,
             weight=float(label_weight),
         )
         return filament["id"] if filament else None
@@ -1250,7 +1260,14 @@ async def init_spoolman_client(url: str) -> SpoolmanClient:
 
     Returns:
         Initialized SpoolmanClient instance.
+
+    Raises:
+        ValueError: If *url* is rejected by the SSRF guard.
     """
+    from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
+
+    assert_safe_spoolman_url(url)
+
     global _spoolman_client
     if _spoolman_client:
         await _spoolman_client.close()

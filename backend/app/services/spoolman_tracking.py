@@ -312,7 +312,11 @@ async def _get_spoolman_client_with_fallback():
 
             spoolman_url = await get_setting(db, "spoolman_url")
             if spoolman_url:
-                client = await init_spoolman_client(spoolman_url)
+                try:
+                    client = await init_spoolman_client(spoolman_url)
+                except ValueError:
+                    logger.warning("Spoolman URL rejected by SSRF guard: %s", spoolman_url)
+                    return None
 
     if not client or not await client.health_check():
         return None

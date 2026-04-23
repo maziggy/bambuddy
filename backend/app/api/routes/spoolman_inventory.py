@@ -46,6 +46,11 @@ _health_check_cache: dict[str, float] = {}
 _HEALTH_CHECK_TTL = 30.0  # seconds
 
 
+def _tag_cleared(val: str | None) -> bool:
+    """Return True when a PATCH field explicitly removes a tag (null or empty string)."""
+    return val is None or val == ""
+
+
 async def _get_client(db: AsyncSession) -> SpoolmanClient:
     """Return an authenticated Spoolman client or raise an HTTP error."""
     result = await db.execute(select(Settings))
@@ -114,6 +119,7 @@ class SpoolmanInventoryCreate(BaseModel):
     material: str = Field(..., min_length=1, max_length=64)
     subtype: str | None = Field(None, max_length=64)
     brand: str | None = Field(None, max_length=128)
+    color_name: str | None = Field(None, max_length=64)
     rgba: str | None = Field(None, max_length=9)
     label_weight: int = Field(1000, ge=1, le=100_000)
     core_weight: int = Field(250, ge=0, le=10_000)
@@ -143,13 +149,14 @@ class SpoolmanInventoryUpdate(BaseModel):
     material: str | None = Field(None, min_length=1, max_length=64)
     subtype: str | None = Field(None, max_length=64)
     brand: str | None = Field(None, max_length=128)
+    color_name: str | None = Field(None, max_length=64)
     rgba: str | None = Field(None, max_length=9)
     label_weight: int | None = Field(None, ge=1, le=100_000)
     core_weight: int | None = Field(None, ge=0, le=10_000)
     weight_used: float | None = Field(None, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
-    tag_uid: str | None = Field(None, max_length=32, pattern=r"^[0-9A-Fa-f]+$")
+    tag_uid: str | None = Field(None, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
     tray_uuid: str | None = Field(None, max_length=32, pattern=r"^[0-9A-Fa-f]+$")
     storage_location: str | None = Field(None, max_length=255)
 
@@ -243,6 +250,7 @@ async def create_spool(
         brand=data.brand,
         color_hex=color_hex,
         label_weight=data.label_weight,
+        color_name=data.color_name,
     )
     if not filament_id:
         raise HTTPException(status_code=500, detail="Failed to find or create filament in Spoolman")
@@ -344,6 +352,7 @@ async def update_spool(
     material = data.material if data.material is not None else cur_mat
     subtype = data.subtype if data.subtype is not None else cur_subtype
     brand = data.brand if data.brand is not None else (cur_vendor.get("name") or None)
+    color_name = data.color_name if data.color_name is not None else (cur_filament.get("color_name") or None)
     cur_color = (cur_filament.get("color_hex") or "808080").upper().removeprefix("#")
     rgba = data.rgba if data.rgba is not None else (cur_color + "FF")
     label_weight = data.label_weight if data.label_weight is not None else int(cur_filament.get("weight") or 1000)
@@ -359,43 +368,54 @@ async def update_spool(
         brand=brand,
         color_hex=color_hex,
         label_weight=label_weight,
+        color_name=color_name,
     )
     if not filament_id:
         raise HTTPException(status_code=500, detail="Failed to find or create filament in Spoolman")
 
     remaining = max(0.0, label_weight - weight_used)
 
-    # When the caller explicitly sets tag_uid/tray_uuid to null or empty string
-    # (i.e. tag removal), fetch the current extra dict, drop only the "tag" key,
-    # and PATCH the remainder.  Sending extra={} wholesale would destroy any other
-    # custom Spoolman extra fields the user has set outside Bambuddy.
-    def _tag_cleared(val: str | None) -> bool:
-        return val is None or val == ""
-
+    # Tag removal: clear only the "tag" key so other custom Spoolman extra fields
+    # set outside Bambuddy are preserved.
     tag_nulled = (
         ("tag_uid" in data.model_fields_set or "tray_uuid" in data.model_fields_set)
         and _tag_cleared(data.tag_uid)
         and _tag_cleared(data.tray_uuid)
     )
-    if tag_nulled:
-        cur_extra = dict(current.get("extra") or {})
-        cur_extra.pop("tag", None)
-        extra: dict | None = cur_extra
-    else:
-        extra = None
 
-    updated = await client.update_spool_full(
-        spool_id=spool_id,
-        filament_id=filament_id,
-        remaining_weight=remaining,
-        comment=note or "",
-        price=data.cost_per_kg,
-        extra=extra,
-        location=storage_location or None,
-        clear_location=storage_location_changed and not storage_location,
-    )
-    if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update spool in Spoolman")
+    # Serialise tag-clear + PATCH under the per-spool extra lock to prevent a
+    # concurrent merge_spool_extra call (e.g. NFC write-back) from overwriting
+    # the tag key between our read and our write.
+    async with client._extra_lock(spool_id):
+        if tag_nulled:
+            # Re-fetch inside the lock so we work with fresh extra data.
+            try:
+                fresh = await client.get_spool(spool_id)
+            except SpoolmanNotFoundError:
+                raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+            except SpoolmanUnavailableError:
+                raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
+            cur_extra = dict(fresh.get("extra") or {})
+            cur_extra.pop("tag", None)
+            extra: dict | None = cur_extra
+        else:
+            extra = None
+
+        try:
+            updated = await client.update_spool_full(
+                spool_id=spool_id,
+                filament_id=filament_id,
+                remaining_weight=remaining,
+                comment=note or "",
+                price=data.cost_per_kg,
+                extra=extra,
+                location=storage_location or None,
+                clear_location=storage_location_changed and not storage_location,
+            )
+        except SpoolmanNotFoundError:
+            raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+        except SpoolmanUnavailableError:
+            raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
     return _map_spoolman_spool(updated)
 
@@ -478,9 +498,12 @@ async def sync_spool_weight(
     core_weight = _safe_float(cur_filament.get("spool_weight"), 250.0)
     remaining = max(0.0, data.weight_grams - core_weight)
 
-    updated = await client.update_spool_full(spool_id=spool_id, remaining_weight=remaining)
-    if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update spool weight in Spoolman")
+    try:
+        updated = await client.update_spool_full(spool_id=spool_id, remaining_weight=remaining)
+    except SpoolmanNotFoundError:
+        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanUnavailableError:
+        raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
     upd_filament = updated.get("filament") or {}
     label_weight = _safe_int(upd_filament.get("weight"), 1000)

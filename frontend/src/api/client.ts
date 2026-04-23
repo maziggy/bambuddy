@@ -2124,6 +2124,12 @@ export interface InventorySpool {
   storage_location?: string | null;
 }
 
+export interface SpoolmanBulkCreateResult {
+  created: InventorySpool[];
+  requested_count: number;
+  failed_count: number;
+}
+
 export interface SpoolUsageRecord {
   id: number;
   spool_id: number;
@@ -4241,7 +4247,7 @@ export const api = {
     data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>,
     quantity: number,
   ) =>
-    request<InventorySpool[]>('/spoolman/inventory/spools/bulk', {
+    request<SpoolmanBulkCreateResult>('/spoolman/inventory/spools/bulk', {
       method: 'POST',
       body: JSON.stringify({ spool: data, quantity }),
     }),

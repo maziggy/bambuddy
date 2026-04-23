@@ -3245,6 +3245,7 @@ export default {
     stock: 'Scorta',
     configured: 'Configurata',
     spoolsCreated: '{{count}} bobine create',
+    spoolsPartiallyCreated: '{{created}} di {{total}} bobine create (alcune non riuscite)',
     spoolCreated: 'Bobina creata',
     spoolUpdated: 'Bobina aggiornata',
     spoolDeleted: 'Bobina eliminata',

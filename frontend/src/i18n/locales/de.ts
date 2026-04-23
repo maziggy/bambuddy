@@ -3324,6 +3324,7 @@ export default {
     stock: 'Lager',
     configured: 'Konfiguriert',
     spoolsCreated: '{{count}} Spulen erstellt',
+    spoolsPartiallyCreated: '{{created}} von {{total}} Spulen erstellt (einige fehlgeschlagen)',
     spoolCreated: 'Spule erstellt',
     spoolUpdated: 'Spule aktualisiert',
     spoolDeleted: 'Spule gelöscht',

@@ -3327,6 +3327,7 @@ export default {
     stock: 'Stock',
     configured: 'Configured',
     spoolsCreated: '{{count}} spools created',
+    spoolsPartiallyCreated: '{{created}} of {{total}} spools created (some failed)',
     spoolCreated: 'Spool created',
     spoolUpdated: 'Spool updated',
     spoolDeleted: 'Spool deleted',

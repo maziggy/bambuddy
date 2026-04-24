@@ -2325,6 +2325,7 @@ export default {
     passwordPlaceholder: '输入您的密码',
     signIn: '登录',
     signingIn: '登录中...',
+    rememberMe: '记住我',
     forgotPassword: '忘记密码？',
     loginSuccess: '登录成功',
     loginFailed: '登录失败',

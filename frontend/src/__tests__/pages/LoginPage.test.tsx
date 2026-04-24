@@ -2,7 +2,7 @@
  * Tests for the LoginPage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -298,6 +298,282 @@ describe('LoginPage', () => {
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /Send Code/i })).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Remember Me', () => {
+    const mockUser = {
+      id: 1,
+      username: 'testuser',
+      role: 'admin' as const,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    beforeEach(() => {
+      vi.mocked(localStorage.setItem).mockClear();
+      sessionStorage.clear();
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'test-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        ),
+        // Prevent checkAuthStatus from clearing the token when getCurrentUser is called
+        http.get('/api/v1/auth/me', () => HttpResponse.json(mockUser))
+      );
+    });
+
+    it('renders Remember Me checkbox on credentials step', async () => {
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Remember Me/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('checkbox', { name: /Remember Me/i })).not.toBeChecked();
+    });
+
+    it('does not persist token to localStorage when unchecked (default)', async () => {
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'testuser');
+      await user.type(screen.getByLabelText(/Password/i), 'testpassword');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      // Token must be in sessionStorage (tab-only) but not in localStorage
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).not.toHaveBeenCalledWith('auth_token', expect.any(String));
+        expect(sessionStorage.getItem('auth_token')).toBe('test-token');
+      });
+    });
+
+    it('persists token to localStorage when Remember Me is checked', async () => {
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('checkbox', { name: /Remember Me/i }));
+      await user.type(screen.getByLabelText(/Username/i), 'testuser');
+      await user.type(screen.getByLabelText(/Password/i), 'testpassword');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'test-token');
+      });
+    });
+
+    it('carries Remember Me through 2FA verification', async () => {
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            requires_2fa: true,
+            pre_auth_token: 'pre-token',
+            two_fa_methods: ['totp'],
+          })
+        ),
+        http.post('/api/v1/auth/2fa/verify', () =>
+          HttpResponse.json({
+            access_token: 'final-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      // Check Remember Me before submitting credentials
+      await user.click(screen.getByRole('checkbox', { name: /Remember Me/i }));
+      await user.type(screen.getByLabelText(/Username/i), 'testuser');
+      await user.type(screen.getByLabelText(/Password/i), 'testpassword');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      // Now on 2FA step — enter code and verify
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByRole('textbox', { name: /Verification Code/i }), '123456');
+      await user.click(screen.getByRole('button', { name: /Verify/i }));
+
+      // Token must be persisted to localStorage because Remember Me was checked
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'final-token');
+      });
+    });
+
+    it('checkbox is not shown on 2FA step', async () => {
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            requires_2fa: true,
+            pre_auth_token: 'pre-token',
+            two_fa_methods: ['totp'],
+          })
+        )
+      );
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'testuser');
+      await user.type(screen.getByLabelText(/Password/i), 'testpassword');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+
+      expect(screen.queryByLabelText(/Remember Me/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('OIDC with Remember Me', () => {
+    const mockUser = {
+      id: 1,
+      username: 'oidcuser',
+      role: 'admin' as const,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    beforeEach(() => {
+      vi.mocked(localStorage.setItem).mockClear();
+      sessionStorage.clear();
+    });
+
+    afterEach(() => {
+      window.location.hash = '';
+      window.history.pushState({}, '', '/login');
+      sessionStorage.clear();
+    });
+
+    it('persists token to localStorage after OIDC redirect when Remember Me was set', async () => {
+      sessionStorage.setItem('auth_remember_me', '1');
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            access_token: 'oidc-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+
+      window.location.hash = '#oidc_token=test-exchange-token';
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'oidc-token');
+      });
+      expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+    });
+
+    it('carries Remember Me through OIDC + 2FA flow', async () => {
+      sessionStorage.setItem('auth_remember_me', '1');
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            requires_2fa: true,
+            pre_auth_token: 'oidc-pre-token',
+            two_fa_methods: ['totp'],
+          })
+        ),
+        http.post('/api/v1/auth/2fa/verify', () =>
+          HttpResponse.json({
+            access_token: 'oidc-2fa-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+
+      window.location.hash = '#oidc_token=test-exchange-token';
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+      // Flag consumed on mount — no stale value for future flows
+      expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+
+      await user.type(screen.getByRole('textbox', { name: /Verification Code/i }), '123456');
+      await user.click(screen.getByRole('button', { name: /Verify/i }));
+
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'oidc-2fa-token');
+      });
+    });
+
+    it('cleans up auth_remember_me flag when OIDC returns an error', async () => {
+      sessionStorage.setItem('auth_remember_me', '1');
+      window.history.pushState({}, '', '/login?oidc_error=invalid_state');
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+      });
+    });
+
+    it('does not persist token to localStorage after OIDC redirect when Remember Me was not set', async () => {
+      // No auth_remember_me flag set — token must stay session-only
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            access_token: 'oidc-session-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+
+      window.location.hash = '#oidc_token=test-exchange-token';
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(sessionStorage.getItem('auth_token')).toBe('oidc-session-token');
+      });
+      expect(vi.mocked(localStorage.setItem)).not.toHaveBeenCalledWith('auth_token', expect.any(String));
+    });
+
+    it('shows error toast when OIDC exchange returns unexpected response shape', async () => {
+      sessionStorage.setItem('auth_remember_me', '1');
+      server.use(
+        // Response is missing both access_token and requires_2fa — hits the else branch
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({ token_type: 'bearer' })
+        )
+      );
+
+      window.location.hash = '#oidc_token=test-exchange-token';
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Login.*failed|failed.*login/i)).toBeInTheDocument();
+      });
+      // Flag must still be cleaned up even on malformed response
+      expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
     });
   });
 });

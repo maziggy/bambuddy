@@ -2274,6 +2274,7 @@ export default {
     passwordPlaceholder: 'Entrez votre mot de passe',
     signIn: 'Se connecter',
     signingIn: 'Connexion...',
+    rememberMe: 'Se souvenir de moi',
     forgotPassword: 'Mot de passe oublié ?',
     loginSuccess: 'Connecté avec succès',
     loginFailed: 'Échec de connexion',

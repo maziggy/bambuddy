@@ -2318,6 +2318,7 @@ export default {
     passwordPlaceholder: '輸入您的密碼',
     signIn: '登入',
     signingIn: '登入中...',
+    rememberMe: '記住我',
     forgotPassword: '忘記密碼？',
     loginSuccess: '登入成功',
     loginFailed: '登入失敗',

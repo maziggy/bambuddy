@@ -2273,6 +2273,7 @@ export default {
     passwordPlaceholder: 'Digite sua senha',
     signIn: 'Entrar',
     signingIn: 'Entrando...',
+    rememberMe: 'Lembrar de mim',
     forgotPassword: 'Esqueceu sua senha?',
     loginSuccess: 'Login realizado com sucesso',
     loginFailed: 'Falha no login',

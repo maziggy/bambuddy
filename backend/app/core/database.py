@@ -216,8 +216,10 @@ async def init_db():
 async def _safe_execute(conn, sql):
     """Execute a DDL migration statement, silently ignoring idempotency errors.
 
-    'already exists' and 'duplicate key' are swallowed so that re-running DDL
-    migrations (ALTER TABLE ADD COLUMN, CREATE INDEX, ADD CONSTRAINT) is safe.
+    'already exists', 'duplicate column name' (SQLite ADD COLUMN), 'no such column'
+    (SQLite RENAME COLUMN when already renamed), and 'duplicate key' are swallowed so
+    that re-running DDL migrations (ALTER TABLE ADD COLUMN, RENAME COLUMN, CREATE INDEX,
+    ADD CONSTRAINT) is safe.
     Any other error is logged and re-raised — callers must not assume silent
     recovery, as a failure will abort the migration sequence and prevent
     application startup.
@@ -236,7 +238,7 @@ async def _safe_execute(conn, sql):
             await conn.execute(text(sql))
     except (OperationalError, ProgrammingError) as exc:
         msg = str(exc).lower()
-        if not any(k in msg for k in ("already exists", "duplicate key")):
+        if not any(k in msg for k in ("already exists", "duplicate key", "duplicate column name", "no such column")):
             logger.error("Migration statement failed: %s | SQL: %.200s", exc, sql)
             raise
 

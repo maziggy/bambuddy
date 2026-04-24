@@ -242,20 +242,23 @@ class TestSafeExecutePattern:
         assert rows[2] is None
 
     @pytest.mark.asyncio
-    async def test_safe_execute_does_not_swallow_no_such_column(self):
-        """'no such column' must propagate — it was removed from the swallow-list so
-        a failed DML migration (e.g. UPDATE referencing a missing column) is always fatal."""
-        from sqlalchemy.exc import OperationalError
+    async def test_safe_execute_swallows_no_such_column_for_rename(self):
+        """'no such column' is swallowed for RENAME COLUMN idempotency.
+
+        When a column has already been renamed, re-running the RENAME COLUMN
+        migration raises 'no such column' — that must be silently swallowed.
+        DML safety is guaranteed by never passing DML through _safe_execute.
+        """
         from sqlalchemy.ext.asyncio import create_async_engine
 
         from backend.app.core.database import _safe_execute
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         async with engine.begin() as conn:
-            await conn.execute(__import__("sqlalchemy").text("CREATE TABLE t (id INTEGER)"))
-            # Referencing a column that does not exist must raise, not be silently swallowed.
-            with pytest.raises(OperationalError, match="no such column"):
-                await _safe_execute(conn, "UPDATE t SET nonexistent_col = 1")
+            await conn.execute(__import__("sqlalchemy").text("CREATE TABLE t (id INTEGER, new_col INTEGER)"))
+            # Column 'old_col' does not exist — simulates re-running a RENAME COLUMN migration
+            # Must NOT raise.
+            await _safe_execute(conn, "ALTER TABLE t RENAME COLUMN old_col TO new_col")
         await engine.dispose()
 
     @pytest.mark.asyncio

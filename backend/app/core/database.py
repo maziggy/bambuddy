@@ -214,12 +214,18 @@ async def init_db():
 
 
 async def _safe_execute(conn, sql):
-    """Execute a migration statement, silently ignoring idempotency errors.
+    """Execute a DDL migration statement, silently ignoring idempotency errors.
 
-    'already exists', 'duplicate column', 'duplicate key', and 'no such column'
-    are swallowed so that re-running migrations is safe. Any other error is logged and
-    re-raised — callers must not assume silent recovery, as a failure will
-    abort the migration sequence and prevent application startup.
+    'already exists' and 'duplicate key' are swallowed so that re-running DDL
+    migrations (ALTER TABLE ADD COLUMN, CREATE INDEX, ADD CONSTRAINT) is safe.
+    Any other error is logged and re-raised — callers must not assume silent
+    recovery, as a failure will abort the migration sequence and prevent
+    application startup.
+
+    IMPORTANT: Only use for DDL statements (ALTER TABLE, CREATE INDEX, etc.).
+    Never pass DML statements (UPDATE, INSERT, SELECT) — use conn.execute()
+    directly so failures are never silently swallowed.
+
     Uses a savepoint so that a failed statement doesn't poison the surrounding
     transaction (required for PostgreSQL).
     """
@@ -230,13 +236,22 @@ async def _safe_execute(conn, sql):
             await conn.execute(text(sql))
     except (OperationalError, ProgrammingError) as exc:
         msg = str(exc).lower()
-        if not any(k in msg for k in ("already exists", "duplicate column", "duplicate key", "no such column")):
+        if not any(k in msg for k in ("already exists", "duplicate key")):
             logger.error("Migration statement failed: %s | SQL: %.200s", exc, sql)
             raise
 
 
 async def run_migrations(conn):
-    """Add new columns to existing tables if they don't exist."""
+    """Run all schema migrations and data backfills on startup.
+
+    Includes ALTER TABLE (add columns, rename columns, add constraints),
+    CREATE INDEX, CREATE TRIGGER, data UPDATE backfills, and table recreations
+    for complex SQLite schema changes that ALTER TABLE cannot handle.
+
+    DDL statements are wrapped in _safe_execute for idempotency.
+    DML statements (UPDATE/INSERT backfills) are executed directly so any
+    failure is always fatal and never silently swallowed.
+    """
     from sqlalchemy import text
 
     # Migration: Add is_favorite column to print_archives
@@ -1435,8 +1450,13 @@ async def run_migrations(conn):
                 )
                 await conn.execute(text(f"PRAGMA schema_version = {schema_version + 1}"))
                 await conn.execute(text("PRAGMA writable_schema = OFF"))
-        except (OperationalError, ProgrammingError):
-            pass
+        except (OperationalError, ProgrammingError) as exc:
+            logger.error(
+                "Failed to remove NOT NULL from users.password_hash via writable_schema — "
+                "OIDC/LDAP user creation will fail on this install: %s",
+                exc,
+                exc_info=True,
+            )
     else:
         await _safe_execute(conn, "ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
 
@@ -1514,6 +1534,7 @@ async def run_migrations(conn):
                     exc,
                     exc_info=True,
                 )
+                raise
 
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat
@@ -1575,11 +1596,15 @@ async def run_migrations(conn):
     # Migration: Normalise provider_email to lowercase (SEC-3).
     # Required for Entra ID where UPN/email claims may arrive in mixed case.
     # LOWER() is supported by both SQLite and PostgreSQL; the UPDATE is idempotent.
-    await _safe_execute(
-        conn,
-        "UPDATE user_oidc_links SET provider_email = LOWER(provider_email) "
-        "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)",
-    )
+    # Executed directly (not via _safe_execute) so any column-reference failure
+    # is always fatal and never silently swallowed.
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "UPDATE user_oidc_links SET provider_email = LOWER(provider_email) "
+                "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)"
+            )
+        )
 
     # Seed default settings keys that must exist on fresh install
     default_settings = [

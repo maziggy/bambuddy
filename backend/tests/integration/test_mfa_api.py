@@ -3429,6 +3429,8 @@ class TestOIDCEmailClaimResolution:
             ("preferred_username", True, {"preferred_username": "user@"}, None),  # SEC-2: empty domain
             ("preferred_username", True, {"preferred_username": "user@nodot"}, None),  # SEC-2: no dot in domain
             ("preferred_username", True, {}, None),  # claim absent
+            # Fall C: email_verified=False present alongside custom claim — must NOT suppress the email
+            ("preferred_username", True, {"preferred_username": "user@co.com", "email_verified": False}, "user@co.com"),
         ],
         ids=[
             "fall-a-ev-true",
@@ -3445,6 +3447,7 @@ class TestOIDCEmailClaimResolution:
             "fall-c-empty-domain",
             "fall-c-no-dot-in-domain",
             "fall-c-claim-absent",
+            "fall-c-ev-false-ignored",
         ],
     )
     async def test_email_resolution_matrix(

@@ -74,6 +74,16 @@ describe('Auth Token Management', () => {
     expect(vi.mocked(localStorage.removeItem)).toHaveBeenCalledWith('auth_token');
     expect(getAuthToken()).toBeNull();
   });
+
+  it('setAuthToken keeps in-memory token when sessionStorage throws', () => {
+    sessionStorageMock.setItem.mockImplementationOnce(() => {
+      throw new DOMException('QuotaExceededError');
+    });
+    // Should not throw even when storage is unavailable
+    expect(() => setAuthToken('fallback-token')).not.toThrow();
+    // In-memory token must still be set
+    expect(getAuthToken()).toBe('fallback-token');
+  });
 });
 
 describe('API Client Auth Header', () => {

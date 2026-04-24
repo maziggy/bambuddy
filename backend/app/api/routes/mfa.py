@@ -377,14 +377,15 @@ def _assert_totp_not_replayed(totp_obj: pyotp.TOTP, totp_record: UserTOTP, code:
 # ---------------------------------------------------------------------------
 # OIDC helpers
 # ---------------------------------------------------------------------------
+_EMAIL_SHAPE_RE = re.compile(r"[^\s@]+@[^\s@]+\.[^\s@]+")
+
+
 def _is_valid_email_shaped(value: str | None) -> bool:
-    # SEC-2: minimal email-shape check for non-standard claims (upn, preferred_username).
-    # Rejects "@", "x@", and "@domain" that a bare '"@" in value' check would accept,
-    # and enforces max length of 255. None and "" are rejected by the early return.
-    if not value:
+    # SEC-2: shape check for non-standard claims (upn, preferred_username).
+    # Requires local@domain.tld — rejects "@", "x@", "@domain", "x@nodot".
+    if not value or len(value) > 255:
         return False
-    parts = value.split("@")
-    return len(parts) == 2 and len(parts[0]) > 0 and len(parts[1]) > 0 and len(value) <= 255
+    return _EMAIL_SHAPE_RE.fullmatch(value) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -1433,10 +1434,9 @@ async def oidc_callback(
             else:
                 if raw_email:
                     logger.info(
-                        "OIDC provider %d: email_claim %r value %r failed shape check for sub=%r, ignoring",
+                        "OIDC provider %d: email_claim %r value failed shape check for sub=%r, ignoring",
                         provider_id,
                         provider.email_claim,
-                        raw_email,
                         provider_sub,
                     )
                 provider_email = None

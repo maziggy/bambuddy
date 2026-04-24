@@ -26,7 +26,7 @@ class OIDCProvider(Base):
         # require_email_verified=True AND email_claim='email'. Enforced on new
         # installations; existing tables get this via the PostgreSQL-only migration.
         CheckConstraint(
-            "auto_link_existing_accounts = 0 OR (require_email_verified = 1 AND email_claim = 'email')",
+            "auto_link_existing_accounts = FALSE OR (require_email_verified = TRUE AND email_claim = 'email')",
             name="ck_auto_link_requires_verified_email_claim",
         ),
     )

@@ -539,3 +539,174 @@ class TestExternalFolderProtections:
         )
         assert response.status_code == 403
         assert "read-only" in response.json()["detail"].lower()
+
+
+class TestExternalFolderWritableUpload:
+    """Tests for upload write-through to writable external folders (#1112).
+
+    Before the fix, uploads to writable external folders silently landed in the
+    internal library dir while the DB row pointed at the external folder —
+    files were invisible when the mount was viewed from another machine.
+    """
+
+    @pytest.fixture
+    def external_dir(self, tmp_path):
+        ext_dir = tmp_path / "writable_share"
+        ext_dir.mkdir()
+        return ext_dir
+
+    @pytest.fixture
+    async def writable_folder(self, async_client, db_session, external_dir):
+        data = {
+            "name": "Writable NAS",
+            "external_path": str(external_dir),
+            "readonly": False,
+        }
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        assert response.status_code == 200
+        return response.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_lands_on_external_mount(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """Bytes are written to ``<external_path>/<filename>``, not the internal library dir."""
+        import io
+
+        content = b"hello-external-world"
+        response = await async_client.post(
+            f"/api/v1/library/files?folder_id={writable_folder['id']}",
+            files={"file": ("upload.stl", io.BytesIO(content), "application/octet-stream")},
+        )
+        assert response.status_code == 200, response.text
+
+        on_disk = external_dir / "upload.stl"
+        assert on_disk.exists(), "file must be written to the external mount"
+        assert on_disk.read_bytes() == content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_persists_correct_db_shape(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """DB row must have ``is_external=True`` and ``file_path`` = absolute external path,
+        so scan-dedupe and deletion behaviour match scanned files."""
+        import io
+
+        from backend.app.models.library import LibraryFile
+
+        response = await async_client.post(
+            f"/api/v1/library/files?folder_id={writable_folder['id']}",
+            files={"file": ("model.3mf", io.BytesIO(b"x"), "application/octet-stream")},
+        )
+        assert response.status_code == 200
+        file_id = response.json()["id"]
+
+        row = await db_session.get(LibraryFile, file_id)
+        await db_session.refresh(row)
+        assert row.is_external is True
+        assert row.file_path == str((external_dir / "model.3mf").resolve())
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_filename_collision_returns_409(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """Re-uploading a filename that already exists on the mount must 409,
+        not silently overwrite — matches scan's treatment of external files as
+        externally-owned bytes."""
+        import io
+
+        (external_dir / "already.stl").write_bytes(b"prior")
+        response = await async_client.post(
+            f"/api/v1/library/files?folder_id={writable_folder['id']}",
+            files={"file": ("already.stl", io.BytesIO(b"new"), "application/octet-stream")},
+        )
+        assert response.status_code == 409
+        assert (external_dir / "already.stl").read_bytes() == b"prior"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_to_missing_external_path_returns_400(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """If the external mount has gone away between folder-create and
+        upload, fail loud rather than silently misroute to internal storage."""
+        import io
+        import shutil
+
+        shutil.rmtree(external_dir)
+
+        response = await async_client.post(
+            f"/api/v1/library/files?folder_id={writable_folder['id']}",
+            files={"file": ("x.stl", io.BytesIO(b"x"), "application/octet-stream")},
+        )
+        assert response.status_code == 400
+        assert "not accessible" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_rejects_path_traversal_filename(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """A malicious filename like ``../escape.stl`` must not write outside
+        the external folder. Defence-in-depth — FastAPI already strips these
+        on parse, but the resolve-and-relative_to guard is the final gate."""
+        import io
+
+        response = await async_client.post(
+            f"/api/v1/library/files?folder_id={writable_folder['id']}",
+            files={"file": ("../escape.stl", io.BytesIO(b"x"), "application/octet-stream")},
+        )
+        # Either a 400 from our traversal guard or a 200 with basename-stripped
+        # filename inside the external dir — both prove nothing escaped.
+        if response.status_code == 200:
+            assert not (external_dir.parent / "escape.stl").exists()
+            assert (external_dir / "escape.stl").exists() or (external_dir / "..escape.stl").exists()
+        else:
+            assert response.status_code in (400, 422)
+            assert not (external_dir.parent / "escape.stl").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_zip_to_writable_external_folder_rejected(
+        self, async_client: AsyncClient, db_session, writable_folder
+    ):
+        """Extract-zip into writable external folders isn't supported (nested
+        subfolder creation on the mount is a separate design). Users are
+        pointed at the Scan flow instead."""
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("a/b/c.stl", b"x")
+        buf.seek(0)
+
+        response = await async_client.post(
+            f"/api/v1/library/files/extract-zip?folder_id={writable_folder['id']}",
+            files={"file": ("test.zip", buf, "application/zip")},
+        )
+        assert response.status_code == 400
+        assert "scan" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_external_upload_unchanged(self, async_client: AsyncClient, db_session):
+        """Uploads with no folder_id (root) keep the existing internal-storage behaviour."""
+        import io
+
+        from backend.app.models.library import LibraryFile
+
+        response = await async_client.post(
+            "/api/v1/library/files",
+            files={"file": ("root.stl", io.BytesIO(b"x"), "application/octet-stream")},
+        )
+        assert response.status_code == 200
+        file_id = response.json()["id"]
+        row = await db_session.get(LibraryFile, file_id)
+        await db_session.refresh(row)
+        assert row.is_external is False
+        # Internal storage: file_path is UUID-scoped, stored as a relative path.
+        assert not row.file_path.startswith("/")

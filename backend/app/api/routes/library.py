@@ -130,6 +130,61 @@ def calculate_file_hash(file_path: Path) -> str:
     return sha256_hash.hexdigest()
 
 
+def _resolve_upload_destination(target_folder: LibraryFolder | None, filename: str) -> tuple[Path, bool]:
+    """Resolve the on-disk destination for an uploaded file.
+
+    Non-external target: returns ``(<library_files_dir>/<uuid><ext>, False)``.
+    Writable external target: writes to ``<external_path>/<filename>``
+    (preserves the real filename so the file is recognisable on the mount);
+    returns ``(dest, True)``. Raises ``HTTPException`` for read-only external
+    folders (403), missing/inaccessible/non-writable external paths (400), and
+    filename collisions on the external mount (409). See #1112 — previously
+    uploads to writable external folders were silently misrouted to the
+    internal library dir.
+    """
+    if target_folder is not None and target_folder.is_external:
+        if target_folder.external_readonly:
+            raise HTTPException(status_code=403, detail="Cannot upload to a read-only external folder")
+        if not target_folder.external_path:
+            raise HTTPException(status_code=400, detail="External folder has no configured path")
+        ext_dir = Path(target_folder.external_path)
+        if not ext_dir.exists() or not ext_dir.is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail=f"External path is not accessible: {target_folder.external_path}",
+            )
+        if not os.access(ext_dir, os.W_OK):
+            raise HTTPException(
+                status_code=400,
+                detail=f"External path is not writable: {target_folder.external_path}",
+            )
+        # Guard against path-traversal via a pathological filename — join then
+        # verify the resolved destination is still inside the external dir.
+        dest = (ext_dir / filename).resolve()
+        try:
+            dest.relative_to(ext_dir.resolve())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        if dest.exists():
+            raise HTTPException(
+                status_code=409,
+                detail=f"A file named {filename!r} already exists in the external folder",
+            )
+        return dest, True
+    ext = os.path.splitext(filename)[1].lower()
+    return get_library_files_dir() / f"{uuid.uuid4().hex}{ext}", False
+
+
+def _stored_file_path(abs_path: Path, is_external: bool) -> str:
+    """Produce the value to persist in ``LibraryFile.file_path``.
+
+    External files store the absolute mount path directly (same as scan does),
+    so ``to_absolute_path`` round-trips through its ``is_absolute()`` fast
+    path. Managed files store a path relative to ``base_dir`` for portability.
+    """
+    return str(abs_path) if is_external else to_relative_path(abs_path)
+
+
 def _clean_3mf_metadata(obj):
     """Strip bytes and thumbnail-carrier keys so the payload is JSON-storable.
 
@@ -1278,17 +1333,17 @@ async def upload_file(
         file_type = ext[1:] if ext else "unknown"
 
         # Verify folder exists if specified
+        target_folder = None
         if folder_id is not None:
             folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
             target_folder = folder_result.scalar_one_or_none()
             if not target_folder:
                 raise HTTPException(status_code=404, detail="Folder not found")
-            if target_folder.is_external and target_folder.external_readonly:
-                raise HTTPException(status_code=403, detail="Cannot upload to a read-only external folder")
 
-        # Generate unique filename for storage
-        unique_filename = f"{uuid.uuid4().hex}{ext}"
-        file_path = get_library_files_dir() / unique_filename
+        # Writable external folders write through to the mount so the file is
+        # visible outside Bambuddy (#1112); everything else lands under the
+        # internal library dir with a UUID-scoped filename.
+        file_path, is_external_upload = _resolve_upload_destination(target_folder, filename)
 
         # Save file
         content = await file.read()
@@ -1366,11 +1421,13 @@ async def upload_file(
             if generate_stl_thumbnails:
                 thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
 
-        # Create database entry (store relative paths for portability)
+        # Create database entry (managed files store relative paths for portability;
+        # external files store the absolute mount path — same shape as scan produces)
         library_file = LibraryFile(
             folder_id=folder_id,
+            is_external=is_external_upload,
             filename=filename,
-            file_path=to_relative_path(file_path),
+            file_path=_stored_file_path(file_path, is_external_upload),
             file_type=file_type,
             file_size=len(content),
             file_hash=file_hash,
@@ -1430,6 +1487,19 @@ async def extract_zip_file(
             raise HTTPException(status_code=404, detail="Target folder not found")
         if target_folder.is_external and target_folder.external_readonly:
             raise HTTPException(status_code=403, detail="Cannot extract ZIP to a read-only external folder")
+        if target_folder.is_external:
+            # Writable external folders aren't supported by extract-zip because the
+            # nested-subfolder creation path would need to mkdir on the mount and
+            # create matching is_external=True LibraryFolder rows — a separate
+            # design. Direct the user at Scan, which already handles that shape
+            # (#1112).
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cannot extract ZIP directly into an external folder. "
+                    "Extract the ZIP on the external mount and run 'Scan External Folder' instead."
+                ),
+            )
 
     # Save ZIP to temp file
     try:

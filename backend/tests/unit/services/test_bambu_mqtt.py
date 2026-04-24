@@ -3560,6 +3560,14 @@ class TestDeleteKProfileDualNozzleDetection:
         assert "setting_id" not in cmd
         assert cmd["extruder_id"] == 0
 
+    def test_h2c_new_prefix_uses_dual_nozzle_format(self):
+        """Post-2026 H2C batches ship with '31B8B' prefix instead of '094' (#1105)."""
+        client = self._make_client("31B8BP000000001")
+        client.delete_kprofile(cali_idx=1, filament_id="GFA00", nozzle_id="HH00-0.4")
+        cmd = self._published(client)
+        assert "setting_id" not in cmd
+        assert cmd["extruder_id"] == 0
+
     def test_p2s_serial_uses_single_nozzle_format(self):
         """P2S is single-nozzle — must NOT take the dual-nozzle branch."""
         client = self._make_client("22E00A000000001")

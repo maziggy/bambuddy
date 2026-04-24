@@ -215,8 +215,8 @@ async def init_db():
 async def _safe_execute(conn, sql):
     """Execute a migration statement, silently ignoring idempotency errors.
 
-    'already exists', 'duplicate column', and 'duplicate key' are swallowed
-    so that re-running migrations is safe. Any other error is logged and
+    'already exists', 'duplicate column', 'duplicate key', and 'no such column'
+    are swallowed so that re-running migrations is safe. Any other error is logged and
     re-raised — callers must not assume silent recovery, as a failure will
     abort the migration sequence and prevent application startup.
     Uses a savepoint so that a failed statement doesn't poison the surrounding
@@ -229,7 +229,7 @@ async def _safe_execute(conn, sql):
             await conn.execute(text(sql))
     except (OperationalError, ProgrammingError) as exc:
         msg = str(exc).lower()
-        if not any(k in msg for k in ("already exists", "duplicate column", "duplicate key")):
+        if not any(k in msg for k in ("already exists", "duplicate column", "duplicate key", "no such column")):
             logger.error("Migration statement failed: %s | SQL: %.200s", exc, sql)
             raise
 

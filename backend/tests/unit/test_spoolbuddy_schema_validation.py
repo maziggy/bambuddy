@@ -171,7 +171,7 @@ class TestWriteTagResultRequestValidation:
 
 
 # ---------------------------------------------------------------------------
-# M4 — ScaleReadingRequest: weight_grams bounds
+# M4 — ScaleReadingRequest: weight_grams accepts any float (raw uncalibrated ADC)
 # ---------------------------------------------------------------------------
 
 
@@ -184,19 +184,12 @@ class TestScaleReadingRequestValidation:
         req = ScaleReadingRequest(device_id="sb1", weight_grams=0.0)
         assert req.weight_grams == 0.0
 
-    def test_max_weight_accepted(self):
-        req = ScaleReadingRequest(device_id="sb1", weight_grams=100_000.0)
-        assert req.weight_grams == 100_000.0
+    def test_large_raw_adc_weight_accepted(self):
+        # Uncalibrated scale with factor=1.0 produces raw ADC values in the millions
+        req = ScaleReadingRequest(device_id="sb1", weight_grams=5_000_000.0)
+        assert req.weight_grams == 5_000_000.0
 
     def test_negative_weight_accepted(self):
         # Scale can legitimately read negative values when tare is not calibrated
-        req = ScaleReadingRequest(device_id="sb1", weight_grams=-1.0)
-        assert req.weight_grams == -1.0
-
-    def test_extreme_negative_weight_rejected(self):
-        with pytest.raises(ValidationError):
-            ScaleReadingRequest(device_id="sb1", weight_grams=-10_001.0)
-
-    def test_over_max_weight_rejected(self):
-        with pytest.raises(ValidationError):
-            ScaleReadingRequest(device_id="sb1", weight_grams=100_001.0)
+        req = ScaleReadingRequest(device_id="sb1", weight_grams=-50_000.0)
+        assert req.weight_grams == -50_000.0

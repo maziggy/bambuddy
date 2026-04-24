@@ -107,7 +107,7 @@ class TagRemovedRequest(BaseModel):
 
 class ScaleReadingRequest(BaseModel):
     device_id: str = Field(..., max_length=50)
-    weight_grams: float = Field(..., ge=-10_000.0, le=100_000.0)
+    weight_grams: float
     stable: bool = False
     raw_adc: int | None = None
 

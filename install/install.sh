@@ -373,14 +373,16 @@ setup_virtualenv() {
 
     if [[ "$OS_TYPE" == "macos" ]]; then
         $PYTHON_CMD -m venv venv
-        source venv/bin/activate
+        "$INSTALL_PATH/venv/bin/pip" install --upgrade pip
+        "$INSTALL_PATH/venv/bin/pip" install -r requirements.txt
     else
+        # Venv is owned by the service user, so pip must also run as that user —
+        # otherwise `pip install --upgrade pip` fails trying to rewrite its own
+        # binary inside the venv it doesn't own.
         sudo -u "$SERVICE_USER" $PYTHON_CMD -m venv venv 2>/dev/null || $PYTHON_CMD -m venv venv
-        source venv/bin/activate
+        sudo -u "$SERVICE_USER" "$INSTALL_PATH/venv/bin/pip" install --upgrade pip
+        sudo -u "$SERVICE_USER" "$INSTALL_PATH/venv/bin/pip" install -r requirements.txt
     fi
-
-    pip install --upgrade pip
-    pip install -r requirements.txt
 
     log_success "Virtual environment configured"
 }
@@ -453,8 +455,16 @@ build_frontend() {
         fi
     fi
 
-    npm ci
-    npm run build
+    # Frontend tree is owned by the service user, so npm must run as that user —
+    # otherwise creating node_modules/ and writing build output fails. macOS
+    # keeps the current-user flow since it has no service user.
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        npm ci
+        npm run build
+    else
+        sudo -H -u "$SERVICE_USER" npm ci
+        sudo -H -u "$SERVICE_USER" npm run build
+    fi
 
     log_success "Frontend built"
 }

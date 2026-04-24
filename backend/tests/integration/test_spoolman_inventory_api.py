@@ -758,14 +758,16 @@ class TestSpoolmanInventoryInputValidation:
             "file:///etc/passwd",
             "gopher://127.0.0.1:70/",
             "dict://internal.corp/",
-            "http://169.254.169.254/latest/meta-data/",  # AWS IMDS (link-local)
-            "http://[::1]:7912/",  # IPv6 loopback
-            "http://0.0.0.0/",  # unspecified
             "javascript:alert(1)",
+            "http://169.254.169.254/latest/meta-data/",  # AWS IMDS
+            "http://100.100.100.200/",  # Alibaba Cloud metadata
+            "http://[fd00:ec2::254]/",  # AWS IMDS IPv6
+            "http://0.0.0.0/",  # unspecified
             "http://224.0.0.1/",  # IPv4 multicast
             "http://[ff02::1]/",  # IPv6 multicast
-            "http://127.1.2.3/",  # 127.x.x.x loopback range
             "http://[::ffff:169.254.169.254]/",  # IPv4-mapped IPv6 IMDS bypass
+            "http://2130706433/",  # decimal-encoded 127.0.0.1
+            "http://0x7f000001/",  # hex-encoded 127.0.0.1
         ],
     )
     async def test_ssrf_blocked_schemes_and_addresses(
@@ -775,7 +777,10 @@ class TestSpoolmanInventoryInputValidation:
         mock_spoolman_client,
         evil_url: str,
     ):
-        """SSRF: any Spoolman URL that is not http(s) must be rejected with 400."""
+        """SSRF: dangerous schemes, cloud metadata IPs, multicast, unspecified,
+        and numeric-encoded IPs must be rejected with 400. Loopback and
+        RFC-1918 private ranges are allowed — they are legitimate Spoolman
+        topologies for self-hosted Bambuddy deployments."""
         from backend.app.models.settings import Settings
 
         db_session.add(Settings(key="spoolman_enabled", value="true"))
@@ -786,6 +791,36 @@ class TestSpoolmanInventoryInputValidation:
         assert response.status_code == 400, (
             f"Expected 400 for SSRF URL {evil_url!r} but got {response.status_code}: {response.json()}"
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "lan_url",
+        [
+            "http://127.0.0.1:7912/",  # loopback
+            "http://[::1]:7912/",  # IPv6 loopback
+            "http://192.168.1.50:7912/",  # RFC-1918 /16
+            "http://10.0.0.5:7912/",  # RFC-1918 /8
+            "http://172.20.0.3:7912/",  # RFC-1918 /12
+        ],
+    )
+    async def test_ssrf_allows_lan_spoolman_topologies(
+        self,
+        async_client: AsyncClient,
+        db_session,
+        mock_spoolman_client,
+        lan_url: str,
+    ):
+        """Regression: Bambuddy's normal deployment is LAN-local Spoolman.
+        Loopback and RFC-1918 private addresses must NOT be rejected as SSRF."""
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value=lan_url))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/spoolman/inventory/spools")
+        assert response.status_code != 400, f"LAN URL {lan_url!r} was incorrectly blocked as SSRF: {response.json()}"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1282,9 +1317,7 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
         [
             "file:///etc/passwd",
             "http://169.254.169.254/latest/meta-data/",  # AWS IMDS
-            "http://[::1]:7912/",  # IPv6 loopback
             "http://0.0.0.0/",  # unspecified
-            "http://10.0.0.1/",  # RFC-1918 private
             "http://[::ffff:169.254.169.254]/",  # IPv4-mapped IMDS bypass
         ],
     )
@@ -1323,7 +1356,6 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
         "evil_url",
         [
             "http://169.254.169.254/latest/meta-data/",  # AWS IMDS
-            "http://10.0.0.1/",  # RFC-1918 private
             "http://[::ffff:169.254.169.254]/",  # IPv4-mapped IMDS bypass
         ],
     )
@@ -1382,7 +1414,6 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
         "evil_url",
         [
             "http://169.254.169.254/latest/meta-data/",  # AWS IMDS
-            "http://10.0.0.1/",  # RFC-1918 private
         ],
     )
     async def test_scale_update_weight_with_ssrf_url_degrades_gracefully(

@@ -452,22 +452,62 @@ class TestSpoolmanClient:
 
 
 class TestInitSpoolmanClientSSRFGuard:
-    """init_spoolman_client must reject unsafe URLs before creating a client."""
+    """init_spoolman_client must reject genuinely unsafe URLs before creating a client.
+
+    Scope: cloud metadata endpoints, multicast, unspecified, non-http(s) schemes,
+    and numeric-encoded IP bypasses. Loopback and RFC-1918 private ranges are
+    explicitly allowed — Bambuddy's primary deployment is LAN-local Spoolman.
+    """
 
     @pytest.mark.asyncio
-    async def test_private_ip_raises_value_error(self):
-        with pytest.raises(ValueError, match="private|loopback|link-local|multicast|unspecified"):
-            await init_spoolman_client("http://10.0.0.1/")
-
-    @pytest.mark.asyncio
-    async def test_link_local_raises_value_error(self):
-        with pytest.raises(ValueError):
+    async def test_cloud_metadata_raises_value_error(self):
+        with pytest.raises(ValueError, match="cloud metadata"):
             await init_spoolman_client("http://169.254.169.254/latest/meta-data/")
 
     @pytest.mark.asyncio
-    async def test_loopback_ip_raises_value_error(self):
-        with pytest.raises(ValueError):
-            await init_spoolman_client("http://127.0.0.1:7912/")
+    async def test_multicast_raises_value_error(self):
+        with pytest.raises(ValueError, match="multicast|unspecified"):
+            await init_spoolman_client("http://224.0.0.1/")
+
+    @pytest.mark.asyncio
+    async def test_unspecified_raises_value_error(self):
+        with pytest.raises(ValueError, match="multicast|unspecified"):
+            await init_spoolman_client("http://0.0.0.0/")
+
+    @pytest.mark.asyncio
+    async def test_numeric_encoded_ip_raises_value_error(self):
+        # decimal-encoded 127.0.0.1 — libc resolves these but ipaddress doesn't
+        with pytest.raises(ValueError, match="numeric-encoded"):
+            await init_spoolman_client("http://2130706433/")
+
+    @pytest.mark.asyncio
+    async def test_non_http_scheme_raises_value_error(self):
+        with pytest.raises(ValueError, match="http or https"):
+            await init_spoolman_client("file:///etc/passwd")
+
+    @pytest.mark.asyncio
+    async def test_private_ip_is_allowed(self):
+        """Regression: RFC-1918 private addresses are the normal LAN topology."""
+        mock_instance = AsyncMock()
+        with (
+            patch("backend.app.services.spoolman._spoolman_client", None),
+            patch("backend.app.services.spoolman.SpoolmanClient", return_value=mock_instance) as mock_cls,
+        ):
+            client = await init_spoolman_client("http://192.168.1.50:7912/")
+        mock_cls.assert_called_once_with("http://192.168.1.50:7912/")
+        assert client is mock_instance
+
+    @pytest.mark.asyncio
+    async def test_loopback_ip_is_allowed(self):
+        """Regression: same-host Spoolman via loopback is a supported topology."""
+        mock_instance = AsyncMock()
+        with (
+            patch("backend.app.services.spoolman._spoolman_client", None),
+            patch("backend.app.services.spoolman.SpoolmanClient", return_value=mock_instance) as mock_cls,
+        ):
+            client = await init_spoolman_client("http://127.0.0.1:7912/")
+        mock_cls.assert_called_once_with("http://127.0.0.1:7912/")
+        assert client is mock_instance
 
     @pytest.mark.asyncio
     async def test_localhost_hostname_is_allowed(self):

@@ -3928,19 +3928,14 @@ export default {
       title: '自動ディスパッチ',
       description: 'キューに追加されたときに自動的に印刷を開始します。オフの場合、手動ディスパッチを待ちます。',
     },
+    tailscaleDisabled: {
+      title: 'Tailscale統合',
+      description: '有効にすると、Tailscaleを使用して信頼できるTLS証明書を使用します。自己署名証明書のみを使用する場合は無効にします。',
+    },
     setupRequired: {
       title: 'セットアップが必要です',
       description: '仮想プリンター機能を使用するには追加のシステム設定が必要です。ポートフォワーディング、ファイアウォールルール、プラットフォーム固有の設定が含まれます。',
       readGuide: '有効にする前にセットアップガイドをお読みください',
-    },
-    tailscale: {
-      connected: 'Tailscale 接続済み',
-      notAvailable: 'Tailscale 未接続',
-      trustedCert: "Let's Encrypt 証明書 — CA設定不要",
-      notAvailableHint: '信頼できるTLS証明書にはTailscaleをインストール',
-      disableTitle: 'Tailscale統合を無効にする',
-      enabledHint: 'Tailscaleを自動検出し、利用可能な場合はLet\'s Encrypt証明書を使用',
-      disabledHint: 'Tailscale無効 — 自己署名証明書を使用中',
     },
     howItWorks: {
       title: '仕組み',
@@ -3965,6 +3960,7 @@ export default {
       updated: '仮想プリンター設定を更新しました',
       failedToUpdate: '設定の更新に失敗しました',
       tailscaleNotAvailable: 'このホストにTailscaleがインストールされていません。先にTailscaleをインストールしてから再試行してください。',
+      copyFailed: 'コピーに失敗しました — テキストを手動で選択してください',
       accessCodeRequired: '先にアクセスコードを設定してください',
       targetPrinterRequired: '先にターゲットプリンターを選択してください',
       bindIpRequired: '先にバインドIPを設定してください',

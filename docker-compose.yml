@@ -43,6 +43,16 @@ services:
       # Backups default to DATA_DIR/backups/ inside the data volume.
       # Uncomment to store them externally (e.g. on a NAS share).
       #- /path/to/nas/bambuddy-backups:/app/data/backups
+      #
+      # Tailscale integration (optional): mount the host's tailscaled socket
+      # so Bambuddy can request Let's Encrypt certs for virtual printers via
+      # your tailnet's MagicDNS name. Requires:
+      #   1. Tailscale installed + `tailscale up` completed on the host
+      #   2. `sudo tailscale set --operator=<container-user>` on the host so
+      #      the user running the container can call `tailscale cert`
+      # Without this mount, the Tailscale toggle in the UI is harmless —
+      # Bambuddy falls back to self-signed certs.
+      #- /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # Port BamBuddy runs on (default: 8000)

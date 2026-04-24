@@ -387,16 +387,31 @@ class VirtualPrinterInstance:
             self._cert_renewal_task = None
 
     async def _cancel_restart_task(self) -> None:
-        """Cancel the cert restart task and await its completion."""
-        if self._cert_restart_task and not self._cert_restart_task.done():
-            self._cert_restart_task.cancel()
+        """Cancel the cert restart task and await its completion.
+
+        Skip when the caller IS the restart task itself — stop_server() /
+        stop_proxy() are called from inside _restart_for_cert_renewal,
+        which runs AS _cert_restart_task. Cancelling + awaiting self
+        flags a CancelledError on the next `await` in stop_server,
+        which tears down the old listeners but never lets start_server
+        run — the VP would sit on an expired cert until process restart.
+        """
+        task = self._cert_restart_task
+        if task is asyncio.current_task():
+            # Renewal path cleaning up its own restart task: clear the
+            # reference so future callers don't see a stale task handle,
+            # but do NOT cancel-and-await ourselves.
+            self._cert_restart_task = None
+            return
+        if task and not task.done():
+            task.cancel()
             try:
-                await self._cert_restart_task
+                await task
             except asyncio.CancelledError:
                 pass
             except Exception as e:
                 logger.warning("[VP %s] Unexpected error in cert restart task: %s", self.name, e)
-        self._cert_restart_task = None
+            self._cert_restart_task = None
 
     async def _restart_for_cert_renewal(self) -> None:
         """Restart VP services to load the newly renewed Tailscale cert into TLS listeners."""

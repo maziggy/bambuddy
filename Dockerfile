@@ -23,9 +23,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
+    gnupg \
     iproute2 \
     libcap2-bin \
     openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the Tailscale CLI only (no tailscaled — the daemon runs on the host).
+# Bambuddy calls `tailscale status` / `tailscale cert` via the host's socket,
+# which the user mounts in via docker-compose when they want to enable the
+# Tailscale integration for virtual printers. Without the socket mount, the
+# binary is harmless — the code logs a hint and falls back to self-signed.
+RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
+        -o /usr/share/keyrings/tailscale-archive-keyring.gpg \
+    && curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.tailscale-keyring.list \
+        -o /etc/apt/sources.list.d/tailscale.list \
+    && apt-get update && apt-get install -y --no-install-recommends tailscale \
     && rm -rf /var/lib/apt/lists/*
 
 # Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.

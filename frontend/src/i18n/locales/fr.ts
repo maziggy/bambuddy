@@ -3890,19 +3890,14 @@ export default {
       title: 'Lancement automatique',
       description: 'Lancer automatiquement les impressions ajoutées à la file. Désactivé, les impressions attendent un lancement manuel.',
     },
+    tailscaleDisabled: {
+      title: 'Intégration Tailscale',
+      description: 'Lorsqu\'activé, utilise Tailscale pour des certificats TLS de confiance. Désactiver pour n\'utiliser que des certificats auto-signés.',
+    },
     setupRequired: {
       title: 'Configuration requise',
       description: 'Nécessite des réglages système (ports, pare-feu).',
       readGuide: 'Lire le guide de configuration',
-    },
-    tailscale: {
-      connected: 'Tailscale connecté',
-      notAvailable: 'Tailscale inactif',
-      trustedCert: "Certificat Let's Encrypt — aucune configuration CA requise",
-      notAvailableHint: 'Installez Tailscale pour des certificats TLS approuvés',
-      disableTitle: 'Désactiver l\'intégration Tailscale',
-      enabledHint: 'Détecter Tailscale automatiquement et utiliser le certificat Let\'s Encrypt si disponible',
-      disabledHint: 'Tailscale désactivé — certificat auto-signé utilisé',
     },
     howItWorks: {
       title: 'Fonctionnement',
@@ -3927,6 +3922,7 @@ export default {
       updated: 'Réglages virtuels mis à jour',
       failedToUpdate: 'Échec mise à jour',
       tailscaleNotAvailable: 'Tailscale n\'est pas installé sur cet hôte. Installez Tailscale puis réessayez.',
+      copyFailed: 'Échec de la copie — veuillez sélectionner le texte manuellement',
       accessCodeRequired: 'Code d\'accès requis',
       targetPrinterRequired: 'Imprimante cible requise',
       bindIpRequired: 'Veuillez d\'abord définir une adresse IP',

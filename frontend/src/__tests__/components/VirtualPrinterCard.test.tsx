@@ -230,3 +230,90 @@ describe('VirtualPrinterCard - tailscale toggle', () => {
     });
   });
 });
+
+describe('VirtualPrinterCard - Tailscale FQDN copy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(createMockPrinter());
+  });
+
+  const fqdn = 'test-host.tail1234.ts.net';
+
+  function getCopyButton() {
+    // The copy button is a <button> with a title attribute. Use title to locate it.
+    const candidates = screen.getAllByRole('button');
+    return candidates.find(btn => /copy/i.test(btn.getAttribute('title') || '')) as HTMLButtonElement;
+  }
+
+  it('uses navigator.clipboard.writeText in a secure context', async () => {
+    const user = userEvent.setup();
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    // JSDOM defaults isSecureContext to true; confirm and stub clipboard.
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+
+    const printer = createMockPrinter({
+      status: { running: true, pending_files: 0, tailscale_fqdn: fqdn },
+    });
+    render(<VirtualPrinterCard printer={printer} models={models} />);
+
+    const copyBtn = getCopyButton();
+    expect(copyBtn).toBeTruthy();
+    await user.click(copyBtn);
+
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(fqdn);
+    });
+  });
+
+  it('falls back to execCommand("copy") when clipboard API is unavailable (HTTP)', async () => {
+    const user = userEvent.setup();
+    // Simulate non-secure context: no clipboard API available.
+    Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+
+    const execCommandMock = vi.fn().mockReturnValue(true);
+    document.execCommand = execCommandMock;
+
+    const printer = createMockPrinter({
+      status: { running: true, pending_files: 0, tailscale_fqdn: fqdn },
+    });
+    render(<VirtualPrinterCard printer={printer} models={models} />);
+
+    const copyBtn = getCopyButton();
+    await user.click(copyBtn);
+
+    await waitFor(() => {
+      expect(execCommandMock).toHaveBeenCalledWith('copy');
+    });
+    // Fallback path: textarea is appended, used, then removed in `finally`.
+    // After the click resolves, no stray textareas should remain in the DOM.
+    expect(document.querySelectorAll('textarea').length).toBe(0);
+  });
+
+  it('always cleans up the hidden textarea even if execCommand throws', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+
+    document.execCommand = vi.fn().mockImplementation(() => {
+      throw new Error('synthetic execCommand failure');
+    });
+
+    const printer = createMockPrinter({
+      status: { running: true, pending_files: 0, tailscale_fqdn: fqdn },
+    });
+    render(<VirtualPrinterCard printer={printer} models={models} />);
+
+    const copyBtn = getCopyButton();
+    await user.click(copyBtn);
+
+    // The `finally` block must remove the textarea regardless of the exception.
+    await waitFor(() => {
+      expect(document.querySelectorAll('textarea').length).toBe(0);
+    });
+  });
+});

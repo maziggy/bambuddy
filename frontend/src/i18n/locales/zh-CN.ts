@@ -3955,19 +3955,14 @@ export default {
       title: '自动派发',
       description: '添加到队列时自动开始打印。关闭后，打印任务等待手动派发。',
     },
+    tailscaleDisabled: {
+      title: 'Tailscale 集成',
+      description: '启用后，使用 Tailscale 获取受信任的 TLS 证书。禁用则仅使用自签名证书。',
+    },
     setupRequired: {
       title: '需要设置',
       description: '虚拟打印机功能需要额外的系统配置才能工作。包括端口转发、防火墙规则和平台特定设置。',
       readGuide: '启用前请阅读设置指南',
-    },
-    tailscale: {
-      connected: 'Tailscale 已连接',
-      notAvailable: 'Tailscale 未激活',
-      trustedCert: "Let's Encrypt 证书 — 无需配置 CA",
-      notAvailableHint: '安装 Tailscale 以获取受信任的 TLS 证书',
-      disableTitle: '禁用 Tailscale 集成',
-      enabledHint: '自动检测 Tailscale，可用时使用 Let\'s Encrypt 证书',
-      disabledHint: 'Tailscale 已禁用 — 使用自签名证书',
     },
     howItWorks: {
       title: '工作原理',
@@ -3992,6 +3987,7 @@ export default {
       updated: '虚拟打印机设置已更新',
       failedToUpdate: '更新设置失败',
       tailscaleNotAvailable: '此主机上未安装 Tailscale。请先安装 Tailscale，然后重试。',
+      copyFailed: '复制失败 — 请手动选中文本',
       accessCodeRequired: '请先设置访问码',
       targetPrinterRequired: '请先选择目标打印机',
       bindIpRequired: '请先设置绑定 IP',

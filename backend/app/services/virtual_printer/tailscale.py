@@ -92,13 +92,21 @@ class TailscaleService:
 
     @classmethod
     def _log_docker_socket_hint(cls) -> None:
-        """Log a one-time hint when running in Docker without the Tailscale socket mounted."""
+        """Log a one-time hint when running in Docker without the Tailscale socket mounted.
+
+        Fires in both states: (a) tailscale binary missing and (b) binary present
+        but the host socket isn't mounted into the container. The binary alone
+        can't talk to the daemon — the host's tailscaled socket needs to be
+        volume-mounted in docker-compose.yml.
+        """
         if cls._docker_hint_logged:
             return
         if Path("/.dockerenv").exists() and not Path("/var/run/tailscale/tailscaled.sock").exists():
             logger.info(
-                "Running in Docker but Tailscale socket not found. "
-                "Mount /var/run/tailscale/tailscaled.sock to enable Tailscale."
+                "Running in Docker but /var/run/tailscale/tailscaled.sock is not mounted. "
+                "Add `- /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock` "
+                "to docker-compose.yml (under volumes:) and run Tailscale on the host to enable "
+                "Let's Encrypt certs for virtual printers."
             )
             cls._docker_hint_logged = True
 
@@ -157,6 +165,10 @@ class TailscaleService:
             )
 
         if returncode is None or returncode != 0:
+            # If the binary is present but the daemon socket is unreachable (e.g.
+            # Docker without the socket mount), log the actionable hint rather than
+            # just the opaque CLI stderr.
+            self._log_docker_socket_hint()
             return TailscaleStatus(
                 available=False,
                 hostname="",

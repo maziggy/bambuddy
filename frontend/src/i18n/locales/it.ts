@@ -3889,19 +3889,14 @@ export default {
       title: 'Avvio automatico',
       description: 'Avvia automaticamente le stampe aggiunte alla coda. Se disattivato, le stampe attendono l\'avvio manuale.',
     },
+    tailscaleDisabled: {
+      title: 'Integrazione Tailscale',
+      description: 'Quando abilitato, utilizza Tailscale per certificati TLS affidabili. Disabilita per utilizzare solo certificati auto-firmati.',
+    },
     setupRequired: {
       title: 'Configurazione necessaria',
       description: 'La stampante virtuale richiede configurazioni di sistema aggiuntive prima di funzionare. Include port forwarding, regole firewall e impostazioni specifiche della piattaforma.',
       readGuide: 'Leggi la guida prima di abilitare',
-    },
-    tailscale: {
-      connected: 'Tailscale connesso',
-      notAvailable: 'Tailscale non attivo',
-      trustedCert: "Certificato Let's Encrypt — nessuna configurazione CA richiesta",
-      notAvailableHint: 'Installa Tailscale per certificati TLS attendibili',
-      disableTitle: 'Disabilita integrazione Tailscale',
-      enabledHint: 'Rileva automaticamente Tailscale e usa il certificato Let\'s Encrypt se disponibile',
-      disabledHint: 'Tailscale disabilitato — viene usato il certificato auto-firmato',
     },
     howItWorks: {
       title: 'Come funziona',
@@ -3926,6 +3921,7 @@ export default {
       updated: 'Impostazioni stampante virtuale aggiornate',
       failedToUpdate: 'Aggiornamento impostazioni fallito',
       tailscaleNotAvailable: 'Tailscale non è installato su questo host. Installa prima Tailscale, poi riprova.',
+      copyFailed: 'Copia non riuscita — seleziona il testo manualmente',
       accessCodeRequired: 'Imposta prima un codice accesso',
       targetPrinterRequired: 'Seleziona prima una stampante target',
       bindIpRequired: 'Impostare prima un indirizzo IP',

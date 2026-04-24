@@ -3955,19 +3955,14 @@ export default {
       title: '自動派發',
       description: '新增到佇列時自動開始列印。關閉後，列印任務等待手動派發。',
     },
+    tailscaleDisabled: {
+      title: 'Tailscale 整合',
+      description: '啟用後，使用 Tailscale 取得受信任的 TLS 憑證。停用則僅使用自簽憑證。',
+    },
     setupRequired: {
       title: '需要設定',
       description: '虛擬印表機功能需要額外的系統設定才能工作。包括埠轉發、防火牆規則和平臺特定設定。',
       readGuide: '啟用前請閱讀設定指南',
-    },
-    tailscale: {
-      connected: 'Tailscale 已連線',
-      notAvailable: 'Tailscale 未啟用',
-      trustedCert: "Let's Encrypt 憑證 — 無需設定 CA",
-      notAvailableHint: '安裝 Tailscale 以取得受信任的 TLS 憑證',
-      disableTitle: '停用 Tailscale 整合',
-      enabledHint: '自動偵測 Tailscale，可用時使用 Let\'s Encrypt 憑證',
-      disabledHint: 'Tailscale 已停用 — 使用自簽憑證',
     },
     howItWorks: {
       title: '工作原理',
@@ -3992,6 +3987,7 @@ export default {
       updated: '虛擬印表機設定已更新',
       failedToUpdate: '更新設定失敗',
       tailscaleNotAvailable: '此主機上未安裝 Tailscale。請先安裝 Tailscale，然後重試。',
+      copyFailed: '複製失敗 — 請手動選取文字',
       accessCodeRequired: '請先設定存取碼',
       targetPrinterRequired: '請先選擇目標印表機',
       bindIpRequired: '請先設定繫結 IP',

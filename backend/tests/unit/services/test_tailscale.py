@@ -760,3 +760,70 @@ class TestCertRenewalLoop:
             await task
 
         assert restart_scheduled[0] is True
+
+
+class TestCancelRestartTaskSelfAwait:
+    """Regression: _cancel_restart_task must not await the current task.
+
+    stop_server() / stop_proxy() are called from inside _restart_for_cert_renewal,
+    which runs AS _cert_restart_task. Cancelling+awaiting self would flag a
+    CancelledError on the next `await`, tearing down the old listeners but
+    never letting start_server run — the VP would stay on the old/expired cert
+    until the process restarts.
+    """
+
+    def _make_instance(self, tmp_path):
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        return VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            tailscale_disabled=False,
+            base_dir=tmp_path,
+        )
+
+    @pytest.mark.asyncio
+    async def test_cancel_from_inside_own_task_does_not_cancel_self(self, tmp_path):
+        """When _cancel_restart_task is called from inside the restart task itself,
+        it clears the reference without cancelling — subsequent awaits must succeed."""
+        instance = self._make_instance(tmp_path)
+        completed_to_end = [False]
+
+        async def fake_restart():
+            # Simulate stop_server calling _cancel_restart_task from inside the restart task.
+            await instance._cancel_restart_task()
+            # If _cancel_restart_task had self-awaited, the next `await` would raise
+            # CancelledError and this line would never be reached.
+            await asyncio.sleep(0)
+            completed_to_end[0] = True
+
+        task = asyncio.create_task(fake_restart(), name="cert_restart")
+        instance._cert_restart_task = task
+        await task
+        assert completed_to_end[0] is True
+        assert instance._cert_restart_task is None
+
+    @pytest.mark.asyncio
+    async def test_cancel_from_outside_still_cancels_and_awaits(self, tmp_path):
+        """Non-self callers must retain the original cancel-and-await behaviour."""
+        instance = self._make_instance(tmp_path)
+        started = asyncio.Event()
+
+        async def long_restart():
+            started.set()
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                raise
+
+        task = asyncio.create_task(long_restart(), name="cert_restart")
+        instance._cert_restart_task = task
+        await started.wait()
+        # Cancel from an outside coroutine — this should actually cancel the task.
+        await instance._cancel_restart_task()
+        assert task.cancelled()
+        assert instance._cert_restart_task is None

@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -7,7 +8,7 @@ import {
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
   ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw,
 } from 'lucide-react';
-import { api, spoolbuddyApi } from '../api/client';
+import { api, spoolbuddyApi, ApiError } from '../api/client';
 import type { InventorySpool, SpoolAssignment, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
 import { SpoolFormModal } from '../components/SpoolFormModal';
@@ -48,6 +49,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'brand', label: 'Brand', visible: true },
   { id: 'slicer_filament', label: 'Slicer Filament', visible: false },
   { id: 'location', label: 'Location', visible: true },
+  { id: 'storage_location', label: 'Storage Location', visible: false },
   { id: 'label_weight', label: 'Label', visible: true },
   { id: 'net', label: 'Net', visible: true },
   { id: 'gross', label: 'Gross', visible: false },
@@ -145,6 +147,7 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   brand: (t) => t('inventory.brand'),
   slicer_filament: (t) => t('inventory.slicerFilament'),
   location: () => 'Location',
+  storage_location: (t) => t('inventory.storageLocation'),
   label_weight: (t) => t('inventory.labelWeight'),
   net: (t) => t('inventory.net'),
   gross: () => 'Gross',
@@ -214,6 +217,14 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-500/20 text-purple-400">
         {printerLabel} {slotLabel}{assignment.ams_label ? ` (${assignment.ams_label})` : ''}
+      </span>
+    );
+  },
+  storage_location: ({ spool }) => {
+    if (!spool.storage_location) return <span className="text-sm text-bambu-gray">-</span>;
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
+        {spool.storage_location}
       </span>
     );
   },
@@ -369,6 +380,7 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
     const label = a.ams_label ? ` (${a.ams_label})` : '';
     return `${a.printer_name || ''} ${formatSlotLabel(a.ams_id, a.tray_id, isHt, isExt)}${label}`;
   },
+  storage_location: (s) => (s.storage_location || '').toLowerCase(),
   label_weight: (s) => s.label_weight,
   net: (s) => Math.max(0, s.label_weight - s.weight_used),
   gross: (s) => Math.max(0, s.label_weight - s.weight_used) + s.core_weight,
@@ -407,74 +419,28 @@ function saveSortState(state: SortState) {
   } catch { /* ignore */ }
 }
 
-// Wrapper: when Spoolman is enabled, embed its UI; otherwise show internal inventory
+// Wrapper: detects Spoolman mode and passes it to the shared inventory UI
 export default function InventoryPageRouter() {
-  const { t } = useTranslation();
   const { data: spoolmanSettings } = useQuery({
     queryKey: ['spoolman-settings'],
     queryFn: api.getSpoolmanSettings,
     staleTime: 5 * 60 * 1000,
   });
 
-  if (spoolmanSettings?.spoolman_enabled === 'true' && spoolmanSettings?.spoolman_url) {
-    const spoolmanUrl = spoolmanSettings.spoolman_url.replace(/\/+$/, '');
-    // Browsers block HTTP iframes inside HTTPS parents (mixed-content rule,
-    // independent of CSP). Spoolman must be reachable over the same protocol
-    // as Bambuddy. Surfacing a targeted error here beats the silent blank
-    // iframe users otherwise see. See issue #1096.
-    const bambuddyIsHttps = window.location.protocol === 'https:';
-    const spoolmanIsHttp = spoolmanUrl.toLowerCase().startsWith('http://');
-    if (bambuddyIsHttps && spoolmanIsHttp) {
-      return (
-        <div className="p-6 max-w-3xl mx-auto">
-          <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-5">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-              <div className="flex-1 min-w-0 space-y-2 text-sm">
-                <p className="font-semibold text-amber-900 dark:text-amber-100">
-                  {t('inventory.spoolmanMixedContentTitle')}
-                </p>
-                <p className="text-amber-800 dark:text-amber-200">
-                  {t('inventory.spoolmanMixedContentBody')}
-                </p>
-                <ul className="list-disc pl-5 space-y-1 text-amber-800 dark:text-amber-200">
-                  <li>{t('inventory.spoolmanMixedContentFixReverseProxy')}</li>
-                  <li>{t('inventory.spoolmanMixedContentFixOpenNewTab')}</li>
-                </ul>
-                <div className="flex flex-wrap gap-2 pt-2">
-                  <a
-                    href={`${spoolmanUrl}/spool`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded bg-amber-600 hover:bg-amber-700 text-white"
-                  >
-                    {t('inventory.spoolmanOpenInNewTab')}
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return (
-      <iframe
-        src={`${spoolmanUrl}/spool`}
-        className="h-full w-full border-0"
-        title="Spoolman"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-      />
-    );
-  }
+  const spoolmanModeReady = spoolmanSettings !== undefined;
+  const spoolmanMode =
+    spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
 
-  return <InventoryPage />;
+  return <InventoryPage spoolmanMode={spoolmanMode} spoolmanModeReady={spoolmanModeReady} />;
 }
 
-function InventoryPage() {
+function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spoolmanMode?: boolean; spoolmanModeReady?: boolean }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null } | null>(null);
+  const deepLinkHandled = useRef(false);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
 
   // Filter state
@@ -516,11 +482,82 @@ function InventoryPage() {
 
   const dateFormat: DateFormat = settings?.date_format || 'system';
 
+  // Query key and fetch function differ based on data source
+  const spoolsQueryKey = spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'];
   const { data: spools, isLoading } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(true), // Always fetch all, filter client-side
+    queryKey: spoolsQueryKey,
+    queryFn: () =>
+      spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
     refetchInterval: 30000,
   });
+
+  // Deep-link: open edit modal for ?spool=<id>
+  // Prefer the already-loaded spool list (no extra API call); fall back to a
+  // targeted fetch for the rare case where the full list hasn't arrived yet.
+  const _rawSpoolParam = searchParams.get('spool');
+  // Only accept strings of digits representing a positive integer — guards against
+  // NaN (Number('abc')), 0, negatives, and floats like '1.5' that would produce
+  // an invalid path parameter and trigger unnecessary 422 responses from the API.
+  const deepLinkSpoolId =
+    _rawSpoolParam && /^\d+$/.test(_rawSpoolParam) && Number(_rawSpoolParam) > 0
+      ? Number(_rawSpoolParam)
+      : null;
+  const deepLinkInList = spools?.find((s) => s.id === deepLinkSpoolId) ?? null;
+
+  const clearDeepLinkParam = useCallback(() => {
+    deepLinkHandled.current = true;
+    setSearchParams((prev) => { prev.delete('spool'); return prev; }, { replace: true });
+  }, [setSearchParams]);
+
+  // Targeted fetch — only fires when mode is known and spool isn't in the list yet
+  const { data: deepLinkSpool, isError: deepLinkFetchFailed, error: deepLinkError } = useQuery({
+    queryKey: spoolmanMode
+      ? ['spoolman-inventory-spool', deepLinkSpoolId]
+      : ['inventory-spool', deepLinkSpoolId],
+    queryFn: () =>
+      spoolmanMode
+        ? api.getSpoolmanInventorySpool(deepLinkSpoolId!)
+        : api.getSpool(deepLinkSpoolId!),
+    enabled: spoolmanModeReady && deepLinkSpoolId !== null && deepLinkInList === null,
+    staleTime: Infinity,
+    retry: (failureCount, error) =>
+      failureCount < 2 && !(error instanceof ApiError && error.status === 404),
+  });
+
+  useEffect(() => {
+    if (deepLinkHandled.current) return;
+
+    // Case 1: spool is already in the fetched list
+    if (spoolmanModeReady && deepLinkSpoolId && deepLinkInList) {
+      clearDeepLinkParam();
+      setFormModal({ spool: deepLinkInList });
+      return;
+    }
+
+    // Case 2: spool was fetched individually
+    if (deepLinkSpool) {
+      clearDeepLinkParam();
+      setFormModal({ spool: deepLinkSpool });
+      return;
+    }
+
+    // Case 3: fetch failed
+    if (deepLinkFetchFailed) {
+      clearDeepLinkParam();
+      const is404 = deepLinkError instanceof ApiError && deepLinkError.status === 404;
+      showToast(t(is404 ? 'inventory.deepLinkSpoolNotFound' : 'inventory.deepLinkFetchFailed'), 'error');
+    }
+  }, [
+    spoolmanModeReady,
+    deepLinkSpoolId,
+    deepLinkInList,
+    deepLinkSpool,
+    deepLinkFetchFailed,
+    deepLinkError,
+    clearDeepLinkParam,
+    showToast,
+    t,
+  ]);
 
   const { data: assignments } = useQuery({
     queryKey: ['spool-assignments'],
@@ -534,38 +571,76 @@ function InventoryPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.deleteSpool(id),
+    mutationFn: (id: number) =>
+      spoolmanMode ? api.deleteSpoolmanInventorySpool(id) : api.deleteSpool(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       showToast(t('inventory.spoolDeleted'), 'success');
+    },
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        showToast(t('inventory.deleteSpoolNotFound'), 'error');
+      } else if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.deleteFailed'), 'error');
+      }
     },
   });
 
   const archiveMutation = useMutation({
-    mutationFn: (id: number) => api.archiveSpool(id),
+    mutationFn: (id: number) =>
+      spoolmanMode ? api.archiveSpoolmanInventorySpool(id) : api.archiveSpool(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       showToast(t('inventory.spoolArchived'), 'success');
+    },
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        showToast(t('inventory.archiveSpoolNotFound'), 'error');
+      } else if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.archiveFailed'), 'error');
+      }
     },
   });
 
   const restoreMutation = useMutation({
-    mutationFn: (id: number) => api.restoreSpool(id),
+    mutationFn: (id: number) =>
+      spoolmanMode ? api.restoreSpoolmanInventorySpool(id) : api.restoreSpool(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       showToast(t('inventory.spoolRestored'), 'success');
+    },
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        showToast(t('inventory.restoreSpoolNotFound'), 'error');
+      } else if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else {
+        showToast(t('inventory.restoreFailed'), 'error');
+      }
     },
   });
 
   const handleSyncWeight = async (spool: InventorySpool) => {
     if (spool.last_scale_weight == null) return;
     try {
-      await spoolbuddyApi.updateSpoolWeight(spool.id, spool.last_scale_weight);
-      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      if (spoolmanMode) {
+        await api.syncSpoolmanSpoolWeight(spool.id, spool.last_scale_weight);
+      } else {
+        await spoolbuddyApi.updateSpoolWeight(spool.id, spool.last_scale_weight);
+      }
+      queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       const spoolName = [spool.brand, spool.material, spool.color_name].filter(Boolean).join(' ');
       showToast(`Synced "${spoolName}" to scale weight`, 'success');
-    } catch {
-      showToast('Failed to sync weight', 'error');
+    } catch (e) {
+      const is404 = e instanceof ApiError && e.status === 404;
+      const is503 = e instanceof ApiError && e.status === 503;
+      if (is404) showToast(t('inventory.syncWeightSpoolNotFound'), 'error');
+      else if (is503) showToast(t('inventory.syncWeightSpoolmanUnreachable'), 'error');
+      else showToast(t('inventory.syncWeightFailed'), 'error');
     }
   };
 
@@ -703,7 +778,8 @@ function InventoryPage() {
         s.color_name?.toLowerCase().includes(q) ||
         s.subtype?.toLowerCase().includes(q) ||
         s.note?.toLowerCase().includes(q) ||
-        s.slicer_filament_name?.toLowerCase().includes(q)
+        s.slicer_filament_name?.toLowerCase().includes(q) ||
+        s.storage_location?.toLowerCase().includes(q)
       );
     }
 
@@ -1512,6 +1588,8 @@ function InventoryPage() {
           onClose={() => setFormModal(null)}
           spool={formModal.spool}
           currencySymbol={currencySymbol}
+          spoolmanMode={spoolmanMode}
+          spoolsQueryKey={spoolsQueryKey}
         />
       )}
 

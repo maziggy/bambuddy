@@ -52,6 +52,13 @@ function SpoolCircle({ color, size = 56 }: { color: string; size?: number }) {
   );
 }
 
+// Renders inventory directly via React instead of embedding Spoolman's own UI in an
+// iframe. The iframe approach was dropped because this component lives inside the
+// SpoolBuddy shell and already has direct access to the same auth/query context,
+// making the iframe an unnecessary dependency on the Spoolman server being reachable
+// from the browser. No feature flag guards this: the internal UI is strictly superior
+// (works offline, supports local spools) and the raw Spoolman URL remains accessible
+// directly from the Settings page for users who want it.
 export function SpoolBuddyInventoryPage() {
   const { sbState, selectedPrinterId } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
@@ -66,9 +73,12 @@ export function SpoolBuddyInventoryPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const spoolmanMode = spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
+
   const { data: spools = [], isLoading, refetch: refetchSpools } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(false),
+    queryKey: spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'],
+    queryFn: () => spoolmanMode ? api.getSpoolmanInventorySpools(false) : api.getSpools(false),
+    enabled: spoolmanSettings !== undefined,
     refetchInterval: 30000,
   });
 
@@ -127,21 +137,6 @@ export function SpoolBuddyInventoryPage() {
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
   }, [activeSpools, filterMode, searchQuery, assignedSpoolIds]);
-
-  // Spoolman iframe mode
-  const spoolmanEnabled = spoolmanSettings?.spoolman_enabled === 'true' && spoolmanSettings?.spoolman_url;
-  if (spoolmanEnabled) {
-    return (
-      <div className="h-full flex flex-col">
-        <iframe
-          src={`${spoolmanSettings.spoolman_url.replace(/\/+$/, '')}/spool`}
-          className="flex-1 w-full border-0"
-          title="Spoolman"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="h-full flex flex-col">

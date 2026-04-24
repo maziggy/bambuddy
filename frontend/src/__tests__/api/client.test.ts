@@ -84,6 +84,28 @@ describe('Auth Token Management', () => {
     // In-memory token must still be set
     expect(getAuthToken()).toBe('fallback-token');
   });
+
+  it('setAuthToken(null) removes from sessionStorage even when localStorage.removeItem throws', () => {
+    setAuthToken('some-token', 'persistent');
+    vi.mocked(localStorage.removeItem).mockImplementationOnce(() => {
+      throw new DOMException('SecurityError');
+    });
+    // Must not throw — localStorage failure must not abort the sessionStorage removal
+    expect(() => setAuthToken(null)).not.toThrow();
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
+    expect(getAuthToken()).toBeNull();
+  });
+
+  it('setAuthToken(null) removes from localStorage even when sessionStorage.removeItem throws', () => {
+    setAuthToken('some-token', 'persistent');
+    sessionStorageMock.removeItem.mockImplementationOnce(() => {
+      throw new DOMException('SecurityError');
+    });
+    // Must not throw — sessionStorage failure must not abort the localStorage removal
+    expect(() => setAuthToken(null)).not.toThrow();
+    expect(vi.mocked(localStorage.removeItem)).toHaveBeenCalledWith('auth_token');
+    expect(getAuthToken()).toBeNull();
+  });
 });
 
 describe('API Client Auth Header', () => {

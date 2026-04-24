@@ -14,16 +14,21 @@ export function setAuthToken(token: string | null, persistence: TokenPersistence
   try {
     if (token) {
       sessionStorage.setItem('auth_token', token);
-      if (persistence === 'persistent') {
-        localStorage.setItem('auth_token', token);
-      }
     } else {
       sessionStorage.removeItem('auth_token');
-      localStorage.removeItem('auth_token');
     }
   } catch (err) {
     // Storage unavailable (quota exceeded, private mode): in-memory token still works for this tab.
-    console.warn('setAuthToken: storage write failed, token is in-memory only', err);
+    console.warn('setAuthToken: sessionStorage unavailable, token kept in-memory only', err);
+  }
+  try {
+    if (!token) {
+      localStorage.removeItem('auth_token');
+    } else if (persistence === 'persistent') {
+      localStorage.setItem('auth_token', token);
+    }
+  } catch (err) {
+    console.warn('setAuthToken: localStorage operation failed', err);
   }
 }
 

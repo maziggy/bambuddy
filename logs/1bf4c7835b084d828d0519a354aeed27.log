@@ -1,0 +1,200 @@
+2026-04-24 16:47:23,578 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:23,579 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-24 16:47:23,579 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('auth_enabled',)
+2026-04-24 16:47:23,581 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:23,583 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:23,584 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ?
+2026-04-24 16:47:23,585 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('0f260e43c06040ff48c297a706422ed6', 'revoked_jti')
+2026-04-24 16:47:23,586 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:23,589 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:23,590 INFO [sqlalchemy.engine.Engine] SELECT users.id, users.username, users.email, users.password_hash, users.role, users.auth_source, users.is_active, users.created_at, users.updated_at, users.password_changed_at, users.cloud_token, users.cloud_email, users.cloud_region 
+FROM users 
+WHERE lower(users.username) = lower(?)
+2026-04-24 16:47:23,590 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('[USER]',)
+2026-04-24 16:47:23,593 INFO [sqlalchemy.engine.Engine] SELECT users_1.id AS users_1_id, groups.id AS groups_id, groups.name AS groups_name, groups.description AS groups_description, groups.permissions AS groups_permissions, groups.is_system AS groups_is_system, groups.created_at AS groups_created_at, groups.updated_at AS groups_updated_at 
+FROM users AS users_1 JOIN user_groups AS user_groups_1 ON users_1.id = user_groups_1.user_id JOIN groups ON groups.id = user_groups_1.group_id 
+WHERE users_1.id IN (?)
+2026-04-24 16:47:23,594 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (2,)
+2026-04-24 16:47:23,596 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:23,601 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:23,602 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-24 16:47:23,602 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('auth_enabled',)
+2026-04-24 16:47:23,605 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:23,606 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ?
+2026-04-24 16:47:23,607 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('0f260e43c06040ff48c297a706422ed6', 'revoked_jti')
+2026-04-24 16:47:23,608 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:23,611 INFO [sqlalchemy.engine.Engine] SELECT users.id, users.username, users.email, users.password_hash, users.role, users.auth_source, users.is_active, users.created_at, users.updated_at, users.password_changed_at, users.cloud_token, users.cloud_email, users.cloud_region 
+FROM users 
+WHERE lower(users.username) = lower(?)
+2026-04-24 16:47:23,611 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('[USER]',)
+2026-04-24 16:47:23,614 INFO [sqlalchemy.engine.Engine] SELECT users_1.id AS users_1_id, groups.id AS groups_id, groups.name AS groups_name, groups.description AS groups_description, groups.permissions AS groups_permissions, groups.is_system AS groups_is_system, groups.created_at AS groups_created_at, groups.updated_at AS groups_updated_at 
+FROM users AS users_1 JOIN user_groups AS user_groups_1 ON users_1.id = user_groups_1.user_id JOIN groups ON groups.id = user_groups_1.group_id 
+WHERE users_1.id IN (?)
+2026-04-24 16:47:23,615 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (2,)
+2026-04-24 16:47:23,618 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:23,621 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:23,623 INFO [sqlalchemy.engine.Engine] SELECT print_queue.id, print_queue.printer_id, print_queue.target_model, print_queue.target_location, print_queue.required_filament_types, print_queue.waiting_reason, print_queue.archive_id, print_queue.library_file_id, print_queue.project_id, print_queue.batch_id, print_queue.position, print_queue.scheduled_time, print_queue.manual_start, print_queue.require_previous_success, print_queue.auto_off_after, print_queue.ams_mapping, print_queue.filament_overrides, print_queue.plate_id, print_queue.print_time_seconds, print_queue.been_jumped, print_queue.gcode_injection, print_queue.bed_levelling, print_queue.flow_cali, print_queue.vibration_cali, print_queue.layer_inspect, print_queue.timelapse, print_queue.use_ams, print_queue.status, print_queue.started_at, print_queue.completed_at, print_queue.error_message, print_queue.created_at, print_queue.created_by_id 
+FROM print_queue 
+WHERE print_queue.status = ? ORDER BY print_queue.printer_id NULLS FIRST, print_queue.position
+2026-04-24 16:47:23,623 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('pending',)
+2026-04-24 16:47:23,627 INFO [sqlalchemy.engine.Engine] SELECT print_archives.id AS print_archives_id, print_archives.printer_id AS print_archives_printer_id, print_archives.project_id AS print_archives_project_id, print_archives.filename AS print_archives_filename, print_archives.file_path AS print_archives_file_path, print_archives.file_size AS print_archives_file_size, print_archives.content_hash AS print_archives_content_hash, print_archives.thumbnail_path AS print_archives_thumbnail_path, print_archives.timelapse_path AS print_archives_timelapse_path, print_archives.source_3mf_path AS print_archives_source_3mf_path, print_archives.f3d_path AS print_archives_f3d_path, print_archives.print_name AS print_archives_print_name, print_archives.print_time_seconds AS print_archives_print_time_seconds, print_archives.filament_used_grams AS print_archives_filament_used_grams, print_archives.filament_type AS print_archives_filament_type, print_archives.filament_color AS print_archives_filament_color, print_archives.layer_height AS print_archives_layer_height, print_archives.total_layers AS print_archives_total_layers, print_archives.nozzle_diameter AS print_archives_nozzle_diameter, print_archives.bed_temperature AS print_archives_bed_temperature, print_archives.nozzle_temperature AS print_archives_nozzle_temperature, print_archives.sliced_for_model AS print_archives_sliced_for_model, print_archives.status AS print_archives_status, print_archives.started_at AS print_archives_started_at, print_archives.completed_at AS print_archives_completed_at, print_archives.subtask_id AS print_archives_subtask_id, print_archives.extra_data AS print_archives_extra_data, print_archives.makerworld_url AS print_archives_makerworld_url, print_archives.designer AS print_archives_designer, print_archives.external_url AS print_archives_external_url, print_archives.is_favorite AS print_archives_is_favorite, print_archives.tags AS print_archives_tags, print_archives.notes AS print_archives_notes, print_archives.cost AS print_archives_cost, print_archives.photos AS print_archives_photos, print_archives.failure_reason AS print_archives_failure_reason, print_archives.quantity AS print_archives_quantity, print_archives.energy_kwh AS print_archives_energy_kwh, print_archives.energy_cost AS print_archives_energy_cost, print_archives.energy_start_kwh AS print_archives_energy_start_kwh, print_archives.created_at AS print_archives_created_at, print_archives.created_by_id AS print_archives_created_by_id 
+FROM print_archives 
+WHERE print_archives.id IN (?)
+2026-04-24 16:47:23,628 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (148,)
+2026-04-24 16:47:23,631 INFO [sqlalchemy.engine.Engine] SELECT library_files.id AS library_files_id, library_files.folder_id AS library_files_folder_id, library_files.project_id AS library_files_project_id, library_files.is_external AS library_files_is_external, library_files.filename AS library_files_filename, library_files.file_path AS library_files_file_path, library_files.file_type AS library_files_file_type, library_files.file_size AS library_files_file_size, library_files.file_hash AS library_files_file_hash, library_files.thumbnail_path AS library_files_thumbnail_path, library_files.file_metadata AS library_files_file_metadata, library_files.print_count AS library_files_print_count, library_files.last_printed_at AS library_files_last_printed_at, library_files.notes AS library_files_notes, library_files.created_by_id AS library_files_created_by_id, library_files.created_at AS library_files_created_at, library_files.updated_at AS library_files_updated_at 
+FROM library_files 
+WHERE library_files.id IN (?)
+2026-04-24 16:47:23,632 INFO [sqlalchemy.engine.Engine] [cached since 9.977e+04s ago] (3,)
+2026-04-24 16:47:23,635 INFO [sqlalchemy.engine.Engine] SELECT print_batches.id AS print_batches_id, print_batches.name AS print_batches_name, print_batches.archive_id AS print_batches_archive_id, print_batches.library_file_id AS print_batches_library_file_id, print_batches.quantity AS print_batches_quantity, print_batches.status AS print_batches_status, print_batches.created_at AS print_batches_created_at, print_batches.created_by_id AS print_batches_created_by_id 
+FROM print_batches 
+WHERE print_batches.id IN (?, ?)
+2026-04-24 16:47:23,636 INFO [sqlalchemy.engine.Engine] [cached since 9.547e+04s ago] (4, 5)
+2026-04-24 16:47:23,639 INFO [sqlalchemy.engine.Engine] SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.password_hash AS users_password_hash, users.role AS users_role, users.auth_source AS users_auth_source, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.password_changed_at AS users_password_changed_at, users.cloud_token AS users_cloud_token, users.cloud_email AS users_cloud_email, users.cloud_region AS users_cloud_region 
+FROM users 
+WHERE users.id IN (?)
+2026-04-24 16:47:23,640 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (2,)
+2026-04-24 16:47:23,643 INFO [sqlalchemy.engine.Engine] SELECT printers.id AS printers_id, printers.name AS printers_name, printers.serial_number AS printers_serial_number, printers.ip_address AS printers_ip_address, printers.access_code AS printers_access_code, printers.model AS printers_model, printers.location AS printers_location, printers.nozzle_count AS printers_nozzle_count, printers.is_active AS printers_is_active, printers.auto_archive AS printers_auto_archive, printers.print_hours_offset AS printers_print_hours_offset, printers.runtime_seconds AS printers_runtime_seconds, printers.last_runtime_update AS printers_last_runtime_update, printers.external_camera_url AS printers_external_camera_url, printers.external_camera_type AS printers_external_camera_type, printers.external_camera_enabled AS printers_external_camera_enabled, printers.camera_rotation AS printers_camera_rotation, printers.plate_detection_enabled AS printers_plate_detection_enabled, printers.plate_detection_roi_x AS printers_plate_detection_roi_x, printers.plate_detection_roi_y AS printers_plate_detection_roi_y, printers.plate_detection_roi_w AS printers_plate_detection_roi_w, printers.plate_detection_roi_h AS printers_plate_detection_roi_h, printers.awaiting_plate_clear AS printers_awaiting_plate_clear, printers.created_at AS printers_created_at, printers.updated_at AS printers_updated_at 
+FROM printers 
+WHERE printers.id IN (?, ?)
+2026-04-24 16:47:23,644 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (2, 3)
+2026-04-24 16:47:23,648 INFO [sqlalchemy.engine.Engine] SELECT users_1.id AS users_1_id, groups.id AS groups_id, groups.name AS groups_name, groups.description AS groups_description, groups.permissions AS groups_permissions, groups.is_system AS groups_is_system, groups.created_at AS groups_created_at, groups.updated_at AS groups_updated_at 
+FROM users AS users_1 JOIN user_groups AS user_groups_1 ON users_1.id = user_groups_1.user_id JOIN groups ON groups.id = user_groups_1.group_id 
+WHERE users_1.id IN (?)
+2026-04-24 16:47:23,648 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (2,)
+2026-04-24 16:47:23,678 INFO [sqlalchemy.engine.Engine] COMMIT
+2026-04-24 16:47:24,175 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:24,176 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" IN (?, ?, ?, ?, ?, ?, ?)
+2026-04-24 16:47:24,177 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('obico_enabled', 'obico_ml_url', 'obico_sensitivity', 'obico_action', 'obico_poll_interval', 'obico_enabled_printers', 'external_url')
+2026-04-24 16:47:24,179 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:24,941 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-24 16:47:24,941 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-24 16:47:24,960 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:24,961 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-24 16:47:24,961 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('queue_shortest_first',)
+2026-04-24 16:47:24,964 INFO [sqlalchemy.engine.Engine] SELECT print_queue.id, print_queue.printer_id, print_queue.target_model, print_queue.target_location, print_queue.required_filament_types, print_queue.waiting_reason, print_queue.archive_id, print_queue.library_file_id, print_queue.project_id, print_queue.batch_id, print_queue.position, print_queue.scheduled_time, print_queue.manual_start, print_queue.require_previous_success, print_queue.auto_off_after, print_queue.ams_mapping, print_queue.filament_overrides, print_queue.plate_id, print_queue.print_time_seconds, print_queue.been_jumped, print_queue.gcode_injection, print_queue.bed_levelling, print_queue.flow_cali, print_queue.vibration_cali, print_queue.layer_inspect, print_queue.timelapse, print_queue.use_ams, print_queue.status, print_queue.started_at, print_queue.completed_at, print_queue.error_message, print_queue.created_at, print_queue.created_by_id 
+FROM print_queue 
+WHERE print_queue.status = ? ORDER BY print_queue.printer_id, print_queue.position
+2026-04-24 16:47:24,964 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('pending',)
+2026-04-24 16:47:24,967 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-24 16:47:24,968 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('require_plate_clear',)
+2026-04-24 16:47:24,969 INFO [backend.app.services.print_scheduler] Queue check: found 8 pending items: [(26, 2, 148, 3), (28, 2, None, 3), (29, 2, None, 3), (30, 2, None, 3), (27, 3, None, 3), (31, 3, None, 3), (32, 3, None, 3), (33, 3, None, 3)]
+2026-04-24 16:47:24,971 INFO [sqlalchemy.engine.Engine] SELECT print_queue.printer_id 
+FROM print_queue 
+WHERE print_queue.status = ? AND print_queue.printer_id IS NOT NULL
+2026-04-24 16:47:24,971 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('printing',)
+2026-04-24 16:47:24,973 DEBUG [backend.app.services.print_scheduler] Printer 2: not idle — state=PAUSE
+2026-04-24 16:47:24,973 DEBUG [backend.app.services.print_scheduler] Printer 3: not idle — awaiting plate-clear acknowledgment (state=FINISH)
+2026-04-24 16:47:24,973 INFO [backend.app.services.print_scheduler] Queue: printer 2 not available — connected=True, state=PAUSE, awaiting_plate_clear=False
+2026-04-24 16:47:24,974 INFO [backend.app.services.print_scheduler] Queue: printer 3 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-04-24 16:47:24,975 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-24 16:47:24,975 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('queue_drying_enabled',)
+2026-04-24 16:47:24,978 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-24 16:47:24,978 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('ambient_drying_enabled',)
+2026-04-24 16:47:24,980 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:25,094 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-24 16:47:25,094 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -68dBm
+2026-04-24 16:47:25,223 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-24 16:47:25,224 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,224 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -70dBm
+2026-04-24 16:47:25,225 INFO [sqlalchemy.engine.Engine] SELECT printers.id, printers.name, printers.runtime_seconds, printers.last_runtime_update 
+FROM printers 
+WHERE printers.is_active IS 1
+2026-04-24 16:47:25,227 INFO [sqlalchemy.engine.Engine] [cached since 9.979e+04s ago] ()
+2026-04-24 16:47:25,230 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:25,232 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=286367s (79.55h)
+2026-04-24 16:47:25,233 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,234 INFO [sqlalchemy.engine.Engine] SELECT printers.id, printers.name, printers.serial_number, printers.ip_address, printers.access_code, printers.model, printers.location, printers.nozzle_count, printers.is_active, printers.auto_archive, printers.print_hours_offset, printers.runtime_seconds, printers.last_runtime_update, printers.external_camera_url, printers.external_camera_type, printers.external_camera_enabled, printers.camera_rotation, printers.plate_detection_enabled, printers.plate_detection_roi_x, printers.plate_detection_roi_y, printers.plate_detection_roi_w, printers.plate_detection_roi_h, printers.awaiting_plate_clear, printers.created_at, printers.updated_at 
+FROM printers 
+WHERE printers.id = ?
+2026-04-24 16:47:25,234 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (1,)
+2026-04-24 16:47:25,238 INFO [sqlalchemy.engine.Engine] UPDATE printers SET runtime_seconds=?, last_runtime_update=?, updated_at=CURRENT_TIMESTAMP WHERE printers.id = ?
+2026-04-24 16:47:25,238 INFO [sqlalchemy.engine.Engine] [cached since 9.979e+04s ago] (286367, '2026-04-24 20:47:25.231927', 1)
+2026-04-24 16:47:25,240 INFO [sqlalchemy.engine.Engine] COMMIT
+2026-04-24 16:47:25,241 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=653764s (181.60h)
+2026-04-24 16:47:25,243 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,244 INFO [sqlalchemy.engine.Engine] SELECT printers.id, printers.name, printers.serial_number, printers.ip_address, printers.access_code, printers.model, printers.location, printers.nozzle_count, printers.is_active, printers.auto_archive, printers.print_hours_offset, printers.runtime_seconds, printers.last_runtime_update, printers.external_camera_url, printers.external_camera_type, printers.external_camera_enabled, printers.camera_rotation, printers.plate_detection_enabled, printers.plate_detection_roi_x, printers.plate_detection_roi_y, printers.plate_detection_roi_w, printers.plate_detection_roi_h, printers.awaiting_plate_clear, printers.created_at, printers.updated_at 
+FROM printers 
+WHERE printers.id = ?
+2026-04-24 16:47:25,244 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (2,)
+2026-04-24 16:47:25,248 INFO [sqlalchemy.engine.Engine] UPDATE printers SET runtime_seconds=?, last_runtime_update=?, updated_at=CURRENT_TIMESTAMP WHERE printers.id = ?
+2026-04-24 16:47:25,248 INFO [sqlalchemy.engine.Engine] [cached since 9.979e+04s ago] (653764, '2026-04-24 20:47:25.231927', 2)
+2026-04-24 16:47:25,250 INFO [sqlalchemy.engine.Engine] COMMIT
+2026-04-24 16:47:25,251 DEBUG [backend.app.main] Updated runtime for 2 printer(s)
+2026-04-24 16:47:25,437 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,438 INFO [sqlalchemy.engine.Engine] SELECT github_backup_config.id, github_backup_config.repository_url, github_backup_config.access_token, github_backup_config.branch, github_backup_config.schedule_enabled, github_backup_config.schedule_type, github_backup_config.schedule_cron, github_backup_config.backup_kprofiles, github_backup_config.backup_cloud_profiles, github_backup_config.backup_settings, github_backup_config.backup_spools, github_backup_config.backup_archives, github_backup_config.enabled, github_backup_config.last_backup_at, github_backup_config.last_backup_status, github_backup_config.last_backup_message, github_backup_config.last_backup_commit_sha, github_backup_config.next_scheduled_run, github_backup_config.created_at, github_backup_config.updated_at 
+FROM github_backup_config 
+WHERE github_backup_config.enabled = 1 AND github_backup_config.schedule_enabled = 1
+2026-04-24 16:47:25,438 INFO [sqlalchemy.engine.Engine] [cached since 9.974e+04s ago] ()
+2026-04-24 16:47:25,440 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:25,740 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,741 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-24 16:47:25,742 INFO [sqlalchemy.engine.Engine] [cached since 9.981e+04s ago] ('auth_enabled',)
+2026-04-24 16:47:25,744 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:25,746 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,747 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ?
+2026-04-24 16:47:25,748 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('0f260e43c06040ff48c297a706422ed6', 'revoked_jti')
+2026-04-24 16:47:25,749 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:25,752 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,753 INFO [sqlalchemy.engine.Engine] SELECT users.id, users.username, users.email, users.password_hash, users.role, users.auth_source, users.is_active, users.created_at, users.updated_at, users.password_changed_at, users.cloud_token, users.cloud_email, users.cloud_region 
+FROM users 
+WHERE lower(users.username) = lower(?)
+2026-04-24 16:47:25,753 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('[USER]',)
+2026-04-24 16:47:25,757 INFO [sqlalchemy.engine.Engine] SELECT users_1.id AS users_1_id, groups.id AS groups_id, groups.name AS groups_name, groups.description AS groups_description, groups.permissions AS groups_permissions, groups.is_system AS groups_is_system, groups.created_at AS groups_created_at, groups.updated_at AS groups_updated_at 
+FROM users AS users_1 JOIN user_groups AS user_groups_1 ON users_1.id = user_groups_1.user_id JOIN groups ON groups.id = user_groups_1.group_id 
+WHERE users_1.id IN (?)
+2026-04-24 16:47:25,757 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (2,)
+2026-04-24 16:47:25,760 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:25,763 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,764 INFO [sqlalchemy.engine.Engine] SELECT settings.id, settings."key", settings.value, settings.created_at, settings.updated_at 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-24 16:47:25,765 INFO [sqlalchemy.engine.Engine] [cached since 9.981e+04s ago] ('auth_enabled',)
+2026-04-24 16:47:25,768 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,769 INFO [sqlalchemy.engine.Engine] SELECT auth_ephemeral_tokens.id, auth_ephemeral_tokens.token, auth_ephemeral_tokens.token_type, auth_ephemeral_tokens.username, auth_ephemeral_tokens.provider_id, auth_ephemeral_tokens.nonce, auth_ephemeral_tokens.code_verifier, auth_ephemeral_tokens.challenge_id, auth_ephemeral_tokens.expires_at, auth_ephemeral_tokens.created_at 
+FROM auth_ephemeral_tokens 
+WHERE auth_ephemeral_tokens.token = ? AND auth_ephemeral_tokens.token_type = ?
+2026-04-24 16:47:25,769 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('0f260e43c06040ff48c297a706422ed6', 'revoked_jti')
+2026-04-24 16:47:25,771 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:25,773 INFO [sqlalchemy.engine.Engine] SELECT users.id, users.username, users.email, users.password_hash, users.role, users.auth_source, users.is_active, users.created_at, users.updated_at, users.password_changed_at, users.cloud_token, users.cloud_email, users.cloud_region 
+FROM users 
+WHERE lower(users.username) = lower(?)
+2026-04-24 16:47:25,774 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] ('[USER]',)
+2026-04-24 16:47:25,777 INFO [sqlalchemy.engine.Engine] SELECT users_1.id AS users_1_id, groups.id AS groups_id, groups.name AS groups_name, groups.description AS groups_description, groups.permissions AS groups_permissions, groups.is_system AS groups_is_system, groups.created_at AS groups_created_at, groups.updated_at AS groups_updated_at 
+FROM users AS users_1 JOIN user_groups AS user_groups_1 ON users_1.id = user_groups_1.user_id JOIN groups ON groups.id = user_groups_1.group_id 
+WHERE users_1.id IN (?)
+2026-04-24 16:47:25,778 INFO [sqlalchemy.engine.Engine] [cached since 9.98e+04s ago] (2,)
+2026-04-24 16:47:25,780 INFO [sqlalchemy.engine.Engine] ROLLBACK
+2026-04-24 16:47:25,782 INFO [sqlalchemy.engine.Engine] BEGIN (implicit)
+2026-04-24 16:47:25,783 INFO [sqlalchemy.engine.Engine] SELECT printers.name, printers.serial_number, printers.ip_address, printers.access_code 
+FROM printers
+2026-04-24 16:47:25,783 INFO [sqlalchemy.engine.Engine] [cached since 9.929e+04s ago] ()
+2026-04-24 16:47:25,786 INFO [sqlalchemy.engine.Engine] SELECT users.username 
+FROM users
+2026-04-24 16:47:25,786 INFO [sqlalchemy.engine.Engine] [cached since 9.929e+04s ago] ()
+2026-04-24 16:47:25,789 INFO [sqlalchemy.engine.Engine] SELECT settings.value 
+FROM settings 
+WHERE settings."key" = ?
+2026-04-24 16:47:25,789 INFO [sqlalchemy.engine.Engine] [cached since 9.929e+04s ago] ('bambu_cloud_email',)
+2026-04-24 16:47:25,791 INFO [sqlalchemy.engine.Engine] ROLLBACK

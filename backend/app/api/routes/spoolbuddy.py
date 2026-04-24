@@ -1017,7 +1017,7 @@ async def queue_system_command(
     device_id: str,
     req: SystemCommandRequest,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Queue a system command (reboot, shutdown, restart_daemon, restart_browser) for the SpoolBuddy device."""
     if req.command not in VALID_SYSTEM_COMMANDS:

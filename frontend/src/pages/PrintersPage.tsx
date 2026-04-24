@@ -595,6 +595,28 @@ function ThermometerFull({ className }: { className?: string }) {
   );
 }
 
+// Nozzle icon - schematic hot-end view (filament body + heater block + tip).
+// Added for visual parity with the thermometer icons on the dual-nozzle card
+// that previously had no icon at all (#1115, design by @m4rtini2).
+function NozzleIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="9.2" y="3.4" width="5.6" height="8.1" />
+      <rect x="6" y="11.5" width="12.1" height="3.7" />
+      <path d="M 7.3 15.2 L 12.1 19.6 L 16.7 15.2" />
+    </svg>
+  );
+}
+
 // Heater thermometer icon - filled when heating, outline when off
 interface HeaterThermometerProps {
   className?: string;
@@ -2882,7 +2904,8 @@ function PrinterCard({
                       filamentInfo={filamentInfo}
                     >
                       <div className="text-center px-3 py-1.5 bg-bambu-dark rounded-lg h-full flex flex-col justify-center items-center cursor-default" title={t('printers.activeNozzle', { nozzle: activeNozzle === 'L' ? t('common.left') : t('common.right') })}>
-                        <div className="flex items-center gap-2 mb-1">
+                        <NozzleIcon className="w-3.5 h-3.5 mb-0.5 text-amber-400" />
+                        <div className="flex items-center gap-2">
                           <span className={`text-[11px] font-bold ${activeNozzle === 'L' ? 'text-amber-400' : 'text-gray-500'}`}>
                             L{leftNozzleSlot?.nozzle_diameter ? ` ${leftNozzleSlot.nozzle_diameter}` : ''}
                           </span>

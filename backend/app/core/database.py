@@ -224,9 +224,9 @@ async def _safe_execute(conn, sql):
     recovery, as a failure will abort the migration sequence and prevent
     application startup.
 
-    IMPORTANT: Only use for DDL statements (ALTER TABLE, CREATE INDEX, etc.).
-    Never pass DML statements (UPDATE, INSERT, SELECT) — use conn.execute()
-    directly so failures are never silently swallowed.
+    Only use for DDL statements (ALTER TABLE, CREATE INDEX, etc.).
+    For DML backfills (UPDATE, DELETE) use conn.execute() directly inside
+    async with conn.begin_nested() so failures are never silently swallowed.
 
     Uses a savepoint so that a failed statement doesn't poison the surrounding
     transaction (required for PostgreSQL).
@@ -254,8 +254,9 @@ async def run_migrations(conn):
     for complex SQLite schema changes that ALTER TABLE cannot handle.
 
     DDL statements are wrapped in _safe_execute for idempotency.
-    DML statements (UPDATE/INSERT backfills) are executed directly so any
-    failure is always fatal and never silently swallowed.
+    DML backfills (UPDATE/DELETE) are executed directly via conn.execute()
+    inside begin_nested() so any failure is always fatal and never silently
+    swallowed.
     """
     from sqlalchemy import text
 
@@ -1424,7 +1425,8 @@ async def run_migrations(conn):
 
     # Migration: Normalize empty printer_ids [] to NULL (global access) on API keys
     # Previously both None and [] meant "all printers"; now [] means "no printers"
-    await _safe_execute(conn, "UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'")
+    async with conn.begin_nested():
+        await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'"))
 
     # Migration: Add auth_source column to users for LDAP support (#794)
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local' NOT NULL")
@@ -1555,10 +1557,8 @@ async def run_migrations(conn):
     # tokens could never be invalidated via the freshness check.  Setting it to
     # created_at is conservative: any token issued before the account was created
     # is always invalid, so this is a safe lower bound.
-    await _safe_execute(
-        conn,
-        "UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL",
-    )
+    async with conn.begin_nested():
+        await conn.execute(text("UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL"))
 
     # Migration: Provenance columns on library_files for MakerWorld imports.
     # source_url is indexed so "already imported" dedupe lookups stay O(log N)
@@ -1592,10 +1592,8 @@ async def run_migrations(conn):
     # every restart. Dedupe (keep lowest id per key) and add the missing unique index
     # before seeding. Safe/idempotent on both dialects — fresh installs already have
     # no dupes and `create_all` already emits the index.
-    await _safe_execute(
-        conn,
-        "DELETE FROM settings WHERE id NOT IN (SELECT MIN(id) FROM settings GROUP BY key)",
-    )
+    async with conn.begin_nested():
+        await conn.execute(text("DELETE FROM settings WHERE id NOT IN (SELECT MIN(id) FROM settings GROUP BY key)"))
     await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_settings_key ON settings(key)")
 
     # Migration: Normalise provider_email to lowercase (SEC-3).

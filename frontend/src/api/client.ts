@@ -16,6 +16,11 @@ export function setAuthToken(token: string | null, persistence: TokenPersistence
       sessionStorage.setItem('auth_token', token);
       if (persistence === 'persistent') {
         localStorage.setItem('auth_token', token);
+      } else {
+        // Clear any stale persistent token from a prior Remember-Me session
+        // that ended without an explicit logout (e.g. crash, browser-kill),
+        // so a new session login doesn't get resurrected on next tab open.
+        localStorage.removeItem('auth_token');
       }
     } else {
       sessionStorage.removeItem('auth_token');

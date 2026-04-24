@@ -150,6 +150,7 @@ function ProviderForm({
           value={form.email_claim}
           onChange={(e) => set('email_claim', e.target.value || 'email')}
           placeholder={t('settings.oidc.form.emailClaimPlaceholder')}
+          disabled={autoLinkOn}
         />
         <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.emailClaimDesc')}</p>
       </div>

@@ -82,6 +82,32 @@ describe('OIDCProviderSettings', () => {
       });
     });
 
+    it('disables the email_claim input when auto_link is enabled (SEC-6 UI parity)', async () => {
+      server.use(http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([])));
+      const user = userEvent.setup();
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getAllByRole('button', { name: /Add Provider/i })[0]).toBeInTheDocument();
+      });
+      await user.click(screen.getAllByRole('button', { name: /Add Provider/i })[0]);
+
+      // Form opens — email_claim input has placeholder 'email' (see en.ts).
+      const emailClaimInput = await screen.findByPlaceholderText('email');
+      expect(emailClaimInput).not.toBeDisabled();
+
+      // Toggling auto_link on must disable the input so the user can't set a
+      // custom claim that would trigger the server-side 422 combined-state
+      // guard. The sibling require_email_verified toggle already does this.
+      const switches = screen.getAllByRole('switch');
+      const autoLinkSwitch = switches[2];
+      await user.click(autoLinkSwitch);
+
+      await waitFor(() => {
+        expect(emailClaimInput).toBeDisabled();
+      });
+    });
+
     it('shows warning text when require_email_verified is toggled off', async () => {
       server.use(http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([])));
       const user = userEvent.setup();

@@ -66,6 +66,18 @@ describe('Auth Token Management', () => {
     expect(vi.mocked(localStorage.setItem)).not.toHaveBeenCalledWith('auth_token', expect.any(String));
   });
 
+  it("setAuthToken('session') clears any stale persistent token from a prior Remember-Me session", () => {
+    // Simulate a prior Remember-Me session that ended without explicit logout.
+    setAuthToken('stale-remember-me-token', 'persistent');
+    vi.mocked(localStorage.setItem).mockClear();
+    vi.mocked(localStorage.removeItem).mockClear();
+
+    // New session-mode login must not leave the stale localStorage token behind;
+    // otherwise a fresh tab would resurrect it via the fallback on module load.
+    setAuthToken('fresh-session-token', 'session');
+    expect(vi.mocked(localStorage.removeItem)).toHaveBeenCalledWith('auth_token');
+  });
+
   it('setAuthToken(null) removes from both storages regardless of previous persistence', () => {
     setAuthToken('some-token', 'persistent');
     vi.mocked(localStorage.setItem).mockClear();

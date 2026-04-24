@@ -3427,6 +3427,7 @@ class TestOIDCEmailClaimResolution:
             ("preferred_username", True, {"preferred_username": "@"}, None),  # SEC-2: "@" only
             ("preferred_username", True, {"preferred_username": "@domain.com"}, None),  # SEC-2: empty local
             ("preferred_username", True, {"preferred_username": "user@"}, None),  # SEC-2: empty domain
+            ("preferred_username", True, {"preferred_username": "user@nodot"}, None),  # SEC-2: no dot in domain
             ("preferred_username", True, {}, None),  # claim absent
         ],
         ids=[
@@ -3442,6 +3443,7 @@ class TestOIDCEmailClaimResolution:
             "fall-c-at-only",
             "fall-c-empty-local",
             "fall-c-empty-domain",
+            "fall-c-no-dot-in-domain",
             "fall-c-claim-absent",
         ],
     )

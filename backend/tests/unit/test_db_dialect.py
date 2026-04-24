@@ -163,13 +163,11 @@ class TestSafeExecutePattern:
         """Verify _safe_execute catches both OperationalError and ProgrammingError."""
         from sqlalchemy.exc import OperationalError, ProgrammingError
 
-        # These are the exception types _safe_execute must catch
-        # (verified by reading the source — actual integration tested by 1509 unit tests)
         for exc_type in (OperationalError, ProgrammingError):
             try:
                 raise exc_type("test", [], Exception("column already exists"))
             except (OperationalError, ProgrammingError):
-                pass  # This is what _safe_execute does
+                pass
 
     def test_safe_execute_would_not_catch_integrity_error(self):
         """IntegrityError should NOT be caught by _safe_execute."""
@@ -179,4 +177,93 @@ class TestSafeExecutePattern:
             try:
                 raise IntegrityError("test", [], Exception("unique violation"))
             except (OperationalError, ProgrammingError):
-                pass  # _safe_execute only catches these two
+                pass
+
+    @pytest.mark.asyncio
+    async def test_safe_execute_reraises_non_idempotency_errors(self):
+        """Non-idempotency errors must propagate so startup fails loudly."""
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from backend.app.core.database import _safe_execute
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            with pytest.raises(OperationalError):
+                await _safe_execute(conn, "SELECT * FROM nonexistent_table_xyz")
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_safe_execute_swallows_already_exists(self):
+        """Idempotency errors (already exists) must be silently ignored."""
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from backend.app.core.database import _safe_execute
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE TABLE t (id INTEGER)"))
+            # Second CREATE must not raise
+            await _safe_execute(conn, "CREATE TABLE t (id INTEGER)")
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_provider_email_lowercasing_migration(self):
+        """provider_email normalisation lowers mixed-case values and leaves NULL rows intact."""
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from backend.app.core.database import _safe_execute
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE TABLE user_oidc_links (id INTEGER PRIMARY KEY, provider_email TEXT)"))
+            await conn.execute(text("INSERT INTO user_oidc_links VALUES (1, 'User@Example.COM')"))
+            await conn.execute(text("INSERT INTO user_oidc_links VALUES (2, 'already@lower.com')"))
+            await conn.execute(text("INSERT INTO user_oidc_links VALUES (3, NULL)"))
+
+            await _safe_execute(
+                conn,
+                "UPDATE user_oidc_links SET provider_email = LOWER(provider_email) "
+                "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)",
+            )
+
+            result = await conn.execute(text("SELECT provider_email FROM user_oidc_links ORDER BY id"))
+            rows = [r[0] for r in result.fetchall()]
+        await engine.dispose()
+
+        assert rows[0] == "user@example.com"
+        assert rows[1] == "already@lower.com"
+        assert rows[2] is None
+
+    @pytest.mark.asyncio
+    async def test_check_constraint_false_true_on_sqlite(self):
+        """CheckConstraint with FALSE/TRUE literals is enforced on SQLite (3.23+)."""
+        from sqlalchemy import text
+        from sqlalchemy.exc import IntegrityError
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("""
+                CREATE TABLE ck_test (
+                    id INTEGER PRIMARY KEY,
+                    auto_link BOOLEAN,
+                    require_ev BOOLEAN,
+                    email_claim TEXT,
+                    CHECK (auto_link = FALSE OR (require_ev = TRUE AND email_claim = 'email'))
+                )
+            """)
+            )
+            # Valid: auto_link=0 (FALSE)
+            await conn.execute(text("INSERT INTO ck_test VALUES (1, 0, 0, 'upn')"))
+            # Valid: auto_link=1, require_ev=1, email_claim='email'
+            await conn.execute(text("INSERT INTO ck_test VALUES (2, 1, 1, 'email')"))
+
+        async with engine.begin() as conn:
+            # Invalid: auto_link=1 but conditions not met
+            with pytest.raises(IntegrityError):
+                await conn.execute(text("INSERT INTO ck_test VALUES (3, 1, 0, 'email')"))
+        await engine.dispose()

@@ -262,6 +262,29 @@ class TestSafeExecutePattern:
         await engine.dispose()
 
     @pytest.mark.asyncio
+    async def test_safe_execute_swallows_does_not_exist_for_rename_postgres(self):
+        """'does not exist' (PostgreSQL UndefinedColumnError) is swallowed for RENAME COLUMN idempotency."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy.exc import ProgrammingError
+
+        from backend.app.core.database import _safe_execute
+
+        fake_exc = ProgrammingError('column "quantity_printed" does not exist', [], Exception())
+
+        nested_cm = MagicMock()
+        nested_cm.__aenter__ = AsyncMock(return_value=nested_cm)
+        nested_cm.execute = AsyncMock(side_effect=fake_exc)
+        nested_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.begin_nested.return_value = nested_cm
+        mock_conn.execute = AsyncMock(side_effect=fake_exc)
+
+        # Must NOT raise — "does not exist" is in the swallow-list
+        await _safe_execute(mock_conn, 'ALTER TABLE project_bom_items RENAME COLUMN quantity_printed TO quantity_acquired')
+
+    @pytest.mark.asyncio
     async def test_safe_execute_swallows_duplicate_key(self):
         """'duplicate key' errors (PostgreSQL unique-constraint violations on re-run)
         must be silently swallowed for idempotent DDL migrations."""

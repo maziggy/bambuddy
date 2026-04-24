@@ -354,9 +354,12 @@ download_bambuddy() {
         # Ensure correct ownership after update
         sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_PATH" 2>/dev/null || true
     else
+        # Clone as root so we have write access regardless of the installing user,
+        # then hand ownership to the service user. Previously we chown'd the empty
+        # dir to the service user before the clone, which left the install-running
+        # user (not root, not bambuddy) unable to write .git into it.
         sudo mkdir -p "$INSTALL_PATH"
-        sudo chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_PATH" 2>/dev/null || true
-        git clone --branch "$BRANCH" https://github.com/maziggy/bambuddy.git "$INSTALL_PATH"
+        sudo git clone --branch "$BRANCH" https://github.com/maziggy/bambuddy.git "$INSTALL_PATH"
         sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_PATH" 2>/dev/null || true
     fi
 

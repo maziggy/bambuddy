@@ -15,42 +15,26 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 
-_CLOUD_METADATA_IPS = frozenset(
-    {
-        # AWS / GCP / Azure / Oracle / DigitalOcean IMDS
-        ipaddress.ip_address("169.254.169.254"),
-        # Alibaba Cloud metadata
-        ipaddress.ip_address("100.100.100.200"),
-        # AWS IMDS IPv6
-        ipaddress.ip_address("fd00:ec2::254"),
-    }
-)
-
-
 def assert_safe_spoolman_url(url: str) -> None:
     """Raise ValueError if *url* should be blocked as an SSRF risk.
 
-    Bambuddy is typically deployed on a home LAN alongside Spoolman, so
-    loopback (127.0.0.1) and RFC-1918 private ranges (192.168.x.x, 10.x.x.x,
-    172.16-31.x) must be permitted — they are THE normal Spoolman topology.
-    This guard therefore targets the genuinely dangerous cases only.
-
     Checks performed:
-    - Scheme must be http or https (no file://, gopher://, dict://, etc.).
+    - Scheme must be http or https.
     - Numeric-encoded IP addresses in decimal (e.g. ``2130706433``) or hex
-      (e.g. ``0x7f000001``) are rejected. Python's ``ipaddress`` module raises
-      ``ValueError`` for these forms so they would otherwise bypass the
-      explicit-IP block below, but libc (and browsers) resolve them as valid
-      IPv4 addresses.
-    - Cloud provider metadata endpoints (169.254.169.254, 100.100.100.200,
-      fd00:ec2::254) are blocked — the classic SSRF credential-exfil target.
-    - Multicast (224.0.0.0/4, ff00::/8) and unspecified (0.0.0.0, ::) addresses
-      are blocked — pointless as a destination and suggests misuse.
-    - IPv4-mapped IPv6 addresses (::ffff:x.x.x.x) are unwrapped so they cannot
-      bypass the checks above.
+      (e.g. ``0x7f000001``) are rejected — Python's ``ipaddress`` module raises
+      ``ValueError`` for these forms so they would otherwise bypass the IP-range
+      guard, but libc resolves them as valid IPv4 addresses.
+    - Bare numeric IP hosts in loopback (127.x, ::1), link-local (169.254.x,
+      fe80::), private (RFC-1918), multicast (224.x, ff::/8), or unspecified
+      (0.0.0.0, ::) ranges are rejected.
+    - IPv4-mapped IPv6 addresses (::ffff:x.x.x.x) are unwrapped to their IPv4
+      equivalent and subject to the same checks.
 
-    Hostname-based addresses ("localhost", "spoolman.lan", "internal.corp")
-    are out of scope — DNS resolution is deliberately not performed here.
+    Hostname-based addresses ("localhost", "internal.corp") require DNS resolution
+    and are outside the scope of this guard — they are mitigated by network-level
+    controls in the deployment environment.  "localhost" is intentionally *not*
+    blocked here because running Spoolman on the same host is a common and
+    supported topology.
     """
     parsed = urlparse(url)
     if parsed.scheme.lower() not in ("http", "https"):
@@ -59,8 +43,9 @@ def assert_safe_spoolman_url(url: str) -> None:
     hostname = (parsed.hostname or "").lower()
 
     # Reject decimal- and hex-encoded IPs (e.g. http://2130706433/ or
-    # http://0x7f000001/). These slip past ipaddress.ip_address() but libc
-    # (and browsers) parse them as IPv4 — an obvious bypass if not caught.
+    # http://0x7f000001/).  Python's ipaddress.ip_address() raises ValueError for
+    # these forms so they slip past the except-clause below, but the C library
+    # (and browsers) parse them as valid IPv4 addresses.
     if re.match(r"^(0x[0-9a-f]+|[0-9]+)$", hostname, re.I):
         raise ValueError("Spoolman URL must not use numeric-encoded IP addresses; use standard dotted-decimal notation")
 
@@ -70,17 +55,22 @@ def assert_safe_spoolman_url(url: str) -> None:
         # Not a bare IP — hostname-based addresses are out of scope.
         return
 
-    # Unwrap IPv4-mapped IPv6 (::ffff:169.254.169.254 etc.) so attackers can't
-    # encode a blocked IPv4 into an IPv6 literal to bypass the check.
+    # Unwrap IPv4-mapped IPv6 (::ffff:169.254.x.x etc.) so their IPv4
+    # properties are evaluated correctly.
     effective: ipaddress.IPv4Address | ipaddress.IPv6Address = addr
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
         effective = addr.ipv4_mapped
 
-    if effective in _CLOUD_METADATA_IPS:
-        raise ValueError("Spoolman URL must not point to a cloud metadata endpoint")
-
-    if effective.is_multicast or effective.is_unspecified:
-        raise ValueError("Spoolman URL must not point to a multicast or unspecified address")
+    if (
+        effective.is_loopback
+        or effective.is_link_local
+        or effective.is_private
+        or effective.is_multicast
+        or effective.is_unspecified
+    ):
+        raise ValueError(
+            "Spoolman URL must not point to a private, loopback, link-local, multicast, or unspecified address"
+        )
 
 
 _COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")

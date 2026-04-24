@@ -2669,6 +2669,13 @@ class BambuMQTTClient:
             and (
                 self._previous_gcode_state == "RUNNING"  # Normal transition
                 or (self._was_running and self._previous_gcode_state != self.state.state)  # After server restart
+                # Pre-print failure (#1111): printer rejected the job during setup
+                # — wrong nozzle size, AMS error, etc. The print never reaches
+                # RUNNING, so without this branch neither the RUNNING check nor
+                # _was_running match and the queue item stays stuck at "printing".
+                # Restricted to FAILED from pre-print states so a stale FAILED on
+                # first connection (prev=None) still can't accidentally fire.
+                or (self.state.state == "FAILED" and self._previous_gcode_state in ("PREPARE", "SLICING"))
             )
         )
         # For IDLE, only trigger if we just came from RUNNING (explicit abort/cancel)

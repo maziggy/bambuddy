@@ -427,6 +427,142 @@ class TestRealisticMessageFlow:
         assert complete_data["status"] == "failed"
 
 
+class TestPrePrintFailureCompletion:
+    """Tests for completion detection when the print errors before reaching RUNNING (#1111).
+
+    Common trigger: a file sliced for the wrong nozzle diameter is dispatched. The
+    printer transitions IDLE -> PREPARE -> FAILED without ever entering RUNNING, so
+    the legacy completion detection (which required _previous_gcode_state == 'RUNNING'
+    or _was_running == True) left the queue item stuck at 'printing' forever.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    def test_prepare_to_failed_triggers_completion(self, mqtt_client):
+        """PREPARE -> FAILED must fire on_print_complete (wrong nozzle size etc.)."""
+        complete_data = {}
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: complete_data.update(data)
+
+        mqtt_client._previous_gcode_state = "PREPARE"
+        mqtt_client._was_running = False
+        mqtt_client._completion_triggered = False
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/plate_1.gcode",
+                    "subtask_name": "WrongNozzle",
+                }
+            }
+        )
+
+        assert complete_data.get("status") == "failed"
+
+    def test_slicing_to_failed_triggers_completion(self, mqtt_client):
+        """SLICING -> FAILED also treated as a pre-print failure."""
+        complete_data = {}
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: complete_data.update(data)
+
+        mqtt_client._previous_gcode_state = "SLICING"
+        mqtt_client._was_running = False
+        mqtt_client._completion_triggered = False
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/plate_1.gcode",
+                    "subtask_name": "WrongNozzle",
+                }
+            }
+        )
+
+        assert complete_data.get("status") == "failed"
+
+    def test_initial_failed_does_not_trigger_completion(self, mqtt_client):
+        """First message arriving with FAILED (no prior state) must NOT fire completion.
+
+        Protects against a stale FAILED on reconnect being mistaken for a fresh failure
+        and marking an unrelated queue item as failed.
+        """
+        calls = []
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: calls.append(data)
+
+        assert mqtt_client._previous_gcode_state is None
+        assert mqtt_client._was_running is False
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/plate_1.gcode",
+                    "subtask_name": "Stale",
+                }
+            }
+        )
+
+        assert calls == []
+
+    def test_idle_to_failed_does_not_trigger_completion(self, mqtt_client):
+        """IDLE -> FAILED (no print ever dispatched) must NOT fire completion."""
+        calls = []
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: calls.append(data)
+
+        mqtt_client._previous_gcode_state = "IDLE"
+        mqtt_client._was_running = False
+        mqtt_client._completion_triggered = False
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "subtask_name": "Stale",
+                }
+            }
+        )
+
+        assert calls == []
+
+    def test_prepare_to_failed_includes_hms_errors_in_callback(self, mqtt_client):
+        """Pre-print FAILED callback should carry the current HMS error list so the
+        queue handler can populate a meaningful error_message."""
+        complete_data = {}
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: complete_data.update(data)
+
+        mqtt_client._previous_gcode_state = "PREPARE"
+        mqtt_client._was_running = False
+
+        # Message carries HMS data for a nozzle-size mismatch (0500_4038) and the
+        # PREPARE -> FAILED gcode_state transition in a single update.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/plate_1.gcode",
+                    "hms": [{"attr": 0x05000000, "code": 0x4038}],
+                }
+            }
+        )
+
+        assert complete_data.get("status") == "failed"
+        errs = complete_data.get("hms_errors") or []
+        assert any(e.get("code") == "0x4038" for e in errs)
+
+
 class TestAMSDataMerging:
     """Tests for AMS data merging, particularly handling empty slots."""
 

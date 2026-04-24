@@ -217,8 +217,9 @@ async def _safe_execute(conn, sql):
     """Execute a migration statement, silently ignoring idempotency errors.
 
     'already exists', 'duplicate column', and 'duplicate key' are swallowed
-    so that re-running migrations is safe. Any other error is logged at WARNING
-    level and then swallowed to keep the migration sequence running.
+    so that re-running migrations is safe. Any other error is logged and
+    re-raised — callers must not assume silent recovery, as a failure will
+    abort the migration sequence and prevent application startup.
     Uses a savepoint so that a failed statement doesn't poison the surrounding
     transaction (required for PostgreSQL).
     """
@@ -230,9 +231,8 @@ async def _safe_execute(conn, sql):
     except (OperationalError, ProgrammingError) as exc:
         msg = str(exc).lower()
         if not any(k in msg for k in ("already exists", "duplicate column", "duplicate key")):
-            logger.warning(
-                "Migration statement FAILED (non-idempotency error, execution continues): %s | SQL: %.120s", exc, sql
-            )
+            logger.error("Migration statement failed: %s | SQL: %.200s", exc, sql)
+            raise
 
 
 async def run_migrations(conn):
@@ -1571,6 +1571,15 @@ async def run_migrations(conn):
         "DELETE FROM settings WHERE id NOT IN (SELECT MIN(id) FROM settings GROUP BY key)",
     )
     await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_settings_key ON settings(key)")
+
+    # Migration: Normalise provider_email to lowercase (SEC-3).
+    # Required for Entra ID where UPN/email claims may arrive in mixed case.
+    # LOWER() is supported by both SQLite and PostgreSQL; the UPDATE is idempotent.
+    await _safe_execute(
+        conn,
+        "UPDATE user_oidc_links SET provider_email = LOWER(provider_email) "
+        "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)",
+    )
 
     # Seed default settings keys that must exist on fresh install
     default_settings = [

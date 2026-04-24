@@ -28,6 +28,11 @@ vi.mock('../../api/client', () => ({
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
     updateSpool: vi.fn().mockResolvedValue({ id: 1 }),
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
+    bulkCreateSpoolmanInventorySpools: vi.fn().mockResolvedValue({
+      created: [{ id: 1, material: 'PLA' }],
+      requested_count: 1,
+      failed_count: 0,
+    }),
   },
 }));
 
@@ -413,6 +418,108 @@ describe('SpoolFormModal weightTouched', () => {
 
     const [, payload] = vi.mocked(api.updateSpool).mock.calls[0];
     expect((payload as { rgba: string }).rgba).toBe('FF0000FF');
+  });
+
+  it('shows warning toast on partial bulk-create in Spoolman mode (T1/partial)', async () => {
+    vi.mocked(api.bulkCreateSpoolmanInventorySpools).mockResolvedValueOnce({
+      created: [{ id: 1, material: 'PLA' } as InventorySpool],
+      requested_count: 3,
+      failed_count: 2,
+    });
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // Enable Quick Add mode so the quantity field appears
+    const quickAddRow = screen.getByText('Quick Add (Stock)').closest('div[class*="justify-between"]');
+    const toggleButton = quickAddRow?.querySelector('button[type="button"]');
+    expect(toggleButton).toBeTruthy();
+    fireEvent.click(toggleButton!);
+
+    // Set quantity to 3 (triggers bulkCreateMutation instead of createMutation)
+    const quantityContainer = screen.getByText('Quantity').closest('div');
+    const quantityInput = quantityContainer?.querySelector('input[type="number"]');
+    expect(quantityInput).toBeTruthy();
+    fireEvent.change(quantityInput!, { target: { value: '3' } });
+
+    // Click the submit button
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    expect(submitButton).toBeTruthy();
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.bulkCreateSpoolmanInventorySpools).toHaveBeenCalledTimes(1);
+    });
+
+    // Should show a warning toast for partial failure (1 created, 2 failed, 3 requested)
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining('1 of 3'),
+      'warning',
+    );
+  });
+
+  it('shows success toast on full bulk-create success in Spoolman mode (T1/success)', async () => {
+    vi.mocked(api.bulkCreateSpoolmanInventorySpools).mockResolvedValueOnce({
+      created: [
+        { id: 1, material: 'PLA' } as InventorySpool,
+        { id: 2, material: 'PLA' } as InventorySpool,
+        { id: 3, material: 'PLA' } as InventorySpool,
+      ],
+      requested_count: 3,
+      failed_count: 0,
+    });
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // Enable Quick Add mode so the quantity field appears
+    const quickAddRow = screen.getByText('Quick Add (Stock)').closest('div[class*="justify-between"]');
+    const toggleButton = quickAddRow?.querySelector('button[type="button"]');
+    expect(toggleButton).toBeTruthy();
+    fireEvent.click(toggleButton!);
+
+    // Set quantity to 3
+    const quantityContainer = screen.getByText('Quantity').closest('div');
+    const quantityInput = quantityContainer?.querySelector('input[type="number"]');
+    expect(quantityInput).toBeTruthy();
+    fireEvent.change(quantityInput!, { target: { value: '3' } });
+
+    // Click the submit button
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    expect(submitButton).toBeTruthy();
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.bulkCreateSpoolmanInventorySpools).toHaveBeenCalledTimes(1);
+    });
+
+    // Should show a success toast listing the count of created spools
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining('3'),
+      'success',
+    );
   });
 
   it('displays correct catalog name when duplicates exist', async () => {

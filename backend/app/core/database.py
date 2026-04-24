@@ -1172,6 +1172,12 @@ async def run_migrations(conn):
     # falls back to the global low_stock_threshold setting.
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN category VARCHAR(50)")
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN low_stock_threshold_pct INTEGER")
+    # Migration: Add user-editable storage location to spool table
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN storage_location VARCHAR(255)")
+    # Migration: Widen tag_uid column from VARCHAR(16) to VARCHAR(32) to accommodate 7-byte NFC
+    # UIDs (14 hex chars) in addition to 8-byte Bambu Lab UIDs (16 hex chars).
+    # SQLite ignores VARCHAR sizes; this is a no-op there but needed for PostgreSQL.
+    await _safe_execute(conn, "ALTER TABLE spool ALTER COLUMN tag_uid TYPE VARCHAR(32)")
     # Migration: Add cost field to spool_usage_history table
     await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN cost REAL")
     # Migration: Add archive_id field to spool_usage_history table
@@ -1270,6 +1276,9 @@ async def run_migrations(conn):
 
     # Migration: Add system_stats JSON blob column to spoolbuddy_devices
     await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN system_stats TEXT")
+
+    # Migration: Add SSH host key for TOFU verification (H1 security fix)
+    await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN ssh_host_key VARCHAR(500)")
 
     # Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
     # Labels are now keyed by AMS serial number so they persist when the AMS is moved to another printer.

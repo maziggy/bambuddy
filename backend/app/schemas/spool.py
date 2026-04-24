@@ -18,7 +18,7 @@ class SpoolBase(BaseModel):
     nozzle_temp_min: int | None = None
     nozzle_temp_max: int | None = None
     note: str | None = None
-    tag_uid: str | None = None
+    tag_uid: str | None = Field(default=None, max_length=32)
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
@@ -29,6 +29,7 @@ class SpoolBase(BaseModel):
     # User-defined category + per-spool low-stock threshold override (#729).
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
+    storage_location: str | None = Field(default=None, max_length=255)
 
 
 class SpoolCreate(SpoolBase):
@@ -55,7 +56,7 @@ class SpoolUpdate(BaseModel):
     nozzle_temp_min: int | None = None
     nozzle_temp_max: int | None = None
     note: str | None = None
-    tag_uid: str | None = None
+    tag_uid: str | None = Field(default=None, max_length=32)
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
@@ -64,6 +65,7 @@ class SpoolUpdate(BaseModel):
     # User-defined category + per-spool low-stock threshold override (#729).
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
+    storage_location: str | None = Field(default=None, max_length=255)
 
 
 class SpoolKProfileBase(BaseModel):
@@ -96,7 +98,7 @@ class SpoolResponse(SpoolBase):
     added_full: bool | None = None
     last_used: datetime | None = None
     encode_time: datetime | None = None
-    tag_uid: str | None = None
+    tag_uid: str | None = Field(default=None, max_length=32)
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Literal
 
 import httpx
 
@@ -56,6 +57,25 @@ class AMSTray:
     tray_weight: int  # Spool weight in grams (usually 1000)
 
 
+class SpoolmanNotFoundError(Exception):
+    """Raised when a spool ID does not exist in Spoolman (HTTP 404)."""
+
+
+class SpoolmanUnavailableError(Exception):
+    """Raised when Spoolman is unreachable or returns a server/network error."""
+
+
+class SpoolmanClientError(Exception):
+    """Raised when Spoolman returns a 4xx client error (not 404).
+
+    Indicates the request was malformed or rejected by Spoolman, not a connectivity failure.
+    """
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class SpoolmanClient:
     """Client for interacting with Spoolman API."""
 
@@ -69,6 +89,8 @@ class SpoolmanClient:
         self.api_url = f"{self.base_url}/api/v1"
         self._client: httpx.AsyncClient | None = None
         self._connected = False
+        # Per-spool locks for atomic read-modify-write in merge_spool_extra.
+        self._extra_locks: dict[int, asyncio.Lock] = {}
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client with connection pooling limits.
@@ -80,7 +102,9 @@ class SpoolmanClient:
         """
         if self._client is None:
             self._client = httpx.AsyncClient(
-                timeout=10.0,
+                timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
+                follow_redirects=False,
+                verify=True,
                 limits=httpx.Limits(
                     max_keepalive_connections=5,
                     max_connections=10,
@@ -169,13 +193,16 @@ class SpoolmanClient:
                     await asyncio.sleep(retry_delay)
                 else:
                     logger.error("Failed to get spools from Spoolman after %d attempts: %s", max_attempts, e)
-                    raise
+                    raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
 
     async def get_filaments(self) -> list[dict]:
         """Get all internal filaments from Spoolman.
 
         Returns:
             List of filament dictionaries.
+
+        Raises:
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
         """
         try:
             client = await self._get_client()
@@ -184,13 +211,16 @@ class SpoolmanClient:
             return response.json()
         except Exception as e:
             logger.error("Failed to get filaments from Spoolman: %s", e)
-            return []
+            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
 
     async def get_external_filaments(self) -> list[dict]:
         """Get external/library filaments from Spoolman.
 
         Returns:
             List of external filament dictionaries.
+
+        Raises:
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
         """
         try:
             client = await self._get_client()
@@ -199,13 +229,16 @@ class SpoolmanClient:
             return response.json()
         except Exception as e:
             logger.error("Failed to get external filaments from Spoolman: %s", e)
-            return []
+            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
 
     async def get_vendors(self) -> list[dict]:
         """Get all vendors from Spoolman.
 
         Returns:
             List of vendor dictionaries.
+
+        Raises:
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
         """
         try:
             client = await self._get_client()
@@ -214,7 +247,7 @@ class SpoolmanClient:
             return response.json()
         except Exception as e:
             logger.error("Failed to get vendors from Spoolman: %s", e)
-            return []
+            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
 
     async def create_vendor(self, name: str) -> dict | None:
         """Create a new vendor in Spoolman.
@@ -274,6 +307,7 @@ class SpoolmanClient:
         vendor_id: int | None = None,
         material: str | None = None,
         color_hex: str | None = None,
+        color_name: str | None = None,
         weight: float | None = None,
         diameter: float = 1.75,
         density: float | None = None,
@@ -285,6 +319,7 @@ class SpoolmanClient:
             vendor_id: Vendor ID
             material: Material type (PLA, PETG, etc.)
             color_hex: Color in hex format (without #)
+            color_name: Human-readable colour name (e.g. "Bambu Green")
             weight: Net weight in grams
             diameter: Filament diameter in mm (default 1.75)
             density: Filament density in g/cm³ (auto-calculated if not provided)
@@ -315,6 +350,8 @@ class SpoolmanClient:
                 # Strip alpha channel if present (RRGGBBAA -> RRGGBB)
                 color_hex = color_hex[:6] if len(color_hex) >= 6 else color_hex
                 data["color_hex"] = color_hex
+            if color_name:
+                data["color_name"] = color_name
             if weight:
                 data["weight"] = weight
 
@@ -420,6 +457,278 @@ class SpoolmanClient:
         except Exception as e:
             logger.error("Failed to update spool in Spoolman: %s", e)
             return None
+
+    async def _request_spool(
+        self,
+        method: Literal["GET", "PATCH", "DELETE"],
+        spool_id: int,
+        *,
+        json_body: dict | None = None,
+        operation: str,
+    ) -> httpx.Response:
+        """Perform a spool-scoped HTTP request, translating 404 and errors to named exceptions."""
+        try:
+            client = await self._get_client()
+            response = await client.request(
+                method,
+                f"{self.api_url}/spool/{spool_id}",
+                json=json_body,
+            )
+            if response.status_code == 404:
+                raise SpoolmanNotFoundError(f"Spool {spool_id} not found in Spoolman")
+            response.raise_for_status()
+            return response
+        except SpoolmanNotFoundError:
+            raise
+        except httpx.HTTPStatusError as e:
+            if 400 <= e.response.status_code < 500:
+                logger.warning(
+                    "Spoolman returned %d for %s spool %s",
+                    e.response.status_code,
+                    operation,
+                    spool_id,
+                )
+                raise SpoolmanClientError(
+                    f"Spoolman rejected {operation} for spool {spool_id} (HTTP {e.response.status_code})",
+                    e.response.status_code,
+                ) from e
+            else:
+                logger.error("Failed to %s spool %s in Spoolman: %s", operation, spool_id, e)
+                raise SpoolmanUnavailableError(f"Failed to {operation} spool {spool_id}") from e
+        except Exception as e:
+            logger.error("Failed to %s spool %s in Spoolman: %s", operation, spool_id, e)
+            raise SpoolmanUnavailableError(f"Failed to {operation} spool {spool_id}") from e
+
+    async def get_spool(self, spool_id: int) -> dict:
+        """Get a single spool by ID from Spoolman.
+
+        Args:
+            spool_id: Spoolman spool ID
+
+        Returns:
+            Spool dictionary.
+
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist (HTTP 404).
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
+        """
+        response = await self._request_spool("GET", spool_id, operation="get")
+        return response.json()
+
+    async def get_all_spools(self, allow_archived: bool = False) -> list[dict]:
+        """Get all spools from Spoolman, optionally including archived ones.
+
+        Args:
+            allow_archived: If True, include archived spools in the result.
+
+        Returns:
+            List of spool dictionaries.
+
+        Raises:
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
+        """
+        try:
+            client = await self._get_client()
+            params: dict = {}
+            if allow_archived:
+                params["allow_archived"] = "true"
+            response = await client.get(f"{self.api_url}/spool", params=params or None)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error("Failed to get all spools from Spoolman: %s", e)
+            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
+
+    async def delete_spool(self, spool_id: int) -> None:
+        """Delete a spool from Spoolman.
+
+        Args:
+            spool_id: Spoolman spool ID
+
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist (HTTP 404).
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
+        """
+        await self._request_spool("DELETE", spool_id, operation="delete")
+
+    async def set_spool_archived(self, spool_id: int, archived: bool) -> dict:
+        """Archive or restore a spool in Spoolman.
+
+        Args:
+            spool_id: Spoolman spool ID
+            archived: True to archive, False to restore.
+
+        Returns:
+            Updated spool dictionary.
+
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist (HTTP 404).
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
+        """
+        response = await self._request_spool(
+            "PATCH",
+            spool_id,
+            json_body={"archived": archived},
+            operation="archive/restore",
+        )
+        return response.json()
+
+    async def update_spool_full(
+        self,
+        spool_id: int,
+        *,
+        filament_id: int | None = None,
+        remaining_weight: float | None = None,
+        comment: str | None = None,
+        price: float | None = None,
+        location: str | None = None,
+        clear_location: bool = False,
+        extra: dict | None = None,
+    ) -> dict:
+        """Update a spool in Spoolman with comprehensive field support.
+
+        Unlike update_spool, this method does not auto-set last_used and
+        supports updating filament_id, comment, and price.
+
+        Args:
+            spool_id: Spoolman spool ID
+            filament_id: New filament type ID
+            remaining_weight: New remaining weight in grams
+            comment: New comment/note (pass empty string to clear)
+            price: Cost per unit (maps to cost_per_kg usage)
+            location: New location string
+            clear_location: If True, sets location to None
+            extra: Extra fields dict to replace (overwrites the entire extra dict;
+                use merge_spool_extra to preserve other fields)
+
+        Returns:
+            Updated spool dictionary.
+
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist (HTTP 404).
+            SpoolmanUnavailableError: If Spoolman is unreachable or returns a server error.
+        """
+        data: dict = {}
+        if filament_id is not None:
+            data["filament_id"] = filament_id
+        if remaining_weight is not None:
+            data["remaining_weight"] = remaining_weight
+        if comment is not None:
+            data["comment"] = comment if comment else None
+        if price is not None:
+            data["price"] = price
+        if clear_location:
+            data["location"] = None
+        elif location is not None:
+            data["location"] = location
+        if extra is not None:
+            data["extra"] = extra
+
+        response = await self._request_spool("PATCH", spool_id, json_body=data, operation="update")
+        return response.json()
+
+    def extra_lock(self, spool_id: int) -> asyncio.Lock:
+        """Return (creating if needed) the per-spool asyncio.Lock used by merge_spool_extra."""
+        return self._extra_locks.setdefault(spool_id, asyncio.Lock())
+
+    async def merge_spool_extra(self, spool_id: int, new_fields: dict) -> dict:
+        """Fetch current extra dict, merge new_fields in, then PATCH back to Spoolman.
+
+        Safe merge — never blindly overwrites other custom Spoolman extra fields.
+        The operation is serialised per spool_id with an asyncio.Lock to prevent
+        concurrent calls from clobbering each other's writes.
+
+        Args:
+            spool_id: Spoolman spool ID
+            new_fields: Fields to add/update in the extra dict
+
+        Returns:
+            Updated spool dictionary.
+
+        Raises:
+            SpoolmanNotFoundError: If the spool does not exist.
+            SpoolmanUnavailableError: If Spoolman is unreachable.
+        """
+        async with self.extra_lock(spool_id):
+            current = await self.get_spool(spool_id)  # raises on error
+            current_extra: dict = current.get("extra") or {}
+            merged = {**current_extra, **new_fields}
+            return await self.update_spool_full(spool_id=spool_id, extra=merged)
+
+    async def find_or_create_vendor(self, name: str) -> int | None:
+        """Find an existing vendor by name or create a new one.
+
+        Args:
+            name: Vendor name (case-insensitive match)
+
+        Returns:
+            Vendor ID or None on failure.
+        """
+        vendors = await self.get_vendors()
+        name_lower = name.strip().lower()
+        for vendor in vendors:
+            if vendor.get("name", "").strip().lower() == name_lower:
+                return vendor["id"]
+        created = await self.create_vendor(name.strip())
+        return created["id"] if created else None
+
+    async def find_or_create_filament(
+        self,
+        material: str,
+        subtype: str,
+        brand: str | None,
+        color_hex: str,
+        label_weight: int,
+        color_name: str | None = None,
+    ) -> int | None:
+        """Find a matching filament in Spoolman or create a new one.
+
+        Matching uses material + full name + vendor + color_hex (normalised).
+        A new filament is created only when no exact match is found.
+
+        Args:
+            material: Filament material (e.g. "PLA")
+            subtype: Filament subtype (e.g. "Basic"); combined with material as name
+            brand: Vendor/brand name; None skips vendor matching
+            color_hex: 6-char hex colour string (RRGGBB, no #)
+            label_weight: Net spool weight in grams
+            color_name: Human-readable colour name passed to create_filament when creating
+
+        Returns:
+            Filament ID or None on failure.
+        """
+        name = f"{material} {subtype}".strip() if subtype else material
+        color = color_hex[:6].upper() if len(color_hex) >= 6 else color_hex.upper()
+
+        vendor_id: int | None = None
+        if brand:
+            vendor_id = await self.find_or_create_vendor(brand)
+
+        filaments = await self.get_filaments()
+        for f in filaments:
+            f_material = (f.get("material") or "").upper()
+            f_name = (f.get("name") or "").strip()
+            f_color = (f.get("color_hex") or "").upper()[:6]
+            f_vendor = f.get("vendor") or {}
+            f_vendor_name = (f_vendor.get("name") or "").strip().lower()
+
+            material_match = f_material == material.upper()
+            name_match = f_name.lower() == name.lower()
+            color_match = f_color == color
+            vendor_match = (not brand) or f_vendor_name == (brand or "").strip().lower()
+
+            if material_match and name_match and color_match and vendor_match:
+                return f["id"]
+
+        filament = await self.create_filament(
+            name=name,
+            vendor_id=vendor_id,
+            material=material,
+            color_hex=color,
+            color_name=color_name,
+            weight=float(label_weight),
+        )
+        return filament["id"] if filament else None
 
     async def use_spool(self, spool_id: int, used_weight: float) -> dict | None:
         """Record filament usage for a spool.
@@ -972,7 +1281,14 @@ async def init_spoolman_client(url: str) -> SpoolmanClient:
 
     Returns:
         Initialized SpoolmanClient instance.
+
+    Raises:
+        ValueError: If *url* is rejected by the SSRF guard.
     """
+    from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
+
+    assert_safe_spoolman_url(url)
+
     global _spoolman_client
     if _spoolman_client:
         await _spoolman_client.close()

@@ -1,7 +1,7 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 def _validate_password_complexity(v: str) -> str:
@@ -296,19 +296,6 @@ class AdminDisable2FARequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-AUTO_LINK_REQUIREMENTS_ERROR = (
-    "auto_link_existing_accounts requires require_email_verified=True and email_claim='email'"
-)
-
-
-def _validate_email_claim_name(v: str) -> str:
-    # Accepts only alphanumeric/underscore/hyphen claim names starting with a letter —
-    # prevents log injection and limits the attack surface of operator-supplied claim names.
-    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_\-]{0,63}", v):
-        raise ValueError("Invalid claim name")
-    return v
-
-
 def _validate_icon_url(v: str | None) -> str | None:
     """Reject non-HTTPS icon URLs to prevent SSRF / mixed-content issues."""
     if v is None:
@@ -368,44 +355,26 @@ class OIDCProviderCreate(BaseModel):
     is_enabled: bool = True
     auto_create_users: bool = False
     auto_link_existing_accounts: bool = False  # M-2: conservative default, opt-in only
-    email_claim: str = Field(default="email", max_length=64)
-    require_email_verified: bool = True
     icon_url: str | None = None
 
     @field_validator("issuer_url")
     @classmethod
     def validate_issuer_url(cls, v: str) -> str:
         result = _validate_issuer_url(v)
-        if result is None:
-            raise ValueError("issuer_url is required")
+        assert result is not None
         return result
 
     @field_validator("scopes")
     @classmethod
     def validate_scopes(cls, v: str) -> str:
         result = _validate_scopes(v)
-        if result is None:
-            raise ValueError("scopes is required")
+        assert result is not None
         return result
-
-    @field_validator("email_claim")
-    @classmethod
-    def validate_email_claim(cls, v: str) -> str:
-        return _validate_email_claim_name(v)
 
     @field_validator("icon_url")
     @classmethod
     def validate_icon_url(cls, v: str | None) -> str | None:
         return _validate_icon_url(v)
-
-    # SEC-1 + SEC-6: auto_link requires both require_email_verified=True AND email_claim="email".
-    # Fall B (require_email_verified=False) accepts absent email_verified → account-takeover risk.
-    # Fall C (custom claim) skips email_verified entirely → same risk.
-    @model_validator(mode="after")
-    def check_auto_link_requires_verified(self) -> "OIDCProviderCreate":
-        if self.auto_link_existing_accounts and (not self.require_email_verified or self.email_claim != "email"):
-            raise ValueError(AUTO_LINK_REQUIREMENTS_ERROR)
-        return self
 
 
 class OIDCProviderUpdate(BaseModel):
@@ -423,8 +392,6 @@ class OIDCProviderUpdate(BaseModel):
     is_enabled: bool | None = None
     auto_create_users: bool | None = None
     auto_link_existing_accounts: bool | None = None
-    email_claim: str | None = Field(default=None, max_length=64)
-    require_email_verified: bool | None = None
     icon_url: str | None = None
 
     @field_validator("scopes")
@@ -432,28 +399,10 @@ class OIDCProviderUpdate(BaseModel):
     def validate_scopes(cls, v: str | None) -> str | None:
         return _validate_scopes(v)
 
-    @field_validator("email_claim")
-    @classmethod
-    def validate_email_claim(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        return _validate_email_claim_name(v)
-
     @field_validator("icon_url")
     @classmethod
     def validate_icon_url(cls, v: str | None) -> str | None:
         return _validate_icon_url(v)
-
-    # SEC-1 + SEC-6 (schema-level): blocks only when both conflicting fields arrive
-    # in the same request. Partial updates spanning two requests are caught by the
-    # Combined-State-Guard in the route handler after the setattr loop.
-    @model_validator(mode="after")
-    def check_auto_link_requires_verified(self) -> "OIDCProviderUpdate":
-        if self.auto_link_existing_accounts is True and (
-            self.require_email_verified is False or (self.email_claim is not None and self.email_claim != "email")
-        ):
-            raise ValueError(AUTO_LINK_REQUIREMENTS_ERROR)
-        return self
 
 
 class OIDCProviderResponse(BaseModel):
@@ -465,8 +414,6 @@ class OIDCProviderResponse(BaseModel):
     is_enabled: bool
     auto_create_users: bool
     auto_link_existing_accounts: bool = False
-    email_claim: str = "email"
-    require_email_verified: bool = True
     icon_url: str | None = None
 
     class Config:

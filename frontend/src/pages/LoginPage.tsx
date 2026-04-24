@@ -6,31 +6,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { X, Mail, Shield, Smartphone, Key } from 'lucide-react';
-import { api, type LoginResponse, type TokenPersistence } from '../api/client';
+import { api, type LoginResponse } from '../api/client';
 import { Card, CardHeader, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 
 type LoginStep = 'credentials' | '2fa' | 'reset-password';
-
-// sessionStorage survives the OIDC provider round-trip; React state does not.
-// Read + remove in one try so all branches in the OIDC useEffect see the same
-// value and a subsequent page load does not replay the flag.
-const REMEMBER_ME_KEY = 'auth_remember_me';
-
-function toPersistence(remember: boolean): TokenPersistence {
-  return remember ? 'persistent' : 'session';
-}
-
-function consumeSavedRememberMe(): boolean {
-  try {
-    const saved = sessionStorage.getItem(REMEMBER_ME_KEY) === '1';
-    sessionStorage.removeItem(REMEMBER_ME_KEY);
-    return saved;
-  } catch (err) {
-    console.warn('consumeSavedRememberMe: sessionStorage unavailable, Remember Me preference lost across OIDC redirect', err);
-    return false;
-  }
-}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -54,8 +34,6 @@ export function LoginPage() {
   const [twoFACode, setTwoFACode] = useState('');
   const [emailOTPSent, setEmailOTPSent] = useState(false);
   const twoFAInputRef = useRef<HTMLInputElement>(null);
-
-  const [rememberMe, setRememberMe] = useState(false);
 
   // H-6: Password reset step state
   const [resetToken, setResetToken] = useState('');
@@ -96,10 +74,6 @@ export function LoginPage() {
     const oidcToken = hash.startsWith('#oidc_token=') ? hash.slice('#oidc_token='.length) : null;
     const oidcError = searchParams.get('oidc_error');
 
-    if (!oidcToken && !oidcError) return;
-
-    const savedRememberMe = consumeSavedRememberMe();
-
     if (oidcError) {
       // L-3: Whitelist known OIDC error codes so provider-controlled text is never
       // shown verbatim. Any unknown code falls back to a generic message.
@@ -126,6 +100,7 @@ export function LoginPage() {
       const errorMsg = KNOWN_OIDC_ERRORS[oidcError]
         ?? (oidcError.startsWith('token_exchange_') ? t('login.oidcErrors.tokenExchangeFailed') : t('login.oidcLoginFailed'));
       showToast(errorMsg, 'error');
+      // Remove query params from URL cleanly
       navigate('/login', { replace: true });
       return;
     }
@@ -134,7 +109,6 @@ export function LoginPage() {
       api.exchangeOIDCToken(oidcToken).then((resp: LoginResponse) => {
         if (resp.requires_2fa && resp.pre_auth_token) {
           // OIDC user has 2FA enabled — redirect to 2FA step
-          setRememberMe(savedRememberMe);
           setPreAuthToken(resp.pre_auth_token);
           const methods = resp.two_fa_methods ?? [];
           setTwoFAMethods(methods);
@@ -145,16 +119,12 @@ export function LoginPage() {
           // Remove oidc_token from URL so page refresh doesn't re-trigger exchange
           navigate('/login', { replace: true });
         } else if (resp.access_token && resp.user) {
-          loginWithToken(resp.access_token, resp.user, toPersistence(savedRememberMe));
+          loginWithToken(resp.access_token, resp.user);
           showToast(t('login.loginSuccess'));
           navigate('/', { replace: true });
-        } else {
-          showToast(t('login.oidcLoginFailed'), 'error');
-          navigate('/login', { replace: true });
         }
-      }).catch((err: unknown) => {
-        console.error('OIDC token exchange failed', err);
-        showToast(t('login.oidcLoginFailed'), 'error');
+      }).catch((err: Error) => {
+        showToast(err.message || t('login.oidcLoginFailed'), 'error');
         navigate('/login', { replace: true });
       });
     }
@@ -162,7 +132,7 @@ export function LoginPage() {
 
   // --- Step 1: Credentials login ---
   const loginMutation = useMutation({
-    mutationFn: () => login(username, password, toPersistence(rememberMe)),
+    mutationFn: () => login(username, password),
     onSuccess: (resp: LoginResponse) => {
       if (resp.requires_2fa && resp.pre_auth_token) {
         // 2FA required — switch to verification step
@@ -230,12 +200,9 @@ export function LoginPage() {
       api.verify2FA({ pre_auth_token: preAuthToken, code: twoFACode, method: twoFAMethod }),
     onSuccess: (resp: LoginResponse) => {
       if (resp.access_token && resp.user) {
-        loginWithToken(resp.access_token, resp.user, toPersistence(rememberMe));
+        loginWithToken(resp.access_token, resp.user);
         showToast(t('login.loginSuccess'));
         navigate('/');
-      } else {
-        console.error('2FA verify: unexpected response shape', resp);
-        showToast(t('login.loginFailed'), 'error');
       }
     },
     onError: (error: Error) => {
@@ -248,13 +215,6 @@ export function LoginPage() {
   const oidcLoginMutation = useMutation({
     mutationFn: (providerId: number) => api.getOIDCAuthorizeUrl(providerId),
     onSuccess: (data) => {
-      if (rememberMe) {
-        try {
-          sessionStorage.setItem(REMEMBER_ME_KEY, '1');
-        } catch (err) {
-          console.warn('setItem auth_remember_me failed, Remember Me will not carry through OIDC redirect', err);
-        }
-      }
       window.location.href = data.auth_url;
     },
     onError: (error: Error) => {
@@ -606,19 +566,6 @@ export function LoginPage() {
                 autoComplete="current-password"
               />
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              id="remember-me"
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="h-4 w-4 rounded border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-green focus:ring-bambu-green/50 cursor-pointer"
-            />
-            <label htmlFor="remember-me" className="text-sm text-bambu-gray cursor-pointer">
-              {t('login.rememberMe')}
-            </label>
           </div>
 
           <div>

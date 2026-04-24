@@ -188,9 +188,14 @@ class TestScaleReadingRequestValidation:
         req = ScaleReadingRequest(device_id="sb1", weight_grams=100_000.0)
         assert req.weight_grams == 100_000.0
 
-    def test_negative_weight_rejected(self):
+    def test_negative_weight_accepted(self):
+        # Scale can legitimately read negative values when tare is not calibrated
+        req = ScaleReadingRequest(device_id="sb1", weight_grams=-1.0)
+        assert req.weight_grams == -1.0
+
+    def test_extreme_negative_weight_rejected(self):
         with pytest.raises(ValidationError):
-            ScaleReadingRequest(device_id="sb1", weight_grams=-1.0)
+            ScaleReadingRequest(device_id="sb1", weight_grams=-10_001.0)
 
     def test_over_max_weight_rejected(self):
         with pytest.raises(ValidationError):

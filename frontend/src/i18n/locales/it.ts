@@ -2273,6 +2273,7 @@ export default {
     passwordPlaceholder: 'Inserisci la password',
     signIn: 'Accedi',
     signingIn: 'Accesso in corso...',
+    rememberMe: 'Ricordami',
     forgotPassword: 'Hai dimenticato la password?',
     loginSuccess: 'Accesso riuscito',
     loginFailed: 'Accesso fallito',

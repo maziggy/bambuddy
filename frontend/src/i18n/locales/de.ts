@@ -3963,10 +3963,23 @@ export default {
       title: 'Automatisch starten',
       description: 'Drucke automatisch starten, wenn sie zur Warteschlange hinzugefügt werden. Wenn deaktiviert, warten Drucke auf manuellen Start.',
     },
+    tailscaleDisabled: {
+      title: 'Tailscale-Integration',
+      description: 'Wenn aktiviert, werden Tailscale-zertifizierte TLS-Zertifikate verwendet. Deaktivieren für selbstsignierte Zertifikate.',
+    },
     setupRequired: {
       title: 'Einrichtung erforderlich',
       description: 'Die virtuelle Druckerfunktion erfordert zusätzliche Systemkonfiguration, bevor sie funktioniert. Dies beinhaltet Portweiterleitung, Firewall-Regeln und plattformspezifische Einstellungen.',
       readGuide: 'Lese die Einrichtungsanleitung vor dem Aktivieren',
+    },
+    tailscale: {
+      connected: 'Tailscale verbunden',
+      notAvailable: 'Tailscale nicht aktiv',
+      trustedCert: "Let's Encrypt-Zertifikat — keine CA-Einrichtung nötig",
+      notAvailableHint: 'Installiere Tailscale für vertrauenswürdige TLS-Zertifikate',
+      disableTitle: 'Tailscale-Integration deaktivieren',
+      enabledHint: 'Tailscale automatisch erkennen und Let\'s Encrypt-Zertifikat verwenden wenn verfügbar',
+      disabledHint: 'Tailscale deaktiviert — selbstsigniertes Zertifikat wird verwendet',
     },
     howItWorks: {
       title: 'So funktioniert es',
@@ -3990,6 +4003,7 @@ export default {
     toast: {
       updated: 'Virtuelle Druckereinstellungen aktualisiert',
       failedToUpdate: 'Einstellungen konnten nicht aktualisiert werden',
+      tailscaleNotAvailable: 'Tailscale ist auf diesem Host nicht installiert. Installiere Tailscale zuerst und versuche es dann erneut.',
       accessCodeRequired: 'Bitte zuerst einen Zugangscode setzen',
       targetPrinterRequired: 'Bitte zuerst einen Zieldrucker auswählen',
       bindIpRequired: 'Bitte zuerst eine Bind-IP setzen',

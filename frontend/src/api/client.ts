@@ -5389,6 +5389,7 @@ export interface VirtualPrinterStatus {
   pending_files: number;
   target_printer_ip?: string;  // For proxy mode
   proxy?: VirtualPrinterProxyStatus;  // For proxy mode
+  tailscale_fqdn?: string;  // Set when Tailscale cert is active
 }
 
 export interface VirtualPrinterSettings {
@@ -5398,6 +5399,7 @@ export interface VirtualPrinterSettings {
   model: string;
   target_printer_id: number | null;  // For proxy mode
   remote_interface_ip: string | null;  // For SSDP proxy across networks
+  tailscale_disabled: boolean;
   status: VirtualPrinterStatus;
 }
 
@@ -5440,6 +5442,7 @@ export const virtualPrinterApi = {
     model?: string;
     target_printer_id?: number;
     remote_interface_ip?: string;
+    tailscale_disabled?: boolean;
   }) => {
     const params = new URLSearchParams();
     if (data.enabled !== undefined) params.set('enabled', String(data.enabled));
@@ -5448,6 +5451,7 @@ export const virtualPrinterApi = {
     if (data.model !== undefined) params.set('model', data.model);
     if (data.target_printer_id !== undefined) params.set('target_printer_id', String(data.target_printer_id));
     if (data.remote_interface_ip !== undefined) params.set('remote_interface_ip', data.remote_interface_ip);
+    if (data.tailscale_disabled !== undefined) params.set('tailscale_disabled', String(data.tailscale_disabled));
 
     return request<VirtualPrinterSettings>(`/settings/virtual-printer?${params.toString()}`, {
       method: 'PUT',
@@ -5467,10 +5471,11 @@ export interface VirtualPrinterConfig {
   serial: string;
   target_printer_id: number | null;
   auto_dispatch: boolean;
+  tailscale_disabled: boolean;
   bind_ip: string | null;
   remote_interface_ip: string | null;
   position: number;
-  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus };
+  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus; tailscale_fqdn?: string };
 }
 
 export interface VirtualPrinterListResponse {
@@ -5507,6 +5512,7 @@ export const multiVirtualPrinterApi = {
     access_code?: string;
     target_printer_id?: number;
     auto_dispatch?: boolean;
+    tailscale_disabled?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
   }) =>
@@ -5519,7 +5525,19 @@ export const multiVirtualPrinterApi = {
     request<{ detail: string; id: number }>(`/virtual-printers/${id}`, {
       method: 'DELETE',
     }),
+
+  getTailscaleStatus: () =>
+    request<TailscaleStatusResponse>('/virtual-printers/tailscale-status'),
 };
+
+export interface TailscaleStatusResponse {
+  available: boolean;
+  fqdn: string;
+  hostname: string;
+  tailnet_name: string;
+  tailscale_ips: string[];
+  error: string | null;
+}
 
 // Pending Uploads API
 export const pendingUploadsApi = {

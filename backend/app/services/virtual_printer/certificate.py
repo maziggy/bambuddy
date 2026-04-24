@@ -132,7 +132,10 @@ class CertificateService:
                 encryption_algorithm=serialization.NoEncryption(),
             )
         )
-        self.ca_key_path.chmod(0o600)
+        try:
+            self.ca_key_path.chmod(0o600)
+        except OSError as e:
+            logger.warning("Could not set CA key permissions on %s: %s", self.ca_key_path, e)
         self.ca_cert_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
 
         logger.info("Saved new CA certificate")
@@ -311,7 +314,10 @@ class CertificateService:
                 encryption_algorithm=serialization.NoEncryption(),
             )
         )
-        self.key_path.chmod(0o600)
+        try:
+            self.key_path.chmod(0o600)
+        except OSError as e:
+            logger.warning("Could not set printer key permissions on %s: %s", self.key_path, e)
 
         # Write printer certificate (include CA cert in chain for full chain)
         cert_chain = printer_cert.public_bytes(serialization.Encoding.PEM) + ca_cert.public_bytes(
@@ -323,6 +329,33 @@ class CertificateService:
         logger.info("  CA: CN=Virtual Printer CA")
         logger.info("  Printer: CN=%s", self.serial)
         return self.cert_path, self.key_path
+
+    # -- Tailscale cert support --
+
+    @property
+    def ts_cert_path(self) -> Path:
+        """Path for Tailscale-provisioned cert (separate from self-signed)."""
+        return self.cert_dir / "virtual_printer_ts.crt"
+
+    @property
+    def ts_key_path(self) -> Path:
+        """Path for Tailscale-provisioned private key."""
+        return self.cert_dir / "virtual_printer_ts.key"
+
+    async def use_tailscale_cert(
+        self,
+        fqdn: str,
+        tailscale_svc: object,
+    ) -> tuple[Path, Path] | None:
+        """Attempt to provision a Tailscale LE cert for fqdn.
+
+        Delegates to tailscale_svc.ensure_cert(). Returns (cert_path, key_path)
+        on success, None if Tailscale provisioning fails.
+        """
+        ok = await tailscale_svc.ensure_cert(fqdn, self.ts_cert_path, self.ts_key_path)
+        if ok:
+            return self.ts_cert_path, self.ts_key_path
+        return None
 
     def delete_printer_certificate(self) -> None:
         """Delete only the printer certificate (preserves CA)."""

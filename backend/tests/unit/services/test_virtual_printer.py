@@ -449,6 +449,7 @@ class TestVirtualPrinterManager:
             "remote_interface_ip": "",
             "target_printer_id": None,
             "auto_dispatch": True,
+            "tailscale_disabled": True,  # Opt-in default (#1070 UX fix)
             "position": 0,
         }
         defaults.update(overrides)
@@ -606,6 +607,37 @@ class TestVirtualPrinterManager:
         manager._instances[1] = inst
 
         db_vp = self._make_db_vp(model="C12")
+        self._setup_sync_mocks(manager, [db_vp], tmp_path)
+
+        with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
+            with patch("backend.app.services.virtual_printer.manager.VirtualPrinterInstance") as MockInst:
+                mock_new = MagicMock()
+                mock_new.start_server = AsyncMock()
+                MockInst.return_value = mock_new
+
+                await manager.sync_from_db()
+
+            mock_remove.assert_called_once_with(1)
+
+    @pytest.mark.asyncio
+    async def test_sync_from_db_restarts_on_tailscale_disabled_change(self, manager, tmp_path):
+        """VP restarts when tailscale_disabled flips from False to True."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            tailscale_disabled=False,
+            base_dir=tmp_path,
+        )
+        inst.stop_server = AsyncMock()
+        manager._instances[1] = inst
+
+        db_vp = self._make_db_vp(tailscale_disabled=True)
         self._setup_sync_mocks(manager, [db_vp], tmp_path)
 
         with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:

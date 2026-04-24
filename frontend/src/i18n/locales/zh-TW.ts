@@ -3960,6 +3960,15 @@ export default {
       description: '虛擬印表機功能需要額外的系統設定才能工作。包括埠轉發、防火牆規則和平臺特定設定。',
       readGuide: '啟用前請閱讀設定指南',
     },
+    tailscale: {
+      connected: 'Tailscale 已連線',
+      notAvailable: 'Tailscale 未啟用',
+      trustedCert: "Let's Encrypt 憑證 — 無需設定 CA",
+      notAvailableHint: '安裝 Tailscale 以取得受信任的 TLS 憑證',
+      disableTitle: '停用 Tailscale 整合',
+      enabledHint: '自動偵測 Tailscale，可用時使用 Let\'s Encrypt 憑證',
+      disabledHint: 'Tailscale 已停用 — 使用自簽憑證',
+    },
     howItWorks: {
       title: '工作原理',
       step1: '在同一區域網路中，虛擬印表機會透過發現機制自動出現在您的切片軟體（Bambu Studio / OrcaSlicer）中。從其他網路，透過 IP 位址和存取碼手動新增。',
@@ -3982,6 +3991,7 @@ export default {
     toast: {
       updated: '虛擬印表機設定已更新',
       failedToUpdate: '更新設定失敗',
+      tailscaleNotAvailable: '此主機上未安裝 Tailscale。請先安裝 Tailscale，然後重試。',
       accessCodeRequired: '請先設定存取碼',
       targetPrinterRequired: '請先選擇目標印表機',
       bindIpRequired: '請先設定繫結 IP',

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
   Loader2, Check, AlertTriangle, Eye, EyeOff, Info,
-  ChevronDown, ChevronRight, ArrowRightLeft, Trash2,
+  ChevronDown, ChevronRight, ArrowRightLeft, Trash2, ShieldCheck,
 } from 'lucide-react';
 import { api, multiVirtualPrinterApi } from '../api/client';
 import type { VirtualPrinterConfig } from '../api/client';
@@ -43,6 +43,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState(printer.remote_interface_ip || '');
   const [localModel, setLocalModel] = useState(printer.model || '');
   const [localAutoDispatch, setLocalAutoDispatch] = useState(printer.auto_dispatch ?? true);
+  const [localTailscaleDisabled, setLocalTailscaleDisabled] = useState(printer.tailscale_disabled ?? true);
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -58,6 +59,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalRemoteInterfaceIp(printer.remote_interface_ip || '');
       setLocalModel(printer.model || '');
       setLocalAutoDispatch(printer.auto_dispatch ?? true);
+      setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
     }
   }, [printer, pendingAction]);
 
@@ -82,11 +84,18 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setPendingAction(null);
     },
     onError: (error: Error) => {
-      showToast(error.message || t('virtualPrinter.toast.failedToUpdate'), 'error');
+      // Specific: the backend rejected "enable Tailscale" because the binary isn't installed.
+      // Surface a clear reason instead of the raw error code.
+      if (error.message === 'tailscale_not_available') {
+        showToast(t('virtualPrinter.toast.tailscaleNotAvailable'), 'error');
+      } else {
+        showToast(error.message || t('virtualPrinter.toast.failedToUpdate'), 'error');
+      }
       setLocalEnabled(printer.enabled);
       setLocalMode((printer.mode === 'queue' ? 'review' : printer.mode) as LocalMode);
       setLocalTargetPrinterId(printer.target_printer_id);
       setLocalBindIp(printer.bind_ip || '');
+      setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
       setPendingAction(null);
     },
   });
@@ -209,6 +218,12 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
           {localRemoteInterfaceIp && (
             <span className="text-[10px] text-bambu-gray flex-shrink-0 font-mono">{localRemoteInterfaceIp}</span>
           )}
+          {printer.status?.tailscale_fqdn && (
+            <span className="flex items-center gap-1 text-xs text-green-400/70 flex-shrink-0">
+              <ShieldCheck className="w-3 h-3" />
+              <span className="font-mono text-[10px]">{printer.status.tailscale_fqdn}</span>
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={handleToggleEnabled}
@@ -309,6 +324,34 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 </div>
               </div>
             )}
+
+            {/* Tailscale toggle */}
+            <div className="pt-2 border-t border-bambu-dark-tertiary">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-white text-sm font-medium">{t('virtualPrinter.tailscaleDisabled.title')}</div>
+                  <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.tailscaleDisabled.description')}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newVal = !localTailscaleDisabled;
+                    setLocalTailscaleDisabled(newVal);
+                    setPendingAction('tailscaleDisabled');
+                    updateMutation.mutate({ tailscale_disabled: newVal });
+                  }}
+                  disabled={pendingAction === 'tailscaleDisabled'}
+                  className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${
+                    !localTailscaleDisabled ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                  } ${pendingAction === 'tailscaleDisabled' ? 'opacity-50' : ''}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                      !localTailscaleDisabled ? 'translate-x-5' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
 
             {/* Printer Model - for non-proxy modes */}
             {localMode !== 'proxy' && (

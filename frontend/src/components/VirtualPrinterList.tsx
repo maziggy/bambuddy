@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Plus, Printer, ExternalLink, AlertTriangle, Info } from 'lucide-react';
+import { Loader2, Plus, Printer, ExternalLink, AlertTriangle, Info, ShieldCheck, ShieldOff } from 'lucide-react';
 import { multiVirtualPrinterApi } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
@@ -16,6 +16,12 @@ export function VirtualPrinterList() {
     queryKey: ['virtual-printers'],
     queryFn: multiVirtualPrinterApi.list,
     refetchInterval: 10000,
+  });
+
+  const { data: tailscaleData } = useQuery({
+    queryKey: ['tailscale-status'],
+    queryFn: multiVirtualPrinterApi.getTailscaleStatus,
+    refetchInterval: 30000,
   });
 
   if (isLoading) {
@@ -33,7 +39,7 @@ export function VirtualPrinterList() {
 
   return (
     <div className="space-y-4">
-      {/* Top row - Setup Required (25%) + How it works (75%) */}
+      {/* Top row - Setup Required (1 col) + Tailscale (1 col) + How it works (2 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
         <Card className="border-l-4 border-l-yellow-500">
           <CardContent className="py-3 px-4">
@@ -56,7 +62,36 @@ export function VirtualPrinterList() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3">
+        <Card className={tailscaleData?.available ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-bambu-dark-tertiary'}>
+          <CardContent className="py-3 px-4">
+            <div className="flex items-start gap-2">
+              {tailscaleData?.available
+                ? <ShieldCheck className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+                : <ShieldOff className="w-4 h-4 text-bambu-gray shrink-0 mt-0.5" />
+              }
+              <div className="text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${tailscaleData?.available ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
+                  <p className={`font-medium ${tailscaleData?.available ? 'text-white' : 'text-bambu-gray'}`}>
+                    {tailscaleData?.available
+                      ? t('virtualPrinter.tailscale.connected')
+                      : t('virtualPrinter.tailscale.notAvailable')}
+                  </p>
+                </div>
+                {tailscaleData?.available ? (
+                  <>
+                    <p className="text-bambu-gray mt-1 font-mono break-all">{tailscaleData.fqdn}</p>
+                    <p className="text-green-400/80 mt-1">{t('virtualPrinter.tailscale.trustedCert')}</p>
+                  </>
+                ) : (
+                  <p className="text-bambu-gray mt-1">{t('virtualPrinter.tailscale.notAvailableHint')}</p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
           <CardContent className="py-3 px-4">
             <div className="flex items-start gap-2">
               <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />

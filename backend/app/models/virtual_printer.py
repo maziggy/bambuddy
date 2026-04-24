@@ -25,6 +25,9 @@ class VirtualPrinter(Base):
     )  # proxy mode
     bind_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)  # dedicated IP (proxy mode)
     remote_interface_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)  # SSDP advertise IP
+    tailscale_disabled: Mapped[bool] = mapped_column(
+        Boolean, server_default="true"
+    )  # opt-in: user must explicitly enable; auto-detect only runs then
     serial_suffix: Mapped[str] = mapped_column(String(9), default="391800001")  # unique per printer
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

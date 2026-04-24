@@ -338,3 +338,108 @@ class TestVirtualPrinterAutoDispatchAPI:
         get_resp = await async_client.get(f"/api/v1/virtual-printers/{vp_id}")
         assert get_resp.status_code == 200
         assert get_resp.json()["auto_dispatch"] is False
+
+
+class TestVirtualPrinterTailscaleGuardAPI:
+    """Enabling Tailscale on a host without the binary must be rejected with 409."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_enable_tailscale_rejected_when_binary_missing(self, async_client: AsyncClient):
+        """PUT tailscale_disabled=False must 409 when tailscale_service reports unavailable."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleStatus
+
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestTailscaleGuard",
+                "mode": "immediate",
+                "access_code": "12345678",
+            },
+        )
+        assert create_resp.status_code == 200
+        vp_id = create_resp.json()["id"]
+        # New VPs default to tailscale_disabled=True (opt-in).
+        assert create_resp.json()["tailscale_disabled"] is True
+
+        mock_status = TailscaleStatus(
+            available=False,
+            hostname="",
+            tailnet_name="",
+            fqdn="",
+            error="tailscale binary not found",
+        )
+        with patch(
+            "backend.app.services.virtual_printer.tailscale.tailscale_service.get_status",
+            new=AsyncMock(return_value=mock_status),
+        ):
+            update_resp = await async_client.put(
+                f"/api/v1/virtual-printers/{vp_id}",
+                json={"tailscale_disabled": False},
+            )
+        assert update_resp.status_code == 409
+        assert update_resp.json()["detail"] == "tailscale_not_available"
+
+        # Ensure the row was not modified.
+        get_resp = await async_client.get(f"/api/v1/virtual-printers/{vp_id}")
+        assert get_resp.json()["tailscale_disabled"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_enable_tailscale_allowed_when_binary_present(self, async_client: AsyncClient):
+        """PUT tailscale_disabled=False succeeds when tailscale_service reports available."""
+        from backend.app.services.virtual_printer.tailscale import TailscaleStatus
+
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestTailscaleAllow",
+                "mode": "immediate",
+                "access_code": "12345678",
+            },
+        )
+        vp_id = create_resp.json()["id"]
+
+        mock_status = TailscaleStatus(
+            available=True,
+            hostname="host",
+            tailnet_name="tail.ts.net",
+            fqdn="host.tail.ts.net",
+            error=None,
+        )
+        with patch(
+            "backend.app.services.virtual_printer.tailscale.tailscale_service.get_status",
+            new=AsyncMock(return_value=mock_status),
+        ):
+            update_resp = await async_client.put(
+                f"/api/v1/virtual-printers/{vp_id}",
+                json={"tailscale_disabled": False},
+            )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["tailscale_disabled"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_tailscale_skips_binary_check(self, async_client: AsyncClient):
+        """Disabling (tailscale_disabled=True) never calls tailscale_service — always allowed."""
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestTailscaleDisableSkip",
+                "mode": "immediate",
+                "access_code": "12345678",
+            },
+        )
+        vp_id = create_resp.json()["id"]
+
+        # get_status must not be called on the disable path.
+        with patch(
+            "backend.app.services.virtual_printer.tailscale.tailscale_service.get_status",
+            new=AsyncMock(side_effect=AssertionError("get_status must not be called for disable")),
+        ):
+            update_resp = await async_client.put(
+                f"/api/v1/virtual-printers/{vp_id}",
+                json={"tailscale_disabled": True},
+            )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["tailscale_disabled"] is True

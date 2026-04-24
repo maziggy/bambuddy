@@ -11,9 +11,22 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
 
+# Imported at module scope so tests can patch
+# backend.app.api.routes.virtual_printers.tailscale_service.
+from backend.app.services.virtual_printer.tailscale import tailscale_service
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/virtual-printers", tags=["virtual-printers"])
+
+
+class TailscaleStatusResponse(BaseModel):
+    available: bool
+    fqdn: str
+    hostname: str
+    tailnet_name: str
+    tailscale_ips: list[str]
+    error: str | None
 
 
 class VirtualPrinterCreate(BaseModel):
@@ -38,6 +51,7 @@ class VirtualPrinterUpdate(BaseModel):
     auto_dispatch: bool | None = None
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
+    tailscale_disabled: bool | None = None
 
 
 def _resolve_printer_model(printer_model: str | None) -> str | None:
@@ -78,6 +92,7 @@ def _vp_to_dict(vp, status: dict | None = None) -> dict:
         "auto_dispatch": vp.auto_dispatch,
         "bind_ip": vp.bind_ip,
         "remote_interface_ip": vp.remote_interface_ip,
+        "tailscale_disabled": vp.tailscale_disabled,
         "position": vp.position,
         "status": status or {"running": False, "pending_files": 0},
     }
@@ -215,6 +230,26 @@ async def create_virtual_printer(
     return _vp_to_dict(vp)
 
 
+@router.get("/tailscale-status", response_model=TailscaleStatusResponse)
+async def get_tailscale_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+) -> TailscaleStatusResponse:
+    """Return current Tailscale availability and machine identity.
+
+    Used by the frontend to indicate whether virtual printer TLS is backed
+    by a trusted Let's Encrypt certificate or a self-signed CA.
+    """
+    status = await tailscale_service.get_status()
+    return TailscaleStatusResponse(
+        available=status.available,
+        fqdn=status.fqdn,
+        hostname=status.hostname,
+        tailnet_name=status.tailnet_name,
+        tailscale_ips=status.tailscale_ips,
+        error=status.error,
+    )
+
+
 @router.get("/{vp_id}")
 async def get_virtual_printer(
     vp_id: int,
@@ -300,6 +335,22 @@ async def update_virtual_printer(
         vp.bind_ip = body.bind_ip
     if body.remote_interface_ip is not None:
         vp.remote_interface_ip = body.remote_interface_ip
+    if body.tailscale_disabled is not None:
+        # Guard: user trying to enable Tailscale (disabled=False) must have the binary available.
+        # Otherwise the toggle looks like it works but silently falls back to self-signed.
+        if body.tailscale_disabled is False and vp.tailscale_disabled is True:
+            from backend.app.services.virtual_printer.tailscale import tailscale_service
+
+            ts_status = await tailscale_service.get_status()
+            if not ts_status.available:
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "detail": "tailscale_not_available",
+                        "reason": ts_status.error or "tailscale binary not found",
+                    },
+                )
+        vp.tailscale_disabled = body.tailscale_disabled
 
     # Auto-inherit model when switching to proxy mode with existing target printer
     if body.mode == "proxy" and body.model is None and body.target_printer_id is None and vp.target_printer_id:

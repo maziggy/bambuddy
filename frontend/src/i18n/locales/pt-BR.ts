@@ -3908,6 +3908,15 @@ export default {
       description: 'O recurso de impressora virtual requer configuração adicional do sistema antes de funcionar. Isso inclui encaminhamento de portas, regras de firewall e configurações específicas da plataforma.',
       readGuide: 'Leia o guia de configuração antes de ativar',
     },
+    tailscale: {
+      connected: 'Tailscale conectado',
+      notAvailable: 'Tailscale inativo',
+      trustedCert: "Certificado Let's Encrypt — sem configuração de CA necessária",
+      notAvailableHint: 'Instale o Tailscale para certificados TLS confiáveis',
+      disableTitle: 'Desativar integração com Tailscale',
+      enabledHint: 'Detectar Tailscale automaticamente e usar certificado Let\'s Encrypt quando disponível',
+      disabledHint: 'Tailscale desativado — usando certificado autoassinado',
+    },
     howItWorks: {
       title: 'Como funciona',
       step1: 'Complete o guia de configuração para sua plataforma',
@@ -3930,6 +3939,7 @@ export default {
     toast: {
       updated: 'Configurações da impressora virtual atualizadas',
       failedToUpdate: 'Falha ao atualizar as configurações',
+      tailscaleNotAvailable: 'Tailscale não está instalado neste host. Instale o Tailscale primeiro e tente novamente.',
       accessCodeRequired: 'Defina um código de acesso primeiro',
       targetPrinterRequired: 'Selecione uma impressora alvo primeiro',
       bindIpRequired: 'Defina um IP de ligação primeiro',

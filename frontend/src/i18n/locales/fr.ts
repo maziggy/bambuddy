@@ -3895,6 +3895,15 @@ export default {
       description: 'Nécessite des réglages système (ports, pare-feu).',
       readGuide: 'Lire le guide de configuration',
     },
+    tailscale: {
+      connected: 'Tailscale connecté',
+      notAvailable: 'Tailscale inactif',
+      trustedCert: "Certificat Let's Encrypt — aucune configuration CA requise",
+      notAvailableHint: 'Installez Tailscale pour des certificats TLS approuvés',
+      disableTitle: 'Désactiver l\'intégration Tailscale',
+      enabledHint: 'Détecter Tailscale automatiquement et utiliser le certificat Let\'s Encrypt si disponible',
+      disabledHint: 'Tailscale désactivé — certificat auto-signé utilisé',
+    },
     howItWorks: {
       title: 'Fonctionnement',
       step1: 'Sur le même LAN, les imprimantes virtuelles apparaissent automatiquement dans votre slicer (Bambu Studio / OrcaSlicer). Depuis d\'autres réseaux, ajoutez-les manuellement par adresse IP et code d\'accès.',
@@ -3917,6 +3926,7 @@ export default {
     toast: {
       updated: 'Réglages virtuels mis à jour',
       failedToUpdate: 'Échec mise à jour',
+      tailscaleNotAvailable: 'Tailscale n\'est pas installé sur cet hôte. Installez Tailscale puis réessayez.',
       accessCodeRequired: 'Code d\'accès requis',
       targetPrinterRequired: 'Imprimante cible requise',
       bindIpRequired: 'Veuillez d\'abord définir une adresse IP',

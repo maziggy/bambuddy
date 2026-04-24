@@ -575,5 +575,56 @@ describe('LoginPage', () => {
       // Flag must still be cleaned up even on malformed response
       expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
     });
+
+    it('writes auth_remember_me flag to sessionStorage before OIDC provider redirect', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 42,
+              name: 'FlagIdP',
+              issuer_url: 'https://flag.test',
+              client_id: 'c',
+              is_enabled: true,
+              icon_url: null,
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+            },
+          ])
+        ),
+        http.get('/api/v1/auth/oidc/authorize/42', () =>
+          HttpResponse.json({ auth_url: 'https://flag.test/authorize?state=abc' })
+        )
+      );
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      // Tick "Remember Me"
+      await waitFor(() => {
+        expect(screen.getByRole('checkbox', { name: /Remember Me/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('checkbox', { name: /Remember Me/i }));
+
+      // Wait for OIDC provider button to appear
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /FlagIdP/i })).toBeInTheDocument();
+      });
+
+      // Stub window.location so the OIDC redirect doesn't actually navigate.
+      // Keep href valid so relative fetch URLs resolve correctly.
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: { ...window.location, href: 'http://localhost:3000/' },
+      });
+
+      await user.click(screen.getByRole('button', { name: /FlagIdP/i }));
+
+      await waitFor(() => {
+        expect(sessionStorage.getItem('auth_remember_me')).toBe('1');
+      });
+    });
   });
 });

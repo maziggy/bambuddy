@@ -26,7 +26,8 @@ function consumeSavedRememberMe(): boolean {
     const saved = sessionStorage.getItem(REMEMBER_ME_KEY) === '1';
     sessionStorage.removeItem(REMEMBER_ME_KEY);
     return saved;
-  } catch {
+  } catch (err) {
+    console.warn('consumeSavedRememberMe: sessionStorage unavailable, Remember Me preference lost across OIDC redirect', err);
     return false;
   }
 }
@@ -234,7 +235,7 @@ export function LoginPage() {
         navigate('/');
       } else {
         console.error('2FA verify: unexpected response shape', resp);
-        showToast(t('login.twoFA.invalidCode'), 'error');
+        showToast(t('login.loginFailed'), 'error');
       }
     },
     onError: (error: Error) => {

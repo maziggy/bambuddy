@@ -3973,6 +3973,7 @@ export default {
       updated: '虛擬印表機設定已更新',
       failedToUpdate: '更新設定失敗',
       tailscaleNotAvailable: '此主機上未安裝 Tailscale。請先安裝 Tailscale，然後重試。',
+      copyFailed: '複製失敗 — 請手動選取文字',
       accessCodeRequired: '請先設定存取碼',
       targetPrinterRequired: '請先選擇目標印表機',
       bindIpRequired: '請先設定繫結 IP',

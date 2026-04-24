@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
   Loader2, Check, AlertTriangle, Eye, EyeOff, Info,
-  ChevronDown, ChevronRight, ArrowRightLeft, Trash2, ShieldCheck,
+  ChevronDown, ChevronRight, ArrowRightLeft, Trash2, ShieldCheck, Copy,
 } from 'lucide-react';
 import { api, multiVirtualPrinterApi } from '../api/client';
 import type { VirtualPrinterConfig } from '../api/client';
@@ -47,6 +47,45 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [fqdnCopied, setFqdnCopied] = useState(false);
+
+  const handleCopyFqdn = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const fqdn = printer.status?.tailscale_fqdn;
+    if (!fqdn) return;
+    let ok = false;
+    // Modern API — only works in secure contexts (HTTPS / localhost).
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(fqdn);
+        ok = true;
+      } catch {
+        // fall through to legacy
+      }
+    }
+    // Legacy fallback for HTTP (common when Bambuddy is reached over LAN / tailnet IP).
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = fqdn;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
+      setFqdnCopied(true);
+      showToast(t('printers.copied'));
+      setTimeout(() => setFqdnCopied(false), 2000);
+    } else {
+      showToast(t('virtualPrinter.toast.copyFailed'), 'error');
+    }
+  };
 
   // Sync local state when props change (e.g., after backend auto-disable)
   useEffect(() => {
@@ -222,6 +261,17 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
             <span className="flex items-center gap-1 text-xs text-green-400/70 flex-shrink-0">
               <ShieldCheck className="w-3 h-3" />
               <span className="font-mono text-[10px]">{printer.status.tailscale_fqdn}</span>
+              <button
+                onClick={handleCopyFqdn}
+                className="p-0.5 rounded hover:bg-bambu-dark-tertiary transition-colors"
+                title={fqdnCopied ? t('printers.copied') : t('printers.copyToClipboard')}
+              >
+                {fqdnCopied ? (
+                  <Check className="w-3 h-3 text-bambu-green" />
+                ) : (
+                  <Copy className="w-3 h-3" />
+                )}
+              </button>
             </span>
           )}
           <div className="ml-auto flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -298,8 +348,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
             {/* Auto-dispatch toggle - only for print_queue mode */}
             {localMode === 'print_queue' && (
               <div className="pt-2 border-t border-bambu-dark-tertiary">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
                     <div className="text-white text-sm font-medium">{t('virtualPrinter.autoDispatch.title')}</div>
                     <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.autoDispatch.description')}</div>
                   </div>
@@ -327,8 +377,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
 
             {/* Tailscale toggle */}
             <div className="pt-2 border-t border-bambu-dark-tertiary">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
                   <div className="text-white text-sm font-medium">{t('virtualPrinter.tailscaleDisabled.title')}</div>
                   <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.tailscaleDisabled.description')}</div>
                 </div>

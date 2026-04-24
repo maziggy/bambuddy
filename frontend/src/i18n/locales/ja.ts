@@ -3946,6 +3946,7 @@ export default {
       updated: '仮想プリンター設定を更新しました',
       failedToUpdate: '設定の更新に失敗しました',
       tailscaleNotAvailable: 'このホストにTailscaleがインストールされていません。先にTailscaleをインストールしてから再試行してください。',
+      copyFailed: 'コピーに失敗しました — テキストを手動で選択してください',
       accessCodeRequired: '先にアクセスコードを設定してください',
       targetPrinterRequired: '先にターゲットプリンターを選択してください',
       bindIpRequired: '先にバインドIPを設定してください',

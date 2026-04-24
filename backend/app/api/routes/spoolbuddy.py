@@ -1206,7 +1206,7 @@ async def trigger_daemon_update(
     device_id: str,
     req: dict | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Trigger a SpoolBuddy update over SSH.
 

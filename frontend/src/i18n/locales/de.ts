@@ -2338,6 +2338,7 @@ export default {
     passwordPlaceholder: 'Passwort eingeben',
     signIn: 'Anmelden',
     signingIn: 'Anmeldung läuft...',
+    rememberMe: 'Angemeldet bleiben',
     forgotPassword: 'Passwort vergessen?',
     loginSuccess: 'Erfolgreich angemeldet',
     loginFailed: 'Anmeldung fehlgeschlagen',

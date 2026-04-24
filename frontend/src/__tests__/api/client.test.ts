@@ -33,6 +33,8 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }));
 afterEach(() => {
   server.resetHandlers();
   sessionStorageMock.clear();
+  vi.mocked(localStorage.setItem).mockClear();
+  vi.mocked(localStorage.removeItem).mockClear();
   setAuthToken(null);
 });
 afterAll(() => server.close());
@@ -48,6 +50,28 @@ describe('Auth Token Management', () => {
     setAuthToken('test-token-123');
     setAuthToken(null);
     expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
+    expect(getAuthToken()).toBeNull();
+  });
+
+  it("setAuthToken('persistent') writes to both sessionStorage and localStorage", () => {
+    setAuthToken('persist-token', 'persistent');
+    expect(sessionStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'persist-token');
+    expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'persist-token');
+    expect(getAuthToken()).toBe('persist-token');
+  });
+
+  it("setAuthToken('session') writes only to sessionStorage, not localStorage", () => {
+    setAuthToken('session-token', 'session');
+    expect(sessionStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'session-token');
+    expect(vi.mocked(localStorage.setItem)).not.toHaveBeenCalledWith('auth_token', expect.any(String));
+  });
+
+  it('setAuthToken(null) removes from both storages regardless of previous persistence', () => {
+    setAuthToken('some-token', 'persistent');
+    vi.mocked(localStorage.setItem).mockClear();
+    setAuthToken(null);
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
+    expect(vi.mocked(localStorage.removeItem)).toHaveBeenCalledWith('auth_token');
     expect(getAuthToken()).toBeNull();
   });
 });

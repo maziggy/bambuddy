@@ -2312,6 +2312,7 @@ export default {
     passwordPlaceholder: 'パスワードを入力',
     signIn: 'サインイン',
     signingIn: 'ログイン中...',
+    rememberMe: 'ログイン状態を保持する',
     forgotPassword: 'パスワードをお忘れですか？',
     loginSuccess: 'ログインしました',
     loginFailed: 'ログインに失敗しました',

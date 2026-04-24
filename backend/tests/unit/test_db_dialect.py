@@ -210,11 +210,13 @@ class TestSafeExecutePattern:
 
     @pytest.mark.asyncio
     async def test_provider_email_lowercasing_migration(self):
-        """provider_email normalisation lowers mixed-case values and leaves NULL rows intact."""
+        """SEC-3: provider_email normalisation lowers mixed-case values, leaves NULL intact.
+
+        The production migration runs this UPDATE directly (not via _safe_execute)
+        so any failure is always fatal and visible at startup.
+        """
         from sqlalchemy import text
         from sqlalchemy.ext.asyncio import create_async_engine
-
-        from backend.app.core.database import _safe_execute
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         async with engine.begin() as conn:
@@ -223,11 +225,13 @@ class TestSafeExecutePattern:
             await conn.execute(text("INSERT INTO user_oidc_links VALUES (2, 'already@lower.com')"))
             await conn.execute(text("INSERT INTO user_oidc_links VALUES (3, NULL)"))
 
-            await _safe_execute(
-                conn,
-                "UPDATE user_oidc_links SET provider_email = LOWER(provider_email) "
-                "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)",
-            )
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "UPDATE user_oidc_links SET provider_email = LOWER(provider_email) "
+                        "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)"
+                    )
+                )
 
             result = await conn.execute(text("SELECT provider_email FROM user_oidc_links ORDER BY id"))
             rows = [r[0] for r in result.fetchall()]
@@ -236,6 +240,51 @@ class TestSafeExecutePattern:
         assert rows[0] == "user@example.com"
         assert rows[1] == "already@lower.com"
         assert rows[2] is None
+
+    @pytest.mark.asyncio
+    async def test_safe_execute_does_not_swallow_no_such_column(self):
+        """'no such column' must propagate — it was removed from the swallow-list so
+        a failed DML migration (e.g. UPDATE referencing a missing column) is always fatal."""
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from backend.app.core.database import _safe_execute
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.execute(__import__("sqlalchemy").text("CREATE TABLE t (id INTEGER)"))
+            # Referencing a column that does not exist must raise, not be silently swallowed.
+            with pytest.raises(OperationalError, match="no such column"):
+                await _safe_execute(conn, "UPDATE t SET nonexistent_col = 1")
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_safe_execute_swallows_duplicate_key(self):
+        """'duplicate key' errors (PostgreSQL unique-constraint violations on re-run)
+        must be silently swallowed for idempotent DDL migrations."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy.exc import OperationalError
+
+        from backend.app.core.database import _safe_execute
+
+        fake_exc = OperationalError("duplicate key value violates unique constraint", [], Exception())
+
+        # begin_nested() is called synchronously (not awaited) and returns an
+        # async context manager. Use MagicMock so the call returns a regular
+        # object, then attach __aenter__/__aexit__ for the async with protocol.
+        nested_cm = MagicMock()
+        nested_cm.__aenter__ = AsyncMock(return_value=nested_cm)
+        # Raise on execute inside the context, simulating PG duplicate key
+        nested_cm.execute = AsyncMock(side_effect=fake_exc)
+        nested_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.begin_nested.return_value = nested_cm
+        mock_conn.execute = AsyncMock(side_effect=fake_exc)
+
+        # Must NOT raise — "duplicate key" is in the swallow-list
+        await _safe_execute(mock_conn, "CREATE UNIQUE INDEX ...")
 
     @pytest.mark.asyncio
     async def test_check_constraint_false_true_on_sqlite(self):

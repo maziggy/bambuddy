@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit2, Trash2, Globe, Check, X, RefreshCw, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +19,8 @@ const EMPTY_FORM: OIDCProviderCreate = {
   is_enabled: true,
   auto_create_users: false,
   auto_link_existing_accounts: false,
+  email_claim: 'email',
+  require_email_verified: true,
   icon_url: undefined,
 };
 
@@ -53,6 +55,19 @@ function ProviderForm({
     }
     onSave(payload);
   };
+
+  const autoLinkOn = form.auto_link_existing_accounts === true;
+  const emailVerifiedOn = form.require_email_verified ?? true;
+  let requireEmailVerifiedDesc: ReactNode;
+  if (autoLinkOn) {
+    requireEmailVerifiedDesc = t('settings.oidc.form.requireEmailVerifiedAutoLink');
+  } else if (emailVerifiedOn) {
+    requireEmailVerifiedDesc = t('settings.oidc.form.requireEmailVerifiedDesc');
+  } else {
+    requireEmailVerifiedDesc = (
+      <span className="text-red-400">{t('settings.oidc.form.requireEmailVerifiedWarning')}</span>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -115,6 +130,29 @@ function ProviderForm({
             <p className="text-bambu-gray text-xs">{t('settings.oidc.form.autoLinkDesc')}</p>
           </div>
         </label>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <Toggle
+            checked={emailVerifiedOn}
+            onChange={(v) => set('require_email_verified', v)}
+            disabled={autoLinkOn}
+          />
+          <div>
+            <p className="text-white text-sm">{t('settings.oidc.form.requireEmailVerified')}</p>
+            <p className="text-bambu-gray text-xs">{requireEmailVerifiedDesc}</p>
+          </div>
+        </label>
+      </div>
+
+      <div>
+        <label className={labelCls}>{t('settings.oidc.form.emailClaim')}</label>
+        <input
+          className={inputCls}
+          value={form.email_claim}
+          onChange={(e) => set('email_claim', e.target.value || 'email')}
+          placeholder={t('settings.oidc.form.emailClaimPlaceholder')}
+          disabled={autoLinkOn}
+        />
+        <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.emailClaimDesc')}</p>
       </div>
 
       <div className="flex gap-3 pt-2">
@@ -304,6 +342,8 @@ export function OIDCProviderSettings() {
                     is_enabled: provider.is_enabled,
                     auto_create_users: provider.auto_create_users,
                     auto_link_existing_accounts: provider.auto_link_existing_accounts,
+                    email_claim: provider.email_claim,
+                    require_email_verified: provider.require_email_verified,
                     icon_url: provider.icon_url ?? undefined,
                   }}
                   onSave={(data) => updateMutation.mutate({ id: provider.id, data })}
@@ -335,6 +375,16 @@ export function OIDCProviderSettings() {
                   <dt className="text-bambu-gray">{t('settings.oidc.form.autoLink')}</dt>
                   <dd className={provider.auto_link_existing_accounts ? 'text-green-400' : 'text-bambu-gray'}>
                     {provider.auto_link_existing_accounts ? t('common.yes') : t('common.no')}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-bambu-gray">{t('settings.oidc.form.emailClaim')}</dt>
+                  <dd className="text-white font-mono">{provider.email_claim}</dd>
+                </div>
+                <div>
+                  <dt className="text-bambu-gray">{t('settings.oidc.form.requireEmailVerified')}</dt>
+                  <dd className={provider.require_email_verified ? 'text-green-400' : 'text-red-400'}>
+                    {provider.require_email_verified ? t('common.yes') : t('common.no')}
                   </dd>
                 </div>
               </dl>

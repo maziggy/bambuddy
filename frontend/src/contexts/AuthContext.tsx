@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, getAuthToken, setAuthToken } from '../api/client';
-import type { LoginResponse, Permission, UserResponse } from '../api/client';
+import type { LoginResponse, Permission, TokenPersistence, UserResponse } from '../api/client';
 
 interface AuthContextType {
   user: UserResponse | null;
@@ -9,9 +9,9 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   /** Login with username/password. Returns LoginResponse (may include requires_2fa). */
-  login: (username: string, password: string) => Promise<LoginResponse>;
+  login: (username: string, password: string, persistence?: TokenPersistence) => Promise<LoginResponse>;
   /** Finalise login after 2FA or OIDC — store token and set user directly. */
-  loginWithToken: (token: string, user: UserResponse) => void;
+  loginWithToken: (token: string, user: UserResponse, persistence?: TokenPersistence) => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
   refreshAuth: () => Promise<void>;
@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const urlParams = new URLSearchParams(window.location.search);
       const urlToken = urlParams.get('token');
       if (urlToken) {
-        setAuthToken(urlToken, false); // session-only until server confirms it's valid
+        setAuthToken(urlToken, 'session'); // session-only until server confirms it's valid
         urlParams.delete('token');
         const cleanSearch = urlParams.toString();
         const cleanUrl = window.location.pathname
@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(currentUser);
             // Persist kiosk token only after the server confirms it is valid.
             if (urlToken && token === urlToken) {
-              setAuthToken(urlToken, true);
+              setAuthToken(urlToken, 'persistent');
             }
           } catch {
             // Token invalid, clear it (removes from both sessionStorage and localStorage)
@@ -116,17 +116,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loading, requiresSetup, authEnabled]);
 
-  const login = async (username: string, password: string): Promise<LoginResponse> => {
+  const login = async (username: string, password: string, persistence: TokenPersistence = 'session'): Promise<LoginResponse> => {
     const response = await api.login({ username, password });
     if (!response.requires_2fa && response.access_token) {
-      setAuthToken(response.access_token);
+      setAuthToken(response.access_token, persistence);
       await checkAuthStatus();
     }
     return response;
   };
 
-  const loginWithToken = (token: string, userObj: UserResponse) => {
-    setAuthToken(token);
+  const loginWithToken = (token: string, userObj: UserResponse, persistence: TokenPersistence = 'session') => {
+    setAuthToken(token, persistence);
     setUser(userObj);
     setAuthEnabled(true);
   };

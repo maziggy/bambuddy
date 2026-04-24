@@ -1,0 +1,200 @@
+2026-04-24 08:01:18,527 INFO [backend.app.api.routes.camera] Using RTSP protocol for H2D Pro
+2026-04-24 08:01:18,528 INFO [backend.app.api.routes.camera] Starting RTSP camera stream for [IP] (stream_id=2-aa86cfa6, model=H2D Pro, fps=15)
+2026-04-24 08:01:18,832 INFO [backend.app.services.print_scheduler] Queue item 125: FTP upload starting - printer=[PRINTER] (H2D Pro), ip=[IP], file=2026-04-23_Whip_SQA_Assembly.3mf, local_path=C:\bambuddy\archive\library\files\84a7bdd88d8b4318b9dd5e01adb35684.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-04-24 08:01:18,912 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=H2D Pro, prot_c=False)
+2026-04-24 08:01:18,914 WARNING [backend.app.services.bambu_ftp] Failed to delete /2026-04-23_Whip_SQA_Assembly.3mf: 550 Delete operation failed.
+2026-04-24 08:01:18,917 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=H2D Pro, mode=prot_p, socket_timeout=30.0s)...
+2026-04-24 08:01:19,004 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=H2D Pro, prot_c=False)
+2026-04-24 08:01:19,005 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-24 08:01:19,005 INFO [backend.app.services.bambu_ftp] FTP uploading C:\bambuddy\archive\library\files\84a7bdd88d8b4318b9dd5e01adb35684.3mf (37242912 bytes) to /2026-04-23_Whip_SQA_Assembly.3mf
+2026-04-24 08:01:19,012 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.0s (PASV + TLS handshake)
+2026-04-24 08:01:23,284 INFO [backend.app.api.routes.camera] Camera stream cancelled (stream_id=2-aa86cfa6)
+2026-04-24 08:01:23,286 INFO [backend.app.api.routes.camera] Camera stream task cancelled (stream_id=2-aa86cfa6)
+2026-04-24 08:01:23,286 INFO [backend.app.api.routes.camera] Stream 2-aa86cfa6 cancelled
+2026-04-24 08:01:23,297 INFO [backend.app.api.routes.camera] Stopped 0 camera stream(s) for printer 2
+2026-04-24 08:01:23,909 WARNING [backend.app.services.bambu_ftp] FTP STOR confirmation not received for /2026-04-23_Whip_SQA_Assembly.3mf (proceeding): 426 Failure reading network stream. (error_temp)
+2026-04-24 08:01:23,910 INFO [backend.app.services.bambu_ftp] FTP upload complete: /2026-04-23_Whip_SQA_Assembly.3mf (37242912 bytes in 4.9s, 7417 KB/s)
+2026-04-24 08:01:23,910 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-24 08:01:23,913 INFO [backend.app.main] Registered expected print: printer=2, file=2026-04-23_Whip_SQA_Assembly.3mf, archive=194, ams_mapping=[2]
+2026-04-24 08:01:23,918 INFO [backend.app.services.print_scheduler] Queue item 125: Status set to 'printing', sending print command...
+2026-04-24 08:01:23,945 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=2, file=2026-04-23_Whip_SQA_Assembly.3mf, caller=C:\bambuddy\backend\app\services\print_scheduler.py:372:check_queue
+2026-04-24 08:01:23,945 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_8.gcode", "url": "ftp://2026-04-23_Whip_SQA_Assembly.3mf", "file": "2026-04-23_Whip_SQA_Assembly.3mf", "md5": "", "bed_type": "auto", "timelapse": 0, "bed_leveling": 1, "auto_bed_leveling": 1, "flow_cali": 0, "vibration_cali": 0, "layer_inspect": 0, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "2026-04-23_Whip_SQA_Assembly", "profile_id": "0", "project_id": "1063107876", "subtask_id": "1063107876", "task_id": "1063107876", "ams_mapping": [2], "ams_mapping2": [{"ams_id": 0, "slot_id": 2}]}}
+2026-04-24 08:01:23,945 INFO [backend.app.services.print_scheduler] Queue item 125: Print started successfully - 2026-04-23 Whip SQA Assembly.gcode.3mf
+2026-04-24 08:01:23,949 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Captured ams_mapping from print command: [2]
+2026-04-24 08:01:23,951 INFO [backend.app.services.print_scheduler] Model-based assignment: queue item 123 assigned to printer 4
+2026-04-24 08:01:23,956 INFO [backend.app.services.print_scheduler] Queue item 123: Computed AMS mapping for printer 4: [3]
+2026-04-24 08:01:23,957 INFO [backend.app.services.print_scheduler] Starting queue item 123
+2026-04-24 08:01:24,040 INFO [backend.app.services.print_scheduler] Queue item 123: Created archive 195 from library file 152
+2026-04-24 08:01:24,042 INFO [backend.app.services.print_scheduler] Queue item 123: FTP upload starting - printer=[PRINTER] (H2D Pro), ip=[IP], file=2026-04-23_Whip_SQA_Assembly.3mf, local_path=C:\bambuddy\archive\library\files\84a7bdd88d8b4318b9dd5e01adb35684.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-04-24 08:01:24,138 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=H2D Pro, prot_c=False)
+2026-04-24 08:01:24,139 WARNING [backend.app.services.bambu_ftp] Failed to delete /2026-04-23_Whip_SQA_Assembly.3mf: 550 Delete operation failed.
+2026-04-24 08:01:24,142 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=H2D Pro, mode=prot_p, socket_timeout=30.0s)...
+2026-04-24 08:01:24,242 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=H2D Pro, prot_c=False)
+2026-04-24 08:01:24,242 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-24 08:01:24,243 INFO [backend.app.services.bambu_ftp] FTP uploading C:\bambuddy\archive\library\files\84a7bdd88d8b4318b9dd5e01adb35684.3mf (37242912 bytes) to /2026-04-23_Whip_SQA_Assembly.3mf
+2026-04-24 08:01:24,256 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.0s (PASV + TLS handshake)
+2026-04-24 08:01:25,629 INFO [backend.app.api.routes.camera] Using RTSP protocol for H2D Pro
+2026-04-24 08:01:25,631 INFO [backend.app.api.routes.camera] Starting RTSP camera stream for [IP] (stream_id=4-ffd5ee47, model=H2D Pro, fps=15)
+2026-04-24 08:01:27,938 INFO [backend.app.api.routes.camera] Camera stream cancelled (stream_id=4-ffd5ee47)
+2026-04-24 08:01:27,938 INFO [backend.app.api.routes.camera] Camera stream task cancelled (stream_id=4-ffd5ee47)
+2026-04-24 08:01:27,939 INFO [backend.app.api.routes.camera] Stream 4-ffd5ee47 cancelled
+2026-04-24 08:01:27,949 INFO [backend.app.api.routes.camera] Stopped 0 camera stream(s) for printer 4
+2026-04-24 08:01:28,599 WARNING [backend.app.services.bambu_ftp] FTP STOR confirmation not received for /2026-04-23_Whip_SQA_Assembly.3mf (proceeding): 426 Failure reading network stream. (error_temp)
+2026-04-24 08:01:28,599 INFO [backend.app.services.bambu_ftp] FTP upload complete: /2026-04-23_Whip_SQA_Assembly.3mf (37242912 bytes in 4.4s, 8349 KB/s)
+2026-04-24 08:01:28,600 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-24 08:01:28,603 INFO [backend.app.main] Registered expected print: printer=4, file=2026-04-23_Whip_SQA_Assembly.3mf, archive=195, ams_mapping=[3]
+2026-04-24 08:01:28,607 INFO [backend.app.services.print_scheduler] Queue item 123: Status set to 'printing', sending print command...
+2026-04-24 08:01:28,607 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=4, file=2026-04-23_Whip_SQA_Assembly.3mf, caller=C:\bambuddy\backend\app\services\print_scheduler.py:372:check_queue
+2026-04-24 08:01:28,608 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://2026-04-23_Whip_SQA_Assembly.3mf", "file": "2026-04-23_Whip_SQA_Assembly.3mf", "md5": "", "bed_type": "auto", "timelapse": 0, "bed_leveling": 1, "auto_bed_leveling": 1, "flow_cali": 0, "vibration_cali": 0, "layer_inspect": 0, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "2026-04-23_Whip_SQA_Assembly", "profile_id": "0", "project_id": "1063112539", "subtask_id": "1063112539", "task_id": "1063112539", "ams_mapping": [3], "ams_mapping2": [{"ams_id": 0, "slot_id": 3}]}}
+2026-04-24 08:01:28,608 INFO [backend.app.services.print_scheduler] Queue item 123: Print started successfully - 2026-04-23 Whip SQA Assembly.gcode.3mf
+2026-04-24 08:01:28,612 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Captured ams_mapping from print command: [3]
+2026-04-24 08:01:28,614 INFO [backend.app.services.print_scheduler] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-04-24 08:01:28,614 INFO [backend.app.services.print_scheduler] Queue: printer 3 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-04-24 08:01:28,615 INFO [backend.app.services.print_scheduler] Queue: printer 4 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-04-24 08:01:44,021 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-24 08:01:45,142 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-24 08:01:46,092 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-24 08:01:47,037 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-24 08:01:48,120 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-24 08:01:58,632 INFO [backend.app.services.print_scheduler] Queue check: found 2 pending items: [(124, None, None, 152), (121, 3, None, 141)]
+2026-04-24 08:01:58,636 INFO [backend.app.services.print_scheduler] Model-based assignment: queue item 124 assigned to printer 2
+2026-04-24 08:01:58,642 INFO [backend.app.services.print_scheduler] Queue item 124: Computed AMS mapping for printer 2: [2]
+2026-04-24 08:01:58,643 INFO [backend.app.services.print_scheduler] Starting queue item 124
+2026-04-24 08:01:58,730 INFO [backend.app.services.print_scheduler] Queue item 124: Created archive 196 from library file 152
+2026-04-24 08:01:58,732 INFO [backend.app.services.print_scheduler] Queue item 124: FTP upload starting - printer=[PRINTER] (H2D Pro), ip=[IP], file=2026-04-23_Whip_SQA_Assembly.3mf, local_path=C:\bambuddy\archive\library\files\84a7bdd88d8b4318b9dd5e01adb35684.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-04-24 08:01:58,820 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=H2D Pro, prot_c=False)
+2026-04-24 08:01:58,901 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=H2D Pro, mode=prot_p, socket_timeout=30.0s)...
+2026-04-24 08:01:59,019 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=H2D Pro, prot_c=False)
+2026-04-24 08:01:59,019 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-24 08:01:59,020 INFO [backend.app.services.bambu_ftp] FTP uploading C:\bambuddy\archive\library\files\84a7bdd88d8b4318b9dd5e01adb35684.3mf (37242912 bytes) to /2026-04-23_Whip_SQA_Assembly.3mf
+2026-04-24 08:01:59,031 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.0s (PASV + TLS handshake)
+2026-04-24 08:02:03,564 ERROR [asyncio] Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Users\[USER]\AppData\Local\Programs\Python\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\[USER]\AppData\Local\Programs\Python\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+2026-04-24 08:02:03,566 ERROR [asyncio] Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Users\[USER]\AppData\Local\Programs\Python\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\[USER]\AppData\Local\Programs\Python\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+2026-04-24 08:02:04,352 WARNING [backend.app.services.bambu_ftp] FTP STOR confirmation not received for /2026-04-23_Whip_SQA_Assembly.3mf (proceeding): 426 Failure reading network stream. (error_temp)
+2026-04-24 08:02:04,352 INFO [backend.app.services.bambu_ftp] FTP upload complete: /2026-04-23_Whip_SQA_Assembly.3mf (37242912 bytes in 5.3s, 6822 KB/s)
+2026-04-24 08:02:04,352 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-24 08:02:04,355 INFO [backend.app.main] Registered expected print: printer=2, file=2026-04-23_Whip_SQA_Assembly.3mf, archive=196, ams_mapping=[2]
+2026-04-24 08:02:04,358 INFO [backend.app.services.print_scheduler] Queue item 124: Status set to 'printing', sending print command...
+2026-04-24 08:02:04,358 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=2, file=2026-04-23_Whip_SQA_Assembly.3mf, caller=C:\bambuddy\backend\app\services\print_scheduler.py:372:check_queue
+2026-04-24 08:02:04,359 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_7.gcode", "url": "ftp://2026-04-23_Whip_SQA_Assembly.3mf", "file": "2026-04-23_Whip_SQA_Assembly.3mf", "md5": "", "bed_type": "auto", "timelapse": 0, "bed_leveling": 1, "auto_bed_leveling": 1, "flow_cali": 0, "vibration_cali": 0, "layer_inspect": 0, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "2026-04-23_Whip_SQA_Assembly", "profile_id": "0", "project_id": "1063148290", "subtask_id": "1063148290", "task_id": "1063148290", "ams_mapping": [2], "ams_mapping2": [{"ams_id": 0, "slot_id": 2}]}}
+2026-04-24 08:02:04,359 INFO [backend.app.services.print_scheduler] Queue item 124: Print started successfully - 2026-04-23 Whip SQA Assembly.gcode.3mf
+2026-04-24 08:02:04,362 INFO [backend.app.services.print_scheduler] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-04-24 08:02:04,362 INFO [backend.app.services.print_scheduler] Queue: printer 3 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-04-24 08:02:04,363 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Captured ams_mapping from print command: [2]
+2026-04-24 08:02:05,710 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-24 08:02:05,710 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-24 08:02:05,710 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-24 08:02:05,710 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-24 08:02:05,710 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-24 08:02:05,710 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-24 08:02:05,710 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-24 08:02:05,710 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-24 08:02:05,710 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-24 08:02:05,710 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-24 08:02:05,710 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-24 08:02:05,862 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-24 08:02:05,862 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-24 08:02:05,862 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: syringeholder
+2026-04-24 08:02:05,862 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 0, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 22699}
+2026-04-24 08:02:05,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-24 08:02:05,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-24 08:02:05,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-24 08:02:05,863 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-24 08:02:05,864 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-24 08:02:05,864 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-24 08:02:05,864 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-24 08:02:05,865 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 27°C (heater OFF)
+2026-04-24 08:02:05,865 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-24 08:02:05,865 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=27.0, heating=False, respect_local=False
+2026-04-24 08:02:05,866 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 27.0, target: 0.0, heating: False
+2026-04-24 08:02:05,866 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: [{'attr': 201327104, 'code': 65541}]
+2026-04-24 08:02:05,867 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '720p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-24 08:02:05,867 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -90dBm
+2026-04-24 08:02:05,867 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-24 08:02:05,868 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [1]
+2026-04-24 08:02:05,868 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: syringeholder
+2026-04-24 08:02:06,190 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 224695, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-24 08:02:06,190 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-24 08:02:06,190 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] xcam cfg bitmask: 224695 (binary: 0b110110110110110111)
+2026-04-24 08:02:06,190 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: 2026-04-23_Whip_SQA_Assembly
+2026-04-24 08:02:06,191 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': 'ff', 'ams_exist_bits_raw': 'ff', 'cali_id': 255, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'fffff', 'tray_is_bbl_bits': 'ffffe', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'fffff', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 41520}
+2026-04-24 08:02:06,191 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-24 08:02:06,192 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 8 new units, 8 total
+2026-04-24 08:02:06,192 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-04-24 08:02:06,192 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 1 info=0x2103 -> extruder 1
+2026-04-24 08:02:06,192 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 128 info=0x2004 -> extruder 0
+2026-04-24 08:02:06,192 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 129 info=0x2104 -> extruder 1
+2026-04-24 08:02:06,192 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 130 info=0x2004 -> extruder 0
+2026-04-24 08:02:06,192 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 131 info=0x2104 -> extruder 1
+2026-04-24 08:02:06,192 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 2 info=0x2003 -> extruder 0
+2026-04-24 08:02:06,193 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 3 info=0x2103 -> extruder 1
+2026-04-24 08:02:06,193 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 1, '128': 0, '129': 1, '130': 0, '131': 1, '2': 0, '3': 1}
+2026-04-24 08:02:06,193 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-24 08:02:06,193 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-24 08:02:06,193 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=2 (switch_state bits 12-14: 0)
+2026-04-24 08:02:06,193 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 24°C (heater OFF)
+2026-04-24 08:02:06,194 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-24 08:02:06,194 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=24.0, heating=False, respect_local=False
+2026-04-24 08:02:06,194 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 24.0, target: 0.0, heating: False
+2026-04-24 08:02:06,194 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: [{'attr': 201326848, 'code': 131099}]
+2026-04-24 08:02:06,194 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 5, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-24 08:02:06,194 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -90dBm
+2026-04-24 08:02:06,195 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-04-24 08:02:06,195 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [2]
+2026-04-24 08:02:06,195 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: 2026-04-23_Whip_SQA_Assembly
+2026-04-24 08:02:06,195 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: gcode_line
+2026-04-24 08:02:06,195 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [2]
+2026-04-24 08:02:06,218 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 224695, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-24 08:02:06,219 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-24 08:02:06,219 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] xcam cfg bitmask: 224695 (binary: 0b110110110110110111)
+2026-04-24 08:02:06,219 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: All_WriteOnNameplate_Holder
+2026-04-24 08:02:06,219 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': 'ff', 'ams_exist_bits_raw': 'ff', 'cali_id': 255, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'fffff', 'tray_is_bbl_bits': 'ffcff', 'tray_now': '3', 'tray_pre': '3', 'tray_read_done_bits': 'fffff', 'tray_reading_bits': '0', 'tray_tar': '3', 'unbind_ams_stat': 0, 'version': 30099}
+2026-04-24 08:02:06,219 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 7
+2026-04-24 08:02:06,219 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 8 new units, 8 total
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x2103 -> extruder 1
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 1 info=0x2003 -> extruder 0
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 128 info=0x2104 -> extruder 1
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 129 info=0x2004 -> extruder 0
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 130 info=0x2004 -> extruder 0
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 131 info=0x2104 -> extruder 1
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 2 info=0x2003 -> extruder 0
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 3 info=0x2103 -> extruder 1
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 1, '129': 0, '130': 0, '131': 1, '2': 0, '3': 1}
+2026-04-24 08:02:06,220 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS data changed, triggering sync callback
+2026-04-24 08:02:06,221 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-04-24 08:02:06,221 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-24 08:02:06,221 INFO [backend.app.main] [Printer 3] Broadcasting AMS change via WebSocket
+2026-04-24 08:02:06,221 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=2 (switch_state bits 12-14: 0)
+2026-04-24 08:02:06,222 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 26°C (heater OFF)
+2026-04-24 08:02:06,222 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-24 08:02:06,222 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=26.0, heating=False, respect_local=False
+2026-04-24 08:02:06,223 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 26.0, target: 0.0, heating: False
+2026-04-24 08:02:06,223 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: [{'attr': 201326848, 'code': 131099}, {'attr': 201327360, 'code': 196634}, {'attr': 201327360, 'code': 196616}]
+2026-04-24 08:02:06,223 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 5, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-24 08:02:06,223 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-04-24 08:02:06,224 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -90dBm
+2026-04-24 08:02:06,224 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-04-24 08:02:06,224 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [259]
+2026-04-24 08:02:06,224 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_1.gcode, subtask: All_WriteOnNameplate_Holder
+2026-04-24 08:02:06,237 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: gcode_line
+2026-04-24 08:02:06,237 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [2]
+2026-04-24 08:02:06,434 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: gcode_line
+2026-04-24 08:02:06,435 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [2]

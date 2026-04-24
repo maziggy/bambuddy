@@ -28,10 +28,12 @@ logger = logging.getLogger(__name__)
 # Permissions that cannot be accessed via API key.
 # API keys are limited to device/inventory operations. The following capabilities
 # are restricted to fully-authenticated users: user/group/API-key management,
-# settings read/backup/restore, firmware updates, and GitHub-backed backup/restore.
+# settings write/backup/restore, firmware updates, and GitHub-backed backup/restore.
+# SETTINGS_READ is intentionally not denied — the SpoolBuddy kiosk reads settings
+# via API key (e.g. to sync the UI language), which was always permitted before the
+# denylist was introduced.
 _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
     {
-        Permission.SETTINGS_READ,
         Permission.SETTINGS_UPDATE,
         Permission.SETTINGS_BACKUP,
         Permission.SETTINGS_RESTORE,

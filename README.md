@@ -193,7 +193,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 
 ### 🔔 Notifications
 - WhatsApp, Telegram, Discord
-- Email, Pushover, ntfy
+- Email, Pushover, ntfy (with per-event priority — Min / Low / Default / High / Urgent)
 - Home Assistant persistent notifications
 - Custom webhooks
 - Quiet hours & daily digest

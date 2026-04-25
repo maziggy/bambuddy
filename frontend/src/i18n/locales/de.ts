@@ -4355,6 +4355,16 @@ export default {
     notificationEvents: 'Benachrichtigungsereignisse',
     progressPercent: '(25%, 50%, 75%)',
     bedCooledAfterPrint: '(nach Druckabschluss)',
+    // Per-event ntfy priority (#990)
+    eventPriority: {
+      sectionTitle: 'ntfy-Priorität',
+      helpNtfy: 'Wähle eine Priorität pro aktiviertem Ereignis. ntfy nutzt diese, um Hinweise (Ton, Sichtbarkeit, Push-Verhalten) zu eskalieren. Hier nicht gesetzte Stufen verwenden den ntfy-Server-Standard.',
+      min: 'Min',
+      low: 'Niedrig',
+      default: 'Standard',
+      high: 'Hoch',
+      urgent: 'Dringend',
+    },
     cancel: 'Abbrechen',
     save: 'Speichern',
     add: 'Hinzufügen',

@@ -670,6 +670,119 @@ class TestNotificationProviderTypes:
             assert "image" not in payload
 
 
+class TestNtfyPriority:
+    """Per-event ntfy Priority header (#990)."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @staticmethod
+    def _mock_client(service):
+        """Patch _get_client and return the mock client + 200 response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.put = AsyncMock(return_value=mock_response)
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_priority_header_set_for_mapped_event(self, service):
+        """Mapped event → ntfy Priority header carries the configured value."""
+        config = {
+            "topic": "bambuddy",
+            "event_priorities": {"on_print_failed": 5, "on_print_complete": 2},
+        }
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            success, _ = await service._send_ntfy(config, "Title", "Body", event_type="on_print_failed")
+
+        assert success is True
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert headers.get("Priority") == "5"
+
+    @pytest.mark.asyncio
+    async def test_priority_header_omitted_for_unmapped_event(self, service):
+        """Unmapped event → no Priority header so ntfy uses its server default."""
+        config = {
+            "topic": "bambuddy",
+            "event_priorities": {"on_print_failed": 5},
+        }
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            await service._send_ntfy(config, "Title", "Body", event_type="on_print_complete")
+
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert "Priority" not in headers
+
+    @pytest.mark.asyncio
+    async def test_priority_header_omitted_when_no_priorities_set(self, service):
+        """Existing setups (no event_priorities key) keep current behaviour."""
+        config = {"topic": "bambuddy"}
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            await service._send_ntfy(config, "Title", "Body", event_type="on_print_failed")
+
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert "Priority" not in headers
+
+    @pytest.mark.asyncio
+    async def test_priority_header_omitted_when_event_type_missing(self, service):
+        """Test sends (no event_type) must not emit a Priority header."""
+        config = {
+            "topic": "bambuddy",
+            "event_priorities": {"on_print_failed": 5},
+        }
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            await service._send_ntfy(config, "Title", "Body")
+
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert "Priority" not in headers
+
+    @pytest.mark.asyncio
+    async def test_priority_out_of_range_is_ignored(self, service):
+        """Values outside 1-5 (or non-numeric) are dropped, not clamped."""
+        for bad in (0, 6, 99, -1, "not-a-number", None):
+            config = {
+                "topic": "bambuddy",
+                "event_priorities": {"on_print_failed": bad},
+            }
+            mock_client = self._mock_client(service)
+            with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+                mock_get.return_value = mock_client
+                await service._send_ntfy(config, "Title", "Body", event_type="on_print_failed")
+
+            headers = mock_client.post.call_args.kwargs["headers"]
+            assert "Priority" not in headers, f"unexpected header for bad value {bad!r}"
+
+    @pytest.mark.asyncio
+    async def test_priority_header_set_on_attachment_path(self, service):
+        """Image-attachment path (PUT) must also carry the Priority header."""
+        config = {
+            "topic": "bambuddy",
+            "event_priorities": {"on_first_layer_complete": 4},
+        }
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            await service._send_ntfy(
+                config,
+                "Title",
+                "Body",
+                image_data=b"\xff\xd8\xff\xe0fake-jpeg",
+                event_type="on_first_layer_complete",
+            )
+
+        headers = mock_client.put.call_args.kwargs["headers"]
+        assert headers.get("Priority") == "4"
+
+
 class TestHomeAssistantProvider:
     """Tests for Home Assistant notification provider."""
 

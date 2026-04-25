@@ -206,7 +206,12 @@ class NotificationService:
             return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
     async def _send_ntfy(
-        self, config: dict, title: str, message: str, image_data: bytes | None = None
+        self,
+        config: dict,
+        title: str,
+        message: str,
+        image_data: bytes | None = None,
+        event_type: str | None = None,
     ) -> tuple[bool, str]:
         """Send notification via ntfy."""
         server = config.get("server", "https://ntfy.sh").rstrip("/")
@@ -222,6 +227,19 @@ class NotificationService:
         # non-ASCII characters (e.g. accented letters, CJK). Passing bytes
         # bypasses the ASCII check — ntfy handles UTF-8 headers correctly.
         headers: dict[str, str | bytes] = {"Title": title.encode("utf-8")}
+
+        # Per-event Priority header (#990). Only set when the user has
+        # explicitly mapped this event to a 1-5 value; otherwise fall through
+        # to the ntfy server's default so existing setups stay unchanged.
+        event_priorities = config.get("event_priorities") or {}
+        if event_type and isinstance(event_priorities, dict):
+            raw = event_priorities.get(event_type)
+            try:
+                priority = int(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                priority = None
+            if priority is not None and 1 <= priority <= 5:
+                headers["Priority"] = str(priority)
 
         if auth_token:
             headers["Authorization"] = f"Bearer {auth_token}"
@@ -603,7 +621,7 @@ class NotificationService:
             if provider.provider_type == "callmebot":
                 return await self._send_callmebot(config, f"{title}\n{message}")
             elif provider.provider_type == "ntfy":
-                return await self._send_ntfy(config, title, message, image_data=image_data)
+                return await self._send_ntfy(config, title, message, image_data=image_data, event_type=event_type)
             elif provider.provider_type == "pushover":
                 return await self._send_pushover(config, title, message, image_data=image_data)
             elif provider.provider_type == "telegram":

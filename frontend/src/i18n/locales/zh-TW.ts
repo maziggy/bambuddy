@@ -4347,6 +4347,16 @@ export default {
     notificationEvents: '通知事件',
     progressPercent: '（25%、50%、75%）',
     bedCooledAfterPrint: '（列印完成後）',
+    // Per-event ntfy priority (#990)
+    eventPriority: {
+      sectionTitle: 'ntfy 優先級',
+      helpNtfy: '為每個已啟用的事件選擇優先級。ntfy 使用它來升級提醒（聲音、可見性、推播行為）。此處未設定的級別將使用 ntfy 伺服器預設值。',
+      min: '最低',
+      low: '低',
+      default: '預設',
+      high: '高',
+      urgent: '緊急',
+    },
     cancel: '取消',
     save: '儲存',
     add: '新增',

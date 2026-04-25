@@ -43,10 +43,31 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onBedCooled, setOnBedCooled] = useState(provider?.on_bed_cooled ?? false);
   const [onFirstLayerComplete, setOnFirstLayerComplete] = useState(provider?.on_first_layer_complete ?? false);
 
-  // Provider-specific config
+  // Provider-specific config (scalar fields only — event_priorities is split out
+  // into its own state because it's an object, not a string).
   const [config, setConfig] = useState<Record<string, string>>(
-    provider?.config ? Object.fromEntries(Object.entries(provider.config).map(([k, v]) => [k, String(v)])) : {}
+    provider?.config
+      ? Object.fromEntries(
+          Object.entries(provider.config)
+            .filter(([k]) => k !== 'event_priorities')
+            .map(([k, v]) => [k, String(v)]),
+        )
+      : {},
   );
+
+  // Per-event ntfy priority (#990). Map of event key → 1-5. Persisted into
+  // config.event_priorities on save; only sent when the provider is ntfy.
+  const initialEventPriorities = (() => {
+    const raw = provider?.config?.event_priorities;
+    if (!raw || typeof raw !== 'object') return {} as Record<string, number>;
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const n = Number(v);
+      if (Number.isInteger(n) && n >= 1 && n <= 5) out[k] = n;
+    }
+    return out;
+  })();
+  const [eventPriorities, setEventPriorities] = useState<Record<string, number>>(initialEventPriorities);
 
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -120,10 +141,15 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       }
     }
 
+    const finalConfig: Record<string, unknown> =
+      providerType === 'ntfy' && Object.keys(eventPriorities).length > 0
+        ? { ...config, event_priorities: eventPriorities }
+        : config;
+
     const data = {
       name: name.trim(),
       provider_type: providerType,
-      config,
+      config: finalConfig,
       printer_id: printerId,
       quiet_hours_enabled: quietHoursEnabled,
       quiet_hours_start: quietHoursEnabled ? quietHoursStart : null,
@@ -527,6 +553,54 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                 </div>
               </div>
             </div>
+
+            {/* Per-event ntfy priority (#990) */}
+            {providerType === 'ntfy' && (() => {
+              const enabledEvents: Array<{ key: string; label: string }> = [];
+              if (onPrintStart) enabledEvents.push({ key: 'on_print_start', label: t('notifications.start') });
+              if (onPrintComplete) enabledEvents.push({ key: 'on_print_complete', label: t('notifications.complete') });
+              if (onPrintFailed) enabledEvents.push({ key: 'on_print_failed', label: t('notifications.failed') });
+              if (onPrintStopped) enabledEvents.push({ key: 'on_print_stopped', label: t('notifications.stopped') });
+              if (onPrintProgress) enabledEvents.push({ key: 'on_print_progress', label: t('notifications.progress') });
+              if (onBedCooled) enabledEvents.push({ key: 'on_bed_cooled', label: t('notifications.bedCooled') });
+              if (onFirstLayerComplete) enabledEvents.push({ key: 'on_first_layer_complete', label: t('notifications.firstLayerCompleteLabel') });
+              if (onPrinterOffline) enabledEvents.push({ key: 'on_printer_offline', label: t('notifications.offline') });
+              if (onPrinterError) enabledEvents.push({ key: 'on_printer_error', label: t('notifications.error') });
+              if (onFilamentLow) enabledEvents.push({ key: 'on_filament_low', label: t('notifications.lowFilament') });
+              if (onMaintenanceDue) enabledEvents.push({ key: 'on_maintenance_due', label: t('notifications.maintenance') });
+
+              if (enabledEvents.length === 0) return null;
+
+              return (
+                <div className="space-y-2 p-3 bg-bambu-dark rounded-lg">
+                  <p className="text-xs text-bambu-gray uppercase tracking-wide mb-1">
+                    {t('notifications.eventPriority.sectionTitle')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mb-2">{t('notifications.eventPriority.helpNtfy')}</p>
+                  <div className="space-y-2">
+                    {enabledEvents.map((ev) => (
+                      <div key={ev.key} className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-white">{ev.label}</span>
+                        <select
+                          value={eventPriorities[ev.key] ?? 3}
+                          onChange={(e) => {
+                            const next = Number(e.target.value);
+                            setEventPriorities((prev) => ({ ...prev, [ev.key]: next }));
+                          }}
+                          className="px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-sm text-white focus:border-bambu-green focus:outline-none"
+                        >
+                          <option value={1}>{t('notifications.eventPriority.min')}</option>
+                          <option value={2}>{t('notifications.eventPriority.low')}</option>
+                          <option value={3}>{t('notifications.eventPriority.default')}</option>
+                          <option value={4}>{t('notifications.eventPriority.high')}</option>
+                          <option value={5}>{t('notifications.eventPriority.urgent')}</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Actions */}

@@ -4320,6 +4320,16 @@ export default {
     notificationEvents: '通知イベント',
     progressPercent: '（25%、50%、75%）',
     bedCooledAfterPrint: '（印刷完了後）',
+    // Per-event ntfy priority (#990)
+    eventPriority: {
+      sectionTitle: 'ntfy 優先度',
+      helpNtfy: '有効な各イベントに優先度を選択してください。ntfy はこれを使って通知の挙動（音、表示、プッシュ動作）を切り替えます。ここで設定していないレベルは ntfy サーバーのデフォルトを使用します。',
+      min: '最小',
+      low: '低',
+      default: 'デフォルト',
+      high: '高',
+      urgent: '緊急',
+    },
     cancel: 'キャンセル',
     save: '保存',
     add: '追加',

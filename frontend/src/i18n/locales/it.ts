@@ -4281,6 +4281,16 @@ export default {
     notificationEvents: 'Eventi di notifica',
     progressPercent: '(25%, 50%, 75%)',
     bedCooledAfterPrint: '(dopo il completamento della stampa)',
+    // Per-event ntfy priority (#990)
+    eventPriority: {
+      sectionTitle: 'Priorità ntfy',
+      helpNtfy: 'Scegli una priorità per ogni evento abilitato. ntfy le usa per intensificare gli avvisi (suono, visibilità, comportamento push). I livelli non impostati qui usano l\'impostazione predefinita del server ntfy.',
+      min: 'Min',
+      low: 'Bassa',
+      default: 'Predefinita',
+      high: 'Alta',
+      urgent: 'Urgente',
+    },
     cancel: 'Annulla',
     save: 'Salva',
     add: 'Aggiungi',

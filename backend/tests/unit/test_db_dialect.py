@@ -282,7 +282,9 @@ class TestSafeExecutePattern:
         mock_conn.execute = AsyncMock(side_effect=fake_exc)
 
         # Must NOT raise — "does not exist" is in the swallow-list
-        await _safe_execute(mock_conn, 'ALTER TABLE project_bom_items RENAME COLUMN quantity_printed TO quantity_acquired')
+        await _safe_execute(
+            mock_conn, "ALTER TABLE project_bom_items RENAME COLUMN quantity_printed TO quantity_acquired"
+        )
 
     @pytest.mark.asyncio
     async def test_safe_execute_swallows_duplicate_key(self):
@@ -342,3 +344,148 @@ class TestSafeExecutePattern:
             with pytest.raises(IntegrityError):
                 await conn.execute(text("INSERT INTO ck_test VALUES (3, 1, 0, 'email')"))
         await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_auto_link_sec1_backfill_resets_unsafe_rows(self):
+        """SEC-1 backfill resets auto_link=TRUE on rows with unsafe combined state.
+
+        Three cases:
+          1. auto_link=TRUE + require_ev=FALSE → reset to FALSE (unsafe: permissive mode)
+          2. auto_link=TRUE + custom claim → reset to FALSE (unsafe: no email_verified gate)
+          3. auto_link=TRUE + require_ev=TRUE + standard claim → unchanged (safe)
+        """
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "CREATE TABLE oidc_providers ("
+                    "id INTEGER PRIMARY KEY, "
+                    "auto_link_existing_accounts BOOLEAN, "
+                    "require_email_verified BOOLEAN, "
+                    "email_claim TEXT"
+                    ")"
+                )
+            )
+            # Row 1: unsafe — require_ev=FALSE
+            await conn.execute(text("INSERT INTO oidc_providers VALUES (1, 1, 0, 'email')"))
+            # Row 2: unsafe — custom claim
+            await conn.execute(text("INSERT INTO oidc_providers VALUES (2, 1, 1, 'preferred_username')"))
+            # Row 3: safe — require_ev=TRUE + standard claim
+            await conn.execute(text("INSERT INTO oidc_providers VALUES (3, 1, 1, 'email')"))
+
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "UPDATE oidc_providers SET auto_link_existing_accounts = FALSE "
+                        "WHERE auto_link_existing_accounts = TRUE "
+                        "AND (require_email_verified = FALSE OR email_claim != 'email')"
+                    )
+                )
+
+            result = await conn.execute(text("SELECT id, auto_link_existing_accounts FROM oidc_providers ORDER BY id"))
+            rows = {r[0]: r[1] for r in result.fetchall()}
+        await engine.dispose()
+
+        assert rows[1] == 0, "unsafe (require_ev=FALSE) row must be reset to FALSE"
+        assert rows[2] == 0, "unsafe (custom claim) row must be reset to FALSE"
+        assert rows[3] == 1, "safe row must remain TRUE"
+
+    @pytest.mark.asyncio
+    async def test_safe_execute_reraises_does_not_exist_without_column(self):
+        """'does not exist' without 'column' in the message must NOT be swallowed.
+
+        This verifies that the narrowing from the broad 'does not exist' substring
+        to the compound RENAME-COLUMN-only guard works correctly.  A missing-relation
+        error must propagate so the operator sees a startup failure rather than a
+        silent schema gap.
+        """
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy.exc import ProgrammingError
+
+        from backend.app.core.database import _safe_execute
+
+        # PostgreSQL error for a missing relation — contains "does not exist" but NOT "column"
+        fake_exc = ProgrammingError('relation "oidc_providers" does not exist', [], Exception())
+
+        nested_cm = MagicMock()
+        nested_cm.__aenter__ = AsyncMock(return_value=nested_cm)
+        nested_cm.execute = AsyncMock(side_effect=fake_exc)
+        nested_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.begin_nested.return_value = nested_cm
+        mock_conn.execute = AsyncMock(side_effect=fake_exc)
+
+        # Must RAISE — "column" is absent so this is not RENAME COLUMN idempotency
+        with pytest.raises(ProgrammingError):
+            await _safe_execute(
+                mock_conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT false"
+            )
+
+    @pytest.mark.asyncio
+    async def test_oidc_boolean_default_migrations_sqlite_defaults(self):
+        """auto_link defaults to 0 (FALSE) and require_email_verified defaults to 1 (TRUE) on SQLite.
+
+        Verifies that the SQLite branch of the BOOLEAN DEFAULT dialect-branch uses
+        the correct integer literals so new rows get safe defaults without explicit values.
+        """
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from backend.app.core.database import _safe_execute
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE TABLE oidc_providers (id INTEGER PRIMARY KEY, name TEXT)"))
+            await _safe_execute(
+                conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT 0"
+            )
+            await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT 1")
+            await conn.execute(text("INSERT INTO oidc_providers (id, name) VALUES (1, 'test')"))
+            result = await conn.execute(
+                text("SELECT auto_link_existing_accounts, require_email_verified FROM oidc_providers WHERE id = 1")
+            )
+            row = result.fetchone()
+        await engine.dispose()
+
+        assert row[0] == 0, "auto_link_existing_accounts must default to 0 (FALSE) on SQLite"
+        assert row[1] == 1, "require_email_verified must default to 1 (TRUE) on SQLite"
+
+    @pytest.mark.asyncio
+    async def test_safe_execute_column_not_exists_only_swallowed_for_rename(self):
+        """'column … does not exist' is swallowed only when the SQL is RENAME COLUMN.
+
+        The compound guard must NOT swallow the same error pattern when the SQL is
+        an ADD COLUMN statement — that would indicate schema corruption, not idempotency.
+        """
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy.exc import ProgrammingError
+
+        from backend.app.core.database import _safe_execute
+
+        fake_exc = ProgrammingError('column "auto_link_existing_accounts" does not exist', [], Exception())
+
+        nested_cm = MagicMock()
+        nested_cm.__aenter__ = AsyncMock(return_value=nested_cm)
+        nested_cm.execute = AsyncMock(side_effect=fake_exc)
+        nested_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.begin_nested.return_value = nested_cm
+        mock_conn.execute = AsyncMock(side_effect=fake_exc)
+
+        # ADD COLUMN statement — must RAISE even though message contains "column" + "does not exist"
+        with pytest.raises(ProgrammingError):
+            await _safe_execute(
+                mock_conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT false"
+            )
+
+        # RENAME COLUMN statement — must NOT raise (idempotency)
+        await _safe_execute(
+            mock_conn, "ALTER TABLE oidc_providers RENAME COLUMN auto_link_existing_accounts TO auto_link"
+        )

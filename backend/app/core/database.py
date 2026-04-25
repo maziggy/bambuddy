@@ -216,9 +216,12 @@ async def _safe_execute(conn, sql):
     """Execute a DDL migration statement, silently ignoring idempotency errors.
 
     'already exists', 'duplicate column name' (SQLite ADD COLUMN), 'no such column'
-    (SQLite RENAME COLUMN), 'does not exist' (PostgreSQL RENAME COLUMN), and
-    'duplicate key' are swallowed so that re-running DDL migrations
-    (ALTER TABLE ADD COLUMN, RENAME COLUMN, CREATE INDEX, ADD CONSTRAINT) is safe.
+    (SQLite RENAME COLUMN), 'duplicate key', and the compound
+    'column … does not exist' (PostgreSQL RENAME COLUMN idempotency) are swallowed
+    so that re-running DDL migrations is safe.  The compound check additionally
+    requires the SQL to be a RENAME COLUMN statement so that "does not exist" errors
+    from ADD COLUMN or CREATE INDEX (which would indicate schema corruption, not
+    idempotency) are never silently swallowed.
     Any other error is logged and re-raised — callers must not assume silent
     recovery, as a failure will abort the migration sequence and prevent
     application startup.
@@ -237,9 +240,12 @@ async def _safe_execute(conn, sql):
             await conn.execute(text(sql))
     except (OperationalError, ProgrammingError) as exc:
         msg = str(exc).lower()
-        if not any(
-            k in msg
-            for k in ("already exists", "duplicate key", "duplicate column name", "no such column", "does not exist")
+        # Only swallow "column … does not exist" for RENAME COLUMN — not for ADD COLUMN
+        # or CREATE INDEX where it would indicate schema corruption, not idempotency.
+        column_not_exists = "rename column" in sql.lower() and "column" in msg and "does not exist" in msg
+        if (
+            not any(k in msg for k in ("already exists", "duplicate key", "duplicate column name", "no such column"))
+            and not column_not_exists
         ):
             logger.error("Migration statement failed: %s | SQL: %.200s", exc, sql)
             raise
@@ -1516,11 +1522,21 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE auth_ephemeral_tokens ADD COLUMN challenge_id VARCHAR(128)")
 
     # Migration: Add auto_link_existing_accounts column to oidc_providers (M-4)
-    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT 0")
+    # Postgres rejects `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT false"
+        )
 
     # Migration: Azure Entra ID support — configurable email claim and verification requirement
     await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN email_claim VARCHAR(64) DEFAULT 'email'")
-    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT 1")
+    # Postgres rejects `DEFAULT 1` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT 1")
+    else:
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT true")
     # SEC-1/SEC-6: Add DB-level CHECK constraint for existing PostgreSQL installs.
     # SQLite does not support ALTER TABLE ADD CONSTRAINT — handled by __table_args__ at creation.
     if not is_sqlite():
@@ -1541,6 +1557,29 @@ async def run_migrations(conn):
                     exc_info=True,
                 )
                 raise
+
+    # SEC-1 backfill: reset auto_link on rows where the combined state is unsafe.
+    # Guards existing installs that may have had auto_link=TRUE set before the
+    # Combined-State-Guard was introduced.  On fresh installs the column defaults
+    # guarantee this UPDATE always matches zero rows.  TRUE/FALSE literals are
+    # accepted by both SQLite (≥ 3.23) and PostgreSQL — no dialect branch needed.
+    try:
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    "UPDATE oidc_providers SET auto_link_existing_accounts = FALSE "
+                    "WHERE auto_link_existing_accounts = TRUE "
+                    "AND (require_email_verified = FALSE OR email_claim != 'email')"
+                )
+            )
+    except Exception as exc:
+        logger.error(
+            "SEC-1 safety backfill FAILED — auto_link_existing_accounts may remain enabled "
+            "on providers with unsafe email settings: %s",
+            exc,
+            exc_info=True,
+        )
+        raise
 
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat

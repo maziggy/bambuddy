@@ -3416,10 +3416,16 @@ class TestOIDCEmailClaimResolution:
             ("email", True, {"email": "fa@example.com", "email_verified": True}, "fa@example.com"),
             ("email", True, {"email": "fa@example.com", "email_verified": False}, None),
             ("email", True, {"email": "fa@example.com"}, None),  # Azure Entra with default config
+            # Fall A + SEC-2: malformed email claim rejected even when email_verified=True
+            ("email", True, {"email": "notanemail", "email_verified": True}, None),
             # Fall B: standard claim + require_ev=False (Azure Entra permissive)
             ("email", False, {"email": "fb@example.com", "email_verified": True}, "fb@example.com"),
             ("email", False, {"email": "fb@example.com", "email_verified": False}, None),
             ("email", False, {"email": "azure@company.com"}, "azure@company.com"),  # ev absent → kept
+            # Fall B + SEC-2: malformed email claim rejected in permissive mode (ev absent)
+            ("email", False, {"email": "user@nodot"}, None),
+            # Fall B + SEC-2: shape check fires before email_verified=False drop
+            ("email", False, {"email": "notanemail", "email_verified": False}, None),
             # Fall C: custom claim (preferred_username) — no email_verified check
             ("preferred_username", True, {"preferred_username": "User@Company.COM"}, "user@company.com"),
             ("preferred_username", True, {"preferred_username": "  User@EXAMPLE.COM  "}, "user@example.com"),
@@ -3436,9 +3442,12 @@ class TestOIDCEmailClaimResolution:
             "fall-a-ev-true",
             "fall-a-ev-false",
             "fall-a-ev-absent",
+            "fall-a-malformed-email",
             "fall-b-ev-true",
             "fall-b-ev-false",
             "fall-b-ev-absent",
+            "fall-b-malformed-email",
+            "fall-b-malformed-email-ev-false",
             "fall-c-valid-upn",
             "fall-c-lowercase-strip",
             "fall-c-no-at",

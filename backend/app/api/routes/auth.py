@@ -1277,3 +1277,199 @@ async def get_ldap_status(db: AsyncSession = Depends(get_db)):
         "ldap_enabled": settings.get("ldap_enabled", "false").lower() == "true",
         "ldap_configured": bool(settings.get("ldap_server_url")),
     }
+
+
+# =============================================================================
+# Long-lived camera-stream tokens (#1108)
+# =============================================================================
+# Camera-only V1. Issue scope: a token a user can paste into Home Assistant /
+# Frigate / a kiosk and have it keep working for days/weeks rather than
+# refreshing the 60-minute ephemeral token. Permission gate: CAMERA_VIEW
+# (same blast radius as the existing 60-min token-mint endpoint).
+
+
+def _long_lived_token_to_response(record, *, plaintext: str | None = None) -> dict:
+    """Serialise a LongLivedToken row for the SPA. Plaintext is included
+    only at create time (and then never again), per the issue's "shown once"
+    contract.
+    """
+    return {
+        "id": record.id,
+        "user_id": record.user_id,
+        "name": record.name,
+        "scope": record.scope,
+        "lookup_prefix": record.lookup_prefix,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        "expires_at": record.expires_at.isoformat() if record.expires_at else None,
+        "last_used_at": record.last_used_at.isoformat() if record.last_used_at else None,
+        # Plaintext is the ONLY field the user ever sees in full — copied once
+        # to a clipboard / kiosk config and then forgotten.
+        "token": plaintext,
+    }
+
+
+@router.post("/tokens", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def create_long_lived_camera_token(
+    payload: dict,
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mint a long-lived camera-stream token (#1108).
+
+    Body: ``{"name": str, "expires_in_days": int, "scope": "camera_stream"}``.
+
+    The plaintext token is returned **exactly once** in the response. The DB
+    only ever stores a pbkdf2 hash, so a leaked DB dump cannot replay the
+    token. Hard cap of 365 days; the issue's ``expire_in: 0`` (never) is
+    explicitly rejected.
+    """
+    from backend.app.services.long_lived_tokens import (
+        ALLOWED_SCOPES,
+        MAX_TOKEN_LIFETIME_DAYS,
+        create_token,
+    )
+
+    # Auth-disabled path: tokens are user-owned, but if auth is off there is
+    # no user to own them. Refuse rather than silently picking a random user.
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Long-lived tokens require authentication to be enabled",
+        )
+
+    name = payload.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise HTTPException(status_code=400, detail="name is required")
+    expires_in_days = payload.get("expires_in_days")
+    if not isinstance(expires_in_days, int) or expires_in_days <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"expires_in_days must be a positive integer (max {MAX_TOKEN_LIFETIME_DAYS}; #1108: no infinite tokens)"
+            ),
+        )
+    scope = payload.get("scope", "camera_stream")
+    if scope not in ALLOWED_SCOPES:
+        raise HTTPException(status_code=400, detail=f"unsupported scope: {scope!r}")
+
+    try:
+        created = await create_token(
+            db,
+            user_id=current_user.id,
+            name=name,
+            expires_in_days=expires_in_days,
+            scope=scope,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _logger.info(
+        "Long-lived camera token created: user=%s name=%r scope=%s expires=%s",
+        current_user.username,
+        name,
+        scope,
+        created.record.expires_at.isoformat(),
+    )
+    return _long_lived_token_to_response(created.record, plaintext=created.plaintext)
+
+
+@router.get("/tokens", response_model=list[dict])
+async def list_long_lived_tokens(
+    user_id: int | None = None,
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    """List long-lived tokens.
+
+    Default: caller's own tokens.
+    Admins can pass ``?user_id=N`` to see another user's tokens, or omit it
+    to see everything (handy for leak triage).
+    """
+    from backend.app.services.long_lived_tokens import list_user_tokens
+
+    # Auth-disabled installs don't have a notion of "my tokens" — refuse so
+    # we don't leak a global list to whoever can hit the API.
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Long-lived tokens require authentication to be enabled",
+        )
+
+    # Reload with groups so is_admin reflects group membership reliably.
+    user_with_groups = (
+        await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
+    ).scalar_one()
+
+    if user_id is None or user_id == current_user.id:
+        records = await list_user_tokens(db, current_user.id)
+    elif user_with_groups.is_admin:
+        records = await list_user_tokens(db, user_id)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can list other users' tokens",
+        )
+    return [_long_lived_token_to_response(r) for r in records]
+
+
+@router.get("/tokens/all", response_model=list[dict])
+async def list_all_long_lived_tokens(
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: every active long-lived token in the system, newest first.
+    Used by the leak-triage view in admin settings.
+    """
+    from backend.app.services.long_lived_tokens import list_all_tokens
+
+    if current_user is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Auth required")
+    user_with_groups = (
+        await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
+    ).scalar_one()
+    if not user_with_groups.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin only",
+        )
+    records = await list_all_tokens(db)
+    return [_long_lived_token_to_response(r) for r in records]
+
+
+@router.delete("/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_long_lived_token(
+    token_id: int,
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke a long-lived token. Owners can revoke their own; admins any."""
+    from backend.app.models.long_lived_token import LongLivedToken
+    from backend.app.services.long_lived_tokens import revoke_token
+
+    if current_user is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Auth required")
+
+    record = (await db.execute(select(LongLivedToken).where(LongLivedToken.id == token_id))).scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    if record.user_id != current_user.id:
+        # Reload for is_admin so admins can revoke any user's token (leak response).
+        user_with_groups = (
+            await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
+        ).scalar_one()
+        if not user_with_groups.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only revoke your own tokens",
+            )
+
+    revoked = await revoke_token(db, token_id)
+    if not revoked:
+        # Already revoked is treated as 404 for idempotency from the UI side.
+        raise HTTPException(status_code=404, detail="Token not found or already revoked")
+    _logger.info(
+        "Long-lived camera token revoked: id=%d by user=%s",
+        token_id,
+        current_user.username,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

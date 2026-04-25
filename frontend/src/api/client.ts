@@ -122,6 +122,21 @@ async function request<T>(
   return await response.json();
 }
 
+// Long-lived camera-stream tokens (#1108). The `token` field is populated
+// only on the create response — listing endpoints set it to null because
+// the plaintext value is shown to the user exactly once.
+export interface LongLivedCameraToken {
+  id: number;
+  user_id: number;
+  name: string;
+  scope: 'camera_stream';
+  lookup_prefix: string;
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  token: string | null;
+}
+
 // Printer types
 export interface Printer {
   id: number;
@@ -4289,6 +4304,21 @@ export const api = {
   // Camera
   getCameraStreamToken: () =>
     request<{ token: string }>('/printers/camera/stream-token', { method: 'POST' }),
+
+  // Long-lived camera-stream tokens (#1108)
+  createLongLivedCameraToken: (payload: { name: string; expires_in_days: number }) =>
+    request<LongLivedCameraToken>('/auth/tokens', {
+      method: 'POST',
+      body: JSON.stringify({ ...payload, scope: 'camera_stream' }),
+    }),
+  listMyLongLivedCameraTokens: () =>
+    request<LongLivedCameraToken[]>('/auth/tokens'),
+  listAllLongLivedCameraTokens: () =>
+    request<LongLivedCameraToken[]>('/auth/tokens/all'),
+  listLongLivedCameraTokensForUser: (userId: number) =>
+    request<LongLivedCameraToken[]>(`/auth/tokens?user_id=${userId}`),
+  revokeLongLivedCameraToken: (tokenId: number) =>
+    request<void>(`/auth/tokens/${tokenId}`, { method: 'DELETE' }),
   getCameraStreamUrl: (printerId: number, fps = 10) =>
     withStreamToken(`${API_BASE}/printers/${printerId}/camera/stream?fps=${fps}`),
   getCameraSnapshotUrl: (printerId: number) =>

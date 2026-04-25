@@ -5281,4 +5281,55 @@ export default {
     runNow: 'Purge archives now',
     saveFailed: 'Could not save auto-purge settings.',
   },
+  cameraTokens: {
+    title: 'Camera API Tokens',
+    navTitle: 'Camera API tokens',
+    description:
+      'Long-lived tokens for embedding the camera stream into Home Assistant, Frigate, kiosks, or any other tool that needs a stable URL. Each token is camera-stream-only and can be revoked at any time.',
+    loading: 'Loading…',
+    confirmRevoke: {
+      title: 'Revoke this token?',
+      body: 'Any device using "{{name}}" will lose access immediately. This cannot be undone.',
+      cancel: 'Cancel',
+      confirm: 'Revoke',
+    },
+    create: {
+      title: 'Create new token',
+      nameLabel: 'Token name',
+      namePlaceholder: 'e.g. Home Assistant',
+      daysLabel: 'Days until expiry',
+      submit: 'Create',
+      hint:
+        'Maximum lifetime is 365 days. The token value is shown only once on creation — copy it now.',
+    },
+    created: {
+      title: 'Token created — copy it now',
+      warning:
+        'This is the only time this token will be visible. After you close this dialog you can never view it again.',
+      copy: 'Copy',
+      dismiss: "I've saved it",
+    },
+    list: {
+      myTitle: 'My tokens',
+      allTitle: 'All users (admin view)',
+      empty: 'No tokens yet.',
+      name: 'Name',
+      owner: 'Owner',
+      prefix: 'Prefix',
+      created: 'Created',
+      expires: 'Expires',
+      lastUsed: 'Last used',
+      revoke: 'Revoke',
+      expired: 'Expired',
+    },
+    toast: {
+      created: 'Token created',
+      createFailed: 'Failed to create token',
+      revoked: 'Token revoked',
+      revokeFailed: 'Failed to revoke token',
+      loadFailed: 'Failed to load tokens',
+      copied: 'Copied to clipboard',
+      copyFailed: 'Copy failed — select and copy manually',
+    },
+  },
 };

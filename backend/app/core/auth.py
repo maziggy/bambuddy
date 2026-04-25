@@ -195,7 +195,12 @@ async def create_camera_stream_token() -> str:
 
 
 async def verify_camera_stream_token(token: str) -> bool:
-    """Verify a camera stream token is valid (reusable — does not consume it)."""
+    """Verify a camera stream token is valid (reusable — does not consume it).
+
+    Tries the ephemeral 60-minute token first (the common, browser-bound case)
+    and falls through to long-lived tokens (#1108) for HA / kiosk integrations
+    that paste a token once and expect it to keep working for days.
+    """
     now = datetime.now(timezone.utc)
     async with async_session() as db:
         result = await db.execute(
@@ -205,7 +210,15 @@ async def verify_camera_stream_token(token: str) -> bool:
                 AuthEphemeralToken.expires_at > now,
             )
         )
-        return result.scalar_one_or_none() is not None
+        if result.scalar_one_or_none() is not None:
+            return True
+
+        # Long-lived path. Imported lazily so the auth module stays importable
+        # at startup before the long_lived_tokens model is registered.
+        from backend.app.services.long_lived_tokens import verify_token as verify_long_lived
+
+        record = await verify_long_lived(db, token, scope="camera_stream")
+        return record is not None
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

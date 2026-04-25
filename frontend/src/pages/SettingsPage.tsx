@@ -8,6 +8,7 @@ import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
+import { CameraTokensSection } from './CameraTokensPage';
 import { Collapsible } from '../components/Collapsible';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
@@ -75,6 +76,7 @@ registerSettingsSearch({ labelKey: 'settings.prometheusMetrics', tab: 'network',
 registerSettingsSearch({ labelKey: 'settings.createNewApiKey', tab: 'apikeys', keywords: 'api key create permission scope', anchor: 'card-createapi' });
 registerSettingsSearch({ labelKey: 'settings.webhookEndpoints', tab: 'apikeys', keywords: 'webhook endpoint post http', anchor: 'card-webhooks' });
 registerSettingsSearch({ labelKey: 'settings.apiBrowser', tab: 'apikeys', keywords: 'api browser endpoint documentation test', anchor: 'card-apibrowser' });
+registerSettingsSearch({ labelKey: 'cameraTokens.title', tab: 'apikeys', keywords: 'camera token long-lived home assistant frigate kiosk stream', anchor: 'card-camera-tokens' });
 registerSettingsSearch({ labelKey: 'settings.tabs.virtualPrinter', tab: 'virtual-printer', keywords: 'virtual printer proxy archive slicer bambustudio orcaslicer ip bind', anchor: 'card-vp' });
 registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy', keywords: 'spoolbuddy device scale nfc rfid kiosk unregister', anchor: 'card-spoolbuddy' });
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
@@ -3503,9 +3505,15 @@ export function SettingsPage() {
 
       {/* API Keys Tab */}
       {activeTab === 'apikeys' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {/* Left Column - API Keys Management */}
+        <div className={hasPermission('api_keys:read')
+          ? 'grid grid-cols-1 xl:grid-cols-2 gap-4'
+          : 'grid grid-cols-1 gap-4'}>
+          {/* Left Column - API Keys Management. Admin-gated content
+              (webhook keys, webhook docs) is hidden from users without
+              api_keys:read; the Camera Tokens panel is always shown so
+              users with camera:view can self-manage their own tokens. */}
           <div>
+            {hasPermission('api_keys:read') && <>
             <div className="flex items-start justify-between gap-4 mb-6">
               <div className="flex-1">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2" id="card-createapi">
@@ -3774,10 +3782,27 @@ export function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+            </>}
+
+            {/* Long-lived camera-stream tokens (#1108) */}
+            <Card className="mt-6">
+              <CardHeader>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-camera-tokens">
+                  <Video className="w-4 h-4 text-bambu-green" />
+                  {t('cameraTokens.title', 'Camera API Tokens')}
+                </h3>
+              </CardHeader>
+              <CardContent>
+                <CameraTokensSection />
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Right Column - API Browser */}
-          <div>
+          {/* Right Column - API Browser. Hidden from users without
+              api_keys:read since the API Browser is the testing surface
+              for those keys; non-admins land in this tab only for the
+              Camera Tokens panel and don't need the browser. */}
+          {hasPermission('api_keys:read') && <div>
             <div className="mb-6">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2" id="card-apibrowser">
                 <Globe className="w-5 h-5 text-bambu-green" />
@@ -3806,7 +3831,7 @@ export function SettingsPage() {
             </Card>
 
             <APIBrowser apiKey={testApiKey} />
-          </div>
+          </div>}
         </div>
       )}
 

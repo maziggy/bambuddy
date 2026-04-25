@@ -10,6 +10,7 @@ from backend.app.models.group import Group, user_groups
 from backend.app.models.kprofile_note import KProfileNote
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.local_preset import LocalPreset
+from backend.app.models.long_lived_token import LongLivedToken
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
 from backend.app.models.notification import NotificationLog
 from backend.app.models.notification_template import NotificationTemplate
@@ -75,4 +76,5 @@ __all__ = [
     "UserTOTP",
     "AuthEphemeralToken",
     "AuthRateLimitEvent",
+    "LongLivedToken",
 ]

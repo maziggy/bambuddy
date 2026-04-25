@@ -166,6 +166,7 @@ async def init_db():
         kprofile_note,
         library,
         local_preset,
+        long_lived_token,
         maintenance,
         notification,
         notification_template,

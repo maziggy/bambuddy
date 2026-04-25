@@ -4279,6 +4279,14 @@ async def lifespan(app: FastAPI):
     stop_runtime_tracking()
     stop_spoolbuddy_watchdog()
     stop_camera_cleanup()
+    # Tear down all camera fan-out broadcasters (#1089) so subscribers exit
+    # cleanly rather than waiting on a queue that nothing will ever fill.
+    try:
+        from backend.app.services.camera_fanout import shutdown_all_broadcasters
+
+        await shutdown_all_broadcasters()
+    except Exception as e:
+        logging.warning("Failed to shut down camera broadcasters: %s", e)
     stop_expected_prints_cleanup()
     stop_auth_cleanup()
     printer_manager.disconnect_all()

@@ -106,6 +106,47 @@ class TestCameraAPI:
         mock_process1.terminate.assert_called_once()
         mock_process2.terminate.assert_not_called()
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_stop_camera_stream_handles_fanout_stream_id(self, async_client: AsyncClient, printer_factory):
+        """Stop must terminate streams keyed with the deterministic
+        ``{printer_id}-fanout`` id used by the fan-out broadcaster (#1089).
+        Regression guard against the prefix-match drifting away from the
+        broadcaster's stream-id convention.
+        """
+        printer = await printer_factory()
+        mock_process = MagicMock()
+        mock_process.returncode = None
+        mock_process.pid = 99996
+        mock_process.terminate = MagicMock()
+        mock_process.wait = AsyncMock()
+
+        with patch(
+            "backend.app.api.routes.camera._active_streams",
+            {f"{printer.id}-fanout": mock_process},
+        ):
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/stop")
+
+        assert response.status_code == 200
+        assert response.json()["stopped"] == 1
+        mock_process.terminate.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_stop_camera_stream_invokes_broadcaster_shutdown(self, async_client: AsyncClient, printer_factory):
+        """Stop must call ``shutdown_broadcaster`` so subscribers wake up via
+        the upstream-gone sentinel rather than stalling on the queue (#1089)."""
+        printer = await printer_factory()
+
+        with patch(
+            "backend.app.api.routes.camera.shutdown_broadcaster",
+            AsyncMock(return_value=False),
+        ) as mock_shutdown:
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/stop")
+
+        assert response.status_code == 200
+        mock_shutdown.assert_awaited_once_with(f"printer-{printer.id}")
+
     # ========================================================================
     # Camera Test Endpoint
     # ========================================================================

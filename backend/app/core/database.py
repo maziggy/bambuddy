@@ -259,7 +259,7 @@ async def _migrate_normalize_printer_ids(conn) -> None:
         if is_sqlite():
             await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'"))
         else:
-            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'::jsonb"))
+            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids::text = '[]'"))
 
 
 async def run_migrations(conn):

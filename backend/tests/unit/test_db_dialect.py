@@ -515,8 +515,8 @@ class TestSafeExecutePattern:
         assert rows[2] == "[1,2]", "non-empty printer_ids must be unchanged"
 
     @pytest.mark.asyncio
-    async def test_normalize_printer_ids_postgres_uses_jsonb_cast(self):
-        """PostgreSQL path generates SQL with explicit ::jsonb cast."""
+    async def test_normalize_printer_ids_postgres_uses_text_cast(self):
+        """PostgreSQL path casts printer_ids to text for comparison (works for json and jsonb)."""
         from unittest.mock import AsyncMock, MagicMock
 
         from backend.app.core.database import _migrate_normalize_printer_ids
@@ -532,5 +532,5 @@ class TestSafeExecutePattern:
             await _migrate_normalize_printer_ids(mock_conn)
 
         sql = mock_conn.execute.call_args[0][0].text
-        assert "'[]'::jsonb" in sql, f"Expected ::jsonb cast in SQL, got: {sql}"
+        assert "::text = '[]'" in sql, f"Expected ::text cast in SQL, got: {sql}"
         assert "printer_ids" in sql

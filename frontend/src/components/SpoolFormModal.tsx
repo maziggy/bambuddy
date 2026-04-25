@@ -276,6 +276,8 @@ export function SpoolFormModal({
           slicer_filament: spool.slicer_filament || '',
           note: spool.note || '',
           cost_per_kg: spool.cost_per_kg ?? null,
+          category: spool.category || '',
+          low_stock_threshold_pct: spool.low_stock_threshold_pct ?? null,
         });
         setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
 
@@ -385,7 +387,7 @@ export function SpoolFormModal({
       api.updateSpool(spool!.id, { tag_uid: null, tray_uuid: null, tag_type: null, data_origin: null } as Parameters<typeof api.updateSpool>[1]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
-      showToast(t('inventory.tagDeleted', 'Tag removed'), 'success');
+      showToast(t('inventory.rfidCleared', 'RFID tag cleared'), 'success');
       onClose();
     },
     onError: (error: Error) => {
@@ -400,6 +402,28 @@ export function SpoolFormModal({
     enabled: isOpen && isEditing,
   });
   const spoolAssignment = spool ? assignments?.find(a => a.spool_id === spool.id) : undefined;
+
+  // Read inventory + settings caches (already populated by InventoryPage) to
+  // drive the category autocomplete and low-stock-threshold placeholder. #729
+  const { data: allSpools } = useQuery({
+    queryKey: ['inventory-spools'],
+    queryFn: () => api.getSpools(true),
+    enabled: isOpen,
+  });
+  const { data: settingsForForm } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+    enabled: isOpen,
+  });
+  const availableCategories = (() => {
+    const set = new Set<string>();
+    for (const s of allSpools ?? []) {
+      const c = s.category?.trim();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  })();
+  const globalLowStockThreshold = settingsForForm?.low_stock_threshold ?? 20;
 
   const unassignMutation = useMutation({
     mutationFn: () => {
@@ -503,6 +527,8 @@ export function SpoolFormModal({
       nozzle_temp_max: null,
       note: formData.note || null,
       cost_per_kg: formData.cost_per_kg,
+      category: formData.category.trim() || null,
+      low_stock_threshold_pct: formData.low_stock_threshold_pct,
     };
 
     // Only send weight_used when creating or when explicitly changed by the user.
@@ -653,6 +679,8 @@ export function SpoolFormModal({
                   updateField={updateField}
                   spoolCatalog={spoolCatalog}
                   currencySymbol={currencySymbol}
+                  availableCategories={availableCategories}
+                  globalLowStockThreshold={globalLowStockThreshold}
                 />
               </div>
 
@@ -686,7 +714,7 @@ export function SpoolFormModal({
                 disabled={isPending || !spool?.tag_uid}
               >
                 <Tag className="w-4 h-4" />
-                {t('inventory.deleteTag', 'Delete Tag')}
+                {t('inventory.clearRfid', 'Clear RFID Tag')}
               </Button>
               <Button
                 variant="secondary"

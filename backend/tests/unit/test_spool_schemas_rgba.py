@@ -129,3 +129,52 @@ class TestSpoolResponseRgbaLeniency:
 
         response = SpoolResponse(**self._make_response_kwargs(rgba="FF00AAFF"))
         assert response.rgba == "FF00AAFF"
+
+
+class TestSpoolCategoryAndThreshold:
+    """#729: per-spool category + low-stock threshold override schema validation."""
+
+    def test_create_accepts_category_and_threshold(self):
+        spool = SpoolCreate(material="PLA", category="Production", low_stock_threshold_pct=50)
+        assert spool.category == "Production"
+        assert spool.low_stock_threshold_pct == 50
+
+    def test_create_defaults_to_null(self):
+        """Both new fields are optional and default to None — backward compat."""
+        spool = SpoolCreate(material="PLA")
+        assert spool.category is None
+        assert spool.low_stock_threshold_pct is None
+
+    def test_update_accepts_partial_changes(self):
+        spool = SpoolUpdate(category="Prototype")
+        assert spool.category == "Prototype"
+        assert spool.low_stock_threshold_pct is None
+
+    def test_update_clears_via_explicit_null(self):
+        """Sending null on PATCH explicitly resets the override."""
+        spool = SpoolUpdate(category=None, low_stock_threshold_pct=None)
+        assert spool.category is None
+        assert spool.low_stock_threshold_pct is None
+
+    def test_threshold_rejects_zero(self):
+        """0% would mean the spool is never low-stock — disallow as a footgun."""
+        with pytest.raises(ValidationError, match="low_stock_threshold_pct"):
+            SpoolCreate(material="PLA", low_stock_threshold_pct=0)
+
+    def test_threshold_rejects_100(self):
+        """100% would mean the spool is always low-stock — disallow."""
+        with pytest.raises(ValidationError, match="low_stock_threshold_pct"):
+            SpoolCreate(material="PLA", low_stock_threshold_pct=100)
+
+    def test_threshold_rejects_negative(self):
+        with pytest.raises(ValidationError, match="low_stock_threshold_pct"):
+            SpoolCreate(material="PLA", low_stock_threshold_pct=-5)
+
+    def test_category_rejects_too_long(self):
+        """50-char cap matches the DB column to prevent silent truncation."""
+        with pytest.raises(ValidationError, match="category"):
+            SpoolCreate(material="PLA", category="X" * 51)
+
+    def test_category_accepts_max_length(self):
+        spool = SpoolCreate(material="PLA", category="X" * 50)
+        assert spool.category == "X" * 50

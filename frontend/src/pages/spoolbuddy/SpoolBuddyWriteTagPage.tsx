@@ -381,6 +381,17 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
   selectedSpool: InventorySpool | null;
   t: (key: string, fallback: string) => string;
 }) {
+  // Read inventory + settings from the shared react-query cache to drive the
+  // category autocomplete and low-stock-threshold placeholder. #729
+  const { data: allSpoolsForForm = [] } = useQuery({
+    queryKey: ['inventory-spools'],
+    queryFn: () => api.getSpools(true),
+  });
+  const { data: settingsForForm } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+
   const [viewMode, setViewMode] = useState<NewSpoolViewMode>('simple');
   const [activeSubTab, setActiveSubTab] = useState<NewSpoolSubTab>('filament');
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
@@ -645,6 +656,8 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
       tag_type: null,
       last_scale_weight: null,
       last_weighed_at: null,
+      category: formData.category.trim() || null,
+      low_stock_threshold_pct: formData.low_stock_threshold_pct,
     };
 
     setCreating(true);
@@ -847,6 +860,10 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
               updateField={updateField}
               spoolCatalog={spoolCatalog}
               currencySymbol={currencySymbol}
+              availableCategories={Array.from(new Set(
+                allSpoolsForForm.map((s) => s.category?.trim()).filter((c): c is string => !!c),
+              )).sort((a, b) => a.localeCompare(b))}
+              globalLowStockThreshold={settingsForForm?.low_stock_threshold ?? 20}
             />
           </div>
         ) : (

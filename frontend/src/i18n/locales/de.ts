@@ -3306,6 +3306,15 @@ export default {
     tempOverrides: 'Temperatur-Überschreibungen',
     note: 'Notiz',
     notePlaceholder: 'Zusätzliche Notizen zu dieser Spule...',
+    // Per-spool category + low-stock threshold override (#729)
+    category: 'Kategorie',
+    categoryPlaceholder: 'z. B. Produktion, Prototyp, Kunde A',
+    categoryNone: 'Ohne Kategorie',
+    lowStockThresholdOverride: 'Niedrigbestandsschwelle (diese Spule)',
+    lowStockThresholdOverrideHelp: 'Leer lassen, um den globalen Schwellenwert ({{global}}%) zu verwenden.',
+    // RFID button rename (was "Tag löschen")
+    clearRfid: 'RFID-Tag löschen',
+    rfidCleared: 'RFID-Tag gelöscht',
     archive: 'Archivieren',
     restore: 'Wiederherstellen',
     noSpools: 'Noch keine Spulen. Fügen Sie Ihre erste Spule hinzu.',

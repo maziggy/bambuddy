@@ -482,6 +482,7 @@ function InventoryPage() {
   const [usageFilter, setUsageFilter] = useState<UsageFilter>('all');
   const [materialFilter, setMaterialFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [spoolFilter, setSpoolFilter] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'stock' | 'configured'>('all');
   const [search, setSearch] = useState('');
@@ -608,7 +609,8 @@ function InventoryPage() {
       totalWeight += remaining;
       totalConsumed += s.weight_used;
       const pct = s.label_weight > 0 ? (remaining / s.label_weight) * 100 : 0;
-      if (pct < lowStockThreshold) lowStock++;
+      const threshold = s.low_stock_threshold_pct ?? lowStockThreshold;
+      if (pct < threshold) lowStock++;
       const mat = s.material || 'Unknown';
       if (!byMaterial[mat]) byMaterial[mat] = { count: 0, weight: 0 };
       byMaterial[mat].count++;
@@ -667,7 +669,8 @@ function InventoryPage() {
       filtered = filtered.filter((s) => {
         const remaining = Math.max(0, s.label_weight - s.weight_used);
         const pct = s.label_weight > 0 ? (remaining / s.label_weight) * 100 : 0;
-        return pct < lowStockThreshold;
+        const threshold = s.low_stock_threshold_pct ?? lowStockThreshold;
+        return pct < threshold;
       });
     }
 
@@ -679,6 +682,15 @@ function InventoryPage() {
     // Brand dropdown
     if (brandFilter) {
       filtered = filtered.filter((s) => s.brand === brandFilter);
+    }
+
+    // Category dropdown (#729)
+    if (categoryFilter) {
+      if (categoryFilter === '__none__') {
+        filtered = filtered.filter((s) => !s.category);
+      } else {
+        filtered = filtered.filter((s) => s.category === categoryFilter);
+      }
     }
 
     // Spool name dropdown
@@ -708,7 +720,7 @@ function InventoryPage() {
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, spoolFilter, stockFilter, search, lowStockThreshold]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, spoolFilter, stockFilter, search, lowStockThreshold]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
@@ -716,6 +728,8 @@ function InventoryPage() {
   // Unique values for filter dropdowns
   const uniqueMaterials = [...new Set(spools?.map((s) => s.material) || [])].sort();
   const uniqueBrands = [...new Set(spools?.map((s) => s.brand).filter(Boolean) || [])].sort() as string[];
+  const uniqueCategories = [...new Set(spools?.map((s) => s.category?.trim()).filter(Boolean) as string[] || [])].sort();
+  const hasUncategorized = (spools ?? []).some((s) => !s.category);
   const uniqueSpoolCatalogIds = [...new Set(spools?.map((s) => s.core_weight_catalog_id).filter((id): id is number => id != null) || [])].sort((a, b) => {
     const nameA = (catalogMap[a]?.name || '').toLowerCase();
     const nameB = (catalogMap[b]?.name || '').toLowerCase();
@@ -723,7 +737,7 @@ function InventoryPage() {
   });
 
   // Check if any filters are non-default
-  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || !!spoolFilter || stockFilter !== 'all' || !!search;
+  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || !!categoryFilter || !!spoolFilter || stockFilter !== 'all' || !!search;
 
   const handleColumnConfigSave = (config: ColumnConfig[]) => {
     setColumnConfig(config);
@@ -844,6 +858,7 @@ function InventoryPage() {
     setUsageFilter('all');
     setMaterialFilter('');
     setBrandFilter('');
+    setCategoryFilter('');
     setSpoolFilter('');
     setStockFilter('all');
     setSearch('');
@@ -1199,6 +1214,28 @@ function InventoryPage() {
             <option key={b} value={b}>{b}</option>
           ))}
         </select>
+
+        {/* Category dropdown chip (#729) — only render once at least one
+            spool carries a category, otherwise it's noise. */}
+        {(uniqueCategories.length > 0 || categoryFilter) && (
+          <select
+            value={categoryFilter}
+            onChange={(e) => { setCategoryFilter(e.target.value); resetPage(); }}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer focus:outline-none ${
+              categoryFilter
+                ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+                : 'bg-transparent text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            <option value="">{t('inventory.category')}</option>
+            {uniqueCategories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+            {hasUncategorized && (
+              <option value="__none__">{t('inventory.categoryNone')}</option>
+            )}
+          </select>
+        )}
 
         {/* Spool name dropdown chip */}
         {uniqueSpoolCatalogIds.length > 0 && (

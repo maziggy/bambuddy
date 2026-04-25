@@ -393,4 +393,49 @@ describe('InventoryPage - Low Stock Threshold', () => {
       // Implementation would show appropriate count based on 30% threshold
     });
   });
+
+  describe('per-spool overrides (#729)', () => {
+    it('per-spool low_stock_threshold_pct overrides the global threshold', async () => {
+      // Global = 20%. Spool 2 (PETG Blue) is at 80% remaining — normally NOT
+      // low-stock. But its per-spool threshold is 90% (it's a "production" spool
+      // the user wants to alert on early), so it MUST count as low-stock.
+      // Spool 1 (10%) and Spool 3 (15%) are already < 20% and stay low-stock.
+      // Expected low-stock count: 3 (was 2 before the override).
+      const spoolsWithOverride = mockSpools.map((s) =>
+        s.id === 2 ? { ...s, low_stock_threshold_pct: 90 } : s,
+      );
+      server.use(
+        http.get('/api/v1/inventory/spools', () => HttpResponse.json(spoolsWithOverride)),
+      );
+
+      render(<InventoryPageRouter />);
+
+      // The low-stock stat-card pill renders the count with "< 20%" suffix.
+      // Find it and confirm it reflects 3 (override pulled spool 2 in).
+      await waitFor(() => {
+        const pills = screen.getAllByText(/< 20%/i);
+        expect(pills.length).toBeGreaterThan(0);
+      });
+
+      // The exact count cell is rendered separately. Easiest robust assertion:
+      // there's a "3" in the low-stock card. Looking up by text would be brittle
+      // (other "3"s on the page), so we assert via the stat card structure.
+      // The card is keyed by the same "< 20%" pill we already found.
+      const pill = screen.getAllByText(/< 20%/i)[0];
+      const card = pill.closest('div')!.parentElement!;
+      // Card text reads e.g. "Low Stock3< 20%" with the count concatenated.
+      expect(card.textContent).toMatch(/Low Stock\D*3\D/);
+    });
+
+    it('category filter chip is hidden when no spool has a category', async () => {
+      // mockSpools all have category=undefined → chip shouldn't render.
+      render(<InventoryPageRouter />);
+      await waitFor(() => {
+        expect(screen.getAllByText(/< 20%/i).length).toBeGreaterThan(0);
+      });
+      // None of the spools carry a category, so the inventory.category chip
+      // never appears.
+      expect(screen.queryByRole('combobox', { name: /category/i })).not.toBeInTheDocument();
+    });
+  });
 });

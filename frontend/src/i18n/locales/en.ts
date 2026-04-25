@@ -3309,6 +3309,16 @@ export default {
     tempOverrides: 'Temperature Overrides',
     note: 'Note',
     notePlaceholder: 'Any additional notes about this spool...',
+    // Per-spool category + low-stock threshold override (#729)
+    category: 'Category',
+    categoryPlaceholder: 'e.g. Production, Prototype, Client A',
+    categoryNone: 'Uncategorized',
+    lowStockThresholdOverride: 'Low-stock threshold (this spool)',
+    lowStockThresholdOverrideHelp: 'Leave blank to use the global threshold ({{global}}%).',
+    // RFID button rename (was "Delete Tag" — confusing because it sounds like a
+    // taxonomy delete; this clears the RFID tag/UUID off the spool record)
+    clearRfid: 'Clear RFID Tag',
+    rfidCleared: 'RFID tag cleared',
     archive: 'Archive',
     restore: 'Restore',
     noSpools: 'No spools yet. Add your first spool to get started.',

@@ -277,6 +277,8 @@ export function SpoolBuddyDashboard() {
         cost_per_kg: null,
         last_scale_weight: weight !== null ? Math.round(weight) : null,
         last_weighed_at: weight !== null ? new Date().toISOString() : null,
+        category: null,
+        low_stock_threshold_pct: null,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

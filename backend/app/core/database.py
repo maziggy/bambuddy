@@ -1152,6 +1152,12 @@ async def run_migrations(conn):
 
     # Migration: Add cost tracking fields to spool table
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN cost_per_kg REAL")
+
+    # Migration: Per-spool category + low-stock threshold override (#729). Both
+    # nullable — NULL category leaves the spool uncategorised, NULL threshold
+    # falls back to the global low_stock_threshold setting.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN category VARCHAR(50)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN low_stock_threshold_pct INTEGER")
     # Migration: Add cost field to spool_usage_history table
     await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN cost REAL")
     # Migration: Add archive_id field to spool_usage_history table

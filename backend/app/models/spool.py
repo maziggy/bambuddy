@@ -33,6 +33,16 @@ class Spool(Base):
     note: Mapped[str | None] = mapped_column(String(500))
     added_full: Mapped[bool | None] = mapped_column()  # Whether spool was added as full (unused)
 
+    # User-defined category (e.g. "Production", "Prototype", "Client A") for
+    # filtering and per-group low-stock thresholds (#729). Free text — the
+    # form autocompletes from categories already present on other spools.
+    category: Mapped[str | None] = mapped_column(String(50))
+    # Per-spool override of the global inventory low-stock threshold (%).
+    # NULL falls back to the `low_stock_threshold` setting. Lets users mark
+    # production spools with a higher threshold (alert earlier) and prototype
+    # spools with a lower one without changing the global default.
+    low_stock_threshold_pct: Mapped[int | None] = mapped_column(Integer)
+
     # Cost tracking
     cost_per_kg: Mapped[float | None] = mapped_column(Float)  # Cost per kilogram
 

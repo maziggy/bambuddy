@@ -23,6 +23,9 @@ export interface SpoolFormData {
   slicer_filament: string;
   note: string;
   cost_per_kg: number | null;
+  // User-defined category + per-spool low-stock threshold override (#729).
+  category: string;
+  low_stock_threshold_pct: number | null;
 }
 
 export const defaultFormData: SpoolFormData = {
@@ -38,6 +41,8 @@ export const defaultFormData: SpoolFormData = {
   slicer_filament: '',
   note: '',
   cost_per_kg: null,
+  category: '',
+  low_stock_threshold_pct: null,
 };
 
 // Printer with calibrations type
@@ -106,6 +111,13 @@ export interface ColorSectionProps extends SectionProps {
 export interface AdditionalSectionProps extends SectionProps {
   spoolCatalog: { id: number; name: string; weight: number }[];
   currencySymbol: string;
+  // Categories already used on other spools — drives the category autocomplete
+  // datalist so users naturally re-use existing names instead of creating
+  // near-duplicates ("Production" vs "production" vs "prod"). #729
+  availableCategories: string[];
+  // Global low-stock threshold (%); shown as placeholder on the per-spool
+  // override input so users see what they're overriding. #729
+  globalLowStockThreshold: number;
 }
 
 // PA Profile section props

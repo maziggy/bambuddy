@@ -26,6 +26,9 @@ class SpoolBase(BaseModel):
     weight_locked: bool = False
     last_scale_weight: int | None = None
     last_weighed_at: datetime | None = None
+    # User-defined category + per-spool low-stock threshold override (#729).
+    category: str | None = Field(default=None, max_length=50)
+    low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
 
 
 class SpoolCreate(SpoolBase):
@@ -58,6 +61,9 @@ class SpoolUpdate(BaseModel):
     tag_type: str | None = None
     cost_per_kg: float | None = Field(default=None, ge=0)
     weight_locked: bool | None = None
+    # User-defined category + per-spool low-stock threshold override (#729).
+    category: str | None = Field(default=None, max_length=50)
+    low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
 
 
 class SpoolKProfileBase(BaseModel):

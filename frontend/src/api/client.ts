@@ -2136,6 +2136,9 @@ export interface InventorySpool {
   cost_per_kg: number | null;
   last_scale_weight: number | null;
   last_weighed_at: string | null;
+  // User-defined category + per-spool low-stock threshold override (#729).
+  category: string | null;
+  low_stock_threshold_pct: number | null;
   k_profiles?: SpoolKProfile[];
 }
 

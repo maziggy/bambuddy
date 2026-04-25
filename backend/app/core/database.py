@@ -1431,8 +1431,13 @@ async def run_migrations(conn):
 
     # Migration: Normalize empty printer_ids [] to NULL (global access) on API keys
     # Previously both None and [] meant "all printers"; now [] means "no printers"
+    # PostgreSQL stores printer_ids as JSONB; comparing JSONB to a string literal fails
+    # with "operator does not exist: jsonb = unknown" — cast the literal to jsonb explicitly.
     async with conn.begin_nested():
-        await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'"))
+        if is_sqlite():
+            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'"))
+        else:
+            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'::jsonb"))
 
     # Migration: Add auth_source column to users for LDAP support (#794)
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local' NOT NULL")

@@ -1,0 +1,200 @@
+2026-04-25 12:46:58,798 INFO [backend.app.main] Found archive 17 with key (1, 'Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf')
+2026-04-25 12:47:00,470 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 12:47:00,506 WARNING [backend.app.services.bambu_ftp] Failed to delete /Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf: 550 
+2026-04-25 12:47:03,323 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 12:47:03,334 WARNING [backend.app.services.bambu_ftp] Failed to delete /Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf: 550 
+2026-04-25 12:47:06,138 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 12:47:06,150 WARNING [backend.app.services.bambu_ftp] Failed to delete /Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf: 550 
+2026-04-25 12:47:06,160 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf (file may linger on SD card)
+2026-04-25 12:47:06,960 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 12:47:06,970 WARNING [backend.app.services.bambu_ftp] Failed to delete /Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode: 550 
+2026-04-25 12:47:09,807 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 12:47:09,821 WARNING [backend.app.services.bambu_ftp] Failed to delete /Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode: 550 
+2026-04-25 12:47:12,699 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 12:47:12,709 WARNING [backend.app.services.bambu_ftp] Failed to delete /Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode: 550 
+2026-04-25 12:47:12,718 WARNING [backend.app.main] SD card cleanup failed after 3 attempts for /Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode (file may linger on SD card)
+2026-04-25 12:47:12,719 INFO [backend.app.main] [TIMING] SD card cleanup: 13.924s elapsed
+2026-04-25 12:47:12,723 INFO [backend.app.main] [TIMING] Queue item update: 13.928s elapsed
+2026-04-25 12:47:12,732 INFO [backend.app.services.spoolman_tracking] [SPOOLMAN] No tracking data for print (printer=1, archive=17)
+2026-04-25 12:47:12,733 INFO [backend.app.main] [TIMING] Spoolman usage report: 13.937s elapsed
+2026-04-25 12:47:12,733 INFO [backend.app.main] [TIMING] Filament usage tracking: 13.938s elapsed
+2026-04-25 12:47:12,733 INFO [backend.app.main] [TIMING] Archive lookup: 13.938s elapsed
+2026-04-25 12:47:12,733 INFO [backend.app.main] [ARCHIVE] Updating archive 17 status...
+2026-04-25 12:47:12,740 INFO [backend.app.main] [ARCHIVE] Archive 17 status updated to completed, failure_reason=None
+2026-04-25 12:47:12,740 INFO [backend.app.main] [ARCHIVE] WebSocket notification sent for archive 17
+2026-04-25 12:47:12,740 INFO [backend.app.main] [TIMING] Archive status update: 13.945s elapsed
+2026-04-25 12:47:12,743 INFO [backend.app.main] [PRINT_LOG] Log entry written for archive 17
+2026-04-25 12:47:12,743 INFO [backend.app.main] [TIMING] Print log entry: 13.948s elapsed
+2026-04-25 12:47:12,743 INFO [backend.app.main] [TIMING] Background tasks scheduled (energy, photo): 13.948s elapsed
+2026-04-25 12:47:12,744 INFO [backend.app.main] [TIMING] All background tasks scheduled: 13.948s elapsed
+2026-04-25 12:47:12,744 INFO [backend.app.main] [CALLBACK] on_print_complete finished for printer 1, archive 17
+2026-04-25 12:47:12,744 INFO [backend.app.main] [ENERGY-BG] Starting energy calculation for archive 17
+2026-04-25 12:47:12,744 INFO [backend.app.main] [PHOTO-BG] Starting finish photo capture for archive 17
+2026-04-25 12:47:12,745 INFO [backend.app.main] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-04-25 12:47:12,746 INFO [backend.app.main] [MAINT-BG] Starting maintenance check for printer 1
+2026-04-25 12:47:12,746 INFO [backend.app.main] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-04-25 12:47:12,750 INFO [backend.app.main] [AUTO-OFF-BG] Completed
+2026-04-25 12:47:12,751 INFO [backend.app.main] [ENERGY-BG] No start kWh recorded for archive 17
+2026-04-25 12:47:12,757 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-04-25 12:47:12,764 INFO [backend.app.services.notification_service] Found 1 providers for maintenance_due: ['Telegram']
+2026-04-25 12:47:12,842 INFO [backend.app.services.notification_service] Sent notification via Telegram
+2026-04-25 12:47:12,843 INFO [backend.app.main] [MAINT-BG] Sent notification: 1 items need attention
+2026-04-25 12:47:14,575 INFO [backend.app.services.camera] Saved camera frame to: /opt/[user]/data/archive/1/20260425_112946_Stop Clip Added _ Mid Shelf Organizer and Drawers set/photos/finish_20260425_124712_c1b5b142.jpg
+2026-04-25 12:47:14,576 INFO [backend.app.services.camera] Finish photo saved: finish_20260425_124712_c1b5b142.jpg
+2026-04-25 12:47:14,581 INFO [backend.app.main] [PHOTO-BG] Saved: finish_20260425_124712_c1b5b142.jpg
+2026-04-25 12:47:14,582 INFO [backend.app.main] [PHOTO-NOTIFY] Photo task returned: finish_20260425_124712_c1b5b142.jpg
+2026-04-25 12:47:14,582 INFO [backend.app.main] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260425_124712_c1b5b142.jpg
+2026-04-25 12:47:14,590 INFO [backend.app.main] [NOTIFY-BG] Loaded finish photo bytes: 71144 bytes
+2026-04-25 12:47:14,591 INFO [backend.app.services.notification_service] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-04-25 12:47:14,592 INFO [backend.app.services.notification_service] Found 1 providers for on_print_complete: ['Telegram']
+2026-04-25 12:47:14,794 INFO [backend.app.services.notification_service] Sent notification via Telegram
+2026-04-25 12:47:14,795 INFO [backend.app.main] [NOTIFY-BG] Completed
+2026-04-25 16:23:50,740 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] PRINT START detected - file: Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf, subtask: Stop Clip Added _ Mid Shelf Organizer and Drawers set, is_new: True, is_file_change: False
+2026-04-25 16:23:50,744 INFO [backend.app.main] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-04-25 16:23:50,755 INFO [backend.app.main] [PLATE CHECK] printer_id=1, plate_detection_enabled=True
+2026-04-25 16:23:50,755 INFO [backend.app.main] [PLATE CHECK] ENTERING plate detection code for printer 1
+2026-04-25 16:23:50,755 INFO [backend.app.main] [PLATE CHECK] Running plate detection for printer 1
+2026-04-25 16:23:50,757 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-04-25 16:23:53,652 INFO [backend.app.services.camera] Saved camera frame to: /tmp/tmpikm_s0q1.jpg
+2026-04-25 16:23:53,653 INFO [backend.app.main] [PLATE CHECK] Plate is empty for printer 1, proceeding with print
+2026-04-25 16:23:53,654 INFO [backend.app.main] [CALLBACK] Print start detected - filename: Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf, subtask: Stop Clip Added _ Mid Shelf Organizer and Drawers set
+2026-04-25 16:23:53,661 INFO [backend.app.main] Trying filenames: ['Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode.3mf', 'Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf', 'Stop_Clip_Added___Mid_Shelf_Organizer_and_Drawers_set.gcode.3mf', 'Stop_Clip_Added___Mid_Shelf_Organizer_and_Drawers_set.3mf']
+2026-04-25 16:23:54,519 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 16:23:54,553 INFO [backend.app.services.bambu_ftp] FTP download failed for /Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode.3mf: 550  (not on printer)
+2026-04-25 16:23:55,352 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 16:23:55,401 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode.3mf: 550  (not on printer)
+2026-04-25 16:23:56,217 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 16:23:56,254 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode.3mf: 550  (not on printer)
+2026-04-25 16:23:57,062 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 16:23:57,093 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode.3mf: 550  (not on printer)
+2026-04-25 16:23:57,905 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 16:23:57,958 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/Stop Clip Added _ Mid Shelf Organizer and Drawers set.gcode.3mf: 550  (not on printer)
+2026-04-25 16:23:58,760 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 16:23:58,799 INFO [backend.app.services.bambu_ftp] FTP download failed for /Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf: 550  (not on printer)
+2026-04-25 16:23:59,587 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 16:24:01,620 INFO [backend.app.services.bambu_ftp] Successfully downloaded /cache/Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf to /opt/[user]/data/archive/temp/Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf (301233 bytes)
+2026-04-25 16:24:01,620 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-25 16:24:01,628 INFO [backend.app.main] Downloaded: /cache/Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf
+2026-04-25 16:24:01,649 INFO [backend.app.main] Created archive 18 for Stop Clip Added _ Mid Shelf Organizer and Drawers set.3mf
+2026-04-25 16:24:01,650 INFO [backend.app.main] [ENERGY] No smart plug for printer 1 (archive 18)
+2026-04-25 16:24:01,652 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-25 16:24:01,653 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-04-25 16:24:03,304 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 63086 bytes
+2026-04-25 16:24:03,304 INFO [backend.app.services.notification_service] on_print_start called for printer 1 ([PRINTER])
+2026-04-25 16:24:03,309 INFO [backend.app.services.notification_service] No notification providers configured for print_start event on printer 1
+2026-04-25 16:24:03,313 INFO [backend.app.main] Loaded 1 printable objects for printer 1
+2026-04-25 16:24:04,206 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 16:24:04,395 INFO [backend.app.main] [TIMELAPSE] Baseline at print start: 7 video files for printer 1
+2026-04-25 16:41:04,630 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-25 16:41:04,632 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-04-25 16:41:08,078 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 56081 bytes
+2026-04-25 16:41:08,294 INFO [backend.app.services.notification_service] Sent notification via Telegram
+2026-04-25 16:41:46,683 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-25 16:41:46,683 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-04-25 16:41:48,634 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 56390 bytes
+2026-04-25 20:24:03,147 INFO [root] Logging to file: /opt/[user]/logs/bambuddy.log
+2026-04-25 20:24:03,171 INFO [root] Bambuddy starting - debug=False, log_level=INFO
+2026-04-25 20:24:04,702 INFO [backend.app.services.printer_manager] Loaded 1 printer(s) awaiting plate-clear acknowledgment: [1]
+2026-04-25 20:24:04,708 INFO [backend.app.services.mqtt_relay] MQTT relay disabled
+2026-04-25 20:24:05,813 INFO [root] Auto-connected to Spoolman at http://[IP]:7912
+2026-04-25 20:24:05,861 INFO [backend.app.services.spoolman] Created 'tag' extra field in Spoolman
+2026-04-25 20:24:05,862 INFO [backend.app.services.background_dispatch] Background dispatch dispatcher started
+2026-04-25 20:24:05,862 INFO [backend.app.services.smart_plug_manager] Smart plug scheduler started
+2026-04-25 20:24:05,862 INFO [backend.app.services.smart_plug_manager] Smart plug energy snapshot loop started
+2026-04-25 20:24:05,873 INFO [backend.app.services.print_scheduler] Print scheduler started
+2026-04-25 20:24:05,880 INFO [backend.app.services.notification_service] Notification digest scheduler started
+2026-04-25 20:24:05,880 INFO [backend.app.services.github_backup] Starting GitHub backup scheduler
+2026-04-25 20:24:05,880 INFO [backend.app.services.local_backup] Starting local backup scheduler
+2026-04-25 20:24:05,887 INFO [backend.app.services.obico_detection] Starting Obico detection service
+2026-04-25 20:24:05,887 INFO [backend.app.main] AMS history recording started
+2026-04-25 20:24:05,887 INFO [backend.app.main] Printer runtime tracking started
+2026-04-25 20:24:05,887 INFO [backend.app.main] SpoolBuddy watchdog started
+2026-04-25 20:24:05,887 INFO [backend.app.main] Camera stream cleanup started
+2026-04-25 20:24:05,887 INFO [backend.app.main] Expected prints cleanup started
+2026-04-25 20:24:05,887 INFO [backend.app.main] Auth periodic cleanup started
+2026-04-25 20:24:06,050 INFO [root] Virtual printer manager synced from database
+2026-04-25 20:24:11,389 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-25 20:24:11,389 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-25 20:24:11,391 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-25 20:24:12,231 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: skeiEP5Hs-sR8shWSQHlC
+2026-04-25 20:24:13,627 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-04-25 20:24:13,628 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Disconnected shortly after request topic subscription. Disabling request topic for this printer.
+2026-04-25 20:24:15,484 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] PRINT START detected - file: 0.2mm layer, 2 walls, 15% infill.3mf, subtask: 0.2mm layer, 2 walls, 15% infill, is_new: True, is_file_change: False
+2026-04-25 20:24:15,487 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Firmware version: 01.10.00.00
+2026-04-25 20:24:15,498 INFO [backend.app.main] [Printer 1] Broadcasting AMS change via WebSocket
+2026-04-25 20:24:16,101 INFO [backend.app.main] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-04-25 20:24:16,129 INFO [backend.app.main] [PLATE CHECK] printer_id=1, plate_detection_enabled=True
+2026-04-25 20:24:16,129 INFO [backend.app.main] [PLATE CHECK] ENTERING plate detection code for printer 1
+2026-04-25 20:24:17,682 INFO [backend.app.main] [PLATE CHECK] Running plate detection for printer 1
+2026-04-25 20:24:17,684 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-04-25 20:24:17,718 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-25 20:24:17,718 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-04-25 20:24:17,736 INFO [backend.app.api.routes.cloud] get_filament_info called with 1 IDs: ['GFA00']
+2026-04-25 20:24:17,752 INFO [backend.app.api.routes.printers] Trying to download cover for '0.2mm layer, 2 walls, 15% infill' from [IP] (trying 16 paths)
+2026-04-25 20:24:18,817 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 20:24:18,912 INFO [backend.app.services.bambu_ftp] FTP download failed for /0.2mm layer, 2 walls, 15% infill.gcode.3mf: 550  (not on printer)
+2026-04-25 20:24:18,979 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/0.2mm layer, 2 walls, 15% infill.gcode.3mf: 550  (not on printer)
+2026-04-25 20:24:19,029 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/0.2mm layer, 2 walls, 15% infill.gcode.3mf: 550  (not on printer)
+2026-04-25 20:24:19,074 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/0.2mm layer, 2 walls, 15% infill.gcode.3mf: 550  (not on printer)
+2026-04-25 20:24:19,116 INFO [backend.app.services.bambu_ftp] FTP download failed for /0.2mm layer, 2 walls, 15% infill.3mf: 550  (not on printer)
+2026-04-25 20:24:22,354 INFO [backend.app.services.camera] Saved camera frame to: /tmp/tmpu1gcjvef.jpg
+2026-04-25 20:24:22,364 INFO [backend.app.main] [PLATE CHECK] Plate is empty for printer 1, proceeding with print
+2026-04-25 20:24:22,365 INFO [backend.app.main] [CALLBACK] Print start detected - filename: 0.2mm layer, 2 walls, 15% infill.3mf, subtask: 0.2mm layer, 2 walls, 15% infill
+2026-04-25 20:24:22,378 INFO [backend.app.main] Trying filenames: ['0.2mm layer, 2 walls, 15% infill.gcode.3mf', '0.2mm layer, 2 walls, 15% infill.3mf', '0.2mm_layer,_2_walls,_15%_infill.gcode.3mf', '0.2mm_layer,_2_walls,_15%_infill.3mf']
+2026-04-25 20:24:22,380 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=5)
+2026-04-25 20:24:23,507 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Developer mode probe: ENABLED (result='')
+2026-04-25 20:24:23,715 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 20:24:23,803 INFO [backend.app.services.bambu_ftp] FTP download failed for /0.2mm layer, 2 walls, 15% infill.gcode.3mf: 550  (not on printer)
+2026-04-25 20:24:24,696 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 20:24:24,793 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/0.2mm layer, 2 walls, 15% infill.gcode.3mf: 550  (not on printer)
+2026-04-25 20:24:25,695 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 20:24:25,772 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/0.2mm layer, 2 walls, 15% infill.gcode.3mf: 550  (not on printer)
+2026-04-25 20:24:26,657 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 20:24:26,736 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/0.2mm layer, 2 walls, 15% infill.gcode.3mf: 550  (not on printer)
+2026-04-25 20:24:27,616 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 20:24:27,696 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/0.2mm layer, 2 walls, 15% infill.gcode.3mf: 550  (not on printer)
+2026-04-25 20:24:28,571 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 20:24:28,650 INFO [backend.app.services.bambu_ftp] FTP download failed for /0.2mm layer, 2 walls, 15% infill.3mf: 550  (not on printer)
+2026-04-25 20:24:29,546 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 20:24:31,732 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 69577 bytes
+2026-04-25 20:24:32,057 INFO [backend.app.services.notification_service] Sent notification via Telegram
+2026-04-25 20:24:32,076 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-25 20:24:32,076 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-04-25 20:24:38,197 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 82616 bytes
+2026-04-25 20:24:51,355 INFO [backend.app.services.bambu_ftp] Successfully downloaded /cache/0.2mm layer, 2 walls, 15% infill.3mf to /opt/[user]/data/archive/temp/cover_1_0.2mm layer, 2 walls, 15% infill.gcode.3mf (2853493 bytes)
+2026-04-25 20:24:51,377 INFO [backend.app.api.routes.printers] Downloaded file size: 2853493 bytes
+2026-04-25 20:24:56,408 INFO [backend.app.services.bambu_ftp] Successfully downloaded /cache/0.2mm layer, 2 walls, 15% infill.3mf to /opt/[user]/data/archive/temp/0.2mm layer, 2 walls, 15% infill.3mf (2853493 bytes)
+2026-04-25 20:24:56,409 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-25 20:24:56,434 INFO [backend.app.main] Downloaded: /cache/0.2mm layer, 2 walls, 15% infill.3mf
+2026-04-25 20:24:56,471 INFO [backend.app.main] Created archive 19 for 0.2mm layer, 2 walls, 15% infill.3mf
+2026-04-25 20:24:56,472 INFO [backend.app.main] [ENERGY] No smart plug for printer 1 (archive 19)
+2026-04-25 20:24:56,474 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-25 20:24:56,474 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-04-25 20:24:58,708 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 80217 bytes
+2026-04-25 20:24:58,708 INFO [backend.app.services.notification_service] on_print_start called for printer 1 ([PRINTER])
+2026-04-25 20:24:58,714 INFO [backend.app.services.notification_service] No notification providers configured for print_start event on printer 1
+2026-04-25 20:24:58,719 INFO [backend.app.main] Loaded 5 printable objects for printer 1
+2026-04-25 20:24:59,566 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-25 20:24:59,771 INFO [backend.app.main] [TIMELAPSE] Baseline at print start: 7 video files for printer 1
+2026-04-25 20:25:02,772 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-25 20:25:02,773 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-25 20:25:02,773 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-25 20:25:02,820 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: 0.2mm layer, 2 walls, 15% infill.3mf, subtask_name: 0.2mm layer, 2 walls, 15% infill
+2026-04-25 20:25:02,820 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '254', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 55, 'insert_flag': True, 'power_on_flag': False}
+2026-04-25 20:25:02,821 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 254
+2026-04-25 20:25:02,821 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-04-25 20:25:02,821 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-04-25 20:25:02,821 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-25 20:25:02,822 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-25 20:25:02,822 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-25 20:25:02,822 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-25 20:25:02,823 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-25 20:25:02,823 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: [{'attr': 83887360, 'code': 65543, 'action': 0, 'timestamp': 1777148655}]
+2026-04-25 20:25:02,824 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-25 20:25:02,824 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -50dBm
+2026-04-25 20:25:02,824 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-04-25 20:25:02,824 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: 0.2mm layer, 2 walls, 15% infill.3mf, subtask: 0.2mm layer, 2 walls, 15% infill
+2026-04-25 20:25:04,858 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-25 20:25:04,858 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-25 20:25:06,898 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-25 20:25:06,899 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -50dBm

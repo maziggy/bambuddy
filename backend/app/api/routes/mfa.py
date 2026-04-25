@@ -436,7 +436,7 @@ def _resolve_provider_email(provider: OIDCProvider, claims: dict, provider_sub: 
         if raw_email and _is_valid_email_shaped(raw_email):
             return raw_email
         if raw_email:
-            logger.info(
+            logger.warning(
                 "OIDC provider %d: email_claim %r value failed shape check for sub=%r, ignoring",
                 provider_id,
                 provider.email_claim,
@@ -447,8 +447,17 @@ def _resolve_provider_email(provider: OIDCProvider, claims: dict, provider_sub: 
     email_verified = claims.get("email_verified")
     if provider.require_email_verified:
         # Fall A: standard C1-Guard — fail closed unless email_verified is True.
+        # SEC-2: apply shape check to standard email claim — providers may set
+        # email_verified=True on non-email values (e.g. numeric user IDs).
         # SEC-3 normalisation applies; existing mixed-case provider_email records
         # were normalised to lowercase by run_migrations at startup.
+        if raw_email and not _is_valid_email_shaped(raw_email):
+            logger.warning(
+                "OIDC provider %d: email claim failed shape check for sub=%r, ignoring",
+                provider_id,
+                provider_sub,
+            )
+            return None
         if email_verified is True:
             return raw_email
         if raw_email:
@@ -462,6 +471,15 @@ def _resolve_provider_email(provider: OIDCProvider, claims: dict, provider_sub: 
 
     # Fall B: permissive — explicit False drops email, absent/None keeps it.
     # Required for Azure Entra ID which never sends email_verified.
+    # SEC-2: apply shape check before the email_verified=False drop so malformed
+    # values are rejected regardless of the email_verified claim.
+    if raw_email and not _is_valid_email_shaped(raw_email):
+        logger.warning(
+            "OIDC provider %d: email claim failed shape check for sub=%r, ignoring",
+            provider_id,
+            provider_sub,
+        )
+        return None
     if email_verified is False:
         return None
     if email_verified is not True:

@@ -1,0 +1,200 @@
+2026-04-25 20:40:56,362 INFO [backend.app.api.routes.camera] Using RTSP protocol for [PRINTER]
+2026-04-25 20:40:56,367 INFO [backend.app.api.routes.camera] Starting RTSP camera stream for [IP] (stream_id=1-1bb37413, model=[PRINTER], fps=15)
+2026-04-25 20:40:56,383 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 20:40:56,416 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 20:40:56,450 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 20:40:56,481 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 20:40:56,517 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 20:40:56,562 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 20:40:56,593 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 20:43:09,667 INFO [backend.app.main] [SNAPSHOT] Using buffered frame for printer 1: 167312 bytes
+2026-04-25 20:44:12,043 INFO [backend.app.api.routes.camera] Stream 1-1bb37413 cancelled
+2026-04-25 20:44:12,044 INFO [backend.app.api.routes.camera] Camera stream generator exit (stream_id=1-1bb37413)
+2026-04-25 20:44:12,622 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-25 20:44:14,046 WARNING [backend.app.api.routes.camera] ffmpeg didn't terminate gracefully, killing (stream_id=1-1bb37413)
+2026-04-25 20:44:36,463 INFO [backend.app.api.routes.camera] Cleaned up 1 orphaned camera stream(s)
+2026-04-25 20:44:46,951 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 20:49:46,974 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 20:54:46,996 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 20:59:47,018 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:04:47,037 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:09:47,071 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:14:47,095 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:19:47,116 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:24:47,138 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:29:47,159 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:34:47,181 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:39:47,200 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:44:37,678 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-25 21:44:37,679 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-25 21:44:37,681 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-25 21:44:38,554 INFO [backend.app.api.routes.cloud] get_filament_info called with 3 IDs: ['Pb628b48', 'Pd1cd49e', 'Pba7c283']
+2026-04-25 21:44:38,825 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pb628b48 (API ID: Pb628b48): Failed to get setting detail: 400
+2026-04-25 21:44:38,900 INFO [backend.app.api.routes.printers] Detected plate number 1 from gcode_file: /data/Metadata/plate_1.gcode
+2026-04-25 21:44:38,901 INFO [backend.app.api.routes.printers] Trying to download cover for 'moon lamp cube' from [IP] (trying 16 paths)
+2026-04-25 21:44:39,001 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pd1cd49e (API ID: Pd1cd49e): Failed to get setting detail: 400
+2026-04-25 21:44:39,174 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pba7c283 (API ID: Pba7c283): Failed to get setting detail: 400
+2026-04-25 21:44:39,622 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: skeiEP5Hs-sR8shWSQHlC
+2026-04-25 21:44:39,790 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-25 21:44:39,845 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:39,878 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:39,912 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:39,943 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:39,977 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,012 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,043 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,103 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,133 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,159 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,186 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,216 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,251 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,277 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,307 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:40,342 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,271 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-25 21:44:41,305 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,337 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,369 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,399 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,447 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,477 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,505 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,540 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,576 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,605 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,639 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,671 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,697 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,726 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,774 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:41,803 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:42,636 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-04-25 21:44:42,676 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:42,710 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:42,778 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:42,823 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon lamp cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:42,859 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:42,907 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:42,945 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:42,976 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon lamp cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:43,007 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:43,038 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:43,066 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:43,104 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon_lamp_cube.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:43,139 INFO [backend.app.services.bambu_ftp] FTP download failed for /moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:43,171 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:43,206 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:43,238 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/moon_lamp_cube.3mf: 550 Failed to open file. (not on printer)
+2026-04-25 21:44:47,219 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-25 21:45:00,236 INFO [backend.app.api.routes.camera] Using RTSP protocol for [PRINTER]
+2026-04-25 21:45:00,243 INFO [backend.app.api.routes.camera] Starting RTSP camera stream for [IP] (stream_id=1-e63cb552, model=[PRINTER], fps=15)
+2026-04-25 21:45:00,436 INFO [backend.app.api.routes.camera] Camera stream cancelled (stream_id=1-e63cb552)
+2026-04-25 21:45:00,437 INFO [backend.app.api.routes.camera] Camera stream task cancelled (stream_id=1-e63cb552)
+2026-04-25 21:45:00,438 INFO [backend.app.api.routes.camera] Stream 1-e63cb552 cancelled
+2026-04-25 21:45:00,462 INFO [backend.app.api.routes.camera] Using RTSP protocol for [PRINTER]
+2026-04-25 21:45:00,467 INFO [backend.app.api.routes.camera] Starting RTSP camera stream for [IP] (stream_id=1-8e70ddba, model=[PRINTER], fps=15)
+2026-04-25 21:45:00,765 INFO [backend.app.api.routes.camera] Camera stream cancelled (stream_id=1-8e70ddba)
+2026-04-25 21:45:00,766 INFO [backend.app.api.routes.camera] Camera stream task cancelled (stream_id=1-8e70ddba)
+2026-04-25 21:45:00,767 INFO [backend.app.api.routes.camera] Stream 1-8e70ddba cancelled
+2026-04-25 21:45:00,811 INFO [backend.app.api.routes.camera] Stopped 0 camera stream(s) for printer 1
+2026-04-25 21:45:00,896 INFO [backend.app.api.routes.camera] Using RTSP protocol for [PRINTER]
+2026-04-25 21:45:00,901 INFO [backend.app.api.routes.camera] Starting RTSP camera stream for [IP] (stream_id=1-6249dcca, model=[PRINTER], fps=15)
+2026-04-25 21:46:10,584 INFO [backend.app.api.routes.camera] Camera stream cancelled (stream_id=1-6249dcca)
+2026-04-25 21:46:10,585 INFO [backend.app.api.routes.camera] Camera stream task cancelled (stream_id=1-6249dcca)
+2026-04-25 21:46:10,585 INFO [backend.app.api.routes.camera] Stream 1-6249dcca cancelled
+2026-04-25 21:48:16,378 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-25 21:48:16,378 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-25 21:48:16,379 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-25 21:48:17,507 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-25 21:48:17,508 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-25 21:48:17,508 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-04-25 21:48:17,508 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: moon lamp cube
+2026-04-25 21:48:17,508 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 933}
+2026-04-25 21:48:17,509 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 0
+2026-04-25 21:48:17,509 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-25 21:48:17,509 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-04-25 21:48:17,510 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-25 21:48:17,510 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-04-25 21:48:17,510 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-25 21:48:17,511 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-25 21:48:17,511 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 30°C (heater OFF)
+2026-04-25 21:48:17,511 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-25 21:48:17,511 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=30.0, heating=False, respect_local=False
+2026-04-25 21:48:17,512 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 30.0, target: 0.0, heating: False
+2026-04-25 21:48:17,512 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: [{'attr': 83887616, 'code': 131184, 'ts_boot': 32100, 'ts_unix': '20260419214336'}]
+2026-04-25 21:48:17,512 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'disable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 114457216, 'tl_external_total_kb': 125297920, 'tl_internal_free_kb': 962560, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-25 21:48:17,512 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-04-25 21:48:17,513 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-25 21:48:17,513 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-25 21:48:17,513 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [0]
+2026-04-25 21:48:17,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_1.gcode, subtask: moon lamp cube
+2026-04-25 21:48:18,682 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-25 21:48:18,682 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-25 21:48:18,683 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-04-25 21:48:18,683 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: moon lamp cube
+2026-04-25 21:48:18,683 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 933}
+2026-04-25 21:48:18,683 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 0
+2026-04-25 21:48:18,684 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-25 21:48:18,684 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-04-25 21:48:18,684 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-25 21:48:18,685 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-04-25 21:48:18,685 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-25 21:48:18,685 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-25 21:48:18,686 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 30°C (heater OFF)
+2026-04-25 21:48:18,686 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-25 21:48:18,686 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=30.0, heating=False, respect_local=False
+2026-04-25 21:48:18,687 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 30.0, target: 0.0, heating: False
+2026-04-25 21:48:18,687 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: [{'attr': 83887616, 'code': 131184, 'ts_boot': 32100, 'ts_unix': '20260419214336'}]
+2026-04-25 21:48:18,687 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'disable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 114457216, 'tl_external_total_kb': 125297920, 'tl_internal_free_kb': 962560, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-25 21:48:18,688 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-04-25 21:48:18,688 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-25 21:48:18,688 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-25 21:48:18,689 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [0]
+2026-04-25 21:48:18,689 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_1.gcode, subtask: moon lamp cube
+2026-04-25 21:48:19,807 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-25 21:48:19,807 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-25 21:48:19,808 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-04-25 21:48:19,808 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: moon lamp cube
+2026-04-25 21:48:19,808 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 933}
+2026-04-25 21:48:19,809 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 0
+2026-04-25 21:48:19,809 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-25 21:48:19,809 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-04-25 21:48:19,810 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-25 21:48:19,810 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-04-25 21:48:19,810 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-25 21:48:19,811 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-25 21:48:19,811 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 29°C (heater OFF)
+2026-04-25 21:48:19,811 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-25 21:48:19,811 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=29.0, heating=False, respect_local=False
+2026-04-25 21:48:19,812 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 29.0, target: 0.0, heating: False
+2026-04-25 21:48:19,812 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: [{'attr': 83887616, 'code': 131184, 'ts_boot': 32100, 'ts_unix': '20260419214336'}]
+2026-04-25 21:48:19,813 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'disable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 114457216, 'tl_external_total_kb': 125297920, 'tl_internal_free_kb': 962560, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-25 21:48:19,814 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-04-25 21:48:19,814 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-25 21:48:19,814 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-25 21:48:19,815 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [0]
+2026-04-25 21:48:19,815 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_1.gcode, subtask: moon lamp cube
+2026-04-25 21:48:21,013 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-25 21:48:21,014 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-25 21:48:21,014 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-04-25 21:48:21,015 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: moon lamp cube
+2026-04-25 21:48:21,015 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 933}
+2026-04-25 21:48:21,015 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 0
+2026-04-25 21:48:21,016 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-25 21:48:21,016 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-04-25 21:48:21,016 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-25 21:48:21,016 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-04-25 21:48:21,017 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-25 21:48:21,017 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-25 21:48:21,017 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 29°C (heater OFF)
+2026-04-25 21:48:21,018 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-25 21:48:21,018 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=29.0, heating=False, respect_local=False
+2026-04-25 21:48:21,019 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 29.0, target: 0.0, heating: False
+2026-04-25 21:48:21,019 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: [{'attr': 83887616, 'code': 131184, 'ts_boot': 32100, 'ts_unix': '20260419214336'}]
+2026-04-25 21:48:21,019 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'disable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 114457216, 'tl_external_total_kb': 125297920, 'tl_internal_free_kb': 962560, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-25 21:48:21,020 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-04-25 21:48:21,020 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -51dBm
+2026-04-25 21:48:21,020 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-25 21:48:21,021 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [0]
+2026-04-25 21:48:21,021 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_1.gcode, subtask: moon lamp cube

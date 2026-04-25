@@ -252,6 +252,16 @@ async def _safe_execute(conn, sql):
             raise
 
 
+async def _migrate_normalize_printer_ids(conn) -> None:
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        if is_sqlite():
+            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'"))
+        else:
+            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'::jsonb"))
+
+
 async def run_migrations(conn):
     """Run all schema migrations and data backfills on startup.
 
@@ -1433,11 +1443,7 @@ async def run_migrations(conn):
     # Previously both None and [] meant "all printers"; now [] means "no printers"
     # PostgreSQL stores printer_ids as JSONB; comparing JSONB to a string literal fails
     # with "operator does not exist: jsonb = unknown" — cast the literal to jsonb explicitly.
-    async with conn.begin_nested():
-        if is_sqlite():
-            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'"))
-        else:
-            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'::jsonb"))
+    await _migrate_normalize_printer_ids(conn)
 
     # Migration: Add auth_source column to users for LDAP support (#794)
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local' NOT NULL")
@@ -1543,8 +1549,34 @@ async def run_migrations(conn):
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT 1")
     else:
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT true")
+    # SEC-1 backfill: reset auto_link on rows where the combined state is unsafe.
+    # Runs BEFORE the CHECK constraint below so existing installs that have
+    # auto_link=TRUE + unsafe email settings self-heal rather than failing when
+    # PostgreSQL validates ADD CONSTRAINT against existing rows ("check constraint
+    # is violated by some row").  On fresh installs the column defaults guarantee
+    # this UPDATE matches zero rows.  TRUE/FALSE literals are accepted by both
+    # SQLite (≥ 3.23) and PostgreSQL — no dialect branch needed.
+    try:
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    "UPDATE oidc_providers SET auto_link_existing_accounts = FALSE "
+                    "WHERE auto_link_existing_accounts = TRUE "
+                    "AND (require_email_verified = FALSE OR email_claim != 'email')"
+                )
+            )
+    except Exception as exc:
+        logger.error(
+            "SEC-1 safety backfill FAILED — auto_link_existing_accounts may remain enabled "
+            "on providers with unsafe email settings: %s",
+            exc,
+            exc_info=True,
+        )
+        raise
+
     # SEC-1/SEC-6: Add DB-level CHECK constraint for existing PostgreSQL installs.
     # SQLite does not support ALTER TABLE ADD CONSTRAINT — handled by __table_args__ at creation.
+    # Runs AFTER the backfill so legacy unsafe rows don't fail constraint validation.
     if not is_sqlite():
         try:
             async with conn.begin_nested():
@@ -1563,29 +1595,6 @@ async def run_migrations(conn):
                     exc_info=True,
                 )
                 raise
-
-    # SEC-1 backfill: reset auto_link on rows where the combined state is unsafe.
-    # Guards existing installs that may have had auto_link=TRUE set before the
-    # Combined-State-Guard was introduced.  On fresh installs the column defaults
-    # guarantee this UPDATE always matches zero rows.  TRUE/FALSE literals are
-    # accepted by both SQLite (≥ 3.23) and PostgreSQL — no dialect branch needed.
-    try:
-        async with conn.begin_nested():
-            await conn.execute(
-                text(
-                    "UPDATE oidc_providers SET auto_link_existing_accounts = FALSE "
-                    "WHERE auto_link_existing_accounts = TRUE "
-                    "AND (require_email_verified = FALSE OR email_claim != 'email')"
-                )
-            )
-    except Exception as exc:
-        logger.error(
-            "SEC-1 safety backfill FAILED — auto_link_existing_accounts may remain enabled "
-            "on providers with unsafe email settings: %s",
-            exc,
-            exc_info=True,
-        )
-        raise
 
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat

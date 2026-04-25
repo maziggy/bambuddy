@@ -489,3 +489,48 @@ class TestSafeExecutePattern:
         await _safe_execute(
             mock_conn, "ALTER TABLE oidc_providers RENAME COLUMN auto_link_existing_accounts TO auto_link"
         )
+
+    @pytest.mark.asyncio
+    async def test_normalize_printer_ids_sqlite_uses_plain_comparison(self):
+        """SQLite path executes plain string comparison (no cast)."""
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from backend.app.core.database import _migrate_normalize_printer_ids
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE TABLE api_keys (id INTEGER PRIMARY KEY, printer_ids TEXT)"))
+            await conn.execute(text("INSERT INTO api_keys VALUES (1, '[]')"))
+            await conn.execute(text("INSERT INTO api_keys VALUES (2, '[1,2]')"))
+
+            with patch("backend.app.core.database.is_sqlite", return_value=True):
+                await _migrate_normalize_printer_ids(conn)
+
+            result = await conn.execute(text("SELECT id, printer_ids FROM api_keys ORDER BY id"))
+            rows = {r[0]: r[1] for r in result.fetchall()}
+        await engine.dispose()
+
+        assert rows[1] is None, "printer_ids='[]' must be normalised to NULL"
+        assert rows[2] == "[1,2]", "non-empty printer_ids must be unchanged"
+
+    @pytest.mark.asyncio
+    async def test_normalize_printer_ids_postgres_uses_jsonb_cast(self):
+        """PostgreSQL path generates SQL with explicit ::jsonb cast."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from backend.app.core.database import _migrate_normalize_printer_ids
+
+        nested_cm = MagicMock()
+        nested_cm.__aenter__ = AsyncMock(return_value=nested_cm)
+        nested_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.begin_nested.return_value = nested_cm
+        mock_conn.execute = AsyncMock()
+
+        with patch("backend.app.core.database.is_sqlite", return_value=False):
+            await _migrate_normalize_printer_ids(mock_conn)
+
+        sql = mock_conn.execute.call_args[0][0].text
+        assert "'[]'::jsonb" in sql, f"Expected ::jsonb cast in SQL, got: {sql}"
+        assert "printer_ids" in sql

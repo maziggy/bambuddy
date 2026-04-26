@@ -160,7 +160,7 @@ export function MacroEditor({ macroId, onSaved, onDeleted }: MacroEditorProps) {
     refetchInterval: (query) => {
       const runs = query.state.data as MacroRun[] | undefined;
       const active = runs?.some((r) => r.status === 'pending' || r.status === 'running');
-      return active ? 2000 : false;
+      return active ? 1500 : 5000;
     },
   });
 

@@ -9,6 +9,7 @@ Macros are stored as .jinja2 files on disk; the DB record holds metadata.
 import asyncio
 import logging
 import shlex
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from jinja2.sandbox import SandboxedEnvironment
@@ -22,6 +23,9 @@ from backend.app.services.gcode_whitelist import is_whitelisted
 logger = logging.getLogger(__name__)
 
 _jinja_env = SandboxedEnvironment(keep_trailing_newline=True)
+
+# How long to wait after a command before sampling HMS for new errors
+_HMS_POLL_DELAY = 0.5
 
 # System command prefixes
 _SYSTEM_COMMANDS = {
@@ -42,6 +46,55 @@ _PRINTER_COMMANDS = {
     "PRINTER_STOP",
     "WAIT_FOR_TEMP",
 }
+
+
+@dataclass
+class HMSErrorInfo:
+    code: str
+    severity: int
+    message: str = ""
+
+
+@dataclass
+class CommandResult:
+    ok: bool
+    log: str = ""
+    new_hms_errors: list[HMSErrorInfo] = field(default_factory=list)
+    printer_state: str = ""
+
+    @property
+    def failed(self) -> bool:
+        return not self.ok
+
+
+def _snapshot_hms(client) -> set[str]:
+    """Return a frozenset of current HMS error codes for diffing."""
+    return {e.code for e in (client.state.hms_errors or [])}
+
+
+def _new_hms_errors(client, before: set[str]) -> list[HMSErrorInfo]:
+    """Return HMS errors that appeared since the snapshot was taken."""
+    result = []
+    for e in client.state.hms_errors or []:
+        if e.code not in before:
+            result.append(HMSErrorInfo(code=e.code, severity=e.severity, message=getattr(e, "message", "")))
+    return result
+
+
+def _preflight(client, line: str) -> str | None:
+    """Check whether the printer can accept a command right now.
+
+    Returns an error string if blocked, None if ok to proceed.
+    """
+    if not client.state.connected:
+        return "Printer is not connected"
+    state = client.state.state
+    token = line.split()[0].upper() if line.strip() else ""
+    # Destructive motion/temperature commands are unsafe while printing
+    _unsafe_while_running = {"G28", "G29", "M84", "M104", "M109", "M140", "M190"}
+    if state == "RUNNING" and token in _unsafe_while_running:
+        return f"Command {token} is not safe while printer is RUNNING (state={state})"
+    return None
 
 
 def _parse_flags(tokens: list[str]) -> dict[str, str]:
@@ -77,6 +130,68 @@ class MacroRunner:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    async def exec_line(
+        self,
+        line: str,
+        printer_id: int | None,
+    ) -> CommandResult:
+        """Execute a single command line immediately. Returns a CommandResult."""
+        from backend.app.services.printer_manager import printer_manager
+
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith(";"):
+            return CommandResult(ok=True, log="")
+
+        # Snapshot HMS before running
+        client = printer_manager.get_client(printer_id) if printer_id else None
+        hms_before = _snapshot_hms(client) if client else set()
+        printer_state = client.state.state if client else ""
+
+        # Pre-flight check
+        if client:
+            err = _preflight(client, line)
+            if err:
+                return CommandResult(
+                    ok=False,
+                    log=f"[PREFLIGHT] {err}\n",
+                    printer_state=printer_state,
+                )
+
+        log_lines: list[str] = []
+
+        async def _capture(run_id: int | None, text: str) -> None:
+            log_lines.append(text)
+
+        orig_append = self._append_log
+        self._append_log = _capture  # type: ignore[method-assign]
+        ok = True
+        try:
+            result = await self._dispatch_line(line, printer_id, run_id=None, allow_printer_commands=True)
+            if result is not None and result.failed:
+                ok = False
+        except Exception as exc:  # noqa: BLE001
+            log_lines.append(f"[ERROR] {exc}\n")
+            ok = False
+        finally:
+            self._append_log = orig_append  # type: ignore[method-assign]
+
+        # Poll HMS for new errors that appeared as a result of the command
+        new_hms: list[HMSErrorInfo] = []
+        if client and ok:
+            await asyncio.sleep(_HMS_POLL_DELAY)
+            new_hms = _new_hms_errors(client, hms_before)
+            if new_hms:
+                ok = False
+                for e in new_hms:
+                    log_lines.append(f"[HMS ERROR] code={e.code} severity={e.severity} {e.message}\n")
+
+        log = "".join(log_lines)
+        # If log contains [ERROR] prefix, treat as failed even without exception
+        if "[ERROR]" in log or "[PREFLIGHT]" in log:
+            ok = False
+
+        return CommandResult(ok=ok, log=log, new_hms_errors=new_hms, printer_state=printer_state)
 
     async def run_macro(
         self,
@@ -140,7 +255,10 @@ class MacroRunner:
                 if not line or line.startswith("#") or line.startswith(";"):
                     continue
                 try:
-                    await self._dispatch_line(line, printer_id, run_id, allow_printer_commands)
+                    result = await self._dispatch_line(line, printer_id, run_id, allow_printer_commands)
+                    if result is not None and result.failed:
+                        error_occurred = True
+                        break
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001
@@ -265,57 +383,74 @@ class MacroRunner:
         printer_id: int | None,
         run_id: int | None,
         allow_printer_commands: bool = True,
-    ) -> None:
+    ) -> CommandResult | None:
+        """Dispatch one rendered line. Returns CommandResult for G-code, None for others."""
         token = line.split()[0].upper()
 
         # G-code commands
         if is_whitelisted(line):
             if not allow_printer_commands:
                 msg = f"[SKIP] G-code blocked in gcode_embed mode: {line}\n"
-                if run_id:
-                    await self._append_log(run_id, msg)
-                else:
-                    logger.warning(msg.strip())
-                return
-            await self._send_gcode(line, printer_id, run_id)
-            return
+                await self._log(run_id, msg)
+                return None
+            return await self._send_gcode(line, printer_id, run_id)
 
         # System commands
         if token in _SYSTEM_COMMANDS:
             if not allow_printer_commands and token in _PRINTER_COMMANDS:
                 msg = f"[SKIP] Command blocked in gcode_embed mode: {line}\n"
-                if run_id:
-                    await self._append_log(run_id, msg)
-                else:
-                    logger.warning(msg.strip())
-                return
-            await self._handle_system(token, line, printer_id, run_id)
-            return
+                await self._log(run_id, msg)
+                return None
+            return await self._handle_system(token, line, printer_id, run_id)
 
         # Unknown
-        msg = f"[WARN] Unknown command (ignored): {line}\n"
-        if run_id:
-            await self._append_log(run_id, msg)
-        else:
-            logger.warning(msg.strip())
+        await self._log(run_id, f"[WARN] Unknown command (ignored): {line}\n")
+        return None
 
-    async def _send_gcode(self, line: str, printer_id: int | None, run_id: int | None) -> None:
+    async def _send_gcode(self, line: str, printer_id: int | None, run_id: int | None) -> CommandResult:
         from backend.app.services.printer_manager import printer_manager
 
         if printer_id is None:
             msg = f"[WARN] No printer target for G-code: {line}\n"
-        else:
-            client = printer_manager.get_client(printer_id)
-            if client:
-                ok = client.send_gcode(line + "\n")
-                msg = f"[GCODE] {line}\n" if ok else f"[ERROR] Failed to send G-code: {line}\n"
-            else:
-                msg = f"[ERROR] Printer {printer_id} not connected\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=False, log=msg)
 
-        if run_id:
-            await self._append_log(run_id, msg)
-        else:
-            logger.info(msg.strip())
+        client = printer_manager.get_client(printer_id)
+        if not client:
+            msg = f"[ERROR] Printer {printer_id} not connected\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=False, log=msg)
+
+        # Pre-flight
+        err = _preflight(client, line)
+        if err:
+            msg = f"[PREFLIGHT] {err}\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=False, log=msg, printer_state=client.state.state)
+
+        hms_before = _snapshot_hms(client)
+        sent = client.send_gcode(line + "\n")
+        if not sent:
+            msg = f"[ERROR] Failed to send G-code (MQTT publish failed): {line}\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=False, log=msg, printer_state=client.state.state)
+
+        msg = f"[GCODE] {line}\n"
+        await self._log(run_id, msg)
+
+        # Poll for HMS errors triggered by this command
+        await asyncio.sleep(_HMS_POLL_DELAY)
+        new_hms = _new_hms_errors(client, hms_before)
+        full_log = msg
+        ok = True
+        if new_hms:
+            ok = False
+            for e in new_hms:
+                hms_msg = f"[HMS ERROR] code={e.code} severity={e.severity} {e.message}\n"
+                await self._log(run_id, hms_msg)
+                full_log += hms_msg
+
+        return CommandResult(ok=ok, log=full_log, new_hms_errors=new_hms, printer_state=client.state.state)
 
     async def _handle_system(
         self,
@@ -323,7 +458,7 @@ class MacroRunner:
         line: str,
         printer_id: int | None,
         run_id: int | None,
-    ) -> None:
+    ) -> CommandResult:
         try:
             tokens = shlex.split(line)
         except ValueError:
@@ -331,30 +466,32 @@ class MacroRunner:
         flags = _parse_flags(tokens[1:])
 
         if token == "AMS_DRYING":
-            await self._handle_ams_drying(flags, printer_id, run_id)
+            return await self._handle_ams_drying(flags, printer_id, run_id)
         elif token == "PRINTER_PAUSE":
-            await self._handle_printer_pause(printer_id, run_id)
+            return await self._handle_printer_pause(printer_id, run_id)
         elif token == "PRINTER_RESUME":
-            await self._handle_printer_resume(printer_id, run_id)
+            return await self._handle_printer_resume(printer_id, run_id)
         elif token == "PRINTER_STOP":
-            await self._handle_printer_stop(printer_id, run_id)
+            return await self._handle_printer_stop(printer_id, run_id)
         elif token == "NOTIFY":
-            await self._handle_notify(flags, run_id)
+            return await self._handle_notify(flags, run_id)
         elif token == "WAIT":
-            await self._handle_wait(flags, run_id)
+            return await self._handle_wait(flags, run_id)
         elif token == "WAIT_FOR_TEMP":
-            await self._handle_wait_for_temp(flags, printer_id, run_id)
+            return await self._handle_wait_for_temp(flags, printer_id, run_id)
+        return CommandResult(ok=True)
 
     # ------------------------------------------------------------------
     # System command handlers
     # ------------------------------------------------------------------
 
-    async def _handle_ams_drying(self, flags: dict, printer_id: int | None, run_id: int | None) -> None:
+    async def _handle_ams_drying(self, flags: dict, printer_id: int | None, run_id: int | None) -> CommandResult:
         from backend.app.services.printer_manager import printer_manager
 
         if printer_id is None:
-            await self._log(run_id, "[ERROR] AMS_DRYING requires a target printer\n")
-            return
+            msg = "[ERROR] AMS_DRYING requires a target printer\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=False, log=msg)
         ams_id = int(flags.get("ams", flags.get("a", "0")))
         temp = int(flags.get("temp", flags.get("t", "45")))
         duration = int(flags.get("duration", flags.get("d", "4")))
@@ -363,38 +500,48 @@ class MacroRunner:
         )
         msg = f"[AMS_DRYING] ams={ams_id} temp={temp} duration={duration}: {'ok' if ok else 'failed'}\n"
         await self._log(run_id, msg)
+        return CommandResult(ok=ok, log=msg)
 
-    async def _handle_printer_pause(self, printer_id: int | None, run_id: int | None) -> None:
+    async def _handle_printer_pause(self, printer_id: int | None, run_id: int | None) -> CommandResult:
         from backend.app.services.printer_manager import printer_manager
 
         if printer_id is None:
-            await self._log(run_id, "[ERROR] PRINTER_PAUSE requires a target printer\n")
-            return
+            msg = "[ERROR] PRINTER_PAUSE requires a target printer\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=False, log=msg)
         client = printer_manager.get_client(printer_id)
         ok = client.pause_print() if client else False
-        await self._log(run_id, f"[PRINTER_PAUSE]: {'ok' if ok else 'failed/not connected'}\n")
+        msg = f"[PRINTER_PAUSE]: {'ok' if ok else 'failed/not connected'}\n"
+        await self._log(run_id, msg)
+        return CommandResult(ok=ok, log=msg)
 
-    async def _handle_printer_resume(self, printer_id: int | None, run_id: int | None) -> None:
+    async def _handle_printer_resume(self, printer_id: int | None, run_id: int | None) -> CommandResult:
         from backend.app.services.printer_manager import printer_manager
 
         if printer_id is None:
-            await self._log(run_id, "[ERROR] PRINTER_RESUME requires a target printer\n")
-            return
+            msg = "[ERROR] PRINTER_RESUME requires a target printer\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=False, log=msg)
         client = printer_manager.get_client(printer_id)
         ok = client.resume_print() if client else False
-        await self._log(run_id, f"[PRINTER_RESUME]: {'ok' if ok else 'failed/not connected'}\n")
+        msg = f"[PRINTER_RESUME]: {'ok' if ok else 'failed/not connected'}\n"
+        await self._log(run_id, msg)
+        return CommandResult(ok=ok, log=msg)
 
-    async def _handle_printer_stop(self, printer_id: int | None, run_id: int | None) -> None:
+    async def _handle_printer_stop(self, printer_id: int | None, run_id: int | None) -> CommandResult:
         from backend.app.services.printer_manager import printer_manager
 
         if printer_id is None:
-            await self._log(run_id, "[ERROR] PRINTER_STOP requires a target printer\n")
-            return
+            msg = "[ERROR] PRINTER_STOP requires a target printer\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=False, log=msg)
         client = printer_manager.get_client(printer_id)
         ok = client.stop_print() if client else False
-        await self._log(run_id, f"[PRINTER_STOP]: {'ok' if ok else 'failed/not connected'}\n")
+        msg = f"[PRINTER_STOP]: {'ok' if ok else 'failed/not connected'}\n"
+        await self._log(run_id, msg)
+        return CommandResult(ok=ok, log=msg)
 
-    async def _handle_notify(self, flags: dict, run_id: int | None) -> None:
+    async def _handle_notify(self, flags: dict, run_id: int | None) -> CommandResult:
         from sqlalchemy import select as sa_select
 
         from backend.app.models.notification import NotificationProvider
@@ -418,19 +565,22 @@ class MacroRunner:
                     )
         except Exception as exc:  # noqa: BLE001
             await self._log(run_id, f"[WARN] Notification dispatch failed: {exc}\n")
+        return CommandResult(ok=True)
 
-    async def _handle_wait(self, flags: dict, run_id: int | None) -> None:
+    async def _handle_wait(self, flags: dict, run_id: int | None) -> CommandResult:
         seconds = float(flags.get("seconds", flags.get("s", "1")))
         seconds = min(seconds, 300)  # hard cap
         await self._log(run_id, f"[WAIT] {seconds}s\n")
         await asyncio.sleep(seconds)
+        return CommandResult(ok=True)
 
-    async def _handle_wait_for_temp(self, flags: dict, printer_id: int | None, run_id: int | None) -> None:
+    async def _handle_wait_for_temp(self, flags: dict, printer_id: int | None, run_id: int | None) -> CommandResult:
         from backend.app.services.printer_manager import printer_manager
 
         if printer_id is None:
-            await self._log(run_id, "[ERROR] WAIT_FOR_TEMP requires a target printer\n")
-            return
+            msg = "[ERROR] WAIT_FOR_TEMP requires a target printer\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=False, log=msg)
         target = float(flags.get("target", "200"))
         tolerance = float(flags.get("tolerance", "5"))
         max_wait = float(flags.get("max_wait", "300"))
@@ -442,10 +592,12 @@ class MacroRunner:
                 current = client.state.temperatures.get("nozzle", 0.0)
                 if abs(current - target) <= tolerance:
                     await self._log(run_id, f"[WAIT_FOR_TEMP] reached {current}°C\n")
-                    return
+                    return CommandResult(ok=True)
             await asyncio.sleep(2)
             elapsed += 2
-        await self._log(run_id, f"[WAIT_FOR_TEMP] timed out after {max_wait}s\n")
+        msg = f"[WARN] WAIT_FOR_TEMP timed out after {max_wait}s\n"
+        await self._log(run_id, msg)
+        return CommandResult(ok=False, log=msg)
 
     # ------------------------------------------------------------------
     # DB helpers

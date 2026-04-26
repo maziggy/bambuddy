@@ -12,6 +12,8 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.macro import Macro, MacroRun
 from backend.app.schemas.macro import (
+    ExecLineRequest,
+    ExecLineResponse,
     MacroCreate,
     MacroResponse,
     MacroRunResponse,
@@ -90,6 +92,59 @@ async def cancel_run(
         run.finished_at = datetime.now(timezone.utc)
         await db.commit()
     return {"ok": True, "cancelled": cancelled}
+
+
+@router.post("/exec", response_model=ExecLineResponse)
+async def exec_line(
+    body: ExecLineRequest,
+    _=RequirePermissionIfAuthEnabled(Permission.MACROS_RUN),
+    db: AsyncSession = Depends(get_db),
+):
+    from backend.app.schemas.macro import HMSErrorInfo as HMSErrorInfoSchema
+
+    line = body.line.strip()
+    if not line:
+        raise HTTPException(422, "line must not be empty")
+
+    # Check if line matches a macro name (allows running macros by name from terminal)
+    token = line.split()[0]
+    macro_result = await db.execute(select(Macro).where(Macro.name == token))
+    macro = macro_result.scalar_one_or_none()
+    if macro is None:
+        # Case-insensitive fallback
+        from sqlalchemy import func as sa_func
+
+        macro_result = await db.execute(select(Macro).where(sa_func.lower(Macro.name) == token.lower()))
+        macro = macro_result.scalar_one_or_none()
+
+    if macro is not None:
+        printer_id = body.printer_id if body.printer_id is not None else macro.printer_id
+        run = MacroRun(
+            macro_id=macro.id,
+            printer_id=printer_id,
+            status="pending",
+            trigger="terminal",
+        )
+        db.add(run)
+        await db.flush()
+        run_id = run.id
+        await db.commit()
+        asyncio.create_task(macro_runner.run_macro(macro.id, printer_id, "terminal", run_id=run_id))
+        return ExecLineResponse(
+            status="success",
+            log=f"[MACRO] Running macro '{macro.name}' (run #{run_id})\n",
+            run_id=run_id,
+        )
+
+    result = await macro_runner.exec_line(line, body.printer_id)
+    return ExecLineResponse(
+        status="success" if result.ok else "error",
+        log=result.log,
+        hms_errors=[
+            HMSErrorInfoSchema(code=e.code, severity=e.severity, message=e.message) for e in result.new_hms_errors
+        ],
+        printer_state=result.printer_state,
+    )
 
 
 @router.get("", response_model=list[MacroResponse])

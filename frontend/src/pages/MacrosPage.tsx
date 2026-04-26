@@ -35,14 +35,14 @@ function MacroCard({ macro, onEdit }: { macro: Macro; onEdit: () => void }) {
     refetchInterval: (query) => {
       const runs = query.state.data as MacroRun[] | undefined;
       const active = runs?.some((r) => r.status === 'pending' || r.status === 'running');
-      return active ? 2000 : false;
+      return active ? 1500 : 5000;
     },
   });
 
   return (
     <Card className="hover:border-bambu-green/40 transition-colors">
       <CardContent className="p-4 flex items-center gap-3">
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={onEdit}>
           <div className="flex items-center gap-2 mb-1">
             <span className="font-medium text-bambu-text truncate">{macro.name}</span>
             <TriggerBadge type={macro.trigger_type} />

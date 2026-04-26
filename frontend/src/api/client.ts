@@ -6471,6 +6471,8 @@ export const api = {
   getMacroRun: (runId: number) => request<MacroRun>(`/macros/runs/${runId}`),
   cancelMacroRun: (runId: number) => request<{ ok: boolean }>(`/macros/runs/${runId}/cancel`, { method: 'POST' }),
   getGcodeWhitelist: () => request<string[]>('/macros/gcode-whitelist'),
+  execLine: (line: string, printer_id?: number) =>
+    request<{ status: string; log: string; hms_errors: { code: string; severity: number; message: string }[]; printer_state: string; run_id: number | null }>('/macros/exec', { method: 'POST', body: JSON.stringify({ line, printer_id: printer_id ?? null }) }),
 };
 
 // Macro types
@@ -6492,10 +6494,10 @@ export interface MacroRun {
   macro_id: number;
   printer_id: number | null;
   status: 'pending' | 'running' | 'success' | 'error';
-  trigger: 'manual' | 'webhook' | 'schedule' | 'gcode_embed';
+  trigger: 'manual' | 'webhook' | 'schedule' | 'gcode_embed' | 'terminal';
   started_at: string;
   finished_at: string | null;
-  log: string;
+  log: string | null;
 }
 
 // AMS History types

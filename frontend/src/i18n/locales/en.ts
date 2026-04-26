@@ -11,6 +11,7 @@ export default {
     inventory: 'Filament',
     files: 'File Manager',
     macros: 'Macros',
+    terminal: 'Terminal',
     makerworld: 'MakerWorld',
     notifications: 'Notifications',
     settings: 'Settings',
@@ -6810,6 +6811,15 @@ export default {
     // Permissions
     noReadAccess: 'You do not have permission to view inventory forecasts.',
     noWriteAccess: 'You do not have permission to modify forecast settings.',
+  },
+
+  terminal: {
+    title: 'Terminal',
+    noPrinter: 'No printer (side-effects only)',
+    placeholder: 'Enter G-code or system command… (↑↓ for history)',
+    hint: 'Type a G-code or system command and press Enter to run it.',
+    activeMacros: 'Running macros',
+    recentMacros: 'Recent macros',
   },
 
   macros: {

@@ -221,6 +221,7 @@ function App() {
                   <Route path="gcode-viewer" element={<GCodeViewerPage />} />
                   <Route path="macros" element={<MacrosPage />} />
                   <Route path="macros/:id" element={<MacrosPage />} />
+                  <Route path="terminal" element={null} />
                   <Route path="external/:id" element={<ExternalLinkPage />} />
                   <Route path="camera-tokens" element={<Navigate to="/settings?tab=apikeys#card-camera-tokens" replace />} />
                 </Route>

@@ -53,3 +53,22 @@ class MacroRunResponse(BaseModel):
 
 class RunMacroRequest(BaseModel):
     printer_id: int | None = None
+
+
+class HMSErrorInfo(BaseModel):
+    code: str
+    severity: int
+    message: str = ""
+
+
+class ExecLineRequest(BaseModel):
+    line: str
+    printer_id: int | None = None
+
+
+class ExecLineResponse(BaseModel):
+    status: str
+    log: str
+    hms_errors: list[HMSErrorInfo] = []
+    printer_state: str = ""
+    run_id: int | None = None

@@ -153,3 +153,51 @@ class TestCreateTlsProxy:
         await server.wait_closed()
 
         assert not server.is_serving()
+
+
+class TestForwardersCatchRuntimeError:
+    """Regression contract: the bidirectional forwarders inside ``_handle``
+    must catch ``RuntimeError``, not just the connection-error tuple.
+
+    asyncio's default selector event loop reports a write-to-closed-handle as
+    ``ConnectionResetError`` / ``OSError``. uvloop (which is what runs under
+    uvicorn's ``--loop uvloop`` / when ``uvloop`` is installed) raises a plain
+    ``RuntimeError`` from ``UVHandle._ensure_alive``. If the except clause
+    drops ``RuntimeError`` the handler escapes the forwarder, asyncio's
+    ``client_connected_cb`` task-exception handler logs an "Unhandled
+    exception" stack, and the user sees noise like:
+
+        ERROR [asyncio] Unhandled exception in client_connected_cb
+        ...
+        RuntimeError: unable to perform operation on
+                      <TCPTransport closed=True ...>; the handler is closed
+
+    Regression guard for that path. Source-level check rather than a runtime
+    test because the forwarders are nested closures inside ``_handle`` and
+    extracting them just for testability would require a pure-cosmetic
+    refactor of the proxy.
+    """
+
+    def test_fwd_to_server_catches_runtime_error(self):
+        import inspect
+
+        src = inspect.getsource(create_tls_proxy)
+        fwd_section = src.split("async def _fwd_to_server")[1].split("async def _fwd_to_client")[0]
+        assert "RuntimeError" in fwd_section, (
+            "_fwd_to_server must catch RuntimeError to absorb uvloop's "
+            "write-to-closed-handle error; otherwise it leaks to "
+            "asyncio.client_connected_cb's unhandled-exception logger."
+        )
+
+    def test_fwd_to_client_catches_runtime_error(self):
+        import inspect
+
+        src = inspect.getsource(create_tls_proxy)
+        # Slice from `_fwd_to_client` to `await asyncio.gather` so we only
+        # inspect that closure's body.
+        fwd_section = src.split("async def _fwd_to_client")[1].split("await asyncio.gather")[0]
+        assert "RuntimeError" in fwd_section, (
+            "_fwd_to_client must catch RuntimeError — that's the actual frame "
+            "in the original bug report (camera.py:191 dst.write(data) under "
+            "uvloop)."
+        )

@@ -162,6 +162,16 @@ async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "as
             proxy_url = f"rtsp://127.0.0.1:{_local_port[0]}".encode()
             real_url = f"rtsps://{target_host}:{target_port}".encode()
 
+            # Note on the broad except below: dst.write() raises RuntimeError
+            # under uvloop when the underlying handle has already been torn
+            # down (uvloop.loop.UVHandle._ensure_alive). asyncio's default
+            # selector loop reports the same situation as ConnectionResetError
+            # / OSError, so a tuple that doesn't include RuntimeError leaks the
+            # uvloop variant up to asyncio's unhandled-exception logger
+            # ("Unhandled exception in client_connected_cb"). The forwarders
+            # are intentionally fire-and-forget on tear-down — once either
+            # peer drops, both halves of the proxy should exit quietly.
+
             async def _fwd_to_server(src: asyncio.StreamReader, dst: asyncio.StreamWriter):
                 """Forward client→server, rewriting RTSP request-line URLs only."""
                 try:
@@ -172,7 +182,7 @@ async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "as
                         data = rewrite_rtsp_request_url(data, proxy_url, real_url)
                         dst.write(data)
                         await dst.drain()
-                except (ConnectionError, OSError, asyncio.CancelledError):
+                except (ConnectionError, OSError, asyncio.CancelledError, RuntimeError):
                     pass
                 finally:
                     if not dst.is_closing():
@@ -190,7 +200,7 @@ async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "as
                             break
                         dst.write(data)
                         await dst.drain()
-                except (ConnectionError, OSError, asyncio.CancelledError):
+                except (ConnectionError, OSError, asyncio.CancelledError, RuntimeError):
                     pass
                 finally:
                     if not dst.is_closing():

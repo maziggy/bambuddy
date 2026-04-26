@@ -4767,12 +4767,25 @@ async def serve_frontend():
     """Serve the React frontend."""
     index_file = app_settings.static_dir / "index.html"
     if index_file.exists():
-        return FileResponse(index_file)
+        return FileResponse(index_file, headers=_HTML_CACHE_HEADERS)
     return {
         "message": "Bambuddy API",
         "docs": "/docs",
         "frontend": "Build and place React app in /static directory",
     }
+
+
+# index.html must always be revalidated — Vite emits content-hashed JS/CSS
+# bundles (e.g. `index-JRaF_JhW.js`), so the JS itself is safe to cache
+# forever, but the HTML wrapping it is the only file that knows which hash
+# is current. Without explicit cache-control headers Chromium decides
+# heuristically (typically 10% of the time since Last-Modified) and on
+# long-running kiosks happily serves stale HTML across browser restarts.
+# That stale HTML references an old bundle hash, the old bundle is also
+# in the disk cache, and the user ends up running pre-update JS forever
+# without ever knowing why. ``no-cache`` (revalidate every time, but a
+# 304 is cheap) is the correct setting for an SPA's entry HTML.
+_HTML_CACHE_HEADERS = {"Cache-Control": "no-cache, must-revalidate"}
 
 
 @app.get("/health")
@@ -4860,6 +4873,6 @@ async def serve_spa(full_path: str):
 
     index_file = app_settings.static_dir / "index.html"
     if index_file.exists():
-        return FileResponse(index_file)
+        return FileResponse(index_file, headers=_HTML_CACHE_HEADERS)
 
     return {"error": "Frontend not built"}

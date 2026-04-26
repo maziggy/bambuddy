@@ -1210,12 +1210,43 @@ for _i in \$(seq 1 60); do
     sleep 1
 done
 
+# Ephemeral user-data-dir under /tmp + wipe on every launch.
+#
+# The kiosk has no per-user state worth persisting (the auth token is in
+# the URL query, not a stored cookie), but the default profile at
+# ~/.config/chromium was accumulating two specific kinds of state across
+# reboots that broke deploys badly:
+#
+#   1. HTTP disk cache holding old index.html across browser restarts.
+#      Chromium's heuristic-cache freshness window kept the old HTML
+#      "fresh" for days, which referenced an old content-hashed bundle,
+#      so newly deployed code never reached the running tab even after
+#      pkill+relaunch. Reproduced in the wild during the #1133 rollout
+#      — the kiosk kept showing the pre-fix picker for hours after every
+#      cache-clear attempt because the persistent profile would re-seed
+#      the cache from disk on next start.
+#   2. A stuck Service Worker registration, which intercepted requests
+#      with its own cache layer (CacheStorage), independent of the HTTP
+#      cache. Even after \`rm -rf Default/Cache/*\` the SW could replay
+#      stale responses from CacheStorage until explicitly unregistered.
+#
+# Wiping the user-data-dir on every launch is the simplest, most
+# bulletproof escape hatch — every kiosk restart is now functionally
+# equivalent to a private-window first-load. Future deploys propagate
+# automatically: the next chromium launch picks up the latest bundle
+# without any extra tooling. Trade-off is a slightly slower first paint
+# (no warm cache) and zero offline support, neither of which matter for
+# a single-purpose kiosk facing a backend on the same LAN.
+USER_DATA_DIR="/tmp/spoolbuddy-kiosk-userdata"
+rm -rf "\$USER_DATA_DIR"
+
 exec chromium --kiosk --no-first-run --disable-infobars \
     --disable-session-crashed-bubble --disable-features=TranslateUI \
     --noerrdialogs --disable-component-update \
     --overscroll-history-navigation=0 \
     --ozone-platform=wayland \
     --disable-crash-reporter --disable-breakpad \
+    --user-data-dir="\$USER_DATA_DIR" \
     "\$kiosk_url"
 EOF
 

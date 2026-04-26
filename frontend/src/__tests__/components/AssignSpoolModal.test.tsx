@@ -77,19 +77,23 @@ describe('AssignSpoolModal', () => {
     expect(screen.queryByText('Assign Spool')).not.toBeInTheDocument();
   });
 
-  it('filters out Bambu Lab spools (with tag_uid/tray_uuid)', async () => {
+  // Inverted from the original "filters out BL spools" expectation in #1133.
+  // Bambu Lab spools (tag_uid + tray_uuid populated by SpoolBuddy NFC scan or
+  // auto-creation) used to be hidden from this picker, blocking the workflow
+  // where a user has a BL spool in inventory but doesn't want to scan it via
+  // SpoolBuddy each time and just wants to pick it from the list. The picker
+  // now lists every spool that isn't already assigned to another slot.
+  it('lists Bambu Lab spools (with tag_uid/tray_uuid) alongside manual ones (#1133)', async () => {
     render(<AssignSpoolModal {...defaultProps} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
     });
 
-    // Manual spools should be visible
     expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
     expect(screen.getByText(/Overture/)).toBeInTheDocument();
-
-    // BL spool should NOT be visible
-    expect(screen.queryByText(/Jade White/)).not.toBeInTheDocument();
+    // The previously-excluded BL spool is now visible.
+    expect(screen.getByText(/Jade White/)).toBeInTheDocument();
   });
 
   it('filters out spools already assigned to other slots', async () => {
@@ -125,14 +129,55 @@ describe('AssignSpoolModal', () => {
     expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
   });
 
-  it('shows noManualSpools message when all spools are BL or assigned', async () => {
-    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([blSpool]);
+  // Empty-state premise reworked for #1133: BL spools no longer trigger
+  // the empty state by virtue of being BL, so we exercise the only
+  // remaining trigger — every spool already taken by another slot.
+  it('shows noAvailableSpools message when every spool is already assigned elsewhere', async () => {
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([manualSpool]);
+    (api.getAssignments as ReturnType<typeof vi.fn>).mockResolvedValue([
+      // manualSpool (id=1) is taken by a different (printer/ams/tray) tuple,
+      // so it must be filtered out of THIS slot's picker.
+      { id: 99, spool_id: 1, printer_id: 1, ams_id: 0, tray_id: 1 },
+    ]);
 
     render(<AssignSpoolModal {...defaultProps} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/No manually added spools/i)).toBeInTheDocument();
+      expect(screen.getByText(/No spools available/i)).toBeInTheDocument();
     });
+  });
+
+  // The toggle's label says "Show all spools" but originally only bypassed
+  // material/profile filtering — spools assigned elsewhere stayed hidden
+  // even with the toggle on. That made it impossible to recover from the
+  // case where MQTT auto-reassignment beat a manual unassign by a few
+  // milliseconds, leaving the just-freed spool in another slot's
+  // assignment row and out of reach of this picker. With the toggle on,
+  // every spool is now listed regardless of where it's currently assigned.
+  it('lists spools assigned to other slots when "Show all spools" toggle is enabled', async () => {
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([manualSpool, anotherManualSpool]);
+    (api.getAssignments as ReturnType<typeof vi.fn>).mockResolvedValue([
+      // anotherManualSpool (id=3) is taken by a different slot.
+      { id: 99, spool_id: 3, printer_id: 1, ams_id: 0, tray_id: 1 },
+    ]);
+
+    render(<AssignSpoolModal {...defaultProps} />);
+
+    // Default state: spool 3 is hidden because it's assigned elsewhere.
+    await waitFor(() => {
+      expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Overture/)).not.toBeInTheDocument();
+
+    // Flip the toggle — both spools must now appear, including the one
+    // currently assigned to the other slot.
+    const toggle = screen.getByLabelText(/show all spools/i);
+    toggle.click();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Overture/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
   });
 
   it('lists spool with no slicer profile when material matches the tray (#1047)', async () => {

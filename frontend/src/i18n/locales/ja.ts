@@ -3277,7 +3277,7 @@ export default {
     archive: 'アーカイブ',
     restore: '復元',
     noSpools: 'スプールがありません。最初のスプールを追加してください。',
-    noManualSpools: '手動で追加されたスプールがありません。先にインベントリにスプールを追加してください。',
+    noAvailableSpools: '利用可能なスプールがありません。インベントリにスプールを追加するか、別のスロットからスプールの割り当てを解除してください。',
     kProfiles: 'Kプロファイル',
     addKProfile: 'Kプロファイルを追加',
     assignSpool: 'スプールを割り当て',

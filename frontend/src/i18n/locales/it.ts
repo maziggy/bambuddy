@@ -3238,7 +3238,7 @@ export default {
     archive: 'Archivia',
     restore: 'Ripristina',
     noSpools: 'Ancora nessuna bobina. Aggiungi la tua prima bobina per iniziare.',
-    noManualSpools: 'Nessuna bobina aggiunta manualmente disponibile. Aggiungi prima una bobina al tuo inventario.',
+    noAvailableSpools: 'Nessuna bobina disponibile. Aggiungi una bobina al tuo inventario o rimuovine l\'assegnazione da un altro slot.',
     kProfiles: 'K-Profiles',
     addKProfile: 'Aggiungi K-Profile',
     assignSpool: 'Assegna Bobina',

@@ -3239,7 +3239,7 @@ export default {
     archive: 'Archiver',
     restore: 'Restaurer',
     noSpools: 'Aucune bobine. Ajoutez votre première bobine pour commencer.',
-    noManualSpools: 'Aucune bobine manuelle disponible. Ajoutez-en une d\'abord.',
+    noAvailableSpools: 'Aucune bobine disponible. Ajoutez une bobine à votre inventaire ou désaffectez-en une d\'un autre emplacement.',
     kProfiles: 'K-Profiles',
     addKProfile: 'Ajouter K-Profile',
     assignSpool: 'Assigner Bobine',

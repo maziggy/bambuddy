@@ -345,8 +345,12 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                 </div>
               )}
 
-              {/* Inventory section - only for non-Bambu spools */}
-              {inventory && data.vendor !== 'Bambu Lab' && (
+              {/* Inventory section — shown for every vendor including
+                  Bambu Lab (#1133). The earlier "non-Bambu only" gate
+                  prevented users from manually assigning a Bambu spool
+                  in inventory to an AMS slot when they didn't want to
+                  re-scan via SpoolBuddy NFC. */}
+              {inventory && (
                 <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary space-y-2">
                   {inventory.assignedSpool ? (
                     <>
@@ -468,13 +472,18 @@ interface EmptySlotHoverCardProps {
   children: ReactNode;
   className?: string;
   configureSlot?: ConfigureSlotConfig;
-  inventory?: InventoryConfig;
 }
 
 /**
- * Wrapper for empty slots - shows "Empty" on hover with optional configure button
+ * Wrapper for empty slots - shows "Empty" on hover with optional configure button.
+ *
+ * The "Assign spool" affordance was removed from empty slots in #1133: a
+ * physically empty slot has no spool to attach to, and offering the
+ * action there only led to users assigning the wrong spool to a slot
+ * the printer hadn't actually loaded yet. Assignment now requires a
+ * loaded slot (which renders FilamentHoverCard, where the button lives).
  */
-export function EmptySlotHoverCard({ children, className = '', configureSlot, inventory }: EmptySlotHoverCardProps) {
+export function EmptySlotHoverCard({ children, className = '', configureSlot }: EmptySlotHoverCardProps) {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -528,21 +537,6 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, in
                 >
                   <Settings2 className="w-3.5 h-3.5" />
                   {t('ams.configure')}
-                </button>
-              </div>
-            )}
-            {/* Assign spool button - allows assigning inventory spool to empty slot */}
-            {inventory?.onAssignSpool && (
-              <div className="px-2 pb-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    inventory.onAssignSpool?.();
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
-                >
-                  <Package className="w-3.5 h-3.5" />
-                  {t('inventory.assignSpool')}
                 </button>
               </div>
             )}

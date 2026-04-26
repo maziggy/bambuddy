@@ -3304,7 +3304,7 @@ export default {
     archive: '归档',
     restore: '恢复',
     noSpools: '暂无耗材。添加您的第一个耗材开始使用。',
-    noManualSpools: '没有手动添加的耗材。请先向库存中添加耗材。',
+    noAvailableSpools: '没有可用的耗材。请先向库存中添加耗材，或从其他槽位取消分配一个耗材。',
     kProfiles: 'K 值配置',
     addKProfile: '添加 K 值配置',
     assignSpool: '分配耗材',

@@ -3318,7 +3318,7 @@ export default {
     archive: 'Archivieren',
     restore: 'Wiederherstellen',
     noSpools: 'Noch keine Spulen. Fügen Sie Ihre erste Spule hinzu.',
-    noManualSpools: 'Keine manuell hinzugefügten Spulen verfügbar. Fügen Sie zuerst eine Spule zum Inventar hinzu.',
+    noAvailableSpools: 'Keine Spulen verfügbar. Fügen Sie eine Spule zum Inventar hinzu oder lösen Sie eine aus einem anderen Slot.',
     kProfiles: 'K-Profile',
     addKProfile: 'K-Profil hinzufügen',
     assignSpool: 'Spule zuweisen',

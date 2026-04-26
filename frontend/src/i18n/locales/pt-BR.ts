@@ -3252,7 +3252,7 @@ export default {
     archive: 'Arquivar',
     restore: 'Restaurar',
     noSpools: 'Nenhum carretel ainda. Adicione seu primeiro carretel para começar.',
-    noManualSpools: 'Nenhum carretel adicionado manualmente disponível. Adicione um carretel ao seu inventário primeiro.',
+    noAvailableSpools: 'Nenhum carretel disponível. Adicione um carretel ao seu inventário ou desatribua um de outro slot primeiro.',
     kProfiles: 'K-Perfis',
     addKProfile: 'Adicionar K-Perfil',
     assignSpool: 'Atribuir Carretel',

@@ -49,9 +49,22 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     }
   }, [isOpen]);
 
+  // Unique cache key — different consumers of `['inventory-spools']` call
+  // `getSpools()` with different `includeArchived` arguments (InventoryPage:
+  // true, SpoolBuddyDashboard / SpoolBuddyInventoryPage: false), but they
+  // all share the same key. React Query treats them as one query and
+  // serves whichever response landed first, so a SpoolBuddy component
+  // priming the cache with the archived-excluded payload makes the picker
+  // miss spools that *are* archived OR (more subtly) miss any spool that
+  // wasn't yet present when SpoolBuddy ran its initial fetch. The picker
+  // gets its own key + a fetch-everything call so this consumer is never
+  // at the mercy of someone else's cache state. Archived spools are then
+  // explicitly excluded client-side because the backend rejects archived
+  // assignments with HTTP 400 anyway, so listing them would only let the
+  // user click a button that fails.
   const { data: spools, isLoading } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(),
+    queryKey: ['inventory-spools', 'assign-modal'],
+    queryFn: () => api.getSpools(true),
     enabled: isOpen,
   });
 
@@ -137,11 +150,27 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       .filter(a => !(a.printer_id === printerId && a.ams_id === amsId && a.tray_id === trayId))
       .map(a => a.spool_id)
   );
-  // External slots (amsId 254 or 255) have no RFID reader, so show all spools.
-  // AMS slots only show manual spools (no tag_uid or tray_uuid).
-  const isExternalSlot = amsId === 254 || amsId === 255;
-  const manualSpools = spools?.filter((spool: InventorySpool) =>
-    !assignedSpoolIds.has(spool.id) && (isExternalSlot || (!spool.tag_uid && !spool.tray_uuid))
+  // Show every spool that isn't already taken by another slot — including
+  // RFID-tagged Bambu Lab spools (#1133). The earlier "manual spools only"
+  // gate (tag_uid && tray_uuid both null) blocked the workflow where a
+  // user has a Bambu Lab spool in inventory but doesn't want to scan it
+  // via SpoolBuddy NFC every time and just wants to pick it from the list.
+  // External slots (amsId 254/255) have always been allowed to pick from
+  // any spool because the slot itself has no RFID reader; that
+  // distinction collapses now that AMS slots also accept any spool.
+  //
+  // The "Show all spools" toggle (disableFiltering) bypasses BOTH this
+  // gate and the material/profile filter below, making it a real escape
+  // hatch for cases where MQTT has auto-reassigned a spool to another
+  // slot a fraction of a second after a manual unassign — without this,
+  // the toggle's label is a lie ("Show all" but actually filters by
+  // assignment). The backend's assign_spool route is upsert-per-
+  // (printer, ams, tray), so picking a spool that's currently taken by
+  // a different slot creates a second assignment row; that's a foot-gun
+  // for normal flows but exactly the recovery path the toggle is for.
+  const availableSpools = spools?.filter((spool: InventorySpool) =>
+    !spool.archived_at &&
+    (disableFiltering || !assignedSpoolIds.has(spool.id))
   );
 
   // Filtering logic with toggle: search filter always applies, AMS tray profile filter is optional.
@@ -149,7 +178,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   // tray's material (partial-match both directions — "PLA" spool accepts a "PLA Basic" slot and
   // vice versa). Manually-added inventory spools typically have no slicer_filament_name; gating
   // on strict profile equality alone hid them even when the material matched (#1047).
-  let filteredSpools = manualSpools;
+  let filteredSpools = availableSpools;
   if (!disableFiltering) {
     const trayProfile = stripProfileQualifier(normalizeValue(trayInfo?.profile));
     const trayMaterial = normalizeValue(trayInfo?.material || trayInfo?.type);
@@ -326,13 +355,31 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                   </button>
                 ))}
               </div>
-            ) : manualSpools && manualSpools.length === 0 ? (
+            ) : availableSpools && availableSpools.length === 0 ? (
               <div className="text-center py-8 text-bambu-gray">
-                <p>{t('inventory.noManualSpools')}</p>
+                <p>{t('inventory.noAvailableSpools')}</p>
+                {/* Diagnostic counter — when the picker is empty, having
+                    the raw fetch / filter counts visible makes a
+                    "spool I expected to see is missing" report
+                    immediately answerable: if `total fetched` is 0 the
+                    backend / cache returned nothing; if it's > 0 then
+                    the archived / assigned-elsewhere filter ate the
+                    spool and the toggle is the right escape hatch. */}
+                {spools && (
+                  <p className="text-[10px] mt-2 opacity-60">
+                    {spools.length} fetched · {spools.filter(s => s.archived_at).length} archived ·{' '}
+                    {spools.filter(s => assignedSpoolIds.has(s.id)).length} assigned to other slots
+                  </p>
+                )}
               </div>
             ) : (
               <div className="text-center py-8 text-bambu-gray">
                 <p>{t('inventory.noSpoolsMatch')}</p>
+                {availableSpools && (
+                  <p className="text-[10px] mt-2 opacity-60">
+                    {availableSpools.length} unassigned spools — {(availableSpools.length) - (filteredSpools?.length ?? 0)} filtered by tray match. Try "Show all spools".
+                  </p>
+                )}
               </div>
             )}
           </div>

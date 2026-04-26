@@ -3322,7 +3322,7 @@ export default {
     archive: 'Archive',
     restore: 'Restore',
     noSpools: 'No spools yet. Add your first spool to get started.',
-    noManualSpools: 'No manually added spools available. Add a spool to your inventory first.',
+    noAvailableSpools: 'No spools available. Add a spool to your inventory or unassign one from another slot first.',
     kProfiles: 'K-Profiles',
     addKProfile: 'Add K-Profile',
     assignSpool: 'Assign Spool',

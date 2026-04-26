@@ -258,7 +258,15 @@ export function SpoolBuddyAmsPage() {
     mutationFn: ({ printerId, amsId, trayId }: { printerId: number; amsId: number; trayId: number }) =>
       api.unassignSpool(printerId, amsId, trayId),
     onSuccess: () => {
+      // Two cache-key shapes coexist for spool assignments: this page and a
+      // few SpoolBuddy components key by printerId, while AssignSpoolModal
+      // (and most of Bambuddy) keys without it. Both must be invalidated
+      // here, otherwise after a SpoolBuddy unassign the modal opens with a
+      // stale assignments list, sees the just-freed spool as still taken,
+      // filters it out, and shows "no spools available" — even though it's
+      // sitting in inventory ready to re-assign (#1133 follow-up).
       queryClient.invalidateQueries({ queryKey: ['spool-assignments', selectedPrinterId] });
+      queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
       showToast(t('inventory.unassignSuccess', 'Spool unassigned'), 'success');
       setSlotActionPicker(null);
     },
@@ -686,8 +694,14 @@ export function SpoolBuddyAmsPage() {
                   </div>
                 </button>
 
-                {/* Inventory: Assign or Unassign */}
-                {!spoolmanEnabled && (assignment ? (
+                {/* Inventory: Assign or Unassign — only when a spool is
+                    physically loaded in the slot (#1133). An empty slot
+                    has nothing to attach an inventory record to, and
+                    showing the action there only led to users assigning
+                    the wrong spool to a slot the printer hadn't actually
+                    loaded yet. handleAmsSlotClick / handleExtSlotClick
+                    both pass tray=null for empty slots. */}
+                {!spoolmanEnabled && slotActionPicker?.tray && (assignment ? (
                   <button
                     onClick={handleUnassignFromPicker}
                     disabled={unassignMutation.isPending}
@@ -749,7 +763,11 @@ export function SpoolBuddyAmsPage() {
           isOpen={!!assignSpoolModal}
           onClose={() => {
             setAssignSpoolModal(null);
+            // Same dual-key invalidation as the unassign path — the AMS
+            // status panel reads the printerId-keyed query while the
+            // shared AssignSpoolModal reads the unkeyed one.
             queryClient.invalidateQueries({ queryKey: ['spool-assignments', selectedPrinterId] });
+            queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
           }}
           printerId={assignSpoolModal.printerId}
           amsId={assignSpoolModal.amsId}

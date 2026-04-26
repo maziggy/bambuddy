@@ -191,6 +191,18 @@ class PrinterManager:
         Persisted so the gate survives Bambuddy/printer restarts (#961): after Auto Off
         cycles the printer, the printer boots into IDLE with no memory of the previous
         finish, and without persistence the queue would bypass the confirmation prompt.
+
+        Also broadcasts an updated ``printer_status`` over the WebSocket (#1128).
+        ``awaiting_plate_clear`` is a Bambuddy-side flag — toggling it does not
+        produce an MQTT push from the printer, so without an explicit broadcast
+        any UI subscriber that's NOT the originating tab would stay stale until
+        the next coincidental status refresh. The plate-clear button on the
+        printer card disappeared "immediately" only because of an optimistic
+        React Query cache update on the click path; clearing the flag through
+        any other route (an admin script, a second tab, an automation that
+        hits ``POST /printers/{id}/clear-plate`` directly) silently broke the
+        UI without it. Centralised here so every current AND future caller is
+        covered without each one having to remember to broadcast.
         """
         if awaiting:
             self._awaiting_plate_clear.add(printer_id)
@@ -200,6 +212,43 @@ class PrinterManager:
         # emits "coroutine was never awaited" warnings (e.g. in sync unit tests).
         if self._loop and self._loop.is_running():
             self._schedule_async(self._persist_awaiting_plate_clear(printer_id, awaiting))
+            self._schedule_async(self._broadcast_status_change(printer_id))
+
+    async def _broadcast_status_change(self, printer_id: int) -> None:
+        """Emit a ``printer_status`` WebSocket update for this printer (#1128).
+
+        Used for state changes that don't come from MQTT — currently just the
+        ``awaiting_plate_clear`` flag, but any future Bambuddy-side flag added
+        to ``printer_state_to_dict`` should plumb through here too. The
+        existing MQTT-driven broadcast in ``main.on_printer_status_change``
+        deduplicates on a status_key that intentionally excludes Bambuddy
+        flags (so e.g. queue-state changes don't get echoed as printer
+        events), which is precisely why those flags need their own emit.
+
+        Lazy-imports ``ws_manager`` to keep ``printer_manager`` clean of
+        application-layer infra at module-import time — the broadcast is the
+        only thing here that needs it.
+        """
+        state = self.get_status(printer_id)
+        if not state:
+            # Printer disconnected or unknown — nothing to broadcast. The
+            # next reconnect will produce a fresh status push anyway, so the
+            # UI eventually catches up without us forcing a stale snapshot
+            # on subscribers now.
+            return
+        try:
+            from backend.app.core.websocket import ws_manager
+
+            await ws_manager.send_printer_status(
+                printer_id,
+                printer_state_to_dict(state, printer_id, self.get_model(printer_id)),
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to broadcast printer_status after Bambuddy-side state change for printer %d: %s",
+                printer_id,
+                e,
+            )
 
     async def _persist_awaiting_plate_clear(self, printer_id: int, awaiting: bool):
         from backend.app.core.database import async_session

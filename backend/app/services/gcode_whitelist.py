@@ -6,7 +6,10 @@ to the printer via MQTT. All others are rejected with a logged warning.
 
 GCODE_WHITELIST: frozenset[str] = frozenset(
     {
-        # Movement
+        # Movement — Z-axis only via macros/terminal.
+        # XY movement via gcode_line is unsafe on Bambu firmware: G91 is ignored
+        # for XY, coordinates are treated as absolute, and the toolhead crashes.
+        # Use the bed-jog UI for Z; the printer touchscreen for XY.
         "G0",
         "G1",
         # Homing

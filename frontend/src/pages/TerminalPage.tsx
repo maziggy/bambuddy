@@ -221,8 +221,8 @@ export function TerminalPage() {
           severityClass(e.severity),
         );
       });
-      if (data.printer_state) {
-        push(`  printer state: ${data.printer_state}`, data.status === 'success' ? 'text-zinc-500' : 'text-yellow-600');
+      if (data.printer_state && data.status !== 'success') {
+        push(`  printer state: ${data.printer_state}`, 'text-yellow-600');
       }
       push('', '');
     },

@@ -18,7 +18,6 @@ from sqlalchemy import select
 from backend.app.core.database import async_session
 from backend.app.models.macro import Macro, MacroRun
 from backend.app.services import macro_files
-from backend.app.services.gcode_whitelist import is_whitelisted
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +88,19 @@ def _preflight(client, line: str) -> str | None:
     if not client.state.connected:
         return "Printer is not connected"
     state = client.state.state
-    token = line.split()[0].upper() if line.strip() else ""
+    tokens = line.upper().split() if line.strip() else []
+    token = tokens[0] if tokens else ""
+
+    # Bambu firmware ignores G91 for XY via gcode_line — G0/G1 with X or Y
+    # coordinates treats them as absolute and causes toolhead crashes.
+    if token in ("G0", "G1"):
+        has_xy = any(t.startswith(("X", "Y")) for t in tokens[1:])
+        if has_xy:
+            return (
+                "XY movement via gcode_line is not safe on Bambu firmware — "
+                "use Z-only moves (e.g. G1 Z-5 F600) and the touchscreen for XY jogging"
+            )
+
     # Destructive motion/temperature commands are unsafe while printing
     _unsafe_while_running = {"G28", "G29", "M84", "M104", "M109", "M140", "M190"}
     if state == "RUNNING" and token in _unsafe_while_running:
@@ -136,62 +147,31 @@ class MacroRunner:
         line: str,
         printer_id: int | None,
     ) -> CommandResult:
-        """Execute a single command line immediately. Returns a CommandResult."""
-        from backend.app.services.printer_manager import printer_manager
-
+        """Execute a single command line from the terminal. Returns a CommandResult."""
         line = line.strip()
         if not line or line.startswith("#") or line.startswith(";"):
             return CommandResult(ok=True, log="")
 
-        # Snapshot HMS before running
-        client = printer_manager.get_client(printer_id) if printer_id else None
-        hms_before = _snapshot_hms(client) if client else set()
-        printer_state = client.state.state if client else ""
+        token = line.split()[0].upper()
 
-        # Pre-flight check
-        if client:
-            err = _preflight(client, line)
-            if err:
-                return CommandResult(
-                    ok=False,
-                    log=f"[PREFLIGHT] {err}\n",
-                    printer_state=printer_state,
-                )
+        # System commands go through the normal handler
+        if token in _SYSTEM_COMMANDS:
+            log_lines: list[str] = []
 
-        log_lines: list[str] = []
+            async def _capture(run_id: int | None, text: str) -> None:
+                log_lines.append(text)
 
-        async def _capture(run_id: int | None, text: str) -> None:
-            log_lines.append(text)
+            orig_append = self._append_log
+            self._append_log = _capture  # type: ignore[method-assign]
+            try:
+                result = await self._handle_system(token, line, printer_id, run_id=None)
+            finally:
+                self._append_log = orig_append  # type: ignore[method-assign]
+            log = "".join(log_lines)
+            return CommandResult(ok=result.ok, log=log or result.log, new_hms_errors=result.new_hms_errors)
 
-        orig_append = self._append_log
-        self._append_log = _capture  # type: ignore[method-assign]
-        ok = True
-        try:
-            result = await self._dispatch_line(line, printer_id, run_id=None, allow_printer_commands=True)
-            if result is not None and result.failed:
-                ok = False
-        except Exception as exc:  # noqa: BLE001
-            log_lines.append(f"[ERROR] {exc}\n")
-            ok = False
-        finally:
-            self._append_log = orig_append  # type: ignore[method-assign]
-
-        # Poll HMS for new errors that appeared as a result of the command
-        new_hms: list[HMSErrorInfo] = []
-        if client and ok:
-            await asyncio.sleep(_HMS_POLL_DELAY)
-            new_hms = _new_hms_errors(client, hms_before)
-            if new_hms:
-                ok = False
-                for e in new_hms:
-                    log_lines.append(f"[HMS ERROR] code={e.code} severity={e.severity} {e.message}\n")
-
-        log = "".join(log_lines)
-        # If log contains [ERROR] prefix, treat as failed even without exception
-        if "[ERROR]" in log or "[PREFLIGHT]" in log:
-            ok = False
-
-        return CommandResult(ok=ok, log=log, new_hms_errors=new_hms, printer_state=printer_state)
+        # G-code: single-line send with preflight + HMS poll
+        return await self._send_gcode(line, printer_id, run_id=None)
 
     async def run_macro(
         self,
@@ -250,21 +230,68 @@ class MacroRunner:
 
         error_occurred = False
         try:
+            # Batch consecutive G-code lines into a single MQTT publish so the
+            # printer receives them as one queued block (avoids inter-line delays
+            # and prevents the firmware buffer from being starved by rapid sends).
+            # System commands (NOTIFY, WAIT, etc.) flush the pending batch first.
+            gcode_batch: list[str] = []
+
+            async def _flush_batch() -> bool:
+                """Send accumulated G-code lines as one MQTT message. Returns False on error."""
+                nonlocal error_occurred
+                if not gcode_batch:
+                    return True
+                combined = "\n".join(gcode_batch) + "\n"
+                gcode_batch.clear()
+                result = await self._send_gcode(combined, printer_id, run_id)
+                if result.failed:
+                    error_occurred = True
+                    return False
+                return True
+
             for raw_line in rendered.splitlines():
                 line = raw_line.strip()
                 if not line or line.startswith("#") or line.startswith(";"):
                     continue
                 try:
-                    result = await self._dispatch_line(line, printer_id, run_id, allow_printer_commands)
-                    if result is not None and result.failed:
-                        error_occurred = True
-                        break
+                    token = line.split()[0].upper()
+                    if token in _SYSTEM_COMMANDS:
+                        # Flush pending G-code before running a system command
+                        if not await _flush_batch():
+                            break
+                        result = await self._dispatch_system(line, printer_id, run_id, allow_printer_commands)
+                        if result is not None and result.failed:
+                            error_occurred = True
+                            break
+                    else:
+                        # Check preflight before batching
+                        if allow_printer_commands and printer_id is not None:
+                            from backend.app.services.printer_manager import printer_manager
+
+                            client = printer_manager.get_client(printer_id)
+                            if client:
+                                err = _preflight(client, line)
+                                if err:
+                                    msg = f"[PREFLIGHT] {err}\n"
+                                    await self._append_log(run_id, msg)
+                                    error_occurred = True
+                                    break
+                        if not allow_printer_commands:
+                            msg = f"[SKIP] G-code blocked in gcode_embed mode: {line}\n"
+                            await self._append_log(run_id, msg)
+                        else:
+                            await self._append_log(run_id, f"[GCODE] {line}\n")
+                            gcode_batch.append(line)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001
                     await self._append_log(run_id, f"[ERROR] {line}: {exc}\n")
                     error_occurred = True
                     break
+
+            # Flush any remaining G-code
+            if not error_occurred:
+                await _flush_batch()
 
             status = "error" if error_occurred else "success"
         except asyncio.CancelledError:
@@ -363,55 +390,55 @@ class MacroRunner:
         except Exception as exc:  # noqa: BLE001
             logger.error("Sub-macro %s render failed: %s", name, exc)
             return
+        gcode_batch: list[str] = []
         for raw_line in rendered.splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#") or line.startswith(";"):
                 continue
             try:
-                await self._dispatch_line(line, printer_id, run_id=None, allow_printer_commands=True)
+                token = line.split()[0].upper()
+                if token in _SYSTEM_COMMANDS:
+                    if gcode_batch:
+                        await self._send_gcode("\n".join(gcode_batch), printer_id, run_id=None)
+                        gcode_batch.clear()
+                    await self._dispatch_system(line, printer_id, run_id=None)
+                else:
+                    gcode_batch.append(line)
             except Exception as exc:  # noqa: BLE001
                 logger.error("Sub-macro %s dispatch error: %s", name, exc)
                 break
+        if gcode_batch:
+            await self._send_gcode("\n".join(gcode_batch), printer_id, run_id=None)
 
     # ------------------------------------------------------------------
     # Dispatch
     # ------------------------------------------------------------------
 
-    async def _dispatch_line(
+    async def _dispatch_system(
         self,
         line: str,
         printer_id: int | None,
         run_id: int | None,
         allow_printer_commands: bool = True,
-    ) -> CommandResult | None:
-        """Dispatch one rendered line. Returns CommandResult for G-code, None for others."""
+    ) -> CommandResult:
+        """Dispatch a system command (NOTIFY, WAIT, AMS_DRYING, etc.)."""
         token = line.split()[0].upper()
+        if not allow_printer_commands and token in _PRINTER_COMMANDS:
+            msg = f"[SKIP] Command blocked in gcode_embed mode: {line}\n"
+            await self._log(run_id, msg)
+            return CommandResult(ok=True)
+        return await self._handle_system(token, line, printer_id, run_id)
 
-        # G-code commands
-        if is_whitelisted(line):
-            if not allow_printer_commands:
-                msg = f"[SKIP] G-code blocked in gcode_embed mode: {line}\n"
-                await self._log(run_id, msg)
-                return None
-            return await self._send_gcode(line, printer_id, run_id)
+    async def _send_gcode(self, payload: str, printer_id: int | None, run_id: int | None) -> CommandResult:
+        """Send one or more G-code lines as a single MQTT message.
 
-        # System commands
-        if token in _SYSTEM_COMMANDS:
-            if not allow_printer_commands and token in _PRINTER_COMMANDS:
-                msg = f"[SKIP] Command blocked in gcode_embed mode: {line}\n"
-                await self._log(run_id, msg)
-                return None
-            return await self._handle_system(token, line, printer_id, run_id)
-
-        # Unknown
-        await self._log(run_id, f"[WARN] Unknown command (ignored): {line}\n")
-        return None
-
-    async def _send_gcode(self, line: str, printer_id: int | None, run_id: int | None) -> CommandResult:
+        payload may be a single line or newline-joined batch.
+        Runs preflight on each line before sending. One HMS poll after the whole batch.
+        """
         from backend.app.services.printer_manager import printer_manager
 
         if printer_id is None:
-            msg = f"[WARN] No printer target for G-code: {line}\n"
+            msg = "[WARN] No printer selected for G-code\n"
             await self._log(run_id, msg)
             return CommandResult(ok=False, log=msg)
 
@@ -421,36 +448,41 @@ class MacroRunner:
             await self._log(run_id, msg)
             return CommandResult(ok=False, log=msg)
 
-        # Pre-flight
-        err = _preflight(client, line)
-        if err:
-            msg = f"[PREFLIGHT] {err}\n"
-            await self._log(run_id, msg)
-            return CommandResult(ok=False, log=msg, printer_state=client.state.state)
+        # Preflight every line in the payload
+        for line in payload.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            err = _preflight(client, line)
+            if err:
+                msg = f"[PREFLIGHT] {err}\n"
+                await self._log(run_id, msg)
+                return CommandResult(ok=False, log=msg, printer_state=client.state.state)
 
         hms_before = _snapshot_hms(client)
-        sent = client.send_gcode(line + "\n")
+        # Ensure payload ends with newline
+        if not payload.endswith("\n"):
+            payload += "\n"
+        sent = client.send_gcode(payload)
         if not sent:
-            msg = f"[ERROR] Failed to send G-code (MQTT publish failed): {line}\n"
+            msg = "[ERROR] Failed to send G-code (MQTT publish failed)\n"
             await self._log(run_id, msg)
             return CommandResult(ok=False, log=msg, printer_state=client.state.state)
 
-        msg = f"[GCODE] {line}\n"
-        await self._log(run_id, msg)
+        for line in payload.splitlines():
+            if line.strip():
+                await self._log(run_id, f"[GCODE] {line.strip()}\n")
 
-        # Poll for HMS errors triggered by this command
+        # One HMS poll for the whole payload
         await asyncio.sleep(_HMS_POLL_DELAY)
         new_hms = _new_hms_errors(client, hms_before)
-        full_log = msg
         ok = True
         if new_hms:
             ok = False
             for e in new_hms:
-                hms_msg = f"[HMS ERROR] code={e.code} severity={e.severity} {e.message}\n"
-                await self._log(run_id, hms_msg)
-                full_log += hms_msg
+                await self._log(run_id, f"[HMS ERROR] code={e.code} severity={e.severity} {e.message}\n")
 
-        return CommandResult(ok=ok, log=full_log, new_hms_errors=new_hms, printer_state=client.state.state)
+        return CommandResult(ok=ok, new_hms_errors=new_hms, printer_state=client.state.state)
 
     async def _handle_system(
         self,

@@ -2983,7 +2983,11 @@ class TestDeveloperModeProbeTimeout:
         assert mqtt_client.state.connected is True
 
     def test_second_timeout_forces_reconnect(self, mqtt_client):
-        """After two consecutive probe timeouts, force-close the socket."""
+        """After two consecutive probe timeouts, force-close the socket.
+
+        Probe timeout detection runs from paho's network thread (no asyncio
+        loop), so force_reconnect_stale_session routes through socket-close
+        rather than hard-reset (loop_stop from inside the loop deadlocks)."""
         import time
 
         data = self._make_pushall_data()
@@ -3005,9 +3009,8 @@ class TestDeveloperModeProbeTimeout:
         assert mqtt_client._dev_mode_probe_failures == 2
         assert mqtt_client.state.connected is False
         assert mqtt_client._stale_reconnecting is True
-        # Socket should have been closed
+        # Sync test → no running loop → socket-close fallback path
         mqtt_client._client.socket().close.assert_called()
-        # on_state_change should have been called
         assert len(state_change_called) > 0
 
     def test_successful_probe_resets_failure_counter(self, mqtt_client):
@@ -4088,7 +4091,13 @@ class TestZombieSessionDetection:
         assert mqtt_client.state.connected is True
 
     def test_two_timeouts_force_reconnect(self, mqtt_client):
-        """Two consecutive unanswered commands trigger force_reconnect."""
+        """Two consecutive unanswered commands trigger force_reconnect.
+
+        Zombie detection runs from paho's network thread (no asyncio loop), so
+        the routing in force_reconnect_stale_session falls back to socket-close
+        — which is the safe option since loop_stop() from inside the loop
+        thread would deadlock. Hard-reset is reserved for async-context callers
+        (background_dispatch dispatch path)."""
         import time
 
         state_change_called = []
@@ -4107,6 +4116,7 @@ class TestZombieSessionDetection:
         assert mqtt_client._ams_cmd_unanswered == 0  # reset after reconnect
         assert mqtt_client.state.connected is False
         assert mqtt_client._stale_reconnecting is True
+        # Sync test → no running loop → socket-close fallback path
         mqtt_client._client.socket().close.assert_called()
         assert len(state_change_called) > 0
 
@@ -4223,3 +4233,113 @@ class TestHMSUserActionFiltering:
         mqtt_client._update_state({"print_error": 0x0500_8061})
         assert len(mqtt_client.state.hms_errors) == 1
         assert mqtt_client.state.hms_errors[0].code == "0x8061"
+
+
+class TestForceReconnectRouting:
+    """#1136 — force_reconnect_stale_session routes between hard-reset (full
+    paho-client teardown, wipes the QoS 1 queue) and socket-close (the legacy
+    behaviour, safe to call from paho's own network thread). The routing
+    decision is based on whether an asyncio loop is running: hard-reset
+    requires loop_stop() which would deadlock if called from inside the
+    network thread itself."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_HARD_RESET",
+            access_code="12345678",
+        )
+        client.state.connected = True
+        client._client = MagicMock()
+        return client
+
+    def test_routing_falls_back_to_socket_close_without_running_loop(self, mqtt_client):
+        """Sync caller → no asyncio loop → socket-close path (legacy behaviour
+        preserved for paho-thread callers like zombie detection)."""
+        mqtt_client.force_reconnect_stale_session("test")
+        mqtt_client._client.socket().close.assert_called()
+        # Old client is NOT torn down on this path; same-instance reconnect
+        # via paho's auto-reconnect handles it.
+        assert mqtt_client._client is not None
+
+    def test_routing_uses_hard_reset_when_loop_is_running(self, mqtt_client):
+        """Async caller → loop available → hard-reset path wipes the queue."""
+        import asyncio
+
+        original = mqtt_client._client
+        # Stub connect() so the rebuild doesn't open a real socket.
+        mqtt_client.connect = lambda loop=None: None
+
+        async def _trigger():
+            mqtt_client.force_reconnect_stale_session("test")
+
+        asyncio.run(_trigger())
+        original.disconnect.assert_called()
+        original.loop_stop.assert_called()
+        # connect() stub didn't repopulate _client, so it's None — the contract
+        # in production is that connect() builds a fresh mqtt.Client here.
+        assert mqtt_client._client is None
+
+    def test_marks_state_disconnected_and_broadcasts(self, mqtt_client):
+        """Both routing paths must broadcast the disconnected state once."""
+        broadcasts: list[bool] = []
+        mqtt_client.on_state_change = lambda s: broadcasts.append(s.connected)
+        mqtt_client.force_reconnect_stale_session("test")
+        assert mqtt_client.state.connected is False
+        assert mqtt_client._stale_reconnecting is True
+        assert broadcasts == [False]
+
+
+class TestHardResetClientDirect:
+    """Lower-level coverage of `_hard_reset_client` itself — the helper called
+    by the routing layer when a full paho-client teardown is safe. These tests
+    drive the helper directly so they don't depend on the routing decision."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_HARD_DIRECT",
+            access_code="12345678",
+        )
+        client.state.connected = True
+        client._client = MagicMock()
+        # Stub connect() so the rebuild doesn't open a real socket.
+        client.connect = lambda loop=None: None
+        return client
+
+    def test_disconnects_and_stops_old_client(self, mqtt_client):
+        """Old paho client must receive DISCONNECT (broker drops session) +
+        loop_stop (network thread exits, taking its QoS 1 queue with it)."""
+        original = mqtt_client._client
+        mqtt_client._hard_reset_client()
+        original.disconnect.assert_called()
+        original.loop_stop.assert_called()
+
+    def test_clears_client_reference(self, mqtt_client):
+        """Old reference must go to None so subsequent code can't accidentally
+        publish through the dying client."""
+        mqtt_client._hard_reset_client()
+        assert mqtt_client._client is None
+
+    def test_swallows_disconnect_exception(self, mqtt_client):
+        """A failing disconnect() (e.g. paho already in error state) must not
+        propagate — the await chain in background_dispatch.py would otherwise
+        raise instead of moving on, and a single broken client could brick
+        every future dispatch."""
+        original = mqtt_client._client
+        original.disconnect.side_effect = RuntimeError("boom")
+        # No exception escapes the call (test would fail if it did).
+        mqtt_client._hard_reset_client()
+        # loop_stop is still attempted after the disconnect failure.
+        original.loop_stop.assert_called()
+        assert mqtt_client._client is None

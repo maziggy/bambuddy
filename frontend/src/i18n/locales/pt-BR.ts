@@ -3313,6 +3313,7 @@ export default {
     assigning: 'Atribuindo...',
     searchSpools: 'Pesquisar carretéis...',
     showAllSpools: 'Mostrar todos os carretéis',
+    spoolmanSpools: 'Bobinas Spoolman',
     allMaterials: 'Todos os Materiais',
     filterByBrand: 'Filtrar por marca...',
     showArchived: 'Mostrar arquivados',

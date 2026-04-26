@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes._spoolman_helpers import (
@@ -27,7 +27,9 @@ from backend.app.api.routes._spoolman_helpers import (
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
+from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.user import User
 from backend.app.services.spoolman import (
     SpoolmanClient,
@@ -232,6 +234,13 @@ class SpoolmanInventoryBulkCreate(BaseModel):
 
 class SpoolWeightUpdate(BaseModel):
     weight_grams: float = Field(..., ge=0.0, le=100_000.0)
+
+
+class SpoolSlotAssignmentRequest(BaseModel):
+    spoolman_spool_id: int = Field(..., gt=0)
+    printer_id: int = Field(..., gt=0)
+    ams_id: int = Field(..., ge=0)
+    tray_id: int = Field(..., ge=0)
 
 
 # ---------------------------------------------------------------------------
@@ -529,3 +538,147 @@ async def sync_spool_weight(
     label_weight = _safe_int(upd_filament.get("weight"), 1000)
     weight_used = max(0.0, label_weight - remaining)
     return {"status": "ok", "weight_used": weight_used}
+
+
+@router.get("/slot-assignments/all")
+async def get_all_spoolman_slot_assignments(
+    printer_id: int | None = Query(None, gt=0),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+) -> list[dict]:
+    """Return all Spoolman slot assignments, optionally filtered by printer.
+
+    Each item is a raw assignment dict with keys ``printer_id``, ``ams_id``,
+    ``tray_id``, and ``spoolman_spool_id`` — not an ``InventorySpool`` object.
+    """
+    query = select(SpoolmanSlotAssignment)
+    if printer_id is not None:
+        query = query.where(SpoolmanSlotAssignment.printer_id == printer_id)
+    result = await db.execute(query)
+    slots = result.scalars().all()
+    return [
+        {
+            "printer_id": s.printer_id,
+            "ams_id": s.ams_id,
+            "tray_id": s.tray_id,
+            "spoolman_spool_id": s.spoolman_spool_id,
+        }
+        for s in slots
+    ]
+
+
+@router.post("/slot-assignments")
+async def assign_spoolman_slot(
+    body: SpoolSlotAssignmentRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Assign a Spoolman spool to a printer AMS slot (stored in local DB only).
+
+    Raises 404 if the printer does not exist or the spool is not found in Spoolman.
+    Spoolman's own ``spool.location`` field is NOT touched — it is user-managed.
+    """
+
+    client = await _get_client(db)
+    result = await db.execute(select(Printer).where(Printer.id == body.printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(status_code=404, detail="Printer not found")
+
+    # Verify the Spoolman spool exists before committing to local DB.
+    # This prevents ghost rows pointing at non-existent spool IDs.
+    async with _translate_spoolman_errors():
+        spool = await client.get_spool(body.spoolman_spool_id)
+
+    # Spool confirmed in Spoolman — upsert into local slot-assignment table
+    # assigned_at is intentionally not refreshed on re-assign (original timestamp preserved)
+    await db.execute(
+        text(
+            "INSERT INTO spoolman_slot_assignments"
+            " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+            " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+            " ON CONFLICT(printer_id, ams_id, tray_id)"
+            " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+        ),
+        {
+            "printer_id": body.printer_id,
+            "ams_id": body.ams_id,
+            "tray_id": body.tray_id,
+            "spool_id": body.spoolman_spool_id,
+        },
+    )
+    await db.commit()
+
+    return _map_spoolman_spool(spool)
+
+
+@router.delete("/slot-assignments/{spoolman_spool_id}")
+async def unassign_spoolman_slot(
+    spoolman_spool_id: int = Path(..., gt=0),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Remove the local slot assignment for a Spoolman spool.
+
+    Spoolman's own ``spool.location`` field is NOT touched — it is user-managed.
+    """
+    client = await _get_client(db)
+
+    # Delete from local slot-assignment table (all slots for this spool ID)
+    await db.execute(
+        delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spoolman_spool_id)
+    )
+    await db.commit()
+
+    # Fetch the spool from Spoolman to return in InventorySpool format.
+    # If the spool no longer exists in Spoolman, the local unassignment still succeeded.
+    try:
+        async with _translate_spoolman_errors():
+            spool = await client.get_spool(spoolman_spool_id)
+        return _map_spoolman_spool(spool)
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        # Spool no longer exists in Spoolman; unassignment still succeeded.
+        return {"id": spoolman_spool_id}
+
+
+@router.get("/slot-assignments")
+async def get_spoolman_slot_assignment(
+    printer_id: int = Query(..., gt=0),
+    ams_id: int = Query(..., ge=0),
+    tray_id: int = Query(..., ge=0),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+) -> dict | None:
+    """Return the Spoolman spool assigned to a specific printer slot, or null if unassigned."""
+    client = await _get_client(db)
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(status_code=404, detail="Printer not found")
+
+    slot_result = await db.execute(
+        select(SpoolmanSlotAssignment).where(
+            SpoolmanSlotAssignment.printer_id == printer_id,
+            SpoolmanSlotAssignment.ams_id == ams_id,
+            SpoolmanSlotAssignment.tray_id == tray_id,
+        )
+    )
+    slot = slot_result.scalar_one_or_none()
+    if not slot:
+        return None
+
+    try:
+        async with _translate_spoolman_errors():
+            spool = await client.get_spool(slot.spoolman_spool_id)
+        return _map_spoolman_spool(spool)
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        # Spool deleted in Spoolman — clean up stale assignment
+        await db.execute(
+            delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.id == slot.id)
+        )
+        await db.commit()
+        return None

@@ -3379,6 +3379,7 @@ export default {
     assigning: 'Wird zugewiesen...',
     searchSpools: 'Spulen suchen...',
     showAllSpools: 'Alle Spulen anzeigen',
+    spoolmanSpools: 'Spoolman-Spulen',
     allMaterials: 'Alle Materialien',
     filterByBrand: 'Nach Marke filtern...',
     showArchived: 'Archivierte anzeigen',

@@ -3300,6 +3300,7 @@ export default {
     assigning: 'Assignation...',
     searchSpools: 'Chercher bobines...',
     showAllSpools: 'Afficher toutes les bobines',
+    spoolmanSpools: 'Bobines Spoolman',
     allMaterials: 'Tous Matériaux',
     filterByBrand: 'Filtrer par marque...',
     showArchived: 'Afficher archivées',

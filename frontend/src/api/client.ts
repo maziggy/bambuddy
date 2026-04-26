@@ -4407,6 +4407,23 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ weight_grams: weightGrams }),
     }),
+  assignSpoolmanSlot: (data: { spoolman_spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
+    request<InventorySpool>('/spoolman/inventory/slot-assignments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  unassignSpoolmanSlot: (spoolmanSpoolId: number) =>
+    request<InventorySpool>(`/spoolman/inventory/slot-assignments/${spoolmanSpoolId}`, { method: 'DELETE' }),
+  getSpoolmanSlotAssignment: (printerId: number, amsId: number, trayId: number) =>
+    request<InventorySpool | null>(
+      `/spoolman/inventory/slot-assignments?printer_id=${printerId}&ams_id=${amsId}&tray_id=${trayId}`,
+    ),
+  getSpoolmanSlotAssignments: (printerId?: number) =>
+    request<Array<{ printer_id: number; ams_id: number; tray_id: number; spoolman_spool_id: number }>>(
+      printerId !== undefined
+        ? `/spoolman/inventory/slot-assignments/all?printer_id=${printerId}`
+        : '/spoolman/inventory/slot-assignments/all',
+    ),
 
   // Updates
   getVersion: () => request<VersionInfo>('/updates/version'),

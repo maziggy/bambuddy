@@ -3338,6 +3338,7 @@ export default {
     assigning: '割り当て中...',
     searchSpools: 'スプールを検索...',
     showAllSpools: 'すべてのスプールを表示',
+    spoolmanSpools: 'Spoolman スプール',
     allMaterials: 'すべての素材',
     filterByBrand: 'ブランドで絞り込み...',
     showArchived: 'アーカイブ済みを表示',

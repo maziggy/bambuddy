@@ -829,10 +829,10 @@ class SpoolmanClient:
     ) -> int:
         """Clear location for spools that are no longer in the AMS.
 
-        When a spool is removed from the AMS, its location should be cleared
-        in Spoolman. This method finds all spools with locations for this printer
-        and clears the location for any that are not in the current_tray_uuids set
-        and were not synced in this cycle (synced_spool_ids).
+        Intended for explicit/manual calls only — not called by automatic AMS sync.
+        Finds all spools whose location matches ``printer_name - *`` and clears
+        any whose tray_uuid is absent from ``current_tray_uuids`` and whose spool
+        ID is absent from ``synced_spool_ids``.
 
         Args:
             printer_name: The printer name used as location prefix
@@ -1072,18 +1072,23 @@ class SpoolmanClient:
         disable_weight_sync: bool = False,
         cached_spools: list[dict] | None = None,
         inventory_remaining: float | None = None,
+        spoolman_spool_id_hint: int | None = None,
     ) -> dict | None:
         """Sync a single AMS tray to Spoolman.
 
-        Only syncs trays with valid Bambu Lab tray_uuid (32 hex characters).
-        Non-Bambu Lab spools (SpoolEase/third-party) are skipped.
+        Syncs both Bambu Lab and third-party spools. Bambu Lab spools are
+        identified by RFID (32-char tray_uuid or 16-char tag_uid) and are
+        created in Spoolman when first seen. Third-party spools without RFID
+        can only update existing Spoolman entries resolved via
+        ``spoolman_spool_id_hint`` (populated from the local slot-assignment
+        table by the caller).
 
         Uses tray_uuid for matching, as it's consistent across all printer models
         (unlike tag_uid which varies between X1C/H2D readers).
 
         Args:
             tray: The AMSTray to sync
-            printer_name: Name of the printer for location
+            printer_name: Name of the printer (informational only; not written to Spoolman)
             disable_weight_sync: If True, skip updating remaining_weight for existing spools.
                 This allows Spoolman's granular usage tracking to maintain accurate weights.
             cached_spools: Optional pre-fetched list of spools to search (avoids API calls).
@@ -1091,6 +1096,9 @@ class SpoolmanClient:
                 API calls during batch sync operations.
             inventory_remaining: Optional fallback remaining weight (grams) from the built-in
                 inventory when AMS MQTT data has invalid remain/tray_weight values.
+            spoolman_spool_id_hint: Spoolman spool ID from the local slot-assignment table.
+                Used as the no-RFID fallback when tray_uuid/tag_uid are unavailable (e.g.,
+                after a firmware update that temporarily stops exposing RFID data).
 
         Returns:
             Synced spool dictionary or None if skipped or failed.
@@ -1101,17 +1109,6 @@ class SpoolmanClient:
             f"uuid={tray.tray_uuid[:16] if tray.tray_uuid else 'none'}, "
             f"tag={tray.tag_uid[:8] if tray.tag_uid else 'none'}..."
         )
-
-        # Only sync trays with valid Bambu Lab identifiers
-        if not self.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
-            if tray.tray_uuid or tray.tag_uid or tray.tray_info_idx:
-                logger.info(
-                    f"Skipping non-Bambu Lab spool: {printer_name} AMS {tray.ams_id} tray {tray.tray_id} "
-                    f"(tray_info_idx={tray.tray_info_idx}, tray_uuid={tray.tray_uuid}, tag_uid={tray.tag_uid})"
-                )
-            else:
-                logger.debug("Skipping tray without RFID tag: AMS %s tray %s", tray.ams_id, tray.tray_id)
-            return None
 
         # Determine which identifier to use for Spoolman (prefer tray_uuid, fallback to tag_uid)
         # Zero-filled values mean the AMS hasn't read the RFID tag — treat as no tag
@@ -1139,7 +1136,6 @@ class SpoolmanClient:
             )
         else:
             remaining = None
-        location = f"{printer_name} - {self.convert_ams_slot_to_location(tray.ams_id, tray.tray_id)}"
 
         if spool_tag:
             # Primary path: match by RFID tag
@@ -1149,45 +1145,65 @@ class SpoolmanClient:
                 return await self.update_spool(
                     spool_id=existing["id"],
                     remaining_weight=None if disable_weight_sync else remaining,
-                    location=location,
                 )
 
             # Spool not found by tag - auto-create it
             logger.info("Creating new spool in Spoolman for %s (tag: %s...)", tray.tray_sub_brands, spool_tag[:16])
-            filament = await self._find_or_create_filament(tray)
-            if not filament:
+            if self.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
+                filament = await self._find_or_create_filament(tray)
+                filament_id = filament["id"] if filament else None
+            else:
+                # Non-BL spool with custom RFID: use generic vendor lookup
+                brand = tray.tray_sub_brands if tray.tray_sub_brands != tray.tray_type else None
+                try:
+                    filament_id = await self.find_or_create_filament(
+                        material=tray.tray_type,
+                        subtype="",
+                        brand=brand,
+                        color_hex=tray.tray_color[:6],
+                        label_weight=tray.tray_weight,
+                    )
+                except (SpoolmanNotFoundError, SpoolmanUnavailableError, SpoolmanClientError):
+                    logger.warning("Could not find or create filament for non-BL spool %s", tray.tray_sub_brands)
+                    return None
+
+            if not filament_id:
                 logger.error("Failed to find or create filament for %s", tray.tray_sub_brands)
                 return None
 
             import json
 
             return await self.create_spool(
-                filament_id=filament["id"],
+                filament_id=filament_id,
                 remaining_weight=remaining,
-                location=location,
                 comment="Created by Bambuddy",
                 extra={"tag": json.dumps(spool_tag)},
             )
 
-        # Fallback path: no RFID tag available (newer firmware may not expose UUIDs)
-        # Only update existing spools matched by location — never create new ones without a tag
-        # to avoid duplicates when old spools exist from previous RFID-based syncs
-        existing = self._find_spool_by_location(location, cached_spools)
-        if existing:
-            logger.info(
-                "Updating spool %s by location match '%s' (no RFID tag available)",
-                existing["id"],
-                location,
-            )
-            return await self.update_spool(
-                spool_id=existing["id"],
-                remaining_weight=None if disable_weight_sync else remaining,
-                location=location,
-            )
+        # No-RFID fallback: use the spool ID resolved from the local slot-assignment table.
+        # Never create new spools without a tag to avoid duplicates.
+        if spoolman_spool_id_hint is not None:
+            existing = next((s for s in (cached_spools or []) if s.get("id") == spoolman_spool_id_hint), None)
+            if existing is None:
+                try:
+                    existing = await self.get_spool(spoolman_spool_id_hint)
+                except (SpoolmanNotFoundError, SpoolmanUnavailableError):
+                    existing = None
+            if existing:
+                logger.info(
+                    "Updating spool %s by slot-assignment hint (no RFID tag available)",
+                    existing["id"],
+                )
+                return await self.update_spool(
+                    spool_id=existing["id"],
+                    remaining_weight=None if disable_weight_sync else remaining,
+                )
 
         logger.info(
-            "No existing spool found at '%s' — skipping (no RFID tag to create with)",
-            location,
+            "%s AMS %s tray %s — skipping (no RFID tag and no slot-assignment hint)",
+            printer_name,
+            tray.ams_id,
+            tray.tray_id,
         )
         return None
 

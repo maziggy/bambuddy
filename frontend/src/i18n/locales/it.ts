@@ -3299,6 +3299,7 @@ export default {
     assigning: 'Assegnazione...',
     searchSpools: 'Cerca bobine...',
     showAllSpools: 'Mostra tutte le bobine',
+    spoolmanSpools: 'Bobine Spoolman',
     allMaterials: 'Tutti i Materiali',
     filterByBrand: 'Filtra per marchio...',
     showArchived: 'Mostra archiviate',

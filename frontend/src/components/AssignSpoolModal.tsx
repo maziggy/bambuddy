@@ -21,16 +21,19 @@ interface AssignSpoolModalProps {
     color: string;
     location: string;
   };
+  spoolmanEnabled?: boolean;
 }
 
-export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, trayInfo }: AssignSpoolModalProps) {
+export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, trayInfo, spoolmanEnabled }: AssignSpoolModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [disableFiltering, setDisableFiltering] = useState(false);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
+  const [selectedSpoolmanSpoolId, setSelectedSpoolmanSpoolId] = useState<number | null>(null);
   useEffect(() => {
     setSelectedSpoolId(null);
+    setSelectedSpoolmanSpoolId(null);
   }, [disableFiltering]);
   const [searchFilter, setSearchFilter] = useState('');
   const [pendingAssignId, setPendingAssignId] = useState<number | null>(null);
@@ -80,6 +83,12 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     enabled: isOpen,
   });
 
+  const { data: spoolmanSpools, isLoading: spoolmanLoading } = useQuery({
+    queryKey: ['spoolman-inventory-spools', 'assign-modal'],
+    queryFn: () => api.getSpoolmanInventorySpools(false),
+    enabled: isOpen && !!spoolmanEnabled,
+  });
+
   const assignMutation = useMutation({
     mutationFn: (spoolId: number) =>
       api.assignSpool({ spool_id: spoolId, printer_id: printerId, ams_id: amsId, tray_id: trayId }),
@@ -97,6 +106,25 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       setShowMismatchConfirm(false);
       setPendingAssignId(null);
       setMismatchDetails(null);
+      onClose();
+    },
+    onError: (error: Error) => {
+      showToast(`${t('inventory.assignFailed')}: ${error.message}`, 'error');
+    },
+  });
+
+  const assignSpoolmanMutation = useMutation({
+    mutationFn: (spoolmanSpoolId: number) =>
+      api.assignSpoolmanSlot({
+        spoolman_spool_id: spoolmanSpoolId,
+        printer_id: printerId,
+        ams_id: amsId,
+        tray_id: trayId,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
+      showToast(t('inventory.assignSuccess'), 'success');
       onClose();
     },
     onError: (error: Error) => {
@@ -212,6 +240,10 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   }
 
   const handleAssign = () => {
+    if (selectedSpoolmanSpoolId !== null) {
+      assignSpoolmanMutation.mutate(selectedSpoolmanSpoolId);
+      return;
+    }
     if (!selectedSpoolId) return;
     const selectedSpool = spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId);
     if (!selectedSpool) {
@@ -317,7 +349,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
           </div>
 
           {/* Spool list */}
-          <div>
+          <div className="space-y-3">
             {isLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-6 h-6 text-bambu-green animate-spin" />
@@ -327,7 +359,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                 {filteredSpools.map((spool: InventorySpool) => (
                   <button
                     key={spool.id}
-                    onClick={() => setSelectedSpoolId(spool.id)}
+                    onClick={() => { setSelectedSpoolId(spool.id); setSelectedSpoolmanSpoolId(null); }}
                     title={spool.note || undefined}
                     className={`p-2.5 rounded-lg border text-left transition-colors ${
                       selectedSpoolId === spool.id
@@ -382,6 +414,69 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                 )}
               </div>
             )}
+
+            {spoolmanEnabled && (
+              <>
+                {spoolmanLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="w-5 h-5 text-bambu-green animate-spin" />
+                  </div>
+                ) : spoolmanSpools && spoolmanSpools.filter(s => !s.archived_at).length > 0 ? (
+                  <>
+                    <p className="text-xs font-medium text-bambu-gray uppercase tracking-wide pt-1">
+                      {t('inventory.spoolmanSpools')}
+                    </p>
+                    <div className="max-h-64 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {spoolmanSpools
+                        .filter(s => !s.archived_at)
+                        .filter(s => {
+                          if (!searchFilter) return true;
+                          const q = searchFilter.toLowerCase();
+                          return (
+                            s.material.toLowerCase().includes(q) ||
+                            (s.brand?.toLowerCase().includes(q) ?? false) ||
+                            (s.color_name?.toLowerCase().includes(q) ?? false) ||
+                            (s.subtype?.toLowerCase().includes(q) ?? false)
+                          );
+                        })
+                        .map((spool: InventorySpool) => (
+                          <button
+                            key={`spoolman-${spool.id}`}
+                            onClick={() => {
+                              setSelectedSpoolmanSpoolId(spool.id);
+                              setSelectedSpoolId(null);
+                            }}
+                            title={spool.note || undefined}
+                            className={`p-2.5 rounded-lg border text-left transition-colors ${
+                              selectedSpoolmanSpoolId === spool.id
+                                ? 'bg-bambu-green/20 border-bambu-green'
+                                : 'bg-bambu-dark border-bambu-dark-tertiary hover:border-bambu-gray'
+                            }`}
+                          >
+                            <p className="text-white text-sm font-medium truncate">
+                              {spool.brand ? `${spool.brand} ` : ''}{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              {spool.rgba && (
+                                <span
+                                  className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
+                                  style={{ backgroundColor: `#${spool.rgba.substring(0, 6)}` }}
+                                />
+                              )}
+                              <span className="text-xs text-bambu-gray truncate">{spool.color_name || ''}</span>
+                            </div>
+                            {spool.label_weight && (
+                              <p className="text-xs text-bambu-gray mt-1">
+                                {Math.max(0, Math.round(spool.label_weight - spool.weight_used))} / {spool.label_weight}g
+                              </p>
+                            )}
+                          </button>
+                        ))}
+                    </div>
+                  </>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
 
@@ -405,9 +500,9 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
             </Button>
             <Button
               onClick={handleAssign}
-              disabled={!selectedSpoolId || assignMutation.isPending}
+              disabled={(!selectedSpoolId && selectedSpoolmanSpoolId === null) || assignMutation.isPending || assignSpoolmanMutation.isPending}
             >
-              {assignMutation.isPending ? (
+              {(assignMutation.isPending || assignSpoolmanMutation.isPending) ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   {t('inventory.assigning')}

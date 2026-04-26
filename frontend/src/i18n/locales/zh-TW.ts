@@ -3370,6 +3370,7 @@ export default {
     assigning: '分配中...',
     searchSpools: '搜尋耗材...',
     showAllSpools: '顯示所有耗材',
+    spoolmanSpools: 'Spoolman 線軸',
     allMaterials: '所有材料',
     filterByBrand: '按品牌篩選...',
     showArchived: '顯示已歸檔',

@@ -203,6 +203,7 @@ async def init_db():
         spool_k_profile,
         spool_usage_history,
         spoolbuddy_device,
+        spoolman_slot_assignment,
         user,
         user_email_pref,
         user_otp_code,
@@ -1076,25 +1077,36 @@ async def run_migrations(conn):
         pass  # Already applied
 
     # Create active_print_spoolman table for Spoolman per-filament tracking
-    try:
-        async with conn.begin_nested():
-            await conn.execute(
-                text("""
-                CREATE TABLE IF NOT EXISTS active_print_spoolman (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
-                    archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
-                    filament_usage TEXT NOT NULL,
-                    ams_trays TEXT NOT NULL,
-                    slot_to_tray TEXT,
-                    layer_usage TEXT,
-                    filament_properties TEXT,
-                    UNIQUE(printer_id, archive_id)
-                )
-            """)
-            )
-    except (OperationalError, ProgrammingError):
-        pass  # Already applied
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS active_print_spoolman (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+            filament_usage TEXT NOT NULL,
+            ams_trays TEXT NOT NULL,
+            slot_to_tray TEXT,
+            layer_usage TEXT,
+            filament_properties TEXT,
+            UNIQUE(printer_id, archive_id)
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS active_print_spoolman (
+            id SERIAL PRIMARY KEY,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+            filament_usage TEXT NOT NULL,
+            ams_trays TEXT NOT NULL,
+            slot_to_tray TEXT,
+            layer_usage TEXT,
+            filament_properties TEXT,
+            UNIQUE(printer_id, archive_id)
+        )
+        """,
+    )
 
     # Migration: Add preset_source column to slot_preset_mappings for local preset support
     try:
@@ -1123,24 +1135,34 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN core_weight_catalog_id INTEGER")
 
     # Migration: Create spool_usage_history table for filament consumption tracking
-    try:
-        async with conn.begin_nested():
-            await conn.execute(
-                text("""
-                CREATE TABLE IF NOT EXISTS spool_usage_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    spool_id INTEGER NOT NULL REFERENCES spool(id) ON DELETE CASCADE,
-                    printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
-                    print_name VARCHAR(500),
-                    weight_used REAL NOT NULL DEFAULT 0,
-                    percent_used INTEGER NOT NULL DEFAULT 0,
-                    status VARCHAR(20) NOT NULL DEFAULT 'completed',
-                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            )
-    except (OperationalError, ProgrammingError):
-        pass  # Already applied
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS spool_usage_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            spool_id INTEGER NOT NULL REFERENCES spool(id) ON DELETE CASCADE,
+            printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
+            print_name VARCHAR(500),
+            weight_used REAL NOT NULL DEFAULT 0,
+            percent_used INTEGER NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'completed',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS spool_usage_history (
+            id SERIAL PRIMARY KEY,
+            spool_id INTEGER NOT NULL REFERENCES spool(id) ON DELETE CASCADE,
+            printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
+            print_name VARCHAR(500),
+            weight_used REAL NOT NULL DEFAULT 0,
+            percent_used INTEGER NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'completed',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+    )
 
     # Migration: Add open_in_new_tab column to external_links
     await _safe_execute(conn, "ALTER TABLE external_links ADD COLUMN open_in_new_tab BOOLEAN DEFAULT 0")
@@ -1176,8 +1198,9 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN storage_location VARCHAR(255)")
     # Migration: Widen tag_uid column from VARCHAR(16) to VARCHAR(32) to accommodate 7-byte NFC
     # UIDs (14 hex chars) in addition to 8-byte Bambu Lab UIDs (16 hex chars).
-    # SQLite ignores VARCHAR sizes; this is a no-op there but needed for PostgreSQL.
-    await _safe_execute(conn, "ALTER TABLE spool ALTER COLUMN tag_uid TYPE VARCHAR(32)")
+    # ALTER COLUMN ... TYPE is PostgreSQL-only syntax; SQLite ignores VARCHAR sizes so no-op there.
+    if not is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE spool ALTER COLUMN tag_uid TYPE VARCHAR(32)")
     # Migration: Add cost field to spool_usage_history table
     await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN cost REAL")
     # Migration: Add archive_id field to spool_usage_history table
@@ -1690,6 +1713,36 @@ async def run_migrations(conn):
                 "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)"
             )
         )
+
+    # Migration: Create spoolman_slot_assignments table for local AMS-slot→Spoolman-spool mapping.
+    # Replaces the pattern of writing spool.location in Spoolman (which polluted the
+    # user-editable storage_location field in the UI).
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS spoolman_slot_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            ams_id INTEGER NOT NULL,
+            tray_id INTEGER NOT NULL,
+            spoolman_spool_id INTEGER NOT NULL,
+            assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(printer_id, ams_id, tray_id)
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS spoolman_slot_assignments (
+            id SERIAL PRIMARY KEY,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            ams_id INTEGER NOT NULL,
+            tray_id INTEGER NOT NULL,
+            spoolman_spool_id INTEGER NOT NULL,
+            assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(printer_id, ams_id, tray_id)
+        )
+        """,
+    )
 
     # Seed default settings keys that must exist on fresh install
     default_settings = [

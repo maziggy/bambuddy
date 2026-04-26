@@ -3383,6 +3383,7 @@ export default {
     assigning: 'Assigning...',
     searchSpools: 'Search spools...',
     showAllSpools: 'Show all spools',
+    spoolmanSpools: 'Spoolman Spools',
     allMaterials: 'All Materials',
     filterByBrand: 'Filter by brand...',
     showArchived: 'Show archived',

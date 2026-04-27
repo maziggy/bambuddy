@@ -19,7 +19,6 @@ from backend.app.schemas.macro import (
     MacroCfgFileSave,
     MacroResponse,
     MacroRunResponse,
-    MacroUpdate,
     RunMacroRequest,
 )
 from backend.app.services import macro_files
@@ -88,16 +87,14 @@ async def exec_line(
     if not line:
         raise HTTPException(422, "line must not be empty")
 
-    # Check if line matches an active macro name (allows running macros by name from terminal)
+    # Check if line matches a macro name (allows running macros by name from terminal)
     token = line.split()[0]
-    macro_result = await db.execute(select(Macro).where(Macro.name == token, Macro.status == "active"))
+    macro_result = await db.execute(select(Macro).where(Macro.name == token))
     macro = macro_result.scalar_one_or_none()
     if macro is None:
         from sqlalchemy import func as sa_func
 
-        macro_result = await db.execute(
-            select(Macro).where(sa_func.lower(Macro.name) == token.lower(), Macro.status == "active")
-        )
+        macro_result = await db.execute(select(Macro).where(sa_func.lower(Macro.name) == token.lower()))
         macro = macro_result.scalar_one_or_none()
 
     if macro is not None:
@@ -215,14 +212,10 @@ async def delete_cfg_file(
 
 @router.get("", response_model=list[MacroResponse])
 async def list_macros(
-    status: str | None = None,
     _=RequirePermissionIfAuthEnabled(Permission.MACROS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Macro).order_by(Macro.name)
-    if status:
-        q = q.where(Macro.status == status)
-    result = await db.execute(q)
+    result = await db.execute(select(Macro).order_by(Macro.name))
     return result.scalars().all()
 
 
@@ -238,32 +231,6 @@ async def get_macro(
     return macro
 
 
-@router.put("/{macro_id}", response_model=MacroResponse)
-async def update_macro(
-    macro_id: int,
-    data: MacroUpdate,
-    _=RequirePermissionIfAuthEnabled(Permission.MACROS_UPDATE),
-    db: AsyncSession = Depends(get_db),
-):
-    macro = await db.get(Macro, macro_id)
-    if not macro:
-        raise HTTPException(404, "Macro not found")
-
-    if data.trigger_type == "schedule" or (data.trigger_type is None and macro.trigger_type == "schedule"):
-        _validate_cron(data.cron_expression or macro.cron_expression)
-
-    if data.trigger_type is not None:
-        macro.trigger_type = data.trigger_type
-    if data.cron_expression is not None:
-        macro.cron_expression = data.cron_expression
-    if data.printer_id is not None:
-        macro.printer_id = data.printer_id
-
-    await db.commit()
-    await db.refresh(macro)
-    return macro
-
-
 @router.post("/{macro_id}/run", response_model=MacroRunResponse)
 async def run_macro(
     macro_id: int,
@@ -274,8 +241,6 @@ async def run_macro(
     macro = await db.get(Macro, macro_id)
     if not macro:
         raise HTTPException(404, "Macro not found")
-    if macro.status != "active":
-        raise HTTPException(409, f"Macro is {macro.status} and cannot be run")
 
     printer_id = body.printer_id if body.printer_id is not None else macro.printer_id
     run = MacroRun(
@@ -308,18 +273,3 @@ async def list_runs(
         select(MacroRun).where(MacroRun.macro_id == macro_id).order_by(MacroRun.started_at.desc()).limit(50)
     )
     return result.scalars().all()
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-
-def _validate_cron(expr: str | None) -> None:
-    if not expr:
-        raise HTTPException(422, "cron_expression is required for schedule trigger")
-    try:
-        from croniter import croniter
-
-        if not croniter.is_valid(expr):
-            raise HTTPException(422, f"Invalid cron expression: {expr}")
-    except ImportError:
-        pass

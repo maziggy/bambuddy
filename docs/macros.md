@@ -1,37 +1,55 @@
 # Macro System
 
-Macros let you automate printer actions by writing simple scripts. Each macro is a plain-text [Jinja2](https://jinja.palletsprojects.com/) template stored as a `.jinja2` file on disk.
+Macros let you automate printer actions by writing simple scripts. Macros are defined as named blocks inside `.cfg` files stored on disk — similar to Klipper's macro format. One `.cfg` file can contain multiple macros.
 
 ---
 
-## What are macros?
+## File format
 
-A macro is a script that runs a sequence of commands against a printer. Commands can be:
-- Standard G-code (from an approved whitelist)
-- Built-in system commands (`AMS_DRYING`, `NOTIFY`, `WAIT`, etc.)
-- Jinja2 template logic (conditionals, loops, variables)
-- Calls to other macros
+Macros live in `.cfg` files inside `data/macros/`. Each file can contain any number of macro blocks:
 
-Macro files live in `data/macros/` (or wherever `DATA_DIR` points). You can edit them directly on disk or through the UI.
-
----
-
-## Writing your first macro
-
-```jinja2
-{# Heat bed and notify when ready #}
+```cfg
+[macro preheat_bed]
+description: Heat bed to 60°C and wait
+trigger: manual
+printer: My X1C
 M140 S60
 WAIT_FOR_TEMP --target=60 --tolerance=2
 NOTIFY --message="Bed is ready!"
+
+[macro daily_purge]
+description: Run a short purge move every morning
+trigger: schedule
+cron: 0 8 * * *
+G28
+G1 E30 F200
+G92 E0
 ```
 
-Save this as a macro named `heat_bed` through the UI, or place it at `data/macros/heat_bed.jinja2`.
+### Block structure
+
+A block starts with `[macro name]`, where `name` is the macro's identifier. Everything between two block headers (or between the last header and end of file) belongs to that macro.
+
+The **config section** comes first — a sequence of `key: value` lines at the top of the block. Recognised keys:
+
+| Key | Required | Values | Description |
+|---|---|---|---|
+| `description` | no | any text | Human-readable description shown in the UI |
+| `trigger` | no | `manual` · `webhook` · `schedule` | When the macro runs (default: `manual`) |
+| `cron` | if `trigger: schedule` | 5-field cron expression | Schedule for automatic execution |
+| `printer` | no | printer name (exact match) | Target printer; must match the printer's name in Bambuddy |
+
+Config lines end as soon as the first non-blank, non-comment line that isn't a `key: value` pair is encountered. Everything after that is the **body** — the commands to execute.
+
+Lines starting with `;` or `#` are comments and are ignored during execution.
 
 ---
 
-## Context variables
+## Body commands
 
-These variables are available in every macro script at render time:
+The body is a [Jinja2](https://jinja.palletsprojects.com/) template. It is rendered first (injecting live printer context), then each resulting line is dispatched as a command.
+
+### Context variables
 
 | Variable | Type | Description |
 |---|---|---|
@@ -46,8 +64,9 @@ These variables are available in every macro script at render time:
 | `ams` | list | List of AMS unit data dicts (raw from MQTT) |
 | `queue` | int | Number of items currently in the print queue |
 
-**Example: conditional preheat**
-```jinja2
+**Example — conditional preheat:**
+```cfg
+[macro conditional_heat]
 {% if printer.bed_temp < 50 %}
 M140 S60
 WAIT_FOR_TEMP --target=60 --tolerance=3
@@ -55,9 +74,7 @@ WAIT_FOR_TEMP --target=60 --tolerance=3
 G28
 ```
 
----
-
-## System commands reference
+### System commands
 
 | Command | Arguments | Description |
 |---|---|---|
@@ -69,115 +86,88 @@ G28
 | `WAIT` | `--seconds=N` | Wait N seconds (max 300) |
 | `WAIT_FOR_TEMP` | `--target=T --tolerance=D --max_wait=S` | Wait until nozzle reaches T±D°C, timeout after S seconds (default 300) |
 
-**Example: dry then notify**
-```jinja2
-AMS_DRYING --ams=0 --temp=65 --duration=4
-NOTIFY --message="Drying started for AMS slot 0"
-```
+### Approved G-code commands
 
----
-
-## Approved G-code commands
-
-Only the following G-code commands are forwarded to the printer. Any other G-code is logged as a warning and ignored. For full parameter documentation see `Gcodes_reference.md`.
+Only the following G-code commands are forwarded to the printer. Any other G-code is logged as a warning and ignored.
 
 | Command(s) | Description |
 |---|---|
-| `G0`, `G1` | Linear move (XY unsafe via API — use Z/E only) |
-| `G2`, `G3` | Arc move (clockwise / counter-clockwise) |
+| `G0`, `G1` | Linear move |
+| `G2`, `G3` | Arc move |
 | `G4` | Dwell / delay (max 90 s per call) |
-| `G28` | Auto home (all axes, X, Y, or Z) |
-| `G29` | Bed mesh calibration |
-| `G29.1` | Set Z offset |
-| `G29.2` | Toggle bed mesh compensation |
-| `G90` | Absolute positioning |
-| `G91` | Relative positioning |
-| `G92` | Set current position (e.g. `G92 E0`) |
-| `G380` | Guarded Z move — must follow G91 (Bambu) |
+| `G28` | Auto home |
+| `G29`, `G29.1`, `G29.2` | Bed mesh calibration / Z offset |
+| `G90`, `G91` | Absolute / relative positioning |
+| `G92` | Set current position |
+| `G380` | Guarded Z move (Bambu) |
 | `G392` | Clog detection toggle (Bambu) |
-| `M17` | Enable steppers / set motor current |
+| `M17` | Enable steppers |
 | `M18`, `M84` | Disable steppers |
 | `M73`, `M73.2` | Set / reset print progress display |
 | `M82`, `M83` | Absolute / relative extruder mode |
-| `M104`, `M109` | Set nozzle temperature (non-blocking / blocking) |
-| `M106` | Set fan speed — always specify P1/P2/P3 |
-| `M107` | Fan off |
-| `M140`, `M190` | Set bed temperature (non-blocking / blocking) |
+| `M104`, `M109` | Set nozzle temperature |
+| `M106`, `M107` | Fan speed / fan off |
+| `M140`, `M190` | Set bed temperature |
 | `M142` | Aux fan / chamber temp (X1C/X1E) |
-| `M201` | Set max acceleration per axis |
-| `M203` | Set max feed rate per axis |
-| `M204`, `M204.2` | Set acceleration / acceleration multiplier |
-| `M205` | Set jerk limits |
-| `M211` | Soft endstops (enable / disable / save / restore) |
-| `M220` | Feed rate override |
-| `M221` | Flow rate override (also soft endstop control) |
+| `M201`, `M203`, `M204`, `M204.2`, `M205` | Motion limits (accel, feed rate, jerk) |
+| `M211` | Soft endstops |
+| `M220`, `M221` | Feed rate / flow rate override |
 | `M290`, `M290.2` | XY compensation |
 | `M302` | Cold extrusion toggle |
-| `M400` | Wait for moves to finish (+ optional delay) |
-| `M412` | Filament runout detection toggle |
+| `M400` | Wait for moves to finish |
+| `M412` | Filament runout detection |
 | `M500` | Save to EEPROM |
-| `M620`, `M620.1`, `M620.3` | AMS filament control / flush / tangle detect |
-| `M621` | Load filament from AMS tray |
-| `M622`, `M623` | Conditional block start / end |
-| `M630` | Reset internal Bambu state |
-| `M900` | Pressure advance (K factor) |
+| `M620`, `M620.1`, `M620.3`, `M621`, `M622`, `M623`, `M630` | AMS filament control |
+| `M900` | Pressure advance |
 | `M960` | LED / laser toggle |
-| `M970`, `M970.3` | Vibration frequency sweep |
-| `M973` | Nozzle camera control |
-| `M974` | Apply vibration curve fit |
-| `M975` | Toggle vibration compensation |
-| `M981` | Spaghetti detector on/off |
-| `M982`, `M982.2`, `M982.4` | Motor noise cancellation |
+| `M970`, `M970.3`, `M973`, `M974`, `M975` | Vibration / camera / noise cancellation |
+| `M981`, `M982`, `M982.2`, `M982.4` | Spaghetti / motor noise detection |
 | `M991` | Layer change notification / timelapse |
-| `M1002` | LCD action status / conditionals / speed level |
-| `M1003` | Bed leveling / power loss recovery |
-| `M1005` | Skew calibration |
-| `M1006` | Speaker / buzzer (enable, play note, wait) |
-| `M1007` | Keep subsystem enabled |
+| `M1002`, `M1003`, `M1005`, `M1006`, `M1007` | LCD, bed levelling, skew, buzzer, subsystem |
 | `T0`–`T3` | Select AMS tray |
-| `T255` | Switch to empty tool |
-| `T1000` | Switch to local nozzle |
-| `T1100` | Switch to scanning space |
-
-**Comments** (lines starting with `#` or `;`) and **blank lines** are always ignored.
+| `T255`, `T1000`, `T1100` | Switch to empty / local / scanning tool |
 
 ---
 
 ## Calling other macros
 
-A macro can invoke another macro by name using the `run_macro()` function:
+A macro body can invoke another macro by name using `run_macro()`:
 
-```jinja2
-{# Run a sub-macro inline #}
+```cfg
+[macro print_ready]
 {{ run_macro("preheat_bed") }}
 G28
 NOTIFY --message="Print ready!"
 ```
 
-The sub-macro is resolved by its **name** field (as stored in the database). Its commands are executed inline within the parent run's log.
+The named macro's commands execute inline within the parent run's log. If the named macro cannot be found, a warning is logged and execution continues.
 
 ### Cycle detection
 
-If macro A calls macro B which calls macro A again, the runner detects the cycle and stops with an error logged to the run output. Infinite recursion is not possible.
+If macro A calls macro B which calls macro A again, the runner detects the cycle and stops with an error. Infinite recursion is not possible.
 
 ---
 
 ## Trigger types
 
-Each macro has a **trigger type** that controls when it runs:
+The trigger is set via the `trigger:` config line in the file — not through the UI.
 
-### Manual
-Run on demand from the UI ("Run Now" button) or via the REST API:
+### `trigger: manual` (default)
+
+Run on demand from the UI (Run button) or via the REST API:
+
 ```
 POST /api/v1/macros/{id}/run
-Content-Type: application/json
 Authorization: Bearer <your-jwt-token>
+Content-Type: application/json
 
 {"printer_id": 1}
 ```
 
-### Webhook
-Triggered by an external HTTP call using an API key:
+### `trigger: webhook`
+
+Triggered by an external HTTP call using an API key. The URL is shown in the run history panel in the UI.
+
 ```
 POST /api/v1/webhook/macro/{id}/run
 Authorization: Bearer <api-key>
@@ -186,11 +176,20 @@ Content-Type: application/json
 {"printer_id": 1}
 ```
 
-The webhook URL is shown in the macro's Settings tab. API keys need the **"macros" permission** (`can_run_macros = true`) to call this endpoint.
+### `trigger: schedule`
 
-### Schedule
-Runs automatically on a cron schedule. Enter a standard 5-field cron expression:
+Runs automatically on a cron schedule. Set the schedule with the `cron:` config line:
 
+```cfg
+[macro morning_purge]
+trigger: schedule
+cron: 0 8 * * 1-5
+G28
+G1 E20 F200
+G92 E0
+```
+
+Standard 5-field cron syntax:
 ```
 ┌──── minute (0-59)
 │ ┌── hour (0-23)
@@ -200,64 +199,56 @@ Runs automatically on a cron schedule. Enter a standard 5-field cron expression:
 * * * * *
 ```
 
-Examples:
-- `0 8 * * 1-5` — Every weekday at 8:00 AM
-- `*/30 * * * *` — Every 30 minutes
-- `0 20 * * *` — Every day at 8:00 PM
+The scheduler checks every 60 seconds, so actual fire time may be up to 60 seconds late.
 
-The scheduler checks every 60 seconds, so the actual fire time may be up to 60 seconds late.
+---
+
+## Managing files in the UI
+
+The Macros page shows a list of `.cfg` files on the left. Selecting a file shows all macro blocks defined in it on the right.
+
+- **New file** — creates a blank `.cfg` file, or upload an existing one
+- **Edit file** — opens a text editor with syntax highlighting and a hints panel (context variables, system commands, G-code whitelist, available macros)
+- **Download / Upload** — in the editor header; upload replaces the current content in the editor (save to persist)
+- **Delete file** — removes the file and all its macros and their run history permanently
+
+Each macro row shows its trigger badge (showing the cron expression for scheduled macros), a last-run status icon, a history button that expands the run log inline, and a run button.
 
 ---
 
 ## Embedding macros in G-code files
 
-You can embed macro trigger calls directly in `.gcode` files inside a `.3mf` archive using a special comment syntax:
+You can embed macro triggers directly in `.gcode` files inside a `.3mf` archive:
 
 ```gcode
-; --- start of print ---
-G28 ; home axes
 ; MACRO: notify_print_started
-G0 Z5
+G28
 ```
 
-### How it works
+When Bambuddy archives a print, it scans the G-code for `; MACRO: name` lines and fires those macros after archiving completes.
 
-When Bambuddy archives a print (at print start), it scans the G-code for `; MACRO: name` comment lines. Any macros found are triggered **after archiving completes**, with the macro identified by its **name** field.
+### Constraints for embedded macros
 
-### Important constraints
+Because Bambu Lab printers execute G-code autonomously, embedded macros **cannot** interact with the printer. The following are **blocked**:
 
-Because Bambu Lab printers execute G-code autonomously (the firmware owns the print stream), embedded macros **cannot** interact with the printer mid-print. The following commands are **blocked** when a macro is triggered from a G-code embed:
+- All whitelisted G-code commands
+- `AMS_DRYING`, `PRINTER_PAUSE`, `PRINTER_RESUME`, `PRINTER_STOP`, `WAIT_FOR_TEMP`
 
-- All whitelisted G-code commands (`G28`, `M104`, etc.)
-- `AMS_DRYING`
-- `PRINTER_PAUSE` / `PRINTER_RESUME` / `PRINTER_STOP`
-- `WAIT_FOR_TEMP`
+The following **are allowed**:
 
-The following commands **are allowed** in embedded macros:
 - `NOTIFY` — send a notification
-- `WAIT` — delay (side-effect only, does not affect print)
+- `WAIT` — delay (side-effect only)
 - Calls to other macros (subject to the same restrictions)
-
-This design is intentional: embedded macros are for **observing and reacting** to print events, not controlling the printer.
-
-**Example — notify when a print starts:**
-```gcode
-; MACRO: on_print_started
-```
-
-Where `on_print_started` is a macro with script:
-```jinja2
-NOTIFY --message="Print has started!"
-```
 
 ---
 
 ## Tips & gotchas
 
-- **Macro names are identifiers.** They are slugified (spaces → underscores, lowercase) when the file is created. Use consistent names when calling sub-macros.
-- **Jinja2 sandbox.** The sandbox blocks access to Python builtins (`open`, `os`, `__import__`, etc.). Standard Jinja2 filters (`|int`, `|upper`, `|default`, etc.) and control flow (`{% if %}`, `{% for %}`) work normally.
-- **WAIT is capped at 300 seconds.** Longer waits are silently capped to prevent runaway executions.
-- **WAIT_FOR_TEMP has a max_wait of 300s** by default. Override with `--max_wait=600` if needed.
-- **Printer context is empty if no printer is targeted.** A macro with no `printer_id` (neither stored nor passed at run time) will have `printer = {}` in context. Guard with `{% if printer %}` if the macro might run without a printer.
-- **Sub-macro runs share the same log** only in terms of causation — they each create their own log if they have a `MacroRun` record. Sub-macros called via `{{ run_macro() }}` in Jinja2 templates execute as background tasks and may not appear in the parent run's log.
-- **Files on disk are the source of truth** for script content. The database holds metadata only. You can edit `.jinja2` files directly, but changes won't show in the UI until the macro record's `updated_at` is refreshed (re-save via UI or API).
+- **Printer name must be exact.** The `printer:` value is matched case-sensitively against the printer's name in Bambuddy. If the name is not found, the macro runs without a targeted printer.
+- **Trigger and cron are read from the file.** There is no settings UI for these — edit the `.cfg` file directly.
+- **Saving the file re-syncs all macros.** Adding, renaming, or removing a `[macro name]` block takes effect immediately when you save. Removed blocks are permanently deleted along with their run history.
+- **Jinja2 sandbox.** Blocks access to Python builtins (`open`, `os`, `__import__`, etc.). Standard filters (`|int`, `|upper`, `|default`) and control flow (`{% if %}`, `{% for %}`) work normally.
+- **WAIT is capped at 300 seconds.** Longer values are silently clamped.
+- **WAIT_FOR_TEMP defaults to 300 s timeout.** Override with `--max_wait=600` if needed.
+- **Printer context is empty if no printer is targeted.** Guard with `{% if printer %}` if the macro might run without one.
+- **The `.cfg` file is the source of truth.** You can edit files directly on disk; changes are picked up automatically at server startup or when the file is saved through the UI.

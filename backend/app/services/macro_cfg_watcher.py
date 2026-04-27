@@ -2,7 +2,7 @@
 
 Responsibilities:
   - On startup: scan macros_dir for all *.cfg files, upsert MacroCfgFile rows,
-    upsert/orphan Macro rows to match what's parsed.
+    upsert/delete Macro rows to match what's parsed.
   - After a PUT /cfg-files/{id} save: re-parse that one file and sync its macros.
 
 No filesystem watcher daemon runs — sync is triggered explicitly on save.
@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
@@ -28,6 +28,19 @@ def _macros_dir() -> Path:
     d = Path(app_settings.macros_dir)
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+async def _resolve_printer_id(db, printer_name: str | None) -> int | None:
+    """Look up a printer by name; return its id or None."""
+    if not printer_name:
+        return None
+    from backend.app.models.printer import Printer
+
+    result = await db.execute(select(Printer).where(Printer.name == printer_name))
+    printer = result.scalar_one_or_none()
+    if printer is None:
+        logger.warning("Macro cfg: printer '%s' not found, leaving printer_id unset", printer_name)
+    return printer.id if printer else None
 
 
 async def scan_all() -> None:
@@ -45,8 +58,8 @@ async def scan_all() -> None:
 async def sync_file(relative_path: str, stem: str | None = None) -> MacroCfgFile:
     """Parse one .cfg file and sync its macros into the DB.
 
-    relative_path — path relative to macros_dir, e.g. 'my_macros.cfg'
-    stem          — optional display name override; defaults to filename stem
+    Macros present in the file are upserted (with trigger, cron, printer from config lines).
+    Macros removed from the file are deleted outright.
 
     Returns the upserted MacroCfgFile row.
     """
@@ -75,62 +88,63 @@ async def sync_file(relative_path: str, stem: str | None = None) -> MacroCfgFile
         existing_result = await db.execute(select(Macro).where(Macro.cfg_file_id == cfg_file.id))
         existing: dict[str, Macro] = {m.name: m for m in existing_result.scalars()}
 
-        # Names present in this parse pass
         parsed_names: set[str] = set()
 
         for pm in parse_result.macros:
             parsed_names.add(pm.name)
             if pm.error:
-                # Block exists but is broken — mark as error, don't overwrite description
                 if pm.name in existing:
-                    existing[pm.name].status = "error"
+                    pass  # leave existing row unchanged, just keep it
                 else:
-                    broken = Macro(
-                        name=pm.name,
-                        cfg_file_id=cfg_file.id,
-                        status="error",
+                    db.add(
+                        Macro(
+                            name=pm.name,
+                            cfg_file_id=cfg_file.id,
+                            trigger_type="manual",
+                        )
                     )
-                    db.add(broken)
                 continue
+
+            printer_id = await _resolve_printer_id(db, pm.printer_name)
 
             if pm.name in existing:
                 macro = existing[pm.name]
-                if macro.status == "orphaned":
-                    # Block came back — reactivate. Preserve trigger/cron/printer settings.
-                    logger.info("Macro '%s' reactivated in %s", pm.name, relative_path)
-                macro.status = "active"
                 macro.description = pm.description
-                macro.cfg_file_id = cfg_file.id
+                macro.trigger_type = pm.trigger_type
+                macro.cron_expression = pm.cron_expression
+                macro.printer_id = printer_id
             else:
-                # Check if a macro with this name exists in ANOTHER file (cross-file collision)
+                # Check for cross-file name collision
                 collision_result = await db.execute(select(Macro).where(Macro.name == pm.name))
                 collision = collision_result.scalar_one_or_none()
                 if collision is not None:
                     logger.warning(
-                        "Macro name '%s' in %s conflicts with existing macro from cfg_file_id=%s — skipping",
+                        "Macro name '%s' in %s conflicts with cfg_file_id=%s — skipping",
                         pm.name,
                         relative_path,
                         collision.cfg_file_id,
                     )
-                    file_level_error = (file_level_error or "") + (
+                    cfg_file.parse_error = (file_level_error or "") + (
                         f"; Name conflict: '{pm.name}' already defined in another file"
                     )
-                    cfg_file.parse_error = file_level_error
                     continue
 
-                new_macro = Macro(
-                    name=pm.name,
-                    description=pm.description,
-                    cfg_file_id=cfg_file.id,
-                    status="active",
+                db.add(
+                    Macro(
+                        name=pm.name,
+                        description=pm.description,
+                        cfg_file_id=cfg_file.id,
+                        trigger_type=pm.trigger_type,
+                        cron_expression=pm.cron_expression,
+                        printer_id=printer_id,
+                    )
                 )
-                db.add(new_macro)
 
-        # Orphan any macros that were in this file but are no longer present
-        for name, macro in existing.items():
-            if name not in parsed_names and macro.status != "orphaned":
-                logger.info("Macro '%s' orphaned (removed from %s)", name, relative_path)
-                macro.status = "orphaned"
+        # Delete macros that are no longer in the file
+        removed = [name for name in existing if name not in parsed_names]
+        if removed:
+            logger.info("Deleting removed macros from %s: %s", relative_path, removed)
+            await db.execute(delete(Macro).where(Macro.cfg_file_id == cfg_file.id, Macro.name.in_(removed)))
 
         await db.commit()
         await db.refresh(cfg_file)
@@ -138,17 +152,11 @@ async def sync_file(relative_path: str, stem: str | None = None) -> MacroCfgFile
 
 
 async def delete_file_from_db(relative_path: str) -> None:
-    """Mark all macros in a deleted/missing cfg file as orphaned and remove the file row."""
+    """Delete the MacroCfgFile row (cascade deletes all its macros)."""
     async with async_session() as db:
         result = await db.execute(select(MacroCfgFile).where(MacroCfgFile.file_path == relative_path))
         cfg_file = result.scalar_one_or_none()
         if cfg_file is None:
             return
-        # Orphan all its macros before cascade-delete removes them
-        macros_result = await db.execute(select(Macro).where(Macro.cfg_file_id == cfg_file.id))
-        for macro in macros_result.scalars():
-            macro.status = "orphaned"
-            macro.cfg_file_id = None  # detach so they survive the file row deletion
-        await db.flush()
         await db.delete(cfg_file)
         await db.commit()

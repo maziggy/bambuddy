@@ -1,8 +1,11 @@
-"""Parser and serializer for Bambuddy .cfg macro files.
+r"""Parser and serializer for Bambuddy .cfg macro files.
 
 Format (Klipper-style):
     [macro preheat_bed]
     description: Heat bed to 60°C and wait
+    trigger: schedule
+    cron: 0 8 * * *
+    printer: My X1C
     M140 S60
     WAIT_FOR_TEMP --target=60 --tolerance=2
     NOTIFY --message="Bed ready"
@@ -14,14 +17,14 @@ Format (Klipper-style):
     ...
 
 Rules:
-  - A block starts with a line matching r'^\\[macro\\s+(\\S+)\\]'
+  - A block starts with a line matching r'^\[macro\s+(\S+)\]'
   - Everything between two block headers (or EOF) is the body
-  - If the first non-blank, non-comment body line starts with 'description:',
-    its value becomes the macro description (stripped)
+  - Config lines (key: value) are read from the top of the block before any
+    G-code or command lines. Recognised keys: description, trigger, cron, printer.
+    Any unrecognised key:value line before body content is treated as body.
   - Lines starting with ';' or '#' are comments — preserved in file, stripped at render
   - Blank lines within a block are preserved for readability
-  - Duplicate block names in the same file produce a ParseError on the duplicate;
-    the first occurrence is kept
+  - Duplicate block names produce a ParseError on the duplicate; first kept
 """
 
 from __future__ import annotations
@@ -30,13 +33,18 @@ import re
 from dataclasses import dataclass, field
 
 _BLOCK_RE = re.compile(r"^\[macro\s+(\S+)\]", re.IGNORECASE)
-_DESCRIPTION_RE = re.compile(r"^description\s*:\s*(.*)", re.IGNORECASE)
+_CONFIG_RE = re.compile(r"^(description|trigger|cron|printer)\s*:\s*(.*)", re.IGNORECASE)
+
+_KNOWN_KEYS = {"description", "trigger", "cron", "printer"}
 
 
 @dataclass
 class ParsedMacro:
     name: str
     description: str | None
+    trigger_type: str  # manual | webhook | schedule
+    cron_expression: str | None
+    printer_name: str | None  # raw name from file; caller resolves to printer_id
     body: str  # raw body text (may include comments and blank lines)
     line_no: int  # 1-based line of the [macro ...] header
     error: str | None = None  # set if this block had a parse-level error
@@ -79,33 +87,52 @@ def parse(text: str) -> ParseResult:
             )
             result.errors.append(error)
             result.macros.append(
-                ParsedMacro(name=name, description=None, body="", line_no=header_line + 1, error=error)
+                ParsedMacro(
+                    name=name,
+                    description=None,
+                    trigger_type="manual",
+                    cron_expression=None,
+                    printer_name=None,
+                    body="",
+                    line_no=header_line + 1,
+                    error=error,
+                )
             )
             continue
 
         seen_names[name] = header_line + 1
 
-        # Extract optional description from first non-blank, non-comment body line
-        description: str | None = None
+        # Extract config fields from leading key: value lines
+        config: dict[str, str] = {}
         remaining_lines: list[str] = []
-        description_consumed = False
+        config_done = False
+
         for line in body_lines:
             stripped = line.strip()
-            if not description_consumed:
+            if not config_done:
+                # blank or comment lines before config are kept as-is in body
                 if not stripped or stripped.startswith(";") or stripped.startswith("#"):
+                    # If we haven't started config yet, these are preamble — skip into body
                     remaining_lines.append(line)
                     continue
-                dm = _DESCRIPTION_RE.match(stripped)
-                if dm:
-                    description = dm.group(1).strip() or None
-                    description_consumed = True
+                cm = _CONFIG_RE.match(stripped)
+                if cm:
+                    key = cm.group(1).lower()
+                    value = cm.group(2).strip()
+                    config[key] = value
                     continue
                 else:
-                    # First non-blank non-comment line is not a description
-                    description_consumed = True
+                    # First non-blank non-comment non-config line ends config section
+                    config_done = True
                     remaining_lines.append(line)
             else:
                 remaining_lines.append(line)
+
+        description = config.get("description") or None
+        trigger_raw = (config.get("trigger") or "manual").strip().lower()
+        trigger_type = trigger_raw if trigger_raw in ("manual", "webhook", "schedule") else "manual"
+        cron_expression = config.get("cron") or None
+        printer_name = config.get("printer") or None
 
         # Strip trailing blank lines from body, keep internal ones
         body = "\n".join(remaining_lines).rstrip()
@@ -114,6 +141,9 @@ def parse(text: str) -> ParseResult:
             ParsedMacro(
                 name=name,
                 description=description,
+                trigger_type=trigger_type,
+                cron_expression=cron_expression,
+                printer_name=printer_name,
                 body=body,
                 line_no=header_line + 1,
             )
@@ -132,17 +162,18 @@ def get_macro_body(text: str, name: str) -> str | None:
 
 
 def serialize(macros: list[dict]) -> str:
-    """Build .cfg file text from a list of dicts with keys: name, description, body.
+    """Build .cfg file text from a list of dicts.
 
-    Used when creating a new file programmatically. Each dict:
-        { "name": str, "description": str | None, "body": str }
+    Recognised keys: name, description, trigger, cron, printer, body.
     """
     parts: list[str] = []
     for macro in macros:
         header = f"[macro {macro['name']}]"
         lines = [header]
-        if macro.get("description"):
-            lines.append(f"description: {macro['description']}")
+        for key in ("description", "trigger", "cron", "printer"):
+            val = macro.get(key)
+            if val:
+                lines.append(f"{key}: {val}")
         body = (macro.get("body") or "").strip()
         if body:
             lines.append(body)

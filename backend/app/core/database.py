@@ -2640,27 +2640,24 @@ async def run_migrations(conn):
     await _safe_execute(
         conn, "ALTER TABLE macros ADD COLUMN cfg_file_id INTEGER REFERENCES macro_cfg_files(id) ON DELETE CASCADE"
     )
-    await _safe_execute(conn, "ALTER TABLE macros ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
-    # Migration: Drop file_path NOT NULL constraint by rebuilding the macros table.
-    # PRAGMA table_info returns one row per column; we check if file_path is still present.
+    # Migration: Rebuild macros table to remove file_path / status columns (SQLite
+    # cannot DROP columns pre-3.35 and cannot remove NOT NULL constraints at all).
+    # Rebuild whenever file_path OR status still exists in the schema.
     if is_sqlite():
         from sqlalchemy import text as _text
 
         try:
             result = await conn.execute(_text("PRAGMA table_info(macros)"))
             cols = {row[1] for row in result.fetchall()}  # row[1] is column name
-            if "file_path" in cols:
-                # Must disable FK enforcement before DROP; PRAGMA is session-scoped so
-                # issue it on the raw underlying connection outside any savepoint.
+            if "file_path" in cols or "status" in cols:
                 await conn.execute(_text("PRAGMA foreign_keys = OFF"))
                 await conn.execute(
                     _text("""
-                    CREATE TABLE macros_v2 (
+                    CREATE TABLE macros_new (
                         id INTEGER PRIMARY KEY,
                         name VARCHAR(200) NOT NULL UNIQUE,
                         description TEXT,
                         cfg_file_id INTEGER REFERENCES macro_cfg_files(id) ON DELETE CASCADE,
-                        status VARCHAR(20) NOT NULL DEFAULT 'active',
                         trigger_type VARCHAR(20) NOT NULL DEFAULT 'manual',
                         cron_expression VARCHAR(100),
                         printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
@@ -2671,19 +2668,19 @@ async def run_migrations(conn):
                 )
                 await conn.execute(
                     _text("""
-                    INSERT INTO macros_v2
-                        (id, name, description, cfg_file_id, status,
+                    INSERT INTO macros_new
+                        (id, name, description, cfg_file_id,
                          trigger_type, cron_expression, printer_id, created_at, updated_at)
                     SELECT id, name, description, cfg_file_id,
-                           COALESCE(status, 'active'),
-                           trigger_type, cron_expression, printer_id, created_at, updated_at
+                           COALESCE(trigger_type, 'manual'),
+                           cron_expression, printer_id, created_at, updated_at
                     FROM macros
                 """)
                 )
                 await conn.execute(_text("DROP TABLE macros"))
-                await conn.execute(_text("ALTER TABLE macros_v2 RENAME TO macros"))
+                await conn.execute(_text("ALTER TABLE macros_new RENAME TO macros"))
                 await conn.execute(_text("PRAGMA foreign_keys = ON"))
-                logger.info("macros table rebuilt: file_path column removed")
+                logger.info("macros table rebuilt: removed file_path/status columns")
         except Exception:
             logger.exception("macros table rebuild failed — manual intervention may be needed")
 

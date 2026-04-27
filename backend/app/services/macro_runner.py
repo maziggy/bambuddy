@@ -336,9 +336,7 @@ class MacroRunner:
                 await asyncio.sleep(60)
                 now = datetime.now(timezone.utc)
                 async with async_session() as db:
-                    result = await db.execute(
-                        select(Macro).where(Macro.trigger_type == "schedule", Macro.status == "active")
-                    )
+                    result = await db.execute(select(Macro).where(Macro.trigger_type == "schedule"))
                     macros = result.scalars().all()
 
                 for macro in macros:
@@ -394,10 +392,10 @@ class MacroRunner:
     async def _run_sub_macro(self, name: str, printer_id: int | None, call_stack: set[str]) -> None:
         """Resolve a macro by name and execute it inline."""
         async with async_session() as db:
-            result = await db.execute(select(Macro).where(Macro.name == name, Macro.status == "active"))
+            result = await db.execute(select(Macro).where(Macro.name == name))
             macro = result.scalar_one_or_none()
         if not macro:
-            logger.warning("Sub-macro not found or not active: %s", name)
+            logger.warning("Sub-macro not found: %s", name)
             return
         try:
             script = await _load_macro_body(macro)

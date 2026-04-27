@@ -33,11 +33,6 @@ class Macro(Base):
         Integer, ForeignKey("macro_cfg_files.id", ondelete="CASCADE"), nullable=True
     )
 
-    # active   — block exists in the .cfg file and parsed cleanly
-    # orphaned — block was removed from the file (run history preserved)
-    # error    — block exists but failed to parse
-    status: Mapped[str] = mapped_column(String(20), default="active")
-
     trigger_type: Mapped[str] = mapped_column(String(20), default="manual")  # manual|webhook|schedule
     cron_expression: Mapped[str | None] = mapped_column(String(100), nullable=True)
     printer_id: Mapped[int | None] = mapped_column(

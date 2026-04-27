@@ -30,19 +30,12 @@ class MacroCfgFileSave(BaseModel):
 # ── Macro schemas ──────────────────────────────────────────────────────────────
 
 
-class MacroUpdate(BaseModel):
-    trigger_type: str | None = None
-    cron_expression: str | None = None
-    printer_id: int | None = None
-
-
 class MacroResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
     description: str | None
-    status: str
     cfg_file_id: int | None
     trigger_type: str
     cron_expression: str | None

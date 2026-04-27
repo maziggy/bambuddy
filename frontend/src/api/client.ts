@@ -6468,10 +6468,8 @@ export const api = {
     request<{ ok: boolean }>(`/macros/cfg-files/${id}`, { method: 'DELETE' }),
 
   // Macros
-  getMacros: (status?: string) => request<Macro[]>(status ? `/macros?status=${status}` : '/macros'),
+  getMacros: () => request<Macro[]>('/macros'),
   getMacro: (id: number) => request<Macro>(`/macros/${id}`),
-  updateMacro: (id: number, data: Partial<Pick<Macro, 'trigger_type' | 'cron_expression' | 'printer_id'>>) =>
-    request<Macro>(`/macros/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   runMacro: (id: number, printer_id?: number) =>
     request<MacroRun>(`/macros/${id}/run`, { method: 'POST', body: JSON.stringify({ printer_id: printer_id ?? null }) }),
   getMacroRuns: (id: number) => request<MacroRun[]>(`/macros/${id}/runs`),
@@ -6496,7 +6494,6 @@ export interface Macro {
   id: number;
   name: string;
   description: string | null;
-  status: 'active' | 'orphaned' | 'error';
   cfg_file_id: number | null;
   trigger_type: 'manual' | 'webhook' | 'schedule';
   cron_expression: string | null;

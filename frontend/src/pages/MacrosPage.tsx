@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -7,15 +7,17 @@ import {
   FileCode2,
   AlertCircle,
   Play,
-  Settings,
   ChevronRight,
   Clock,
   CircleCheck,
   Trash2,
+  History,
+  ChevronDown,
+  X,
+  Upload,
 } from 'lucide-react';
 import { api, type MacroCfgFile, type Macro, type MacroRun } from '../api/client';
 import { CfgFileEditor } from '../components/CfgFileEditor';
-import { MacroSettingsPanel } from '../components/MacroSettingsPanel';
 import { Button } from '../components/Button';
 import { Card, CardContent } from '../components/Card';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -23,81 +25,194 @@ import { useToast } from '../contexts/ToastContext';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: Macro['status'] }) {
-  const styles: Record<string, string> = {
-    active: 'bg-green-900/50 text-green-300',
-    orphaned: 'bg-zinc-700 text-zinc-400',
-    error: 'bg-red-900/50 text-red-300',
-  };
-  return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[status] ?? styles.error}`}>
-      {status}
-    </span>
-  );
-}
-
-function TriggerBadge({ type }: { type: Macro['trigger_type'] }) {
+function TriggerBadge({ macro }: { macro: Macro }) {
   const colors = {
     manual: 'bg-zinc-700 text-zinc-300',
     webhook: 'bg-blue-900/50 text-blue-300',
     schedule: 'bg-purple-900/50 text-purple-300',
   };
+  const label =
+    macro.trigger_type === 'schedule' && macro.cron_expression
+      ? macro.cron_expression
+      : macro.trigger_type;
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium capitalize ${colors[type]}`}>
-      {type}
+    <span className={`px-2 py-0.5 rounded text-xs font-medium font-mono ${colors[macro.trigger_type]}`}>
+      {label}
     </span>
   );
 }
 
-function LastRunIcon({ runs }: { runs?: MacroRun[] }) {
-  const last = runs?.[0];
-  if (!last) return <Clock className="w-4 h-4 text-bambu-text-secondary" title="Never run" />;
-  if (last.status === 'success') return <CircleCheck className="w-4 h-4 text-green-400" title="Last run: success" />;
-  if (last.status === 'error') return <AlertCircle className="w-4 h-4 text-red-400" title="Last run: error" />;
-  return <Loader2 className="w-4 h-4 animate-spin text-blue-400" title="Running…" />;
+function RunStatusIcon({ status }: { status: MacroRun['status'] }) {
+  if (status === 'pending' || status === 'running')
+    return <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />;
+  if (status === 'success') return <CircleCheck className="w-3.5 h-3.5 text-green-400" />;
+  return <AlertCircle className="w-3.5 h-3.5 text-red-400" />;
+}
+
+// ── Run history panel (inline expansion) ─────────────────────────────────────
+
+function RunHistoryPanel({
+  macro,
+  onClose,
+}: {
+  macro: Macro;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
+
+  const { data: runs = [], isLoading } = useQuery({
+    queryKey: ['macro-runs', macro.id],
+    queryFn: () => api.getMacroRuns(macro.id),
+    refetchInterval: (query) => {
+      const r = query.state.data as MacroRun[] | undefined;
+      return r?.some((r) => r.status === 'pending' || r.status === 'running') ? 1500 : false;
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (runId: number) => api.cancelMacroRun(runId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['macro-runs', macro.id] });
+      showToast('Run cancelled');
+    },
+    onError: () => showToast('Failed to cancel run', 'error'),
+  });
+
+  return (
+    <div className="border-t border-bambu-dark-tertiary bg-bambu-dark/60">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-bambu-dark-tertiary">
+        <span className="text-xs font-semibold text-bambu-text-secondary uppercase tracking-wide">
+          Run history
+        </span>
+        <button
+          onClick={onClose}
+          className="p-1 rounded hover:bg-bambu-dark-secondary text-bambu-text-secondary hover:text-bambu-text transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="px-4 py-2 max-h-64 overflow-y-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="w-4 h-4 animate-spin text-bambu-text-secondary" />
+          </div>
+        ) : runs.length === 0 ? (
+          <div className="flex items-center gap-2 text-bambu-text-secondary text-xs py-3">
+            <Clock className="w-3.5 h-3.5" />
+            Never run
+          </div>
+        ) : (
+          runs.map((run) => {
+            const isActive = run.status === 'pending' || run.status === 'running';
+            const duration = run.finished_at
+              ? Math.round(
+                  (new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000
+                )
+              : null;
+            const isExpanded = expandedRunId === run.id;
+
+            return (
+              <div key={run.id} className="border border-bambu-dark-tertiary rounded mb-2">
+                <div className="flex items-center gap-2 px-3 py-1.5">
+                  <button
+                    className="flex items-center gap-2 flex-1 text-left"
+                    onClick={() => setExpandedRunId(isExpanded ? null : run.id)}
+                  >
+                    <RunStatusIcon status={run.status} />
+                    <span className="text-xs flex-1 text-bambu-text">
+                      #{run.id} · <span className="capitalize">{run.trigger}</span>
+                    </span>
+                    <span className="text-xs text-bambu-text-secondary">
+                      {new Date(run.started_at).toLocaleString()}
+                    </span>
+                    {duration !== null && (
+                      <span className="text-xs text-bambu-text-secondary ml-2">{duration}s</span>
+                    )}
+                    {isExpanded ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-bambu-text-secondary" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 text-bambu-text-secondary" />
+                    )}
+                  </button>
+                  {isActive && (
+                    <button
+                      onClick={() => cancelMutation.mutate(run.id)}
+                      className="p-1 rounded text-red-400 hover:bg-red-900/30 transition-colors"
+                      title="Cancel"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {isExpanded && (
+                  <pre className="bg-zinc-900 rounded-b px-3 py-2 text-xs font-mono overflow-auto max-h-48 whitespace-pre-wrap text-bambu-text-secondary border-t border-bambu-dark-tertiary">
+                    {run.log || '(no output)'}
+                  </pre>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Macro row ─────────────────────────────────────────────────────────────────
 
 function MacroRow({
   macro,
-  onSettings,
   onRun,
 }: {
   macro: Macro;
-  onSettings: () => void;
   onRun: () => void;
 }) {
+  const [showHistory, setShowHistory] = useState(false);
+
   const { data: runs } = useQuery({
     queryKey: ['macro-runs', macro.id],
     queryFn: () => api.getMacroRuns(macro.id),
     refetchInterval: (query) => {
       const r = query.state.data as MacroRun[] | undefined;
-      return r?.some((run) => run.status === 'pending' || run.status === 'running') ? 1500 : 10000;
+      return r?.some((run) => run.status === 'pending' || run.status === 'running') ? 1500 : 30000;
     },
   });
 
+  const lastRun = runs?.[0];
+
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-bambu-dark-tertiary last:border-0 hover:bg-bambu-dark-secondary/40 transition-colors">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-bambu-text text-sm">{macro.name}</span>
-          <StatusBadge status={macro.status} />
-          <TriggerBadge type={macro.trigger_type} />
+    <div className="border-b border-bambu-dark-tertiary last:border-0">
+      <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-bambu-dark-secondary/40 transition-colors">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-bambu-text text-sm">{macro.name}</span>
+            <TriggerBadge macro={macro} />
+          </div>
+          {macro.description && (
+            <p className="text-xs text-bambu-text-secondary mt-0.5 truncate">{macro.description}</p>
+          )}
         </div>
-        {macro.description && (
-          <p className="text-xs text-bambu-text-secondary mt-0.5 truncate">{macro.description}</p>
+
+        {/* Last run status dot */}
+        {lastRun && (
+          <span title={`Last run: ${lastRun.status}`}>
+            <RunStatusIcon status={lastRun.status} />
+          </span>
         )}
-      </div>
-      <LastRunIcon runs={runs} />
-      <button
-        onClick={onSettings}
-        className="p-1.5 rounded hover:bg-bambu-dark-secondary transition-colors text-bambu-text-secondary hover:text-bambu-text"
-        title="Settings"
-      >
-        <Settings className="w-4 h-4" />
-      </button>
-      {macro.status === 'active' && (
+
+        <button
+          onClick={() => setShowHistory((v) => !v)}
+          className={`p-1.5 rounded transition-colors ${
+            showHistory
+              ? 'bg-bambu-dark-secondary text-bambu-text'
+              : 'hover:bg-bambu-dark-secondary text-bambu-text-secondary hover:text-bambu-text'
+          }`}
+          title="Run history"
+        >
+          <History className="w-4 h-4" />
+        </button>
         <button
           onClick={onRun}
           className="p-1.5 rounded hover:bg-bambu-dark-secondary transition-colors text-bambu-text-secondary hover:text-bambu-text"
@@ -105,6 +220,10 @@ function MacroRow({
         >
           <Play className="w-4 h-4" />
         </button>
+      </div>
+
+      {showHistory && (
+        <RunHistoryPanel macro={macro} onClose={() => setShowHistory(false)} />
       )}
     </div>
   );
@@ -143,7 +262,7 @@ function CfgFileItem({
   );
 }
 
-// ── Run modal ─────────────────────────────────────────────────────────────────
+// ── Run modal (printer selector) ──────────────────────────────────────────────
 
 function RunModal({
   macro,
@@ -213,11 +332,24 @@ function NewFileModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
+  const [content, setContent] = useState('');
+  const uploadRef = useRef<HTMLInputElement>(null);
+
+  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!name) setName(f.name.replace(/\.cfg$/i, ''));
+    const reader = new FileReader();
+    reader.onload = (ev) => setContent(ev.target?.result as string);
+    reader.readAsText(f);
+    e.target.value = '';
+  }
 
   const createMutation = useMutation({
-    mutationFn: () => api.createMacroCfgFile({ name }),
+    mutationFn: () => api.createMacroCfgFile({ name, content }),
     onSuccess: (file) => {
       queryClient.invalidateQueries({ queryKey: ['macro-cfg-files'] });
+      queryClient.invalidateQueries({ queryKey: ['macros'] });
       showToast(`Created ${file.name}`);
       onCreated(file.id);
     },
@@ -241,6 +373,16 @@ function NewFileModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
               autoFocus
             />
             <p className="text-xs text-bambu-text-secondary mt-1">A .cfg file will be created in the macros directory.</p>
+          </div>
+          <div>
+            <input ref={uploadRef} type="file" accept=".cfg,.txt" className="hidden" onChange={handleUpload} />
+            <button
+              onClick={() => uploadRef.current?.click()}
+              className="flex items-center gap-2 text-sm text-bambu-text-secondary hover:text-bambu-text transition-colors"
+            >
+              <Upload className="w-4 h-4" />
+              {content ? 'File loaded — click to replace' : 'Upload existing .cfg file (optional)'}
+            </button>
           </div>
           <div className="flex gap-2 justify-end">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
@@ -270,7 +412,6 @@ export function MacrosPage() {
 
   const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
   const [panelView, setPanelView] = useState<PanelView>('macros');
-  const [settingsMacroId, setSettingsMacroId] = useState<number | null>(null);
   const [runMacro, setRunMacro] = useState<Macro | null>(null);
   const [showNewFile, setShowNewFile] = useState(false);
   const [deleteFileId, setDeleteFileId] = useState<number | null>(null);
@@ -305,14 +446,9 @@ export function MacrosPage() {
     ? allMacros.filter((m) => m.cfg_file_id === selectedFile.id)
     : [];
 
-  const settingsMacro = settingsMacroId
-    ? allMacros.find((m) => m.id === settingsMacroId) ?? null
-    : null;
-
   function handleFileSelect(fileId: number) {
     setSelectedFileId(fileId);
     setPanelView('macros');
-    setSettingsMacroId(null);
   }
 
   return (
@@ -370,11 +506,6 @@ export function MacrosPage() {
               queryClient.invalidateQueries({ queryKey: ['macro-cfg-files'] });
             }}
           />
-        ) : settingsMacro ? (
-          <MacroSettingsPanel
-            macro={settingsMacro}
-            onBack={() => setSettingsMacroId(null)}
-          />
         ) : (
           /* Macro list for selected file */
           <div className="flex flex-col h-full">
@@ -425,7 +556,6 @@ export function MacrosPage() {
                     <MacroRow
                       key={macro.id}
                       macro={macro}
-                      onSettings={() => setSettingsMacroId(macro.id)}
                       onRun={() => setRunMacro(macro)}
                     />
                   ))}
@@ -451,7 +581,7 @@ export function MacrosPage() {
       {deleteFileId !== null && (
         <ConfirmModal
           title="Delete macro file"
-          message={`Delete "${cfgFiles.find((f) => f.id === deleteFileId)?.name}"? All its macros will be orphaned (run history preserved).`}
+          message={`Delete "${cfgFiles.find((f) => f.id === deleteFileId)?.name}"? All its macros and their run history will be permanently deleted.`}
           variant="danger"
           isLoading={deleteFileMutation.isPending}
           onConfirm={() => deleteFileMutation.mutate(deleteFileId)}

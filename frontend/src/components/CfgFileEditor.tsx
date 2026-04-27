@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { python } from '@codemirror/lang-python';
 import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { Save, ArrowLeft, Loader2, AlertCircle, Download, Upload } from 'lucide-react';
 import { api, type MacroCfgFile } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
@@ -37,6 +38,29 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
   const queryClient = useQueryClient();
   const [content, setContent] = useState('');
   const [dirty, setDirty] = useState(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
+
+  function handleDownload() {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.file_path.split('/').pop() ?? `${file.name}.cfg`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setContent(ev.target?.result as string);
+      setDirty(true);
+    };
+    reader.readAsText(f);
+    e.target.value = '';
+  }
 
   const [contentLoading, setContentLoading] = useState(true);
 
@@ -99,7 +123,7 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
     [gcodeWhitelist, allMacros]
   );
 
-  const extensions = [autocompletion({ override: [completions] })];
+  const extensions = [python(), autocompletion({ override: [completions] })];
 
   function handleChange(value: string) {
     setContent(value);
@@ -128,6 +152,27 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
           </div>
           <p className="text-xs text-bambu-text-secondary">{file.file_path}</p>
         </div>
+        <input
+          ref={uploadRef}
+          type="file"
+          accept=".cfg,.txt"
+          className="hidden"
+          onChange={handleUpload}
+        />
+        <button
+          onClick={handleDownload}
+          className="p-1.5 rounded hover:bg-bambu-dark-secondary text-bambu-text-secondary hover:text-bambu-text transition-colors"
+          title="Download .cfg file"
+        >
+          <Download className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => uploadRef.current?.click()}
+          className="p-1.5 rounded hover:bg-bambu-dark-secondary text-bambu-text-secondary hover:text-bambu-text transition-colors"
+          title="Upload .cfg file (replaces current content)"
+        >
+          <Upload className="w-4 h-4" />
+        </button>
         <Button
           variant="primary"
           size="sm"
@@ -176,7 +221,10 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
           <div className="p-3 border-b border-bambu-dark-tertiary">
             <div className="text-xs font-semibold text-bambu-text mb-2">Format</div>
             <pre className="text-xs text-bambu-text-secondary font-mono whitespace-pre-wrap leading-relaxed">{`[macro name]
-description: optional
+description: optional text
+trigger: manual|webhook|schedule
+cron: 0 8 * * *
+printer: My Printer Name
 G28
 M104 S200
 NOTIFY --message="Done"`}</pre>

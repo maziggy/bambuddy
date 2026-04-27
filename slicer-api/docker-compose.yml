@@ -1,0 +1,71 @@
+# Optional slicer-API sidecar stack for Bambuddy.
+#
+# Both services are HTTP wrappers around a slicer CLI: the same Node code
+# (`maziggy/orca-slicer-api`, `bambuddy/profile-resolver` branch) bundled
+# with a different binary in each image. Bambuddy talks to them via the
+# URLs configured in Settings -> Slicer.
+#
+#   bambu-studio-api  → host port 3001 (BambuStudio CLI)
+#   orca-slicer-api   → host port 3003 (OrcaSlicer CLI)
+#
+# Bambuddy's virtual-printer feature reserves host ports 3000 and 3002,
+# which is why the OrcaSlicer sidecar sits on 3003. Override either port
+# in `.env` (see `.env.example`) if you don't run Bambuddy on this host.
+#
+# Usage:
+#   cd slicer-api/
+#   docker compose up -d                       # starts OrcaSlicer only
+#   docker compose --profile bambu up -d       # starts both
+#
+# First build pulls the source from the fork over git (~5 min — downloads
+# the BambuStudio AppImage, ~220 MB) and caches the image locally.
+# Subsequent runs reuse the cache. Pin the slicer versions via .env.
+
+services:
+  orca-slicer-api:
+    build:
+      context: https://github.com/maziggy/orca-slicer-api.git#bambuddy/profile-resolver
+      dockerfile: Dockerfile
+      args:
+        ORCA_VERSION: "${ORCA_VERSION:-2.3.2}"
+    image: bambuddy-orca-slicer-api:orca${ORCA_VERSION:-2.3.2}
+    container_name: orca-slicer-api
+    restart: unless-stopped
+    ports:
+      - "${ORCA_API_PORT:-3003}:3000"
+    volumes:
+      - ./data/orca:/app/data
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  bambu-studio-api:
+    build:
+      context: https://github.com/maziggy/orca-slicer-api.git#bambuddy/profile-resolver
+      dockerfile: Dockerfile.bambu-studio
+      args:
+        BAMBU_VERSION: "${BAMBU_VERSION:-02.06.00.51}"
+    image: bambuddy-bambu-studio-api:bambu${BAMBU_VERSION:-02.06.00.51}
+    container_name: bambu-studio-api
+    restart: unless-stopped
+    ports:
+      - "${BAMBU_API_PORT:-3001}:3000"
+    volumes:
+      - ./data/bambu:/app/data
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    profiles:
+      - bambu

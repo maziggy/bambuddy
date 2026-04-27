@@ -25,6 +25,7 @@ from backend.app.models.filament import Filament
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ReprintRequest
+from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
 from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
@@ -2818,6 +2819,10 @@ async def get_archive_plates(
         raise HTTPException(404, "Archive file not found")
 
     plates = []
+    # Initialize so the `has_gcode = bool(gcode_files)` after the try/except
+    # never raises NameError when the archive isn't a valid zip (e.g. plain
+    # .gcode file from a sliced-archive flow that didn't request 3MF output).
+    gcode_files: list[str] = []
 
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
@@ -3228,6 +3233,101 @@ async def get_filament_requirements(
         "filename": archive.filename,
         "plate_id": plate_id,
         "filaments": filaments,
+    }
+
+
+@router.post("/{archive_id}/slice", status_code=202)
+async def slice_archive(
+    archive_id: int,
+    request: SliceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
+):
+    """Enqueue a slice job for an archive's source. Returns 202 + job_id;
+    the slice runs in the background, the caller polls `GET /slice-jobs/{id}`.
+
+    Source preference: ``source_3mf_path`` (the un-sliced project file the
+    user originally sent to slice) → ``file_path`` (the sliced 3MF/gcode that
+    actually printed).
+    """
+    from backend.app.api.routes.library import slice_and_persist_as_archive
+    from backend.app.core.database import async_session
+    from backend.app.services.slice_dispatch import (
+        http_exception_to_job_error,
+        slice_dispatch,
+    )
+
+    archive = await db.get(PrintArchive, archive_id)
+    if archive is None:
+        raise HTTPException(status_code=404, detail="Archive not found")
+
+    src_relative = archive.source_3mf_path or archive.file_path
+    if not src_relative:
+        raise HTTPException(
+            status_code=400,
+            detail="Archive has no source file to slice",
+        )
+
+    src_path = Path(settings.base_dir) / src_relative
+    if not src_path.exists():
+        raise HTTPException(status_code=404, detail="Archive source file missing on disk")
+
+    raw_filename = archive.filename or src_path.name
+    src_lower = raw_filename.lower()
+    if not (
+        src_lower.endswith(".stl")
+        or src_lower.endswith(".3mf")
+        or src_lower.endswith(".step")
+        or src_lower.endswith(".stp")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Archive's source file must be STL, 3MF, or STEP to slice",
+        )
+
+    # Match the library route: derive the sliced output's filename from
+    # `print_name` when set, so the new archive row's display name lines
+    # up with the source's display.
+    src_ext = Path(raw_filename).suffix.lower() or ".3mf"
+    src_filename = (
+        f"{archive.print_name.strip()}{src_ext}" if archive.print_name and archive.print_name.strip() else raw_filename
+    )
+
+    model_bytes = src_path.read_bytes()
+    archive_id_local = archive.id
+    user_id = current_user.id if current_user else None
+
+    async def _run():
+        async with async_session() as task_db:
+            # Re-fetch the source archive on the background-task session.
+            src_archive = await task_db.get(PrintArchive, archive_id_local)
+            if src_archive is None:
+                raise http_exception_to_job_error(
+                    HTTPException(status_code=404, detail="Archive disappeared during slice")
+                )
+            try:
+                response = await slice_and_persist_as_archive(
+                    task_db,
+                    model_bytes=model_bytes,
+                    model_filename=src_filename,
+                    request=request,
+                    source_archive=src_archive,
+                    current_user_id=user_id,
+                )
+            except HTTPException as exc:
+                raise http_exception_to_job_error(exc) from exc
+        return response.model_dump()
+
+    job = await slice_dispatch.enqueue(
+        kind="archive",
+        source_id=archive.id,
+        source_name=archive.print_name or archive.filename or f"archive {archive.id}",
+        run=_run,
+    )
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "status_url": f"/api/v1/slice-jobs/{job.id}",
     }
 
 

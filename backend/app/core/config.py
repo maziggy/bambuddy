@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     # API
     api_prefix: str = "/api/v1"
 
+    # Slicer API sidecars. Defaults match the docker-compose.yml ports in the
+    # orca-slicer-api fork (https://github.com/maziggy/orca-slicer-api):
+    #   OrcaSlicer  → port 3003 (default profile)
+    #   BambuStudio → port 3001 (built locally via Dockerfile.bambu-studio)
+    # The slice route picks which one based on the user's preferred_slicer
+    # setting.
+    slicer_api_url: str = "http://localhost:3003"
+    bambu_studio_api_url: str = "http://localhost:3001"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

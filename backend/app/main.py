@@ -288,7 +288,10 @@ if app_settings.log_to_file:
     # for exactly this reason. Filtered to write methods only
     # (POST/PUT/PATCH/DELETE) so the high-volume status-poll GETs from the
     # frontend don't churn the rotation window faster than it's useful.
-    from backend.app.core.logging_filters import WriteRequestsOnlyFilter
+    from backend.app.core.logging_filters import (
+        CancelledPoolNoiseFilter,
+        WriteRequestsOnlyFilter,
+    )
 
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_access_logger.addHandler(file_handler)
@@ -298,6 +301,13 @@ if app_settings.log_to_file:
     # second instance directly so HTTP access lines carry the same trace
     # ID column as the application logs they correlate with.
     uvicorn_access_logger.addFilter(TraceIDFilter())
+
+    # Drop SQLAlchemy connection-pool log noise that's caused by Starlette's
+    # BaseHTTPMiddleware cancelling the inner task scope on client
+    # disconnect (#1112). The cancel-safe `get_db` already prevents the
+    # underlying transaction leak; this filter only suppresses the residual
+    # log records that pre-existing pools still emit during their cleanup.
+    logging.getLogger("sqlalchemy.pool").addFilter(CancelledPoolNoiseFilter())
 
 # Reduce noise from third-party libraries in production
 if not app_settings.debug:
@@ -4160,6 +4170,12 @@ def stop_auth_cleanup() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    # Install Windows-only asyncio Proactor cleanup-RST filter (#1113) before
+    # anything else can spawn tasks that might trip it.
+    from backend.app.core.asyncio_handlers import install_proactor_reset_filter
+
+    install_proactor_reset_filter()
+
     await init_db()
 
     # Register an app-scoped httpx client for Bambu Cloud services so

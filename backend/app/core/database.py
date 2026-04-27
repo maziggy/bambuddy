@@ -141,11 +141,25 @@ async def get_db() -> AsyncSession:
         try:
             yield session
             await session.commit()
-        except Exception:
-            await session.rollback()
+        except BaseException:
+            # Catch BaseException (not just Exception) so CancelledError —
+            # raised when Starlette's BaseHTTPMiddleware cancels the inner
+            # task scope on client disconnect — also triggers rollback.
+            # `asyncio.shield` keeps the rollback running to completion
+            # even when the await itself gets cancelled, so the SQLite
+            # write lock is released promptly instead of being held until
+            # the connection is GC'd ages later (which was producing the
+            # "database is locked" cascade in #1112's support package).
+            try:
+                await asyncio.shield(session.rollback())
+            except BaseException:  # noqa: BLE001 — rollback failure must not mask the original
+                pass
             raise
         finally:
-            await session.close()
+            try:
+                await asyncio.shield(session.close())
+            except BaseException:  # noqa: BLE001 — close failure must not mask the original
+                pass
 
 
 async def init_db():

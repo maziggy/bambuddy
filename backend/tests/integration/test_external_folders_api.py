@@ -710,3 +710,249 @@ class TestExternalFolderWritableUpload:
         assert row.is_external is False
         # Internal storage: file_path is UUID-scoped, stored as a relative path.
         assert not row.file_path.startswith("/")
+
+
+class TestCrossBoundaryMove:
+    """#1112 follow-up: moving files between managed and external folders
+    must physically relocate the bytes, not just shuffle the DB ``folder_id``.
+
+    Pre-fix symptom (reported by @Carter3DP after testing 0.2.4b1): a file
+    moved from a managed folder to a NAS-backed external folder showed up
+    in Bambuddy's UI under the external folder but was never written to
+    the NAS — so the SMB mount and Bambuddy disagreed about what was
+    actually there.
+    """
+
+    @pytest.fixture
+    def external_dir(self, tmp_path):
+        ext_dir = tmp_path / "writable_share"
+        ext_dir.mkdir()
+        return ext_dir
+
+    @pytest.fixture
+    async def writable_folder(self, async_client, db_session, external_dir):
+        data = {"name": "Writable NAS", "external_path": str(external_dir), "readonly": False}
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        assert response.status_code == 200
+        return response.json()
+
+    @pytest.fixture
+    async def readonly_folder(self, async_client, db_session, tmp_path):
+        ro_dir = tmp_path / "ro_share"
+        ro_dir.mkdir()
+        (ro_dir / "stranded.gcode").write_text("G28")
+        data = {"name": "Read-only NAS", "external_path": str(ro_dir), "readonly": True}
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        assert response.status_code == 200
+        # Populate via scan so the file gets a DB row with is_external=True.
+        scan = await async_client.post(f"/api/v1/library/folders/{response.json()['id']}/scan")
+        assert scan.status_code == 200
+        return response.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_managed_to_external_relocates_bytes(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """The actual #1112 fix: managed → external must write the bytes
+        to the NAS mount AND drop them from internal storage. Pre-fix the
+        DB row flipped to the new folder but the bytes stayed put."""
+        import io
+
+        from backend.app.api.routes.library import to_absolute_path
+        from backend.app.models.library import LibraryFile
+
+        upload = await async_client.post(
+            "/api/v1/library/files",
+            files={"file": ("ship_me.stl", io.BytesIO(b"original-bytes"), "application/octet-stream")},
+        )
+        assert upload.status_code == 200
+        file_id = upload.json()["id"]
+
+        # Snapshot the pre-move on-disk path so we can verify it's gone after.
+        pre = await db_session.get(LibraryFile, file_id)
+        await db_session.refresh(pre)
+        managed_disk_path = to_absolute_path(pre.file_path)
+        assert managed_disk_path is not None and managed_disk_path.exists()
+
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": [file_id], "folder_id": writable_folder["id"]},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["moved"] == 1
+        assert body["skipped"] == 0
+
+        # Bytes are on the NAS mount.
+        on_nas = external_dir / "ship_me.stl"
+        assert on_nas.exists()
+        assert on_nas.read_bytes() == b"original-bytes"
+
+        # Internal copy is gone.
+        assert not managed_disk_path.exists(), "managed source must be removed after the move"
+
+        # DB row matches reality.
+        await db_session.refresh(pre)
+        assert pre.is_external is True
+        assert pre.folder_id == writable_folder["id"]
+        assert pre.file_path == str(on_nas.resolve())
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_external_to_managed_relocates_bytes(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """Symmetric direction: external → managed copies the bytes into
+        internal storage with a UUID name, deletes the source on the
+        mount, and recomputes the file hash (since scan stores
+        ``file_hash=None`` for external rows)."""
+        import io
+
+        from backend.app.models.library import LibraryFile
+
+        # Plant a file on the writable mount and let upload give it a row.
+        upload = await async_client.post(
+            f"/api/v1/library/files?folder_id={writable_folder['id']}",
+            files={"file": ("relocate_me.stl", io.BytesIO(b"nas-bytes"), "application/octet-stream")},
+        )
+        assert upload.status_code == 200
+        file_id = upload.json()["id"]
+        ext_disk = external_dir / "relocate_me.stl"
+        assert ext_disk.exists()
+
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": [file_id], "folder_id": None},
+        )
+        assert response.status_code == 200
+        assert response.json()["moved"] == 1
+
+        db_session.expire_all()
+        row = await db_session.get(LibraryFile, file_id)
+        assert row.is_external is False
+        assert row.folder_id is None
+        assert not row.file_path.startswith("/"), "managed file_path must be relative"
+        assert not ext_disk.exists(), "external source must be removed after the move"
+        # Hash filled in for the now-managed row so future dedup works.
+        assert row.file_hash is not None and len(row.file_hash) == 64
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_managed_to_external_collision_skips_with_reason(
+        self, async_client: AsyncClient, db_session, writable_folder, external_dir
+    ):
+        """A name collision on the target external mount must skip the
+        move with a structured reason — not silently overwrite a file
+        that's already on the NAS."""
+        import io
+
+        # Pre-existing file on the mount with the same name as the upload.
+        (external_dir / "duplicate.stl").write_bytes(b"pre-existing")
+
+        upload = await async_client.post(
+            "/api/v1/library/files",
+            files={"file": ("duplicate.stl", io.BytesIO(b"new-bytes"), "application/octet-stream")},
+        )
+        assert upload.status_code == 200
+        file_id = upload.json()["id"]
+
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": [file_id], "folder_id": writable_folder["id"]},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["moved"] == 0
+        assert body["skipped"] == 1
+        reasons = body["skipped_reasons"]
+        assert len(reasons) == 1
+        assert reasons[0]["file_id"] == file_id
+        assert reasons[0]["code"] == "name_collision"
+        # Pre-existing target file is intact.
+        assert (external_dir / "duplicate.stl").read_bytes() == b"pre-existing"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_external_readonly_source_skips(self, async_client: AsyncClient, db_session, readonly_folder):
+        """A read-only mount allows reading but not deletes, and a move
+        is semantically a delete on the source. Skip with
+        ``source_readonly`` so the file isn't duplicated by half-moving."""
+        listing = await async_client.get(f"/api/v1/library/files?folder_id={readonly_folder['id']}")
+        assert listing.status_code == 200
+        ext_file_id = listing.json()[0]["id"]
+
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": [ext_file_id], "folder_id": None},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["moved"] == 0
+        assert body["skipped"] == 1
+        assert body["skipped_reasons"][0]["code"] == "source_readonly"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_managed_to_managed_remains_db_only(self, async_client: AsyncClient, db_session):
+        """Same-boundary moves (managed → managed) keep the existing
+        DB-only fast path — no shutil.copy, no UUID rename. The original
+        file_path stays the same, only ``folder_id`` changes."""
+        import io
+
+        from backend.app.models.library import LibraryFile
+
+        sub = await async_client.post(
+            "/api/v1/library/folders",
+            json={"name": "subfolder", "parent_id": None},
+        )
+        assert sub.status_code == 200
+        target_id = sub.json()["id"]
+
+        upload = await async_client.post(
+            "/api/v1/library/files",
+            files={"file": ("part.stl", io.BytesIO(b"x"), "application/octet-stream")},
+        )
+        assert upload.status_code == 200
+        file_id = upload.json()["id"]
+        pre = await db_session.get(LibraryFile, file_id)
+        await db_session.refresh(pre)
+        original_path = pre.file_path
+
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": [file_id], "folder_id": target_id},
+        )
+        assert response.status_code == 200
+        assert response.json()["moved"] == 1
+
+        db_session.expire_all()
+        post = await db_session.get(LibraryFile, file_id)
+        assert post.folder_id == target_id
+        assert post.is_external is False
+        assert post.file_path == original_path  # bytes never moved
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_skipped_reasons_field_present_even_when_empty(self, async_client: AsyncClient, db_session):
+        """Backwards-compatible response shape: ``skipped_reasons`` is
+        always present (empty list when nothing skipped) so frontend
+        code can treat it as the source of truth without optional-chain
+        gymnastics."""
+        import io
+
+        upload = await async_client.post(
+            "/api/v1/library/files",
+            files={"file": ("trivial.stl", io.BytesIO(b"x"), "application/octet-stream")},
+        )
+        assert upload.status_code == 200
+        file_id = upload.json()["id"]
+
+        response = await async_client.post(
+            "/api/v1/library/files/move",
+            json={"file_ids": [file_id], "folder_id": None},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert "skipped_reasons" in body
+        assert body["skipped_reasons"] == []

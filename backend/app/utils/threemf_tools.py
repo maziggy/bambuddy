@@ -6,12 +6,15 @@ accurate partial usage reporting for multi-material prints.
 """
 
 import json
+import logging
 import math
 import re
 import zipfile
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
+
+logger = logging.getLogger(__name__)
 
 # Default filament properties
 DEFAULT_FILAMENT_DIAMETER = 1.75  # mm
@@ -442,6 +445,90 @@ def extract_filament_usage_from_3mf(file_path: Path, plate_id: int | None = None
     return filament_usage
 
 
+# Header values exposed as `{placeholder}` substitutions inside snippets.
+# Aliases let users write Prusa-style names (`{max_layer_z}`) that map onto
+# Bambu/Orca header keys (`max_z_height`).
+_HEADER_PLACEHOLDER_ALIASES = {
+    "max_layer_z": "max_z_height",
+    "max_print_height": "max_z_height",
+    "total_layers": "total_layer_number",
+}
+
+_HEADER_KEY_RE = re.compile(r"^;\s*([^:]+?)\s*:\s*(.+?)\s*$")
+_PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+_START_GCODE_END_MARKER = "; MACHINE_START_GCODE_END"
+
+
+def _parse_3mf_gcode_header(content: str) -> dict[str, str]:
+    """Parse the `; HEADER_BLOCK_START..END` block into a normalised dict.
+
+    Keys are lowercased, ` [units]` suffixes stripped, and spaces converted
+    to underscores so callers can look up `total_layer_number` regardless of
+    whether the source line is `; total layer number: 80` or
+    `; total filament length [mm] : 12155.34`.
+    """
+    header: dict[str, str] = {}
+    in_header = False
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if line == "; HEADER_BLOCK_START":
+            in_header = True
+            continue
+        if line == "; HEADER_BLOCK_END":
+            break
+        if not in_header:
+            continue
+        m = _HEADER_KEY_RE.match(line)
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2)
+        key = re.sub(r"\s*\[[^\]]*\]\s*$", "", key)
+        key = key.strip().lower().replace(" ", "_")
+        header[key] = value
+    return header
+
+
+def _substitute_placeholders(snippet: str, header: dict[str, str]) -> str:
+    """Replace `{var}` placeholders with header values, leaving unknowns intact."""
+
+    def repl(m: re.Match) -> str:
+        name = m.group(1)
+        value = header.get(name)
+        if value is None:
+            alias = _HEADER_PLACEHOLDER_ALIASES.get(name)
+            if alias is not None:
+                value = header.get(alias)
+        if value is None:
+            logger.warning(
+                "G-code injection: placeholder {%s} not found in 3MF header; leaving as-is",
+                name,
+            )
+            return m.group(0)
+        return value
+
+    return _PLACEHOLDER_RE.sub(repl, snippet)
+
+
+def _inject_start_at_marker(content: str, snippet: str) -> str:
+    """Insert snippet immediately before `; MACHINE_START_GCODE_END`.
+
+    The marker sits at the bottom of the printer's startup block — bed heat,
+    homing, and nozzle prime are already done, so injected snippets land in
+    the same place a slicer-side custom-start-gcode would. Falls back to
+    prepending if the marker isn't present (older files / non-Bambu slicers).
+    """
+    marker_idx = content.find(_START_GCODE_END_MARKER)
+    if marker_idx == -1:
+        logger.warning(
+            "G-code injection: '%s' not found, prepending start snippet to whole file",
+            _START_GCODE_END_MARKER,
+        )
+        return snippet.rstrip("\n") + "\n" + content
+    line_start = content.rfind("\n", 0, marker_idx)
+    line_start = 0 if line_start == -1 else line_start + 1
+    return content[:line_start] + snippet.rstrip("\n") + "\n" + content[line_start:]
+
+
 def inject_gcode_into_3mf(
     source_path: Path,
     plate_id: int,
@@ -450,10 +537,16 @@ def inject_gcode_into_3mf(
 ):
     """Create a temp copy of a 3MF with G-code injected at start/end.
 
+    Snippets support `{placeholder}` substitution against values parsed from
+    the 3MF G-code header block (e.g. `{max_layer_z}` → `16.00`). Start
+    snippets are anchored to the `; MACHINE_START_GCODE_END` marker so they
+    run after the printer's own startup (#422). End snippets are appended
+    after the last line of the print.
+
     Args:
         source_path: Path to the original 3MF file.
         plate_id: Plate number (1-indexed) to inject into.
-        start_gcode: G-code to prepend, or None.
+        start_gcode: G-code to insert after printer startup, or None.
         end_gcode: G-code to append, or None.
 
     Returns:
@@ -486,11 +579,14 @@ def inject_gcode_into_3mf(
 
             # Read and modify gcode content
             gcode_content = zf.read(target_gcode).decode("utf-8", errors="ignore")
+            header = _parse_3mf_gcode_header(gcode_content)
 
             if start_gcode:
-                gcode_content = start_gcode + "\n" + gcode_content
+                resolved = _substitute_placeholders(start_gcode, header)
+                gcode_content = _inject_start_at_marker(gcode_content, resolved)
             if end_gcode:
-                gcode_content = gcode_content.rstrip("\n") + "\n" + end_gcode + "\n"
+                resolved = _substitute_placeholders(end_gcode, header)
+                gcode_content = gcode_content.rstrip("\n") + "\n" + resolved + "\n"
 
             # Write modified 3MF to temp file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".3mf") as tmp:

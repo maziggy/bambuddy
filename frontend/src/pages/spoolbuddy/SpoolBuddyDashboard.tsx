@@ -140,10 +140,18 @@ export function SpoolBuddyDashboard() {
   const { t } = useTranslation();
   const { showToast } = useToast();
 
+  const { data: spoolmanSettings } = useQuery({
+    queryKey: ['spoolman-settings'],
+    queryFn: api.getSpoolmanSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const spoolmanMode = spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
+
   // Fetch spools for stats, tag lookup, and untagged list
   const { data: spools = [], refetch: refetchSpools } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(false),
+    queryKey: spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'],
+    queryFn: () => spoolmanMode ? api.getSpoolmanInventorySpools(false) : api.getSpools(false),
+    enabled: spoolmanSettings !== undefined,
   });
 
   // Fetch printers and their statuses for the status badges
@@ -227,8 +235,10 @@ export function SpoolBuddyDashboard() {
 
   // Untagged spools for the Link feature
   const untaggedSpools = useMemo(() => {
-    return spools.filter((s) => !s.tag_uid && !s.archived_at);
-  }, [spools]);
+    return spoolmanMode
+      ? spools.filter((s) => !s.tag_uid && !s.tray_uuid && !s.archived_at)
+      : spools.filter((s) => !s.tag_uid && !s.archived_at);
+  }, [spools, spoolmanMode]);
 
   // Handle tag detection - show card when tag detected, keep until user closes or new tag
   useEffect(() => {
@@ -265,15 +275,25 @@ export function SpoolBuddyDashboard() {
   const handleLinkTagToSpool = async (spool: InventorySpool) => {
     if (!displayedTagId) return;
     try {
-      await api.linkTagToSpool(spool.id, {
-        tag_uid: displayedTagId,
-        tag_type: 'generic',
-        data_origin: 'nfc_link',
-      });
+      if (spoolmanMode) {
+        await api.linkTagToSpoolmanSpool(spool.id, {
+          tray_uuid: sbState.unknownTrayUuid || undefined,
+          tag_uid: (!sbState.unknownTrayUuid && sbState.unknownTagUid) ? sbState.unknownTagUid : undefined,
+        });
+      } else {
+        await api.linkTagToSpool(spool.id, {
+          tag_uid: displayedTagId,
+          tag_type: 'generic',
+          data_origin: 'nfc_link',
+        });
+      }
       setShowLinkModal(false);
       refetchSpools();
     } catch (e) {
       console.error('Failed to link tag:', e);
+      if (spoolmanMode) {
+        showToast(t('spoolman.linkFailed'), 'error');
+      }
     }
   };
 
@@ -282,34 +302,69 @@ export function SpoolBuddyDashboard() {
     setQuickAddBusy(true);
     try {
       const weight = liveWeight ?? displayedWeight;
-      await api.createSpool({
-        material: 'PLA',
-        subtype: null,
-        color_name: null,
-        rgba: null,
-        brand: null,
-        label_weight: 1000,
-        core_weight: 250,
-        core_weight_catalog_id: null,
-        weight_used: 0,
-        slicer_filament: null,
-        slicer_filament_name: null,
-        nozzle_temp_min: null,
-        nozzle_temp_max: null,
-        note: null,
-        added_full: null,
-        last_used: null,
-        encode_time: null,
-        tag_uid: displayedTagId,
-        tray_uuid: null,
-        data_origin: 'spoolbuddy',
-        tag_type: 'generic',
-        cost_per_kg: null,
-        last_scale_weight: weight !== null ? Math.round(weight) : null,
-        last_weighed_at: weight !== null ? new Date().toISOString() : null,
-        category: null,
-        low_stock_threshold_pct: null,
-      });
+      if (spoolmanMode) {
+        const created = await api.createSpoolmanInventorySpool({
+          material: 'PLA',
+          subtype: null,
+          color_name: null,
+          rgba: null,
+          brand: null,
+          label_weight: 1000,
+          core_weight: 250,
+          core_weight_catalog_id: null,
+          weight_used: 0,
+          slicer_filament: null,
+          slicer_filament_name: null,
+          nozzle_temp_min: null,
+          nozzle_temp_max: null,
+          note: null,
+          added_full: null,
+          last_used: null,
+          encode_time: null,
+          tag_uid: null,
+          tray_uuid: null,
+          data_origin: null,
+          tag_type: null,
+          cost_per_kg: null,
+          last_scale_weight: weight !== null ? Math.round(weight) : null,
+          last_weighed_at: weight !== null ? new Date().toISOString() : null,
+          category: null,
+          low_stock_threshold_pct: null,
+        });
+        await api.linkTagToSpoolmanSpool(created.id, {
+          tray_uuid: sbState.unknownTrayUuid || undefined,
+          tag_uid: (!sbState.unknownTrayUuid && sbState.unknownTagUid) ? sbState.unknownTagUid : undefined,
+        });
+      } else {
+        await api.createSpool({
+          material: 'PLA',
+          subtype: null,
+          color_name: null,
+          rgba: null,
+          brand: null,
+          label_weight: 1000,
+          core_weight: 250,
+          core_weight_catalog_id: null,
+          weight_used: 0,
+          slicer_filament: null,
+          slicer_filament_name: null,
+          nozzle_temp_min: null,
+          nozzle_temp_max: null,
+          note: null,
+          added_full: null,
+          last_used: null,
+          encode_time: null,
+          tag_uid: displayedTagId,
+          tray_uuid: null,
+          data_origin: 'spoolbuddy',
+          tag_type: 'generic',
+          cost_per_kg: null,
+          last_scale_weight: weight !== null ? Math.round(weight) : null,
+          last_weighed_at: weight !== null ? new Date().toISOString() : null,
+          category: null,
+          low_stock_threshold_pct: null,
+        });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('Failed to quick-add spool:', msg);

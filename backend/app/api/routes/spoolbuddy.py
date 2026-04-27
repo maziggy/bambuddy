@@ -375,6 +375,7 @@ async def nfc_tag_scanned(
                 "type": "spoolbuddy_tag_matched",
                 "device_id": req.device_id,
                 "tag_uid": req.tag_uid,
+                "tray_uuid": req.tray_uuid,
                 "spool": {
                     "id": spool.id,
                     "material": spool.material,
@@ -411,6 +412,7 @@ async def nfc_tag_scanned(
                         "type": "spoolbuddy_tag_matched",
                         "device_id": req.device_id,
                         "tag_uid": req.tag_uid,
+                        "tray_uuid": req.tray_uuid,
                         "spool": {
                             "id": mapped["id"],
                             "material": mapped["material"],
@@ -463,6 +465,7 @@ async def nfc_tag_scanned(
             "type": "spoolbuddy_unknown_tag",
             "device_id": req.device_id,
             "tag_uid": req.tag_uid,
+            "tray_uuid": req.tray_uuid,
             "sak": req.sak,
             "tag_type": req.tag_type,
         }
@@ -824,8 +827,7 @@ async def update_spool_weight(
             req.spool_id,
         )
         spool_weight_warning = (
-            "spool_weight_not_set: Spoolman filament has no spool_weight configured; "
-            "weight estimate uses 250g fallback"
+            "spool_weight_not_set: Spoolman filament has no spool_weight configured; weight estimate uses 250g fallback"
         )
     core_weight = _safe_float(raw_spool_weight, 250.0)
     label_weight = _safe_float(filament.get("weight"), 1000.0)

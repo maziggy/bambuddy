@@ -4402,6 +4402,11 @@ export const api = {
     request<InventorySpool>(`/spoolman/inventory/spools/${id}/archive`, { method: 'POST' }),
   restoreSpoolmanInventorySpool: (id: number) =>
     request<InventorySpool>(`/spoolman/inventory/spools/${id}/restore`, { method: 'POST' }),
+  linkTagToSpoolmanSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string }) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${spoolId}/tag`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   syncSpoolmanSpoolWeight: (spoolId: number, weightGrams: number) =>
     request<{ status: string; weight_used: number }>(`/spoolman/inventory/spools/${spoolId}/weight`, {
       method: 'PATCH',

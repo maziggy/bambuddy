@@ -515,9 +515,7 @@ async def sync_all_printers(
                                 cached_spools.append(sync_result)
                                 logger.debug("Added newly created spool %s to cache", sync_result["id"])
                     elif spool_tag:
-                        all_errors.append(
-                            f"Spool not found in Spoolman: {printer.name} AMS {ams_id}:{tray.tray_id}"
-                        )
+                        all_errors.append(f"Spool not found in Spoolman: {printer.name} AMS {ams_id}:{tray.tray_id}")
                     elif not hint:
                         all_skipped.append(
                             SkippedSpool(
@@ -806,7 +804,11 @@ async def link_spool(
             logger.error(
                 "Linked spool %s in Spoolman but failed to persist local slot assignment "
                 "(printer=%s ams=%s tray=%s): %s",
-                spool_id, p_id, a_id, t_id, e,
+                spool_id,
+                p_id,
+                a_id,
+                t_id,
+                e,
             )
             raise HTTPException(
                 status_code=500,
@@ -853,9 +855,7 @@ async def unlink_spool(
 
     # Remove local slot assignment for this spool (all slots — a spool can only be in one at a time)
     try:
-        await db.execute(
-            delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spool_id)
-        )
+        await db.execute(delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spool_id))
         await db.commit()
     except Exception:
         await db.rollback()

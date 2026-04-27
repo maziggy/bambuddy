@@ -7,6 +7,7 @@ regardless of whether data comes from the local database or Spoolman.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -112,9 +113,7 @@ async def _translate_spoolman_errors():
         raise HTTPException(status_code=503, detail="Spoolman server is not reachable") from exc
 
 
-async def _apply_price_if_set(
-    client: SpoolmanClient, spool: dict, cost_per_kg: float | None
-) -> tuple[dict, list[str]]:
+async def _apply_price_if_set(client: SpoolmanClient, spool: dict, cost_per_kg: float | None) -> tuple[dict, list[str]]:
     """Patch the spool price; return (updated_spool, warnings).
 
     Returns the original spool and a non-empty warnings list when the price
@@ -238,6 +237,17 @@ class SpoolmanInventoryBulkCreate(BaseModel):
 
 class SpoolWeightUpdate(BaseModel):
     weight_grams: float = Field(..., ge=0.0, le=100_000.0)
+
+
+class SpoolTagLinkRequest(BaseModel):
+    tag_uid: str | None = Field(None, min_length=8, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
+    tray_uuid: str | None = Field(None, min_length=32, max_length=32, pattern=r"^[0-9A-Fa-f]+$")
+
+    @model_validator(mode="after")
+    def at_least_one(self) -> SpoolTagLinkRequest:
+        if not self.tag_uid and not self.tray_uuid:
+            raise ValueError("tag_uid or tray_uuid is required")
+        return self
 
 
 class SpoolSlotAssignmentRequest(BaseModel):
@@ -546,6 +556,26 @@ async def sync_spool_weight(
     label_weight = _safe_int(upd_filament.get("weight"), 1000)
     weight_used = max(0.0, label_weight - remaining)
     return {"status": "ok", "weight_used": weight_used}
+
+
+@router.patch("/spools/{spool_id}/tag")
+async def link_tag_to_spoolman_spool(
+    *,
+    spool_id: int = Path(..., gt=0),
+    data: SpoolTagLinkRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Write an NFC tag UID or Bambu tray UUID into Spoolman's extra.tag for a spool.
+
+    tray_uuid takes precedence over tag_uid when both are supplied.
+    Uses merge_spool_extra to preserve all other custom extra fields.
+    """
+    client = await _get_client(db)
+    tag = (data.tray_uuid or data.tag_uid).upper()
+    async with _translate_spoolman_errors():
+        updated = await client.merge_spool_extra(spool_id, {"tag": json.dumps(tag)})
+    return _map_spoolman_spool(updated)
 
 
 @router.get("/slot-assignments/all")

@@ -18,14 +18,18 @@ import { ToastProvider } from '../../contexts/ToastContext';
 vi.mock('../../api/client', () => ({
   api: {
     getSpools: vi.fn().mockResolvedValue([
-      { id: 1, material: 'PLA', brand: 'Bambu', tag_uid: 'AA:BB', archived_at: null, color_name: 'Red', rgba: 'FF0000FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 100 },
-      { id: 2, material: 'PETG', brand: 'Bambu', tag_uid: 'CC:DD', archived_at: null, color_name: 'Blue', rgba: '0000FFFF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 200 },
-      { id: 3, material: 'ABS', brand: 'Polymaker', tag_uid: null, archived_at: null, color_name: 'White', rgba: 'FFFFFFFF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      { id: 1, material: 'PLA', brand: 'Bambu', tag_uid: 'AA:BB', tray_uuid: null, archived_at: null, color_name: 'Red', rgba: 'FF0000FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 100 },
+      { id: 2, material: 'PETG', brand: 'Bambu', tag_uid: 'CC:DD', tray_uuid: null, archived_at: null, color_name: 'Blue', rgba: '0000FFFF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 200 },
+      { id: 3, material: 'ABS', brand: 'Polymaker', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'White', rgba: 'FFFFFFFF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
     ]),
     getPrinters: vi.fn().mockResolvedValue([]),
     getPrinterStatus: vi.fn().mockResolvedValue({ connected: false }),
+    getSpoolmanSettings: vi.fn().mockResolvedValue({ spoolman_enabled: 'false', spoolman_url: '', spoolman_sync_mode: 'off', spoolman_disable_weight_sync: 'false', spoolman_report_partial_usage: 'false' }),
+    getSpoolmanInventorySpools: vi.fn().mockResolvedValue([]),
     linkTagToSpool: vi.fn().mockResolvedValue({}),
+    linkTagToSpoolmanSpool: vi.fn().mockResolvedValue({}),
     createSpool: vi.fn().mockResolvedValue({ id: 4 }),
+    createSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 4 }),
     clearPlate: vi.fn().mockResolvedValue({}),
   },
   spoolbuddyApi: {
@@ -54,6 +58,7 @@ const mockOutletContext = {
     rawAdc: null,
     matchedSpool: null,
     unknownTagUid: null,
+    unknownTrayUuid: null,
     deviceOnline: true,
     deviceId: 'dev-1',
     remainingWeight: null,
@@ -242,6 +247,143 @@ describe('SpoolBuddyDashboard', () => {
       fireEvent.click(btn);
       await waitFor(() => {
         expect(screen.queryByTestId('plate-clear-button-9')).toBeNull();
+      });
+    });
+  });
+
+  describe('Spoolman mode', () => {
+    it('fetches from getSpoolmanInventorySpools when Spoolman is enabled', async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 10, material: 'PLA', brand: 'Bambu', tag_uid: 'SM:01', tray_uuid: null, archived_at: null, color_name: 'Green', rgba: '00FF00FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(api.getSpoolmanInventorySpools).toHaveBeenCalled();
+      });
+    });
+
+    it('still uses getSpools when Spoolman is disabled', async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'false',
+        spoolman_url: '',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(api.getSpools).toHaveBeenCalled();
+      });
+    });
+
+    it('excludes tray_uuid spools from the untagged list in Spoolman mode', async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      // One spool has tray_uuid (linked via Bambu) → excluded from untagged
+      // One spool has neither tag_uid nor tray_uuid → included
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 20, material: 'PETG', brand: 'Bambu', tag_uid: null, tray_uuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF', archived_at: null, color_name: 'Blue', rgba: '0000FFFF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+        { id: 21, material: 'ABS', brand: 'Polymaker', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'Black', rgba: '000000FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+
+      renderPage({ unknownTagUid: 'AABB1122', unknownTrayUuid: 'CAFEBABECAFEBABECAFEBABECAFEBABE' });
+
+      // Open the link modal
+      const linkBtn = await waitFor(() => screen.getByText('Link to Spool'));
+      fireEvent.click(linkBtn);
+
+      await waitFor(() => {
+        // Only the ABS spool (id=21) should appear — the PETG with tray_uuid is excluded
+        expect(screen.getByText('Black')).toBeDefined();
+        expect(screen.queryByText('Blue')).toBeNull();
+      });
+    });
+
+    it('calls linkTagToSpoolmanSpool with tray_uuid when linking in Spoolman mode', async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 30, material: 'TPU', brand: 'Bambu', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'Orange', rgba: 'FF6600FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+
+      renderPage({
+        unknownTagUid: 'AABB1122334455FF',
+        unknownTrayUuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+      });
+
+      const linkBtn = await waitFor(() => screen.getByText('Link to Spool'));
+      fireEvent.click(linkBtn);
+
+      const spoolBtn = await waitFor(() => screen.getByText('Orange'));
+      fireEvent.click(spoolBtn);
+
+      const confirmBtn = await waitFor(() => screen.getByText('Link Tag'));
+      fireEvent.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(30, {
+          tray_uuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+          tag_uid: undefined,
+        });
+      });
+    });
+
+    it('calls linkTagToSpool (local) when Spoolman is disabled — no regression', async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'false',
+        spoolman_url: '',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 3, material: 'ABS', brand: 'Polymaker', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'White', rgba: 'FFFFFFFF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+
+      renderPage({ unknownTagUid: 'AABB9999' });
+
+      const linkBtn = await waitFor(() => screen.getByText('Link to Spool'));
+      fireEvent.click(linkBtn);
+
+      const spoolBtn = await waitFor(() => screen.getByText('White'));
+      fireEvent.click(spoolBtn);
+
+      const confirmBtn = await waitFor(() => screen.getByText('Link Tag'));
+      fireEvent.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(api.linkTagToSpool).toHaveBeenCalledWith(3, {
+          tag_uid: 'AABB9999',
+          tag_type: 'generic',
+          data_origin: 'nfc_link',
+        });
+        expect(api.linkTagToSpoolmanSpool).not.toHaveBeenCalled();
       });
     });
   });

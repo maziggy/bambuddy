@@ -1100,6 +1100,7 @@ export default {
     cancelDispatchJob: 'Cancel dispatch job',
     cancel: 'Cancel',
     cancelling: 'Cancelling…',
+    awaitingPrinter: 'Awaiting printer…',
     status: {
       dispatched: 'Dispatched',
       processing: 'Processing',
@@ -4894,6 +4895,11 @@ export default {
       spoolSize: 'Spool size',
       close: 'Close',
       currentSpool: 'Current Spool',
+      plateReady: 'Plate ready: {{name}}',
+      plateReadyLabel: 'Plates ready to clear',
+      plateClearAction: 'Clear',
+      plateClearedToast: 'Plate marked as cleared',
+      plateClearFailed: 'Could not mark plate as cleared',
     },
     modal: {
       spoolDetected: 'Spool Detected',

@@ -1093,6 +1093,7 @@ export default {
     cancelDispatchJob: 'Cancel dispatch job',
     cancel: 'Cancel',
     cancelling: 'Cancelling…',
+    awaitingPrinter: 'Aguardando impressora…',
     status: {
       dispatched: 'Dispatched',
       processing: 'Processing',
@@ -4824,6 +4825,11 @@ export default {
       spoolSize: 'Tamanho do carretel',
       close: 'Fechar',
       currentSpool: 'Carretel Atual',
+      plateReady: 'Mesa pronta: {{name}}',
+      plateReadyLabel: 'Mesas para liberar',
+      plateClearAction: 'Liberar',
+      plateClearedToast: 'Mesa marcada como limpa',
+      plateClearFailed: 'Não foi possível marcar a mesa como limpa',
     },
     modal: {
       spoolDetected: 'Carretel Detectado',

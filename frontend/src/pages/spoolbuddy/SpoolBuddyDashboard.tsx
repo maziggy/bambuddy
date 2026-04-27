@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api, type InventorySpool, type Printer, type PrinterStatus } from '../../api/client';
@@ -157,8 +157,38 @@ export function SpoolBuddyDashboard() {
       queryKey: ['printerStatus', printer.id],
       queryFn: () => api.getPrinterStatus(printer.id),
       refetchInterval: 10000,
-      select: (data: PrinterStatus) => ({ connected: data?.connected }),
+      select: (data: PrinterStatus) => ({
+        connected: data?.connected,
+        awaiting_plate_clear: data?.awaiting_plate_clear === true,
+      }),
     })),
+  });
+
+  // Plate-clear: collect printers that are waiting for the operator to confirm.
+  // The kiosk's API key passes the printers:clear_plate gate (not in the
+  // _APIKEY_DENIED_PERMISSIONS set), so no extra perm wiring is needed here.
+  const platesPending = printers
+    .map((printer: Printer, i: number) => ({
+      printer,
+      pending: statusQueries[i]?.data?.awaiting_plate_clear === true,
+    }))
+    .filter((row: { pending: boolean }) => row.pending);
+
+  const queryClient = useQueryClient();
+  const clearPlateMutation = useMutation({
+    mutationFn: (printerId: number) => api.clearPlate(printerId),
+    onSuccess: (_data, printerId) => {
+      // Optimistically clear the flag so the row vanishes immediately; the
+      // backend already broadcasts a printer_status WS event after clearing,
+      // but we don't want the user to see the row linger while that round-trips.
+      queryClient.setQueryData(['printerStatus', printerId], (old: PrinterStatus | undefined) =>
+        old ? { ...old, awaiting_plate_clear: false } : old
+      );
+      showToast(t('spoolbuddy.dashboard.plateClearedToast', 'Plate marked as cleared'), 'success');
+    },
+    onError: () => {
+      showToast(t('spoolbuddy.dashboard.plateClearFailed', 'Could not mark plate as cleared'), 'error');
+    },
   });
 
   // Current Spool card state - persists until user closes or new tag detected
@@ -389,6 +419,40 @@ export function SpoolBuddyDashboard() {
                   );
                 })}
               </div>
+
+              {/* Plate-ready pills — same compact size as the printer badges above so
+                  the row stays scannable when multiple printers finish at once.
+                  Wraps via flex-wrap. Each pill is independently tappable. */}
+              {platesPending.length > 0 && (
+                <div
+                  className="mt-2 flex flex-wrap gap-2"
+                  data-testid="plate-clear-section"
+                  aria-label={t('spoolbuddy.dashboard.plateReadyLabel', 'Plates ready to clear')}
+                >
+                  {platesPending.map(({ printer }: { printer: Printer }) => (
+                    <button
+                      key={printer.id}
+                      type="button"
+                      onClick={() => clearPlateMutation.mutate(printer.id)}
+                      disabled={clearPlateMutation.isPending}
+                      data-testid={`plate-clear-button-${printer.id}`}
+                      title={t('spoolbuddy.dashboard.plateReady', 'Plate ready: {{name}}', { name: printer.name })}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 border border-amber-500/30 text-amber-200 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                    >
+                      <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 9v4" />
+                        <path d="M12 17h.01" />
+                        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      </svg>
+                      <span className="text-xs truncate max-w-[100px]">{printer.name}</span>
+                      <span className="text-xs opacity-70" aria-hidden="true">·</span>
+                      <span className="text-xs font-medium">
+                        {t('spoolbuddy.dashboard.plateClearAction', 'Clear')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

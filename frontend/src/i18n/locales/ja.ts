@@ -1092,6 +1092,7 @@ export default {
     cancelDispatchJob: '配信ジョブをキャンセル',
     cancel: 'キャンセル',
     cancelling: 'キャンセル中…',
+    awaitingPrinter: 'プリンターを待機中…',
     status: {
       dispatched: '配信済み',
       processing: '処理中',
@@ -4849,6 +4850,11 @@ export default {
       spoolSize: 'スプールサイズ',
       close: '閉じる',
       currentSpool: '現在のスプール',
+      plateReady: 'プレート準備完了: {{name}}',
+      plateReadyLabel: '片付け待ちプレート',
+      plateClearAction: '片付け',
+      plateClearedToast: 'プレートを片付け済みにしました',
+      plateClearFailed: 'プレートを片付け済みにできませんでした',
     },
     modal: {
       spoolDetected: 'スプール検出',

@@ -1093,6 +1093,7 @@ export default {
     cancelDispatchJob: 'Cancel dispatch job',
     cancel: 'Cancel',
     cancelling: 'Cancelling…',
+    awaitingPrinter: 'En attente de l\'imprimante…',
     status: {
       dispatched: 'Dispatched',
       processing: 'Processing',
@@ -4811,6 +4812,11 @@ export default {
       spoolSize: 'Taille bobine',
       close: 'Fermer',
       currentSpool: 'Bobine actuelle',
+      plateReady: 'Plateau prêt : {{name}}',
+      plateReadyLabel: 'Plateaux à libérer',
+      plateClearAction: 'Libérer',
+      plateClearedToast: 'Plateau marqué comme libéré',
+      plateClearFailed: 'Impossible de marquer le plateau comme libéré',
     },
     modal: {
       spoolDetected: 'Bobine détectée',

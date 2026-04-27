@@ -1100,6 +1100,7 @@ export default {
     cancelDispatchJob: 'Dispatch-Job abbrechen',
     cancel: 'Abbrechen',
     cancelling: 'Wird abgebrochen…',
+    awaitingPrinter: 'Warte auf Drucker…',
     status: {
       dispatched: 'Geplant',
       processing: 'In Bearbeitung',
@@ -4885,6 +4886,11 @@ export default {
       spoolSize: 'Spulengröße',
       close: 'Schließen',
       currentSpool: 'Aktuelle Spule',
+      plateReady: 'Druckplatte bereit: {{name}}',
+      plateReadyLabel: 'Bereit-zum-Quittieren-Liste',
+      plateClearAction: 'Frei',
+      plateClearedToast: 'Druckplatte als geleert markiert',
+      plateClearFailed: 'Druckplatte konnte nicht als geleert markiert werden',
     },
     modal: {
       spoolDetected: 'Spule erkannt',

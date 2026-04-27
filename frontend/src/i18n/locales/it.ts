@@ -1093,6 +1093,7 @@ export default {
     cancelDispatchJob: 'Annulla job dispatch',
     cancel: 'Annulla',
     cancelling: 'Annullamento…',
+    awaitingPrinter: 'In attesa della stampante…',
     status: {
       dispatched: 'Inviato',
       processing: 'In elaborazione',
@@ -4810,6 +4811,11 @@ export default {
       spoolSize: 'Dimensione bobina',
       close: 'Chiudi',
       currentSpool: 'Bobina attuale',
+      plateReady: 'Piatto pronto: {{name}}',
+      plateReadyLabel: 'Piatti da liberare',
+      plateClearAction: 'Libera',
+      plateClearedToast: 'Piatto contrassegnato come liberato',
+      plateClearFailed: 'Impossibile contrassegnare il piatto come liberato',
     },
     modal: {
       spoolDetected: 'Bobina rilevata',

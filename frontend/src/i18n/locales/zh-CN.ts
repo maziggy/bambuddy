@@ -1100,6 +1100,7 @@ export default {
     cancelDispatchJob: '取消分发任务',
     cancel: '取消',
     cancelling: '取消中…',
+    awaitingPrinter: '等待打印机…',
     status: {
       dispatched: '已分发',
       processing: '处理中',
@@ -4875,6 +4876,11 @@ export default {
       spoolSize: '耗材盘尺寸',
       close: '关闭',
       currentSpool: '当前耗材',
+      plateReady: '热床就绪: {{name}}',
+      plateReadyLabel: '待清理的热床',
+      plateClearAction: '清理',
+      plateClearedToast: '已将热床标记为已清理',
+      plateClearFailed: '无法将热床标记为已清理',
     },
     modal: {
       spoolDetected: '检测到耗材',

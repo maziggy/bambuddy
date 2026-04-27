@@ -53,8 +53,10 @@ import {
   Play,
   ClipboardList,
   Zap,
+  Cog,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { SliceModal } from '../components/SliceModal';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
@@ -145,6 +147,7 @@ function ArchiveCard({
   isHighlighted,
   timeFormat = 'system',
   preferredSlicer = 'bambu_studio',
+  useSlicerApi = false,
   currency,
   t,
   onNavigateToArchive,
@@ -158,6 +161,7 @@ function ArchiveCard({
   isHighlighted?: boolean;
   timeFormat?: TimeFormat;
   preferredSlicer?: SlicerType;
+  useSlicerApi?: boolean;
   currency: string;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
@@ -173,6 +177,7 @@ function ArchiveCard({
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
+  const [showSliceModal, setShowSliceModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
@@ -407,10 +412,14 @@ function ArchiveCard({
     ] : [
       {
         label: t('archives.menu.slice'),
-        icon: <ExternalLink className="w-4 h-4" />,
+        icon: useSlicerApi ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />,
         onClick: () => {
-          const filename = archive.print_name || archive.filename || 'model';
-          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+          if (useSlicerApi) {
+            setShowSliceModal(true);
+          } else {
+            const filename = archive.print_name || archive.filename || 'model';
+            openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+          }
         },
       },
     ]),
@@ -1116,18 +1125,26 @@ function ArchiveCard({
               </Button>
             </>
           ) : (
-            // Source file only - must open in slicer first
+            // Source file only - "Slice" action
             <Button
               variant="primary"
               size="sm"
               className="flex-1 min-w-0 overflow-hidden"
               onClick={() => {
-                const filename = archive.print_name || archive.filename || 'model';
-                openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+                if (useSlicerApi) {
+                  setShowSliceModal(true);
+                } else {
+                  const filename = archive.print_name || archive.filename || 'model';
+                  openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+                }
               }}
-              title={t('archives.card.openInBambuStudioToSlice')}
+              title={useSlicerApi ? t('slice.title') : t('archives.card.openInBambuStudioToSlice')}
             >
-              <ExternalLink className="w-3 h-3 flex-shrink-0" />
+              {useSlicerApi ? (
+                <Cog className="w-3 h-3 flex-shrink-0" />
+              ) : (
+                <ExternalLink className="w-3 h-3 flex-shrink-0" />
+              )}
               <span className="hidden sm:inline truncate">{t('archives.card.slice')}</span>
             </Button>
           )}
@@ -1203,6 +1220,14 @@ function ArchiveCard({
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
           onClose={() => setShowReprint(false)}
+        />
+      )}
+
+      {/* Slice Modal */}
+      {showSliceModal && (
+        <SliceModal
+          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
+          onClose={() => setShowSliceModal(false)}
         />
       )}
 
@@ -1448,6 +1473,7 @@ function ArchiveListRow({
   projects,
   isHighlighted,
   preferredSlicer = 'bambu_studio',
+  useSlicerApi = false,
   t,
   onNavigateToArchive,
 }: {
@@ -1459,6 +1485,7 @@ function ArchiveListRow({
   projects: ProjectListItem[] | undefined;
   isHighlighted?: boolean;
   preferredSlicer?: SlicerType;
+  useSlicerApi?: boolean;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
 }) {
@@ -1469,6 +1496,7 @@ function ArchiveListRow({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
+  const [showSliceModal, setShowSliceModal] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
   const [showTimelapseSelect, setShowTimelapseSelect] = useState(false);
@@ -1676,10 +1704,14 @@ function ArchiveListRow({
     ] : [
       {
         label: t('archives.menu.slice'),
-        icon: <ExternalLink className="w-4 h-4" />,
+        icon: useSlicerApi ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />,
         onClick: () => {
-          const filename = archive.print_name || archive.filename || 'model';
-          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+          if (useSlicerApi) {
+            setShowSliceModal(true);
+          } else {
+            const filename = archive.print_name || archive.filename || 'model';
+            openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+          }
         },
       },
     ]),
@@ -2132,6 +2164,14 @@ function ArchiveListRow({
         />
       )}
 
+      {/* Slice Modal */}
+      {showSliceModal && (
+        <SliceModal
+          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
+          onClose={() => setShowSliceModal(false)}
+        />
+      )}
+
       {/* Delete Confirmation */}
       {showDeleteConfirm && (
         <ConfirmModal
@@ -2533,6 +2573,7 @@ export function ArchivesPage() {
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
   const preferredSlicer: SlicerType = settings?.preferred_slicer || 'bambu_studio';
+  const useSlicerApi = settings?.use_slicer_api ?? false;
   const currency = getCurrencySymbol(settings?.currency || 'USD');
 
   const bulkDeleteMutation = useMutation({
@@ -3408,6 +3449,7 @@ export function ArchivesPage() {
                 isHighlighted={archive.id === highlightedArchiveId}
                 timeFormat={timeFormat}
                 preferredSlicer={preferredSlicer}
+                useSlicerApi={useSlicerApi}
                 currency={currency}
                 t={t}
                 onNavigateToArchive={handleNavigateToArchive}
@@ -3449,6 +3491,7 @@ export function ArchivesPage() {
                   projects={projects}
                   isHighlighted={archive.id === highlightedArchiveId}
                   preferredSlicer={preferredSlicer}
+                  useSlicerApi={useSlicerApi}
                   t={t}
                   onNavigateToArchive={handleNavigateToArchive}
                 />

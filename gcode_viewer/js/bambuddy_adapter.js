@@ -180,6 +180,13 @@
                 /^\/?downloads\/files\/local\/__bambuddy_archive_(\d+)$/,
                 API_BASE + '/archives/$1/gcode'
             );
+            // OctoPrint file download  →  Bambuddy library file gcode
+            // (sliced LibraryFile — extracts embedded gcode from .gcode.3mf
+            // or returns plain .gcode). Plate is ignored upstream for now.
+            newPath = newPath.replace(
+                /^\/?downloads\/files\/local\/__bambuddy_libgcode_(\d+)(?:_plate\d+)?$/,
+                API_BASE + '/library/files/$1/gcode'
+            );
             // OctoPrint plugin static assets  →  gcode-viewer static files
             newPath = newPath.replace(
                 /^\/?plugin\/prettygcode\/static\//,
@@ -412,6 +419,57 @@
     }
 
     // -------------------------------------------------------------------------
+    // 10b. Library file loader — invoked via /gcode-viewer/?library_file=<id>
+    // -------------------------------------------------------------------------
+    function loadLibraryFileById(fileId, plate) {
+        // Mirror loadArchiveById, but use the library gcode endpoint. The
+        // /library/files/<id>/gcode endpoint extracts the embedded gcode
+        // from a .gcode.3mf or returns a plain .gcode body. It does not
+        // accept a plate selector today — multi-plate library files would
+        // need an upstream change. The plate suffix here is preserved in
+        // currentFilename for display only.
+        var plateSuffix = (typeof plate === 'number' && plate >= 1) ? ('_plate' + plate) : '';
+        currentFileId = 'libfile_' + fileId + plateSuffix;
+        currentFilename = 'Library file #' + fileId + (plateSuffix ? (' (plate ' + plate + ')') : '');
+        currentFileDate = Date.now();
+        gcodeLayerMap = null;
+        lastFedLayer = -1;
+        stopPlayback(true);
+        updateFilenameDisplay(currentFilename);
+        var playBtn = document.getElementById('bb-play-btn');
+        if (playBtn) playBtn.disabled = false;
+        if (viewModel && viewModel.fromCurrentData) {
+            viewModel.fromCurrentData({
+                job: {
+                    file: {
+                        path: '__bambuddy_libgcode_' + fileId + plateSuffix,
+                        date: currentFileDate,
+                    },
+                    estimatedPrintTime: null,
+                },
+                state: { text: 'Operational', flags: { printing: false } },
+                progress: { filepos: null, completion: 0 },
+                currentZ: null,
+                logs: [],
+            });
+        }
+
+        // Fetch metadata for the filename display. There is no
+        // /library/files/<id>/capabilities endpoint, so the bed stays at
+        // whatever the default fakePrinterProfile is set to.
+        apiFetch('/library/files/' + fileId, {})
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (meta) {
+                if (meta && (meta.print_name || meta.filename)) {
+                    currentFilename = (meta.print_name || meta.filename) +
+                        (plateSuffix ? (' (plate ' + plate + ')') : '');
+                    updateFilenameDisplay(currentFilename);
+                }
+            })
+            .catch(function () { /* best-effort — filename stays "Library file #N" */ });
+    }
+
+    // -------------------------------------------------------------------------
     // 11. Initialise after DOM + scripts are ready
     // -------------------------------------------------------------------------
     function init() {
@@ -548,19 +606,23 @@
     function onDomReady() {
         setTimeout(function () {
             init();
-            // If the viewer was opened with ?archive=<id>[&plate=<N>], load that
-            // archive's gcode for the requested plate once the viewmodel is ready.
+            // If the viewer was opened with ?archive=<id>[&plate=<N>] or
+            // ?library_file=<id>[&plate=<N>], load that source's gcode once
+            // the viewmodel is ready.
             try {
                 var params = new URLSearchParams(window.location.search);
                 var archiveParam = params.get('archive');
+                var libParam = params.get('library_file');
                 var plateParam = params.get('plate');
+                var plateId = (plateParam && /^[1-9][0-9]*$/.test(plateParam))
+                    ? parseInt(plateParam, 10)
+                    : undefined;
                 if (archiveParam && /^[1-9][0-9]*$/.test(archiveParam)) {
                     var archiveId = parseInt(archiveParam, 10);
-                    var plateId = (plateParam && /^[1-9][0-9]*$/.test(plateParam))
-                        ? parseInt(plateParam, 10)
-                        : undefined;
-                    // Allow a tick for init() to finish wiring viewModel.fromCurrentData
                     setTimeout(function () { loadArchiveById(archiveId, plateId); }, 50);
+                } else if (libParam && /^[1-9][0-9]*$/.test(libParam)) {
+                    var libId = parseInt(libParam, 10);
+                    setTimeout(function () { loadLibraryFileById(libId, plateId); }, 50);
                 }
             } catch (e) { /* URLSearchParams unsupported — skip */ }
         }, 200);
@@ -577,6 +639,7 @@
     // -------------------------------------------------------------------------
     window.BambuddyPrettyGCode = {
         loadArchive: loadArchiveById,
+        loadLibraryFile: loadLibraryFileById,
         getViewModel: function () { return viewModel; },
         play: startPlayback,
         stop: stopPlayback,

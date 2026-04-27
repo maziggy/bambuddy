@@ -183,6 +183,28 @@ class AppSettings(BaseModel):
         description="Preferred slicer: 'bambu_studio' or 'orcaslicer'",
     )
 
+    # Slicer dispatch mode: when True, "Slice" actions open the in-app
+    # SliceModal and call the slicer-API sidecar. When False (default), they
+    # hand off to the user's local desktop slicer via URI scheme — preserving
+    # the original Bambuddy behavior for users who don't run a sidecar.
+    use_slicer_api: bool = Field(
+        default=False,
+        description="Use the slicer-API sidecar for slicing instead of the desktop slicer URI scheme",
+    )
+
+    # Slicer-API sidecar base URLs. Per-installation, configured via the
+    # Settings UI (the "Slicer" card). Empty string means "fall back to the
+    # SLICER_API_URL / BAMBU_STUDIO_API_URL env vars" — which themselves
+    # default to the docker-compose ports in core/config.py.
+    orcaslicer_api_url: str = Field(
+        default="",
+        description="OrcaSlicer sidecar URL (e.g. http://localhost:3003). Empty falls back to the SLICER_API_URL env var.",
+    )
+    bambu_studio_api_url: str = Field(
+        default="",
+        description="BambuStudio sidecar URL (e.g. http://localhost:3001). Empty falls back to the BAMBU_STUDIO_API_URL env var.",
+    )
+
     # Prometheus metrics endpoint
     prometheus_enabled: bool = Field(default=False, description="Enable Prometheus metrics endpoint at /metrics")
     prometheus_token: str = Field(
@@ -352,6 +374,9 @@ class AppSettingsUpdate(BaseModel):
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
     preferred_slicer: str | None = None
+    use_slicer_api: bool | None = None
+    orcaslicer_api_url: str | None = None
+    bambu_studio_api_url: str | None = None
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)

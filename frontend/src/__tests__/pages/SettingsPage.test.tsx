@@ -37,6 +37,11 @@ const mockSettings = {
 
 describe('SettingsPage', () => {
   beforeEach(() => {
+    // BrowserRouter shares window.location across tests; reset it so a tab
+    // switch in one test (e.g. clicking "Workflow") doesn't carry into
+    // sibling tests that expect to land on the default General tab.
+    window.history.replaceState({}, '', '/');
+
     server.use(
       http.get('/api/v1/settings/', () => {
         return HttpResponse.json(mockSettings);
@@ -119,16 +124,30 @@ describe('SettingsPage', () => {
       });
     });
 
-    it('shows preferred slicer setting', async () => {
+    it('shows preferred slicer setting on Workflow tab', async () => {
+      const user = userEvent.setup();
       render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
 
       await waitFor(() => {
         expect(screen.getByText('Preferred Slicer')).toBeInTheDocument();
       });
     });
 
-    it('shows slicer dropdown with both options', async () => {
+    it('shows slicer dropdown with both options on Workflow tab', async () => {
+      const user = userEvent.setup();
       render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
 
       await waitFor(() => {
         const slicerSelect = screen.getAllByDisplayValue('Bambu Studio');

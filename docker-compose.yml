@@ -66,6 +66,13 @@ services:
       # External PostgreSQL (optional — uses SQLite by default)
       # Example: DATABASE_URL=postgresql+asyncpg://bambuddy:password@db-host:5432/bambuddy
       #- DATABASE_URL=
+      #
+      # Slicer API sidecar (optional — Settings → "Use Slicer API" toggles this on).
+      # Default points at the OrcaSlicer sidecar on the docker host; change if you
+      # run the sidecar on a different host/port. The matching docker-compose.yml
+      # for the sidecars lives in the orca-slicer-api fork
+      # (https://github.com/maziggy/orca-slicer-api).
+      #- SLICER_API_URL=http://localhost:3003
     restart: unless-stopped
 
   # Optional: External PostgreSQL database

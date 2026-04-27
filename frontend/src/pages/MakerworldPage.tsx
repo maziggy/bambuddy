@@ -15,6 +15,8 @@ import { openInSlicer, type SlicerType } from '../utils/slicer';
 import { Button } from '../components/Button';
 import { Card, CardContent, CardHeader } from '../components/Card';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { SliceModal, type SliceSource } from '../components/SliceModal';
+import { Cog } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -180,6 +182,16 @@ export function MakerworldPage() {
   const preferredSlicer: SlicerType = settingsQuery.data?.preferred_slicer || 'bambu_studio';
   const preferredSlicerName =
     preferredSlicer === 'orcaslicer' ? 'OrcaSlicer' : 'Bambu Studio';
+  const useSlicerApi = settingsQuery.data?.use_slicer_api ?? false;
+
+  // Slice-via-API modal source. When set, the SliceModal is shown for the
+  // referenced library file; it covers MakerWorld's "Slice in <Slicer>" /
+  // "Open in Slicer" actions whenever the user has Use Slicer API enabled.
+  const [sliceModalSource, setSliceModalSource] = useState<SliceSource | null>(null);
+
+  const openSliceForLibraryFile = (libraryFileId: number, filename: string) => {
+    setSliceModalSource({ kind: 'libraryFile', id: libraryFileId, filename });
+  };
 
   const resolveMutation = useMutation({
     mutationFn: (url: string) => api.resolveMakerworldUrl(url),
@@ -268,7 +280,14 @@ export function MakerworldPage() {
       if (data.profile_id) {
         setImportsByProfile((prev) => ({ ...prev, [data.profile_id!]: data }));
       }
-      await handleOpenInSlicer(data.library_file_id, data.filename, preferredSlicer);
+      // After import, branch on the user's slicer-API preference: API mode
+      // opens the in-app SliceModal; URI mode hands the file off to the
+      // local slicer GUI (the historical behavior).
+      if (useSlicerApi) {
+        openSliceForLibraryFile(data.library_file_id, data.filename);
+      } else {
+        await handleOpenInSlicer(data.library_file_id, data.filename, preferredSlicer);
+      }
     },
     onError: (err: Error) => showToast(err.message || t('makerworld.errors.downloadFailed'), 'error'),
   });
@@ -704,26 +723,39 @@ export function MakerworldPage() {
                           <FolderOpen className="w-3.5 h-3.5" />
                           <span className="ml-1.5">{t('makerworld.viewInLibrary')}</span>
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            handleOpenInSlicer(imported.library_file_id, imported.filename, 'bambu_studio')
-                          }
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span className="ml-1.5">{t('makerworld.openInBambuStudio')}</span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            handleOpenInSlicer(imported.library_file_id, imported.filename, 'orcaslicer')
-                          }
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span className="ml-1.5">{t('makerworld.openInOrcaSlicer')}</span>
-                        </Button>
+                        {useSlicerApi ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openSliceForLibraryFile(imported.library_file_id, imported.filename)}
+                          >
+                            <Cog className="w-3.5 h-3.5" />
+                            <span className="ml-1.5">{t('slice.action', 'Slice')}</span>
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                handleOpenInSlicer(imported.library_file_id, imported.filename, 'bambu_studio')
+                              }
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span className="ml-1.5">{t('makerworld.openInBambuStudio')}</span>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                handleOpenInSlicer(imported.library_file_id, imported.filename, 'orcaslicer')
+                              }
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span className="ml-1.5">{t('makerworld.openInOrcaSlicer')}</span>
+                            </Button>
+                          </>
+                        )}
                         <div className="ml-auto">
                           <Button
                             variant="ghost"
@@ -806,16 +838,29 @@ export function MakerworldPage() {
                           >
                             <FolderOpen className="w-3.5 h-3.5" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              handleOpenInSlicer(item.library_file_id, item.filename, 'bambu_studio')
-                            }
-                            title={t('makerworld.openInBambuStudio')}
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </Button>
+                          {useSlicerApi ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                openSliceForLibraryFile(item.library_file_id, item.filename)
+                              }
+                              title={t('slice.action', 'Slice')}
+                            >
+                              <Cog className="w-3.5 h-3.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                handleOpenInSlicer(item.library_file_id, item.filename, 'bambu_studio')
+                              }
+                              title={t('makerworld.openInBambuStudio')}
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
                           {item.source_url && (
                             <a
                               href={item.source_url}
@@ -857,6 +902,13 @@ export function MakerworldPage() {
               profileId: pendingDelete.profileId,
             })
           }
+        />
+      )}
+
+      {sliceModalSource && (
+        <SliceModal
+          source={sliceModalSource}
+          onClose={() => setSliceModalSource(null)}
         />
       )}
 

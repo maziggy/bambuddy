@@ -3253,7 +3253,6 @@ export default {
     selectPreset: '— Profil auswählen —',
     loadingPresets: 'Profile werden geladen…',
     presetsLoadFailed: 'Profile konnten nicht geladen werden. Importiere sie zuerst unter Einstellungen → Profile.',
-    fallbackUsedEmbedded: 'Slicer hat die gewählten Profile abgelehnt — stattdessen wurden die im Modell eingebetteten Einstellungen verwendet.',
     enqueuing: 'Slice-Auftrag wird übermittelt…',
     queued: 'In Warteschlange…',
     failed: 'Slicen fehlgeschlagen. Logs des Slicer-Sidecars prüfen.',

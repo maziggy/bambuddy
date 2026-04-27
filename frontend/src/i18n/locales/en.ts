@@ -3256,7 +3256,6 @@ export default {
     selectPreset: '— Select a preset —',
     loadingPresets: 'Loading presets…',
     presetsLoadFailed: 'Failed to load presets. Open Settings → Profiles to import them first.',
-    fallbackUsedEmbedded: "Slicer rejected the chosen profiles for this model — used the file's embedded settings instead.",
     enqueuing: 'Submitting slice job…',
     queued: 'Queued…',
     failed: 'Slicing failed. Check the slicer sidecar logs.',

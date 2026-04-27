@@ -52,9 +52,11 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
       setActiveJobs((prev) => prev.filter((j) => j.id !== job.id));
 
       if (state.status === 'completed') {
-        if (state.result?.used_embedded_settings) {
-          showToast(t('slice.fallbackUsedEmbedded'), 'warning');
-        }
+        // `used_embedded_settings` still comes back on the result for tests
+        // and observability, but the warning toast that surfaced it was
+        // firing on essentially every slice (3MF inputs trigger the
+        // embedded-settings fallback as a normal path) and just added
+        // noise — see the trailing yellow toast complaint, removed.
         showToast(
           t('slice.completedToast', 'Sliced {{name}}', { name: job.sourceName }),
           'success',

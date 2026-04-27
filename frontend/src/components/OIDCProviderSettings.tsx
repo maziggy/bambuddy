@@ -123,14 +123,14 @@ function ProviderForm({
             <p className="text-bambu-gray text-xs">{t('settings.oidc.form.autoCreateDesc')}</p>
           </div>
         </label>
-        <label className="flex items-center gap-3 cursor-pointer">
+        <label className="flex items-center gap-3 cursor-pointer w-full">
           <Toggle checked={form.auto_link_existing_accounts ?? false} onChange={(v) => set('auto_link_existing_accounts', v)} />
           <div>
             <p className="text-white text-sm">{t('settings.oidc.form.autoLink')}</p>
             <p className="text-bambu-gray text-xs">{t('settings.oidc.form.autoLinkDesc')}</p>
           </div>
         </label>
-        <label className="flex items-center gap-3 cursor-pointer">
+        <label className="flex items-center gap-3 cursor-pointer w-full">
           <Toggle
             checked={emailVerifiedOn}
             onChange={(v) => set('require_email_verified', v)}

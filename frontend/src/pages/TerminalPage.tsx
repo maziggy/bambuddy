@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { Send, Loader2 } from 'lucide-react';
 import { api, type MacroRun, type Printer } from '../api/client';
 import { Button } from '../components/Button';
+import { useSearchParams } from 'react-router-dom';
 
 interface BufferLine {
   id: number;
@@ -54,14 +55,22 @@ function resolveTag(tag: string, printers: Printer[]): Printer[] {
   return printers.filter((p) => p.name.toLowerCase().startsWith(name));
 }
 
-export function TerminalPage() {
+export function TerminalPage({ initialPrinterId }: { initialPrinterId?: number } = {}) {
   const { t } = useTranslation();
+  const [searchParams] = useSearchParams();
+
+  // When opened as a standalone popup window, seed printer from URL params
+  const urlPrinterId = searchParams.get('printer') ? Number(searchParams.get('printer')) : undefined;
+  const urlPrinterName = searchParams.get('name') ?? undefined;
+  const isStandalone = !!urlPrinterId || searchParams.has('standalone');
 
   const [input, setInput] = useState('');
-  const [printerId, setPrinterId] = useState<number | null>(null);
-  const [buffer, setBuffer] = useState<BufferLine[]>([
+  const [printerId, setPrinterId] = useState<number | null>(initialPrinterId ?? urlPrinterId ?? null);
+  const [buffer, setBuffer] = useState<BufferLine[]>(() => [
     { id: nextId(), text: 'Bambuddy terminal — type a G-code, system command, or macro name and press Enter.', cls: 'text-zinc-500' },
-    { id: nextId(), text: 'Tip: prefix with @printername or @all to target specific printers.', cls: 'text-zinc-600' },
+    ...(urlPrinterName
+      ? [{ id: nextId(), text: `Targeting: ${urlPrinterName}`, cls: 'text-bambu-green' }]
+      : [{ id: nextId(), text: 'Tip: prefix with @printername or @all to target specific printers.', cls: 'text-zinc-600' }]),
     { id: nextId(), text: '', cls: '' },
   ]);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
@@ -344,7 +353,7 @@ export function TerminalPage() {
     : (printers.find((p) => p.id === printerId)?.name ?? '');
 
   return (
-    <div className="p-6 flex flex-col" style={{ height: 'calc(100vh - 4rem)' }}>
+    <div className="p-6 flex flex-col bg-bambu-dark" style={{ height: isStandalone ? '100vh' : 'calc(100vh - 4rem)' }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4 shrink-0">
         <h1 className="text-2xl font-bold text-bambu-text">{t('terminal.title')}</h1>

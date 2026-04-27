@@ -122,6 +122,15 @@ import { Collapsible } from '../components/Collapsible';
 import { ConnectionDiagnosticModal, DiagnosticChecklist } from '../components/ConnectionDiagnostic';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
+function openTerminalWindow(printerId?: number, printerName?: string) {
+  const params = new URLSearchParams({ standalone: '1' });
+  if (printerId != null) params.set('printer', String(printerId));
+  if (printerName) params.set('name', printerName);
+  const token = getAuthToken();
+  if (token) params.set('token', token);
+  window.open(`/terminal?${params}`, printerId ? `terminal-${printerId}` : 'terminal', 'width=960,height=640,noopener,noreferrer');
+}
+
 export interface SpoolmanSlotAssignmentRow {
   printer_id: number;
   ams_id: number;
@@ -1749,6 +1758,7 @@ function PrinterCard({
   checkPrinterFirmware = true,
   dryingPresets = DRYING_PRESETS,
   requirePlateClear = false,
+  onOpenTerminal,
   selectionMode = false,
   isSelected = false,
   onToggleSelect,
@@ -1787,6 +1797,7 @@ function PrinterCard({
   checkPrinterFirmware?: boolean;
   dryingPresets?: Record<string, { n3f: number; n3s: number; n3f_hours: number; n3s_hours: number }>;
   requirePlateClear?: boolean;
+  onOpenTerminal?: (printerId: number, printerName: string) => void;
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (id: number) => void;
@@ -3235,6 +3246,105 @@ function PrinterCard({
                   )}
                 </p>
               </div>
+            </div>
+            {/* Terminal + Menu buttons */}
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {onOpenTerminal && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onOpenTerminal(printer.id, printer.name)}
+                  title={t('terminal.title')}
+                >
+                  <Terminal className="w-4 h-4" />
+                </Button>
+              )}
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowMenu(!showMenu)}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+              {showMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg z-20">
+                  <button
+                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
+                      hasPermission('printers:update')
+                        ? 'hover:bg-bambu-dark-tertiary'
+                        : 'opacity-50 cursor-not-allowed'
+                    }`}
+                    onClick={() => {
+                      if (!hasPermission('printers:update')) return;
+                      setShowEditModal(true);
+                      setShowMenu(false);
+                    }}
+                    title={!hasPermission('printers:update') ? t('printers.permission.noEdit') : undefined}
+                  >
+                    <Pencil className="w-4 h-4" />
+                    {t('common.edit')}
+                  </button>
+                  <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      setShowPrinterInfo(true);
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Info className="w-4 h-4" />
+                    {t('printers.printerInformation')}
+                  </button>
+                  <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      connectMutation.mutate();
+                      setShowMenu(false);
+                    }}
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    {t('printers.reconnect')}
+                  </button>
+                  <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2 disabled:opacity-50"
+                    disabled={forceRefreshMutation.isPending}
+                    onClick={() => {
+                      forceRefreshMutation.mutate();
+                      setShowMenu(false);
+                    }}
+                  >
+                    <RotateCw className={`w-4 h-4 ${forceRefreshMutation.isPending ? 'animate-spin' : ''}`} />
+                    {t('printers.forceRefresh')}
+                  </button>
+                  <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      setShowMQTTDebug(true);
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Terminal className="w-4 h-4" />
+                    {t('printers.mqttDebug')}
+                  </button>
+                  <button
+                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
+                      hasPermission('printers:delete')
+                        ? 'text-red-400 hover:bg-bambu-dark-tertiary'
+                        : 'text-red-400/50 cursor-not-allowed'
+                    }`}
+                    onClick={() => {
+                      if (!hasPermission('printers:delete')) return;
+                      setShowDeleteConfirm(true);
+                      setShowMenu(false);
+                    }}
+                    title={!hasPermission('printers:delete') ? t('printers.permission.noDelete') : undefined}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {t('common.delete')}
+                  </button>
+                </div>
+              )}
+            </div>
             </div>
           </div>
 
@@ -8580,6 +8690,22 @@ export function PrintersPage() {
               </ToolbarMenu>
             </div>
           )}
+          <Button
+            variant="secondary"
+            onClick={() => openTerminalWindow()}
+            title={t('terminal.title')}
+          >
+            <Terminal className="w-4 h-4" />
+            {t('terminal.title')}
+          </Button>
+          <Button
+            onClick={() => setShowAddModal(true)}
+            disabled={!hasPermission('printers:create')}
+            title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
+          >
+            <Plus className="w-4 h-4" />
+            {t('printers.addPrinter')}
+          </Button>
         </div>
       </div>
 
@@ -8720,6 +8846,7 @@ export function PrintersPage() {
                       timeFormat={settings?.time_format || 'system'}
                       cameraViewMode={settings?.camera_view_mode || 'window'}
                       onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+                      onOpenTerminal={(id, name) => openTerminalWindow(id, name)}
                       checkPrinterFirmware={settings?.check_printer_firmware !== false}
                       dryingPresets={effectiveDryingPresets}
                       nozzleTempPresets={effectiveNozzleTempPresets}
@@ -8769,6 +8896,7 @@ export function PrintersPage() {
               timeFormat={settings?.time_format || 'system'}
               cameraViewMode={settings?.camera_view_mode || 'window'}
               onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+              onOpenTerminal={(id, name) => openTerminalWindow(id, name)}
               checkPrinterFirmware={settings?.check_printer_firmware !== false}
               dryingPresets={effectiveDryingPresets}
               nozzleTempPresets={effectiveNozzleTempPresets}

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, Code2, TerminalSquare, type LucideIcon } from 'lucide-react';
-import { TerminalPage } from '../pages/TerminalPage';
+import { Printer, Archive, Calendar, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, Code2, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -50,7 +49,6 @@ export const defaultNavItems: NavItem[] = [
   { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
   { id: 'stats', to: '/stats', icon: BarChart3, labelKey: 'nav.stats' },
   { id: 'macros', to: '/macros', icon: Code2, labelKey: 'nav.macros' },
-  { id: 'terminal', to: '/terminal', icon: TerminalSquare, labelKey: 'nav.terminal' },
   // User-account features: kept adjacent to Settings intentionally
   { id: 'notifications', to: '/notifications', icon: Bell, labelKey: 'nav.notifications' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },
@@ -301,7 +299,6 @@ export function Layout() {
       files: ['library:read', 'library:read_own', 'library:read_all'],
       macros: 'macros:read',
       makerworld: 'makerworld:view',
-      terminal: 'macros:run',
       settings: 'settings:read',
     };
 
@@ -905,12 +902,7 @@ export function Layout() {
             </button>
           </div>
         )}
-        <div className={location.pathname === '/terminal' ? 'hidden' : undefined}>
-          <Outlet />
-        </div>
-        <div className={location.pathname !== '/terminal' ? 'hidden' : undefined}>
-          <TerminalPage />
-        </div>
+        <Outlet />
       </main>
 
       <UnknownSpoolModal

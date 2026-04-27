@@ -25,6 +25,7 @@ import { SetupPage } from './pages/SetupPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { GCodeViewerPage } from './pages/GCodeViewerPage';
 import { MacrosPage } from './pages/MacrosPage';
+import { TerminalPage } from './pages/TerminalPage';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useStreamTokenSync } from './hooks/useCameraStreamToken';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -183,6 +184,9 @@ function App() {
                 {/* Stream overlay page - standalone for OBS/streaming embeds, no auth required */}
                 <Route path="/overlay/:printerId" element={<StreamOverlayPage />} />
 
+                {/* Terminal popup - standalone window, no sidebar layout */}
+                <Route path="/terminal" element={<ProtectedRoute><WebSocketProvider><TerminalPage /></WebSocketProvider></ProtectedRoute>} />
+
                 {/* SpoolBuddy kiosk UI */}
                 <Route element={<ProtectedRoute><WebSocketProvider><SpoolBuddyLayout /></WebSocketProvider></ProtectedRoute>}>
                   <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
@@ -221,7 +225,6 @@ function App() {
                   <Route path="gcode-viewer" element={<GCodeViewerPage />} />
                   <Route path="macros" element={<MacrosPage />} />
                   <Route path="macros/:id" element={<MacrosPage />} />
-                  <Route path="terminal" element={null} />
                   <Route path="external/:id" element={<ExternalLinkPage />} />
                   <Route path="camera-tokens" element={<Navigate to="/settings?tab=apikeys#card-camera-tokens" replace />} />
                 </Route>

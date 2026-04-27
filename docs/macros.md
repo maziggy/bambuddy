@@ -79,25 +79,65 @@ NOTIFY --message="Drying started for AMS slot 0"
 
 ## Approved G-code commands
 
-Only the following G-code commands are allowed in macros. Any other G-code is logged as a warning and ignored.
+Only the following G-code commands are forwarded to the printer. Any other G-code is logged as a warning and ignored. For full parameter documentation see `Gcodes_reference.md`.
 
-| Command | Description |
+| Command(s) | Description |
 |---|---|
-| `G0`, `G1` | Linear move |
-| `G28` | Home all axes |
+| `G0`, `G1` | Linear move (XY unsafe via API — use Z/E only) |
+| `G2`, `G3` | Arc move (clockwise / counter-clockwise) |
+| `G4` | Dwell / delay (max 90 s per call) |
+| `G28` | Auto home (all axes, X, Y, or Z) |
+| `G29` | Bed mesh calibration |
+| `G29.1` | Set Z offset |
+| `G29.2` | Toggle bed mesh compensation |
 | `G90` | Absolute positioning |
 | `G91` | Relative positioning |
-| `G92` | Set position |
-| `M82` | Absolute extruder mode |
-| `M83` | Relative extruder mode |
-| `M84` | Disable steppers |
-| `M104` | Set nozzle temperature (no wait) |
-| `M109` | Set nozzle temperature (wait) |
-| `M140` | Set bed temperature (no wait) |
-| `M190` | Set bed temperature (wait) |
-| `M106` | Set fan speed |
+| `G92` | Set current position (e.g. `G92 E0`) |
+| `G380` | Guarded Z move — must follow G91 (Bambu) |
+| `G392` | Clog detection toggle (Bambu) |
+| `M17` | Enable steppers / set motor current |
+| `M18`, `M84` | Disable steppers |
+| `M73`, `M73.2` | Set / reset print progress display |
+| `M82`, `M83` | Absolute / relative extruder mode |
+| `M104`, `M109` | Set nozzle temperature (non-blocking / blocking) |
+| `M106` | Set fan speed — always specify P1/P2/P3 |
 | `M107` | Fan off |
-| `T0`–`T3` | Select tool/extruder |
+| `M140`, `M190` | Set bed temperature (non-blocking / blocking) |
+| `M142` | Aux fan / chamber temp (X1C/X1E) |
+| `M201` | Set max acceleration per axis |
+| `M203` | Set max feed rate per axis |
+| `M204`, `M204.2` | Set acceleration / acceleration multiplier |
+| `M205` | Set jerk limits |
+| `M211` | Soft endstops (enable / disable / save / restore) |
+| `M220` | Feed rate override |
+| `M221` | Flow rate override (also soft endstop control) |
+| `M290`, `M290.2` | XY compensation |
+| `M302` | Cold extrusion toggle |
+| `M400` | Wait for moves to finish (+ optional delay) |
+| `M412` | Filament runout detection toggle |
+| `M500` | Save to EEPROM |
+| `M620`, `M620.1`, `M620.3` | AMS filament control / flush / tangle detect |
+| `M621` | Load filament from AMS tray |
+| `M622`, `M623` | Conditional block start / end |
+| `M630` | Reset internal Bambu state |
+| `M900` | Pressure advance (K factor) |
+| `M960` | LED / laser toggle |
+| `M970`, `M970.3` | Vibration frequency sweep |
+| `M973` | Nozzle camera control |
+| `M974` | Apply vibration curve fit |
+| `M975` | Toggle vibration compensation |
+| `M981` | Spaghetti detector on/off |
+| `M982`, `M982.2`, `M982.4` | Motor noise cancellation |
+| `M991` | Layer change notification / timelapse |
+| `M1002` | LCD action status / conditionals / speed level |
+| `M1003` | Bed leveling / power loss recovery |
+| `M1005` | Skew calibration |
+| `M1006` | Speaker / buzzer (enable, play note, wait) |
+| `M1007` | Keep subsystem enabled |
+| `T0`–`T3` | Select AMS tray |
+| `T255` | Switch to empty tool |
+| `T1000` | Switch to local nozzle |
+| `T1100` | Switch to scanning space |
 
 **Comments** (lines starting with `#` or `;`) and **blank lines** are always ignored.
 

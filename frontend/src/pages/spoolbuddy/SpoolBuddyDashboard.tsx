@@ -207,6 +207,7 @@ export function SpoolBuddyDashboard() {
   const [showAssignAmsModal, setShowAssignAmsModal] = useState(false);
   const [showQuickAddModal, setShowQuickAddModal] = useState(false);
   const [quickAddBusy, setQuickAddBusy] = useState(false);
+  const [justLinkedSpool, setJustLinkedSpool] = useState<InventorySpool | null>(null);
 
   // Track current tag from state
   const currentTagId = sbState.matchedSpool?.tag_uid ?? sbState.unknownTagUid ?? null;
@@ -230,8 +231,14 @@ export function SpoolBuddyDashboard() {
       if (byId) return byId;
     }
     if (!displayedTagId) return null;
-    return spools.find((s) => tagsEquivalent(s.tag_uid, displayedTagId)) ?? null;
-  }, [displayedTagId, sbState.matchedSpool, spools]);
+    const byTag = spools.find((s) => tagsEquivalent(s.tag_uid, displayedTagId));
+    if (byTag) return byTag;
+    // Spoolman stores the tag as tray_uuid in extra.tag — tag_uid stays null after
+    // linking, so tagsEquivalent never matches. Use the spool returned by the link
+    // call directly until the device re-scans and sbState.matchedSpool is populated.
+    if (justLinkedSpool) return justLinkedSpool;
+    return null;
+  }, [displayedTagId, sbState.matchedSpool, spools, justLinkedSpool]);
 
   // Untagged spools for the Link feature
   const untaggedSpools = useMemo(() => {
@@ -250,6 +257,7 @@ export function SpoolBuddyDashboard() {
         setDisplayedTagId(currentTagId);
         setDisplayedWeight(null);
         setHiddenTagId(null);
+        setJustLinkedSpool(null);
       }
 
       // Update weight when stable and card is visible
@@ -262,6 +270,7 @@ export function SpoolBuddyDashboard() {
         setDisplayedTagId(null);
         setHiddenTagId(null);
         setDisplayedWeight(null);
+        setJustLinkedSpool(null);
       }
     }
   }, [currentTagId, currentWeight, weightStable, displayedTagId, hiddenTagId]);
@@ -276,10 +285,12 @@ export function SpoolBuddyDashboard() {
     if (!displayedTagId) return;
     try {
       if (spoolmanMode) {
-        await api.linkTagToSpoolmanSpool(spool.id, {
+        const updated = await api.linkTagToSpoolmanSpool(spool.id, {
           tray_uuid: sbState.unknownTrayUuid || undefined,
           tag_uid: (!sbState.unknownTrayUuid && sbState.unknownTagUid) ? sbState.unknownTagUid : undefined,
         });
+        setJustLinkedSpool(updated);
+        showToast(t('spoolman.linkSuccess'), 'success');
       } else {
         await api.linkTagToSpool(spool.id, {
           tag_uid: displayedTagId,

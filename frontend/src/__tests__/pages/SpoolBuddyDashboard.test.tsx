@@ -353,6 +353,47 @@ describe('SpoolBuddyDashboard', () => {
       });
     });
 
+    it('switches to SpoolInfoCard and hides UnknownTagCard after successful Spoolman link', async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      const linkedSpool = {
+        id: 30, material: 'TPU', brand: 'Bambu', tag_uid: null,
+        tray_uuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF', archived_at: null,
+        color_name: 'Orange', rgba: 'FF6600FF', subtype: null,
+        label_weight: 1000, core_weight: 250, weight_used: 0,
+        created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z',
+      };
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { ...linkedSpool, tag_uid: null, tray_uuid: null },
+      ]);
+      (api.linkTagToSpoolmanSpool as ReturnType<typeof vi.fn>).mockResolvedValue(linkedSpool);
+
+      renderPage({
+        unknownTagUid: 'AABB1122334455FF',
+        unknownTrayUuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+      });
+
+      const linkBtn = await waitFor(() => screen.getByText('Link to Spool'));
+      fireEvent.click(linkBtn);
+
+      const spoolBtn = await waitFor(() => screen.getByText('Orange'));
+      fireEvent.click(spoolBtn);
+
+      const confirmBtn = await waitFor(() => screen.getByText('Link Tag'));
+      fireEvent.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Link to Spool')).toBeNull();
+        expect(screen.getByText('Sync Weight')).toBeDefined();
+      });
+    });
+
     it('calls linkTagToSpool (local) when Spoolman is disabled — no regression', async () => {
       const { api } = await import('../../api/client');
       (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({

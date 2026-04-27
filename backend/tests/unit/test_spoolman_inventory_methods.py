@@ -298,13 +298,13 @@ class TestFindOrCreateVendor:
         mock_create.assert_called_once_with("New Brand")
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_create_fails(self, client):
+    async def test_raises_when_create_fails(self, client):
         with (
             patch.object(client, "get_vendors", AsyncMock(return_value=[])),
-            patch.object(client, "create_vendor", AsyncMock(return_value=None)),
+            patch.object(client, "create_vendor", AsyncMock(side_effect=SpoolmanUnavailableError("unreachable"))),
+            pytest.raises(SpoolmanUnavailableError),
         ):
-            result = await client.find_or_create_vendor("Ghost Brand")
-        assert result is None
+            await client.find_or_create_vendor("Ghost Brand")
 
 
 # ---------------------------------------------------------------------------
@@ -373,14 +373,14 @@ class TestFindOrCreateFilament:
         )
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_create_fails(self, client):
+    async def test_raises_when_create_fails(self, client):
         with (
-            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=None)),
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=1)),
             patch.object(client, "get_filaments", AsyncMock(return_value=[])),
-            patch.object(client, "create_filament", AsyncMock(return_value=None)),
+            patch.object(client, "create_filament", AsyncMock(side_effect=SpoolmanUnavailableError("unreachable"))),
+            pytest.raises(SpoolmanUnavailableError),
         ):
-            result = await client.find_or_create_filament("TPU", "Flex", "Generic", "000000", 500)
-        assert result is None
+            await client.find_or_create_filament("TPU", "Flex", "Generic", "000000", 500)
 
 
 # ---------------------------------------------------------------------------

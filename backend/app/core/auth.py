@@ -25,13 +25,8 @@ from backend.app.models.user import User
 
 logger = logging.getLogger(__name__)
 
-# Permissions that cannot be accessed via API key.
-# API keys are limited to device/inventory operations. The following capabilities
-# are restricted to fully-authenticated users: user/group/API-key management,
-# settings write/backup/restore, firmware updates, and GitHub-backed backup/restore.
 # SETTINGS_READ is intentionally not denied — the SpoolBuddy kiosk reads settings
-# via API key (e.g. to sync the UI language), which was always permitted before the
-# denylist was introduced.
+# via API key (e.g. to sync the UI language).
 _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
     {
         Permission.SETTINGS_UPDATE,
@@ -720,6 +715,16 @@ async def get_api_key(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid API key",
     )
+
+
+async def caller_is_api_key(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> bool:
+    """Return True when the request is authenticated via API key (X-API-Key or Bearer bb_xxx)."""
+    if x_api_key:
+        return True
+    return credentials is not None and credentials.credentials.startswith("bb_")
 
 
 def check_permission(api_key: APIKey, permission: str) -> None:

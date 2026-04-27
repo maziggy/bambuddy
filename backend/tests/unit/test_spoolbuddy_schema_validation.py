@@ -193,3 +193,15 @@ class TestScaleReadingRequestValidation:
         # Scale can legitimately read negative values when tare is not calibrated
         req = ScaleReadingRequest(device_id="sb1", weight_grams=-50_000.0)
         assert req.weight_grams == -50_000.0
+
+    def test_nan_weight_rejected(self):
+        import math
+
+        with pytest.raises(ValidationError):
+            ScaleReadingRequest(device_id="sb1", weight_grams=math.nan)
+
+    def test_inf_weight_rejected(self):
+        import math
+
+        with pytest.raises(ValidationError):
+            ScaleReadingRequest(device_id="sb1", weight_grams=math.inf)

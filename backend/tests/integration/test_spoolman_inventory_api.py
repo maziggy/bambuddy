@@ -1216,7 +1216,9 @@ class TestSpoolmanInventorySecurityExtras:
         mock_spoolman_client,
     ):
         """I9: bulk create with quantity=3 where middle call fails → 207 Multi-Status."""
-        results = [SAMPLE_SPOOLMAN_SPOOL, None, SAMPLE_SPOOLMAN_SPOOL]
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+
+        results = [SAMPLE_SPOOLMAN_SPOOL, SpoolmanUnavailableError("Spoolman down"), SAMPLE_SPOOLMAN_SPOOL]
         mock_spoolman_client.create_spool.side_effect = results
 
         payload = {

@@ -7,6 +7,7 @@ import type { InventorySpool, SpoolAssignment } from '../api/client';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
+import { filterSpoolsByQuery } from '../utils/inventorySearch';
 
 interface AssignSpoolModalProps {
   isOpen: boolean;
@@ -228,15 +229,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     }
   }
   if (searchFilter && filteredSpools) {
-    const q = searchFilter.toLowerCase();
-    filteredSpools = filteredSpools.filter((spool: InventorySpool) => {
-      return (
-        spool.material.toLowerCase().includes(q) ||
-        (spool.brand?.toLowerCase().includes(q) ?? false) ||
-        (spool.color_name?.toLowerCase().includes(q) ?? false) ||
-        (spool.subtype?.toLowerCase().includes(q) ?? false)
-      );
-    });
+    filteredSpools = filterSpoolsByQuery(filteredSpools, searchFilter);
   }
 
   const handleAssign = () => {
@@ -427,18 +420,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                       {t('inventory.spoolmanSpools')}
                     </p>
                     <div className="max-h-64 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {spoolmanSpools
-                        .filter(s => !s.archived_at)
-                        .filter(s => {
-                          if (!searchFilter) return true;
-                          const q = searchFilter.toLowerCase();
-                          return (
-                            s.material.toLowerCase().includes(q) ||
-                            (s.brand?.toLowerCase().includes(q) ?? false) ||
-                            (s.color_name?.toLowerCase().includes(q) ?? false) ||
-                            (s.subtype?.toLowerCase().includes(q) ?? false)
-                          );
-                        })
+                      {filterSpoolsByQuery(spoolmanSpools.filter(s => !s.archived_at), searchFilter)
                         .map((spool: InventorySpool) => (
                           <button
                             key={`spoolman-${spool.id}`}

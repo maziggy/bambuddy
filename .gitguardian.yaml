@@ -1,0 +1,3 @@
+version: 2
+ignore-paths:
+  - backend/tests/

@@ -10,9 +10,46 @@ import logging
 import math
 import re
 from datetime import datetime, timezone
+from typing import TypedDict
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+
+class MappedSpoolFields(TypedDict, total=False):
+    """Full shape of the dict returned by _map_spoolman_spool (InventorySpool-compatible)."""
+
+    id: int
+    material: str | None
+    subtype: str | None
+    brand: str | None
+    color_name: str | None
+    rgba: str | None
+    label_weight: int | None
+    core_weight: int | None
+    core_weight_catalog_id: None
+    weight_used: float | None
+    weight_locked: bool
+    last_scale_weight: None
+    last_weighed_at: None
+    slicer_filament: None
+    slicer_filament_name: str | None
+    nozzle_temp_min: int | None
+    nozzle_temp_max: None
+    note: str | None
+    added_full: None
+    last_used: str | None
+    encode_time: str | None
+    tag_uid: str | None
+    tray_uuid: str | None
+    data_origin: str | None
+    tag_type: str | None
+    archived_at: str | None
+    created_at: str | None
+    updated_at: str | None
+    cost_per_kg: float | None
+    storage_location: str | None
+    k_profiles: list
 
 
 _CLOUD_METADATA_IPS = frozenset(
@@ -126,7 +163,7 @@ def _safe_optional_float(value: object) -> float | None:
     return None
 
 
-def _map_spoolman_spool(spool: dict) -> dict:
+def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     """Convert a raw Spoolman spool dict to the InventorySpool-compatible format.
 
     Fields not supported by Spoolman (k_profiles, slicer_filament, …) are

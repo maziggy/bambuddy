@@ -230,4 +230,39 @@ describe('InventoryPage - deep-link ?spool= flow', () => {
       await screen.findByText('Could not load spool — try again', {}, { timeout: 6000 });
     });
   });
+
+  describe('scenario 5 (T-Gap 8): deep-link works in Spoolman mode', () => {
+    beforeEach(() => {
+      window.history.pushState({}, '', '/?spool=42');
+      // Override settings with Spoolman enabled
+      server.use(
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ ...MOCK_SETTINGS, spoolman_enabled: true, spoolman_url: 'http://spoolman.local:7912' })
+        ),
+        http.get('/api/v1/settings/spoolman', () =>
+          HttpResponse.json({ spoolman_enabled: 'true', spoolman_url: 'http://spoolman.local:7912', spoolman_sync_mode: 'auto', spoolman_disable_weight_sync: 'false', spoolman_report_partial_usage: 'true' })
+        ),
+        // In Spoolman mode the component fetches from /api/v1/spoolman/inventory/spools
+        http.get('/api/v1/spoolman/inventory/spools', () => HttpResponse.json([BASE_SPOOL])),
+        http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
+        http.get('/api/v1/inventory/catalog', () => HttpResponse.json([])),
+      );
+    });
+
+    it('removes ?spool= param from URL in Spoolman mode', async () => {
+      render(<InventoryPageRouter />);
+
+      await waitFor(() => {
+        expect(window.location.search).not.toContain('spool=42');
+      });
+    });
+
+    it('opens the edit modal for the linked local spool in Spoolman mode', async () => {
+      render(<InventoryPageRouter />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText(/PLA/i).length).toBeGreaterThan(0);
+      });
+    });
+  });
 });

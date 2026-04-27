@@ -2,6 +2,7 @@
 
 import json
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -19,6 +20,7 @@ from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.user import User
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.spoolman import (
+    SpoolmanClientError,
     SpoolmanNotFoundError,
     SpoolmanUnavailableError,
     close_spoolman_client,
@@ -42,10 +44,10 @@ class SpoolmanStatus(BaseModel):
 class SkippedSpool(BaseModel):
     """Information about a skipped spool during sync."""
 
-    location: str  # e.g., "AMS A1" or "External Spool"
-    reason: str  # e.g., "Not a Bambu Lab spool", "Empty tray"
-    filament_type: str | None = None  # e.g., "PLA", "PETG"
-    color: str | None = None  # Hex color
+    location: str
+    reason: Literal["No RFID tag and no slot assignment"]
+    filament_type: str | None = None
+    color: str | None = None
 
 
 class SyncResult(BaseModel):
@@ -135,6 +137,9 @@ async def connect_spoolman(
         await client.ensure_tag_extra_field()
 
         return {"success": True, "message": f"Connected to Spoolman at {url}"}
+    except ValueError as exc:
+        logger.warning("Spoolman URL rejected: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:
         logger.error("Failed to connect to Spoolman: %s", e)
         raise HTTPException(status_code=503, detail=str(e))
@@ -776,6 +781,8 @@ async def link_spool(
         await client.merge_spool_extra(spool_id, {"tag": json.dumps(spool_tag)})
     except SpoolmanNotFoundError:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanClientError:
+        raise HTTPException(status_code=502, detail="Spoolman rejected the request")
     except SpoolmanUnavailableError:
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
@@ -839,6 +846,8 @@ async def unlink_spool(
         await client.merge_spool_extra(spool_id, {"tag": json.dumps("")})
     except SpoolmanNotFoundError:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanClientError:
+        raise HTTPException(status_code=502, detail="Spoolman rejected the request")
     except SpoolmanUnavailableError:
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 

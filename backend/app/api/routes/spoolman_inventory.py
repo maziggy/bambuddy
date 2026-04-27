@@ -101,40 +101,39 @@ async def _get_client(db: AsyncSession) -> SpoolmanClient:
 
 @asynccontextmanager
 async def _translate_spoolman_errors():
-    """Translate Spoolman exceptions to HTTP responses for all inventory endpoints.
-
-    Maps SpoolmanNotFoundError → 404 and SpoolmanUnavailableError → 503.
-    Add new SpoolmanClient exception mappings here rather than in individual handlers.
-    """
+    """Translate Spoolman typed exceptions to HTTP errors for all inventory endpoints."""
     try:
         yield
     except SpoolmanNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman") from exc
     except SpoolmanClientError as exc:
-        raise HTTPException(status_code=exc.status_code, detail="Spoolman rejected the request") from exc
+        raise HTTPException(status_code=502, detail="Spoolman rejected the request") from exc
     except SpoolmanUnavailableError as exc:
         raise HTTPException(status_code=503, detail="Spoolman server is not reachable") from exc
 
 
-async def _apply_price_if_set(client: SpoolmanClient, spool: dict, cost_per_kg: float | None) -> dict:
-    """Patch the spool's price via a follow-up update when cost_per_kg is provided.
+async def _apply_price_if_set(
+    client: SpoolmanClient, spool: dict, cost_per_kg: float | None
+) -> tuple[dict, list[str]]:
+    """Patch the spool price; return (updated_spool, warnings).
 
-    Bambuddy's SpoolmanClient.create_spool() does not forward price to Spoolman's POST /spool
-    endpoint, so a follow-up PATCH via update_spool_full is needed to set it.
-    On failure, logs an error and returns the original spool (caller gets HTTP 200 without price).
+    Returns the original spool and a non-empty warnings list when the price
+    update fails, so the caller can return HTTP 207 instead of silently
+    discarding the price.
     """
     if cost_per_kg is None:
-        return spool
+        return spool, []
     try:
         async with _translate_spoolman_errors():
-            return await client.update_spool_full(spool["id"], price=cost_per_kg)
+            updated = await client.update_spool_full(spool["id"], price=cost_per_kg)
+        return updated, []
     except HTTPException:
-        logger.error(
+        logger.warning(
             "Price update failed for spool %d; spool created without price (cost_per_kg=%s)",
             spool["id"],
             cost_per_kg,
         )
-        return spool
+        return spool, ["price_not_set: Spoolman rejected the price update"]
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +164,7 @@ class SpoolmanInventoryCreate(BaseModel):
     subtype: str | None = Field(None, max_length=64)
     brand: str | None = Field(None, max_length=128)
     color_name: str | None = Field(None, max_length=64)
-    rgba: str | None = Field(None, max_length=8)
+    rgba: str | None = Field(None, max_length=8, description="6-digit hex (RRGGBB) or 8-digit (RRGGBBAA)")
     label_weight: int = Field(1000, ge=1, le=100_000)
     core_weight: int = Field(
         250, ge=0, le=10_000
@@ -189,6 +188,11 @@ class SpoolmanInventoryCreate(BaseModel):
     def validate_weight_consistency(self) -> SpoolmanInventoryCreate:
         if self.weight_used > self.label_weight:
             raise ValueError("weight_used must not exceed label_weight")
+        if self.core_weight != 250:
+            raise ValueError(
+                "core_weight is not persisted in Spoolman (stored on the filament type, not the spool). "
+                "Omit this field or leave it at the default (250 g)."
+            )
         return self
 
 
@@ -197,7 +201,7 @@ class SpoolmanInventoryUpdate(BaseModel):
     subtype: str | None = Field(None, max_length=64)
     brand: str | None = Field(None, max_length=128)
     color_name: str | None = Field(None, max_length=64)
-    rgba: str | None = Field(None, max_length=8)
+    rgba: str | None = Field(None, max_length=8, description="6-digit hex (RRGGBB) or 8-digit (RRGGBBAA)")
     label_weight: int | None = Field(None, ge=1, le=100_000)
     core_weight: int | None = Field(
         None, ge=0, le=10_000
@@ -239,8 +243,8 @@ class SpoolWeightUpdate(BaseModel):
 class SpoolSlotAssignmentRequest(BaseModel):
     spoolman_spool_id: int = Field(..., gt=0)
     printer_id: int = Field(..., gt=0)
-    ams_id: int = Field(..., ge=0)
-    tray_id: int = Field(..., ge=0)
+    ams_id: int = Field(..., ge=0, le=7)
+    tray_id: int = Field(..., ge=0, le=3)
 
 
 # ---------------------------------------------------------------------------
@@ -303,21 +307,21 @@ async def create_spool(
             label_weight=data.label_weight,
             color_name=data.color_name,
         )
-    if not filament_id:
-        raise HTTPException(status_code=500, detail="Failed to find or create filament in Spoolman")
 
     remaining = max(0.0, data.label_weight - data.weight_used)
-    spool = await client.create_spool(
-        filament_id=filament_id,
-        remaining_weight=remaining,
-        comment=data.note or None,
-        location=data.storage_location or None,
-    )
-    if not spool:
-        raise HTTPException(status_code=500, detail="Failed to create spool in Spoolman")
+    async with _translate_spoolman_errors():
+        spool = await client.create_spool(
+            filament_id=filament_id,
+            remaining_weight=remaining,
+            comment=data.note or None,
+            location=data.storage_location or None,
+        )
 
-    spool = await _apply_price_if_set(client, spool, data.cost_per_kg)
-    return _map_spoolman_spool(spool)
+    spool, price_warnings = await _apply_price_if_set(client, spool, data.cost_per_kg)
+    result = _map_spoolman_spool(spool)
+    if price_warnings:
+        return JSONResponse(status_code=207, content={**result, "warnings": price_warnings})
+    return result
 
 
 @router.post("/spools/bulk")
@@ -339,21 +343,24 @@ async def bulk_create_spools(
             color_hex=color_hex,
             label_weight=data.label_weight,
         )
-    if not filament_id:
-        raise HTTPException(status_code=500, detail="Failed to find or create filament in Spoolman")
 
     remaining = max(0.0, data.label_weight - data.weight_used)
     created: list[dict] = []
+    failures: list[str] = []
     for _ in range(payload.quantity):
-        spool = await client.create_spool(
-            filament_id=filament_id,
-            remaining_weight=remaining,
-            comment=data.note or None,
-            location=data.storage_location or None,
-        )
-        if spool:
-            spool = await _apply_price_if_set(client, spool, data.cost_per_kg)
-            created.append(_map_spoolman_spool(spool))
+        try:
+            spool = await client.create_spool(
+                filament_id=filament_id,
+                remaining_weight=remaining,
+                comment=data.note or None,
+                location=data.storage_location or None,
+            )
+        except (SpoolmanUnavailableError, SpoolmanClientError, SpoolmanNotFoundError) as exc:
+            logger.warning("Bulk spool creation: one spool failed: %s", exc)
+            failures.append(str(exc))
+            continue
+        spool, _ = await _apply_price_if_set(client, spool, data.cost_per_kg)
+        created.append(_map_spoolman_spool(spool))
 
     if not created:
         raise HTTPException(status_code=500, detail="Failed to create any spools in Spoolman")
@@ -367,6 +374,7 @@ async def bulk_create_spools(
                 "created": created,
                 "requested_count": payload.quantity,
                 "failed_count": payload.quantity - len(created),
+                "failures": failures,
             },
         )
 
@@ -592,22 +600,27 @@ async def assign_spoolman_slot(
 
     # Spool confirmed in Spoolman — upsert into local slot-assignment table
     # assigned_at is intentionally not refreshed on re-assign (original timestamp preserved)
-    await db.execute(
-        text(
-            "INSERT INTO spoolman_slot_assignments"
-            " (printer_id, ams_id, tray_id, spoolman_spool_id)"
-            " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
-            " ON CONFLICT(printer_id, ams_id, tray_id)"
-            " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
-        ),
-        {
-            "printer_id": body.printer_id,
-            "ams_id": body.ams_id,
-            "tray_id": body.tray_id,
-            "spool_id": body.spoolman_spool_id,
-        },
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            text(
+                "INSERT INTO spoolman_slot_assignments"
+                " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+                " ON CONFLICT(printer_id, ams_id, tray_id)"
+                " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+            ),
+            {
+                "printer_id": body.printer_id,
+                "ams_id": body.ams_id,
+                "tray_id": body.tray_id,
+                "spool_id": body.spoolman_spool_id,
+            },
+        )
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.error("Failed to persist slot assignment: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to save slot assignment") from exc
 
     return _map_spoolman_spool(spool)
 
@@ -624,11 +637,15 @@ async def unassign_spoolman_slot(
     """
     client = await _get_client(db)
 
-    # Delete from local slot-assignment table (all slots for this spool ID)
-    await db.execute(
-        delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spoolman_spool_id)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spoolman_spool_id)
+        )
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.error("Failed to delete slot assignment: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to remove slot assignment") from exc
 
     # Fetch the spool from Spoolman to return in InventorySpool format.
     # If the spool no longer exists in Spoolman, the local unassignment still succeeded.
@@ -646,8 +663,8 @@ async def unassign_spoolman_slot(
 @router.get("/slot-assignments")
 async def get_spoolman_slot_assignment(
     printer_id: int = Query(..., gt=0),
-    ams_id: int = Query(..., ge=0),
-    tray_id: int = Query(..., ge=0),
+    ams_id: int = Query(..., ge=0, le=7),
+    tray_id: int = Query(..., ge=0, le=3),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> dict | None:
@@ -676,9 +693,23 @@ async def get_spoolman_slot_assignment(
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
-        # Spool deleted in Spoolman — clean up stale assignment
-        await db.execute(
-            delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.id == slot.id)
-        )
-        await db.commit()
+        # Spool deleted in Spoolman — clean up stale assignment.
+        # Include spoolman_spool_id in WHERE to avoid a TOCTOU race where a
+        # concurrent re-assign changed the slot to a different spool between
+        # the GET and this DELETE.
+        try:
+            await db.execute(
+                delete(SpoolmanSlotAssignment).where(
+                    SpoolmanSlotAssignment.id == slot.id,
+                    SpoolmanSlotAssignment.spoolman_spool_id == slot.spoolman_spool_id,
+                )
+            )
+            await db.commit()
+        except Exception as cleanup_exc:
+            await db.rollback()
+            logger.warning(
+                "Failed to remove stale slot assignment for spool %s: %s",
+                slot.spoolman_spool_id,
+                cleanup_exc,
+            )
         return None

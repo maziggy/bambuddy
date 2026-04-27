@@ -1723,11 +1723,11 @@ async def run_migrations(conn):
         CREATE TABLE IF NOT EXISTS spoolman_slot_assignments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
-            ams_id INTEGER NOT NULL,
-            tray_id INTEGER NOT NULL,
+            ams_id INTEGER NOT NULL CHECK (ams_id >= 0 AND ams_id <= 7),
+            tray_id INTEGER NOT NULL CHECK (tray_id >= 0 AND tray_id <= 3),
             spoolman_spool_id INTEGER NOT NULL,
             assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(printer_id, ams_id, tray_id)
+            CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id)
         )
         """
         if is_sqlite()
@@ -1735,13 +1735,17 @@ async def run_migrations(conn):
         CREATE TABLE IF NOT EXISTS spoolman_slot_assignments (
             id SERIAL PRIMARY KEY,
             printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
-            ams_id INTEGER NOT NULL,
-            tray_id INTEGER NOT NULL,
+            ams_id INTEGER NOT NULL CHECK (ams_id >= 0 AND ams_id <= 7),
+            tray_id INTEGER NOT NULL CHECK (tray_id >= 0 AND tray_id <= 3),
             spoolman_spool_id INTEGER NOT NULL,
             assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(printer_id, ams_id, tray_id)
+            CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id)
         )
         """,
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_slot_assignment_spool ON spoolman_slot_assignments (spoolman_spool_id)",
     )
 
     # Seed default settings keys that must exist on fresh install

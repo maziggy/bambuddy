@@ -12,7 +12,13 @@ from sqlalchemy import delete, select
 
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
-from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+from backend.app.services.spoolman import (
+    SpoolmanClientError,
+    SpoolmanNotFoundError,
+    SpoolmanUnavailableError,
+    get_spoolman_client,
+    init_spoolman_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -371,10 +377,12 @@ async def _report_spool_usage_for_slots(
             logger.debug("[SPOOLMAN] Slot %s: no spool for tag %s...", slot_id, spool_tag[:16])
             continue
 
-        result = await client.use_spool(spool["id"], grams_used)
-        if result:
+        try:
+            await client.use_spool(spool["id"], grams_used)
             logger.info("[SPOOLMAN] %s: slot %s: %sg -> spool %s", method_label, slot_id, grams_used, spool["id"])
             spools_updated += 1
+        except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
+            logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", spool["id"], exc)
 
     return spools_updated
 

@@ -1259,7 +1259,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         remaining = max(0.0, spool.label_weight - (spool.weight_used or 0))
                         inventory_weights[(assignment.ams_id, assignment.tray_id)] = remaining
             except Exception as e:
-                logger.debug("Could not load inventory weights for printer %s: %s", printer_id, e)
+                logger.warning("Could not load inventory weights for printer %s: %s", printer_id, e)
 
             # Load existing Spoolman slot assignments for the no-RFID fallback path
             spoolman_slot_map: dict[tuple[int, int], int] = {}

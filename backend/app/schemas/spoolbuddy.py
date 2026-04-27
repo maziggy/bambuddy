@@ -107,14 +107,14 @@ class TagRemovedRequest(BaseModel):
 
 class ScaleReadingRequest(BaseModel):
     device_id: str = Field(..., max_length=50)
-    weight_grams: float
+    weight_grams: float = Field(..., allow_inf_nan=False)
     stable: bool = False
     raw_adc: int | None = None
 
 
 class UpdateSpoolWeightRequest(BaseModel):
     spool_id: int = Field(..., gt=0)
-    weight_grams: float
+    weight_grams: float = Field(..., allow_inf_nan=False)
 
 
 # --- Calibration schemas ---

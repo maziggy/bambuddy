@@ -1,6 +1,7 @@
 """SpoolBuddy device management API routes."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -40,7 +41,7 @@ from backend.app.schemas.spoolbuddy import (
     WriteTagResultRequest,
 )
 from backend.app.services.spool_tag_matcher import get_spool_by_tag
-from backend.app.services.spoolman import SpoolmanNotFoundError, SpoolmanUnavailableError
+from backend.app.services.spoolman import SpoolmanClientError, SpoolmanNotFoundError, SpoolmanUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,23 @@ router = APIRouter(prefix="/spoolbuddy", tags=["spoolbuddy"])
 
 OFFLINE_THRESHOLD_SECONDS = 30
 ONLINE_BROADCAST_INTERVAL_SECONDS = 10
+_SSRF_WARN_THROTTLE_SECONDS = 60
 _spoolbuddy_online_last_broadcast: dict[str, float] = {}
+_ssrf_warn_last_broadcast: dict[str, float] = {}
 _diagnostic_results: dict[tuple[str, str], dict] = {}
+
+
+@contextlib.asynccontextmanager
+async def _translate_spoolbuddy_errors():
+    """Translate Spoolman typed exceptions to HTTP for SpoolBuddy endpoints."""
+    try:
+        yield
+    except SpoolmanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Spool not found in Spoolman") from exc
+    except SpoolmanClientError as exc:
+        raise HTTPException(status_code=502, detail="Spoolman rejected the request") from exc
+    except SpoolmanUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Spoolman server is not reachable") from exc
 
 
 async def _get_spoolman_client_or_none(db: AsyncSession):
@@ -75,6 +91,15 @@ async def _get_spoolman_client_or_none(db: AsyncSession):
             spoolman_url,
             exc,
         )
+        now = time.monotonic()
+        if now - _ssrf_warn_last_broadcast.get(spoolman_url, 0) > _SSRF_WARN_THROTTLE_SECONDS:
+            _ssrf_warn_last_broadcast[spoolman_url] = now
+            await ws_manager.broadcast(
+                {
+                    "type": "spoolman_ssrf_blocked",
+                    "detail": "Spoolman URL was rejected by the SSRF guard",
+                }
+            )
         return None
 
     client = await get_spoolman_client()
@@ -413,9 +438,15 @@ async def nfc_tag_scanned(
                 "Spoolman unreachable during tag lookup for %s",
                 req.tag_uid,
             )
-            # Degrade gracefully on any Spoolman connectivity failure — device must not receive 500.
-            # Also suppresses unknown_tag broadcast: the UI cannot distinguish a Spoolman outage
-            # from "spool not registered", which would trigger duplicate-registration flows.
+            # Broadcast a diagnostic event so the UI can surface "Spoolman down" to the user.
+            # Use a distinct type from spoolbuddy_unknown_tag — Spoolman outage != unregistered spool.
+            await ws_manager.broadcast(
+                {
+                    "type": "spoolman_unavailable",
+                    "device_id": req.device_id,
+                    "context": "nfc_tag_scanned",
+                }
+            )
             return {"status": "ok", "matched": False, "spool_id": None}
         except Exception as exc:
             logger.error(
@@ -496,12 +527,8 @@ async def nfc_write_tag(
         if sm_client is None:
             raise HTTPException(status_code=404, detail="Spool not found")
 
-        try:
+        async with _translate_spoolbuddy_errors():
             sm_spool = await sm_client.get_spool(req.spool_id)
-        except SpoolmanNotFoundError:
-            raise HTTPException(status_code=404, detail="Spool not found")
-        except SpoolmanUnavailableError:
-            raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
 
         try:
             mapped = _map_spoolman_spool(sm_spool)
@@ -618,16 +645,11 @@ async def nfc_write_result(
                     req.tag_uid,
                 )
                 _tag_link_ok = True
-            except SpoolmanNotFoundError:
+            except (SpoolmanNotFoundError, SpoolmanUnavailableError) as exc:
                 logger.error(
-                    "Spoolman spool %d deleted before tag write-back could be persisted",
+                    "Spoolman error during tag write-back for spool %d: %s",
                     req.spool_id,
-                )
-                # fall through to broadcast + raise 502 below
-            except SpoolmanUnavailableError:
-                logger.error(
-                    "Spoolman unreachable during tag write-back for spool %d",
-                    req.spool_id,
+                    exc,
                 )
                 # fall through to broadcast + raise 502 below
             except Exception:
@@ -765,63 +787,65 @@ async def update_spool_weight(
 ):
     """Update spool's used weight from scale reading."""
     from backend.app.api.routes._spoolman_helpers import _safe_float
-
-    sm_client = await _get_spoolman_client_or_none(db)
-    if sm_client is not None:
-        try:
-            sm_spool = await sm_client.get_spool(req.spool_id)
-        except SpoolmanNotFoundError:
-            raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-        except SpoolmanUnavailableError:
-            raise HTTPException(status_code=503, detail="Spoolman server is not reachable")
-
-        filament = sm_spool.get("filament") or {}
-        raw_spool_weight = filament.get("spool_weight")
-        if not raw_spool_weight:
-            logger.warning(
-                "Spoolman spool %d has no spool_weight set; using 250g fallback for tare",
-                req.spool_id,
-            )
-        core_weight = _safe_float(raw_spool_weight, 250.0)
-        label_weight = _safe_float(filament.get("weight"), 1000.0)
-        remaining_weight = max(0.0, req.weight_grams - core_weight)
-
-        result = await sm_client.update_spool(spool_id=req.spool_id, remaining_weight=remaining_weight)
-        if result is None:
-            raise HTTPException(status_code=502, detail="Failed to update spool weight in Spoolman")
-
-        weight_used = max(0.0, label_weight - remaining_weight)
-        logger.info(
-            "SpoolBuddy updated Spoolman spool %d: %.1fg on scale, core=%.1fg → %.1fg remaining",
-            req.spool_id,
-            req.weight_grams,
-            core_weight,
-            remaining_weight,
-        )
-        return {"status": "ok", "weight_used": weight_used}
-
-    # Local DB mode
     from backend.app.models.spool import Spool
 
+    # Try local DB first — local spool IDs must not be forwarded to Spoolman.
     db_result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
     spool = db_result.scalar_one_or_none()
-    if not spool:
+
+    if spool:
+        net_filament = max(0, req.weight_grams - spool.core_weight)
+        spool.weight_used = max(0, spool.label_weight - net_filament)
+        spool.last_scale_weight = req.weight_grams
+        spool.last_weighed_at = datetime.now(timezone.utc)
+        await db.commit()
+        logger.info(
+            "SpoolBuddy updated spool %d weight: %.1fg on scale, %.1fg used",
+            spool.id,
+            req.weight_grams,
+            spool.weight_used,
+        )
+        return {"status": "ok", "weight_used": spool.weight_used}
+
+    # Local miss — fall back to Spoolman when enabled.
+    sm_client = await _get_spoolman_client_or_none(db)
+    if sm_client is None:
         raise HTTPException(status_code=404, detail="Spool not found")
 
-    # net weight = total on scale minus empty spool core
-    net_filament = max(0, req.weight_grams - spool.core_weight)
-    spool.weight_used = max(0, spool.label_weight - net_filament)
-    spool.last_scale_weight = req.weight_grams
-    spool.last_weighed_at = datetime.now(timezone.utc)
-    await db.commit()
+    async with _translate_spoolbuddy_errors():
+        sm_spool = await sm_client.get_spool(req.spool_id)
 
+    filament = sm_spool.get("filament") or {}
+    raw_spool_weight = filament.get("spool_weight")
+    spool_weight_warning: str | None = None
+    if not raw_spool_weight:
+        logger.warning(
+            "Spoolman spool %d has no spool_weight set; using 250g fallback for tare",
+            req.spool_id,
+        )
+        spool_weight_warning = (
+            "spool_weight_not_set: Spoolman filament has no spool_weight configured; "
+            "weight estimate uses 250g fallback"
+        )
+    core_weight = _safe_float(raw_spool_weight, 250.0)
+    label_weight = _safe_float(filament.get("weight"), 1000.0)
+    remaining_weight = max(0.0, req.weight_grams - core_weight)
+
+    async with _translate_spoolbuddy_errors():
+        await sm_client.update_spool(spool_id=req.spool_id, remaining_weight=remaining_weight)
+
+    weight_used = max(0.0, label_weight - remaining_weight)
     logger.info(
-        "SpoolBuddy updated spool %d weight: %.1fg on scale, %.1fg used",
-        spool.id,
+        "SpoolBuddy updated Spoolman spool %d: %.1fg on scale, core=%.1fg → %.1fg remaining",
+        req.spool_id,
         req.weight_grams,
-        spool.weight_used,
+        core_weight,
+        remaining_weight,
     )
-    return {"status": "ok", "weight_used": spool.weight_used}
+    result: dict = {"status": "ok", "weight_used": weight_used}
+    if spool_weight_warning:
+        result["warnings"] = [spool_weight_warning]
+    return result
 
 
 # --- Calibration endpoints ---
@@ -1017,7 +1041,7 @@ async def queue_system_command(
     device_id: str,
     req: SystemCommandRequest,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Queue a system command (reboot, shutdown, restart_daemon, restart_browser) for the SpoolBuddy device."""
     if req.command not in VALID_SYSTEM_COMMANDS:
@@ -1206,7 +1230,7 @@ async def trigger_daemon_update(
     device_id: str,
     req: dict | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Trigger a SpoolBuddy update over SSH.
 

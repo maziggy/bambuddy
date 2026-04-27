@@ -88,6 +88,13 @@ import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
+export interface SpoolmanSlotAssignmentRow {
+  printer_id: number;
+  ams_id: number;
+  tray_id: number;
+  spoolman_spool_id: number;
+}
+
 // Color names resolve via getColorName() which reads the backend color_catalog
 // (loaded once by ColorCatalogProvider). No hardcoded tables here — see #857.
 
@@ -1366,7 +1373,7 @@ function PrinterCard({
   onGetAssignment?: (printerId: number, amsId: number, trayId: number) => SpoolAssignment | undefined;
   onUnassignSpool?: (printerId: number, amsId: number, trayId: number) => void;
   spoolmanSpools?: InventorySpool[];
-  spoolmanSlotAssignments?: Array<{ printer_id: number; ams_id: number; tray_id: number; spoolman_spool_id: number }>;
+  spoolmanSlotAssignments?: SpoolmanSlotAssignmentRow[];
   onUnassignSpoolmanSpool?: (spoolmanSpoolId: number) => void;
   timeFormat?: 'system' | '12h' | '24h';
   cameraViewMode?: 'window' | 'embedded';

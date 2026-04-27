@@ -12,26 +12,17 @@ NDEF structure:
   [Terminator: FE]               - 1 byte
 """
 
+import logging
 import struct
-from typing import TypedDict
 
+from backend.app.api.routes._spoolman_helpers import MappedSpoolFields
 from backend.app.models.spool import Spool
+
+logger = logging.getLogger(__name__)
 
 OPENTAG3D_MIME_TYPE = b"application/opentag3d"
 PAYLOAD_SIZE = 102
 TAG_VERSION = 1000  # v1.000
-
-
-class MappedSpoolFields(TypedDict, total=False):
-    """Fields consumed by the OpenTag3D encoder from a mapped Spoolman spool dict."""
-
-    material: str | None
-    subtype: str | None
-    brand: str | None
-    color_name: str | None
-    rgba: str | None
-    label_weight: int | None
-    nozzle_temp_min: int | None
 
 
 def _build_payload_from_dict(data: dict) -> bytes:
@@ -69,6 +60,7 @@ def _build_payload_from_dict(data: dict) -> bytes:
     try:
         rgba_bytes = bytes.fromhex(rgba_hex[:8].ljust(8, "0"))
     except ValueError:
+        logger.warning("OpenTag3D encoder: invalid rgba value %r — encoding as transparent black", rgba_hex)
         rgba_bytes = b"\x00\x00\x00\x00"
     buf[0x4B:0x4F] = rgba_bytes[:4]
 

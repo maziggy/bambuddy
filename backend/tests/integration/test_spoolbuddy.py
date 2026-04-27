@@ -1386,12 +1386,12 @@ class TestUpdateSpoolWeightSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spoolman_mode_502_on_client_failure(self, async_client: AsyncClient, spoolman_settings):
-        """502 is returned when Spoolman client update fails (returns None)."""
+    async def test_spoolman_mode_503_on_client_failure(self, async_client: AsyncClient, spoolman_settings):
+        """503 is returned when Spoolman is unreachable during weight update."""
         sm_spool = _spoolman_spool_fixture(99)
         mock_client = _mock_spoolman_client()
         mock_client.get_spool = AsyncMock(return_value=sm_spool)
-        mock_client.update_spool = AsyncMock(return_value=None)
+        mock_client.update_spool = AsyncMock(side_effect=SpoolmanUnavailableError("Spoolman down"))
 
         with (
             patch(
@@ -1408,7 +1408,7 @@ class TestUpdateSpoolWeightSpoolman:
                 json={"spool_id": 99, "weight_grams": 500},
             )
 
-        assert resp.status_code == 502
+        assert resp.status_code == 503
 
     @pytest.mark.asyncio
     @pytest.mark.integration

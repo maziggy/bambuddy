@@ -3,7 +3,7 @@
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.app.core.compat import StrEnum
 
@@ -16,12 +16,23 @@ class ScheduleType(StrEnum):
     WEEKLY = "weekly"
 
 
+class ProviderType(StrEnum):
+    """Git hosting provider types."""
+
+    GITHUB = "github"
+    GITHUB_ENTERPRISE = "github_enterprise"
+    GITEA = "gitea"
+    GITLAB = "gitlab"
+
+
 class GitHubBackupConfigCreate(BaseModel):
     """Schema for creating/updating GitHub backup config."""
 
-    repository_url: str = Field(..., min_length=1, max_length=500, description="GitHub repository URL")
+    repository_url: str = Field(..., min_length=1, max_length=500, description="Git repository URL")
     access_token: str = Field(..., min_length=1, description="Personal Access Token")
     branch: str = Field(default="main", max_length=100, description="Branch to push to")
+    provider: ProviderType = Field(default=ProviderType.GITHUB, description="Git hosting provider")
+    api_base_url: str | None = Field(default=None, max_length=500, description="Base URL for self-hosted instances")
 
     schedule_enabled: bool = Field(default=False, description="Enable scheduled backups")
     schedule_type: ScheduleType = Field(default=ScheduleType.DAILY, description="Schedule frequency")
@@ -37,16 +48,21 @@ class GitHubBackupConfigCreate(BaseModel):
     @field_validator("repository_url")
     @classmethod
     def validate_repo_url(cls, v: str) -> str:
-        """Validate GitHub repository URL format."""
-        # Accept various GitHub URL formats
+        """Validate Git repository URL format."""
         patterns = [
-            r"^https://github\.com/[\w.-]+/[\w.-]+(?:\.git)?$",
-            r"^git@github\.com:[\w.-]+/[\w.-]+(?:\.git)?$",
+            r"^https://[\w.-]+(:\d+)?/[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?/?$",
+            r"^git@[\w.-]+:[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?$",
         ]
         v = v.strip().rstrip("/")
         if not any(re.match(p, v) for p in patterns):
-            raise ValueError("Invalid GitHub repository URL. Expected format: https://github.com/owner/repo")
+            raise ValueError("Invalid Git repository URL. Expected format: https://host/owner/repo")
         return v
+
+    @model_validator(mode="after")
+    def validate_api_base_url(self) -> "GitHubBackupConfigCreate":
+        if self.provider in (ProviderType.GITHUB_ENTERPRISE, ProviderType.GITEA) and not self.api_base_url:
+            raise ValueError("api_base_url is required for github_enterprise and gitea providers")
+        return self
 
 
 class GitHubBackupConfigUpdate(BaseModel):
@@ -55,6 +71,8 @@ class GitHubBackupConfigUpdate(BaseModel):
     repository_url: str | None = Field(default=None, max_length=500)
     access_token: str | None = Field(default=None)
     branch: str | None = Field(default=None, max_length=100)
+    provider: ProviderType | None = None
+    api_base_url: str | None = Field(default=None, max_length=500)
 
     schedule_enabled: bool | None = None
     schedule_type: ScheduleType | None = None
@@ -73,13 +91,19 @@ class GitHubBackupConfigUpdate(BaseModel):
         if v is None:
             return v
         patterns = [
-            r"^https://github\.com/[\w.-]+/[\w.-]+(?:\.git)?$",
-            r"^git@github\.com:[\w.-]+/[\w.-]+(?:\.git)?$",
+            r"^https://[\w.-]+(:\d+)?/[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?/?$",
+            r"^git@[\w.-]+:[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?$",
         ]
         v = v.strip().rstrip("/")
         if not any(re.match(p, v) for p in patterns):
-            raise ValueError("Invalid GitHub repository URL")
+            raise ValueError("Invalid Git repository URL")
         return v
+
+    @model_validator(mode="after")
+    def validate_api_base_url(self) -> "GitHubBackupConfigUpdate":
+        if self.provider in (ProviderType.GITHUB_ENTERPRISE, ProviderType.GITEA) and not self.api_base_url:
+            raise ValueError("api_base_url is required for github_enterprise and gitea providers")
+        return self
 
 
 class GitHubBackupConfigResponse(BaseModel):
@@ -89,6 +113,8 @@ class GitHubBackupConfigResponse(BaseModel):
     repository_url: str
     has_token: bool = Field(description="Whether an access token is configured")
     branch: str
+    provider: str
+    api_base_url: str | None
 
     schedule_enabled: bool
     schedule_type: str

@@ -6862,5 +6862,7 @@ export default {
     settings: 'Settings',
     editor: 'Editor',
     hints: 'Reference',
+    files: 'Macro Files',
+    editFile: 'Edit File',
   },
 };

@@ -4,20 +4,33 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+# ── Cfg file schemas ───────────────────────────────────────────────────────────
 
-class MacroCreate(BaseModel):
+
+class MacroCfgFileCreate(BaseModel):
     name: str
-    description: str | None = None
-    script: str
-    trigger_type: str = "manual"  # manual|webhook|schedule
-    cron_expression: str | None = None
-    printer_id: int | None = None
+    content: str = ""
+
+
+class MacroCfgFileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    file_path: str
+    parse_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class MacroCfgFileSave(BaseModel):
+    content: str
+
+
+# ── Macro schemas ──────────────────────────────────────────────────────────────
 
 
 class MacroUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    script: str | None = None
     trigger_type: str | None = None
     cron_expression: str | None = None
     printer_id: int | None = None
@@ -29,13 +42,16 @@ class MacroResponse(BaseModel):
     id: int
     name: str
     description: str | None
-    script: str  # content read from disk at response time
-    file_path: str
+    status: str
+    cfg_file_id: int | None
     trigger_type: str
     cron_expression: str | None
     printer_id: int | None
     created_at: datetime
     updated_at: datetime
+
+
+# ── Run schemas ────────────────────────────────────────────────────────────────
 
 
 class MacroRunResponse(BaseModel):
@@ -53,6 +69,9 @@ class MacroRunResponse(BaseModel):
 
 class RunMacroRequest(BaseModel):
     printer_id: int | None = None
+
+
+# ── Terminal / exec schemas ────────────────────────────────────────────────────
 
 
 class HMSErrorInfo(BaseModel):

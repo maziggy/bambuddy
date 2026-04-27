@@ -10,11 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.models.macro import Macro, MacroRun
+from backend.app.models.macro import Macro, MacroCfgFile, MacroRun
 from backend.app.schemas.macro import (
     ExecLineRequest,
     ExecLineResponse,
-    MacroCreate,
+    MacroCfgFileCreate,
+    MacroCfgFileResponse,
+    MacroCfgFileSave,
     MacroResponse,
     MacroRunResponse,
     MacroUpdate,
@@ -22,6 +24,7 @@ from backend.app.schemas.macro import (
 )
 from backend.app.services import macro_files
 from backend.app.services.gcode_whitelist import GCODE_WHITELIST
+from backend.app.services.macro_cfg_watcher import delete_file_from_db, sync_file
 from backend.app.services.macro_runner import macro_runner
 
 logger = logging.getLogger(__name__)
@@ -29,27 +32,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/macros", tags=["macros"])
 
 
-def _macro_to_response(macro: Macro) -> MacroResponse:
-    try:
-        script = macro_files.read(macro.file_path)
-    except FileNotFoundError:
-        script = ""
-    return MacroResponse(
-        id=macro.id,
-        name=macro.name,
-        description=macro.description,
-        script=script,
-        file_path=macro.file_path,
-        trigger_type=macro.trigger_type,
-        cron_expression=macro.cron_expression,
-        printer_id=macro.printer_id,
-        created_at=macro.created_at,
-        updated_at=macro.updated_at,
-    )
-
-
-# NOTE: These routes MUST be declared before /{macro_id} to avoid FastAPI
-# treating literal path segments as macro_id values.
+# ── Static / utility routes (must come before /{macro_id}) ────────────────────
 
 
 @router.get("/gcode-whitelist", response_model=list[str])
@@ -84,7 +67,6 @@ async def cancel_run(
         raise HTTPException(409, "Run is not active")
     cancelled = macro_runner.cancel_run(run_id)
     if not cancelled:
-        # Task already finished between check and cancel; mark error anyway
         run.status = "error"
         run.log = (run.log or "") + "[CANCELLED] Cancelled via API (task already done)\n"
         from datetime import datetime, timezone
@@ -106,15 +88,16 @@ async def exec_line(
     if not line:
         raise HTTPException(422, "line must not be empty")
 
-    # Check if line matches a macro name (allows running macros by name from terminal)
+    # Check if line matches an active macro name (allows running macros by name from terminal)
     token = line.split()[0]
-    macro_result = await db.execute(select(Macro).where(Macro.name == token))
+    macro_result = await db.execute(select(Macro).where(Macro.name == token, Macro.status == "active"))
     macro = macro_result.scalar_one_or_none()
     if macro is None:
-        # Case-insensitive fallback
         from sqlalchemy import func as sa_func
 
-        macro_result = await db.execute(select(Macro).where(sa_func.lower(Macro.name) == token.lower()))
+        macro_result = await db.execute(
+            select(Macro).where(sa_func.lower(Macro.name) == token.lower(), Macro.status == "active")
+        )
         macro = macro_result.scalar_one_or_none()
 
     if macro is not None:
@@ -147,43 +130,100 @@ async def exec_line(
     )
 
 
-@router.get("", response_model=list[MacroResponse])
-async def list_macros(
+# ── Cfg file CRUD ─────────────────────────────────────────────────────────────
+
+
+@router.get("/cfg-files", response_model=list[MacroCfgFileResponse])
+async def list_cfg_files(
     _=RequirePermissionIfAuthEnabled(Permission.MACROS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Macro).order_by(Macro.name))
-    return [_macro_to_response(m) for m in result.scalars()]
+    result = await db.execute(select(MacroCfgFile).order_by(MacroCfgFile.name))
+    return result.scalars().all()
 
 
-@router.post("", response_model=MacroResponse)
-async def create_macro(
-    data: MacroCreate,
+@router.post("/cfg-files", response_model=MacroCfgFileResponse)
+async def create_cfg_file(
+    data: MacroCfgFileCreate,
     _=RequirePermissionIfAuthEnabled(Permission.MACROS_CREATE),
+):
+    relative_path = macro_files.create(data.name, data.content)
+    cfg_file = await sync_file(relative_path)
+    return cfg_file
+
+
+@router.get("/cfg-files/{file_id}", response_model=MacroCfgFileResponse)
+async def get_cfg_file(
+    file_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.MACROS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    if data.trigger_type == "schedule":
-        _validate_cron(data.cron_expression)
+    cfg_file = await db.get(MacroCfgFile, file_id)
+    if not cfg_file:
+        raise HTTPException(404, "Cfg file not found")
+    return cfg_file
 
-    # Check name uniqueness
-    existing = await db.execute(select(Macro).where(Macro.name == data.name))
-    if existing.scalar_one_or_none():
-        raise HTTPException(409, f"Macro named '{data.name}' already exists")
 
-    file_path = macro_files.write(data.name, data.script)
-    macro = Macro(
-        name=data.name,
-        description=data.description,
-        file_path=file_path,
-        trigger_type=data.trigger_type,
-        cron_expression=data.cron_expression,
-        printer_id=data.printer_id,
-    )
-    db.add(macro)
-    await db.flush()
-    await db.refresh(macro)
-    await db.commit()
-    return _macro_to_response(macro)
+@router.get("/cfg-files/{file_id}/content")
+async def get_cfg_file_content(
+    file_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.MACROS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    cfg_file = await db.get(MacroCfgFile, file_id)
+    if not cfg_file:
+        raise HTTPException(404, "Cfg file not found")
+    try:
+        content = macro_files.read(cfg_file.file_path)
+    except FileNotFoundError:
+        content = ""
+    return {"content": content}
+
+
+@router.put("/cfg-files/{file_id}", response_model=MacroCfgFileResponse)
+async def save_cfg_file(
+    file_id: int,
+    data: MacroCfgFileSave,
+    _=RequirePermissionIfAuthEnabled(Permission.MACROS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    cfg_file = await db.get(MacroCfgFile, file_id)
+    if not cfg_file:
+        raise HTTPException(404, "Cfg file not found")
+    macro_files.write(cfg_file.file_path, data.content)
+    updated = await sync_file(cfg_file.file_path)
+    return updated
+
+
+@router.delete("/cfg-files/{file_id}")
+async def delete_cfg_file(
+    file_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.MACROS_DELETE),
+    db: AsyncSession = Depends(get_db),
+):
+    cfg_file = await db.get(MacroCfgFile, file_id)
+    if not cfg_file:
+        raise HTTPException(404, "Cfg file not found")
+    relative_path = cfg_file.file_path
+    macro_files.delete(relative_path)
+    await delete_file_from_db(relative_path)
+    return {"ok": True}
+
+
+# ── Macro routes ──────────────────────────────────────────────────────────────
+
+
+@router.get("", response_model=list[MacroResponse])
+async def list_macros(
+    status: str | None = None,
+    _=RequirePermissionIfAuthEnabled(Permission.MACROS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(Macro).order_by(Macro.name)
+    if status:
+        q = q.where(Macro.status == status)
+    result = await db.execute(q)
+    return result.scalars().all()
 
 
 @router.get("/{macro_id}", response_model=MacroResponse)
@@ -195,7 +235,7 @@ async def get_macro(
     macro = await db.get(Macro, macro_id)
     if not macro:
         raise HTTPException(404, "Macro not found")
-    return _macro_to_response(macro)
+    return macro
 
 
 @router.put("/{macro_id}", response_model=MacroResponse)
@@ -212,17 +252,6 @@ async def update_macro(
     if data.trigger_type == "schedule" or (data.trigger_type is None and macro.trigger_type == "schedule"):
         _validate_cron(data.cron_expression or macro.cron_expression)
 
-    if data.name is not None and data.name != macro.name:
-        existing = await db.execute(select(Macro).where(Macro.name == data.name))
-        if existing.scalar_one_or_none():
-            raise HTTPException(409, f"Macro named '{data.name}' already exists")
-        macro.name = data.name
-
-    if data.script is not None:
-        macro_files.write(data.name or macro.name, data.script, existing_path=macro.file_path)
-
-    if data.description is not None:
-        macro.description = data.description
     if data.trigger_type is not None:
         macro.trigger_type = data.trigger_type
     if data.cron_expression is not None:
@@ -232,22 +261,7 @@ async def update_macro(
 
     await db.commit()
     await db.refresh(macro)
-    return _macro_to_response(macro)
-
-
-@router.delete("/{macro_id}")
-async def delete_macro(
-    macro_id: int,
-    _=RequirePermissionIfAuthEnabled(Permission.MACROS_DELETE),
-    db: AsyncSession = Depends(get_db),
-):
-    macro = await db.get(Macro, macro_id)
-    if not macro:
-        raise HTTPException(404, "Macro not found")
-    macro_files.delete(macro.file_path)
-    await db.delete(macro)
-    await db.commit()
-    return {"ok": True}
+    return macro
 
 
 @router.post("/{macro_id}/run", response_model=MacroRunResponse)
@@ -260,6 +274,8 @@ async def run_macro(
     macro = await db.get(Macro, macro_id)
     if not macro:
         raise HTTPException(404, "Macro not found")
+    if macro.status != "active":
+        raise HTTPException(409, f"Macro is {macro.status} and cannot be run")
 
     printer_id = body.printer_id if body.printer_id is not None else macro.printer_id
     run = MacroRun(
@@ -273,7 +289,6 @@ async def run_macro(
     run_id = run.id
     await db.commit()
 
-    # Launch background; pass run_id so the task reuses the record we just created
     asyncio.create_task(macro_runner.run_macro(macro_id, printer_id, "manual", run_id=run_id))
 
     run = await db.get(MacroRun, run_id)
@@ -295,9 +310,7 @@ async def list_runs(
     return result.scalars().all()
 
 
-# ------------------------------------------------------------------
-# Helpers
-# ------------------------------------------------------------------
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _validate_cron(expr: str | None) -> None:
@@ -309,4 +322,4 @@ def _validate_cron(expr: str | None) -> None:
         if not croniter.is_valid(expr):
             raise HTTPException(422, f"Invalid cron expression: {expr}")
     except ImportError:
-        pass  # croniter not installed; skip validation
+        pass

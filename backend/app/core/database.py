@@ -2636,6 +2636,57 @@ async def run_migrations(conn):
     # Migration: Add allow_insecure_http column to github_backup_config for self-hosted HTTP instances
     await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN allow_insecure_http BOOLEAN DEFAULT FALSE")
 
+    # Migration: Add macro system columns (cfg-file-based redesign)
+    await _safe_execute(
+        conn, "ALTER TABLE macros ADD COLUMN cfg_file_id INTEGER REFERENCES macro_cfg_files(id) ON DELETE CASCADE"
+    )
+    await _safe_execute(conn, "ALTER TABLE macros ADD COLUMN status VARCHAR(20) DEFAULT 'active'")
+    # Migration: Drop file_path NOT NULL constraint by rebuilding the macros table.
+    # PRAGMA table_info returns one row per column; we check if file_path is still present.
+    if is_sqlite():
+        from sqlalchemy import text as _text
+
+        try:
+            result = await conn.execute(_text("PRAGMA table_info(macros)"))
+            cols = {row[1] for row in result.fetchall()}  # row[1] is column name
+            if "file_path" in cols:
+                # Must disable FK enforcement before DROP; PRAGMA is session-scoped so
+                # issue it on the raw underlying connection outside any savepoint.
+                await conn.execute(_text("PRAGMA foreign_keys = OFF"))
+                await conn.execute(
+                    _text("""
+                    CREATE TABLE macros_v2 (
+                        id INTEGER PRIMARY KEY,
+                        name VARCHAR(200) NOT NULL UNIQUE,
+                        description TEXT,
+                        cfg_file_id INTEGER REFERENCES macro_cfg_files(id) ON DELETE CASCADE,
+                        status VARCHAR(20) NOT NULL DEFAULT 'active',
+                        trigger_type VARCHAR(20) NOT NULL DEFAULT 'manual',
+                        cron_expression VARCHAR(100),
+                        printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
+                        created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+                        updated_at DATETIME DEFAULT (CURRENT_TIMESTAMP)
+                    )
+                """)
+                )
+                await conn.execute(
+                    _text("""
+                    INSERT INTO macros_v2
+                        (id, name, description, cfg_file_id, status,
+                         trigger_type, cron_expression, printer_id, created_at, updated_at)
+                    SELECT id, name, description, cfg_file_id,
+                           COALESCE(status, 'active'),
+                           trigger_type, cron_expression, printer_id, created_at, updated_at
+                    FROM macros
+                """)
+                )
+                await conn.execute(_text("DROP TABLE macros"))
+                await conn.execute(_text("ALTER TABLE macros_v2 RENAME TO macros"))
+                await conn.execute(_text("PRAGMA foreign_keys = ON"))
+                logger.info("macros table rebuilt: file_path column removed")
+        except Exception:
+            logger.exception("macros table rebuild failed — manual intervention may be needed")
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

@@ -6456,15 +6456,22 @@ export const api = {
   refreshBaseProfileCache: () =>
     request<{ refreshed: number; failed: number; total: number }>('/local-presets/base-cache/refresh', { method: 'POST' }),
 
+  // Macro cfg files
+  getMacroCfgFiles: () => request<MacroCfgFile[]>('/macros/cfg-files'),
+  getMacroCfgFile: (id: number) => request<MacroCfgFile>(`/macros/cfg-files/${id}`),
+  getMacroCfgFileContent: (id: number) => request<{ content: string }>(`/macros/cfg-files/${id}/content`),
+  createMacroCfgFile: (data: { name: string; content?: string }) =>
+    request<MacroCfgFile>('/macros/cfg-files', { method: 'POST', body: JSON.stringify(data) }),
+  saveMacroCfgFile: (id: number, content: string) =>
+    request<MacroCfgFile>(`/macros/cfg-files/${id}`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  deleteMacroCfgFile: (id: number) =>
+    request<{ ok: boolean }>(`/macros/cfg-files/${id}`, { method: 'DELETE' }),
+
   // Macros
-  getMacros: () => request<Macro[]>('/macros'),
+  getMacros: (status?: string) => request<Macro[]>(status ? `/macros?status=${status}` : '/macros'),
   getMacro: (id: number) => request<Macro>(`/macros/${id}`),
-  createMacro: (data: Partial<Macro> & { script: string; name: string }) =>
-    request<Macro>('/macros', { method: 'POST', body: JSON.stringify(data) }),
-  updateMacro: (id: number, data: Partial<Macro>) =>
+  updateMacro: (id: number, data: Partial<Pick<Macro, 'trigger_type' | 'cron_expression' | 'printer_id'>>) =>
     request<Macro>(`/macros/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteMacro: (id: number) =>
-    request<{ ok: boolean }>(`/macros/${id}`, { method: 'DELETE' }),
   runMacro: (id: number, printer_id?: number) =>
     request<MacroRun>(`/macros/${id}/run`, { method: 'POST', body: JSON.stringify({ printer_id: printer_id ?? null }) }),
   getMacroRuns: (id: number) => request<MacroRun[]>(`/macros/${id}/runs`),
@@ -6476,12 +6483,21 @@ export const api = {
 };
 
 // Macro types
+export interface MacroCfgFile {
+  id: number;
+  name: string;
+  file_path: string;
+  parse_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Macro {
   id: number;
   name: string;
   description: string | null;
-  script: string;
-  file_path: string;
+  status: 'active' | 'orphaned' | 'error';
+  cfg_file_id: number | null;
   trigger_type: 'manual' | 'webhook' | 'schedule';
   cron_expression: string | null;
   printer_id: number | null;

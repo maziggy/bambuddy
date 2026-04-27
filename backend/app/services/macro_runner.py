@@ -16,8 +16,9 @@ from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
 
 from backend.app.core.database import async_session
-from backend.app.models.macro import Macro, MacroRun
-from backend.app.services import macro_files
+from backend.app.models.macro import Macro, MacroCfgFile, MacroRun
+from backend.app.services.macro_cfg_parser import get_macro_body
+from backend.app.services.macro_files import read as read_cfg_file
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,21 @@ def _parse_flags(tokens: list[str]) -> dict[str, str]:
     return flags
 
 
+async def _load_macro_body(macro: Macro) -> str | None:
+    """Read the parent .cfg file and extract this macro's body block."""
+    if macro.cfg_file_id is None:
+        return None
+    async with async_session() as db:
+        cfg_file = await db.get(MacroCfgFile, macro.cfg_file_id)
+    if cfg_file is None:
+        return None
+    try:
+        text = read_cfg_file(cfg_file.file_path)
+    except FileNotFoundError:
+        return None
+    return get_macro_body(text, macro.name)
+
+
 class MacroRunner:
     def __init__(self) -> None:
         self._scheduler_task: asyncio.Task | None = None
@@ -205,14 +221,12 @@ class MacroRunner:
                 run = await db.get(MacroRun, run_id)
                 if run:
                     run.status = "running"
-            file_path = macro.file_path
             macro_name = macro.name
             await db.commit()
 
-        try:
-            script = macro_files.read(file_path)
-        except FileNotFoundError:
-            await self._finish_run(run_id, "error", f"[ERROR] Macro file not found: {file_path}\n")
+        script = await _load_macro_body(macro)
+        if script is None:
+            await self._finish_run(run_id, "error", f"[ERROR] Macro body not found for '{macro_name}'\n")
             return run_id
 
         # Build context and render
@@ -322,7 +336,9 @@ class MacroRunner:
                 await asyncio.sleep(60)
                 now = datetime.now(timezone.utc)
                 async with async_session() as db:
-                    result = await db.execute(select(Macro).where(Macro.trigger_type == "schedule"))
+                    result = await db.execute(
+                        select(Macro).where(Macro.trigger_type == "schedule", Macro.status == "active")
+                    )
                     macros = result.scalars().all()
 
                 for macro in macros:
@@ -378,13 +394,16 @@ class MacroRunner:
     async def _run_sub_macro(self, name: str, printer_id: int | None, call_stack: set[str]) -> None:
         """Resolve a macro by name and execute it inline."""
         async with async_session() as db:
-            result = await db.execute(select(Macro).where(Macro.name == name))
+            result = await db.execute(select(Macro).where(Macro.name == name, Macro.status == "active"))
             macro = result.scalar_one_or_none()
         if not macro:
-            logger.warning("Sub-macro not found: %s", name)
+            logger.warning("Sub-macro not found or not active: %s", name)
             return
         try:
-            script = macro_files.read(macro.file_path)
+            script = await _load_macro_body(macro)
+            if script is None:
+                logger.warning("Sub-macro body not found: %s", name)
+                return
             context = await self._build_context(printer_id, call_stack)
             rendered = _jinja_env.from_string(script).render(**context)
         except Exception as exc:  # noqa: BLE001

@@ -2193,6 +2193,7 @@ export default {
         emailClaim: '邮箱声明',
         emailClaimDesc: "用作邮箱身份的 JWT 声明。Azure Entra ID 请使用 'preferred_username' 或 'upn'（不发送 email_verified）。仅使用可信的声明名称。",
         emailClaimPlaceholder: 'email',
+        emailClaimCustomClaimAutoLinkWarning: "Custom claims are safe for auto-link only when the value is tenant-administered (e.g. Azure Entra ID upn / preferred_username). Do not enable auto-link if your IdP allows users to self-assert this claim.",
         requireEmailVerified: '要求邮箱已验证',
         requireEmailVerifiedDesc: '仅在提供商将邮箱声明标记为已验证时才接受。',
         requireEmailVerifiedWarning: '警告：将在未经验证的情况下接受邮箱。仅对受信任的提供商使用。',

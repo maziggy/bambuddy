@@ -709,3 +709,46 @@ class TestAutoLinkConstraintMigration:
         assert "ADD CONSTRAINT" in add_sql.upper()
         assert "email_claim != 'email'" in add_sql
         assert "require_email_verified = TRUE AND email_claim = 'email'" not in add_sql
+
+    @pytest.mark.asyncio
+    async def test_constraint_migration_sqlite_count_guard_raises_on_mismatch(self):
+        """RuntimeError is raised when the copied row count doesn't match the source."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import pytest
+
+        from backend.app.core.database import _migrate_update_auto_link_constraint
+
+        _OLD_SQL = (
+            "CREATE TABLE oidc_providers (id INTEGER NOT NULL, "
+            "CONSTRAINT ck_auto_link_requires_verified_email_claim "
+            "CHECK (auto_link_existing_accounts = FALSE OR "
+            "(require_email_verified = TRUE AND email_claim = 'email')))"
+        )
+
+        async def fake_execute(stmt):
+            sql = str(stmt)
+            result = MagicMock()
+            if "sqlite_master" in sql:
+                result.fetchone.return_value = (_OLD_SQL,)
+            elif "count(*)" in sql.lower() and "oidc_providers_v2" not in sql:
+                result.scalar_one.return_value = 2  # source has 2 rows
+            elif "count(*)" in sql.lower() and "oidc_providers_v2" in sql:
+                result.scalar_one.return_value = 1  # copy only has 1 — mismatch
+            else:
+                result.fetchone.return_value = None
+            return result
+
+        nested_cm = MagicMock()
+        nested_cm.__aenter__ = AsyncMock(return_value=None)
+        nested_cm.__aexit__ = AsyncMock(return_value=False)  # don't suppress exceptions
+
+        mock_conn = MagicMock()
+        mock_conn.execute = AsyncMock(side_effect=fake_execute)
+        mock_conn.begin_nested.return_value = nested_cm
+
+        with (
+            patch("backend.app.core.database.is_sqlite", return_value=True),
+            pytest.raises(RuntimeError, match="mismatch"),
+        ):
+            await _migrate_update_auto_link_constraint(mock_conn)

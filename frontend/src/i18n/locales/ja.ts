@@ -2180,6 +2180,7 @@ export default {
         emailClaim: 'メールクレーム',
         emailClaimDesc: "メールIDとして使用するJWTクレーム。Azure Entra IDには'preferred_username'または'upn'を使用（email_verifiedを送信しない）。信頼できるクレーム名のみ使用してください。",
         emailClaimPlaceholder: 'email',
+        emailClaimCustomClaimAutoLinkWarning: "Custom claims are safe for auto-link only when the value is tenant-administered (e.g. Azure Entra ID upn / preferred_username). Do not enable auto-link if your IdP allows users to self-assert this claim.",
         requireEmailVerified: 'メール確認を要求',
         requireEmailVerifiedDesc: 'プロバイダーが確認済みとしてマークした場合にのみメールクレームを受け入れます。',
         requireEmailVerifiedWarning: '警告：確認なしでメールが受け入れられます。信頼できるプロバイダーのみで使用してください。',

@@ -2141,6 +2141,7 @@ export default {
         emailClaim: 'Claim de e-mail',
         emailClaimDesc: "Claim JWT usado como identidade de e-mail. Use 'preferred_username' ou 'upn' para Azure Entra ID (que não envia email_verified). Use apenas nomes de claim confiáveis.",
         emailClaimPlaceholder: 'email',
+        emailClaimCustomClaimAutoLinkWarning: "Custom claims are safe for auto-link only when the value is tenant-administered (e.g. Azure Entra ID upn / preferred_username). Do not enable auto-link if your IdP allows users to self-assert this claim.",
         requireEmailVerified: 'Exigir e-mail verificado',
         requireEmailVerifiedDesc: 'Aceitar o claim de e-mail apenas quando o provedor o marcar como verificado.',
         requireEmailVerifiedWarning: 'Aviso: o e-mail será aceito sem verificação. Use apenas com provedores confiáveis.',

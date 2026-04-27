@@ -4094,3 +4094,149 @@ class TestOIDCEmailResolutionExtra:
         assert upd2.status_code == 200
         assert upd2.json()["auto_link_existing_accounts"] is True
         assert upd2.json()["email_claim"] == "preferred_username"
+
+
+# ===========================================================================
+# E2E: Fall C (custom email claim) auto-link actually links existing user
+# ===========================================================================
+
+
+class TestOIDCFallCAutoLinkE2E:
+    """OIDC callback with email_claim='preferred_username' (Fall C / Azure Entra ID)
+    must auto-link an existing local user when auto_link_existing_accounts=True.
+
+    This test exercises _resolve_provider_email Fall C and the auto-link path in
+    oidc_callback — a regression in either would silently drop the link without
+    being caught by the configuration-layer tests.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_fall_c_auto_link_links_existing_user_via_callback(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from sqlalchemy import select as sa_select
+
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
+
+        issuer = "https://entra.fallc.example.com"
+        nonce = secrets.token_urlsafe(32)
+        code_verifier = secrets.token_urlsafe(48)
+
+        # ── 1. Local user that should be linked ──────────────────────────────
+        alice = User(
+            username="fallc_alice",
+            email="alice.fallc@example.com",
+            password_hash=get_password_hash(secrets.token_urlsafe(16)),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(alice)
+        await db_session.flush()
+
+        # ── 2. Provider: Fall C config (preferred_username, no email_verified) ─
+        provider = OIDCProvider(
+            name="AzureEntraFallC",
+            issuer_url=issuer,
+            client_id="azure-client",
+            _client_secret_enc="azure-secret",
+            scopes="openid profile",
+            is_enabled=True,
+            auto_link_existing_accounts=True,
+            auto_create_users=False,
+            email_claim="preferred_username",
+            require_email_verified=False,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+
+        # ── 3. OIDC state token ───────────────────────────────────────────────
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider.id,
+                nonce=nonce,
+                code_verifier=code_verifier,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+
+        # ── 4. Mock HTTP + JWT ────────────────────────────────────────────────
+        fake_discovery = {
+            "issuer": issuer,
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        fake_token = {"access_token": "acc_tok", "id_token": "fake.id.token"}
+        # Fall C: preferred_username carries the email; no email_verified key at all
+        fake_claims = {
+            "sub": "azure-sub-alice",
+            "preferred_username": "alice.fallc@example.com",
+            "iss": issuer,
+            "aud": "azure-client",
+            "nonce": nonce,
+            "exp": 9_999_999_999,
+        }
+
+        disc_resp = AsyncMock()
+        disc_resp.raise_for_status = MagicMock()
+        disc_resp.json = MagicMock(return_value=fake_discovery)
+
+        token_resp = AsyncMock()
+        token_resp.json = MagicMock(return_value=fake_token)
+
+        jwks_resp = AsyncMock()
+        jwks_resp.raise_for_status = MagicMock()
+        jwks_resp.json = MagicMock(return_value={})
+
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(side_effect=[disc_resp, jwks_resp])
+        mock_http.post = AsyncMock(return_value=token_resp)
+
+        mock_signing_key = MagicMock()
+        mock_signing_key.key = "fake_key"
+
+        with (
+            patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_httpx_cls,
+            patch("backend.app.api.routes.mfa.jwt.decode", return_value=fake_claims),
+            patch("backend.app.api.routes.mfa.PyJWKClient") as mock_jwks_cls,
+        ):
+            mock_httpx_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_httpx_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_jwks_cls.return_value.get_signing_key_from_jwt.return_value = mock_signing_key
+
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=fake_code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_token=" in location, f"Expected oidc_token in redirect, got: {location}"
+
+        # ── 5. Exchange token → full JWT ──────────────────────────────────────
+        oidc_exchange_token = location.split("oidc_token=")[1].split("&")[0].split("#")[-1]
+        exchange_resp = await async_client.post(
+            "/api/v1/auth/oidc/exchange",
+            json={"oidc_token": oidc_exchange_token},
+        )
+        assert exchange_resp.status_code == 200
+        assert exchange_resp.json()["user"]["username"] == "fallc_alice"
+
+        # ── 6. Verify UserOIDCLink was created in DB ──────────────────────────
+        async with db_session as s:
+            result = await s.execute(
+                sa_select(UserOIDCLink).where(
+                    UserOIDCLink.user_id == alice.id,
+                    UserOIDCLink.provider_id == provider.id,
+                )
+            )
+            link = result.scalar_one_or_none()
+        assert link is not None, "UserOIDCLink must have been created by auto-link"
+        assert link.provider_user_id == "azure-sub-alice"

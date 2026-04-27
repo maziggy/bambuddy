@@ -152,6 +152,9 @@ function ProviderForm({
           placeholder={t('settings.oidc.form.emailClaimPlaceholder')}
         />
         <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.emailClaimDesc')}</p>
+        {autoLinkOn && form.email_claim !== 'email' && (
+          <p className="text-yellow-400 text-xs mt-1">{t('settings.oidc.form.emailClaimCustomClaimAutoLinkWarning')}</p>
+        )}
       </div>
 
       <div className="flex gap-3 pt-2">

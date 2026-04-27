@@ -345,6 +345,13 @@ async def _migrate_update_auto_link_constraint(conn) -> None:
                             "FROM oidc_providers"
                         )
                     )
+                    original = (await conn.execute(text("SELECT count(*) FROM oidc_providers"))).scalar_one()
+                    copied = (await conn.execute(text("SELECT count(*) FROM oidc_providers_v2"))).scalar_one()
+                    if copied != original:
+                        raise RuntimeError(
+                            f"auto_link constraint migration: row count mismatch after copy "
+                            f"({original} in source, {copied} in copy)"
+                        )
                     await conn.execute(text("DROP TABLE oidc_providers"))
                     await conn.execute(text("ALTER TABLE oidc_providers_v2 RENAME TO oidc_providers"))
             except Exception as exc:

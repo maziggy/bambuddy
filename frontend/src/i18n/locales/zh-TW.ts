@@ -2191,6 +2191,7 @@ export default {
         emailClaim: '電子郵件聲明',
         emailClaimDesc: "用作電子郵件身份的 JWT 聲明。Azure Entra ID 請使用 'preferred_username' 或 'upn'（不發送 email_verified）。僅使用可信的聲明名稱。",
         emailClaimPlaceholder: 'email',
+        emailClaimCustomClaimAutoLinkWarning: "Custom claims are safe for auto-link only when the value is tenant-administered (e.g. Azure Entra ID upn / preferred_username). Do not enable auto-link if your IdP allows users to self-assert this claim.",
         requireEmailVerified: '要求電子郵件已驗證',
         requireEmailVerifiedDesc: '僅在提供商將電子郵件聲明標記為已驗證時才接受。',
         requireEmailVerifiedWarning: '警告：將在未經驗證的情況下接受電子郵件。僅對受信任的提供商使用。',

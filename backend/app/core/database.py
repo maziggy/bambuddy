@@ -1799,6 +1799,10 @@ async def run_migrations(conn):
             )
         )
 
+    # Migration: Add provider and api_base_url columns to github_backup_config for multi-provider support
+    await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN provider VARCHAR(30) DEFAULT 'github'")
+    await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN api_base_url VARCHAR(500)")
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

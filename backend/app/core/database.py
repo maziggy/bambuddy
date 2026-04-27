@@ -262,6 +262,86 @@ async def _migrate_normalize_printer_ids(conn) -> None:
             await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids::text = '[]'"))
 
 
+async def _migrate_update_auto_link_constraint(conn) -> None:
+    """Update the auto_link CHECK constraint to allow Fall C (custom email claim).
+
+    Old formula: auto_link = FALSE OR (require_ev = TRUE AND email_claim = 'email')
+    New formula: auto_link = FALSE OR email_claim != 'email' OR require_ev = TRUE
+
+    Only Fall B (email_claim='email' + require_ev=False) remains blocked.
+    Fall C (custom claim, e.g. Azure preferred_username/upn) is now allowed.
+
+    PostgreSQL: DROP CONSTRAINT IF EXISTS + ADD new formula via _safe_execute (idempotent).
+    SQLite: table recreation when old formula is detected in sqlite_master (idempotent).
+    """
+    from sqlalchemy import text
+
+    _NEW_FORMULA = "auto_link_existing_accounts = FALSE OR email_claim != 'email' OR require_email_verified = TRUE"
+    _CONSTRAINT_NAME = "ck_auto_link_requires_verified_email_claim"
+
+    if not is_sqlite():
+        await _safe_execute(conn, f"ALTER TABLE oidc_providers DROP CONSTRAINT IF EXISTS {_CONSTRAINT_NAME}")
+        await _safe_execute(
+            conn,
+            f"ALTER TABLE oidc_providers ADD CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})",
+        )
+    else:
+        row = (
+            await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='oidc_providers'"))
+        ).fetchone()
+        # Only recreate if the old (more restrictive) formula is still present.
+        # Fresh installs created with the new __table_args__ already have the correct formula.
+        # Installs without any constraint (pre-SEC-1 upgrades) are skipped — app-level guards suffice.
+        if row and "require_email_verified = TRUE AND email_claim = 'email'" in row[0]:
+            try:
+                async with conn.begin_nested():
+                    await conn.execute(text("DROP TABLE IF EXISTS oidc_providers_v2"))
+                    await conn.execute(
+                        text(
+                            "CREATE TABLE oidc_providers_v2 ("
+                            "id INTEGER NOT NULL, "
+                            "name VARCHAR(100) NOT NULL, "
+                            "issuer_url VARCHAR(500) NOT NULL, "
+                            "client_id VARCHAR(255) NOT NULL, "
+                            "client_secret VARCHAR(512) NOT NULL, "
+                            "scopes VARCHAR(500), "
+                            "is_enabled BOOLEAN, "
+                            "auto_create_users BOOLEAN, "
+                            "auto_link_existing_accounts BOOLEAN DEFAULT 0, "
+                            "email_claim VARCHAR(64) DEFAULT 'email', "
+                            "require_email_verified BOOLEAN DEFAULT 1, "
+                            "icon_url TEXT, "
+                            "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                            "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                            "PRIMARY KEY (id), "
+                            f"UNIQUE (name), "
+                            f"CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})"
+                            ")"
+                        )
+                    )
+                    await conn.execute(
+                        text(
+                            "INSERT INTO oidc_providers_v2 "
+                            "(id, name, issuer_url, client_id, client_secret, scopes, is_enabled, "
+                            "auto_create_users, auto_link_existing_accounts, email_claim, "
+                            "require_email_verified, icon_url, created_at, updated_at) "
+                            "SELECT id, name, issuer_url, client_id, client_secret, scopes, is_enabled, "
+                            "auto_create_users, auto_link_existing_accounts, email_claim, "
+                            "require_email_verified, icon_url, created_at, updated_at "
+                            "FROM oidc_providers"
+                        )
+                    )
+                    await conn.execute(text("DROP TABLE oidc_providers"))
+                    await conn.execute(text("ALTER TABLE oidc_providers_v2 RENAME TO oidc_providers"))
+            except Exception as exc:
+                logger.error(
+                    "auto_link constraint update (SQLite table recreation) FAILED: %s",
+                    exc,
+                    exc_info=True,
+                )
+                raise
+
+
 async def run_migrations(conn):
     """Run all schema migrations and data backfills on startup.
 
@@ -1555,20 +1635,19 @@ async def run_migrations(conn):
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT 1")
     else:
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT true")
-    # SEC-1 backfill: reset auto_link on rows where the combined state is unsafe.
-    # Runs BEFORE the CHECK constraint below so existing installs that have
-    # auto_link=TRUE + unsafe email settings self-heal rather than failing when
-    # PostgreSQL validates ADD CONSTRAINT against existing rows ("check constraint
-    # is violated by some row").  On fresh installs the column defaults guarantee
-    # this UPDATE matches zero rows.  TRUE/FALSE literals are accepted by both
-    # SQLite (≥ 3.23) and PostgreSQL — no dialect branch needed.
+    # SEC-1 backfill: reset auto_link only for Fall B (email_claim='email' + require_email_verified=False).
+    # Fall C (custom claim) is now allowed to use auto_link — do NOT reset those rows.
+    # Runs BEFORE the CHECK constraint below so Fall B rows self-heal rather than failing
+    # PostgreSQL's "check constraint is violated by some row" on ADD CONSTRAINT.
+    # On fresh installs the column defaults guarantee this UPDATE matches zero rows.
+    # TRUE/FALSE literals are accepted by both SQLite (≥ 3.23) and PostgreSQL — no dialect branch needed.
     try:
         async with conn.begin_nested():
             await conn.execute(
                 text(
                     "UPDATE oidc_providers SET auto_link_existing_accounts = FALSE "
                     "WHERE auto_link_existing_accounts = TRUE "
-                    "AND (require_email_verified = FALSE OR email_claim != 'email')"
+                    "AND email_claim = 'email' AND require_email_verified = FALSE"
                 )
             )
     except Exception as exc:
@@ -1580,16 +1659,16 @@ async def run_migrations(conn):
         )
         raise
 
-    # SEC-1/SEC-6: Add DB-level CHECK constraint for existing PostgreSQL installs.
+    # SEC-1: Add DB-level CHECK constraint for existing PostgreSQL installs.
     # SQLite does not support ALTER TABLE ADD CONSTRAINT — handled by __table_args__ at creation.
-    # Runs AFTER the backfill so legacy unsafe rows don't fail constraint validation.
+    # Runs AFTER the backfill so Fall B rows don't fail constraint validation.
     if not is_sqlite():
         try:
             async with conn.begin_nested():
                 await conn.execute(
                     text(
                         "ALTER TABLE oidc_providers ADD CONSTRAINT ck_auto_link_requires_verified_email_claim "
-                        "CHECK (auto_link_existing_accounts = FALSE OR (require_email_verified = TRUE AND email_claim = 'email'))"
+                        "CHECK (auto_link_existing_accounts = FALSE OR email_claim != 'email' OR require_email_verified = TRUE)"
                     )
                 )
         except (OperationalError, ProgrammingError) as exc:
@@ -1601,6 +1680,13 @@ async def run_migrations(conn):
                     exc_info=True,
                 )
                 raise
+
+    # Migration: Update auto_link CHECK constraint formula (existing installs).
+    # Existing PostgreSQL installs that ran the ADD CONSTRAINT above with the old formula
+    # (or a previous version of this code) need an explicit DROP + ADD to update it.
+    # For SQLite, the table is recreated with the new constraint formula if the old formula
+    # is still present in sqlite_master (SQLite cannot ALTER TABLE DROP/ADD CONSTRAINT).
+    await _migrate_update_auto_link_constraint(conn)
 
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat

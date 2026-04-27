@@ -3522,8 +3522,12 @@ class TestOIDCEmailClaimResolution:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_auto_link_blocked_with_custom_claim_create(self, async_client: AsyncClient):
-        """SEC-6: auto_link + email_claim!='email' must be rejected at schema level on CREATE (422)."""
+    async def test_auto_link_allowed_with_custom_claim_create(self, async_client: AsyncClient):
+        """Fall C: auto_link + email_claim!='email' must be accepted on CREATE (201).
+
+        Custom claims (e.g. Azure preferred_username/upn) never perform an email_verified
+        check, so auto_link is safe regardless of require_email_verified.
+        """
         admin_token = await _setup_and_login(async_client, "sec6c_adm", "Sec6CAdm123!")
         resp = await async_client.post(
             "/api/v1/auth/oidc/providers",
@@ -3538,12 +3542,17 @@ class TestOIDCEmailClaimResolution:
             },
             headers={"Authorization": f"Bearer {admin_token}"},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 201
+        assert resp.json()["auto_link_existing_accounts"] is True
+        assert resp.json()["email_claim"] == "upn"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_auto_link_blocked_with_custom_claim_update(self, async_client: AsyncClient):
-        """SEC-6: auto_link=True + email_claim='upn' in same UPDATE request → 422 (T4)."""
+    async def test_auto_link_allowed_with_custom_claim_update(self, async_client: AsyncClient):
+        """Fall C: auto_link=True + email_claim='upn' in same UPDATE request → 200.
+
+        Custom claims never perform an email_verified check, so auto_link is safe.
+        """
         admin_token = await _setup_and_login(async_client, "sec6u_adm", "Sec6UAdm123!")
         create_resp = await async_client.post(
             "/api/v1/auth/oidc/providers",
@@ -3563,7 +3572,9 @@ class TestOIDCEmailClaimResolution:
             json={"auto_link_existing_accounts": True, "email_claim": "upn"},
             headers={"Authorization": f"Bearer {admin_token}"},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 200
+        assert resp.json()["auto_link_existing_accounts"] is True
+        assert resp.json()["email_claim"] == "upn"
 
     # ── Combined-State-Guard (partial updates across two requests) ─────────────
 
@@ -3602,8 +3613,8 @@ class TestOIDCEmailClaimResolution:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_partial_update_guard_email_claim(self, async_client: AsyncClient):
-        """SEC-6 Combined-State-Guard: email_claim='upn' then auto_link=True → 422 (T1 email_claim path)."""
+    async def test_partial_update_custom_claim_then_auto_link_allowed(self, async_client: AsyncClient):
+        """Fall C: email_claim='upn' first, then auto_link=True → both 200 (custom claim is safe)."""
         admin_token = await _setup_and_login(async_client, "pg_ec_adm", "PgEc123!")
         create_resp = await async_client.post(
             "/api/v1/auth/oidc/providers",
@@ -3631,7 +3642,44 @@ class TestOIDCEmailClaimResolution:
             json={"auto_link_existing_accounts": True},
             headers={"Authorization": f"Bearer {admin_token}"},
         )
-        assert upd2.status_code == 422
+        assert upd2.status_code == 200
+        assert upd2.json()["auto_link_existing_accounts"] is True
+        assert upd2.json()["email_claim"] == "upn"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_partial_update_auto_link_then_custom_claim_allowed(self, async_client: AsyncClient):
+        """Fall C: auto_link=True first (email_claim='email', safe), then email_claim='upn' → both 200."""
+        admin_token = await _setup_and_login(async_client, "pg_al_ec_adm", "PgAlEc123!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "PG-AutoLink-Claim-Test",
+                "issuer_url": "https://pg-al-ec.test",
+                "client_id": "pg-al-ec-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        upd1 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"auto_link_existing_accounts": True},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd1.status_code == 200
+
+        upd2 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"email_claim": "preferred_username"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd2.status_code == 200
+        assert upd2.json()["auto_link_existing_accounts"] is True
+        assert upd2.json()["email_claim"] == "preferred_username"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -4009,7 +4057,11 @@ class TestOIDCEmailResolutionExtra:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_combined_state_guard_email_claim_inverse_order(self, async_client: AsyncClient):
-        """T4: Combined-State-Guard — set auto_link=True first, then switch email_claim to custom."""
+        """Fall C: auto_link=True first, then switch email_claim to custom → both 200 (now allowed).
+
+        Custom claims never perform an email_verified check, so switching to a custom claim
+        while auto_link is on transitions from Fall A to Fall C — both are safe.
+        """
         admin_token = await _setup_and_login(async_client, "inv_ec_adm", "InvEc123!")
         create_resp = await async_client.post(
             "/api/v1/auth/oidc/providers",
@@ -4025,7 +4077,7 @@ class TestOIDCEmailResolutionExtra:
         assert create_resp.status_code == 201
         provider_id = create_resp.json()["id"]
 
-        # First: enable auto_link (safe — email_claim="email", require_ev=True)
+        # First: enable auto_link (Fall A — email_claim='email', require_ev=True)
         upd1 = await async_client.put(
             f"/api/v1/auth/oidc/providers/{provider_id}",
             json={"auto_link_existing_accounts": True},
@@ -4033,10 +4085,12 @@ class TestOIDCEmailResolutionExtra:
         )
         assert upd1.status_code == 200
 
-        # Second: switch email_claim to custom while auto_link is on → unsafe combined state
+        # Second: switch to custom claim → Fall C, still safe
         upd2 = await async_client.put(
             f"/api/v1/auth/oidc/providers/{provider_id}",
             json={"email_claim": "preferred_username"},
             headers={"Authorization": f"Bearer {admin_token}"},
         )
-        assert upd2.status_code == 422
+        assert upd2.status_code == 200
+        assert upd2.json()["auto_link_existing_accounts"] is True
+        assert upd2.json()["email_claim"] == "preferred_username"

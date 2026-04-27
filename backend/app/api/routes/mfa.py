@@ -389,15 +389,14 @@ def _is_valid_email_shaped(value: str | None) -> bool:
 
 
 def _enforce_auto_link_safety(provider: OIDCProvider) -> None:
-    """Raise HTTP 422 if auto_link_existing_accounts is on without safe email settings.
+    """Raise HTTP 422 if auto_link_existing_accounts is on with an unsafe combined state.
 
-    SEC-1/SEC-6: auto_link is only safe when require_email_verified=True AND
-    email_claim='email'. Called after ORM construction (create) and after the
-    setattr loop (update) so partial-update bypasses are also caught.
+    SEC-1: only Fall B (email_claim='email' + require_email_verified=False) is unsafe —
+    an attacker-controlled IdP could present an unverified email that matches a local account.
+    Fall C (custom claim) never performs an email_verified check, so auto_link is safe there.
+    Called after ORM construction (create) and after the setattr loop (update).
     """
-    if provider.auto_link_existing_accounts and (
-        not provider.require_email_verified or provider.email_claim != "email"
-    ):
+    if provider.auto_link_existing_accounts and provider.email_claim == "email" and not provider.require_email_verified:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=AUTO_LINK_REQUIREMENTS_ERROR,

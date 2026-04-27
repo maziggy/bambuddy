@@ -22,11 +22,11 @@ class OIDCProvider(Base):
 
     __tablename__ = "oidc_providers"
     __table_args__ = (
-        # DB-level enforcement of SEC-1/SEC-6: auto_link is only safe when
-        # require_email_verified=True AND email_claim='email'. Enforced on new
-        # installations; existing tables get this via the PostgreSQL-only migration.
+        # DB-level enforcement of SEC-1: blocks only Fall B (email_claim='email' + require_ev=False).
+        # Fall C (custom claim) is safe — no email_verified gate on that path.
+        # Enforced on new installations; existing tables updated via _migrate_update_auto_link_constraint.
         CheckConstraint(
-            "auto_link_existing_accounts = FALSE OR (require_email_verified = TRUE AND email_claim = 'email')",
+            "auto_link_existing_accounts = FALSE OR email_claim != 'email' OR require_email_verified = TRUE",
             name="ck_auto_link_requires_verified_email_claim",
         ),
     )

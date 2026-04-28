@@ -103,6 +103,41 @@ function fromRefValue(raw: string): PresetRef | null {
   return { source, id };
 }
 
+// Inline spinner for the filament-requirements query. The backend runs a
+// preview slice on first open of an unsliced project file (cached after);
+// on a complex multi-color model that's a real slice — multi-second to
+// multi-minute. The static "Analyzing plate filaments…" string left
+// users wondering whether anything was happening, so the spinner now
+// shows elapsed seconds and a hint that explains the wait. After ~5s it
+// also surfaces a "this is a one-time slice — repeat opens are instant"
+// note so users don't worry it'll be slow forever.
+function FilamentAnalysisSpinner() {
+  const { t } = useTranslation();
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const startedAt = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="flex flex-col gap-1 text-bambu-gray text-sm py-2">
+      <div className="flex items-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        {t('slice.analyzingPlateFilaments', 'Analyzing plate filaments…')}
+        <span className="text-xs tabular-nums">{elapsed}s</span>
+      </div>
+      {elapsed >= 5 && (
+        <div className="text-xs text-bambu-gray/70 pl-6">
+          {t(
+            'slice.analyzingPlateFilamentsHint',
+            'Running a preview slice to discover which AMS slots this plate uses. Cached after — re-opening is instant.',
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SliceModal({ source, onClose }: SliceModalProps) {
   const { t } = useTranslation();
   const { trackJob } = useSliceJobTracker();
@@ -371,39 +406,49 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                   scoped spinner so the user sees the printer/process
                   dropdowns instead of an opaque "Loading presets…" wait. */}
               {filamentReqsQuery.isLoading ? (
-                <div className="flex items-center gap-2 text-bambu-gray text-sm py-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {t('slice.analyzingPlateFilaments', 'Analyzing plate filaments…')}
-                </div>
+                <FilamentAnalysisSpinner />
               ) : (
-                filamentSlots.map((slot, idx) => (
-                  <PresetDropdown
-                    key={`filament-${idx}`}
-                    label={
-                      filamentSlots.length > 1
-                        ? t('slice.filamentSlot', {
-                            index: idx + 1,
-                            type: slot.type,
-                            defaultValue: `Filament ${idx + 1} (${slot.type || ''})`,
-                          })
-                        : t('slice.filament', 'Filament profile')
-                    }
-                    slot="filament"
-                    data={presetsQuery.data}
-                    value={filamentPresets[idx] ?? null}
-                    onChange={(ref) =>
-                      setFilamentPresets((current) => {
-                        const next = current.length === filamentSlots.length
-                          ? [...current]
-                          : filamentSlots.map((_, i) => current[i] ?? null);
-                        next[idx] = ref;
-                        return next;
-                      })
-                    }
-                    disabled={isEnqueuing}
-                    swatchColor={filamentSlots.length > 1 ? slot.color : undefined}
-                  />
-                ))
+                filamentSlots.map((slot, idx) => {
+                  // Slots flagged by the backend as not used by the
+                  // picked plate are auto-picked from project metadata
+                  // and disabled — the slicer CLI still needs a
+                  // profile per project slot, but the user shouldn't
+                  // have to think about slots their plate doesn't
+                  // paint with. used_in_plate defaults to true when
+                  // missing (sliced 3MFs and the no-flag legacy path).
+                  const isUsed = slot.used_in_plate !== false;
+                  const baseLabel =
+                    filamentSlots.length > 1
+                      ? t('slice.filamentSlot', {
+                          index: idx + 1,
+                          type: slot.type,
+                          defaultValue: `Filament ${idx + 1} (${slot.type || ''})`,
+                        })
+                      : t('slice.filament', 'Filament profile');
+                  const label = isUsed
+                    ? baseLabel
+                    : `${baseLabel} ${t('slice.notUsedByPlate', '— not used by this plate')}`;
+                  return (
+                    <PresetDropdown
+                      key={`filament-${idx}`}
+                      label={label}
+                      slot="filament"
+                      data={presetsQuery.data}
+                      value={filamentPresets[idx] ?? null}
+                      onChange={(ref) =>
+                        setFilamentPresets((current) => {
+                          const next = current.length === filamentSlots.length
+                            ? [...current]
+                            : filamentSlots.map((_, i) => current[i] ?? null);
+                          next[idx] = ref;
+                          return next;
+                        })
+                      }
+                      disabled={isEnqueuing || !isUsed}
+                      swatchColor={filamentSlots.length > 1 ? slot.color : undefined}
+                    />
+                  );
+                })
               )}
             </>
           )}

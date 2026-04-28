@@ -3242,6 +3242,8 @@ export default {
     selectPreset: '— Select a preset —',
     loadingPresets: 'Loading presets…',
     analyzingPlateFilaments: 'Analyzing plate filaments…',
+    analyzingPlateFilamentsHint: 'Running a preview slice to discover which AMS slots this plate uses. Cached after — re-opening is instant.',
+    notUsedByPlate: '— not used by this plate',
     printerMismatch: 'This 3MF was sliced for {{source}}, but you picked {{target}}. The slicer CLI cannot re-slice a 3MF for a different printer — open the source in Bambu Studio, change the printer, and re-export.',
     noPresetsForSlot: 'No presets available',
     presetsLoadFailed: 'Failed to load presets. Open Settings → Profiles to import them first.',
@@ -3250,6 +3252,8 @@ export default {
     queued: 'Queued…',
     failed: 'Slicing failed. Check the slicer sidecar logs.',
     startedToast: 'Slicing {{name}} in the background…',
+    queuedToast: 'Queued: {{name}} — {{elapsed}}',
+    runningToast: 'Slicing {{name}} — {{elapsed}}',
     completedToast: 'Sliced {{name}}',
     failedToast: 'Slicing {{name}} failed: {{detail}}',
     tier: {

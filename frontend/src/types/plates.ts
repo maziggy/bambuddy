@@ -4,6 +4,15 @@ export interface PlateFilament {
   color: string;
   used_grams: number;
   used_meters: number;
+  // True when this AMS slot is consumed by the picked plate. False
+  // means the slot is configured project-wide but the picked plate
+  // doesn't paint with it. Sliced 3MFs (.gcode.3mf) report only used
+  // filaments — the field is true for every entry. Unsliced project
+  // files report ALL project slots; SliceModal disables the unused
+  // rows so the user only interacts with the dropdowns that matter,
+  // while the backend still passes the complete list to the slicer
+  // CLI to prevent silent fallback to embedded defaults.
+  used_in_plate?: boolean;
 }
 
 export interface PlateMetadata {

@@ -29,7 +29,6 @@ from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
 from backend.app.utils.threemf_tools import (
     extract_nozzle_mapping_from_3mf,
-    extract_plate_extruder_set_from_3mf,
     extract_project_filaments_from_3mf,
     extract_source_printer_model_from_3mf,
 )
@@ -3237,6 +3236,7 @@ async def get_filament_requirements(
                                             "used_grams": round(used_grams, 1),
                                             "used_meters": float(used_m) if used_m else 0,
                                             "tray_info_idx": tray_info_idx,
+                                            "used_in_plate": True,
                                         }
                                     )
                             break
@@ -3267,41 +3267,32 @@ async def get_filament_requirements(
                                     "used_grams": round(used_grams, 1),
                                     "used_meters": float(used_m) if used_m else 0,
                                     "tray_info_idx": tray_info_idx,
+                                    "used_in_plate": True,
                                 }
                             )
 
-            # Unsliced project files: slice_info has nothing usable. Try a
-            # preview-slice via the sidecar — the slicer's own logic
-            # determines which filaments the plate actually consumes
-            # (Bambu Studio prunes painted regions whose extruder isn't
-            # used, etc.) — and parse the resulting slice_info. Cached so
-            # the modal opens fast on the second visit. Falls back to the
-            # painted-face heuristic if the sidecar isn't configured or
-            # the preview slice errors out.
-            if not filaments and plate_id is not None:
-                preview = await _try_preview_slice_filaments(
-                    db,
-                    kind="archive",
-                    source_id=archive_id,
-                    plate_id=plate_id,
-                    file_path=file_path,
-                )
-                if preview is not None:
-                    filaments = preview
-
-            # Last-resort fallback for unsliced files when preview slicing
-            # also can't help (no sidecar, slicer errored, etc.). See
-            # library.py for the matching block.
+            # Unsliced project files: see library.py for full rationale.
+            # Return the FULL project_settings.config slot list with a
+            # used_in_plate flag derived from the preview slice; the
+            # CLI needs every slot pre-filled to avoid silent default
+            # substitution.
             if not filaments:
                 project_filaments = extract_project_filaments_from_3mf(zf)
-                if plate_id is not None and project_filaments:
-                    used_slots = extract_plate_extruder_set_from_3mf(zf, plate_id)
-                    if used_slots:
-                        filaments = [f for f in project_filaments if f["slot_id"] in used_slots]
-                    else:
-                        filaments = project_filaments
-                elif project_filaments:
-                    filaments = project_filaments
+                used_slot_ids: set[int] = set()
+                if project_filaments and plate_id is not None:
+                    preview = await _try_preview_slice_filaments(
+                        db,
+                        kind="archive",
+                        source_id=archive_id,
+                        plate_id=plate_id,
+                        file_path=file_path,
+                    )
+                    if preview is not None:
+                        used_slot_ids = {f["slot_id"] for f in preview}
+                fallback_all_used = not used_slot_ids
+                for f in project_filaments:
+                    f["used_in_plate"] = fallback_all_used or f["slot_id"] in used_slot_ids
+                filaments = project_filaments
 
             # Sort by slot ID
             filaments.sort(key=lambda x: x["slot_id"])

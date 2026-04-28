@@ -63,7 +63,6 @@ from backend.app.services.archive import ThreeMFParser
 from backend.app.services.stl_thumbnail import generate_stl_thumbnail
 from backend.app.utils.threemf_tools import (
     extract_nozzle_mapping_from_3mf,
-    extract_plate_extruder_set_from_3mf,
     extract_project_filaments_from_3mf,
     extract_source_printer_model_from_3mf,
 )
@@ -2475,6 +2474,11 @@ async def get_library_file_filament_requirements(
                                             "used_grams": round(used_grams, 1),
                                             "used_meters": float(used_m) if used_m else 0,
                                             "tray_info_idx": tray_info_idx,
+                                            # Sliced output already pre-filtered by used_g>0,
+                                            # so every entry that survives is in fact used by
+                                            # this plate. Print-dispatch consumers ignore the
+                                            # flag; SliceModal uses it to enable/disable rows.
+                                            "used_in_plate": True,
                                         }
                                     )
                             break
@@ -2503,40 +2507,42 @@ async def get_library_file_filament_requirements(
                                     "used_grams": round(used_grams, 1),
                                     "used_meters": float(used_m) if used_m else 0,
                                     "tray_info_idx": tray_info_idx,
+                                    "used_in_plate": True,
                                 }
                             )
 
-            # Unsliced project files: slice_info has nothing usable. Try a
-            # preview-slice via the sidecar — see archives.py for full
-            # rationale. Cached per (kind, id, plate, content_hash).
-            if not filaments and plate_id is not None:
-                preview = await _try_preview_slice_filaments(
-                    db,
-                    kind="library_file",
-                    source_id=file_id,
-                    plate_id=plate_id,
-                    file_path=file_path,
-                )
-                if preview is not None:
-                    filaments = preview
-
-            # Last-resort fallback when preview slicing also can't help (no
-            # sidecar configured, slicer errored, etc.). project_settings
-            # gives us the full AMS slot config; the plate-extruder filter
-            # narrows it to the slots the painted faces reference.
+            # Unsliced project files: slice_info had no per-plate data.
+            # Return the FULL project_settings.config AMS slot list so
+            # the slicer CLI receives a profile for every project slot
+            # (otherwise it silently fills the gap from embedded
+            # defaults — surfaces as "I picked white but the print has
+            # grey" because the source's grey support filament leaks
+            # into the output). Use the preview slice to mark which
+            # slots the picked plate actually consumes; the SliceModal
+            # disables the unused rows so the user only interacts with
+            # the dropdowns that matter, while the backend still has
+            # the complete list to pass to the CLI.
             if not filaments:
                 project_filaments = extract_project_filaments_from_3mf(zf)
-                if plate_id is not None and project_filaments:
-                    used_slots = extract_plate_extruder_set_from_3mf(zf, plate_id)
-                    if used_slots:
-                        filaments = [f for f in project_filaments if f["slot_id"] in used_slots]
-                    else:
-                        # No extruder metadata anywhere — return the full
-                        # project list rather than zero so the user still
-                        # gets to pick (over-rendering > under-rendering).
-                        filaments = project_filaments
-                elif project_filaments:
-                    filaments = project_filaments
+                used_slot_ids: set[int] = set()
+                if project_filaments and plate_id is not None:
+                    preview = await _try_preview_slice_filaments(
+                        db,
+                        kind="library_file",
+                        source_id=file_id,
+                        plate_id=plate_id,
+                        file_path=file_path,
+                    )
+                    if preview is not None:
+                        used_slot_ids = {f["slot_id"] for f in preview}
+                # Default to "every slot is used" when preview-slice
+                # didn't produce data: better to over-enable dropdowns
+                # than under-enable and have the user unable to pick a
+                # filament the plate actually uses.
+                fallback_all_used = not used_slot_ids
+                for f in project_filaments:
+                    f["used_in_plate"] = fallback_all_used or f["slot_id"] in used_slot_ids
+                filaments = project_filaments
 
             # Sort by slot ID
             filaments.sort(key=lambda x: x["slot_id"])

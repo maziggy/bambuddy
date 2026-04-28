@@ -3255,6 +3255,8 @@ export default {
     selectPreset: '— Profil auswählen —',
     loadingPresets: 'Profile werden geladen…',
     analyzingPlateFilaments: 'Plattenfilamente werden analysiert…',
+    analyzingPlateFilamentsHint: 'Es wird ein Probeschnitt ausgeführt, um die belegten AMS-Slots dieser Platte zu ermitteln. Wird zwischengespeichert — erneutes Öffnen ist sofort.',
+    notUsedByPlate: '— wird von dieser Platte nicht verwendet',
     printerMismatch: 'Dieses 3MF wurde für {{source}} gesliced, du hast aber {{target}} ausgewählt. Der Slicer-CLI kann ein 3MF nicht für einen anderen Drucker neu slicen — öffne die Quelle in Bambu Studio, ändere den Drucker und exportiere neu.',
     noPresetsForSlot: 'Keine Profile verfügbar',
     presetsLoadFailed: 'Profile konnten nicht geladen werden. Importiere sie zuerst unter Einstellungen → Profile.',
@@ -3263,6 +3265,8 @@ export default {
     queued: 'In Warteschlange…',
     failed: 'Slicen fehlgeschlagen. Logs des Slicer-Sidecars prüfen.',
     startedToast: '{{name}} wird im Hintergrund gesliced…',
+    queuedToast: 'Warteschlange: {{name}} — {{elapsed}}',
+    runningToast: '{{name}} wird gesliced — {{elapsed}}',
     completedToast: '{{name}} wurde gesliced',
     failedToast: 'Slicen von {{name}} fehlgeschlagen: {{detail}}',
     tier: {

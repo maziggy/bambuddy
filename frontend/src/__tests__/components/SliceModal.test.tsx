@@ -819,4 +819,141 @@ describe('SliceModal', () => {
     const sliceButton = screen.getByRole('button', { name: /^Slice$/ }) as HTMLButtonElement;
     expect(sliceButton.disabled).toBe(false);
   });
+
+  // The `used_in_plate` flag tells the modal which AMS slots are
+  // actually consumed by the picked plate. Slots flagged as unused
+  // are still rendered (the slicer CLI needs a profile per project
+  // slot, otherwise it silently fills the gap from embedded defaults
+  // and unwanted colours leak into the output) but disabled in the UI
+  // so the user only interacts with the dropdowns that matter.
+  it('disables filament dropdowns for slots not used by the picked plate', async () => {
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Helmet.3mf',
+      is_multi_plate: false,
+      plates: [
+        {
+          index: 1,
+          name: 'Plate 1',
+          objects: ['Helmet'],
+          has_thumbnail: false,
+          thumbnail_url: null,
+          print_time_seconds: 1200,
+          filament_used_grams: 80,
+          filaments: [],
+        },
+      ],
+    });
+    // Project has 2 AMS slots configured (white + grey support), but
+    // plate 1 only paints with white (slot 1). The backend now returns
+    // BOTH slots with used_in_plate flagging the difference.
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100,
+      filename: 'Helmet.3mf',
+      plate_id: 1,
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FFFFFF', used_grams: 80, used_meters: 27, used_in_plate: true },
+        { slot_id: 2, type: 'PLA', color: '#808080', used_grams: 0, used_meters: 0, used_in_plate: false },
+      ],
+    });
+    mockApi.getSlicerPresets.mockResolvedValue({
+      cloud: {
+        printer: [{ id: 'P1', name: 'X1C', source: 'cloud' }],
+        process: [{ id: 'PR1', name: '0.20mm', source: 'cloud' }],
+        filament: [
+          { id: 'F-WHITE', name: 'Cloud PLA White', source: 'cloud', filament_type: 'PLA', filament_colour: '#FFFFFF' },
+          { id: 'F-GREY', name: 'Cloud PLA Grey', source: 'cloud', filament_type: 'PLA', filament_colour: '#808080' },
+        ],
+      },
+      local: { printer: [], process: [], filament: [] },
+      standard: { printer: [], process: [], filament: [] },
+      cloud_status: 'ok',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Helmet.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+
+    // Both filament rows render — 1 printer + 1 process + 2 filament = 4.
+    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    expect(selects).toHaveLength(4);
+    // Slot 1 (used) is editable, slot 2 (not used) is disabled.
+    expect(selects[2].disabled).toBe(false);
+    expect(selects[3].disabled).toBe(true);
+    // The disabled row's label calls out why it's disabled.
+    expect(screen.getByText(/not used by this plate/i)).toBeDefined();
+  });
+
+  it('still sends both filaments to the backend even when one slot is disabled', async () => {
+    // The auto-pick scoring fills the disabled slot from project
+    // metadata — the slicer CLI requires a profile for every project
+    // slot, otherwise it silently fills the gap. The disabled UI is
+    // purely cosmetic; the wire format must include the full list.
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Helmet.3mf',
+      is_multi_plate: false,
+      plates: [
+        {
+          index: 1,
+          name: 'Plate 1',
+          objects: ['Helmet'],
+          has_thumbnail: false,
+          thumbnail_url: null,
+          print_time_seconds: 1200,
+          filament_used_grams: 80,
+          filaments: [],
+        },
+      ],
+    });
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100,
+      filename: 'Helmet.3mf',
+      plate_id: 1,
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FFFFFF', used_grams: 80, used_meters: 27, used_in_plate: true },
+        { slot_id: 2, type: 'PLA', color: '#808080', used_grams: 0, used_meters: 0, used_in_plate: false },
+      ],
+    });
+    mockApi.getSlicerPresets.mockResolvedValue({
+      cloud: {
+        printer: [{ id: 'P1', name: 'X1C', source: 'cloud' }],
+        process: [{ id: 'PR1', name: '0.20mm', source: 'cloud' }],
+        filament: [
+          { id: 'F-WHITE', name: 'Cloud PLA White', source: 'cloud', filament_type: 'PLA', filament_colour: '#FFFFFF' },
+          { id: 'F-GREY', name: 'Cloud PLA Grey', source: 'cloud', filament_type: 'PLA', filament_colour: '#808080' },
+        ],
+      },
+      local: { printer: [], process: [], filament: [] },
+      standard: { printer: [], process: [], filament: [] },
+      cloud_status: 'ok',
+    });
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 50,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/50',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Helmet.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => {
+      const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
+      // Both slots populated: slot 1 with the user's white pick, slot
+      // 2 auto-picked with grey from the colour-match scoring.
+      expect(body.filament_presets).toHaveLength(2);
+      expect(body.filament_presets[0]).toEqual({ source: 'cloud', id: 'F-WHITE' });
+      expect(body.filament_presets[1]).toEqual({ source: 'cloud', id: 'F-GREY' });
+    });
+  });
 });

@@ -94,6 +94,7 @@ async def test_engine():
         spool_k_profile,
         spool_usage_history,
         spoolbuddy_device,
+        spoolman_k_profile,
         spoolman_slot_assignment,
         user,
         user_email_pref,

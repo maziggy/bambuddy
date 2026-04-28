@@ -1590,6 +1590,12 @@ export default {
     amsSyncing: 'Synchronisiere...',
     amsSyncSuccess: '{{synced}} Spule(n) synchronisiert, {{skipped}} übersprungen',
     amsSyncError: 'Synchronisierung der Gewichte vom AMS fehlgeschlagen',
+    spoolmanAmsSyncButton: 'Spoolman-Gewichte vom AMS synchronisieren',
+    spoolmanAmsSyncTitle: 'Spoolman-Spulengewichte vom AMS synchronisieren',
+    spoolmanAmsSyncMessage: 'Dabei werden alle Spoolman-Spulengewichte anhand der aktuellen AMS-Füllstandswerte der verbundenen Drucker aktualisiert. Die Drucker müssen online sein.',
+    spoolmanAmsSyncing: 'Synchronisiere...',
+    spoolmanAmsSyncSuccess: '{{synced}} Spule(n) synchronisiert, {{skipped}} übersprungen',
+    spoolmanAmsSyncError: 'Synchronisierung der Spoolman-Gewichte vom AMS fehlgeschlagen',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL Ihres Spoolman-Servers (z.B. http://localhost:7912)',

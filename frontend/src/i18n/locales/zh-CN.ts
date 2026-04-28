@@ -1591,6 +1591,12 @@ export default {
     amsSyncing: '同步中...',
     amsSyncSuccess: '已同步 {{synced}} 个耗材，跳过 {{skipped}} 个',
     amsSyncError: '从 AMS 同步重量失败',
+    spoolmanAmsSyncButton: '从 AMS 同步 Spoolman 重量',
+    spoolmanAmsSyncTitle: '从 AMS 同步 Spoolman 耗材重量',
+    spoolmanAmsSyncMessage: '这将根据已连接打印机的当前 AMS 剩余百分比值更新所有 Spoolman 耗材重量。打印机必须在线。',
+    spoolmanAmsSyncing: '同步中...',
+    spoolmanAmsSyncSuccess: '已同步 {{synced}} 个 Spoolman 耗材，跳过 {{skipped}} 个',
+    spoolmanAmsSyncError: '从 AMS 同步 Spoolman 重量失败',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'Spoolman 服务器的 URL（例如 http://localhost:7912）',

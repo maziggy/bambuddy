@@ -1564,6 +1564,12 @@ export default {
     amsSyncing: '同期中...',
     amsSyncSuccess: '{{synced}}個のスプールを同期、{{skipped}}個をスキップ',
     amsSyncError: 'AMSからの重量同期に失敗しました',
+    spoolmanAmsSyncButton: 'AMSからSpoolmanの重量を同期',
+    spoolmanAmsSyncTitle: 'AMSからSpoolmanスプール重量を同期',
+    spoolmanAmsSyncMessage: '接続されたプリンターの現在のAMS残量値に基づいて、すべてのSpoolmanスプール重量を更新します。プリンターがオンラインである必要があります。',
+    spoolmanAmsSyncing: '同期中...',
+    spoolmanAmsSyncSuccess: '{{synced}}個のSpoolmanスプールを同期、{{skipped}}個をスキップ',
+    spoolmanAmsSyncError: 'AMSからのSpoolman重量同期に失敗しました',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'Spoolmanサーバーのurl（例：http://localhost:7912）',

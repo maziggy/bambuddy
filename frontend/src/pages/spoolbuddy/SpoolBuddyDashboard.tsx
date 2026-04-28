@@ -590,6 +590,7 @@ export function SpoolBuddyDashboard() {
           onClose={() => setShowAssignAmsModal(false)}
           spool={displayedSpool}
           printerId={selectedPrinterId}
+          spoolmanMode={spoolmanMode}
         />
       )}
 

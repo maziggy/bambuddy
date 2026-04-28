@@ -1,4 +1,4 @@
-"""Utility functions for converting between filament_id and setting_id formats.
+"""Utility functions for converting between filament_id and setting_id formats, and shared filament constants.
 
 Bambu printers use two ID formats for filament presets:
   - **filament_id** (aka tray_info_idx): e.g. "GFL05", "GFG02", "GFA00"
@@ -9,6 +9,38 @@ Bambu printers use two ID formats for filament presets:
 The only difference for official Bambu filaments is an "S" inserted after "GF".
 User presets (starting with "P") use the same ID in both contexts.
 """
+
+
+MATERIAL_TEMPS: dict[str, tuple[int, int]] = {
+    "PLA": (190, 230),
+    "PETG": (220, 260),
+    "ABS": (240, 270),
+    "ASA": (240, 270),
+    "TPU": (200, 240),
+    "PA": (260, 290),
+    "PC": (250, 280),
+    "PVA": (190, 210),
+    "PLA-CF": (210, 240),
+    "PETG-CF": (240, 270),
+    "PA-CF": (270, 300),
+}
+
+GENERIC_FILAMENT_IDS: dict[str, str] = {
+    "PLA": "GFL99",
+    "PETG": "GFG99",
+    "ABS": "GFB99",
+    "ASA": "GFB98",
+    "PC": "GFC99",
+    "PA": "GFN99",
+    "NYLON": "GFN99",
+    "TPU": "GFU99",
+    "PVA": "GFS99",
+    "HIPS": "GFS98",
+    "PLA-CF": "GFL98",
+    "PETG-CF": "GFG98",
+    "PA-CF": "GFN98",
+    "PETG HF": "GFG96",
+}
 
 
 def filament_id_to_setting_id(filament_id: str) -> str:

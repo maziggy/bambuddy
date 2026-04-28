@@ -28,6 +28,8 @@ vi.mock('../../api/client', () => ({
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
     updateSpool: vi.fn().mockResolvedValue({ id: 1 }),
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
+    saveSpoolmanKProfiles: vi.fn().mockResolvedValue([]),
+    updateSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 42 }),
     bulkCreateSpoolmanInventorySpools: vi.fn().mockResolvedValue({
       created: [{ id: 1, material: 'PLA' }],
       requested_count: 1,
@@ -563,5 +565,90 @@ describe('SpoolFormModal weightTouched', () => {
       );
       expect(bambuFound).toBeTruthy();
     });
+  });
+});
+
+describe('SpoolFormModal Spoolman K-profile support', () => {
+  const spoolmanSpool: InventorySpool = {
+    ...{
+      id: 42,
+      material: 'PLA',
+      subtype: 'Basic',
+      brand: 'BrandX',
+      color_name: 'Black',
+      rgba: '000000FF',
+      label_weight: 1000,
+      core_weight: 250,
+      core_weight_catalog_id: null,
+      weight_used: 200,
+      slicer_filament: '',
+      slicer_filament_name: '',
+      nozzle_temp_min: null,
+      nozzle_temp_max: null,
+      note: null,
+      added_full: null,
+      last_used: null,
+      encode_time: null,
+      tag_uid: null,
+      tray_uuid: null,
+      data_origin: 'spoolman',
+      tag_type: 'spoolman',
+      archived_at: null,
+      created_at: '2025-01-01T00:00:00Z',
+      updated_at: '2025-01-01T00:00:00Z',
+      k_profiles: [],
+    },
+  } as InventorySpool;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows PA Profile tab for Spoolman spools in non-quickAdd mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolmanSpool}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    // PA Profile tab should be visible in Spoolman mode
+    expect(screen.getByText('PA Profile')).toBeInTheDocument();
+  });
+
+  it('calls saveSpoolmanKProfiles (not saveSpoolKProfiles) on update in Spoolman mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolmanSpool}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpoolmanInventorySpool).toHaveBeenCalledTimes(1);
+    });
+
+    // saveSpoolmanKProfiles is always called on update (even with empty list)
+    await waitFor(() => {
+      expect(api.saveSpoolmanKProfiles).toHaveBeenCalledWith(42, []);
+    });
+    expect(api.saveSpoolKProfiles).not.toHaveBeenCalled();
   });
 });

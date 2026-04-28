@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Unlink } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, SpoolmanBulkCreateResult } from '../api/client';
+import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, SpoolmanBulkCreateResult, SpoolKProfileInput } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
@@ -341,8 +341,9 @@ export function SpoolFormModal({
         ? api.createSpoolmanInventorySpool(data as Parameters<typeof api.createSpoolmanInventorySpool>[0])
         : api.createSpool(data as Parameters<typeof api.createSpool>[0]),
     onSuccess: async (newSpool) => {
-      if (!spoolmanMode && selectedProfiles.size > 0 && newSpool?.id) {
-        await saveKProfiles(newSpool.id);
+      if (newSpool?.id) {
+        const ok = await saveKProfiles(newSpool.id);
+        if (!ok) return;
       }
       await queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       if (onSpoolsCreated) onSpoolsCreated([newSpool]);
@@ -378,7 +379,7 @@ export function SpoolFormModal({
         ? spoolmanResult.created
         : (result as InventorySpool[]);
 
-      if (!spoolmanMode && selectedProfiles.size > 0) {
+      if (selectedProfiles.size > 0) {
         for (const s of createdSpools) {
           await saveKProfiles(s.id);
         }
@@ -413,8 +414,9 @@ export function SpoolFormModal({
         ? api.updateSpoolmanInventorySpool(spool!.id, data as Parameters<typeof api.updateSpoolmanInventorySpool>[1])
         : api.updateSpool(spool!.id, data as Parameters<typeof api.updateSpool>[1]),
     onSuccess: async () => {
-      if (!spoolmanMode && spool?.id) {
-        await saveKProfiles(spool.id);
+      if (spool?.id) {
+        const ok = await saveKProfiles(spool.id);
+        if (!ok) return;
       }
       await queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
       showToast(t('inventory.spoolUpdated'), 'success');
@@ -495,27 +497,29 @@ export function SpoolFormModal({
     },
   });
 
-  // Save K-profiles for selected calibrations
-  const saveKProfiles = async (spoolId: number) => {
+  // Save K-profiles for selected calibrations. Returns false if any error occurred.
+  const saveKProfiles = async (spoolId: number): Promise<boolean> => {
+    const saveApi = spoolmanMode ? api.saveSpoolmanKProfiles : api.saveSpoolKProfiles;
+
     if (selectedProfiles.size === 0) {
-      // Clear existing K-profiles
       try {
-        await api.saveSpoolKProfiles(spoolId, []);
+        await saveApi(spoolId, []);
+        return true;
       } catch (e) {
         console.error('Failed to save K-profiles:', e);
         showToast(t('inventory.kProfileSaveFailed'), 'warning');
+        return false;
       }
-      return;
     }
 
-    const profiles = [];
+    const profiles: SpoolKProfileInput[] = [];
+    let dropped = 0;
     for (const key of selectedProfiles) {
       const [printerIdStr, caliIdxStr, extruderStr] = key.split(':');
       const printerId = parseInt(printerIdStr);
       const caliIdx = parseInt(caliIdxStr);
       const extruder = extruderStr === 'null' ? 0 : parseInt(extruderStr);
 
-      // Find the matching calibration
       const pc = resolvedCalibrations.find(p => p.printer.id === printerId);
       if (pc) {
         const cal = pc.calibrations.find(c => c.cali_idx === caliIdx);
@@ -529,18 +533,32 @@ export function SpoolFormModal({
             cali_idx: cal.cali_idx,
             setting_id: cal.setting_id || null,
           });
+        } else {
+          dropped++;
         }
+      } else {
+        dropped++;
       }
+    }
+
+    if (dropped > 0) {
+      console.error(`saveKProfiles: ${dropped} profile key(s) could not be resolved`, Array.from(selectedProfiles));
+      showToast(t('inventory.kProfileSaveFailed'), 'warning');
+      return false;
     }
 
     if (profiles.length > 0) {
       try {
-        await api.saveSpoolKProfiles(spoolId, profiles);
+        await saveApi(spoolId, profiles);
+        return true;
       } catch (e) {
         console.error('Failed to save K-profiles:', e);
         showToast(t('inventory.kProfileSaveFailed'), 'warning');
+        return false;
       }
     }
+
+    return true;
   };
 
   // Close on Escape key
@@ -665,7 +683,7 @@ export function SpoolFormModal({
             <Palette className="w-4 h-4" />
             {t('inventory.filamentInfoTab')}
           </button>
-          {!quickAdd && !spoolmanMode && (
+          {!quickAdd && (
             <button
               onClick={() => setActiveTab('pa-profile')}
               className={`flex-1 px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${

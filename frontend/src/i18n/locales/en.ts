@@ -1593,6 +1593,12 @@ export default {
     amsSyncing: 'Syncing...',
     amsSyncSuccess: '{{synced}} spool(s) synced, {{skipped}} skipped',
     amsSyncError: 'Failed to sync weights from AMS',
+    spoolmanAmsSyncButton: 'Sync Spoolman Weights from AMS',
+    spoolmanAmsSyncTitle: 'Sync Spoolman Spool Weights from AMS',
+    spoolmanAmsSyncMessage: 'This will update all Spoolman spool weights based on the current AMS remain% values from connected printers. Printers must be online.',
+    spoolmanAmsSyncing: 'Syncing...',
+    spoolmanAmsSyncSuccess: '{{synced}} spool(s) synced, {{skipped}} skipped',
+    spoolmanAmsSyncError: 'Failed to sync Spoolman weights from AMS',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL of your Spoolman server (e.g., http://localhost:7912)',

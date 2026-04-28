@@ -13,10 +13,11 @@ import re
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import delete, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes._spoolman_helpers import (
@@ -30,8 +31,11 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
+from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.user import User
+from backend.app.schemas.spool import SpoolKProfileBase
+from backend.app.services.printer_manager import printer_manager
 from backend.app.services.spoolman import (
     SpoolmanClient,
     SpoolmanClientError,
@@ -40,6 +44,7 @@ from backend.app.services.spoolman import (
     get_spoolman_client,
     init_spoolman_client,
 )
+from backend.app.utils.filament_ids import GENERIC_FILAMENT_IDS, MATERIAL_TEMPS
 
 logger = logging.getLogger(__name__)
 
@@ -234,11 +239,7 @@ class SpoolmanInventoryUpdate(BaseModel):
         if self.weight_used is not None and self.label_weight is not None:
             if self.weight_used > self.label_weight:
                 raise ValueError("weight_used must not exceed label_weight")
-        if (
-            "core_weight" in self.model_fields_set
-            and self.core_weight is not None
-            and self.core_weight != 250
-        ):
+        if "core_weight" in self.model_fields_set and self.core_weight is not None and self.core_weight != 250:
             raise ValueError(
                 "core_weight is not persisted in Spoolman (stored on the filament type, not the spool). "
                 "Omit this field or leave it at the default (250 g)."
@@ -296,13 +297,26 @@ async def list_spools(
     client = await _get_client(db)
     async with _translate_spoolman_errors():
         spools = await client.get_all_spools(allow_archived=include_archived)
-    result = []
+
+    mapped: list[dict] = []
+    spool_ids: list[int] = []
     for s in spools:
         try:
-            result.append(_map_spoolman_spool(s))
+            m = _map_spoolman_spool(s)
+            mapped.append(m)
+            spool_ids.append(m["id"])
         except ValueError as exc:
             logger.warning("Skipping malformed Spoolman spool (id=%r): %s", s.get("id"), exc)
-    return result
+
+    if spool_ids:
+        kp_result = await db.execute(select(SpoolmanKProfile).where(SpoolmanKProfile.spoolman_spool_id.in_(spool_ids)))
+        kp_by_spool: dict[int, list[dict]] = {}
+        for kp in kp_result.scalars().all():
+            kp_by_spool.setdefault(kp.spoolman_spool_id, []).append(_k_profile_to_dict(kp))
+        for m in mapped:
+            m["k_profiles"] = kp_by_spool.get(m["id"], [])
+
+    return mapped
 
 
 @router.get("/spools/{spool_id}")
@@ -316,10 +330,14 @@ async def get_spool(
     async with _translate_spoolman_errors():
         spool = await client.get_spool(spool_id)
     try:
-        return _map_spoolman_spool(spool)
+        mapped = _map_spoolman_spool(spool)
     except ValueError as exc:
         logger.warning("Malformed Spoolman spool (id=%r): %s", spool_id, exc)
         raise HTTPException(status_code=502, detail="Spoolman returned malformed spool data") from exc
+
+    kp_result = await db.execute(select(SpoolmanKProfile).where(SpoolmanKProfile.spoolman_spool_id == spool_id))
+    mapped["k_profiles"] = [_k_profile_to_dict(kp) for kp in kp_result.scalars().all()]
+    return mapped
 
 
 @router.post("/spools")
@@ -651,6 +669,133 @@ async def get_all_spoolman_slot_assignments(
     ]
 
 
+@router.post("/sync-ams-weights")
+async def sync_spoolman_ams_weights(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Sync remaining weight back to Spoolman for all slot-assigned spools.
+
+    Reads live AMS remain% from connected printers, computes
+    remaining = label_weight * remain% / 100, and PATCHes Spoolman.
+    """
+    client = await _get_client(db)
+
+    # Fetch all non-archived Spoolman spools once for label_weight lookup
+    async with _translate_spoolman_errors():
+        raw_spools = await client.get_all_spools(allow_archived=False)
+    spool_lookup: dict[int, dict] = {s["id"]: s for s in raw_spools if s.get("id") is not None}
+
+    result = await db.execute(select(SpoolmanSlotAssignment))
+    assignments = list(result.scalars().all())
+
+    synced = 0
+    skipped = 0
+
+    def _find_tray(ams_data: list, ams_id: int, tray_id: int) -> dict | None:
+        if not ams_data:
+            return None
+        for ams_unit in ams_data:
+            if _safe_int(ams_unit.get("id"), -1) != ams_id:
+                continue
+            for tray in ams_unit.get("tray", []):
+                if _safe_int(tray.get("id"), -1) == tray_id:
+                    return tray
+        return None
+
+    for assignment in assignments:
+        spool_dict = spool_lookup.get(assignment.spoolman_spool_id)
+        if not spool_dict:
+            logger.debug("Spoolman AMS sync: spool %d not found in Spoolman, skipping", assignment.spoolman_spool_id)
+            skipped += 1
+            continue
+
+        label_weight = _safe_int((spool_dict.get("filament") or {}).get("weight"), 1000)
+        if label_weight <= 0:
+            logger.debug("Spoolman AMS sync: spool %d has no label_weight, skipping", assignment.spoolman_spool_id)
+            skipped += 1
+            continue
+
+        state = printer_manager.get_status(assignment.printer_id)
+        if not state or not state.raw_data:
+            logger.info(
+                "Spoolman AMS sync: printer %d not connected, skipping spool %d",
+                assignment.printer_id,
+                assignment.spoolman_spool_id,
+            )
+            skipped += 1
+            continue
+
+        ams_raw = state.raw_data.get("ams", [])
+        if isinstance(ams_raw, dict):
+            ams_raw = ams_raw.get("ams", [])
+        tray = _find_tray(ams_raw, assignment.ams_id, assignment.tray_id)
+        if not tray:
+            logger.info(
+                "Spoolman AMS sync: no tray data for spool %d (printer %d AMS%d-T%d)",
+                assignment.spoolman_spool_id,
+                assignment.printer_id,
+                assignment.ams_id,
+                assignment.tray_id,
+            )
+            skipped += 1
+            continue
+
+        remain_raw = tray.get("remain")
+        if remain_raw is None:
+            logger.debug(
+                "Spoolman AMS sync: no remain value for spool %d (tray %d/%d), skipping",
+                assignment.spoolman_spool_id,
+                assignment.ams_id,
+                assignment.tray_id,
+            )
+            skipped += 1
+            continue
+
+        try:
+            remain_val = int(remain_raw)
+        except (TypeError, ValueError):
+            logger.debug(
+                "Spoolman AMS sync: non-numeric remain=%r for spool %d, skipping",
+                remain_raw,
+                assignment.spoolman_spool_id,
+            )
+            skipped += 1
+            continue
+
+        if remain_val < 0 or remain_val > 100:
+            logger.debug("Spoolman AMS sync: invalid remain=%s for spool %d", remain_raw, assignment.spoolman_spool_id)
+            skipped += 1
+            continue
+
+        remaining = round(label_weight * remain_val / 100.0, 1)
+        try:
+            async with _translate_spoolman_errors():
+                await client.update_spool_full(assignment.spoolman_spool_id, remaining_weight=remaining)
+            logger.info(
+                "Spoolman AMS sync: spool %d remaining set to %s g (remain=%d%%)",
+                assignment.spoolman_spool_id,
+                remaining,
+                remain_val,
+            )
+            synced += 1
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                logger.warning(
+                    "Spoolman AMS sync: spool %d not found in Spoolman (404), skipping",
+                    assignment.spoolman_spool_id,
+                )
+            else:
+                logger.warning(
+                    "Spoolman AMS sync: failed to update spool %d (HTTP %d)",
+                    assignment.spoolman_spool_id,
+                    exc.status_code,
+                )
+            skipped += 1
+
+    return {"synced": synced, "skipped": skipped}
+
+
 @router.post("/slot-assignments")
 async def assign_spoolman_slot(
     body: SpoolSlotAssignmentRequest,
@@ -698,7 +843,107 @@ async def assign_spoolman_slot(
         logger.error("Failed to persist slot assignment: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to save slot assignment") from exc
 
-    return _map_spoolman_spool(spool)
+    mapped = _map_spoolman_spool(spool)
+
+    # Fetch K-profiles before the MQTT try block so we can use async DB access.
+    kp_rows_result = await db.execute(
+        select(SpoolmanKProfile).where(
+            SpoolmanKProfile.spoolman_spool_id == body.spoolman_spool_id,
+            SpoolmanKProfile.printer_id == body.printer_id,
+        )
+    )
+    kp_rows = kp_rows_result.scalars().all()
+
+    # Auto-configure AMS slot via MQTT (best-effort; slot assignment is already persisted)
+    try:
+        mqtt_client = printer_manager.get_client(body.printer_id)
+        if mqtt_client:
+            tray_type = mapped.get("material") or ""
+            brand = mapped.get("brand") or ""
+            subtype = mapped.get("subtype") or ""
+            if brand:
+                tray_sub_brands = f"{brand} {tray_type} {subtype}".strip()
+            elif subtype:
+                tray_sub_brands = f"{tray_type} {subtype}".strip()
+            else:
+                tray_sub_brands = tray_type
+
+            tray_color = (mapped.get("rgba") or "808080FF").upper()
+            if len(tray_color) == 6:
+                tray_color = tray_color + "FF"
+
+            material_upper = tray_type.upper().strip()
+            tray_info_idx = (
+                GENERIC_FILAMENT_IDS.get(material_upper)
+                or GENERIC_FILAMENT_IDS.get(material_upper.split("-")[0].split(" ")[0])
+                or ""
+            )
+
+            temp_defaults = MATERIAL_TEMPS.get(material_upper, (200, 240))
+            temp_min = mapped.get("nozzle_temp_min") or temp_defaults[0]
+            temp_max = temp_defaults[1]
+
+            mqtt_client.ams_set_filament_setting(
+                ams_id=body.ams_id,
+                tray_id=body.tray_id,
+                tray_info_idx=tray_info_idx,
+                tray_type=tray_type,
+                tray_sub_brands=tray_sub_brands,
+                tray_color=tray_color,
+                nozzle_temp_min=temp_min,
+                nozzle_temp_max=temp_max,
+            )
+
+            # K-profile calibration via extrusion_cali_sel
+            state = mqtt_client.printer_state if hasattr(mqtt_client, "printer_state") else None
+            nozzle_diameter = "0.4"
+            nozzle_list = getattr(state, "nozzles", None) if state else None
+            if nozzle_list:
+                nd = nozzle_list[0].nozzle_diameter
+                if nd:
+                    nozzle_diameter = nd
+
+            slot_extruder = None
+            if state and getattr(state, "ams_extruder_map", None):
+                if body.ams_id == 255:
+                    # External slots: ext-L (tray 0) → extruder 1, ext-R (tray 1) → extruder 0
+                    # tray_id 0→1, 1→0
+                    slot_extruder = 1 - body.tray_id
+                else:
+                    slot_extruder = state.ams_extruder_map.get(str(body.ams_id))
+
+            matching_kp = None
+            for kp in kp_rows:
+                if kp.nozzle_diameter == nozzle_diameter:
+                    if slot_extruder is not None and kp.extruder is not None and kp.extruder != slot_extruder:
+                        continue
+                    matching_kp = kp
+                    break
+
+            if matching_kp and matching_kp.cali_idx is not None:
+                mqtt_client.extrusion_cali_sel(
+                    ams_id=body.ams_id,
+                    tray_id=body.tray_id,
+                    cali_idx=matching_kp.cali_idx,
+                    filament_id=tray_info_idx,
+                    nozzle_diameter=nozzle_diameter,
+                )
+
+            logger.info(
+                "Auto-configured AMS slot ams=%d tray=%d for Spoolman spool %d on printer %d",
+                body.ams_id,
+                body.tray_id,
+                body.spoolman_spool_id,
+                body.printer_id,
+            )
+    except Exception as exc:
+        logger.warning(
+            "Failed to auto-configure AMS slot for Spoolman spool %d: %s",
+            body.spoolman_spool_id,
+            exc,
+        )
+
+    return mapped
 
 
 @router.delete("/slot-assignments/{spoolman_spool_id}")
@@ -789,3 +1034,77 @@ async def get_spoolman_slot_assignment(
                 cleanup_exc,
             )
         return None
+
+
+def _k_profile_to_dict(p: SpoolmanKProfile) -> dict:
+    """Manually map SpoolmanKProfile → SpoolKProfileResponse-compatible dict."""
+    return {
+        "id": p.id,
+        "spool_id": p.spoolman_spool_id,
+        "printer_id": p.printer_id,
+        "extruder": p.extruder,
+        "nozzle_diameter": p.nozzle_diameter,
+        "nozzle_type": p.nozzle_type,
+        "k_value": p.k_value,
+        "name": p.name,
+        "cali_idx": p.cali_idx,
+        "setting_id": p.setting_id,
+        "created_at": p.created_at,
+    }
+
+
+@router.get("/spools/{spool_id}/k-profiles")
+async def get_spoolman_k_profiles(
+    spool_id: int = Path(..., gt=0),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+) -> list[dict]:
+    """Return all local K-value calibration profiles for a Spoolman spool."""
+    await _get_client(db)
+    result = await db.execute(select(SpoolmanKProfile).where(SpoolmanKProfile.spoolman_spool_id == spool_id))
+    profiles = result.scalars().all()
+    return [_k_profile_to_dict(p) for p in profiles]
+
+
+@router.put("/spools/{spool_id}/k-profiles")
+async def save_spoolman_k_profiles(
+    spool_id: int = Path(..., gt=0),
+    profiles: list[SpoolKProfileBase] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> list[dict]:
+    """Replace all K-value calibration profiles for a Spoolman spool."""
+    client = await _get_client(db)
+    async with _translate_spoolman_errors():
+        await client.get_spool(spool_id)
+
+    saved: list[SpoolmanKProfile] = []
+    try:
+        await db.execute(delete(SpoolmanKProfile).where(SpoolmanKProfile.spoolman_spool_id == spool_id))
+        for profile in profiles:
+            obj = SpoolmanKProfile(
+                spoolman_spool_id=spool_id,
+                printer_id=profile.printer_id,
+                extruder=profile.extruder,
+                nozzle_diameter=profile.nozzle_diameter,
+                nozzle_type=profile.nozzle_type,
+                k_value=profile.k_value,
+                name=profile.name,
+                cali_idx=profile.cali_idx,
+                setting_id=profile.setting_id,
+            )
+            db.add(obj)
+            saved.append(obj)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(422, "Duplicate or invalid K-profile (check printer_id and nozzle uniqueness)") from exc
+    except Exception as exc:
+        await db.rollback()
+        logger.error("K-profile save for spool %d failed: %s", spool_id, exc)
+        raise HTTPException(500, "Failed to save K-profiles") from exc
+
+    for obj in saved:
+        await db.refresh(obj)
+
+    return [_k_profile_to_dict(p) for p in saved]

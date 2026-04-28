@@ -4429,6 +4429,17 @@ export const api = {
         ? `/spoolman/inventory/slot-assignments/all?printer_id=${printerId}`
         : '/spoolman/inventory/slot-assignments/all',
     ),
+  syncSpoolmanAmsWeights: () =>
+    request<{ synced: number; skipped: number }>('/spoolman/inventory/sync-ams-weights', { method: 'POST' }),
+
+  getSpoolmanKProfiles: (spoolId: number) =>
+    request<SpoolKProfile[]>(`/spoolman/inventory/spools/${spoolId}/k-profiles`),
+
+  saveSpoolmanKProfiles: (spoolId: number, profiles: SpoolKProfileInput[]) =>
+    request<SpoolKProfile[]>(`/spoolman/inventory/spools/${spoolId}/k-profiles`, {
+      method: 'PUT',
+      body: JSON.stringify(profiles),
+    }),
 
   // Updates
   getVersion: () => request<VersionInfo>('/updates/version'),

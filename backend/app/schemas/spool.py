@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SpoolBase(BaseModel):
@@ -77,6 +77,14 @@ class SpoolKProfileBase(BaseModel):
     name: str | None = None
     cali_idx: int | None = None
     setting_id: str | None = None
+
+    @field_validator("nozzle_diameter")
+    @classmethod
+    def normalize_nozzle_diameter(cls, v: str) -> str:
+        try:
+            return str(float(v))
+        except (ValueError, TypeError):
+            return v
 
 
 class SpoolKProfileResponse(SpoolKProfileBase):

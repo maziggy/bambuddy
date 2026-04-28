@@ -1539,6 +1539,12 @@ export default {
     amsSyncing: 'Sincronizzazione...',
     amsSyncSuccess: '{{synced}} bobina/e sincronizzata/e, {{skipped}} saltata/e',
     amsSyncError: 'Impossibile sincronizzare i pesi dall\'AMS',
+    spoolmanAmsSyncButton: 'Sincronizza i pesi Spoolman dall\'AMS',
+    spoolmanAmsSyncTitle: 'Sincronizza i pesi delle bobine Spoolman dall\'AMS',
+    spoolmanAmsSyncMessage: 'Questo aggiornerà i pesi di tutte le bobine Spoolman in base ai valori di riempimento AMS correnti delle stampanti connesse. Le stampanti devono essere online.',
+    spoolmanAmsSyncing: 'Sincronizzazione...',
+    spoolmanAmsSyncSuccess: '{{synced}} bobina/e sincronizzata/e, {{skipped}} saltata/e',
+    spoolmanAmsSyncError: 'Impossibile sincronizzare i pesi Spoolman dall\'AMS',
     // Spoolman settings
     spoolmanUrl: 'URL Spoolman',
     spoolmanUrlHint: 'URL del server Spoolman (es. http://localhost:7912)',

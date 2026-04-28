@@ -56,9 +56,10 @@ interface AssignToAmsModalProps {
   onClose: () => void;
   spool: InventorySpool;
   printerId: number | null;
+  spoolmanMode?: boolean;
 }
 
-export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignToAmsModalProps) {
+export function AssignToAmsModal({ isOpen, onClose, spool, printerId, spoolmanMode = false }: AssignToAmsModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -167,21 +168,26 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignTo
   }, [isDualNozzle, amsExtruderMap]);
 
   // Assign spool to AMS slot — single API call, backend handles both
-  // DB record AND MQTT auto-configuration (same as SpoolStation).
+  // DB record AND MQTT auto-configuration (ams_set_filament_setting + extrusion_cali_sel).
   const configureMutation = useMutation({
     mutationFn: async ({ amsId, trayId }: { amsId: number; trayId: number }) => {
       if (!printerId) throw new Error('No printer selected');
 
-      await api.assignSpool({
-        spool_id: spool.id,
-        printer_id: printerId,
-        ams_id: amsId,
-        tray_id: trayId,
-      });
-
-      // Slot preset mapping is now saved by the backend in assign_spool()
-      // after successful MQTT configuration, using the authoritative
-      // slicer_filament_name from the spool record.
+      if (spoolmanMode) {
+        await api.assignSpoolmanSlot({
+          spoolman_spool_id: spool.id,
+          printer_id: printerId,
+          ams_id: amsId,
+          tray_id: trayId,
+        });
+      } else {
+        await api.assignSpool({
+          spool_id: spool.id,
+          printer_id: printerId,
+          ams_id: amsId,
+          tray_id: trayId,
+        });
+      }
     },
     onSuccess: () => {
       setStatusType('success');

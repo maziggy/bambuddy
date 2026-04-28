@@ -1539,6 +1539,12 @@ export default {
     amsSyncing: 'Sincronizando...',
     amsSyncSuccess: '{{synced}} rolo(s) sincronizado(s), {{skipped}} ignorado(s)',
     amsSyncError: 'Falha ao sincronizar pesos do AMS',
+    spoolmanAmsSyncButton: 'Sincronizar pesos do Spoolman pelo AMS',
+    spoolmanAmsSyncTitle: 'Sincronizar pesos dos rolos Spoolman pelo AMS',
+    spoolmanAmsSyncMessage: 'Isso atualizará os pesos de todos os rolos Spoolman com base nos valores atuais de % restante do AMS das impressoras conectadas. As impressoras devem estar online.',
+    spoolmanAmsSyncing: 'Sincronizando...',
+    spoolmanAmsSyncSuccess: '{{synced}} rolo(s) Spoolman sincronizado(s), {{skipped}} ignorado(s)',
+    spoolmanAmsSyncError: 'Falha ao sincronizar pesos do Spoolman pelo AMS',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL do seu servidor Spoolman (por exemplo, http://localhost:7912)',

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Check, X, RefreshCw, Link2, Link2Off, Database, ChevronDown, Info, AlertTriangle, Package, ExternalLink } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { SpoolmanSyncResult, Printer } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
@@ -22,6 +22,7 @@ export function SpoolmanSettings() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [showAllSkipped, setShowAllSkipped] = useState(false);
   const [showAmsSyncConfirm, setShowAmsSyncConfirm] = useState(false);
+  const [showSpoolmanAmsSyncConfirm, setShowSpoolmanAmsSyncConfirm] = useState(false);
 
   // Fetch Spoolman settings
   const { data: settings, isLoading: settingsLoading } = useQuery({
@@ -92,6 +93,9 @@ export function SpoolmanSettings() {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       showToast(t('settings.toast.settingsSaved'));
     },
+    onError: () => {
+      showToast(t('settings.toast.saveFailed'), 'error');
+    },
   });
 
   // Connect mutation
@@ -99,6 +103,9 @@ export function SpoolmanSettings() {
     mutationFn: api.connectSpoolman,
     onSuccess: () => {
       refetchStatus();
+    },
+    onError: () => {
+      showToast(t('settings.toast.saveFailed'), 'error');
     },
   });
 
@@ -108,15 +115,19 @@ export function SpoolmanSettings() {
     onSuccess: () => {
       refetchStatus();
     },
+    onError: () => {
+      showToast(t('settings.toast.saveFailed'), 'error');
+    },
   });
 
   // Sync all mutation
   const syncAllMutation = useMutation({
     mutationFn: api.syncAllPrintersAms,
     onSuccess: (data: SpoolmanSyncResult) => {
-      if (data.success) {
-        // Show success message
-      }
+      showToast(t('settings.spoolmanAmsSyncSuccess', { synced: data.synced_count, skipped: 0 }), 'success');
+    },
+    onError: () => {
+      showToast(t('settings.toast.saveFailed'), 'error');
     },
   });
 
@@ -124,9 +135,10 @@ export function SpoolmanSettings() {
   const syncPrinterMutation = useMutation({
     mutationFn: (printerId: number) => api.syncPrinterAms(printerId),
     onSuccess: (data: SpoolmanSyncResult) => {
-      if (data.success) {
-        // Show success message
-      }
+      showToast(t('settings.spoolmanAmsSyncSuccess', { synced: data.synced_count, skipped: 0 }), 'success');
+    },
+    onError: () => {
+      showToast(t('settings.toast.saveFailed'), 'error');
     },
   });
 
@@ -151,6 +163,26 @@ export function SpoolmanSettings() {
     onError: () => {
       showToast(t('settings.amsSyncError'), 'error');
       setShowAmsSyncConfirm(false);
+    },
+  });
+
+  // Spoolman AMS weight sync mutation
+  const spoolmanAmsSyncMutation = useMutation({
+    mutationFn: api.syncSpoolmanAmsWeights,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
+      showToast(t('settings.spoolmanAmsSyncSuccess', { synced: data.synced, skipped: data.skipped }), 'success');
+      setShowSpoolmanAmsSyncConfirm(false);
+    },
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 503) {
+        showToast(t('settings.spoolmanAmsSyncError') + ' (Spoolman unreachable)', 'error');
+      } else if (error instanceof ApiError && error.status === 400) {
+        showToast(t('settings.spoolmanAmsSyncError') + ' (Spoolman not configured)', 'error');
+      } else {
+        showToast(t('settings.spoolmanAmsSyncError'), 'error');
+      }
+      setShowSpoolmanAmsSyncConfirm(false);
     },
   });
 
@@ -438,9 +470,9 @@ export function SpoolmanSettings() {
               </div>
 
               {/* Error display */}
-              {connectMutation.isError && (
+              {(connectMutation.isError || disconnectMutation.isError) && (
                 <div className="mb-3 p-2 bg-red-500/20 border border-red-500/50 rounded text-sm text-red-400">
-                  {(connectMutation.error as Error).message}
+                  {((connectMutation.error || disconnectMutation.error) as Error).message}
                 </div>
               )}
 
@@ -483,6 +515,31 @@ export function SpoolmanSettings() {
                         <RefreshCw className="w-4 h-4" />
                       )}
                       {t('spoolman.sync')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Spoolman AMS weight sync */}
+              {status?.connected && (
+                <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-white">{t('settings.spoolmanAmsSyncButton')}</p>
+                      <p className="text-xs text-bambu-gray">{t('settings.spoolmanAmsSyncMessage')}</p>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setShowSpoolmanAmsSyncConfirm(true)}
+                      disabled={spoolmanAmsSyncMutation.isPending}
+                    >
+                      {spoolmanAmsSyncMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      {spoolmanAmsSyncMutation.isPending ? t('settings.spoolmanAmsSyncing') : t('settings.spoolmanAmsSyncButton')}
                     </Button>
                   </div>
                 </div>
@@ -573,6 +630,19 @@ export function SpoolmanSettings() {
           loadingText={t('settings.amsSyncing')}
           onConfirm={() => amsSyncMutation.mutate()}
           onCancel={() => setShowAmsSyncConfirm(false)}
+        />
+      )}
+
+      {showSpoolmanAmsSyncConfirm && (
+        <ConfirmModal
+          title={t('settings.spoolmanAmsSyncTitle')}
+          message={t('settings.spoolmanAmsSyncMessage')}
+          confirmText={t('settings.spoolmanAmsSyncButton')}
+          variant="warning"
+          isLoading={spoolmanAmsSyncMutation.isPending}
+          loadingText={t('settings.spoolmanAmsSyncing')}
+          onConfirm={() => spoolmanAmsSyncMutation.mutate()}
+          onCancel={() => setShowSpoolmanAmsSyncConfirm(false)}
         />
       )}
     </Card>

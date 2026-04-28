@@ -203,6 +203,7 @@ async def init_db():
         spool_k_profile,
         spool_usage_history,
         spoolbuddy_device,
+        spoolman_k_profile,
         spoolman_slot_assignment,
         user,
         user_email_pref,
@@ -1746,6 +1747,48 @@ async def run_migrations(conn):
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_slot_assignment_spool ON spoolman_slot_assignments (spoolman_spool_id)",
+    )
+
+    # Migration: Create spoolman_k_profile table for K-value calibration profiles linked to Spoolman spools.
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS spoolman_k_profile (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            spoolman_spool_id INTEGER NOT NULL,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            extruder INTEGER NOT NULL DEFAULT 0 CHECK (extruder >= 0 AND extruder <= 1),
+            nozzle_diameter VARCHAR(10) NOT NULL DEFAULT '0.4',
+            nozzle_type VARCHAR(50),
+            k_value REAL NOT NULL,
+            name VARCHAR(100),
+            cali_idx INTEGER,
+            setting_id VARCHAR(50),
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_spoolman_k_profile UNIQUE(spoolman_spool_id, printer_id, extruder, nozzle_diameter)
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS spoolman_k_profile (
+            id SERIAL PRIMARY KEY,
+            spoolman_spool_id INTEGER NOT NULL,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            extruder INTEGER NOT NULL DEFAULT 0 CHECK (extruder >= 0 AND extruder <= 1),
+            nozzle_diameter VARCHAR(10) NOT NULL DEFAULT '0.4',
+            nozzle_type VARCHAR(50),
+            k_value DOUBLE PRECISION NOT NULL,
+            name VARCHAR(100),
+            cali_idx INTEGER,
+            setting_id VARCHAR(50),
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_spoolman_k_profile UNIQUE(spoolman_spool_id, printer_id, extruder, nozzle_diameter)
+        )
+        """,
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_spoolman_k_profile_spool ON spoolman_k_profile (spoolman_spool_id)",
     )
 
     # Seed default settings keys that must exist on fresh install

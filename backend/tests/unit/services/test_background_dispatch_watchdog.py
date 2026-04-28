@@ -22,9 +22,9 @@ import pytest
 from backend.app.services.background_dispatch import BackgroundDispatchService
 
 
-def _status(state: str, subtask_id: str | None = None):
-    """Minimal stand-in for PrinterState — only the two fields the watchdog reads."""
-    return SimpleNamespace(state=state, subtask_id=subtask_id)
+def _status(state: str, subtask_id: str | None = None, gcode_file: str | None = None):
+    """Minimal stand-in for PrinterState — only the fields the watchdog reads."""
+    return SimpleNamespace(state=state, subtask_id=subtask_id, gcode_file=gcode_file)
 
 
 class TestReturnsTrueOnPickup:
@@ -222,6 +222,144 @@ class TestDefaults:
 
         sig = inspect.signature(BackgroundDispatchService._verify_print_response)
         assert sig.parameters["timeout"].default == 90.0
+
+
+class TestGcodeFileDiscriminator:
+    """#1150 vs #887/#936 discriminator: skip the forced reconnect when the
+    printer's gcode_file changed since pre-dispatch (project_file landed,
+    printer is parsing slowly — reconnecting mid-parse causes 0500_4003).
+    Reconnect when gcode_file is unchanged (publish was silently swallowed —
+    half-broken session needs the original recovery)."""
+
+    @pytest.mark.asyncio
+    async def test_skips_reconnect_when_gcode_file_changed(self):
+        get_status = MagicMock(
+            return_value=_status("FINISH", "OLD_SUBTASK", gcode_file="/new.3mf"),
+        )
+        client = MagicMock()
+        get_client = MagicMock(return_value=client)
+
+        with (
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_status",
+                get_status,
+            ),
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_client",
+                get_client,
+            ),
+        ):
+            result = await BackgroundDispatchService._verify_print_response(
+                printer_id=42,
+                printer_name="P1P",
+                pre_state="FINISH",
+                pre_subtask_id="OLD_SUBTASK",
+                pre_gcode_file="/old.3mf",
+                timeout=0.2,
+                poll_interval=0.05,
+            )
+
+        assert result is False
+        client.force_reconnect_stale_session.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reconnects_when_gcode_file_unchanged(self):
+        # The half-broken-session case (#887/#936): publish was dropped, so
+        # the printer is still showing the previous file. Reconnect to clear
+        # the broken paho QoS-1 queue.
+        get_status = MagicMock(
+            return_value=_status("FINISH", "OLD_SUBTASK", gcode_file="/old.3mf"),
+        )
+        client = MagicMock()
+        get_client = MagicMock(return_value=client)
+
+        with (
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_status",
+                get_status,
+            ),
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_client",
+                get_client,
+            ),
+        ):
+            await BackgroundDispatchService._verify_print_response(
+                printer_id=42,
+                printer_name="P1P",
+                pre_state="FINISH",
+                pre_subtask_id="OLD_SUBTASK",
+                pre_gcode_file="/old.3mf",
+                timeout=0.2,
+                poll_interval=0.05,
+            )
+
+        client.force_reconnect_stale_session.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_skips_reconnect_when_pre_gcode_file_was_none(self):
+        # Printer just connected (pre_gcode_file=None) and now reports a
+        # file — that's a clear "command landed" signal too.
+        get_status = MagicMock(
+            return_value=_status("FINISH", "OLD_SUBTASK", gcode_file="/new.3mf"),
+        )
+        client = MagicMock()
+        get_client = MagicMock(return_value=client)
+
+        with (
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_status",
+                get_status,
+            ),
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_client",
+                get_client,
+            ),
+        ):
+            await BackgroundDispatchService._verify_print_response(
+                printer_id=42,
+                printer_name="P1P",
+                pre_state="FINISH",
+                pre_subtask_id="OLD_SUBTASK",
+                pre_gcode_file=None,
+                timeout=0.2,
+                poll_interval=0.05,
+            )
+
+        client.force_reconnect_stale_session.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reconnects_when_no_pre_gcode_file_arg_supplied(self):
+        # Backward-compat: callers that don't pass pre_gcode_file at all
+        # (everything but our updated dispatch sites) must still get the
+        # original reconnect-on-timeout behaviour. Here pre_gcode_file
+        # defaults to None and the printer's current gcode_file is also
+        # None → publish_landed=False → reconnect.
+        get_status = MagicMock(
+            return_value=_status("FINISH", "OLD_SUBTASK", gcode_file=None),
+        )
+        client = MagicMock()
+        get_client = MagicMock(return_value=client)
+
+        with (
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_status",
+                get_status,
+            ),
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_client",
+                get_client,
+            ),
+        ):
+            await BackgroundDispatchService._verify_print_response(
+                printer_id=42,
+                printer_name="P1P",
+                pre_state="FINISH",
+                pre_subtask_id="OLD_SUBTASK",
+                timeout=0.2,
+                poll_interval=0.05,
+            )
+
+        client.force_reconnect_stale_session.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

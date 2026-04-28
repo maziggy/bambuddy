@@ -241,11 +241,38 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     },
   });
 
+  // Pre-slice compatibility check: the slicer CLI (both OrcaSlicer and
+  // BambuStudio) cannot re-slice a 3MF for a printer different from the one
+  // it was originally bound to — the cross-printer "convert project" flow
+  // is desktop-Studio only. If we can match the source's printer model to a
+  // SliceModal-known model and the user's chosen printer profile names a
+  // different model, surface a warning before they click Slice.
+  const sourcePrinterModel = platesQuery.data?.source_printer_model ?? null;
+  const printerProfileName = printerPreset
+    ? presetsQuery.data?.[printerPreset.source].printer.find((p) => p.id === printerPreset.id)?.name
+    : null;
+  // Profile names follow `<model> <nozzle> nozzle` (e.g. "Bambu Lab H2D 0.4
+  // nozzle"). The CLI compat check uses the model prefix; substring match
+  // catches both standard and locally-imported user-named profiles that
+  // include the model in the name. Cloud presets with arbitrary names
+  // (e.g. "My Custom X1C") fall through to no-warning, which is a
+  // reasonable default — the user picked it knowingly.
+  const printerMismatch =
+    !!sourcePrinterModel &&
+    !!printerProfileName &&
+    !printerProfileName.toLowerCase().includes(sourcePrinterModel.toLowerCase());
+
+  // Slice button stays disabled while the printer mismatch warning is
+  // visible: clicking it would silently fall back to embedded settings and
+  // produce a wrong-printer file, the exact UX bug the warning is here to
+  // prevent. Only re-enable when the user picks a matching profile (or
+  // cloud preset whose name we can't parse).
   const isReady =
     printerPreset != null &&
     processPreset != null &&
     filamentPresets.length > 0 &&
-    filamentPresets.every((r) => r != null);
+    filamentPresets.every((r) => r != null) &&
+    !printerMismatch;
   const isEnqueuing = enqueueMutation.isPending;
 
   // Step 1: plate picker for multi-plate 3MF sources. Cancelling closes the
@@ -301,7 +328,10 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {(platesQuery.isLoading || presetsQuery.isLoading || filamentReqsQuery.isLoading) && (
+          {/* Preset listing loader — printer/process dropdowns can't render
+              without it. Plate query reuses the same spinner since it's
+              also blocking. */}
+          {(platesQuery.isLoading || presetsQuery.isLoading) && (
             <div className="flex items-center gap-2 text-bambu-gray text-sm">
               <Loader2 className="w-4 h-4 animate-spin" />
               {t('slice.loadingPresets', 'Loading presets…')}
@@ -336,35 +366,60 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                 onChange={setProcessPreset}
                 disabled={isEnqueuing}
               />
-              {filamentSlots.map((slot, idx) => (
-                <PresetDropdown
-                  key={`filament-${idx}`}
-                  label={
-                    filamentSlots.length > 1
-                      ? t('slice.filamentSlot', {
-                          index: idx + 1,
-                          type: slot.type,
-                          defaultValue: `Filament ${idx + 1} (${slot.type || ''})`,
-                        })
-                      : t('slice.filament', 'Filament profile')
-                  }
-                  slot="filament"
-                  data={presetsQuery.data}
-                  value={filamentPresets[idx] ?? null}
-                  onChange={(ref) =>
-                    setFilamentPresets((current) => {
-                      const next = current.length === filamentSlots.length
-                        ? [...current]
-                        : filamentSlots.map((_, i) => current[i] ?? null);
-                      next[idx] = ref;
-                      return next;
-                    })
-                  }
-                  disabled={isEnqueuing}
-                  swatchColor={filamentSlots.length > 1 ? slot.color : undefined}
-                />
-              ))}
+              {/* Filament reqs may need a server-side preview-slice for
+                  unsliced project files (single-pass, then cached). Show a
+                  scoped spinner so the user sees the printer/process
+                  dropdowns instead of an opaque "Loading presets…" wait. */}
+              {filamentReqsQuery.isLoading ? (
+                <div className="flex items-center gap-2 text-bambu-gray text-sm py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {t('slice.analyzingPlateFilaments', 'Analyzing plate filaments…')}
+                </div>
+              ) : (
+                filamentSlots.map((slot, idx) => (
+                  <PresetDropdown
+                    key={`filament-${idx}`}
+                    label={
+                      filamentSlots.length > 1
+                        ? t('slice.filamentSlot', {
+                            index: idx + 1,
+                            type: slot.type,
+                            defaultValue: `Filament ${idx + 1} (${slot.type || ''})`,
+                          })
+                        : t('slice.filament', 'Filament profile')
+                    }
+                    slot="filament"
+                    data={presetsQuery.data}
+                    value={filamentPresets[idx] ?? null}
+                    onChange={(ref) =>
+                      setFilamentPresets((current) => {
+                        const next = current.length === filamentSlots.length
+                          ? [...current]
+                          : filamentSlots.map((_, i) => current[i] ?? null);
+                        next[idx] = ref;
+                        return next;
+                      })
+                    }
+                    disabled={isEnqueuing}
+                    swatchColor={filamentSlots.length > 1 ? slot.color : undefined}
+                  />
+                ))
+              )}
             </>
+          )}
+
+          {printerMismatch && (
+            <div
+              className="text-sm text-amber-200 bg-amber-900/20 border border-amber-700/40 rounded p-2"
+              role="alert"
+            >
+              {t('slice.printerMismatch', {
+                source: sourcePrinterModel,
+                target: printerProfileName,
+                defaultValue:
+                  'This 3MF was sliced for {{source}}, but you picked {{target}}. The slicer CLI cannot re-slice a 3MF for a different printer — open the source in Bambu Studio, change the printer, and re-export.',
+              })}
+            </div>
           )}
 
           {errorMessage && (

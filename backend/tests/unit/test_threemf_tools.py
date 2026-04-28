@@ -13,6 +13,7 @@ from backend.app.utils.threemf_tools import (
     extract_filament_usage_from_3mf,
     extract_plate_extruder_set_from_3mf,
     extract_project_filaments_from_3mf,
+    extract_source_printer_model_from_3mf,
     get_cumulative_usage_at_layer,
     mm_to_grams,
     parse_gcode_layer_filament_usage,
@@ -645,3 +646,43 @@ class TestExtractPlateExtruderSetFrom3mf:
             # Top-level metadata still works; missing component model file
             # is silently skipped without crashing.
             assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {2}
+
+
+# ---------------------------------------------------------------------------
+# Tests for extract_source_printer_model_from_3mf — feeds the SliceModal's
+# pre-slice mismatch warning. The CLI cannot re-slice a 3MF for a different
+# printer, so warning the user up-front avoids producing wrong-printer output.
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSourcePrinterModelFrom3mf:
+    def test_returns_none_when_project_settings_missing(self):
+        with _make_3mf_with({"placeholder.txt": "hi"}) as zf:
+            assert extract_source_printer_model_from_3mf(zf) is None
+
+    def test_reads_printer_model_directly(self):
+        proj = {"printer_model": "Bambu Lab H2D"}
+        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
+            assert extract_source_printer_model_from_3mf(zf) == "Bambu Lab H2D"
+
+    def test_falls_back_to_printer_settings_id_with_nozzle_strip(self):
+        # Older Bambu Studio exports stored the printer under
+        # printer_settings_id, often with a "0.4 nozzle" suffix the helper
+        # must strip to match the canonical model name.
+        proj = {"printer_settings_id": "Bambu Lab A1 0.4 nozzle"}
+        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
+            assert extract_source_printer_model_from_3mf(zf) == "Bambu Lab A1"
+
+    def test_settings_id_without_nozzle_suffix_returned_as_is(self):
+        proj = {"printer_settings_id": "Bambu Lab P1S"}
+        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
+            assert extract_source_printer_model_from_3mf(zf) == "Bambu Lab P1S"
+
+    def test_corrupt_json_returns_none_no_exception(self):
+        with _make_3mf_with({"Metadata/project_settings.config": b"{broken"}) as zf:
+            assert extract_source_printer_model_from_3mf(zf) is None
+
+    def test_empty_string_treated_as_missing(self):
+        proj = {"printer_model": "", "printer_settings_id": ""}
+        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
+            assert extract_source_printer_model_from_3mf(zf) is None

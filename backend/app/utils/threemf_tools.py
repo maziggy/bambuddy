@@ -609,6 +609,38 @@ def inject_gcode_into_3mf(
         return None
 
 
+def extract_source_printer_model_from_3mf(zf: zipfile.ZipFile) -> str | None:
+    """Source 3MF's bound printer model from ``Metadata/project_settings.config``.
+
+    Returns e.g. ``"Bambu Lab A1"`` when the project was built for an A1, or
+    ``None`` when the file lacks the metadata or the field is absent. The
+    SliceModal uses this to warn the user before slicing if the chosen
+    printer profile targets a different model — the slicer CLI rejects
+    cross-printer slicing with rc=-16 and the result, when the strip + load
+    fallback masks it, is a misleadingly-tagged archive.
+    """
+    if "Metadata/project_settings.config" not in zf.namelist():
+        return None
+    try:
+        proj = json.loads(zf.read("Metadata/project_settings.config").decode())
+    except (ValueError, OSError):
+        return None
+    if not isinstance(proj, dict):
+        return None
+    model = proj.get("printer_model")
+    if isinstance(model, str) and model.strip():
+        return model.strip()
+    # Some older Bambu Studio exports stored the model under
+    # ``printer_settings_id`` (e.g. "Bambu Lab A1 0.4 nozzle"); strip the
+    # nozzle suffix to get the canonical model name. Best-effort — if the
+    # field doesn't follow the convention we leave it as-is.
+    settings_id = proj.get("printer_settings_id")
+    if isinstance(settings_id, str) and settings_id.strip():
+        # Drop trailing " 0.4 nozzle" / " 0.2 nozzle" / etc.
+        return re.sub(r"\s+0\.\d+\s+nozzle$", "", settings_id.strip())
+    return None
+
+
 def extract_project_filaments_from_3mf(zf: zipfile.ZipFile) -> list[dict]:
     """Project-wide AMS slot config from ``Metadata/project_settings.config``.
 

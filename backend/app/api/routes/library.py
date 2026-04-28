@@ -65,6 +65,7 @@ from backend.app.utils.threemf_tools import (
     extract_nozzle_mapping_from_3mf,
     extract_plate_extruder_set_from_3mf,
     extract_project_filaments_from_3mf,
+    extract_source_printer_model_from_3mf,
 )
 
 logger = logging.getLogger(__name__)
@@ -2302,11 +2303,22 @@ async def get_library_file_plates(
     except Exception as e:
         logger.warning("Failed to parse plates from library file %s: %s", file_id, e)
 
+    # SliceModal pre-check signal: the source 3MF's bound printer model. The
+    # CLI cannot re-slice for a different printer; surface this so the modal
+    # can warn the user before they pick a mismatched profile.
+    source_printer_model: str | None = None
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            source_printer_model = extract_source_printer_model_from_3mf(zf)
+    except (zipfile.BadZipFile, OSError):
+        pass
+
     return {
         "file_id": file_id,
         "filename": lib_file.filename,
         "plates": plates,
         "is_multi_plate": len(plates) > 1,
+        "source_printer_model": source_printer_model,
     }
 
 
@@ -2671,13 +2683,24 @@ async def _run_slicer_with_fallback(
             detail=f"Unknown preferred_slicer setting: '{preferred}'. Expected 'orcaslicer' or 'bambu_studio'.",
         )
 
+    # Note: an earlier version of this code stripped Metadata/project_settings.
+    # config + model_settings.config + slice_info.config + cut_information.xml
+    # before forwarding the 3MF, the theory being that --load-settings would
+    # then take precedence cleanly. That theory was wrong: model_settings.
+    # config carries the plate definitions the CLI needs to map `--slice N`
+    # to a real plate, and slice_info / project_settings supply baseline
+    # config the CLI's StaticPrintConfig pass needs at all. Stripping ANY
+    # of them caused the CLI to silently exit immediately after
+    # "Initializing StaticPrintConfigs" — exit code 0, no result.json, no
+    # stderr — which Node's child_process treated as failure and Bambuddy
+    # then masked by falling back to slice_without_profiles using the
+    # un-stripped bytes (and the source's embedded printer). Net effect:
+    # every 3MF slice with profiles silently produced wrong-printer output.
+    # Forwarding the original bytes lets --load-settings override the
+    # specific fields the user changed (printer/process/filament) while
+    # the embedded plate / model definitions remain intact.
     is_3mf = model_filename.lower().endswith(".3mf")
     primary_bytes = model_bytes
-    if is_3mf:
-        try:
-            primary_bytes = _strip_3mf_embedded_settings(model_bytes)
-        except (zipfile.BadZipFile, KeyError) as exc:
-            raise HTTPException(status_code=400, detail=f"Source 3MF is corrupt: {exc}") from exc
 
     used_embedded_settings = False
     service = SlicerApiService(api_url)

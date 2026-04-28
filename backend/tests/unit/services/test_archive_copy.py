@@ -113,6 +113,51 @@ class TestThreeMFParserErrorVisibility:
         # No assertions about which keys are present — just that it didn't blow up.
         assert isinstance(result, dict)
 
+    def test_filament_metadata_only_includes_filaments_with_used_g(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """slice_and_persist_as_archive uses parsed_metadata.filament_type/color
+        to populate the new archive's filament list. The parser must filter
+        out filaments whose used_g==0 — otherwise the resulting archive card
+        shows every project-wide AMS slot (16+ swatches) for what was
+        actually a 2-color print on a single plate.
+        """
+        p = tmp_path / "two-of-eighteen.3mf"
+        with zipfile.ZipFile(p, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            # 4 declared slots, only 2 actually consumed on this plate.
+            zf.writestr(
+                "Metadata/slice_info.config",
+                """<?xml version="1.0"?>
+                <config>
+                  <plate>
+                    <metadata key="index" value="1"/>
+                    <filament id="1" type="PLA"  color="#FFFFFF" used_g="25.0" used_m="8.5"/>
+                    <filament id="2" type="PETG" color="#FF0000" used_g="0"    used_m="0"/>
+                    <filament id="3" type="PLA"  color="#000000" used_g="12.5" used_m="4.2"/>
+                    <filament id="4" type="ABS"  color="#00FF00" used_g="0"    used_m="0"/>
+                  </plate>
+                </config>""",
+            )
+
+        result = ThreeMFParser(p).parse()
+
+        # Both fields should be comma-joined strings of only the consumed
+        # filaments — slot 2 (PETG #FF0000) and slot 4 (ABS #00FF00) must
+        # not appear on the new archive card. The parser dedupes types,
+        # so both PLA slots collapse into a single "PLA" entry; colors
+        # are unique per swatch and stay distinct.
+        types = result.get("filament_type", "")
+        assert "PLA" in types
+        assert "PETG" not in types  # used_g=0 → excluded
+        assert "ABS" not in types
+        colors = result.get("filament_color", "")
+        assert "#FFFFFF" in colors
+        assert "#000000" in colors
+        assert "#FF0000" not in colors
+        assert "#00FF00" not in colors
+
 
 class TestZipFileSentinel:
     """Sanity check the sentinel the archive pipeline relies on."""

@@ -389,9 +389,17 @@ class TestSliceLibraryFile:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_3mf_input_strips_embedded_settings_before_forwarding(
+    async def test_3mf_input_forwarded_unmodified_to_sidecar(
         self, async_client: AsyncClient, db_session, slice_test_setup
     ):
+        # 3MF input must be forwarded to the sidecar verbatim — every
+        # Metadata/*.config the source carries (project_settings,
+        # model_settings, slice_info, cut_information) is needed by the
+        # CLI to find plate definitions and baseline config; an earlier
+        # version of this code stripped them and caused the CLI to
+        # silently exit immediately after "Initializing StaticPrintConfigs"
+        # for every 3MF slice. --load-settings overrides the specific
+        # fields the user changed; the rest comes from the embedded data.
         src_3mf_path = slice_test_setup["tmp_path"] / "library" / "files" / "real.3mf"
         src_3mf_path.write_bytes(_make_3mf_with_settings({"prime_tower_brim_width": "-1"}))
         threemf = LibraryFile(
@@ -431,20 +439,18 @@ class TestSliceLibraryFile:
         final = await _wait_for_job(async_client, response.json()["job_id"])
         assert final["status"] == "completed", final
 
-        # Recover the embedded zip from the multipart body — the strip
-        # must remove every config that references the original slice's
-        # printer / filament IDs (otherwise the CLI's input validation
-        # rejects the new --load-settings triplet, the slice fails, and
-        # we drop into the embedded-settings fallback).  Geometry stays.
+        # Recover the embedded zip from the multipart body and assert ALL
+        # the source's Metadata/*.config files are still present — the
+        # opposite of the previous (broken) "strip everything" test.
         body = captured["body"]
         pk = body.find(b"PK\x03\x04")
         assert pk >= 0, "3MF body not found in multipart payload"
         with zipfile.ZipFile(io.BytesIO(body[pk:]), "r") as zin:
             names = set(zin.namelist())
-        assert "Metadata/project_settings.config" not in names
-        assert "Metadata/model_settings.config" not in names
-        assert "Metadata/slice_info.config" not in names
-        assert "Metadata/cut_information.xml" not in names
+        assert "Metadata/project_settings.config" in names
+        assert "Metadata/model_settings.config" in names
+        assert "Metadata/slice_info.config" in names
+        assert "Metadata/cut_information.xml" in names
         assert "3D/3dmodel.model" in names
 
 

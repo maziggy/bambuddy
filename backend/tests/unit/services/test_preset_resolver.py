@@ -30,7 +30,24 @@ def test_standard_emits_inherits_stub():
         # treat this as a User-authored profile and reject it against
         # system filament/process pairs.
         "from": "system",
+        # `type` is required by the CLI's --load-settings parser. Without
+        # it the CLI silently exits with rc=-5 ("input preset file is
+        # invalid"), causing every 3MF slice to fall back to embedded
+        # settings. See preset_resolver._SLOT_TO_PROFILE_TYPE.
+        "type": "machine",
     }
+
+
+def test_standard_emits_correct_type_per_slot():
+    """Each slot maps to the right `type` value the CLI parser expects:
+    printer → machine, process → process, filament → filament. Missing or
+    wrong type causes the CLI to silently exit with rc=-5."""
+    for slot, expected_type in (("printer", "machine"), ("process", "process"), ("filament", "filament")):
+        out = preset_resolver._resolve_standard(
+            PresetRef(source="standard", id="anything"),
+            slot=slot,
+        )
+        assert json.loads(out)["type"] == expected_type, slot
 
 
 def test_standard_rejects_unknown_slot():

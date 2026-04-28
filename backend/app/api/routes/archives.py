@@ -31,6 +31,7 @@ from backend.app.utils.threemf_tools import (
     extract_nozzle_mapping_from_3mf,
     extract_plate_extruder_set_from_3mf,
     extract_project_filaments_from_3mf,
+    extract_source_printer_model_from_3mf,
 )
 
 logger = logging.getLogger(__name__)
@@ -3072,12 +3073,20 @@ async def get_archive_plates(
     # to preview gcode — the viewer, skip-objects — can gate on this instead of
     # 404-ing on every plate request.
     has_gcode = bool(gcode_files)
+    # SliceModal pre-check signal — see library.py for rationale.
+    source_printer_model: str | None = None
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            source_printer_model = extract_source_printer_model_from_3mf(zf)
+    except (zipfile.BadZipFile, OSError):
+        pass
     return {
         "archive_id": archive_id,
         "filename": archive.filename,
         "plates": plates,
         "is_multi_plate": len(plates) > 1,
         "has_gcode": has_gcode,
+        "source_printer_model": source_printer_model,
     }
 
 

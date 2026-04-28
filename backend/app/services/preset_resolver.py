@@ -49,6 +49,22 @@ _SLOT_TO_BUNDLED_CATEGORY = {
     "filament": "filament",
 }
 
+# The CLI's --load-settings parser uses the JSON's `type` field to decide
+# how to interpret each file (machine/process/filament). Without it the
+# CLI logs `operator(): unknown config type ... in load-settings`,
+# writes `error_string: "The input preset file is invalid and can not be
+# parsed.", return_code: -5` to result.json, and exits 0 — which the
+# Node sidecar's child_process treats as silent success producing no
+# output, then bubbles up as a generic "Failed to slice the model" 5xx.
+# Bambuddy then falls back to the embedded-settings path for every 3MF
+# slice, silently using whatever printer the source file was originally
+# bound to. Setting `type` correctly per slot fixes the silent fallback.
+_SLOT_TO_PROFILE_TYPE = {
+    "printer": "machine",
+    "process": "process",
+    "filament": "filament",
+}
+
 
 async def resolve_preset_ref(
     db: AsyncSession,
@@ -148,8 +164,8 @@ async def _resolve_cloud(db: AsyncSession, user: User | None, ref: PresetRef, sl
 
 
 def _resolve_standard(ref: PresetRef, slot: str) -> str:
-    """Build a minimal `{inherits: <name>}` stub. The sidecar's resolver
-    walks `BUNDLED_PROFILES_PATH/<category>/<name>.json` and merges,
+    """Build a minimal `{name, inherits, from, type}` stub. The sidecar's
+    resolver walks `BUNDLED_PROFILES_PATH/<category>/<name>.json` and merges,
     yielding the full bundled preset without us round-tripping the content
     through Bambuddy."""
     if slot not in _SLOT_TO_BUNDLED_CATEGORY:
@@ -165,5 +181,8 @@ def _resolve_standard(ref: PresetRef, slot: str) -> str:
             # the resolver was designed to fix for OrcaSlicer GUI exports —
             # we never want a bundled preset to be treated as User-authored.
             "from": "system",
+            # `type` is required by the CLI's --load-settings parser — see
+            # _SLOT_TO_PROFILE_TYPE above for the silent-failure mode.
+            "type": _SLOT_TO_PROFILE_TYPE[slot],
         }
     )

@@ -24,6 +24,11 @@ export interface ArchivePlatesResponse {
   plates: PlateMetadata[];
   is_multi_plate: boolean;
   has_gcode?: boolean;
+  // Bound printer model from the source 3MF's project_settings.config (e.g.
+  // "Bambu Lab A1"). Used by the SliceModal to warn before slicing if the
+  // user picks a profile for a different printer — the slicer CLI can't
+  // convert a 3MF across printer models.
+  source_printer_model?: string | null;
 }
 
 export interface LibraryFilePlatesResponse {
@@ -31,6 +36,7 @@ export interface LibraryFilePlatesResponse {
   filename: string;
   plates: PlateMetadata[];
   is_multi_plate: boolean;
+  source_printer_model?: string | null;
 }
 
 export interface ViewerPlateSelectionState {

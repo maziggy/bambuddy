@@ -691,4 +691,132 @@ describe('SliceModal', () => {
       expect(body.filament_presets[1]).toEqual({ source: 'cloud', id: 'F-WHITE' });
     });
   });
+
+  // Pre-slice printer-mismatch warning. The slicer CLI cannot re-slice a
+  // 3MF for a different printer model — clicking Slice in that state
+  // would silently fall back to the embedded settings and produce a
+  // wrong-printer file. The modal surfaces a warning and disables Slice
+  // when the source's source_printer_model doesn't match the picked
+  // printer profile.
+  it('shows a printer-mismatch warning and disables Slice when models differ', async () => {
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'A1Original.3mf',
+      is_multi_plate: false,
+      source_printer_model: 'A1',
+      plates: [
+        {
+          index: 1,
+          name: 'Plate 1',
+          objects: [],
+          has_thumbnail: false,
+          thumbnail_url: null,
+          print_time_seconds: null,
+          filament_used_grams: null,
+          filaments: [],
+        },
+      ],
+    });
+    // Standard tier offers an X1C profile — the user picks (auto-picks) it.
+    mockApi.getSlicerPresets.mockResolvedValue(makeUnified({
+      standard: {
+        printer: [{ id: 'Bambu Lab X1 Carbon 0.4 nozzle', name: 'Bambu Lab X1 Carbon 0.4 nozzle', source: 'standard' }],
+        process: [{ id: '0.20mm Standard', name: '0.20mm Standard', source: 'standard' }],
+        filament: [{ id: 'Bambu PLA Basic', name: 'Bambu PLA Basic', source: 'standard' }],
+      },
+    }));
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'A1Original.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText('Bambu Lab X1 Carbon 0.4 nozzle')).toBeDefined(),
+    );
+
+    // Warning banner is visible (role=alert) and references both models.
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/A1/);
+    expect(alert.textContent).toMatch(/X1 Carbon/);
+
+    // Slice button is disabled while the warning is up.
+    const sliceButton = screen.getByRole('button', { name: /^Slice$/ }) as HTMLButtonElement;
+    expect(sliceButton.disabled).toBe(true);
+  });
+
+  it('keeps Slice enabled when the picked profile matches the source printer model', async () => {
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'X1COriginal.3mf',
+      is_multi_plate: false,
+      source_printer_model: 'X1 Carbon',
+      plates: [
+        {
+          index: 1,
+          name: 'Plate 1',
+          objects: [],
+          has_thumbnail: false,
+          thumbnail_url: null,
+          print_time_seconds: null,
+          filament_used_grams: null,
+          filaments: [],
+        },
+      ],
+    });
+    mockApi.getSlicerPresets.mockResolvedValue(makeUnified({
+      standard: {
+        printer: [{ id: 'Bambu Lab X1 Carbon 0.4 nozzle', name: 'Bambu Lab X1 Carbon 0.4 nozzle', source: 'standard' }],
+        process: [{ id: '0.20mm Standard', name: '0.20mm Standard', source: 'standard' }],
+        filament: [{ id: 'Bambu PLA Basic', name: 'Bambu PLA Basic', source: 'standard' }],
+      },
+    }));
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'X1COriginal.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText('Bambu Lab X1 Carbon 0.4 nozzle')).toBeDefined(),
+    );
+
+    // No mismatch warning.
+    expect(screen.queryByRole('alert')).toBeNull();
+    const sliceButton = screen.getByRole('button', { name: /^Slice$/ }) as HTMLButtonElement;
+    expect(sliceButton.disabled).toBe(false);
+  });
+
+  it('keeps Slice enabled when source_printer_model is unknown (legacy archives)', async () => {
+    // Older 3MFs without project_settings.printer_model fall through to
+    // no-warning — we don't have enough info to gate the user.
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Legacy.3mf',
+      is_multi_plate: false,
+      source_printer_model: null,
+      plates: [
+        {
+          index: 1,
+          name: 'Plate 1',
+          objects: [],
+          has_thumbnail: false,
+          thumbnail_url: null,
+          print_time_seconds: null,
+          filament_used_grams: null,
+          filaments: [],
+        },
+      ],
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Legacy.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    expect(screen.queryByRole('alert')).toBeNull();
+    const sliceButton = screen.getByRole('button', { name: /^Slice$/ }) as HTMLButtonElement;
+    expect(sliceButton.disabled).toBe(false);
+  });
 });

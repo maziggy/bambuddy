@@ -182,6 +182,36 @@ async def resolve_url(
     if not isinstance(instances, list):
         instances = []
 
+    # /instances/hits omits the per-instance printer compatibility info that
+    # /design.instances[].extention.modelInfo carries (compatibility +
+    # otherCompatibility). Merge it in so the frontend can show "this
+    # instance was sliced for A1" + "also marked compatible with: H2D, P1S,
+    # …" before the user picks one — without that, every instance row looks
+    # identical in the UI and users blindly pick the first one regardless of
+    # whether it matches their printer.
+    design_instances = design.get("instances") or []
+    if isinstance(design_instances, list):
+        compat_by_id = {}
+        for di in design_instances:
+            if not isinstance(di, dict):
+                continue
+            iid = di.get("id")
+            if iid is None:
+                continue
+            ext = (di.get("extention") or {}).get("modelInfo") or {}
+            compat_by_id[iid] = {
+                "compatibility": ext.get("compatibility"),
+                "otherCompatibility": ext.get("otherCompatibility"),
+            }
+        for inst in instances:
+            if not isinstance(inst, dict):
+                continue
+            iid = inst.get("id")
+            extra = compat_by_id.get(iid)
+            if extra:
+                inst["compatibility"] = extra["compatibility"]
+                inst["otherCompatibility"] = extra["otherCompatibility"]
+
     # Find every library row whose source_url is either the model-level
     # canonical URL (legacy whole-model imports) or any plate-level URL
     # (``...#profileId-{n}``) under this model. The frontend surfaces this

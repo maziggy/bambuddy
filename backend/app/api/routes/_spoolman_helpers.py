@@ -104,7 +104,11 @@ def assert_safe_spoolman_url(url: str) -> None:
     try:
         addr = ipaddress.ip_address(hostname)
     except ValueError:
-        # Not a bare IP — hostname-based addresses are out of scope.
+        # Not a bare IP address — includes intentional cases such as "localhost" and
+        # RFC-1918 hostnames ("spoolman.lan", "192.168.1.10" would be caught above as
+        # a dotted-decimal IP; symbolic names resolve via DNS which is out of scope).
+        # Running Spoolman on the same host or home LAN is the standard Bambuddy
+        # topology, so loopback and private ranges are deliberately NOT blocked here.
         return
 
     # Unwrap IPv4-mapped IPv6 (::ffff:169.254.169.254 etc.) so attackers can't

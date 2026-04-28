@@ -19,6 +19,7 @@ import { resolveSpoolColorName } from '../utils/colors';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
+import { filterSpoolsByQuery } from '../utils/inventorySearch';
 
 type ArchiveFilter = 'active' | 'archived';
 type UsageFilter = 'all' | 'used' | 'new' | 'lowstock';
@@ -783,16 +784,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
 
     // Global search
     if (search) {
-      const q = search.toLowerCase();
-      filtered = filtered.filter((s) =>
-        s.brand?.toLowerCase().includes(q) ||
-        s.material.toLowerCase().includes(q) ||
-        s.color_name?.toLowerCase().includes(q) ||
-        s.subtype?.toLowerCase().includes(q) ||
-        s.note?.toLowerCase().includes(q) ||
-        s.slicer_filament_name?.toLowerCase().includes(q) ||
-        s.storage_location?.toLowerCase().includes(q)
-      );
+      filtered = filterSpoolsByQuery(filtered, search);
     }
 
     return filtered;

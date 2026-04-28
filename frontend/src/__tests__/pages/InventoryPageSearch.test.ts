@@ -11,20 +11,10 @@
 
 import { describe, it, expect } from 'vitest';
 import type { InventorySpool } from '../../api/client';
+import { filterSpoolsByQuery } from '../../utils/inventorySearch';
 
-// Replicate the search filter from InventoryPage
 function applySearch(spools: InventorySpool[], search: string): InventorySpool[] {
-  if (!search) return spools;
-  const q = search.toLowerCase();
-  return spools.filter((s) =>
-    s.brand?.toLowerCase().includes(q) ||
-    s.material.toLowerCase().includes(q) ||
-    s.color_name?.toLowerCase().includes(q) ||
-    s.subtype?.toLowerCase().includes(q) ||
-    s.note?.toLowerCase().includes(q) ||
-    s.slicer_filament_name?.toLowerCase().includes(q) ||
-    s.storage_location?.toLowerCase().includes(q)
-  );
+  return filterSpoolsByQuery(spools, search);
 }
 
 function makeSpool(overrides: Partial<InventorySpool> & { id: number }): InventorySpool {

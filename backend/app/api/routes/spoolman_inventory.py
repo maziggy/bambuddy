@@ -108,7 +108,14 @@ async def _translate_spoolman_errors():
     except SpoolmanNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman") from exc
     except SpoolmanClientError as exc:
-        raise HTTPException(status_code=502, detail="Spoolman rejected the request") from exc
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "Spoolman rejected the request",
+                "upstream_status": exc.status_code,
+                "upstream_body": getattr(exc, "response_text", ""),
+            },
+        ) from exc
     except SpoolmanUnavailableError as exc:
         raise HTTPException(status_code=503, detail="Spoolman server is not reachable") from exc
 
@@ -227,6 +234,15 @@ class SpoolmanInventoryUpdate(BaseModel):
         if self.weight_used is not None and self.label_weight is not None:
             if self.weight_used > self.label_weight:
                 raise ValueError("weight_used must not exceed label_weight")
+        if (
+            "core_weight" in self.model_fields_set
+            and self.core_weight is not None
+            and self.core_weight != 250
+        ):
+            raise ValueError(
+                "core_weight is not persisted in Spoolman (stored on the filament type, not the spool). "
+                "Omit this field or leave it at the default (250 g)."
+            )
         return self
 
 
@@ -240,8 +256,16 @@ class SpoolWeightUpdate(BaseModel):
 
 
 class SpoolTagLinkRequest(BaseModel):
-    tag_uid: str | None = Field(None, min_length=8, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
+    # Minimum 14 hex chars = 7-byte NFC UID (smallest tag written by SpoolBuddy).
+    tag_uid: str | None = Field(None, min_length=14, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
     tray_uuid: str | None = Field(None, min_length=32, max_length=32, pattern=r"^[0-9A-Fa-f]+$")
+
+    @field_validator("tag_uid")
+    @classmethod
+    def tag_uid_not_all_zeros(cls, v: str | None) -> str | None:
+        if v is not None and all(c in "0" for c in v):
+            raise ValueError("tag_uid must not be all-zero bytes")
+        return v
 
     @model_validator(mode="after")
     def at_least_one(self) -> SpoolTagLinkRequest:
@@ -569,12 +593,34 @@ async def link_tag_to_spoolman_spool(
     """Write an NFC tag UID or Bambu tray UUID into Spoolman's extra.tag for a spool.
 
     tray_uuid takes precedence over tag_uid when both are supplied.
-    Uses merge_spool_extra to preserve all other custom extra fields.
+    Returns 409 if another spool already carries the same tag.
+    Uses extra_lock to serialise against concurrent extra-field writes.
     """
     client = await _get_client(db)
     tag = (data.tray_uuid or data.tag_uid).upper()
-    async with _translate_spoolman_errors():
-        updated = await client.merge_spool_extra(spool_id, {"tag": json.dumps(tag)})
+    tag_json = json.dumps(tag)
+
+    async with client.extra_lock(spool_id):
+        # Duplicate check: scan all spools for the same tag on a different spool.
+        async with _translate_spoolman_errors():
+            all_spools = await client.get_all_spools()
+        for s in all_spools:
+            s_tag = (s.get("extra") or {}).get("tag", "")
+            if s_tag.strip('"').upper() == tag and s.get("id") != spool_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Tag is already assigned to spool {s['id']}",
+                )
+
+        # Re-fetch inside the lock so cur_extra reflects any concurrent update.
+        async with _translate_spoolman_errors():
+            current = await client.get_spool(spool_id)
+        cur_extra = dict(current.get("extra") or {})
+        cur_extra["tag"] = tag_json
+        async with _translate_spoolman_errors():
+            updated = await client.update_spool_full(spool_id=spool_id, extra=cur_extra)
+
+    logger.info("Linked tag %s to Spoolman spool %s", tag, spool_id)
     return _map_spoolman_spool(updated)
 
 

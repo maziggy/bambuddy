@@ -523,8 +523,11 @@ class TestSpoolmanAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_unlink_spool_success(self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client):
-        """Verify successfully unlinking a spool uses merge_spool_extra to preserve custom fields."""
-        mock_spoolman_client.merge_spool_extra = AsyncMock(return_value={"id": 1, "extra": {"tag": '""'}})
+        """Verify successfully unlinking a spool pops extra.tag without overwriting other extra fields."""
+        mock_spoolman_client.get_spool = AsyncMock(
+            return_value={"id": 1, "extra": {"tag": '"AABB1122334455FF"', "custom": "keep"}}
+        )
+        mock_spoolman_client.update_spool_full = AsyncMock(return_value={"id": 1, "extra": {}})
 
         response = await async_client.post("/api/v1/spoolman/spools/1/unlink")
         assert response.status_code == 200
@@ -532,7 +535,11 @@ class TestSpoolmanAPI:
         assert data["success"] is True
         assert "unlinked" in data["message"].lower()
 
-        mock_spoolman_client.merge_spool_extra.assert_called_once_with(1, {"tag": '""'})
+        mock_spoolman_client.update_spool_full.assert_called_once()
+        _, kwargs = mock_spoolman_client.update_spool_full.call_args
+        sent_extra = kwargs.get("extra")
+        assert "tag" not in sent_extra
+        assert sent_extra.get("custom") == "keep"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -540,6 +547,7 @@ class TestSpoolmanAPI:
         self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client, printer_factory
     ):
         """unlink removes the local slot assignment for the spool."""
+        # link_spool calls merge_spool_extra; unlink_spool uses get_spool + update_spool_full.
         mock_spoolman_client.merge_spool_extra = AsyncMock(
             return_value={"id": 7, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
         )
@@ -556,7 +564,11 @@ class TestSpoolmanAPI:
             },
         )
 
-        mock_spoolman_client.merge_spool_extra = AsyncMock(return_value={"id": 7, "extra": {"tag": '""'}})
+        # Set up the mocks needed by the new unlink_spool implementation.
+        mock_spoolman_client.get_spool = AsyncMock(
+            return_value={"id": 7, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
+        )
+        mock_spoolman_client.update_spool_full = AsyncMock(return_value={"id": 7, "extra": {}})
         response = await async_client.post("/api/v1/spoolman/spools/7/unlink")
         assert response.status_code == 200
 
@@ -608,7 +620,7 @@ class TestSpoolmanAPI:
         """unlink returns 404 when Spoolman reports the spool does not exist."""
         from backend.app.services.spoolman import SpoolmanNotFoundError
 
-        mock_spoolman_client.merge_spool_extra = AsyncMock(side_effect=SpoolmanNotFoundError("not found"))
+        mock_spoolman_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("not found"))
 
         response = await async_client.post("/api/v1/spoolman/spools/99/unlink")
         assert response.status_code == 404

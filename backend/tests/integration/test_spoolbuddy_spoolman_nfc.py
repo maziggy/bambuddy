@@ -252,13 +252,18 @@ class TestLinkTagToSpoolmanSpool:
     def _mock_client(self, spool_id: int) -> MagicMock:
         client = MagicMock()
         client.base_url = "http://localhost:7912"
-        client.merge_spool_extra = AsyncMock(return_value=_spoolman_spool(spool_id))
+        # get_all_spools returns empty list — no duplicate tags in Spoolman.
+        client.get_all_spools = AsyncMock(return_value=[])
+        client.get_spool = AsyncMock(return_value=_spoolman_spool(spool_id))
+        client.update_spool_full = AsyncMock(return_value=_spoolman_spool(spool_id))
         return client
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_link_tag_uid_writes_to_extra_tag(self, async_client: AsyncClient):
         """PATCH with tag_uid writes uppercased tag_uid to Spoolman extra.tag."""
+        import json as _json
+
         mock_client = self._mock_client(42)
 
         with patch(
@@ -271,13 +276,16 @@ class TestLinkTagToSpoolmanSpool:
             )
 
         assert resp.status_code == 200
-        import json as _json
-        mock_client.merge_spool_extra.assert_called_once_with(42, {"tag": _json.dumps("AABB1122334455FF")})
+        mock_client.update_spool_full.assert_called_once()
+        _, kwargs = mock_client.update_spool_full.call_args
+        assert kwargs.get("extra", {}).get("tag") == _json.dumps("AABB1122334455FF")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_tray_uuid_takes_precedence_over_tag_uid(self, async_client: AsyncClient):
         """tray_uuid takes precedence when both tag_uid and tray_uuid are provided."""
+        import json as _json
+
         mock_client = self._mock_client(7)
 
         with patch(
@@ -293,10 +301,9 @@ class TestLinkTagToSpoolmanSpool:
             )
 
         assert resp.status_code == 200
-        import json as _json
-        mock_client.merge_spool_extra.assert_called_once_with(
-            7, {"tag": _json.dumps("DEADBEEFDEADBEEFDEADBEEFDEADBEEF")}
-        )
+        mock_client.update_spool_full.assert_called_once()
+        _, kwargs = mock_client.update_spool_full.call_args
+        assert kwargs.get("extra", {}).get("tag") == _json.dumps("DEADBEEFDEADBEEFDEADBEEFDEADBEEF")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -318,9 +325,8 @@ class TestLinkTagToSpoolmanSpool:
     async def test_spool_not_found_returns_404(self, async_client: AsyncClient):
         """404 when Spoolman reports the spool does not exist."""
         mock_client = MagicMock()
-        mock_client.merge_spool_extra = AsyncMock(
-            side_effect=SpoolmanNotFoundError("Spool 999 not found")
-        )
+        mock_client.get_all_spools = AsyncMock(return_value=[])
+        mock_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("Spool 999 not found"))
 
         with patch(
             "backend.app.api.routes.spoolman_inventory._get_client",
@@ -336,11 +342,9 @@ class TestLinkTagToSpoolmanSpool:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_spoolman_unavailable_returns_503(self, async_client: AsyncClient):
-        """503 when Spoolman is unreachable during the tag link."""
+        """503 when Spoolman is unreachable during the tag link (duplicate check fails first)."""
         mock_client = MagicMock()
-        mock_client.merge_spool_extra = AsyncMock(
-            side_effect=SpoolmanUnavailableError("Spoolman down")
-        )
+        mock_client.get_all_spools = AsyncMock(side_effect=SpoolmanUnavailableError("Spoolman down"))
 
         with patch(
             "backend.app.api.routes.spoolman_inventory._get_client",

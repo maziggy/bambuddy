@@ -844,14 +844,18 @@ async def unlink_spool(
     if not await client.health_check():
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
-    try:
-        await client.merge_spool_extra(spool_id, {"tag": json.dumps("")})
-    except SpoolmanNotFoundError:
-        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
-    except SpoolmanClientError:
-        raise HTTPException(status_code=502, detail="Spoolman rejected the request")
-    except SpoolmanUnavailableError:
-        raise HTTPException(status_code=503, detail="Spoolman is not reachable")
+    async with client.extra_lock(spool_id):
+        try:
+            cur_spool = await client.get_spool(spool_id)
+            cur_extra = dict(cur_spool.get("extra") or {})
+            cur_extra.pop("tag", None)
+            await client.update_spool_full(spool_id=spool_id, extra=cur_extra)
+        except SpoolmanNotFoundError:
+            raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+        except SpoolmanClientError:
+            raise HTTPException(status_code=502, detail="Spoolman rejected the request")
+        except SpoolmanUnavailableError:
+            raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
     # Remove local slot assignment for this spool (all slots — a spool can only be in one at a time)
     try:

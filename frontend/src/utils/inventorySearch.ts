@@ -1,7 +1,7 @@
 import type { InventorySpool } from '../api/client';
 
 /**
- * Return true when spool matches the search query across material, brand, color_name, and subtype.
+ * Return true when spool matches the search query across all searchable text fields.
  * Case-insensitive. Empty query always returns true.
  */
 export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean {
@@ -11,7 +11,10 @@ export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean
     spool.material.toLowerCase().includes(q) ||
     (spool.brand?.toLowerCase().includes(q) ?? false) ||
     (spool.color_name?.toLowerCase().includes(q) ?? false) ||
-    (spool.subtype?.toLowerCase().includes(q) ?? false)
+    (spool.subtype?.toLowerCase().includes(q) ?? false) ||
+    (spool.note?.toLowerCase().includes(q) ?? false) ||
+    (spool.slicer_filament_name?.toLowerCase().includes(q) ?? false) ||
+    (spool.storage_location?.toLowerCase().includes(q) ?? false)
   );
 }
 

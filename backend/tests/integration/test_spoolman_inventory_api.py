@@ -1555,3 +1555,181 @@ class TestBulkCreateWithPriceFailure:
         assert mock_spoolman_client.create_spool.call_count == 2
         # Price update was attempted for each
         assert mock_spoolman_client.update_spool_full.call_count == 2
+
+
+class TestSpoolTagLinkValidation:
+    """NEW-B1: /spools/{id}/tag endpoint validates tag_uid length and content."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tag_uid_8_chars_rejected(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """tag_uid with 8 hex chars (4-byte UID) is rejected — min is 14 (7-byte UID)."""
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42/tag",
+            json={"tag_uid": "AABBCCDD"},  # 8 chars
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tag_uid_all_zeros_rejected(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """tag_uid that is all-zero bytes is rejected as an unwritten/blank tag."""
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42/tag",
+            json={"tag_uid": "00000000000000"},  # 14 zeros
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tag_uid_valid_14_chars_accepted(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """tag_uid with 14 valid hex chars (7-byte UID) is accepted."""
+        # This tag is not in SAMPLE_SPOOLMAN_SPOOL so no duplicate conflict.
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42/tag",
+            json={"tag_uid": "AABBCCDD112233"},  # 14 chars, valid, not all-zeros
+        )
+        assert resp.status_code == 200
+
+
+class TestLinkTagDuplicate:
+    """NEW-I1: /spools/{id}/tag returns 409 when another spool already has the same tag."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_link_tag_returns_200_when_tag_not_on_another_spool(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Linking a fresh tag to spool 42 returns 200 — no duplicate in Spoolman."""
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42/tag",
+            json={"tag_uid": "AABBCCDD112233"},  # not in SAMPLE_SPOOLMAN_SPOOL
+        )
+        assert resp.status_code == 200
+        mock_spoolman_client.update_spool_full.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_link_tag_returns_409_when_same_tag_on_different_spool(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Linking spool 99 to a tag that spool 42 already carries must return 409."""
+        # SAMPLE_SPOOLMAN_SPOOL (id=42) has extra.tag = '"AABBCCDDEEFF0011AABBCCDDEEFF0011"'.
+        # Attempting to assign the same tag to spool 99 must be rejected.
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/99/tag",
+            json={"tray_uuid": "AABBCCDDEEFF0011AABBCCDDEEFF0011"},  # 32-char tray UUID
+        )
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert "42" in str(detail)
+
+
+class TestSpoolmanInventoryUpdateCoreWeight:
+    """I11: SpoolmanInventoryUpdate rejects non-default core_weight via model_fields_set guard."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_core_weight_other_than_250_rejected(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """PATCH with core_weight != 250 must return 422 — field is not persisted in Spoolman."""
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42",
+            json={"core_weight": 100},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_core_weight_250_explicitly_is_accepted(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """PATCH with core_weight=250 (the default) is valid and returns 200."""
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42",
+            json={"core_weight": 250},
+        )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_without_core_weight_is_accepted(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """PATCH without core_weight (omitted) must not trigger the validator — returns 200."""
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42",
+            json={"note": "no core_weight key"},
+        )
+        assert resp.status_code == 200
+
+
+class TestUnlinkSpool:
+    """I3: POST /spoolman/spools/{id}/unlink pops 'tag' from Spoolman extra rather than clearing it."""
+
+    @pytest.fixture
+    def mock_unlink_client(self):
+        """Mock Spoolman client for the spoolman.py (non-inventory) route."""
+        spool_with_tag = {
+            **SAMPLE_SPOOLMAN_SPOOL,
+            "extra": {"tag": '"AABBCCDDEEFF0011AABBCCDDEEFF0011"', "custom": "keep"},
+        }
+        mock_client = MagicMock()
+        mock_client.base_url = "http://localhost:7912"
+        mock_client.health_check = AsyncMock(return_value=True)
+        mock_client.get_spool = AsyncMock(return_value=spool_with_tag)
+        mock_client.update_spool_full = AsyncMock(return_value=spool_with_tag)
+
+        with (
+            patch(
+                "backend.app.api.routes.spoolman.get_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+            patch(
+                "backend.app.api.routes.spoolman.init_spoolman_client",
+                AsyncMock(return_value=mock_client),
+            ),
+        ):
+            yield mock_client
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unlink_pops_tag_key_from_extra(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_unlink_client,
+    ):
+        """Unlink must call update_spool_full with an extra dict that has no 'tag' key."""
+        resp = await async_client.post("/api/v1/spoolman/spools/42/unlink")
+        assert resp.status_code == 200
+
+        mock_unlink_client.update_spool_full.assert_called_once()
+        _, kwargs = mock_unlink_client.update_spool_full.call_args
+        sent_extra = kwargs.get("extra")
+        assert sent_extra is not None, "extra must be sent on unlink"
+        assert "tag" not in sent_extra, "tag key must be removed on unlink"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unlink_preserves_other_extra_keys(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_unlink_client,
+    ):
+        """Unlink must preserve unrelated extra keys (e.g. custom user fields)."""
+        resp = await async_client.post("/api/v1/spoolman/spools/42/unlink")
+        assert resp.status_code == 200
+
+        _, kwargs = mock_unlink_client.update_spool_full.call_args
+        sent_extra = kwargs.get("extra")
+        assert sent_extra is not None
+        assert sent_extra.get("custom") == "keep", "unrelated extra keys must survive unlink"

@@ -114,7 +114,7 @@ class ScaleReadingRequest(BaseModel):
 
 class UpdateSpoolWeightRequest(BaseModel):
     spool_id: int = Field(..., gt=0)
-    weight_grams: float = Field(..., allow_inf_nan=False)
+    weight_grams: float = Field(..., allow_inf_nan=False, ge=0.0, le=100_000.0)
 
 
 # --- Calibration schemas ---

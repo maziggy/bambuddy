@@ -1060,13 +1060,13 @@ class TestUpdateEndpoints:
 
         with patch(
             "backend.app.services.spoolbuddy_ssh.get_public_key",
-            AsyncMock(side_effect=RuntimeError("SECRET internal path /data/keys/id_ed25519")),
+            AsyncMock(side_effect=RuntimeError("REDACT_ME internal path /data/keys/id_ed25519")),
         ):
             resp = await async_client.get(f"{API}/ssh/public-key")
 
         assert resp.status_code == 500
         body = resp.json()["detail"]
-        assert "SECRET" not in body
+        assert "REDACT_ME" not in body
         assert "/data/keys" not in body
         assert "id_ed25519" not in body
 

@@ -15,7 +15,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, type SliceJobState, type SliceJobStatus } from '../api/client';
+import { api, type SliceJobProgress, type SliceJobState, type SliceJobStatus } from '../api/client';
 import { useToast } from './ToastContext';
 
 interface TrackedJob {
@@ -35,6 +35,21 @@ const POLL_INTERVAL_MS = 1500;
 const TICK_INTERVAL_MS = 1000;
 
 const toastIdFor = (jobId: number) => `slice-job-${jobId}`;
+
+/** Decode percent-encoded characters in a filename so the toast doesn't
+ * show `stormtrooper-helmet%20h2d.3mf` for files that came from a source
+ * with URL-encoded names (MakerWorld API, S3 path tails, etc.). The
+ * MakerWorld import path now decodes at persist time, but already-imported
+ * rows still carry the encoded form — this is a belt-and-suspenders
+ * decode at display time so old rows look right too. Wrapped in try/catch
+ * because malformed encodings (`%XY` where XY isn't hex) throw URIError. */
+function prettifyFilename(name: string): string {
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
 
 function formatElapsed(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -58,10 +73,12 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
   const activeJobsRef = useRef<TrackedJob[]>([]);
   activeJobsRef.current = activeJobs;
 
-  // Per-job start time + latest phase, kept in refs so the 1s tick
-  // doesn't need to re-render on every update. Keyed by job id.
+  // Per-job start time, latest phase, and latest progress snapshot,
+  // kept in refs so the 1s tick doesn't need to re-render on every
+  // update. Keyed by job id.
   const startedAtRef = useRef<Map<number, number>>(new Map());
   const phaseRef = useRef<Map<number, SliceJobStatus>>(new Map());
+  const progressRef = useRef<Map<number, SliceJobProgress | null>>(new Map());
 
   const renderProgressToast = useCallback(
     (job: TrackedJob) => {
@@ -69,6 +86,33 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
       if (startedAt == null) return;
       const elapsedSecs = (Date.now() - startedAt) / 1000;
       const phase = phaseRef.current.get(job.id) ?? 'pending';
+      const elapsedStr = formatElapsed(elapsedSecs);
+      const progress = progressRef.current.get(job.id) ?? null;
+      // When the sidecar has emitted at least one progress frame, weave
+      // the stage label + percent into the toast — that's what makes the
+      // wait feel professional ("Generating G-code 75%" beats "Slicing X
+      // — 47s"). Falls back to the elapsed-time-only message in three
+      // cases: queued/pending phase before the slicer has started,
+      // missing or zero progress (Initializing), or sidecar without
+      // --pipe support.
+      const hasUseful = progress && progress.stage && progress.total_percent > 0;
+      if (phase === 'running' && hasUseful) {
+        showPersistentToast(
+          toastIdFor(job.id),
+          t(
+            'slice.runningWithProgress',
+            '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+            {
+              name: prettifyFilename(job.sourceName),
+              stage: progress.stage,
+              percent: Math.min(100, Math.max(0, Math.round(progress.total_percent))),
+              elapsed: elapsedStr,
+            },
+          ),
+          'loading',
+        );
+        return;
+      }
       const messageKey = phase === 'pending' ? 'slice.queuedToast' : 'slice.runningToast';
       const fallback =
         phase === 'pending'
@@ -76,7 +120,7 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
           : 'Slicing {{name}} — {{elapsed}}';
       showPersistentToast(
         toastIdFor(job.id),
-        t(messageKey, fallback, { name: job.sourceName, elapsed: formatElapsed(elapsedSecs) }),
+        t(messageKey, fallback, { name: prettifyFilename(job.sourceName), elapsed: elapsedStr }),
         'loading',
       );
     },
@@ -88,6 +132,7 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
       setActiveJobs((prev) => (prev.some((j) => j.id === id) ? prev : [...prev, { id, kind, sourceName }]));
       startedAtRef.current.set(id, Date.now());
       phaseRef.current.set(id, 'pending');
+      progressRef.current.set(id, null);
       // Render the initial frame immediately so the user sees the toast
       // before the first tick lands (~1s delay otherwise).
       renderProgressToast({ id, kind, sourceName });
@@ -100,6 +145,7 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
       setActiveJobs((prev) => prev.filter((j) => j.id !== job.id));
       startedAtRef.current.delete(job.id);
       phaseRef.current.delete(job.id);
+      progressRef.current.delete(job.id);
 
       // Replace the persistent progress toast with a transient
       // success/error toast (auto-dismisses after 3s, same as showToast).
@@ -112,12 +158,12 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
         // embedded-settings fallback as a normal path) and just added
         // noise — see the trailing yellow toast complaint, removed.
         showToast(
-          t('slice.completedToast', 'Sliced {{name}}', { name: job.sourceName }),
+          t('slice.completedToast', 'Sliced {{name}}', { name: prettifyFilename(job.sourceName) }),
           'success',
         );
       } else if (state.status === 'failed') {
         const detail = state.error_detail || t('slice.failed');
-        showToast(t('slice.failedToast', 'Slicing {{name}} failed: {{detail}}', { name: job.sourceName, detail }), 'error');
+        showToast(t('slice.failedToast', 'Slicing {{name}} failed: {{detail}}', { name: prettifyFilename(job.sourceName), detail }), 'error');
       }
 
       // Refresh whichever list owns the result. Both are cheap to invalidate.
@@ -139,6 +185,11 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
         try {
           const state = await api.getSliceJob(job.id);
           phaseRef.current.set(job.id, state.status);
+          // Capture the latest progress snapshot if the sidecar fed
+          // one through. The 1s tick re-renders the toast off this ref.
+          if (state.progress) {
+            progressRef.current.set(job.id, state.progress);
+          }
           if (state.status === 'completed' || state.status === 'failed') {
             completeJob(job, state);
           }

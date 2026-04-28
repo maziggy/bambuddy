@@ -59,6 +59,7 @@ async def get_preview_filaments(
     file_bytes: bytes,
     file_name: str,
     api_url: str,
+    request_id: str | None = None,
 ) -> list[dict] | None:
     """Run a preview slice for ``plate_id`` using the file's embedded settings,
     parse the resulting slice_info, and return the per-plate filament list.
@@ -90,6 +91,7 @@ async def get_preview_filaments(
                     model_filename=file_name,
                     plate=plate_id,
                     export_3mf=True,
+                    request_id=request_id,
                 )
         except SlicerApiError as e:
             logger.warning(

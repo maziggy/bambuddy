@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -325,3 +327,155 @@ class TestHealth:
         service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
         with pytest.raises(SlicerApiUnavailableError):
             await service.health()
+
+
+class TestSliceWithProfilesProgress:
+    """Live-progress wiring for slice_with_profiles.
+
+    When the caller supplies a ``request_id`` and an ``on_progress``
+    callback, the service forwards the id as a ``requestId`` form field
+    (the sidecar uses it to wire up `--pipe` per request) and spawns a
+    background poller that calls back into ``on_progress`` for each
+    snapshot the sidecar publishes. The poller is cancelled the moment
+    the slice POST returns.
+    """
+
+    @pytest.mark.asyncio
+    async def test_request_id_forwarded_as_form_field(self):
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/slice":
+                captured["body"] = request.content
+                return httpx.Response(
+                    status_code=200,
+                    content=b"PK\x03\x04 fake",
+                    headers={"x-print-time-seconds": "1", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+                )
+            # /slice/progress/<id> — return 404 so the poller exits cleanly.
+            return httpx.Response(status_code=404, json={"error": "not_found"})
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        await service.slice_with_profiles(
+            model_bytes=b"x",
+            model_filename="Cube.stl",
+            printer_profile_json="{}",
+            process_profile_json="{}",
+            filament_profile_jsons=["{}"],
+            request_id="abc-123",
+            on_progress=lambda _snap: None,
+        )
+        # The form field name on the wire is `requestId` (camelCase) to
+        # match the sidecar's SlicingSettings shape.
+        body = captured["body"].decode("utf-8", errors="ignore")
+        assert "requestId" in body
+        assert "abc-123" in body
+
+    @pytest.mark.asyncio
+    async def test_on_progress_called_with_snapshots(self):
+        # Drive enough poller ticks for at least one progress 200 to land
+        # before the slice response unblocks the caller.
+        slice_release = asyncio.Event()
+        snapshots: list[dict] = []
+
+        async def slice_handler() -> httpx.Response:
+            # Hold the slice POST until the test signals release, mimicking
+            # a real long-running slice.
+            await slice_release.wait()
+            return httpx.Response(
+                status_code=200,
+                content=b"PK\x03\x04",
+                headers={"x-print-time-seconds": "1", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+            )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/slice":
+                # MockTransport supports async handlers if we return a
+                # coroutine — but the simpler path is to drive completion
+                # via the captured event below.
+                pass
+            if request.url.path == "/slice/progress/req-1":
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "stage": "Generating G-code",
+                        "total_percent": 75,
+                        "plate_percent": 80,
+                        "plate_index": 1,
+                        "plate_count": 1,
+                        "updated_at": 0,
+                    },
+                )
+            return httpx.Response(404)
+
+        # Use an async handler so the slice POST blocks until released.
+        async def async_handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/slice":
+                return await slice_handler()
+            return handler(request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(async_handler))
+        service = SlicerApiService("http://sidecar:3000", client=client)
+
+        # Run the slice with progress callback, releasing it after a beat.
+        async def release_after_first_snapshot():
+            # Wait until the poller has published at least one snapshot
+            # via the on_progress callback, then unblock the slice POST.
+            for _ in range(60):
+                if snapshots:
+                    break
+                await asyncio.sleep(0.05)
+            slice_release.set()
+
+        release_task = asyncio.create_task(release_after_first_snapshot())
+        try:
+            await service.slice_with_profiles(
+                model_bytes=b"x",
+                model_filename="Cube.stl",
+                printer_profile_json="{}",
+                process_profile_json="{}",
+                filament_profile_jsons=["{}"],
+                request_id="req-1",
+                on_progress=lambda snap: snapshots.append(snap),
+            )
+        finally:
+            release_task.cancel()
+            await asyncio.gather(release_task, return_exceptions=True)
+            await client.aclose()
+
+        assert snapshots, "on_progress was never called"
+        first = snapshots[0]
+        assert first["stage"] == "Generating G-code"
+        assert first["total_percent"] == 75
+
+    @pytest.mark.asyncio
+    async def test_progress_404_does_not_crash_or_stop_polling(self):
+        """A 404 from /slice/progress/:id is expected during the early
+        race window (POST fired before sidecar's progressStore.start()
+        ran) and from older sidecars without progress support. Neither
+        should crash the slice or block the response — the poller just
+        keeps trying until the outer cancel fires."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/slice":
+                return httpx.Response(
+                    status_code=200,
+                    content=b"PK\x03\x04",
+                    headers={"x-print-time-seconds": "1", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+                )
+            return httpx.Response(status_code=404, json={"error": "not_found"})
+
+        snapshots: list[dict] = []
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        result = await service.slice_with_profiles(
+            model_bytes=b"x",
+            model_filename="Cube.stl",
+            printer_profile_json="{}",
+            process_profile_json="{}",
+            filament_profile_jsons=["{}"],
+            request_id="legacy-sidecar",
+            on_progress=lambda snap: snapshots.append(snap),
+        )
+        assert result is not None
+        # Sustained 404 → no snapshots ever forwarded.
+        assert snapshots == []

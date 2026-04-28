@@ -41,6 +41,13 @@ class SliceJob:
     # On failure: HTTP status + error message.
     error_status: int | None = None
     error_detail: str | None = None
+    # Live progress fed by the sidecar's --pipe channel while the slicer
+    # is running. Populated by a polling task spawned alongside the
+    # blocking POST /slice request; None when the sidecar doesn't
+    # support progress (older sidecars, no request_id, etc.). Surfaced
+    # in the SliceJobState response so the persistent toast can render
+    # "Generating G-code (75%)" instead of just elapsed time.
+    progress: dict[str, Any] | None = None
 
 
 # Retention: keep finished jobs around for 30 minutes so the polling client
@@ -62,13 +69,14 @@ class SliceDispatchService:
         kind: Literal["library_file", "archive"],
         source_id: int,
         source_name: str,
-        run: Callable[[], Awaitable[dict[str, Any]]],
+        run: Callable[[int], Awaitable[dict[str, Any]]],
     ) -> SliceJob:
         """Register a new slice job and start it on the event loop.
 
-        ``run`` is an async callable that performs the actual slice + save
-        and returns the response body the caller will receive once status
-        flips to ``completed``.
+        ``run`` is an async callable that takes the freshly-created
+        ``job_id`` (so it can wire up live-progress reporting via
+        :meth:`set_progress`) and returns the response body the caller
+        will receive once status flips to ``completed``.
         """
         async with self._lock:
             job = SliceJob(
@@ -88,12 +96,12 @@ class SliceDispatchService:
     async def _run_job(
         self,
         job: SliceJob,
-        run: Callable[[], Awaitable[dict[str, Any]]],
+        run: Callable[[int], Awaitable[dict[str, Any]]],
     ) -> None:
         job.started_at = datetime.now(timezone.utc)
         job.status = "running"
         try:
-            result = await run()
+            result = await run(job.id)
             job.result = result
             job.status = "completed"
         except _SliceJobError as exc:
@@ -112,6 +120,18 @@ class SliceDispatchService:
 
     def get(self, job_id: int) -> SliceJob | None:
         return self._jobs.get(job_id)
+
+    def set_progress(self, job_id: int, progress: dict[str, Any] | None) -> None:
+        """Update the live-progress snapshot for a running job.
+
+        Called by the slice route's progress poller every ~1s while the
+        sidecar slice request is in flight. Silently ignores unknown ids
+        (the job may have just finished and been retention-swept) so a
+        late poll doesn't crash the polling task.
+        """
+        job = self._jobs.get(job_id)
+        if job is not None:
+            job.progress = progress
 
     def _sweep_locked(self) -> None:
         """Drop finished jobs older than the retention window. Caller holds

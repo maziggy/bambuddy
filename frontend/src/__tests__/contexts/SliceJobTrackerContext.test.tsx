@@ -261,4 +261,125 @@ describe('SliceJobTrackerProvider — persistent progress toast', () => {
     // complaint that motivated `_format_sidecar_error` on the backend.
     expect(screen.getByText(/sidecar segfault/)).toBeDefined();
   });
+
+  // The backend now exposes a `progress` field on each slice-job poll
+  // result, fed by the sidecar's --pipe channel. When a useful frame
+  // is present the toast must show "{name} — {stage} ({percent}%) —
+  // {elapsed}" so the user sees concrete progress instead of a wall of
+  // elapsed time.
+  it('weaves stage + percent into the toast when the sidecar reports progress', async () => {
+    let pollCount = 0;
+    mockApi.getSliceJob.mockImplementation(async () => {
+      pollCount += 1;
+      // First poll: running with a useful progress frame.
+      if (pollCount === 1) {
+        return {
+          job_id: 7,
+          status: 'running',
+          kind: 'library_file',
+          source_id: 200,
+          source_name: 'Helmet.3mf',
+          created_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          completed_at: null,
+          progress: {
+            stage: 'Generating G-code',
+            total_percent: 75,
+            plate_percent: 80,
+            plate_index: 1,
+            plate_count: 1,
+            updated_at: Date.now(),
+          },
+        };
+      }
+      // Subsequent polls keep the same frame so the test loop stays stable.
+      return {
+        job_id: 7,
+        status: 'running',
+        kind: 'library_file',
+        source_id: 200,
+        source_name: 'Helmet.3mf',
+        created_at: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        completed_at: null,
+        progress: {
+          stage: 'Generating G-code',
+          total_percent: 75,
+          plate_percent: 80,
+          plate_index: 1,
+          plate_count: 1,
+          updated_at: Date.now(),
+        },
+      };
+    });
+
+    render(
+      <Wrapper>
+        <TrackTrigger id={7} name="Helmet.3mf" />
+      </Wrapper>,
+    );
+
+    act(() => {
+      screen.getByText('track-7').click();
+    });
+
+    // Drive the 1.5s poll so the progress frame lands in the ref, then
+    // tick the 1s renderer so the toast picks it up.
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    // Toast contains the stage + percent + filename.
+    const text = screen.getByText(/Generating G-code/);
+    expect(text.textContent).toMatch(/Helmet\.3mf/);
+    expect(text.textContent).toMatch(/75%/);
+  });
+
+  it('falls back to elapsed-time message when progress is null', async () => {
+    // Sidecar without --pipe support / pre-progress feature: state.progress
+    // stays null and the toast shows the existing "Slicing X — 47s" text.
+    mockApi.getSliceJob.mockResolvedValue({
+      job_id: 8,
+      status: 'running',
+      kind: 'library_file',
+      source_id: 201,
+      source_name: 'OldSidecar.3mf',
+      created_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      progress: null,
+    });
+
+    render(
+      <Wrapper>
+        <TrackTrigger id={8} name="OldSidecar.3mf" />
+      </Wrapper>,
+    );
+
+    act(() => {
+      screen.getByText('track-8').click();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    // The "Slicing X — Ns" / "Queued: X — Ns" fallback must still render
+    // — the absence of progress mustn't blank the toast.
+    expect(screen.getByText(/OldSidecar\.3mf/)).toBeDefined();
+    // No progress percent is shown when null.
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
 });

@@ -3128,11 +3128,13 @@ async def _try_preview_slice_filaments(
     source_id: int,
     plate_id: int,
     file_path: Path,
+    request_id: str | None = None,
 ) -> list[dict] | None:
     """Run a preview slice via the user's configured sidecar so the filament
     list endpoint can return real per-plate filaments for unsliced project
     files. Returns ``None`` on any failure — the caller falls back to the
-    painted-face heuristic."""
+    painted-face heuristic. ``request_id`` flows through to the sidecar
+    for live progress on the SliceModal's inline spinner + toast."""
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
 
@@ -3159,6 +3161,7 @@ async def _try_preview_slice_filaments(
         file_bytes=file_bytes,
         file_name=file_path.name,
         api_url=api_url,
+        request_id=request_id,
     )
 
 
@@ -3166,6 +3169,7 @@ async def _try_preview_slice_filaments(
 async def get_filament_requirements(
     archive_id: int,
     plate_id: int | None = None,
+    request_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
@@ -3286,6 +3290,7 @@ async def get_filament_requirements(
                         source_id=archive_id,
                         plate_id=plate_id,
                         file_path=file_path,
+                        request_id=request_id,
                     )
                     if preview is not None:
                         used_slot_ids = {f["slot_id"] for f in preview}
@@ -3375,7 +3380,7 @@ async def slice_archive(
     archive_id_local = archive.id
     user_id = current_user.id if current_user else None
 
-    async def _run():
+    async def _run(job_id: int):
         async with async_session() as task_db:
             # Re-fetch the source archive on the background-task session.
             src_archive = await task_db.get(PrintArchive, archive_id_local)
@@ -3391,6 +3396,7 @@ async def slice_archive(
                     request=request,
                     source_archive=src_archive,
                     current_user_id=user_id,
+                    job_id=job_id,
                 )
             except HTTPException as exc:
                 raise http_exception_to_job_error(exc) from exc

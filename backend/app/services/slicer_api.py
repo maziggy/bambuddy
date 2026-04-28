@@ -8,7 +8,9 @@ under the hood, response body is raw G-code or 3MF with metadata in the
 `X-Print-Time-Seconds` / `X-Filament-Used-G` / `X-Filament-Used-Mm` headers).
 """
 
+import asyncio
 import logging
+from collections.abc import Callable
 from typing import NamedTuple
 
 import httpx
@@ -153,6 +155,46 @@ class SlicerApiService:
             raise SlicerApiUnavailableError(f"Slicer sidecar /profiles/bundled returned {response.status_code}")
         return response.json()
 
+    async def _poll_progress(
+        self,
+        request_id: str,
+        on_progress: Callable[[dict], None],
+    ) -> None:
+        """Poll the sidecar's progress endpoint at ~1Hz and forward each
+        snapshot to ``on_progress``. Runs until cancelled.
+
+        4xx is NOT treated as terminal: the FIRST poll fires the moment
+        the slice POST is sent, which can be milliseconds before the
+        request actually lands on the sidecar and `progressStore.start()`
+        runs — so a fresh request legitimately returns 404 for the first
+        tick or two. Bailing on the first 404 (the original implementation)
+        meant we'd quit before progress could ever arrive. The polling
+        task is cancelled by the outer slice request anyway, so a
+        sustained 404 (older sidecar without progress support, or post-
+        slice grace expiry) just costs a few wasted GETs that the cancel
+        will stop. Network errors and non-JSON 5xx are swallowed; the
+        next tick retries.
+        """
+        url = f"{self.base_url}/slice/progress/{request_id}"
+        while True:
+            try:
+                response = await self._client.get(url, timeout=5.0)
+                if response.status_code == 200:
+                    payload = response.json()
+                    if isinstance(payload, dict):
+                        on_progress(payload)
+                # 404 / other 4xx = no progress available (yet, or ever
+                # for older sidecars). Keep polling — the outer slice
+                # request will cancel this task on completion.
+            except (httpx.RequestError, ValueError):
+                # ValueError covers JSONDecodeError when the sidecar
+                # returns a non-JSON 5xx. Don't crash the poller.
+                pass
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                return
+
     async def slice_with_profiles(
         self,
         *,
@@ -163,6 +205,8 @@ class SlicerApiService:
         filament_profile_jsons: list[str],
         plate: int | None = None,
         export_3mf: bool = False,
+        request_id: str | None = None,
+        on_progress: Callable[[dict], None] | None = None,
     ) -> SliceResult:
         """POST /slice with model + printer/process/filament profiles.
 
@@ -172,6 +216,12 @@ class SlicerApiService:
         field — the sidecar's route declares ``maxCount: 16`` and the
         slicing service joins them as semicolon-separated
         ``--load-filaments`` for the OrcaSlicer / BambuStudio CLI.
+
+        ``request_id``: when supplied, the sidecar wires --pipe to a
+        per-request FIFO and publishes structured JSON progress events to
+        its in-memory ProgressStore under this id. Bambuddy's slice
+        dispatch polls ``GET /slice/progress/{request_id}`` in parallel
+        to drive the live-progress toast.
 
         Raises:
             SlicerInputError: 4xx from sidecar (caller-supplied input is bad).
@@ -198,6 +248,20 @@ class SlicerApiService:
             data["plate"] = str(plate)
         if export_3mf:
             data["exportType"] = "3mf"
+        if request_id is not None:
+            data["requestId"] = request_id
+
+        # When the caller supplied a request_id, kick off a parallel
+        # poller that reads the sidecar's --pipe-fed progress endpoint
+        # and surfaces structured updates via on_progress. Uses a
+        # short-tick poll (1s) since the slicer emits stage changes
+        # several times per minute on complex models.
+        progress_task: asyncio.Task | None = None
+        if request_id is not None and on_progress is not None:
+            progress_task = asyncio.create_task(
+                self._poll_progress(request_id, on_progress),
+                name=f"slicer-progress-{request_id}",
+            )
 
         try:
             response = await self._client.post(
@@ -208,6 +272,13 @@ class SlicerApiService:
             )
         except httpx.RequestError as exc:
             raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
+        finally:
+            if progress_task is not None:
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except (asyncio.CancelledError, Exception):
+                    pass  # Polling errors must not fail the slice.
 
         if response.status_code >= 500:
             raise SlicerApiServerError(f"Slicer CLI failed ({response.status_code}): {_format_sidecar_error(response)}")
@@ -228,6 +299,8 @@ class SlicerApiService:
         model_filename: str,
         plate: int | None = None,
         export_3mf: bool = False,
+        request_id: str | None = None,
+        on_progress: Callable[[dict], None] | None = None,
     ) -> SliceResult:
         """POST /slice with only the model file and no profile triplet.
 
@@ -236,6 +309,14 @@ class SlicerApiService:
         `slice_with_profiles` triggers a CLI segfault or other 5xx —
         complex H2D / multi-extruder models hit upstream bugs in both the
         OrcaSlicer and BambuStudio CLIs when invoked via `--load-settings`.
+
+        Also used by the SliceModal's per-plate filament discovery path:
+        for an unsliced project file we run a real preview slice via the
+        sidecar to find which AMS slots the picked plate consumes. The
+        ``request_id`` parameter routes the sidecar's --pipe progress
+        events to the ProgressStore so the modal's inline spinner +
+        toast can show "Generating G-code (75%)" for that preview as
+        well.
         """
         files = {
             "file": (model_filename, model_bytes, _guess_model_content_type(model_filename)),
@@ -245,6 +326,20 @@ class SlicerApiService:
             data["plate"] = str(plate)
         if export_3mf:
             data["exportType"] = "3mf"
+        if request_id is not None:
+            data["requestId"] = request_id
+
+        # Same progress-poller wiring as slice_with_profiles. Used by the
+        # SliceModal's preview slice (for filament discovery) AND the
+        # embedded-settings fallback path triggered by an Orca/Bambu CLI
+        # segfault on complex H2D models — both want to keep updating
+        # the user's toast through the slow operation.
+        progress_task: asyncio.Task | None = None
+        if request_id is not None and on_progress is not None:
+            progress_task = asyncio.create_task(
+                self._poll_progress(request_id, on_progress),
+                name=f"slicer-progress-{request_id}",
+            )
 
         try:
             response = await self._client.post(
@@ -255,6 +350,13 @@ class SlicerApiService:
             )
         except httpx.RequestError as exc:
             raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
+        finally:
+            if progress_task is not None:
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
         if response.status_code >= 500:
             raise SlicerApiServerError(f"Slicer CLI failed ({response.status_code}): {_format_sidecar_error(response)}")

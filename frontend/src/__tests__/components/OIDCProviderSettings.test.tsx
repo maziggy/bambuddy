@@ -107,7 +107,6 @@ describe('OIDCProviderSettings', () => {
         ).toBeInTheDocument();
       });
     });
-  });
 
     it('shows security warning when auto_link is enabled with a custom email claim', async () => {
       server.use(http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([])));
@@ -135,6 +134,7 @@ describe('OIDCProviderSettings', () => {
         expect(screen.getByText(/tenant-administered/i)).toBeInTheDocument();
       });
     });
+  });
 
   describe('Provider info view', () => {
     it('renders email_claim and require_email_verified fields in provider details', async () => {

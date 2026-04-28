@@ -1,12 +1,12 @@
-"""Gitea / Forgejo backend — identical Git Data API to GitHub, different base URL."""
+"""Gitea backend — identical Git Data API to GitHub, different base URL."""
 
 import re
 
 from backend.app.services.git_providers.github import GitHubBackend
 
 
-class GiteaForgejoBackend(GitHubBackend):
-    """Backend for Gitea and Forgejo instances.
+class GiteaBackend(GitHubBackend):
+    """Backend for Gitea instances.
 
     The Git Data API is endpoint-compatible with GitHub; only the base URL
     (scheme://host/api/v1) and Accept header differ.

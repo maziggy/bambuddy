@@ -257,8 +257,8 @@ class SpoolWeightUpdate(BaseModel):
 
 
 class SpoolTagLinkRequest(BaseModel):
-    # Minimum 14 hex chars = 7-byte NFC UID (smallest tag written by SpoolBuddy).
-    tag_uid: str | None = Field(None, min_length=14, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
+    # Minimum 8 hex chars = 4-byte NFC UID (Bambu Lab hardware tags use 4-byte UIDs).
+    tag_uid: str | None = Field(None, min_length=8, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
     tray_uuid: str | None = Field(None, min_length=32, max_length=32, pattern=r"^[0-9A-Fa-f]+$")
 
     @field_validator("tag_uid")

@@ -367,3 +367,25 @@ class TestLinkTagToSpoolmanSpool:
         )
 
         assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_4_byte_uid_writes_to_extra_tag(self, async_client: AsyncClient):
+        """PATCH with 8-char (4-byte Bambu Lab) tag_uid writes correctly to Spoolman extra.tag."""
+        import json as _json
+
+        mock_client = self._mock_client(42)
+
+        with patch(
+            "backend.app.api.routes.spoolman_inventory._get_client",
+            AsyncMock(return_value=mock_client),
+        ):
+            resp = await async_client.patch(
+                f"{INVENTORY_API}/spools/42/tag",
+                json={"tag_uid": "2728C17B"},  # 4-byte / 8-char Bambu Lab hardware UID
+            )
+
+        assert resp.status_code == 200
+        mock_client.update_spool_full.assert_called_once()
+        _, kwargs = mock_client.update_spool_full.call_args
+        assert kwargs.get("extra", {}).get("tag") == _json.dumps("2728C17B")

@@ -325,7 +325,7 @@ describe('SpoolBuddyDashboard', () => {
       });
     });
 
-    it('calls linkTagToSpoolmanSpool with tray_uuid when linking in Spoolman mode', async () => {
+    it('calls linkTagToSpoolmanSpool with tag_uid when linking in Spoolman mode', async () => {
       const { api } = await import('../../api/client');
       (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
         spoolman_enabled: 'true',
@@ -354,8 +354,8 @@ describe('SpoolBuddyDashboard', () => {
 
       await waitFor(() => {
         expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(30, {
-          tray_uuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
-          tag_uid: undefined,
+          tag_uid: 'AABB1122334455FF',
+          tray_uuid: undefined,
         });
       });
     });

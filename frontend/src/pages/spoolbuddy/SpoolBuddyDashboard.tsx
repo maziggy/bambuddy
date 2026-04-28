@@ -289,9 +289,9 @@ export function SpoolBuddyDashboard() {
     if (!displayedTagId) return;
     try {
       if (spoolmanMode) {
-        const tray_uuid = sbState.unknownTrayUuid || undefined;
-        const tag_uid = (!sbState.unknownTrayUuid && sbState.unknownTagUid) ? sbState.unknownTagUid : undefined;
-        if (!tray_uuid && !tag_uid) {
+        const tag_uid = sbState.unknownTagUid || undefined;
+        const tray_uuid = (!sbState.unknownTagUid && sbState.unknownTrayUuid) ? sbState.unknownTrayUuid : undefined;
+        if (!tag_uid && !tray_uuid) {
           showToast(t('spoolman.linkFailed'), 'error');
           return;
         }
@@ -355,8 +355,8 @@ export function SpoolBuddyDashboard() {
           low_stock_threshold_pct: null,
         });
         await api.linkTagToSpoolmanSpool(created.id, {
-          tray_uuid: sbState.unknownTrayUuid || undefined,
-          tag_uid: (!sbState.unknownTrayUuid && sbState.unknownTagUid) ? sbState.unknownTagUid : undefined,
+          tag_uid: sbState.unknownTagUid || undefined,
+          tray_uuid: (!sbState.unknownTagUid && sbState.unknownTrayUuid) ? sbState.unknownTrayUuid : undefined,
         });
       } else {
         await api.createSpool({

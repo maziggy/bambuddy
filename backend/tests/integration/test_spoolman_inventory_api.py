@@ -1562,13 +1562,13 @@ class TestSpoolTagLinkValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_tag_uid_8_chars_rejected(
+    async def test_tag_uid_6_chars_rejected(
         self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
     ):
-        """tag_uid with 8 hex chars (4-byte UID) is rejected — min is 14 (7-byte UID)."""
+        """tag_uid with 6 hex chars is rejected — minimum is 8 chars (4-byte UID)."""
         resp = await async_client.patch(
             "/api/v1/spoolman/inventory/spools/42/tag",
-            json={"tag_uid": "AABBCCDD"},  # 8 chars
+            json={"tag_uid": "AABBCC"},  # 6 chars — below new minimum
         )
         assert resp.status_code == 422
 
@@ -1596,6 +1596,30 @@ class TestSpoolTagLinkValidation:
             json={"tag_uid": "AABBCCDD112233"},  # 14 chars, valid, not all-zeros
         )
         assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tag_uid_8_chars_accepted(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """tag_uid with 8 hex chars (4-byte Bambu Lab NFC UID) is accepted after min_length fix."""
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42/tag",
+            json={"tag_uid": "2728C17B"},  # 8 chars — real Bambu Lab 4-byte hardware UID
+        )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_tag_uid_8_zeros_rejected(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """tag_uid with 8 zero chars is rejected — all-zeros validator applies at the new minimum."""
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42/tag",
+            json={"tag_uid": "00000000"},  # 8 zeros — meets min_length but is a blank/unwritten tag
+        )
+        assert resp.status_code == 422
 
 
 class TestLinkTagDuplicate:

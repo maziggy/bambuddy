@@ -35,6 +35,10 @@ async def get_slice_job(
         "created_at": job.created_at.isoformat(),
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        # Live progress fed by the sidecar's --pipe channel. Null when
+        # the slicer hasn't emitted yet (early "Initializing" phase) or
+        # the sidecar doesn't support progress (older versions).
+        "progress": job.progress,
     }
     if job.status == "completed":
         body["result"] = job.result

@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { X, FolderKanban, Loader2, XCircle } from 'lucide-react';
+import { X, FolderKanban, Loader2, XCircle, Search } from 'lucide-react';
 import { api } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
@@ -12,13 +13,26 @@ interface BatchProjectModalProps {
 }
 
 export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const [query, setQuery] = useState('');
 
   const { data: projects, isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.getProjects(),
   });
+
+  const sortedProjects = useMemo(
+    () => (projects ? [...projects].sort((a, b) => a.name.localeCompare(b.name)) : undefined),
+    [projects],
+  );
+
+  const trimmed = query.trim().toLowerCase();
+  const visibleProjects = trimmed
+    ? sortedProjects?.filter((p) => p.name.toLowerCase().includes(trimmed))
+    : sortedProjects;
+  const showSearch = (sortedProjects?.length ?? 0) > 5;
 
   // Close on Escape key
   useEffect(() => {
@@ -127,7 +141,7 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
                 </button>
 
                 {/* Divider */}
-                {projects && projects.length > 0 && (
+                {sortedProjects && sortedProjects.length > 0 && (
                   <div className="flex items-center gap-2 py-2">
                     <div className="flex-1 h-px bg-bambu-dark-tertiary" />
                     <span className="text-xs text-bambu-gray">or assign to</span>
@@ -135,8 +149,22 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
                   </div>
                 )}
 
+                {/* Search input */}
+                {showSearch && (
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                    <input
+                      type="text"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder={t('archives.menu.searchProjects')}
+                      className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray text-sm focus:border-bambu-green focus:outline-none"
+                    />
+                  </div>
+                )}
+
                 {/* Project list */}
-                {projects?.map((project) => (
+                {visibleProjects?.map((project) => (
                   <button
                     key={project.id}
                     onClick={() => assignMutation.mutate(project.id)}
@@ -165,10 +193,14 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
                   </button>
                 ))}
 
-                {(!projects || projects.length === 0) && (
+                {(!sortedProjects || sortedProjects.length === 0) && (
                   <p className="text-center text-bambu-gray py-4">
                     No projects yet. Create one from the Projects page.
                   </p>
+                )}
+
+                {sortedProjects && sortedProjects.length > 0 && visibleProjects?.length === 0 && (
+                  <p className="text-center text-bambu-gray text-sm py-4">—</p>
                 )}
               </div>
             )}

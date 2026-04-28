@@ -589,6 +589,9 @@ function ArchiveCard({
       onClick: () => {},
       disabled: !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+      submenuSearchPlaceholder: (projects?.filter(p => p.status === 'active').length ?? 0) > 5
+        ? t('archives.menu.searchProjects')
+        : undefined,
       submenu: (() => {
         const items: ContextMenuItem[] = [];
 
@@ -611,7 +614,9 @@ function ArchiveCard({
             disabled: true,
           });
         } else {
-          const activeProjects = projects.filter(p => p.status === 'active');
+          const activeProjects = projects
+            .filter(p => p.status === 'active')
+            .sort((a, b) => a.name.localeCompare(b.name));
           if (activeProjects.length === 0) {
             items.push({
               label: t('archives.menu.noProjectsAvailable'),
@@ -1879,6 +1884,9 @@ function ArchiveListRow({
       label: t('archives.menu.addToProject'),
       icon: <FolderKanban className="w-4 h-4" />,
       onClick: () => {},
+      submenuSearchPlaceholder: (projects?.filter(p => p.status === 'active').length ?? 0) > 5
+        ? t('archives.menu.searchProjects')
+        : undefined,
       submenu: (() => {
         const items: ContextMenuItem[] = [];
         if (archive.project_id) {
@@ -1896,7 +1904,9 @@ function ArchiveListRow({
             disabled: true,
           });
         } else {
-          const activeProjects = projects.filter(p => p.status === 'active');
+          const activeProjects = projects
+            .filter(p => p.status === 'active')
+            .sort((a, b) => a.name.localeCompare(b.name));
           if (activeProjects.length === 0) {
             items.push({
               label: t('archives.menu.noProjectsAvailable'),

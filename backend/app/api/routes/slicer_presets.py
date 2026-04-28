@@ -359,3 +359,47 @@ async def list_unified_presets(
         standard=UnifiedPresetsBySlot(**standard),
         cloud_status=cloud_status,
     )
+
+
+@router.get("/preview-progress/{request_id}")
+async def get_preview_slice_progress(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_READ),
+):
+    """Proxy to the sidecar's ``GET /slice/progress/:requestId``.
+
+    The SliceModal's filament-requirements call kicks off a real preview
+    slice on the sidecar to discover which AMS slots the picked plate
+    actually consumes. That HTTP call holds open for the full slice
+    duration (multi-second to multi-minute on complex models), and the
+    browser can't reach the sidecar directly thanks to the same-origin
+    policy + the sidecar's CORS allowlist. This endpoint forwards the
+    poll so the modal's inline spinner can show "Generating G-code (45%)"
+    instead of an opaque elapsed-time counter while the preview runs.
+
+    Returns the sidecar's snapshot verbatim, or 404 when the request_id
+    is unknown / completed and grace-window-expired.
+    """
+    import httpx
+
+    api_url = await _resolve_slicer_api_url(db)
+    if not api_url:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail="No slicer sidecar configured")
+    url = f"{api_url}/slice/progress/{request_id}"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url)
+    except httpx.RequestError:
+        # Sidecar unreachable: surface as 503 instead of 500 so the
+        # frontend's poller can keep trying without flagging a hard error.
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail="Slicer sidecar unreachable") from None
+    if response.status_code == 404:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Progress unavailable")
+    return response.json()

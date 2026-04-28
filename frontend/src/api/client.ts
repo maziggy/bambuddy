@@ -1205,6 +1205,17 @@ export interface SliceJobEnqueueResponse {
   status_url: string;
 }
 
+export interface SliceJobProgress {
+  /** Stage label emitted by the slicer ("Generating G-code", "Slicing finished"). */
+  stage: string;
+  total_percent: number;
+  plate_percent: number;
+  /** 1-indexed plate position; 0 means "all plates" / final completion. */
+  plate_index: number;
+  plate_count: number;
+  updated_at: number;
+}
+
 export interface SliceJobState {
   job_id: number;
   status: SliceJobStatus;
@@ -1214,6 +1225,10 @@ export interface SliceJobState {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  /** Live progress fed by the sidecar's --pipe channel; null until the
+   * slicer emits its first frame (early "Initializing" phase) or when
+   * the sidecar doesn't support progress. */
+  progress: SliceJobProgress | null;
   result?: SliceResponse | SliceArchiveResponse;
   error_status?: number;
   error_detail?: string;
@@ -3677,8 +3692,11 @@ export const api = {
   },
   getArchivePlates: (archiveId: number) =>
     request<ArchivePlatesResponse>(`/archives/${archiveId}/plates`),
-  getArchiveFilamentRequirements: (archiveId: number, plateId?: number) =>
-    request<{
+  getArchiveFilamentRequirements: (archiveId: number, plateId?: number, requestId?: string) => {
+    const qs = new URLSearchParams();
+    if (plateId !== undefined) qs.set('plate_id', String(plateId));
+    if (requestId) qs.set('request_id', requestId);
+    return request<{
       archive_id: number;
       filename: string;
       plate_id: number | null;
@@ -3688,8 +3706,10 @@ export const api = {
         color: string;
         used_grams: number;
         used_meters: number;
+        used_in_plate?: boolean;
       }>;
-    }>(`/archives/${archiveId}/filament-requirements${plateId !== undefined ? `?plate_id=${plateId}` : ''}`),
+    }>(`/archives/${archiveId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
+  },
   reprintArchive: (
     archiveId: number,
     printerId: number,
@@ -5009,8 +5029,11 @@ export const api = {
     }),
   getLibraryFilePlates: (fileId: number) =>
     request<LibraryFilePlatesResponse>(`/library/files/${fileId}/plates`),
-  getLibraryFileFilamentRequirements: (fileId: number, plateId?: number) =>
-    request<{
+  getLibraryFileFilamentRequirements: (fileId: number, plateId?: number, requestId?: string) => {
+    const qs = new URLSearchParams();
+    if (plateId !== undefined) qs.set('plate_id', String(plateId));
+    if (requestId) qs.set('request_id', requestId);
+    return request<{
       file_id: number;
       filename: string;
       filaments: Array<{
@@ -5019,8 +5042,24 @@ export const api = {
         color: string;
         used_grams: number;
         used_meters: number;
+        used_in_plate?: boolean;
       }>;
-    }>(`/library/files/${fileId}/filament-requirements${plateId !== undefined ? `?plate_id=${plateId}` : ''}`),
+    }>(`/library/files/${fileId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
+  },
+
+  /** Poll the sidecar's per-request progress snapshot via the Bambuddy
+   * proxy. Used by the SliceModal's filament-discovery path so the inline
+   * spinner + persistent toast can show "Generating G-code (45%)" while
+   * the preview slice runs. Returns null on 404 (sidecar doesn't yet
+   * have an entry — early race window — or it expired) so the poller
+   * can keep trying. */
+  getPreviewSliceProgress: async (requestId: string): Promise<SliceJobProgress | null> => {
+    try {
+      return await request<SliceJobProgress>(`/slicer/preview-progress/${encodeURIComponent(requestId)}`);
+    } catch {
+      return null;
+    }
+  },
 
   // GitHub Backup
   getGitHubBackupConfig: () =>

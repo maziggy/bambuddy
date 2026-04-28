@@ -1954,7 +1954,7 @@ export interface NotificationProviderUpdate {
 
 // GitHub Backup types
 export type ScheduleType = 'hourly' | 'daily' | 'weekly';
-export type GitProviderType = 'github' | 'github_enterprise' | 'gitea' | 'gitlab';
+export type GitProviderType = 'github' | 'gitea' | 'forgejo' | 'gitlab';
 
 export interface GitHubBackupConfig {
   id: number;

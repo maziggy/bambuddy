@@ -20,10 +20,9 @@ class ProviderType(StrEnum):
     """Git hosting provider types."""
 
     GITHUB = "github"
-    GITHUB_ENTERPRISE = "github_enterprise"
-    GITEA = "gitea"
     GITLAB = "gitlab"
-
+    GITEA = "gitea"
+    FORGEJO = "forgejo"
 
 class GitHubBackupConfigCreate(BaseModel):
     """Schema for creating/updating GitHub backup config."""

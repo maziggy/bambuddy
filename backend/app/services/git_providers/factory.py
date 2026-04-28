@@ -1,15 +1,15 @@
 """Factory for instantiating the correct Git provider backend."""
 
 from backend.app.services.git_providers.base import GitProviderBackend
-from backend.app.services.git_providers.gitea import GiteaForgejoBackend
+from backend.app.services.git_providers.forgejo import ForgejoBackend
+from backend.app.services.git_providers.gitea import GiteaBackend
 from backend.app.services.git_providers.github import GitHubBackend
-from backend.app.services.git_providers.github_enterprise import GitHubEnterpriseBackend
 from backend.app.services.git_providers.gitlab import GitLabBackend
 
 _BACKENDS: dict[str, type[GitProviderBackend]] = {
     "github": GitHubBackend,
-    "github_enterprise": GitHubEnterpriseBackend,
-    "gitea": GiteaForgejoBackend,
+    "gitea": GiteaBackend,
+    "forgejo": ForgejoBackend,
     "gitlab": GitLabBackend,
 }
 

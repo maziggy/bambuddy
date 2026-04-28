@@ -77,6 +77,20 @@ function StatusBadge({ status }: StatusBadgeProps) {
   );
 }
 
+const PROVIDER_REPO_URL_I18N_KEY: Record<GitProviderType, string> = {
+  github: 'backup.repoUrlPlaceholderGitHub',
+  gitea: 'backup.repoUrlPlaceholderGitea',
+  forgejo: 'backup.repoUrlPlaceholderForgejo',
+  gitlab: 'backup.repoUrlPlaceholderGitLab',
+};
+
+const PROVIDER_TOKEN_PLACEHOLDER: Record<GitProviderType, string> = {
+  github: 'ghp_xxxxxxxxxxxx',
+  gitea: 'your_access_token',
+  forgejo: 'your_access_token',
+  gitlab: 'glpat-xxxxxxxxxxxx',
+};
+
 export function GitHubBackupSettings() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -503,9 +517,9 @@ export function GitHubBackupSettings() {
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
               >
                 <option value="github">{t('backup.providerGitHub')}</option>
-                <option value="github_enterprise">{t('backup.providerGitHubEnterprise')}</option>
-                <option value="gitea">{t('backup.providerGitea')}</option>
                 <option value="gitlab">{t('backup.providerGitLab')}</option>
+                <option value="gitea">{t('backup.providerGitea')}</option>
+                <option value="forgejo">{t('backup.providerForgejo')}</option>
               </select>
             </div>
 
@@ -518,7 +532,7 @@ export function GitHubBackupSettings() {
                     type="text"
                     value={repoUrl}
                     onChange={(e) => { setRepoUrl(e.target.value); setTestResult(null); }}
-                    placeholder="https://github.com/username/bambuddy-backup"
+                    placeholder={t(PROVIDER_REPO_URL_I18N_KEY[provider])}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
                 </div>
@@ -532,7 +546,7 @@ export function GitHubBackupSettings() {
                     type="password"
                     value={accessToken}
                     onChange={(e) => { setAccessToken(e.target.value); setTestResult(null); }}
-                    placeholder={config?.has_token ? t('backup.enterNewToken') : 'ghp_xxxxxxxxxxxx'}
+                    placeholder={config?.has_token ? t('backup.enterNewToken') : PROVIDER_TOKEN_PLACEHOLDER[provider]}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
                   <p className="text-xs text-bambu-gray mt-1">

@@ -4,7 +4,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { GitHubBackupSettings } from '../../components/GitHubBackupSettings';
 import { http, HttpResponse } from 'msw';
@@ -68,17 +67,6 @@ describe('GitHubBackupSettings - Provider Selection', () => {
     expect(screen.queryByText('Instance URL')).not.toBeInTheDocument();
   });
 
-  it('switching to github_enterprise does not show instance URL field', async () => {
-    render(<GitHubBackupSettings />);
-    await waitFor(() => {
-      expect(screen.getByRole('combobox', { name: /git provider/i })).toBeInTheDocument();
-    });
-    const select = screen.getByRole('combobox', { name: /git provider/i });
-    await userEvent.selectOptions(select, 'github_enterprise');
-    expect(select).toHaveValue('github_enterprise');
-    expect(screen.queryByText('Instance URL')).not.toBeInTheDocument();
-  });
-
   it('loads provider from existing config', async () => {
     server.use(
       http.get('/api/v1/github-backup/config', () =>
@@ -110,6 +98,51 @@ describe('GitHubBackupSettings - Provider Selection', () => {
     await waitFor(() => {
       const select = screen.getByRole('combobox', { name: /git provider/i });
       expect(select).toHaveValue('gitea');
+    });
+  });
+
+  it('renders Forgejo as a separate dropdown option', async () => {
+    render(<GitHubBackupSettings />);
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /git provider/i })).toBeInTheDocument();
+    });
+    const select = screen.getByRole('combobox', { name: /git provider/i });
+    const options = Array.from((select as HTMLSelectElement).options).map((o) => o.value);
+    expect(options).toContain('gitea');
+    expect(options).toContain('forgejo');
+  });
+
+  it('loads forgejo provider from existing config', async () => {
+    server.use(
+      http.get('/api/v1/github-backup/config', () =>
+        HttpResponse.json({
+          id: 2,
+          repository_url: 'https://forgejo.example.com/owner/repo',
+          has_token: true,
+          branch: 'main',
+          provider: 'forgejo',
+          schedule_enabled: false,
+          schedule_type: 'daily',
+          backup_kprofiles: true,
+          backup_cloud_profiles: true,
+          backup_settings: false,
+          backup_spools: false,
+          backup_archives: false,
+          enabled: true,
+          last_backup_at: null,
+          last_backup_status: null,
+          last_backup_message: null,
+          last_backup_commit_sha: null,
+          next_scheduled_run: null,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        })
+      )
+    );
+    render(<GitHubBackupSettings />);
+    await waitFor(() => {
+      const select = screen.getByRole('combobox', { name: /git provider/i });
+      expect(select).toHaveValue('forgejo');
     });
   });
 });

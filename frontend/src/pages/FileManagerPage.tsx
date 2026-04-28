@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -31,6 +31,7 @@ import {
   Unlink,
   Archive as ArchiveIcon,
   Briefcase,
+  Cog,
   Printer,
   Pencil,
   Play,
@@ -56,6 +57,7 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
+import { SliceModal } from '../components/SliceModal';
 import { FileUploadModal } from '../components/FileUploadModal';
 import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
 import { useToast } from '../contexts/ToastContext';
@@ -683,6 +685,14 @@ function isSlicedFilename(filename: string): boolean {
   return lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf');
 }
 
+// Files that can be fed to the slicer sidecar (model geometry inputs).
+// Excludes .gcode.* (already sliced) and any other non-model formats.
+function isSliceableFilename(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf')) return false;
+  return lower.endsWith('.stl') || lower.endsWith('.3mf') || lower.endsWith('.step') || lower.endsWith('.stp');
+}
+
 // File Card
 interface FileCardProps {
   file: LibraryFileListItem;
@@ -693,6 +703,8 @@ interface FileCardProps {
   onDownload: (id: number) => void;
   onAddToQueue?: (id: number) => void;
   onPrint?: (file: LibraryFileListItem) => void;
+  onSlice?: (file: LibraryFileListItem) => void;
+  useSlicerApi?: boolean;
   onPreview3d?: (file: LibraryFileListItem) => void;
   onRename?: (file: LibraryFileListItem) => void;
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
@@ -703,7 +715,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onPreview3d, onRename, onGenerateThumbnail, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -808,6 +820,19 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('fileManager.schedulePrint')}
                 </button>
               )}
+              {onSlice && useSlicerApi && isSliceableFilename(file.filename) && (
+                <button
+                  className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
+                    hasPermission('library:upload') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                  }`}
+                  onClick={() => { if (hasPermission('library:upload')) { onSlice(file); setShowActions(false); } }}
+                  disabled={!hasPermission('library:upload')}
+                  title={!hasPermission('library:upload') ? t('fileManager.noPermissionSlice') : undefined}
+                >
+                  <Cog className="w-3.5 h-3.5" />
+                  {t('slice.action')}
+                </button>
+              )}
               {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
@@ -892,6 +917,7 @@ export function FileManagerPage() {
   const { showToast } = useToast();
   const { hasPermission, hasAnyPermission, canModify, authEnabled } = useAuth();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // Read folder ID from URL query parameter
   const folderIdFromUrl = searchParams.get('folder');
@@ -910,6 +936,7 @@ export function FileManagerPage() {
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [printMultiFile, setPrintMultiFile] = useState<LibraryFileListItem | null>(null);
   const [scheduleFile, setScheduleFile] = useState<LibraryFileListItem | null>(null);
+  const [sliceFile, setSliceFile] = useState<LibraryFileListItem | null>(null);
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<number, number>>({});
   const [viewerFile, setViewerFile] = useState<LibraryFileListItem | null>(null);
@@ -1947,7 +1974,19 @@ export function FileManagerPage() {
                       if (file) setScheduleFile(file);
                     }}
                     onPrint={setPrintFile}
-                    onPreview3d={setViewerFile}
+                    onSlice={setSliceFile}
+                    useSlicerApi={settings?.use_slicer_api ?? false}
+                    onPreview3d={(f) => {
+                      // Sliced files (.gcode / .gcode.3mf) open the same
+                      // full-page gcode viewer the archive card uses, so
+                      // the two paths feel consistent. STL / source 3MF
+                      // continue to use the in-app 3D model viewer modal.
+                      if (isSlicedFilename(f.filename)) {
+                        navigate(`/gcode-viewer?library_file=${f.id}`);
+                      } else {
+                        setViewerFile(f);
+                      }
+                    }}
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
                     thumbnailVersion={thumbnailVersions[file.id]}
@@ -2083,9 +2122,30 @@ export function FileManagerPage() {
                           </button>
                         </>
                       )}
+                      {(settings?.use_slicer_api ?? false) && isSliceableFilename(file.filename) && (
+                        <button
+                          onClick={() => hasPermission('library:upload') && setSliceFile(file)}
+                          className={`p-1.5 rounded transition-colors ${
+                            hasPermission('library:upload')
+                              ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
+                              : 'text-bambu-gray/50 cursor-not-allowed'
+                          }`}
+                          title={hasPermission('library:upload') ? t('slice.action') : t('fileManager.noPermissionSlice')}
+                          disabled={!hasPermission('library:upload')}
+                        >
+                          <Cog className="w-4 h-4" />
+                        </button>
+                      )}
                       {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
                         <button
-                          onClick={() => hasPermission('library:read') && setViewerFile(file)}
+                          onClick={() => {
+                            if (!hasPermission('library:read')) return;
+                            if (isSlicedFilename(file.filename)) {
+                              navigate(`/gcode-viewer?library_file=${file.id}`);
+                            } else {
+                              setViewerFile(file);
+                            }
+                          }}
                           className={`p-1.5 rounded transition-colors ${
                             hasPermission('library:read')
                               ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
@@ -2277,6 +2337,13 @@ export function FileManagerPage() {
             queryClient.invalidateQueries({ queryKey: ['queue'] });
             queryClient.invalidateQueries({ queryKey: ['archives'] });
           }}
+        />
+      )}
+
+      {sliceFile && (
+        <SliceModal
+          source={{ kind: 'libraryFile', id: sliceFile.id, filename: sliceFile.filename }}
+          onClose={() => setSliceFile(null)}
         />
       )}
 

@@ -926,6 +926,11 @@ export interface AppSettings {
   camera_view_mode: 'window' | 'embedded';
   // Preferred slicer
   preferred_slicer: 'bambu_studio' | 'orcaslicer';
+  // Use the slicer-API sidecar for slicing (in-app modal) vs desktop URI scheme
+  use_slicer_api: boolean;
+  // Per-install sidecar URLs. Empty string falls back to the env defaults.
+  orcaslicer_api_url: string;
+  bambu_studio_api_url: string;
   // Prometheus metrics
   prometheus_enabled: boolean;
   prometheus_token: string;
@@ -1103,6 +1108,90 @@ export interface SlicerSettingDeleteResponse {
 export interface BuiltinFilament {
   filament_id: string;
   name: string;
+}
+
+// Slice request/response — POST /library/files/{id}/slice and /archives/{id}/slice
+//
+// Two preset shapes are accepted per slot:
+//   - Legacy bare integer ids (`*_preset_id`) — pre-cloud-tier clients.
+//   - Source-aware refs (`*_preset: PresetRef`) — new SliceModal that picks
+//     across cloud / local / standard tiers. Source-aware refs win when both
+//     are present in the same payload.
+export type PresetSource = 'cloud' | 'local' | 'standard';
+export interface PresetRef {
+  source: PresetSource;
+  id: string;
+}
+export interface SliceRequest {
+  printer_preset_id?: number;
+  process_preset_id?: number;
+  filament_preset_id?: number;
+  printer_preset?: PresetRef;
+  process_preset?: PresetRef;
+  filament_preset?: PresetRef;
+  plate?: number;
+  export_3mf?: boolean;
+}
+
+// GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
+export type SlicerCloudStatus = 'ok' | 'not_authenticated' | 'expired' | 'unreachable';
+export interface UnifiedPreset {
+  id: string;
+  name: string;
+  source: PresetSource;
+}
+export interface UnifiedPresetsBySlot {
+  printer: UnifiedPreset[];
+  process: UnifiedPreset[];
+  filament: UnifiedPreset[];
+}
+export interface UnifiedPresetsResponse {
+  cloud: UnifiedPresetsBySlot;
+  local: UnifiedPresetsBySlot;
+  standard: UnifiedPresetsBySlot;
+  cloud_status: SlicerCloudStatus;
+}
+
+export interface SliceResponse {
+  library_file_id: number;
+  name: string;
+  print_time_seconds: number;
+  filament_used_g: number;
+  filament_used_mm: number;
+  used_embedded_settings: boolean;
+}
+
+export interface SliceArchiveResponse {
+  archive_id: number;
+  name: string;
+  print_time_seconds: number;
+  filament_used_g: number;
+  filament_used_mm: number;
+  used_embedded_settings: boolean;
+}
+
+// Background slice-job lifecycle. POST /slice returns 202 + this shape;
+// the frontend polls /slice-jobs/{id} until status is terminal.
+export type SliceJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface SliceJobEnqueueResponse {
+  job_id: number;
+  status: SliceJobStatus;
+  status_url: string;
+}
+
+export interface SliceJobState {
+  job_id: number;
+  status: SliceJobStatus;
+  kind: 'library_file' | 'archive';
+  source_id: number;
+  source_name: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  result?: SliceResponse | SliceArchiveResponse;
+  error_status?: number;
+  error_detail?: string;
 }
 
 // Local preset types (OrcaSlicer imports)
@@ -4904,6 +4993,27 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ url }),
     }),
+
+  // Slicer API — slice in the background. Both endpoints return 202 + a
+  // job_id; poll /slice-jobs/{id} until status is `completed` or `failed`.
+  sliceLibraryFile: (fileId: number, body: SliceRequest) =>
+    request<SliceJobEnqueueResponse>(`/library/files/${fileId}/slice`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  sliceArchive: (archiveId: number, body: SliceRequest) =>
+    request<SliceJobEnqueueResponse>(`/archives/${archiveId}/slice`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getSliceJob: (jobId: number) =>
+    request<SliceJobState>(`/slice-jobs/${jobId}`),
+
+  // Unified slicer-preset listing — cloud + local + standard, deduped by name.
+  // Used by the SliceModal; see UnifiedPresetsResponse for the shape and
+  // backend/app/api/routes/slicer_presets.py for the priority rules.
+  getSlicerPresets: () =>
+    request<UnifiedPresetsResponse>('/slicer/presets'),
 
   // Local Presets (OrcaSlicer imports)
   getLocalPresets: () =>

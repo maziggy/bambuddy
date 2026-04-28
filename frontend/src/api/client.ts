@@ -1129,6 +1129,11 @@ export interface SliceRequest {
   printer_preset?: PresetRef;
   process_preset?: PresetRef;
   filament_preset?: PresetRef;
+  // Multi-color: one PresetRef per plate slot, in plate order. Always
+  // preferred over the singular `filament_preset` when both are sent; the
+  // backend validator promotes a singular into a one-element list when this
+  // is omitted, so legacy single-color clients keep working unchanged.
+  filament_presets?: PresetRef[];
   plate?: number;
   export_3mf?: boolean;
 }
@@ -1139,6 +1144,13 @@ export interface UnifiedPreset {
   id: string;
   name: string;
   source: PresetSource;
+  // Populated for the filament slot only — used by the SliceModal multi-color
+  // pre-pick to score presets against each plate slot's required (type,
+  // colour). Optional because the bundled / standard tier rarely carries a
+  // colour (colour is a runtime spool attribute on Bambu) and older API
+  // responses pre-date these fields entirely.
+  filament_type?: string | null;
+  filament_colour?: string | null;
 }
 export interface UnifiedPresetsBySlot {
   printer: UnifiedPreset[];

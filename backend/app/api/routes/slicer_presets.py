@@ -12,6 +12,7 @@ without faking an "ok with empty list" response.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import time
 
@@ -105,40 +106,53 @@ async def _fetch_cloud_presets(db: AsyncSession, user: User | None) -> tuple[dic
     cloud = BambuCloudService(region=region)
     cloud.set_token(token)
     try:
-        raw = await cloud.get_slicer_settings()
-    except BambuCloudAuthError:
-        # Don't clear the token here — the cloud-status endpoint owns that
-        # lifecycle. Just report expired so the UI can prompt re-auth.
-        return _empty_slots(), "expired"
-    except BambuCloudError as e:
-        logger.warning("Cloud preset fetch failed for user %s: %s", user_key, e)
-        return _empty_slots(), "unreachable"
-    except Exception as e:  # noqa: BLE001 — defensive: never crash the modal
-        logger.warning("Cloud preset fetch unexpected error for user %s: %s", user_key, e)
-        return _empty_slots(), "unreachable"
+        try:
+            raw = await cloud.get_slicer_settings()
+        except BambuCloudAuthError:
+            # Don't clear the token here — the cloud-status endpoint owns that
+            # lifecycle. Just report expired so the UI can prompt re-auth.
+            return _empty_slots(), "expired"
+        except BambuCloudError as e:
+            logger.warning("Cloud preset fetch failed for user %s: %s", user_key, e)
+            return _empty_slots(), "unreachable"
+        except Exception as e:  # noqa: BLE001 — defensive: never crash the modal
+            logger.warning("Cloud preset fetch unexpected error for user %s: %s", user_key, e)
+            return _empty_slots(), "unreachable"
+
+        slots = _empty_slots()
+        for cloud_type, slot in _CLOUD_TYPE_TO_SLOT.items():
+            type_data = raw.get(cloud_type, {})
+            # The cloud splits presets into "private" (the user's own) and "public"
+            # (Bambu's stock cloud presets). Both are valid choices — surface them
+            # in the natural order private → public so a user's customisations
+            # appear above the stock entries with the same names. Stock entries
+            # that share names with private ones get deduped out within the cloud
+            # tier itself.
+            seen_names: set[str] = set()
+            for entry in type_data.get("private", []) + type_data.get("public", []):
+                name = entry.get("name")
+                setting_id = entry.get("setting_id") or entry.get("id")
+                if not name or not setting_id or name in seen_names:
+                    continue
+                seen_names.add(name)
+                slots[slot].append(UnifiedPreset(id=setting_id, name=name, source="cloud"))
+
+        # Cloud filament presets carry no metadata in this response on
+        # purpose: the per-preset detail endpoint
+        # (/v1/iot-service/api/slicer/setting/{id}) is rate-limited at roughly
+        # 10/sec per token, so fetching N filament presets to enrich them
+        # one-by-one trips Bambu's limiter and returns 429 on every request
+        # for users with large preset libraries (#1150 follow-up).
+        #
+        # The dedup pass (see _dedupe_by_name) compensates: when a cloud entry
+        # wins over a same-named local entry, the cloud entry inherits the
+        # local entry's filament_type / filament_colour. So cloud presets that
+        # also exist locally still get metadata-aware pre-pick in the
+        # SliceModal; cloud-only presets fall back to plain priority order.
+        _cloud_cache[cache_key] = (now, slots)
+        return slots, "ok"
     finally:
         await cloud.close()
-
-    slots = _empty_slots()
-    for cloud_type, slot in _CLOUD_TYPE_TO_SLOT.items():
-        type_data = raw.get(cloud_type, {})
-        # The cloud splits presets into "private" (the user's own) and "public"
-        # (Bambu's stock cloud presets). Both are valid choices — surface them
-        # in the natural order private → public so a user's customisations
-        # appear above the stock entries with the same names. Stock entries
-        # that share names with private ones get deduped out within the cloud
-        # tier itself.
-        seen_names: set[str] = set()
-        for entry in type_data.get("private", []) + type_data.get("public", []):
-            name = entry.get("name")
-            setting_id = entry.get("setting_id") or entry.get("id")
-            if not name or not setting_id or name in seen_names:
-                continue
-            seen_names.add(name)
-            slots[slot].append(UnifiedPreset(id=setting_id, name=name, source="cloud"))
-
-    _cloud_cache[cache_key] = (now, slots)
-    return slots, "ok"
 
 
 async def _fetch_local_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset]]:
@@ -151,8 +165,38 @@ async def _fetch_local_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset
         slot = type_to_slot.get(p.preset_type)
         if slot is None:
             continue
-        slots[slot].append(UnifiedPreset(id=str(p.id), name=p.name, source="local"))
+        extra: dict[str, str | None] = {}
+        if slot == "filament":
+            extra["filament_type"], extra["filament_colour"] = _parse_filament_metadata(p.setting)
+        slots[slot].append(
+            UnifiedPreset(id=str(p.id), name=p.name, source="local", **extra),
+        )
     return slots
+
+
+def _parse_filament_metadata(setting_json: str | None) -> tuple[str | None, str | None]:
+    """Extract first-slot ``filament_type`` and ``filament_colour`` from a
+    stored preset JSON. OrcaSlicer stores both as arrays (per-extruder) — we
+    take the first entry since pre-pick matching is one-slot-at-a-time.
+    Defensive parse: any error returns (None, None) so a corrupt row never
+    breaks the listing."""
+    if not setting_json:
+        return None, None
+    try:
+        data = json.loads(setting_json)
+    except (ValueError, TypeError):
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    return _first_scalar(data.get("filament_type")), _first_scalar(data.get("filament_colour"))
+
+
+def _first_scalar(value: object) -> str | None:
+    if isinstance(value, list) and value:
+        return value[0] if isinstance(value[0], str) else None
+    if isinstance(value, str) and value:
+        return value
+    return None
 
 
 async def _fetch_bundled_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset]]:
@@ -186,7 +230,13 @@ async def _fetch_bundled_presets(db: AsyncSession) -> dict[str, list[UnifiedPres
                 continue
             # Bundled presets are addressed by name (the slicer resolves them
             # by name during the `inherits:` walk), so name doubles as id.
-            slots[slot].append(UnifiedPreset(id=name, name=name, source="standard"))
+            extra: dict[str, str | None] = {}
+            if slot == "filament":
+                extra["filament_type"] = entry.get("filament_type")
+                extra["filament_colour"] = entry.get("filament_colour")
+            slots[slot].append(
+                UnifiedPreset(id=name, name=name, source="standard", **extra),
+            )
 
     _bundled_cache = (now, slots)
     return slots
@@ -236,7 +286,36 @@ def _dedupe_by_name(
     Order within each tier is preserved as-is — only "lower-priority duplicates"
     are dropped. A preset shared across tiers (e.g. "Bambu PLA Basic" in cloud
     public AND standard bundled) only renders once, in the cloud tier.
+
+    Filament metadata is **merged across tiers** during dedup: when a cloud
+    entry wins over a same-named local entry, the cloud entry inherits the
+    local entry's ``filament_type`` and ``filament_colour`` (cloud entries
+    carry no metadata themselves because we deliberately don't fetch each
+    setting's content — see _fetch_cloud_presets). Without this merge, the
+    SliceModal's metadata-aware pre-pick would silently lose match data for
+    every preset the user has both cloud-synced and locally imported, and
+    fall back to plain priority selection.
     """
+    # Build a lookup: filament name → metadata from the highest-quality tier
+    # that has it. Local + standard both expose parsed metadata; cloud
+    # doesn't. Take whichever non-empty entry shows up first.
+    metadata_by_name: dict[str, tuple[str | None, str | None]] = {}
+    for tier in (local, standard):
+        for p in tier["filament"]:
+            if p.name in metadata_by_name:
+                continue
+            if p.filament_type or p.filament_colour:
+                metadata_by_name[p.name] = (p.filament_type, p.filament_colour)
+
+    # Backfill cloud entries that don't have their own metadata.
+    for p in cloud["filament"]:
+        if (p.filament_type is None or p.filament_colour is None) and p.name in metadata_by_name:
+            t, c = metadata_by_name[p.name]
+            if p.filament_type is None and t is not None:
+                p.filament_type = t
+            if p.filament_colour is None and c is not None:
+                p.filament_colour = c
+
     deduped_local = _empty_slots()
     deduped_standard = _empty_slots()
     for slot in ("printer", "process", "filament"):

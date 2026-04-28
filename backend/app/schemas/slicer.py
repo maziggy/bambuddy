@@ -53,6 +53,13 @@ class SliceRequest(BaseModel):
     process_preset: PresetRef | None = None
     filament_preset: PresetRef | None = None
 
+    # Multi-color: one PresetRef per AMS slot the source plate uses. Order is
+    # significant — the slicer matches index-by-index against the plate's
+    # filament slots. Always preferred over the legacy singular field; the
+    # validator promotes a singular field into ``[singular]`` when the list
+    # is empty so older clients keep working.
+    filament_presets: list[PresetRef] = Field(default_factory=list)
+
     plate: int | None = Field(
         default=None,
         ge=1,
@@ -67,11 +74,13 @@ class SliceRequest(BaseModel):
     def normalise_preset_refs(self) -> "SliceRequest":
         """Each slot must end up with a `PresetRef` set. Legacy integer ids
         become `(source='local', id=str(int))` so the route handler only
-        deals with the canonical shape."""
+        deals with the canonical shape. For filament: a non-empty
+        ``filament_presets`` list satisfies the requirement on its own; an
+        empty list falls back to the singular fields, which then promote
+        into a one-element list."""
         for slot, ref_attr, legacy_attr in (
             ("printer", "printer_preset", "printer_preset_id"),
             ("process", "process_preset", "process_preset_id"),
-            ("filament", "filament_preset", "filament_preset_id"),
         ):
             ref = getattr(self, ref_attr)
             legacy_id = getattr(self, legacy_attr)
@@ -81,6 +90,28 @@ class SliceRequest(BaseModel):
                 )
             if ref is None:
                 setattr(self, ref_attr, PresetRef(source="local", id=str(legacy_id)))
+
+        # Filament accepts THREE shapes, in priority order:
+        #   1. filament_presets    — multi-color array (new clients)
+        #   2. filament_preset     — source-aware singular (single-color new clients)
+        #   3. filament_preset_id  — legacy bare integer (old clients)
+        # The first non-empty shape wins; missing all three raises.
+        if not self.filament_presets:
+            if self.filament_preset is not None:
+                self.filament_presets = [self.filament_preset]
+            elif self.filament_preset_id is not None:
+                fallback = PresetRef(source="local", id=str(self.filament_preset_id))
+                self.filament_preset = fallback
+                self.filament_presets = [fallback]
+            else:
+                raise ValueError(
+                    "filament preset is required: provide 'filament_presets' (preferred), "
+                    "'filament_preset', or legacy 'filament_preset_id'"
+                )
+        elif self.filament_preset is None:
+            # Multi-color caller: backfill the singular from the first slot
+            # so callers that still read the legacy field see a stable value.
+            self.filament_preset = self.filament_presets[0]
         return self
 
 

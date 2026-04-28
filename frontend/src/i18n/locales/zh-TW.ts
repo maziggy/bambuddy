@@ -721,6 +721,7 @@ export default {
       removeFromProject: '從專案中移除',
       loading: '載入中...',
       noProjectsAvailable: '無可用專案',
+      searchProjects: 'Search projects…',
       select: '選擇',
       deselect: '取消選擇',
       delete: '刪除',

@@ -713,6 +713,7 @@ export default {
       removeFromProject: 'プロジェクトから削除',
       loading: 'アーカイブを読み込み中...',
       noProjectsAvailable: '利用可能なプロジェクトがありません',
+      searchProjects: 'Search projects…',
       select: '選択',
       deselect: '選択解除',
       delete: '削除',

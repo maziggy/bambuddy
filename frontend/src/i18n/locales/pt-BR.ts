@@ -714,6 +714,7 @@ export default {
       removeFromProject: 'Remover do projeto',
       loading: 'Carregando...',
       noProjectsAvailable: 'Nenhum projeto disponível',
+      searchProjects: 'Search projects…',
       select: 'Selecionar',
       deselect: 'Desmarcar',
       delete: 'Excluir',

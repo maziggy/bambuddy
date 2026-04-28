@@ -196,7 +196,7 @@ function FilamentAnalysisSpinner({
     return () => {
       dismissToast(toastId);
     };
-  }, [elapsed, progress, sourceName, showPersistentToast, dismissToast, t, toastId]);
+  }, [elapsed, progress, prettyName, showPersistentToast, dismissToast, t, toastId]);
 
   const stage = progress?.stage;
   const percent = progress?.total_percent;
@@ -281,11 +281,13 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // pair; switching plates regenerates so a stale poll doesn't bleed
   // progress between plates.
   const previewRequestId = useMemo(() => {
-    const id =
+    const random =
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    return id;
+    // Tag the id with the (source, plate) so logs/Network panel show which
+    // pair owns the poll. Also lets the lint rule see the deps in use.
+    return `${source.kind}-${source.id}-p${effectivePlateId}-${random}`;
   }, [source.kind, source.id, effectivePlateId]);
   const filamentReqsQuery = useQuery({
     queryKey: ['sliceFilamentReqs', source.kind, source.id, effectivePlateId],

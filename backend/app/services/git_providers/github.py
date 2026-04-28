@@ -1,7 +1,6 @@
 """GitHub backend — implements GitProviderBackend using the GitHub Git Data API."""
 
 import base64
-import hashlib
 import json
 import logging
 import re
@@ -112,9 +111,7 @@ class GitHubBackend(GitProviderBackend):
             api_base = self.get_api_base(repo_url)
             headers = self.get_headers(token)
 
-            ref_response = await client.get(
-                f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{branch}", headers=headers
-            )
+            ref_response = await client.get(f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{branch}", headers=headers)
 
             if ref_response.status_code == 404:
                 return await self._create_branch_and_push(
@@ -153,9 +150,7 @@ class GitHubBackend(GitProviderBackend):
             for path, content in files.items():
                 content_str = json.dumps(content, indent=2, default=str)
                 content_bytes = content_str.encode("utf-8")
-                content_sha = hashlib.sha1(
-                    f"blob {len(content_bytes)}\0".encode() + content_bytes, usedforsecurity=False
-                ).hexdigest()
+                content_sha = self._blob_sha(content_bytes)
 
                 if path in existing_files and existing_files[path] == content_sha:
                     continue

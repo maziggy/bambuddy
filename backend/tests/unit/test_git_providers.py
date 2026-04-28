@@ -1,5 +1,9 @@
 """Unit tests for the git_providers abstraction package."""
 
+import hashlib
+import json
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from backend.app.services.git_providers.factory import get_provider_backend
@@ -132,3 +136,87 @@ class TestGitLabBackend:
         headers = self.backend.get_headers("mytoken")
         assert headers["Authorization"] == "Bearer mytoken"
         assert "Content-Type" in headers
+
+
+def _blob_sha(content: dict) -> str:
+    content_bytes = json.dumps(content, indent=2, default=str).encode("utf-8")
+    return hashlib.sha1(
+        f"blob {len(content_bytes)}\0".encode() + content_bytes, usedforsecurity=False
+    ).hexdigest()
+
+
+def _make_mock_response(status_code: int, body=None):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json = MagicMock(return_value=body or {})
+    return resp
+
+
+class TestGitLabBackendPushFiles:
+    def setup_method(self):
+        self.backend = GitLabBackend()
+        self.repo_url = "https://gitlab.com/owner/repo"
+        self.token = "glpat-test"
+        self.branch = "bambuddy-backup"
+        self.files = {"config/printers.json": {"name": "my-printer"}}
+
+    @pytest.mark.asyncio
+    async def test_skips_commit_when_content_unchanged(self):
+        sha = _blob_sha(self.files["config/printers.json"])
+
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                # branch check → branch exists
+                _make_mock_response(200, {"name": self.branch}),
+                # tree fetch → one blob whose sha matches current content
+                _make_mock_response(200, [{"type": "blob", "path": "config/printers.json", "id": sha}]),
+            ]
+        )
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, self.files, client)
+
+        assert result["status"] == "skipped"
+        assert result["files_changed"] == 0
+        client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_commits_when_content_changed(self):
+        stale_sha = "0000000000000000000000000000000000000000"
+
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"name": self.branch}),
+                _make_mock_response(200, [{"type": "blob", "path": "config/printers.json", "id": stale_sha}]),
+            ]
+        )
+        client.post = AsyncMock(
+            return_value=_make_mock_response(201, {"id": "abc123"})
+        )
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, self.files, client)
+
+        assert result["status"] == "success"
+        assert result["files_changed"] == 1
+        client.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_creates_new_file_not_in_existing_tree(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"name": self.branch}),
+                # tree is empty
+                _make_mock_response(200, []),
+            ]
+        )
+        client.post = AsyncMock(
+            return_value=_make_mock_response(201, {"id": "def456"})
+        )
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, self.files, client)
+
+        assert result["status"] == "success"
+        call_kwargs = client.post.call_args.kwargs["json"]
+        assert call_kwargs["actions"][0]["action"] == "create"

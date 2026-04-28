@@ -44,9 +44,7 @@ class GitLabBackend(GitProviderBackend):
             return match.group(1), match.group(2).removesuffix(".git")
         raise ValueError(f"Cannot parse repository URL: {url}")
 
-    async def test_connection(
-        self, repo_url: str, token: str, client: httpx.AsyncClient
-    ) -> dict:
+    async def test_connection(self, repo_url: str, token: str, client: httpx.AsyncClient) -> dict:
         try:
             owner, repo = self.parse_repo_url(repo_url)
             api_base = self.get_api_base(repo_url)
@@ -151,24 +149,32 @@ class GitLabBackend(GitProviderBackend):
                 headers=headers,
                 params={"recursive": "true", "ref": branch, "per_page": 100},
             )
-            existing_paths: set[str] = set()
+            existing_blobs: dict[str, str] = {}
             if tree_response.status_code == 200:
                 for item in tree_response.json():
                     if item.get("type") == "blob":
-                        existing_paths.add(item["path"])
+                        existing_blobs[item["path"]] = item["id"]
 
             actions = []
             for path, content in files.items():
                 content_str = json.dumps(content, indent=2, default=str)
-                actions.append({
-                    "action": "update" if path in existing_paths else "create",
-                    "file_path": path,
-                    "content": base64.b64encode(content_str.encode()).decode(),
-                    "encoding": "base64",
-                })
+                content_bytes = content_str.encode("utf-8")
+                content_sha = self._blob_sha(content_bytes)
+
+                if path in existing_blobs and existing_blobs[path] == content_sha:
+                    continue
+
+                actions.append(
+                    {
+                        "action": "update" if path in existing_blobs else "create",
+                        "file_path": path,
+                        "content": base64.b64encode(content_bytes).decode(),
+                        "encoding": "base64",
+                    }
+                )
 
             if not actions:
-                return {"status": "skipped", "message": "No files to commit", "commit_sha": None, "files_changed": 0}
+                return {"status": "skipped", "message": "No changes to commit", "commit_sha": None, "files_changed": 0}
 
             commit_message = f"Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
             commit_response = await client.post(
@@ -203,12 +209,14 @@ class GitLabBackend(GitProviderBackend):
             actions = []
             for path, content in files.items():
                 content_str = json.dumps(content, indent=2, default=str)
-                actions.append({
-                    "action": "create",
-                    "file_path": path,
-                    "content": base64.b64encode(content_str.encode()).decode(),
-                    "encoding": "base64",
-                })
+                actions.append(
+                    {
+                        "action": "create",
+                        "file_path": path,
+                        "content": base64.b64encode(content_str.encode()).decode(),
+                        "encoding": "base64",
+                    }
+                )
 
             commit_message = f"Initial Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
             commit_response = await client.post(

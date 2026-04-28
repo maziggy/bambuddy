@@ -1954,12 +1954,14 @@ export interface NotificationProviderUpdate {
 
 // GitHub Backup types
 export type ScheduleType = 'hourly' | 'daily' | 'weekly';
+export type GitProviderType = 'github' | 'github_enterprise' | 'gitea' | 'gitlab';
 
 export interface GitHubBackupConfig {
   id: number;
   repository_url: string;
   has_token: boolean;
   branch: string;
+  provider: GitProviderType;
   schedule_enabled: boolean;
   schedule_type: ScheduleType;
   backup_kprofiles: boolean;
@@ -1981,6 +1983,7 @@ export interface GitHubBackupConfigCreate {
   repository_url: string;
   access_token: string;
   branch?: string;
+  provider?: GitProviderType;
   schedule_enabled?: boolean;
   schedule_type?: ScheduleType;
   backup_kprofiles?: boolean;
@@ -5047,9 +5050,9 @@ export const api = {
   deleteGitHubBackupConfig: () =>
     request<{ message: string }>('/github-backup/config', { method: 'DELETE' }),
 
-  testGitHubConnection: (repoUrl: string, token: string) =>
+  testGitHubConnection: (repoUrl: string, token: string, provider: GitProviderType = 'github') =>
     request<GitHubTestConnectionResponse>(
-      `/github-backup/test?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}`,
+      `/github-backup/test?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}&provider=${encodeURIComponent(provider)}`,
       { method: 'POST' }
     ),
 

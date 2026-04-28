@@ -27,6 +27,7 @@ import type {
   GitHubBackupLog,
   GitHubBackupStatus,
   GitHubBackupTriggerResponse,
+  GitProviderType,
   LocalBackupFile,
   LocalBackupStatus,
   ScheduleType,
@@ -85,6 +86,7 @@ export function GitHubBackupSettings() {
   const [repoUrl, setRepoUrl] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [branch, setBranch] = useState('main');
+  const [provider, setProvider] = useState<GitProviderType>('github');
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleType, setScheduleType] = useState<ScheduleType>('daily');
   const [backupKProfiles, setBackupKProfiles] = useState(true);
@@ -254,6 +256,7 @@ export function GitHubBackupSettings() {
     if (config) {
       setRepoUrl(config.repository_url);
       setBranch(config.branch);
+      setProvider(config.provider ?? 'github');
       setScheduleEnabled(config.schedule_enabled);
       setScheduleType(config.schedule_type);
       setBackupKProfiles(config.backup_kprofiles);
@@ -279,6 +282,7 @@ export function GitHubBackupSettings() {
           repository_url: repoUrl,
           access_token: accessToken,
           branch,
+          provider,
           schedule_enabled: scheduleEnabled,
           schedule_type: scheduleType,
           backup_kprofiles: backupKProfiles,
@@ -295,6 +299,7 @@ export function GitHubBackupSettings() {
         await api.updateGitHubBackupConfig({
           repository_url: repoUrl,
           branch,
+          provider,
           schedule_enabled: scheduleEnabled,
           schedule_type: scheduleType,
           backup_kprofiles: backupKProfiles,
@@ -311,7 +316,7 @@ export function GitHubBackupSettings() {
     } catch (error) {
       showToast(t('backup.failedToSave', { message: (error as Error).message }), 'error');
     }
-  }, [config?.has_token, repoUrl, accessToken, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, backupSpools, backupArchives, enabled, queryClient, showToast, t]);
+  }, [config?.has_token, repoUrl, accessToken, branch, provider, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, backupSpools, backupArchives, enabled, queryClient, showToast, t]);
 
   // Auto-save effect for existing configs (debounced)
   useEffect(() => {
@@ -330,7 +335,7 @@ export function GitHubBackupSettings() {
         clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [repoUrl, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, backupSpools, backupArchives, enabled, autoSave, config?.has_token]);
+  }, [repoUrl, branch, provider, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, backupSpools, backupArchives, enabled, autoSave, config?.has_token]);
 
   // Auto-save token when it changes (with longer debounce)
   useEffect(() => {
@@ -409,7 +414,7 @@ export function GitHubBackupSettings() {
           setTestLoading(false);
           return;
         }
-        result = await api.testGitHubConnection(repoUrl, accessToken);
+        result = await api.testGitHubConnection(repoUrl, accessToken, provider);
       } else if (config?.has_token) {
         // Use stored credentials
         result = await api.testGitHubStoredConnection();
@@ -441,6 +446,7 @@ export function GitHubBackupSettings() {
       repository_url: repoUrl,
       access_token: accessToken,
       branch,
+      provider,
       schedule_enabled: scheduleEnabled,
       schedule_type: scheduleType,
       backup_kprofiles: backupKProfiles,
@@ -486,6 +492,22 @@ export function GitHubBackupSettings() {
                 <p className="text-sm text-bambu-gray">
                   {t('backup.githubDescription')}
                 </p>
+
+            {/* Provider Selection */}
+            <div>
+              <label htmlFor="git-provider-select" className="block text-sm text-bambu-gray mb-1">{t('backup.provider')}</label>
+              <select
+                id="git-provider-select"
+                value={provider}
+                onChange={(e) => { setProvider(e.target.value as GitProviderType); setTestResult(null); }}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              >
+                <option value="github">{t('backup.providerGitHub')}</option>
+                <option value="github_enterprise">{t('backup.providerGitHubEnterprise')}</option>
+                <option value="gitea">{t('backup.providerGitea')}</option>
+                <option value="gitlab">{t('backup.providerGitLab')}</option>
+              </select>
+            </div>
 
                 {/* Repository URL */}
                 <div>

@@ -21,7 +21,7 @@ class GitProviderBackend(ABC):
         """Return (owner, repo) extracted from the repository URL."""
 
     @abstractmethod
-    def get_api_base(self, repo_url: str, api_base_url: str | None) -> str:
+    def get_api_base(self, repo_url: str) -> str:
         """Return the API base URL for this provider instance."""
 
     @abstractmethod
@@ -36,6 +36,5 @@ class GitProviderBackend(ABC):
         branch: str,
         files: dict,
         client: httpx.AsyncClient,
-        api_base_url: str | None = None,
     ) -> dict:
         """Push files to the repository. Returns status/message/commit_sha/files_changed."""

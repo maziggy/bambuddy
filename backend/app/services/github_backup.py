@@ -100,9 +100,7 @@ class GitHubBackupService:
         interval = SCHEDULE_INTERVALS.get(schedule_type, SCHEDULE_INTERVALS["daily"])
         return now + timedelta(seconds=interval)
 
-    async def test_connection(
-        self, repo_url: str, token: str, provider: str = "github", api_base_url: str | None = None
-    ) -> dict:
+    async def test_connection(self, repo_url: str, token: str, provider: str = "github") -> dict:
         """Test connection and permissions for the given provider."""
         backend = get_provider_backend(provider)
         client = await self._get_client()
@@ -532,7 +530,6 @@ class GitHubBackupService:
             branch=config.branch,
             files=files,
             client=client,
-            api_base_url=getattr(config, "api_base_url", None),
         )
 
     @property

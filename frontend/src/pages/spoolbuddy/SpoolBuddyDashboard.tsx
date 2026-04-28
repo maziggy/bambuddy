@@ -4,6 +4,7 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api, type InventorySpool, type Printer, type PrinterStatus } from '../../api/client';
+import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
 import { useToast } from '../../contexts/ToastContext';
 import { SpoolIcon } from '../../components/spoolbuddy/SpoolIcon';
 import { SpoolInfoCard, UnknownTagCard } from '../../components/spoolbuddy/SpoolInfoCard';
@@ -207,7 +208,7 @@ export function SpoolBuddyDashboard() {
   const [showAssignAmsModal, setShowAssignAmsModal] = useState(false);
   const [showQuickAddModal, setShowQuickAddModal] = useState(false);
   const [quickAddBusy, setQuickAddBusy] = useState(false);
-  const [justLinkedSpool, setJustLinkedSpool] = useState<InventorySpool | null>(null);
+  const [justLinkedSpool, setJustLinkedSpool] = useState<Omit<MatchedSpool, 'tag_uid'> | null>(null);
 
   // Track current tag from state
   const currentTagId = sbState.matchedSpool?.tag_uid ?? sbState.unknownTagUid ?? null;
@@ -233,9 +234,11 @@ export function SpoolBuddyDashboard() {
     if (!displayedTagId) return null;
     const byTag = spools.find((s) => tagsEquivalent(s.tag_uid, displayedTagId));
     if (byTag) return byTag;
-    // Spoolman stores the tag as tray_uuid in extra.tag — tag_uid stays null after
-    // linking, so tagsEquivalent never matches. Use the spool returned by the link
-    // call directly until the device re-scans and sbState.matchedSpool is populated.
+    // When a Bambu tray UUID (32-char) is linked, Spoolman stores it in extra.tag and
+    // _map_spoolman_spool routes it to tray_uuid, not tag_uid. tagsEquivalent only
+    // compares tag_uid, so it misses this spool until the device re-scans and
+    // sbState.matchedSpool is populated. Hold the spool returned by the link call
+    // as a temporary bridge.
     if (justLinkedSpool) return justLinkedSpool;
     return null;
   }, [displayedTagId, sbState.matchedSpool, spools, justLinkedSpool]);
@@ -285,11 +288,20 @@ export function SpoolBuddyDashboard() {
     if (!displayedTagId) return;
     try {
       if (spoolmanMode) {
-        const updated = await api.linkTagToSpoolmanSpool(spool.id, {
-          tray_uuid: sbState.unknownTrayUuid || undefined,
-          tag_uid: (!sbState.unknownTrayUuid && sbState.unknownTagUid) ? sbState.unknownTagUid : undefined,
-        });
-        setJustLinkedSpool(updated);
+        const tray_uuid = sbState.unknownTrayUuid || undefined;
+        const tag_uid = (!sbState.unknownTrayUuid && sbState.unknownTagUid) ? sbState.unknownTagUid : undefined;
+        if (!tray_uuid && !tag_uid) {
+          showToast(t('spoolman.linkFailed'), 'error');
+          return;
+        }
+        const raw = await api.linkTagToSpoolmanSpool(spool.id, { tray_uuid, tag_uid });
+        const updated = raw as InventorySpool | undefined;
+        if (!updated) {
+          showToast(t('spoolman.linkFailed'), 'error');
+          return;
+        }
+        const { id, material, subtype, color_name, rgba, brand, label_weight, core_weight, weight_used } = updated;
+        setJustLinkedSpool({ id, material, subtype, color_name, rgba, brand, label_weight, core_weight, weight_used });
         showToast(t('spoolman.linkSuccess'), 'success');
       } else {
         await api.linkTagToSpool(spool.id, {
@@ -298,13 +310,12 @@ export function SpoolBuddyDashboard() {
           data_origin: 'nfc_link',
         });
       }
-      setShowLinkModal(false);
       refetchSpools();
     } catch (e) {
       console.error('Failed to link tag:', e);
-      if (spoolmanMode) {
-        showToast(t('spoolman.linkFailed'), 'error');
-      }
+      showToast(t('spoolman.linkFailed'), 'error');
+    } finally {
+      setShowLinkModal(false);
     }
   };
 

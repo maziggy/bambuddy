@@ -71,6 +71,24 @@ class PrintScheduler:
         self._min_drying_seconds = 1800  # 30 minutes minimum before humidity re-check can stop drying
         # Track which printers are currently auto-drying (printer_id -> start timestamp)
         self._drying_in_progress: dict[int, float] = {}
+        # Defensive in-memory dispatch hold (#1157): a printer that just received
+        # a project_file command must not get a second dispatch until either it
+        # transitions out of pre_state OR the hard timeout expires. The H2D Pro
+        # can take 80–210 s to flip FINISH→PREPARE after project_file, and
+        # during that window the DB busy_printers seed is empirically unreliable
+        # (multi-plate batches double-/triple-dispatched onto the same printer
+        # 30 s apart). Keyed by printer_id; cleared by the watchdog on success
+        # or revert.
+        # printer_id -> (monotonic_started_at, pre_state, pre_subtask_id)
+        self._dispatch_holds: dict[int, tuple[float, str, str | None]] = {}
+        # Minimum cooldown between dispatches to the same printer (covers the
+        # H2D's project_file digestion window).
+        self._dispatch_min_cooldown = 60.0
+        # Hard timeout — drop the hold even if we never observed a transition,
+        # so a lost MQTT session can't lock a printer out of the queue forever.
+        # Matches the watchdog timeout (90 s) plus a safety margin so the
+        # watchdog runs first on the unhappy path.
+        self._dispatch_max_hold = 180.0
 
     async def run(self):
         """Main loop - check queue every interval."""
@@ -148,6 +166,18 @@ class PrintScheduler:
                 .where(PrintQueueItem.printer_id.is_not(None))
             )
             busy_printers: set[int] = {pid for (pid,) in busy_result.all() if pid is not None}
+
+            # Defense-in-depth (#1157): augment busy_printers with any printer
+            # still in its post-dispatch hold window. Empirically, the DB seed
+            # above can miss in-flight items in a multi-plate batch — same-file
+            # plates were being dispatched 30 s apart while the H2D was still
+            # digesting the first project_file. The hold is keyed in-memory and
+            # released by the watchdog on the success path, so it adds a layer
+            # that doesn't depend on DB row visibility or completion-callback
+            # timing.
+            for held_printer_id in list(self._dispatch_holds.keys()):
+                if self._printer_in_dispatch_hold(held_printer_id):
+                    busy_printers.add(held_printer_id)
 
             # Log skip reasons once per queue check (not per item)
             skip_reasons: dict[str, int] = {}
@@ -1118,6 +1148,70 @@ class PrintScheduler:
 
         return mapping
 
+    def _mark_printer_dispatched(
+        self,
+        printer_id: int,
+        pre_state: str | None,
+        pre_subtask_id: str | None,
+    ) -> None:
+        """Record that a print command was just sent to ``printer_id``.
+
+        Held until either the watchdog observes a state/subtask transition
+        (success path) or the hard timeout expires. See ``_dispatch_holds``.
+        """
+        if not pre_state:
+            # No pre_state means we can't detect a transition — fall back to a
+            # pure time-based hold using empty string as a sentinel that won't
+            # match any real printer state.
+            pre_state = ""
+        self._dispatch_holds[printer_id] = (time.monotonic(), pre_state, pre_subtask_id)
+
+    def _release_dispatch_hold(self, printer_id: int) -> None:
+        """Drop the dispatch hold for ``printer_id`` (called by the watchdog)."""
+        self._dispatch_holds.pop(printer_id, None)
+
+    def _printer_in_dispatch_hold(self, printer_id: int) -> bool:
+        """True if ``printer_id`` is still inside its post-dispatch hold window.
+
+        Returns False (and clears the hold) once any of these are true:
+          - hard timeout (``_dispatch_max_hold``) has elapsed
+          - the printer has transitioned out of pre_state and we're past the
+            minimum cooldown
+          - the printer's subtask_id has advanced past pre_subtask_id and we're
+            past the minimum cooldown
+        Otherwise the printer is held — caller should treat it as busy.
+        """
+        entry = self._dispatch_holds.get(printer_id)
+        if not entry:
+            return False
+        started_at, pre_state, pre_subtask_id = entry
+        elapsed = time.monotonic() - started_at
+
+        if elapsed >= self._dispatch_max_hold:
+            self._dispatch_holds.pop(printer_id, None)
+            return False
+
+        # Without a pre_state we can't detect a transition — fall back to the
+        # min cooldown alone, then drop the hold.
+        if not pre_state:
+            if elapsed >= self._dispatch_min_cooldown:
+                self._dispatch_holds.pop(printer_id, None)
+                return False
+            return True
+
+        status = printer_manager.get_status(printer_id)
+        current_state = getattr(status, "state", None) if status else None
+        current_subtask_id = getattr(status, "subtask_id", None) if status else None
+        transitioned = (current_state is not None and current_state != pre_state) or (
+            pre_subtask_id is not None and current_subtask_id is not None and current_subtask_id != pre_subtask_id
+        )
+
+        if transitioned and elapsed >= self._dispatch_min_cooldown:
+            self._dispatch_holds.pop(printer_id, None)
+            return False
+
+        return True
+
     def _is_printer_idle(self, printer_id: int, require_plate_clear: bool = True) -> bool:
         """Check if a printer is connected and idle."""
         if not printer_manager.is_connected(printer_id):
@@ -1870,6 +1964,12 @@ class PrintScheduler:
         if started:
             logger.info("Queue item %s: Print started successfully - %s", item.id, filename)
 
+            # Hold the printer against further dispatches until the watchdog
+            # confirms the printer transitioned (or until the hard timeout).
+            # Prevents multi-plate batches from triple-dispatching onto the
+            # same H2D Pro while it digests the first project_file (#1157).
+            self._mark_printer_dispatched(item.printer_id, pre_state, pre_subtask_id)
+
             # Watchdog: if the printer never transitions out of pre_state AND
             # never advances subtask_id, the MQTT publish was accepted locally but
             # didn't reach the printer (half-broken session — same shape as
@@ -1990,14 +2090,27 @@ class PrintScheduler:
             await asyncio.sleep(poll_interval)
             status = printer_manager.get_status(printer_id)
             if not status:
-                return  # Printer disconnected — don't mess with the DB
+                # Printer disconnected — don't mess with the DB. Drop the
+                # in-memory dispatch hold too so a fresh dispatch can retry
+                # once the printer comes back; the hard timeout would
+                # otherwise hold the printer unnecessarily.
+                scheduler._release_dispatch_hold(printer_id)
+                return
             last_status = status
             if status.state != pre_state:
-                return  # Printer picked up the job (state transition)
+                # Printer picked up the job (state transition) — release the
+                # post-dispatch hold so the next pending item for this printer
+                # can be evaluated normally.
+                scheduler._release_dispatch_hold(printer_id)
+                return
             if pre_subtask_id is not None and status.subtask_id is not None and status.subtask_id != pre_subtask_id:
-                return  # Printer picked up the job (subtask_id advanced)
+                # Printer picked up the job (subtask_id advanced)
+                scheduler._release_dispatch_hold(printer_id)
+                return
 
         # No transition. Revert the item so the scheduler can retry.
+        # Drop the in-memory hold so the retry isn't blocked by it.
+        scheduler._release_dispatch_hold(printer_id)
         async with async_session() as db:
             item = await db.get(PrintQueueItem, queue_item_id)
             if not item or item.status != "printing":

@@ -2360,9 +2360,15 @@ async def _try_preview_slice_filaments(
     source_id: int,
     plate_id: int,
     file_path: Path,
+    request_id: str | None = None,
 ) -> list[dict] | None:
     """Run a preview slice via the user's configured sidecar. Same shape as
-    the matching helper in archives.py — see that module for rationale."""
+    the matching helper in archives.py — see that module for rationale.
+
+    ``request_id``: when supplied, forwarded to the sidecar so the
+    SliceModal's inline spinner + toast can poll the matching progress
+    endpoint and show "Generating G-code (45%)" for the preview as well.
+    """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
 
@@ -2389,6 +2395,7 @@ async def _try_preview_slice_filaments(
         file_bytes=file_bytes,
         file_name=file_path.name,
         api_url=api_url,
+        request_id=request_id,
     )
 
 
@@ -2396,6 +2403,7 @@ async def _try_preview_slice_filaments(
 async def get_library_file_filament_requirements(
     file_id: int,
     plate_id: int | None = None,
+    request_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
@@ -2532,6 +2540,7 @@ async def get_library_file_filament_requirements(
                         source_id=file_id,
                         plate_id=plate_id,
                         file_path=file_path,
+                        request_id=request_id,
                     )
                     if preview is not None:
                         used_slot_ids = {f["slot_id"] for f in preview}
@@ -2629,6 +2638,7 @@ async def _run_slicer_with_fallback(
     model_filename: str,
     request: SliceRequest,
     current_user_id: int | None = None,
+    job_id: int | None = None,
 ):
     """Validate presets, dispatch to the right sidecar, run the slicer with
     the auto-fallback for 3MF inputs whose `--load-settings` path crashes the
@@ -2638,6 +2648,13 @@ async def _run_slicer_with_fallback(
     `current_user_id` is needed to resolve **cloud** presets — the cloud token
     is per-user when auth is enabled. For the legacy / local-only path it can
     be left ``None``.
+
+    `job_id`: when set, a request_id is generated and a parallel poller
+    pushes the sidecar's --pipe-fed progress events onto
+    ``slice_dispatch.set_progress(job_id, ...)`` so the UI's persistent
+    toast can show "Generating G-code (75%)" instead of just elapsed
+    time. Pass None for synchronous routes that aren't tracked by the
+    dispatcher.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.preset_resolver import resolve_preset_ref
@@ -2710,6 +2727,23 @@ async def _run_slicer_with_fallback(
 
     used_embedded_settings = False
     service = SlicerApiService(api_url)
+    # When this slice is dispatcher-tracked, generate a request_id so
+    # the sidecar publishes progress under it, and wire a callback that
+    # forwards each frame onto SliceDispatchService.set_progress for the
+    # status-poll endpoint to surface to the UI.
+    progress_request_id: str | None = None
+    progress_callback = None
+    if job_id is not None:
+        from uuid import uuid4
+
+        from backend.app.services.slice_dispatch import slice_dispatch as _dispatch
+
+        progress_request_id = str(uuid4())
+
+        def _on_progress(snapshot: dict) -> None:
+            _dispatch.set_progress(job_id, snapshot)
+
+        progress_callback = _on_progress
     try:
         try:
             result = await service.slice_with_profiles(
@@ -2720,6 +2754,8 @@ async def _run_slicer_with_fallback(
                 filament_profile_jsons=filament_jsons,
                 plate=request.plate,
                 export_3mf=request.export_3mf,
+                request_id=progress_request_id,
+                on_progress=progress_callback,
             )
         except SlicerApiServerError as exc:
             if not is_3mf:
@@ -2729,11 +2765,16 @@ async def _run_slicer_with_fallback(
                 model_filename,
                 exc,
             )
+            # Forward the same request_id + callback so the toast's live
+            # progress keeps updating across the fallback retry instead
+            # of going blank for the rest of the slice.
             result = await service.slice_without_profiles(
                 model_bytes=model_bytes,
                 model_filename=model_filename,
                 plate=request.plate,
                 export_3mf=request.export_3mf,
+                request_id=progress_request_id,
+                on_progress=progress_callback,
             )
             used_embedded_settings = True
     except SlicerInputError as exc:
@@ -2757,6 +2798,7 @@ async def slice_and_persist(
     extra_metadata: dict | None,
     request: SliceRequest,
     current_user_id: int | None,
+    job_id: int | None = None,
 ) -> SliceResponse:
     """Slice a model and save the result as a new ``LibraryFile`` in
     ``folder_id`` (same folder as the source by convention).
@@ -2775,6 +2817,7 @@ async def slice_and_persist(
         model_filename=model_filename,
         request=library_request,
         current_user_id=current_user_id,
+        job_id=job_id,
     )
 
     base_name = model_filename.rsplit(".", 1)[0]
@@ -2862,6 +2905,7 @@ async def slice_and_persist_as_archive(
     request: SliceRequest,
     source_archive,  # PrintArchive — hint kept loose to avoid cyclic import
     current_user_id: int | None,
+    job_id: int | None = None,
 ):
     """Slice a model and save the result as a new ``PrintArchive`` row,
     inheriting printer / project / makerworld metadata from the source
@@ -2882,6 +2926,7 @@ async def slice_and_persist_as_archive(
         model_bytes=model_bytes,
         model_filename=model_filename,
         request=archive_request,
+        job_id=job_id,
         current_user_id=current_user_id,
     )
 
@@ -3031,7 +3076,7 @@ async def slice_library_file(
     src_ext = Path(lib_file.filename).suffix.lower() or ".3mf"
     model_filename = f"{src_print_name}{src_ext}" if src_print_name else lib_file.filename
 
-    async def _run():
+    async def _run(job_id: int):
         async with async_session() as task_db:
             try:
                 response = await slice_and_persist(
@@ -3042,6 +3087,7 @@ async def slice_library_file(
                     extra_metadata={"sliced_from_library_file_id": source_lib_file_id},
                     request=request,
                     current_user_id=user_id,
+                    job_id=job_id,
                 )
             except HTTPException as exc:
                 raise http_exception_to_job_error(exc) from exc

@@ -4100,6 +4100,25 @@ export function SettingsPage() {
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.preferredSlicerDescription')}
                 </p>
+                {/* Upstream OrcaSlicer 2.3.2 / 2.4.0-dev have two known
+                    CLI bugs that block slicing many Bambu-authored 3MFs:
+                    a SIGSEGV on painted multi-extruder 3MFs (#12426) and
+                    a strict range-check on sentinel parameter values
+                    BambuStudio writes by default. Until the upstream
+                    fixes land, surface a clear warning when a user has
+                    OrcaSlicer selected so they know what to expect; we
+                    don't auto-switch them in case they're testing. */}
+                {(localSettings.preferred_slicer ?? 'bambu_studio') === 'orcaslicer' && (
+                  <div
+                    role="alert"
+                    className="text-xs text-amber-200 bg-amber-900/20 border border-amber-700/40 rounded p-2 mt-2"
+                  >
+                    {t(
+                      'settings.orcaslicerKnownIssuesWarning',
+                      'OrcaSlicer 2.3.2 / 2.4.0-dev have known CLI bugs that block slicing many Bambu-authored 3MFs — see upstream issues #12426 (segfault on painted multi-extruder files) and #13386 (parameter-range strict-validation reject). Bambu Studio is recommended until the upstream fixes land.',
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">

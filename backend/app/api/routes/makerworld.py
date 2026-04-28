@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -339,7 +340,12 @@ async def import_instance(
     # filename regardless (see library.py), so this is defence-in-depth.
     raw_name = manifest.get("name")
     if isinstance(raw_name, str) and raw_name.strip():
-        suggested_name = os.path.basename(raw_name.strip()) or f"makerworld-{body.model_id}.3mf"
+        # MakerWorld emits percent-encoded names (`%20` for spaces, etc.)
+        # because the same string round-trips through HTTP URLs in the
+        # CDN download path. Decode before persisting so the library
+        # row, the slice toast, and every later UI surface show the
+        # human-readable form.
+        suggested_name = os.path.basename(unquote(raw_name.strip())) or f"makerworld-{body.model_id}.3mf"
     else:
         suggested_name = f"makerworld-{body.model_id}.3mf"
     if not signed_url or not isinstance(signed_url, str):
@@ -369,8 +375,10 @@ async def import_instance(
         await service.close()
 
     # Prefer the server-provided human-readable filename; the signed URL's
-    # path ends in a UUID that's not meaningful to users.
-    filename = suggested_name if suggested_name.endswith(".3mf") else download_filename
+    # path ends in a UUID that's not meaningful to users. Decode the
+    # fallback path-tail too — same percent-encoding round-trip applies
+    # there as on the manifest-supplied name.
+    filename = suggested_name if suggested_name.endswith(".3mf") else unquote(download_filename)
 
     library_file, was_existing = await save_3mf_bytes_to_library(
         db,

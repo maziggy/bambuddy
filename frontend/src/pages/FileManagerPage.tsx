@@ -376,6 +376,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
   const { data: projects } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.getProjects(),
+    select: (rows) => [...rows].sort((a, b) => a.name.localeCompare(b.name)),
   });
 
   const { data: archives } = useQuery({

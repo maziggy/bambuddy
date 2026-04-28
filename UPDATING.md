@@ -1,9 +1,8 @@
 # Updating Bambuddy
 
-> **One-time note for 0.2.2.x → 0.2.3:** the in-app **Update** button does not
-> reliably perform this specific migration. Do this one upgrade from the
-> command line using the steps below. Once you're on 0.2.3, the in-app Update
-> button works normally again for all future releases.
+> **0.2.3 note:** the in-app **Update** button is unreliable when upgrading from
+> older releases. Use the commands below instead — they cover every supported
+> install path and are safe to run repeatedly.
 
 Pick the section that matches how Bambuddy was installed.
 
@@ -75,7 +74,10 @@ These installs have no `.git` directory, so neither `update.sh` nor a plain
 
 ```bash
 # 1. Back up your stateful data
-Create and download a backup via Bambuddy Settings -> Backup -> Local Backup
+sudo systemctl stop bambuddy
+sudo tar czf ~/bambuddy-backup.tgz -C /opt/bambuddy \
+  data bambuddy.db bambuddy.db-shm bambuddy.db-wal \
+  virtual_printer archive projects icons .env 2>/dev/null || true
 
 # 2. Remove the old install and reinstall via install.sh
 sudo rm -rf /opt/bambuddy
@@ -83,10 +85,9 @@ curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/install/insta
   -o /tmp/install.sh && sudo bash /tmp/install.sh --path /opt/bambuddy
 
 # 3. Restore your data
-Restore your backup via Bambuddy -> Settings -> Backup -> Local Backup
-
-# 4. Restart Bambuddy
-sudo systemctl restart bambuddy
+sudo systemctl stop bambuddy
+sudo tar xzf ~/bambuddy-backup.tgz -C /opt/bambuddy
+sudo systemctl start bambuddy
 ```
 
 ---

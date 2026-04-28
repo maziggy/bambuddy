@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { OIDCProviderSettings } from '../../components/OIDCProviderSettings';
@@ -105,6 +105,33 @@ describe('OIDCProviderSettings', () => {
         expect(
           screen.getByText(/warning.*accept.*without.*verif/i)
         ).toBeInTheDocument();
+      });
+    });
+
+    it('shows security warning when auto_link is enabled with a custom email claim', async () => {
+      server.use(http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([])));
+      const user = userEvent.setup();
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getAllByRole('button', { name: /Add Provider/i })[0]).toBeInTheDocument();
+      });
+      await user.click(screen.getAllByRole('button', { name: /Add Provider/i })[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Auto.*Link/i)).toBeInTheDocument();
+      });
+
+      // Enable auto_link (switch index 2)
+      const autoLinkSwitch = screen.getAllByRole('switch')[2];
+      await user.click(autoLinkSwitch);
+
+      // Change email claim to a custom value via fireEvent to bypass the onChange fallback
+      const emailClaimInput = screen.getByPlaceholderText('email');
+      fireEvent.change(emailClaimInput, { target: { value: 'preferred_username' } });
+
+      await waitFor(() => {
+        expect(screen.getByText(/tenant-administered/i)).toBeInTheDocument();
       });
     });
   });

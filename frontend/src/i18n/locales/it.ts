@@ -3636,6 +3636,8 @@ export default {
 	repoUrlPlaceholderGitea: 'https://gitea.example.com/username/repo-name',
     repoUrlPlaceholderForgejo: 'https://forgejo.example.com/username/repo-name',
     repoUrlPlaceholderGitLab: 'https://gitlab.com/username/repo-name',
+    allowInsecureHttp: 'Consenti HTTP non sicuro',
+    allowInsecureHttpHint: 'Abilita per istanze self-hosted su reti private senza TLS',
     personalAccessToken: 'Token di accesso personale',
     tokenSaved: '(salvato)',
     enterNewToken: 'Inserisci un nuovo token per aggiornare',
@@ -4784,9 +4786,9 @@ export default {
     configureSlot: 'Configura slot',
   },
 
-  // GitHub Backup Settings
+  // Git Backup Settings
   githubBackup: {
-    title: 'Backup GitHub',
+    title: 'Backup Git',
     history: 'Cronologia',
     downloadBackup: 'Scarica backup',
     restoreBackup: 'Ripristina backup',

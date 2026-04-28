@@ -3637,6 +3637,8 @@ export default {
 	repoUrlPlaceholderGitea: 'https://gitea.example.com/username/repo-name',
     repoUrlPlaceholderForgejo: 'https://forgejo.example.com/username/repo-name',
     repoUrlPlaceholderGitLab: 'https://gitlab.com/username/repo-name',
+    allowInsecureHttp: '允許不安全的 HTTP',
+    allowInsecureHttpHint: '為無 TLS 的私人網路自托管執行個體啟用',
     personalAccessToken: '個人存取權杖',
     tokenSaved: '（已儲存）',
     enterNewToken: '輸入新權杖以更新',
@@ -4784,9 +4786,9 @@ export default {
     configureSlot: '設定槽位',
   },
 
-  // GitHub Backup Settings
+  // Git Backup Settings
   githubBackup: {
-    title: 'GitHub 備份',
+    title: 'Git 備份',
     history: '歷史',
     downloadBackup: '下載備份',
     restoreBackup: '恢復備份',

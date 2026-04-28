@@ -3649,6 +3649,8 @@ export default {
 	repoUrlPlaceholderGitea: 'https://gitea.example.com/username/repo-name',
     repoUrlPlaceholderForgejo: 'https://forgejo.example.com/username/repo-name',
     repoUrlPlaceholderGitLab: 'https://gitlab.com/username/repo-name',
+    allowInsecureHttp: '安全でないHTTPを許可',
+    allowInsecureHttpHint: 'TLSなしのプライベートネットワーク上のセルフホストインスタンスに対して有効化',
     personalAccessToken: '個人アクセストークン',
     tokenSaved: '(保存済み)',
     enterNewToken: '新しいトークンを入力して更新',
@@ -4797,9 +4799,9 @@ export default {
     configureSlot: 'スロットを設定',
   },
 
-  // GitHub Backup Settings
+  // Git Backup Settings
   githubBackup: {
-    title: 'GitHubバックアップ',
+    title: 'Gitバックアップ',
     history: '履歴',
     downloadBackup: 'バックアップをダウンロード',
     restoreBackup: 'バックアップを復元',

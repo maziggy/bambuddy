@@ -93,7 +93,9 @@ async function request<T>(
     const detail = error.detail;
     const message = typeof detail === 'string'
       ? detail
-      : (detail ? JSON.stringify(detail) : `HTTP ${response.status}`);
+      : Array.isArray(detail)
+        ? detail.map((e: { msg?: string }) => (e.msg ?? '').replace(/^Value error,\s*/i, '')).filter(Boolean).join('; ')
+        : `HTTP ${response.status}`;
 
     // Handle 401 Unauthorized - only clear token if it's actually invalid
     // Don't clear on "Authentication required" which might be a timing issue
@@ -1962,6 +1964,7 @@ export interface GitHubBackupConfig {
   has_token: boolean;
   branch: string;
   provider: GitProviderType;
+  allow_insecure_http: boolean;
   schedule_enabled: boolean;
   schedule_type: ScheduleType;
   backup_kprofiles: boolean;
@@ -1984,6 +1987,7 @@ export interface GitHubBackupConfigCreate {
   access_token: string;
   branch?: string;
   provider?: GitProviderType;
+  allow_insecure_http?: boolean;
   schedule_enabled?: boolean;
   schedule_type?: ScheduleType;
   backup_kprofiles?: boolean;

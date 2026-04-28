@@ -3640,7 +3640,7 @@ export default {
     restoreNote: 'Virtueller Drucker wird während der Wiederherstellung gestoppt',
 
     // GitHub Backup
-    githubBackup: 'GitHub Backup',
+    githubBackup: 'Git Backup',
     enabled: 'Aktiviert',
     cloudLoginRequired: 'Bambu Cloud Login erforderlich. Melden Sie sich unter Profile → Cloud-Profile an, um GitHub-Backup zu aktivieren.',
     cloudLoginRequiredShort: 'Cloud-Login erforderlich',
@@ -3650,6 +3650,8 @@ export default {
 	repoUrlPlaceholderGitea: 'https://gitea.example.com/username/repo-name',
     repoUrlPlaceholderForgejo: 'https://forgejo.example.com/username/repo-name',
     repoUrlPlaceholderGitLab: 'https://gitlab.com/username/repo-name',
+    allowInsecureHttp: 'Unsicheres HTTP erlauben',
+    allowInsecureHttpHint: 'Für selbst gehostete Instanzen in privaten Netzwerken ohne TLS aktivieren',
     personalAccessToken: 'Persönlicher Zugriffstoken',
     tokenSaved: '(gespeichert)',
     enterNewToken: 'Neuen Token eingeben zum Aktualisieren',
@@ -4797,9 +4799,9 @@ export default {
     configureSlot: 'Slot konfigurieren',
   },
 
-  // GitHub Backup Settings
+  // Git Backup Settings
   githubBackup: {
-    title: 'GitHub-Backup',
+    title: 'Git-Backup',
     history: 'Verlauf',
     downloadBackup: 'Backup herunterladen',
     restoreBackup: 'Backup wiederherstellen',

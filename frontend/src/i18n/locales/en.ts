@@ -3648,7 +3648,7 @@ export default {
     restoreNote: 'Virtual Printer will be stopped during restore',
 
     // GitHub Backup
-    githubBackup: 'GitHub Backup',
+    githubBackup: 'Git Backup',
     enabled: 'Enabled',
     cloudLoginRequired: 'Bambu Cloud login required. Sign in under Profiles → Cloud Profiles to enable GitHub backup.',
     cloudLoginRequiredShort: 'Cloud login required',
@@ -3658,6 +3658,8 @@ export default {
 	repoUrlPlaceholderGitea: 'https://gitea.example.com/username/repo-name',
     repoUrlPlaceholderForgejo: 'https://forgejo.example.com/username/repo-name',
     repoUrlPlaceholderGitLab: 'https://gitlab.com/username/repo-name',
+    allowInsecureHttp: 'Allow insecure HTTP',
+    allowInsecureHttpHint: 'Enable for self-hosted instances on private networks without TLS',
     personalAccessToken: 'Personal Access Token',
     tokenSaved: '(saved)',
     enterNewToken: 'Enter new token to update',
@@ -4806,9 +4808,9 @@ export default {
     configureSlot: 'Configure Slot',
   },
 
-  // GitHub Backup Settings
+  // Git Backup Settings
   githubBackup: {
-    title: 'GitHub Backup',
+    title: 'Git Backup',
     history: 'History',
     downloadBackup: 'Download Backup',
     restoreBackup: 'Restore Backup',

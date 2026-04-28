@@ -35,6 +35,7 @@ def _config_to_response(config: GitHubBackupConfig) -> dict:
         "has_token": bool(config.access_token),
         "branch": config.branch,
         "provider": getattr(config, "provider", "github") or "github",
+        "allow_insecure_http": config.allow_insecure_http,
         "schedule_enabled": config.schedule_enabled,
         "schedule_type": config.schedule_type,
         "backup_kprofiles": config.backup_kprofiles,
@@ -95,6 +96,7 @@ async def save_config(
         config.backup_settings = config_data.backup_settings
         config.backup_spools = config_data.backup_spools
         config.backup_archives = config_data.backup_archives
+        config.allow_insecure_http = config_data.allow_insecure_http
         config.enabled = config_data.enabled
 
         # Calculate next scheduled run if enabled
@@ -118,6 +120,7 @@ async def save_config(
             backup_settings=config_data.backup_settings,
             backup_spools=config_data.backup_spools,
             backup_archives=config_data.backup_archives,
+            allow_insecure_http=config_data.allow_insecure_http,
             enabled=config_data.enabled,
         )
 
@@ -147,6 +150,17 @@ async def update_config(
         raise HTTPException(status_code=404, detail="No configuration found")
 
     update_dict = update_data.model_dump(exclude_unset=True)
+
+    # Validate HTTP URL restriction when the URL policy is being changed. This avoids blocking unrelated autosaves
+    # for legacy configs that already contain an HTTP URL.
+    if "repository_url" in update_dict or "allow_insecure_http" in update_dict:
+        url_to_check = update_dict.get("repository_url", config.repository_url)
+        effective_allow_http = update_dict.get("allow_insecure_http", config.allow_insecure_http)
+        if url_to_check and url_to_check.startswith("http://") and not effective_allow_http:
+            raise HTTPException(
+                status_code=422,
+                detail="This URL uses HTTP instead of HTTPS. Enable 'Allow insecure HTTP' if your instance does not use TLS.",
+            )
 
     for key, value in update_dict.items():
         if key in ("schedule_type", "provider") and value is not None:

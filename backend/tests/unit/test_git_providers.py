@@ -80,6 +80,94 @@ class TestGiteaBackendApiBase:
         assert repo == "repo"
 
 
+class TestGiteaBackendPushFiles:
+    def setup_method(self):
+        self.backend = GiteaBackend()
+        self.repo_url = "https://git.example.com/owner/repo"
+        self.token = "gitea-token"
+        self.branch = "bambuddy-backup"
+        self.files = {"config/printers.json": {"name": "my-printer"}}
+
+    @pytest.mark.asyncio
+    async def test_creates_file_using_contents_api(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"name": self.branch}),
+                _make_mock_response(404, {}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "abc123"}}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, self.files, client)
+
+        assert result["status"] == "success"
+        assert result["commit_sha"] == "abc123"
+        assert result["files_changed"] == 1
+        assert "/contents/config/printers.json" in client.post.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_updates_existing_changed_file_using_contents_api(self):
+        stale_sha = "0000000000000000000000000000000000000000"
+
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"name": self.branch}),
+                _make_mock_response(200, {"sha": stale_sha}),
+            ]
+        )
+        client.put = AsyncMock(return_value=_make_mock_response(200, {"commit": {"id": "def456"}}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, self.files, client)
+
+        assert result["status"] == "success"
+        assert result["commit_sha"] == "def456"
+        payload = client.put.call_args.kwargs["json"]
+        assert payload["sha"] == stale_sha
+
+    @pytest.mark.asyncio
+    async def test_skips_unchanged_existing_file(self):
+        sha = _blob_sha(self.files["config/printers.json"])
+
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"name": self.branch}),
+                _make_mock_response(200, {"sha": sha}),
+            ]
+        )
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, self.files, client)
+
+        assert result["status"] == "skipped"
+        client.post.assert_not_called()
+        client.put.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_creates_missing_branch_from_default_branch(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(404, {}),
+                _make_mock_response(200, {"default_branch": "main"}),
+                _make_mock_response(404, {}),
+            ]
+        )
+        client.post = AsyncMock(
+            side_effect=[
+                _make_mock_response(201, {"name": self.branch}),
+                _make_mock_response(201, {"commit": {"sha": "abc123"}}),
+            ]
+        )
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, self.files, client)
+
+        assert result["status"] == "success"
+        branch_payload = client.post.call_args_list[0].kwargs["json"]
+        assert branch_payload["new_branch_name"] == self.branch
+
+
 class TestForgejoBackendApiBase:
     def setup_method(self):
         self.backend = ForgejoBackend()
@@ -140,9 +228,7 @@ class TestGitLabBackend:
 
 def _blob_sha(content: dict) -> str:
     content_bytes = json.dumps(content, indent=2, default=str).encode("utf-8")
-    return hashlib.sha1(
-        f"blob {len(content_bytes)}\0".encode() + content_bytes, usedforsecurity=False
-    ).hexdigest()
+    return hashlib.sha1(f"blob {len(content_bytes)}\0".encode() + content_bytes, usedforsecurity=False).hexdigest()
 
 
 def _make_mock_response(status_code: int, body=None):
@@ -191,9 +277,7 @@ class TestGitLabBackendPushFiles:
                 _make_mock_response(200, [{"type": "blob", "path": "config/printers.json", "id": stale_sha}]),
             ]
         )
-        client.post = AsyncMock(
-            return_value=_make_mock_response(201, {"id": "abc123"})
-        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"id": "abc123"}))
 
         result = await self.backend.push_files(self.repo_url, self.token, self.branch, self.files, client)
 
@@ -211,9 +295,7 @@ class TestGitLabBackendPushFiles:
                 _make_mock_response(200, []),
             ]
         )
-        client.post = AsyncMock(
-            return_value=_make_mock_response(201, {"id": "def456"})
-        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"id": "def456"}))
 
         result = await self.backend.push_files(self.repo_url, self.token, self.branch, self.files, client)
 

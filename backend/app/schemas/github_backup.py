@@ -3,7 +3,7 @@
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, model_validator
 
 from backend.app.core.compat import StrEnum
 
@@ -42,20 +42,31 @@ class GitHubBackupConfigCreate(BaseModel):
     backup_spools: bool = Field(default=False, description="Backup spool inventory")
     backup_archives: bool = Field(default=False, description="Backup print archive history")
 
+    allow_insecure_http: bool = Field(default=False, description="Allow HTTP (non-TLS) repository URLs")
     enabled: bool = Field(default=True, description="Enable backup feature")
 
-    @field_validator("repository_url")
-    @classmethod
-    def validate_repo_url(cls, v: str) -> str:
-        """Validate Git repository URL format."""
-        patterns = [
+    @model_validator(mode="after")
+    def validate_repo_url(self) -> "GitHubBackupConfigCreate":
+        url = self.repository_url.strip().rstrip("/")
+        self.repository_url = url
+        https_or_ssh = [
             r"^https://[\w.-]+(:\d+)?/[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?/?$",
             r"^git@[\w.-]+:[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?$",
         ]
-        v = v.strip().rstrip("/")
-        if not any(re.match(p, v) for p in patterns):
-            raise ValueError("Invalid Git repository URL. Expected format: https://host/owner/repo")
-        return v
+        http_pattern = r"^http://[\w.-]+(:\d+)?/[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?/?$"
+        if any(re.match(p, url) for p in https_or_ssh):
+            return self
+        if re.match(http_pattern, url):
+            if not self.allow_insecure_http:
+                raise ValueError(
+                    "This URL uses HTTP instead of HTTPS. "
+                    "Enable 'Allow insecure HTTP' if your instance does not use TLS."
+                )
+            return self
+        raise ValueError(
+            "Invalid Git repository URL. Expected: https://host/owner/repo, "
+            "http://host/owner/repo (with 'Allow insecure HTTP' enabled), or git@host:owner/repo"
+        )
 
 
 class GitHubBackupConfigUpdate(BaseModel):
@@ -75,21 +86,25 @@ class GitHubBackupConfigUpdate(BaseModel):
     backup_spools: bool | None = None
     backup_archives: bool | None = None
 
+    allow_insecure_http: bool | None = None
     enabled: bool | None = None
 
-    @field_validator("repository_url")
-    @classmethod
-    def validate_repo_url(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        patterns = [
-            r"^https://[\w.-]+(:\d+)?/[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?/?$",
+    @model_validator(mode="after")
+    def validate_repo_url(self) -> "GitHubBackupConfigUpdate":
+        if self.repository_url is None:
+            return self
+        url = self.repository_url.strip().rstrip("/")
+        self.repository_url = url
+        valid_patterns = [
+            r"^https?://[\w.-]+(:\d+)?/[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?/?$",
             r"^git@[\w.-]+:[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?$",
         ]
-        v = v.strip().rstrip("/")
-        if not any(re.match(p, v) for p in patterns):
-            raise ValueError("Invalid Git repository URL")
-        return v
+        if not any(re.match(p, url) for p in valid_patterns):
+            raise ValueError(
+                "Invalid repository URL. Expected: https://host/owner/repo, "
+                "http://host/owner/repo, or git@host:owner/repo"
+            )
+        return self
 
 
 class GitHubBackupConfigResponse(BaseModel):
@@ -100,6 +115,7 @@ class GitHubBackupConfigResponse(BaseModel):
     has_token: bool = Field(description="Whether an access token is configured")
     branch: str
     provider: str
+    allow_insecure_http: bool
 
     schedule_enabled: bool
     schedule_type: str

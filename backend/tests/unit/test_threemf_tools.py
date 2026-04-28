@@ -5,11 +5,14 @@ and cumulative layer usage lookup.
 """
 
 import io
+import json
 import math
 import zipfile
 
 from backend.app.utils.threemf_tools import (
     extract_filament_usage_from_3mf,
+    extract_plate_extruder_set_from_3mf,
+    extract_project_filaments_from_3mf,
     get_cumulative_usage_at_layer,
     mm_to_grams,
     parse_gcode_layer_filament_usage,
@@ -408,3 +411,237 @@ class TestExtractFilamentUsageFrom3mf:
         assert len(result) == 1
         assert result[0]["type"] == ""
         assert result[0]["color"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Tests for extract_project_filaments_from_3mf — used by the slice modal as
+# fallback when the sidecar can't run a preview slice.
+# ---------------------------------------------------------------------------
+
+
+def _make_3mf_with(files: dict[str, bytes | str]) -> zipfile.ZipFile:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, content in files.items():
+            zf.writestr(name, content if isinstance(content, (bytes, str)) else str(content))
+    buf.seek(0)
+    return zipfile.ZipFile(buf, "r")
+
+
+class TestExtractProjectFilamentsFrom3mf:
+    """The helper backfills the slice modal when slice_info.config is empty
+    (raw project files) and the sidecar is unreachable."""
+
+    def test_returns_empty_when_project_settings_missing(self):
+        with _make_3mf_with({"placeholder.txt": "hi"}) as zf:
+            assert extract_project_filaments_from_3mf(zf) == []
+
+    def test_happy_path_returns_one_entry_per_slot(self):
+        proj = {
+            "filament_type": ["PLA", "PETG"],
+            "filament_colour": ["#000000", "#FFFFFF"],
+        }
+        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
+            out = extract_project_filaments_from_3mf(zf)
+        assert [(f["slot_id"], f["type"], f["color"]) for f in out] == [
+            (1, "PLA", "#000000"),
+            (2, "PETG", "#FFFFFF"),
+        ]
+
+    def test_mismatched_array_lengths_use_max_with_blanks(self):
+        proj = {
+            "filament_type": ["PLA", "PETG", "ABS"],
+            "filament_colour": ["#000000"],
+        }
+        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
+            out = extract_project_filaments_from_3mf(zf)
+        assert len(out) == 3
+        assert out[0]["color"] == "#000000"
+        assert out[1]["color"] == ""
+        assert out[2]["color"] == ""
+
+    def test_corrupt_json_returns_empty_no_exception(self):
+        with _make_3mf_with({"Metadata/project_settings.config": b"{not json"}) as zf:
+            assert extract_project_filaments_from_3mf(zf) == []
+
+    def test_root_is_list_returns_empty(self):
+        # Defensive: spec says it's a dict, but a file shipping a top-level
+        # list (or anything non-dict) shouldn't crash the modal.
+        with _make_3mf_with({"Metadata/project_settings.config": json.dumps([])}) as zf:
+            assert extract_project_filaments_from_3mf(zf) == []
+
+    def test_empty_arrays_returns_empty(self):
+        proj = {"filament_type": [], "filament_colour": []}
+        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
+            assert extract_project_filaments_from_3mf(zf) == []
+
+
+# ---------------------------------------------------------------------------
+# Tests for extract_plate_extruder_set_from_3mf — three sources unioned:
+# object top-level extruder, per-part extruder, painted-face quadtree leaves.
+# ---------------------------------------------------------------------------
+
+
+def _model_settings(plate_id: int, objects: list[dict]) -> str:
+    """Build a minimal model_settings.config XML for tests. Each object dict
+    can have: id, extruder (top-level), parts (list of {extruder}).
+    The plate references all object ids."""
+    parts_xml = []
+    for obj in objects:
+        oid = obj["id"]
+        ext = obj.get("extruder")
+        parts = obj.get("parts", [])
+        ext_meta = f'<metadata key="extruder" value="{ext}"/>' if ext is not None else ""
+        part_blocks = "".join(
+            f'<part id="{i}" subtype="normal_part"><metadata key="extruder" value="{p["extruder"]}"/></part>'
+            for i, p in enumerate(parts)
+            if p.get("extruder") is not None
+        )
+        parts_xml.append(f'<object id="{oid}"><metadata key="name" value="o{oid}"/>{ext_meta}{part_blocks}</object>')
+    instances = "".join(
+        f'<model_instance><metadata key="object_id" value="{o["id"]}"/></model_instance>' for o in objects
+    )
+    plate = f'<plate><metadata key="plater_id" value="{plate_id}"/>{instances}</plate>'
+    return f'<?xml version="1.0"?><config>{"".join(parts_xml)}{plate}</config>'
+
+
+class TestExtractPlateExtruderSetFrom3mf:
+    def test_returns_empty_set_when_model_settings_missing(self):
+        with _make_3mf_with({"placeholder.txt": "hi"}) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == set()
+
+    def test_object_top_level_extruder_only(self):
+        xml = _model_settings(plate_id=1, objects=[{"id": "10", "extruder": 2}])
+        with _make_3mf_with({"Metadata/model_settings.config": xml}) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {2}
+
+    def test_per_part_extruder_unions_with_top_level(self):
+        # Object's default is 1; one of its parts overrides to 3 (multi-color
+        # via a sub-mesh). Union both — the slicer needs profiles for both.
+        xml = _model_settings(
+            plate_id=1,
+            objects=[{"id": "10", "extruder": 1, "parts": [{"extruder": 3}]}],
+        )
+        with _make_3mf_with({"Metadata/model_settings.config": xml}) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {1, 3}
+
+    def test_unknown_plate_id_returns_empty_set(self):
+        xml = _model_settings(plate_id=1, objects=[{"id": "10", "extruder": 2}])
+        with _make_3mf_with({"Metadata/model_settings.config": xml}) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=99) == set()
+
+    def test_corrupt_xml_returns_empty_set_no_exception(self):
+        with _make_3mf_with({"Metadata/model_settings.config": "<not valid xml"}) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == set()
+
+    def test_zero_extruder_value_ignored(self):
+        # Bambu's 0 means "use object default" — not a real slot.
+        xml = _model_settings(plate_id=1, objects=[{"id": "10", "extruder": 0}])
+        with _make_3mf_with({"Metadata/model_settings.config": xml}) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == set()
+
+    def test_painted_face_above_threshold_kept(self):
+        # 60/40 split: 60 triangles painted with extruder 1, 40 with ext 2.
+        # Threshold is 5%; both above. The dominant ones are real colours.
+        triangles = []
+        for _ in range(60):
+            triangles.append('<triangle v1="0" v2="1" v3="2" paint_color="1"/>')
+        for _ in range(40):
+            triangles.append('<triangle v1="0" v2="1" v3="2" paint_color="2"/>')
+        per_obj = (
+            '<?xml version="1.0"?>'
+            '<model><resources><object id="100" type="model"><mesh>'
+            "<triangles>" + "".join(triangles) + "</triangles>"
+            "</mesh></object></resources><build/></model>"
+        )
+        ms = (
+            '<?xml version="1.0"?><config>'
+            '<object id="10"><metadata key="name" value="o"/></object>'
+            '<plate><metadata key="plater_id" value="1"/>'
+            '<model_instance><metadata key="object_id" value="10"/></model_instance>'
+            "</plate></config>"
+        )
+        threed = (
+            '<?xml version="1.0"?>'
+            '<model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
+            ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">'
+            "<resources>"
+            '<object id="10" type="model"><components>'
+            '<component p:path="/3D/Objects/o100.model" objectid="100"/>'
+            "</components></object>"
+            "</resources><build/></model>"
+        )
+        with _make_3mf_with(
+            {
+                "Metadata/model_settings.config": ms,
+                "3D/3dmodel.model": threed,
+                "3D/Objects/o100.model": per_obj,
+            }
+        ) as zf:
+            result = extract_plate_extruder_set_from_3mf(zf, plate_id=1)
+        # Both real colours kept (60/40 well above 5% threshold); the dropped
+        # threshold case is the regression that motivates this test.
+        assert result == {1, 2}
+
+    def test_painted_face_below_threshold_dropped_as_noise(self):
+        # 99 triangles at ext 1, 1 triangle at ext 9 (1% — below 5%
+        # threshold). The 1% leaf is a single-leaf accident.
+        triangles = []
+        for _ in range(99):
+            triangles.append('<triangle v1="0" v2="1" v3="2" paint_color="1"/>')
+        triangles.append('<triangle v1="0" v2="1" v3="2" paint_color="9"/>')
+        per_obj = (
+            '<?xml version="1.0"?>'
+            '<model><resources><object id="100" type="model"><mesh>'
+            "<triangles>" + "".join(triangles) + "</triangles>"
+            "</mesh></object></resources><build/></model>"
+        )
+        ms = (
+            '<?xml version="1.0"?><config>'
+            '<object id="10"><metadata key="name" value="o"/></object>'
+            '<plate><metadata key="plater_id" value="1"/>'
+            '<model_instance><metadata key="object_id" value="10"/></model_instance>'
+            "</plate></config>"
+        )
+        threed = (
+            '<?xml version="1.0"?>'
+            '<model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
+            ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">'
+            '<resources><object id="10" type="model"><components>'
+            '<component p:path="/3D/Objects/o100.model" objectid="100"/>'
+            "</components></object></resources><build/></model>"
+        )
+        with _make_3mf_with(
+            {
+                "Metadata/model_settings.config": ms,
+                "3D/3dmodel.model": threed,
+                "3D/Objects/o100.model": per_obj,
+            }
+        ) as zf:
+            result = extract_plate_extruder_set_from_3mf(zf, plate_id=1)
+        # Single-leaf accident at 1% filtered as noise; only the dominant
+        # extruder survives.
+        assert result == {1}
+
+    def test_missing_per_object_model_file_silently_skipped(self):
+        ms = (
+            '<?xml version="1.0"?><config>'
+            '<object id="10"><metadata key="extruder" value="2"/></object>'
+            '<plate><metadata key="plater_id" value="1"/>'
+            '<model_instance><metadata key="object_id" value="10"/></model_instance>'
+            "</plate></config>"
+        )
+        threed = (
+            '<?xml version="1.0"?>'
+            '<model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
+            ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">'
+            '<resources><object id="10" type="model"><components>'
+            '<component p:path="/3D/Objects/missing.model" objectid="999"/>'
+            "</components></object></resources><build/></model>"
+        )
+        with _make_3mf_with(
+            {"Metadata/model_settings.config": ms, "3D/3dmodel.model": threed},
+        ) as zf:
+            # Top-level metadata still works; missing component model file
+            # is silently skipped without crashing.
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {2}

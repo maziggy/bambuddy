@@ -160,22 +160,39 @@ class SlicerApiService:
         model_filename: str,
         printer_profile_json: str,
         process_profile_json: str,
-        filament_profile_json: str,
+        filament_profile_jsons: list[str],
         plate: int | None = None,
         export_3mf: bool = False,
     ) -> SliceResult:
-        """POST /slice with model + printer/process/filament profile triplet.
+        """POST /slice with model + printer/process/filament profiles.
+
+        ``filament_profile_jsons`` is plate-slot-ordered: index 0 is the
+        profile for slot 1, etc. Single-color callers pass a one-element
+        list. Multiple ``filamentProfile`` parts are sent as a repeated form
+        field — the sidecar's route declares ``maxCount: 16`` and the
+        slicing service joins them as semicolon-separated
+        ``--load-filaments`` for the OrcaSlicer / BambuStudio CLI.
 
         Raises:
             SlicerInputError: 4xx from sidecar (caller-supplied input is bad).
             SlicerApiUnavailableError: connection error or 5xx from sidecar.
         """
-        files = {
-            "file": (model_filename, model_bytes, _guess_model_content_type(model_filename)),
-            "printerProfile": ("printer.json", printer_profile_json.encode("utf-8"), "application/json"),
-            "presetProfile": ("preset.json", process_profile_json.encode("utf-8"), "application/json"),
-            "filamentProfile": ("filament.json", filament_profile_json.encode("utf-8"), "application/json"),
-        }
+        # httpx supports repeated multipart fields when files is a list of
+        # tuples — using the dict form would silently overwrite duplicate
+        # keys and ship only the last filament profile.
+        files: list[tuple[str, tuple[str, bytes, str]]] = [
+            ("file", (model_filename, model_bytes, _guess_model_content_type(model_filename))),
+            ("printerProfile", ("printer.json", printer_profile_json.encode("utf-8"), "application/json")),
+            ("presetProfile", ("preset.json", process_profile_json.encode("utf-8"), "application/json")),
+        ]
+        for idx, fjson in enumerate(filament_profile_jsons):
+            files.append(
+                (
+                    "filamentProfile",
+                    (f"filament_{idx + 1}.json", fjson.encode("utf-8"), "application/json"),
+                )
+            )
+
         data: dict[str, str] = {}
         if plate is not None:
             data["plate"] = str(plate)

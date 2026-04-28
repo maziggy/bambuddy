@@ -3250,15 +3250,28 @@ export default {
     printer: 'Drucker-Profil',
     process: 'Prozess-Profil',
     filament: 'Filament-Profil',
+    filamentSlot: 'Filament {{index}} ({{type}})',
     selectPreset: '— Profil auswählen —',
     loadingPresets: 'Profile werden geladen…',
+    noPresetsForSlot: 'Keine Profile verfügbar',
     presetsLoadFailed: 'Profile konnten nicht geladen werden. Importiere sie zuerst unter Einstellungen → Profile.',
+    allPresetsRequired: 'Alle Profile müssen ausgewählt sein',
     enqueuing: 'Slice-Auftrag wird übermittelt…',
     queued: 'In Warteschlange…',
     failed: 'Slicen fehlgeschlagen. Logs des Slicer-Sidecars prüfen.',
     startedToast: '{{name}} wird im Hintergrund gesliced…',
     completedToast: '{{name}} wurde gesliced',
     failedToast: 'Slicen von {{name}} fehlgeschlagen: {{detail}}',
+    tier: {
+      local: 'Importiert',
+      cloud: 'Cloud',
+      standard: 'Standard',
+    },
+    cloud: {
+      notAuthenticated: 'In Bambu Cloud anmelden (Einstellungen → Profile → Cloud), um deine Cloud-Profile zu sehen.',
+      expired: 'Bambu-Cloud-Sitzung abgelaufen — erneut anmelden, um die Cloud-Profile zu aktualisieren.',
+      unreachable: 'Bambu Cloud ist gerade nicht erreichbar. Lokale und Standard-Profile funktionieren weiterhin.',
+    },
   },
 
   // Spoolman

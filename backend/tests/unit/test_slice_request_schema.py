@@ -84,3 +84,61 @@ class TestPriorityWhenBothSet:
         # Validator only fills the ref when it's None — the explicit cloud
         # ref stays untouched.
         assert req.printer_preset == PresetRef(source="cloud", id="PFU")
+
+
+class TestFilamentPresetsList:
+    """Multi-color: the new array shape carries one filament profile per
+    plate slot in plate order. Backwards-compat: legacy clients still
+    submit a singular `filament_preset` and the validator promotes it into
+    a one-element list so the route handler only deals with one shape."""
+
+    def test_explicit_list_passes_through(self):
+        refs = [
+            PresetRef(source="cloud", id="A"),
+            PresetRef(source="local", id="2"),
+            PresetRef(source="standard", id="Bambu PLA Basic"),
+        ]
+        req = SliceRequest(
+            printer_preset_id=1,
+            process_preset_id=2,
+            filament_preset_id=99,  # explicit legacy id — should be ignored
+            filament_presets=refs,
+        )
+        assert req.filament_presets == refs
+        # Precedence pin: when caller sends both shapes, the array wins and
+        # the singular gets backfilled from the array's first entry — NOT
+        # from the legacy id 99. Documents the migration ordering for a
+        # future change that might quietly mix them.
+        assert req.filament_preset == refs[0]
+
+    def test_empty_list_is_backfilled_from_singular(self):
+        req = SliceRequest(printer_preset_id=1, process_preset_id=2, filament_preset_id=3)
+        # Legacy single-color path: validator promotes the singular into a
+        # one-element list so route handlers can iterate uniformly.
+        assert req.filament_presets == [PresetRef(source="local", id="3")]
+
+    def test_explicit_empty_list_with_singular_set_uses_singular(self):
+        # User of the new schema can leave `filament_presets` as the empty
+        # default and rely on the legacy `filament_preset_id` — same path
+        # as `test_empty_list_is_backfilled_from_singular`.
+        req = SliceRequest(
+            printer_preset_id=1,
+            process_preset_id=2,
+            filament_preset=PresetRef(source="cloud", id="PFU"),
+            filament_presets=[],
+        )
+        assert req.filament_presets == [PresetRef(source="cloud", id="PFU")]
+
+    def test_list_preserves_order(self):
+        refs = [
+            PresetRef(source="cloud", id="slot1"),
+            PresetRef(source="cloud", id="slot2"),
+            PresetRef(source="cloud", id="slot3"),
+        ]
+        req = SliceRequest(
+            printer_preset_id=1,
+            process_preset_id=2,
+            filament_preset_id=3,
+            filament_presets=refs,
+        )
+        assert [r.id for r in req.filament_presets] == ["slot1", "slot2", "slot3"]

@@ -599,6 +599,19 @@ export function MakerworldPage() {
                 const materialCnt = pickNumber(inst, 'materialCnt');
                 const needAms = inst?.['needAms'] === true;
                 const downloadsOnInstance = pickNumber(inst, 'downloadCount');
+                // Primary printer the file was sliced for (devProductName,
+                // e.g. "A1") + the alt-compatibility list MakerWorld marks.
+                // Both come from the design endpoint's per-instance
+                // extention.modelInfo, merged into the instance by the
+                // backend resolve route. The "compat" list is informational
+                // — Bambuddy can't actually re-slice across printers, but
+                // the user gets to see what they're picking.
+                const compat = (inst?.['compatibility'] as { devProductName?: string } | null) ?? null;
+                const others = (inst?.['otherCompatibility'] as Array<{ devProductName?: string }> | null) ?? null;
+                const primaryPrinter = compat?.devProductName ?? null;
+                const otherPrinters: string[] = Array.isArray(others)
+                  ? others.map((o) => o?.devProductName ?? '').filter(Boolean)
+                  : [];
                 if (instanceId == null) return null;
                 const isImporting = importMutation.isPending && importMutation.variables?.instanceId === instanceId;
                 const isPrinting = sliceMutation.isPending && sliceMutation.variables?.instanceId === instanceId;
@@ -644,6 +657,11 @@ export function MakerworldPage() {
                           {instanceTitle || t('makerworld.plateDefaultName', { n: idx + 1 })}
                         </p>
                         <div className="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {primaryPrinter && (
+                            <span className="font-medium text-gray-700 dark:text-gray-300">
+                              {t('makerworld.slicedFor', { printer: primaryPrinter, defaultValue: 'Sliced for {{printer}}' })}
+                            </span>
+                          )}
                           {materialCnt !== null && (
                             <span>{t('makerworld.materialCount', { count: materialCnt })}</span>
                           )}
@@ -652,6 +670,14 @@ export function MakerworldPage() {
                             <span>{t('makerworld.downloadsCount', { count: downloadsOnInstance })}</span>
                           )}
                         </div>
+                        {otherPrinters.length > 0 && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1" title={otherPrinters.join(', ')}>
+                            {t('makerworld.alsoCompatible', {
+                              printers: otherPrinters.slice(0, 6).join(', ') + (otherPrinters.length > 6 ? '…' : ''),
+                              defaultValue: 'Also marked compatible: {{printers}}',
+                            })}
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-2 shrink-0">
                         <Button

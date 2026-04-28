@@ -136,6 +136,92 @@ class TestResolve:
         assert resp.status_code == 200, resp.text
         assert resp.json()["already_imported_library_ids"] == [existing.id]
 
+    @pytest.mark.asyncio
+    async def test_merges_compatibility_from_design_into_instances(self, async_client):
+        """Per-instance printer compatibility info lives on
+        ``design.instances[].extention.modelInfo`` but not on
+        ``/instances/hits``. Resolve enriches each hit with both
+        ``compatibility`` (primary printer the instance was sliced for) and
+        ``otherCompatibility`` (extra printers the uploader marked it
+        compatible with) so the frontend can show "sliced for A1 / also
+        marked compatible with: H2D, P1S".
+        """
+        design_payload = {
+            "id": 1400373,
+            "title": "Seed Starter",
+            "instances": [
+                {
+                    "id": 1452154,
+                    "extention": {
+                        "modelInfo": {
+                            "compatibility": ["A1"],
+                            "otherCompatibility": ["H2D", "P1S"],
+                        }
+                    },
+                },
+                {
+                    "id": 1452158,
+                    "extention": {
+                        "modelInfo": {
+                            "compatibility": ["X1 Carbon"],
+                            "otherCompatibility": [],
+                        }
+                    },
+                },
+            ],
+        }
+        instances_payload = {
+            "total": 2,
+            "hits": [
+                {"id": 1452154, "profileId": 298919107, "title": "9 cells"},
+                {"id": 1452158, "profileId": 298919564, "title": "12 cells"},
+            ],
+        }
+        svc = _fake_service(get_design=design_payload, get_design_instances=instances_payload)
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
+            resp = await async_client.post(
+                "/api/v1/makerworld/resolve",
+                json={"url": "https://makerworld.com/en/models/1400373"},
+            )
+        assert resp.status_code == 200, resp.text
+        instances = resp.json()["instances"]
+        by_id = {i["id"]: i for i in instances}
+        assert by_id[1452154]["compatibility"] == ["A1"]
+        assert by_id[1452154]["otherCompatibility"] == ["H2D", "P1S"]
+        assert by_id[1452158]["compatibility"] == ["X1 Carbon"]
+        assert by_id[1452158]["otherCompatibility"] == []
+
+    @pytest.mark.asyncio
+    async def test_resolve_handles_missing_compatibility_gracefully(self, async_client):
+        """Older designs (or hits without a matching design.instances entry)
+        must not crash the resolve response — they just don't get the
+        compat fields."""
+        design_payload = {"id": 1400373, "instances": [{"id": 1452154}]}  # no extention
+        instances_payload = {
+            "total": 2,
+            "hits": [
+                {"id": 1452154, "profileId": 298919107},
+                {"id": 9999999, "profileId": 298919999},  # no design.instances match
+            ],
+        }
+        svc = _fake_service(get_design=design_payload, get_design_instances=instances_payload)
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
+            resp = await async_client.post(
+                "/api/v1/makerworld/resolve",
+                json={"url": "https://makerworld.com/en/models/1400373"},
+            )
+        assert resp.status_code == 200, resp.text
+        instances = resp.json()["instances"]
+        # First instance: design entry exists but no extention → fields absent or None.
+        first = next(i for i in instances if i["id"] == 1452154)
+        assert first.get("compatibility") is None
+        assert first.get("otherCompatibility") is None
+        # Second instance: no design entry at all → no enrichment, no crash.
+        second = next(i for i in instances if i["id"] == 9999999)
+        assert "compatibility" not in second or second["compatibility"] is None
+
 
 class TestImport:
     """End-to-end of POST /makerworld/import — mocks the service but exercises

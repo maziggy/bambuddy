@@ -74,7 +74,7 @@ class TestSliceWithProfiles:
             model_filename="Cube.stl",
             printer_profile_json='{"name": "p"}',
             process_profile_json='{"name": "pr"}',
-            filament_profile_json='{"name": "f"}',
+            filament_profile_jsons=['{"name": "f"}'],
         )
 
         assert isinstance(result, SliceResult)
@@ -103,7 +103,7 @@ class TestSliceWithProfiles:
                 model_filename="Cube.stl",
                 printer_profile_json="{}",
                 process_profile_json="{}",
-                filament_profile_json="{}",
+                filament_profile_jsons=["{}"],
             )
         assert "Invalid file type" in str(exc_info.value)
 
@@ -125,7 +125,7 @@ class TestSliceWithProfiles:
                 model_filename="Cube.stl",
                 printer_profile_json="{}",
                 process_profile_json="{}",
-                filament_profile_json="{}",
+                filament_profile_jsons=["{}"],
             )
         assert "Failed to slice the model" in str(exc_info.value)
 
@@ -153,7 +153,7 @@ class TestSliceWithProfiles:
                 model_filename="Cube.stl",
                 printer_profile_json="{}",
                 process_profile_json="{}",
-                filament_profile_json="{}",
+                filament_profile_jsons=["{}"],
             )
         msg = str(exc_info.value)
         assert "Failed to slice the model" in msg
@@ -178,7 +178,7 @@ class TestSliceWithProfiles:
                 model_filename="Cube.stl",
                 printer_profile_json="{}",
                 process_profile_json="{}",
-                filament_profile_json="{}",
+                filament_profile_jsons=["{}"],
             )
         assert "SIGSEGV" in str(exc_info.value)
 
@@ -198,7 +198,7 @@ class TestSliceWithProfiles:
                 model_filename="Cube.stl",
                 printer_profile_json="{}",
                 process_profile_json="{}",
-                filament_profile_json="{}",
+                filament_profile_jsons=["{}"],
             )
         assert "Bad Gateway" in str(exc_info.value)
 
@@ -214,7 +214,7 @@ class TestSliceWithProfiles:
                 model_filename="Cube.stl",
                 printer_profile_json="{}",
                 process_profile_json="{}",
-                filament_profile_json="{}",
+                filament_profile_jsons=["{}"],
             )
         assert "unreachable" in str(exc_info.value).lower()
 
@@ -236,7 +236,7 @@ class TestSliceWithProfiles:
             model_filename="Cube.stl",
             printer_profile_json="{}",
             process_profile_json="{}",
-            filament_profile_json="{}",
+            filament_profile_jsons=["{}"],
             plate=2,
             export_3mf=True,
         )
@@ -248,6 +248,41 @@ class TestSliceWithProfiles:
         assert b"\r\n2\r\n" in body or b'name="plate"\r\n\r\n2' in body
         assert b'name="exportType"' in body
         assert b"3mf" in body
+
+    @pytest.mark.asyncio
+    async def test_multi_filament_sends_one_part_per_profile(self):
+        # Multi-color slicing requires N filament profiles, in plate-slot
+        # order, sent as N repeated multipart `filamentProfile` parts (NOT a
+        # single concatenated value). The CLI joins their resulting paths
+        # with `;` for --load-filaments. A future regression to a dict-shaped
+        # `files=` would silently keep prior tests green but ship only the
+        # last filament — pin the wire shape.
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=b"3MF-BYTES",
+                headers={"x-print-time-seconds": "0", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        await service.slice_with_profiles(
+            model_bytes=b"x",
+            model_filename="Cube.3mf",
+            printer_profile_json="{}",
+            process_profile_json="{}",
+            filament_profile_jsons=['{"a":1}', '{"b":2}', '{"c":3}'],
+        )
+
+        body = captured["body"]
+        # Three repeated `filamentProfile` parts, in submission order.
+        assert body.count(b'name="filamentProfile"') == 3
+        assert b'{"a":1}' in body and b'{"b":2}' in body and b'{"c":3}' in body
+        # Parts present in plate order — the 'a' bytes appear before 'b'
+        # which appear before 'c'. (httpx preserves the list order.)
+        assert body.index(b'{"a":1}') < body.index(b'{"b":2}') < body.index(b'{"c":3}')
 
     @pytest.mark.asyncio
     async def test_missing_metadata_headers_default_to_zero(self):
@@ -262,7 +297,7 @@ class TestSliceWithProfiles:
             model_filename="Cube.stl",
             printer_profile_json="{}",
             process_profile_json="{}",
-            filament_profile_json="{}",
+            filament_profile_jsons=["{}"],
         )
         assert result.print_time_seconds == 0
         assert result.filament_used_g == 0.0

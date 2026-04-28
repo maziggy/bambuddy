@@ -12,6 +12,9 @@ import {
   type UnifiedPresetsResponse,
 } from '../api/client';
 import { useSliceJobTracker } from '../contexts/SliceJobTrackerContext';
+import { PlatePickerModal } from './PlatePickerModal';
+import type { PlateFilament } from '../types/plates';
+import { normalizeColorForCompare, colorsAreSimilar } from '../utils/amsHelpers';
 
 export type SliceSource =
   | { kind: 'libraryFile'; id: number; filename: string }
@@ -24,16 +27,64 @@ interface SliceModalProps {
 
 type Slot = 'printer' | 'process' | 'filament';
 
+// SliceModal-specific tier priority: local (imported) → cloud → standard.
+// Imported profiles are surfaced first because they're the user's curated
+// picks (often colour/type-tagged), cloud is second since names alone can't
+// drive metadata-aware match, standard is the bundled fallback. This is
+// distinct from the listing endpoint's dedup order and only affects what
+// the SliceModal renders / pre-picks.
+const SLICE_MODAL_TIER_ORDER = ['local', 'cloud', 'standard'] as const;
+
 function pickDefault(by: UnifiedPresetsResponse, slot: Slot): PresetRef | null {
-  // Cloud > local > standard. The endpoint already deduplicates by name, so
-  // no name-collision handling needed here — first non-empty tier wins.
-  for (const tier of ['cloud', 'local', 'standard'] as const) {
+  for (const tier of SLICE_MODAL_TIER_ORDER) {
     const list = by[tier][slot];
     if (list.length > 0) {
       return { source: list[0].source, id: list[0].id };
     }
   }
   return null;
+}
+
+const TIER_BONUS: Record<PresetSource, number> = {
+  local: 1.5,
+  cloud: 1.0,
+  standard: 0.5,
+};
+
+function pickFilamentForSlot(
+  by: UnifiedPresetsResponse,
+  required: { type: string; color: string },
+): PresetRef | null {
+  // Score every filament preset against the plate slot's required (type,
+  // colour) and pick the highest. Mirrors the AMS slot-mapping match in the
+  // print/schedule modal: type match dominates, exact-colour-match bumps over
+  // similar-colour-match, and a small per-tier bonus breaks ties so cloud
+  // user customisations win over standard bundled fallbacks of equal merit.
+  const reqType = required.type.trim().toUpperCase();
+  const reqColor = normalizeColorForCompare(required.color);
+
+  let best: { ref: PresetRef; score: number } | null = null;
+  for (const tier of SLICE_MODAL_TIER_ORDER) {
+    for (const p of by[tier].filament) {
+      let score = 0;
+      const presetType = (p.filament_type ?? '').trim().toUpperCase();
+      const presetColor = normalizeColorForCompare(p.filament_colour ?? '');
+      if (reqType && presetType && reqType === presetType) score += 10;
+      if (reqColor && presetColor) {
+        if (presetColor === reqColor) score += 5;
+        else if (colorsAreSimilar(p.filament_colour ?? '', required.color)) score += 2;
+      }
+      score += TIER_BONUS[tier];
+      if (best == null || score > best.score) {
+        best = { ref: { source: p.source, id: p.id }, score };
+      }
+    }
+  }
+  // Fall back to plain priority pick if every preset scored 0+tier (i.e. no
+  // metadata matched). The fallback is exactly the single-color default —
+  // first preset in the highest-priority non-empty tier.
+  if (best == null) return pickDefault(by, 'filament');
+  return best.ref;
 }
 
 function toRefValue(ref: PresetRef | null): string {
@@ -58,36 +109,122 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
 
   const [printerPreset, setPrinterPreset] = useState<PresetRef | null>(null);
   const [processPreset, setProcessPreset] = useState<PresetRef | null>(null);
-  const [filamentPreset, setFilamentPreset] = useState<PresetRef | null>(null);
+  // One filament ref per plate slot, in plate order. For STL / single-plate /
+  // single-color sources this is a one-element array; multi-color 3MFs get one
+  // entry per AMS slot the plate uses. Pre-pick (effect below) initialises
+  // each slot from the source plate's required (type, colour).
+  const [filamentPresets, setFilamentPresets] = useState<(PresetRef | null)[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // null = plate not yet picked (or single-plate / non-3MF — picker is skipped
+  // and we'll backfill 1 at submit time). Set to a 1-indexed plate number once
+  // the user picks one (or implicitly for single-plate sources).
+  const [selectedPlate, setSelectedPlate] = useState<number | null>(null);
+
+  const platesQuery = useQuery({
+    queryKey: ['slicePlates', source.kind, source.id],
+    queryFn: async () => {
+      if (source.kind === 'libraryFile') {
+        return api.getLibraryFilePlates(source.id);
+      }
+      return api.getArchivePlates(source.id);
+    },
+    staleTime: 60_000,
+  });
+
+  const isMultiPlate =
+    !!platesQuery.data?.is_multi_plate && (platesQuery.data?.plates?.length ?? 0) > 1;
+  // Single-plate / non-3MF / fetch failure: skip the picker, default to plate 1
+  // at submit time so the backend's existing default behaviour is preserved.
+  const needsPlatePicker = isMultiPlate && selectedPlate == null;
+
+  // Per-plate filament requirements via the same endpoint the print/schedule
+  // modal uses. Reusing it here keeps the SliceModal honest with whatever
+  // logic that endpoint applies (slice_info parsing, future enhancements for
+  // unsliced project files, dual-nozzle fields, etc.) instead of duplicating
+  // extraction. plate_id is always sent: single-plate falls through to plate
+  // 1 server-side; multi-plate uses the user's pick.
+  const effectivePlateId = selectedPlate ?? 1;
+  const filamentReqsQuery = useQuery({
+    queryKey: ['sliceFilamentReqs', source.kind, source.id, effectivePlateId],
+    queryFn: async () => {
+      if (source.kind === 'libraryFile') {
+        return api.getLibraryFileFilamentRequirements(source.id, effectivePlateId);
+      }
+      return api.getArchiveFilamentRequirements(source.id, effectivePlateId);
+    },
+    enabled: !needsPlatePicker,
+    staleTime: 60_000,
+  });
+
+  // Filament slot list for the active plate. Falls back to one synthetic slot
+  // for STL/STEP and any "no metadata available" case so the modal still
+  // works (single dropdown, mono-color slice).
+  const filamentSlots = useMemo<PlateFilament[]>(() => {
+    const reqs = filamentReqsQuery.data?.filaments ?? [];
+    if (reqs.length > 0) return reqs as PlateFilament[];
+    return [
+      { slot_id: 1, type: '', color: '', used_grams: 0, used_meters: 0 },
+    ];
+  }, [filamentReqsQuery.data]);
 
   const presetsQuery = useQuery({
     queryKey: ['slicerPresets'],
     queryFn: () => api.getSlicerPresets(),
     staleTime: 60_000,
+    // Don't fetch presets while the plate picker is on screen — saves a
+    // round-trip if the user cancels out of the plate step.
+    enabled: !platesQuery.isLoading && !needsPlatePicker,
   });
 
-  // Default selection: cloud > local > standard. Runs only on the first
-  // successful load; subsequent re-renders preserve the user's manual choice.
+  // Printer / process pre-pick: see SLICE_MODAL_TIER_ORDER. Runs once when
+  // presets first arrive; subsequent re-renders preserve any manual choice.
   useEffect(() => {
     if (!presetsQuery.data) return;
     if (printerPreset == null) setPrinterPreset(pickDefault(presetsQuery.data, 'printer'));
     if (processPreset == null) setProcessPreset(pickDefault(presetsQuery.data, 'process'));
-    if (filamentPreset == null) setFilamentPreset(pickDefault(presetsQuery.data, 'filament'));
-    // Intentionally exclude state-setters and current selections from deps —
-    // we only want the auto-pick to fire once when data first arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetsQuery.data]);
 
+  // Filament pre-pick: re-runs whenever the active filament-slot count
+  // changes (plate selection, single-plate metadata arriving). For each slot
+  // we score every available filament preset against the slot's required
+  // (type, colour) and keep the highest match. Slot count mismatch → reset
+  // and re-pick everything; same length → preserve any user override.
+  useEffect(() => {
+    if (!presetsQuery.data) return;
+    const data = presetsQuery.data;
+    setFilamentPresets((current) => {
+      if (current.length === filamentSlots.length && current.every((r) => r != null)) {
+        return current;
+      }
+      return filamentSlots.map((slot) =>
+        pickFilamentForSlot(data, { type: slot.type, color: slot.color }),
+      );
+    });
+  }, [presetsQuery.data, filamentSlots]);
+
   const enqueueMutation = useMutation({
     mutationFn: async () => {
-      if (!printerPreset || !processPreset || !filamentPreset) {
-        throw new Error('All three presets must be selected');
+      if (
+        !printerPreset ||
+        !processPreset ||
+        filamentPresets.length === 0 ||
+        filamentPresets.some((r) => r == null)
+      ) {
+        throw new Error(t('slice.allPresetsRequired', 'All presets must be selected'));
       }
       const body = {
         printer_preset: printerPreset,
         process_preset: processPreset,
-        filament_preset: filamentPreset,
+        // The first slot also goes into the legacy singular field so the
+        // backend's older callers / clients keep behaving the same — the
+        // backend validator prefers `filament_presets` when both are set.
+        filament_preset: filamentPresets[0] as PresetRef,
+        filament_presets: filamentPresets as PresetRef[],
+        // Always send a concrete plate number when the source is multi-plate;
+        // omit otherwise so the backend default applies for STL / single-plate
+        // 3MF sources where the concept doesn't apply.
+        ...(selectedPlate != null ? { plate: selectedPlate } : {}),
       };
       if (source.kind === 'libraryFile') {
         return api.sliceLibraryFile(source.id, body);
@@ -104,9 +241,56 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     },
   });
 
-  const isReady = printerPreset != null && processPreset != null && filamentPreset != null;
+  // Pre-slice compatibility check: the slicer CLI (both OrcaSlicer and
+  // BambuStudio) cannot re-slice a 3MF for a printer different from the one
+  // it was originally bound to — the cross-printer "convert project" flow
+  // is desktop-Studio only. If we can match the source's printer model to a
+  // SliceModal-known model and the user's chosen printer profile names a
+  // different model, surface a warning before they click Slice.
+  const sourcePrinterModel = platesQuery.data?.source_printer_model ?? null;
+  const printerProfileName = printerPreset
+    ? presetsQuery.data?.[printerPreset.source].printer.find((p) => p.id === printerPreset.id)?.name
+    : null;
+  // Profile names follow `<model> <nozzle> nozzle` (e.g. "Bambu Lab H2D 0.4
+  // nozzle"). The CLI compat check uses the model prefix; substring match
+  // catches both standard and locally-imported user-named profiles that
+  // include the model in the name. Cloud presets with arbitrary names
+  // (e.g. "My Custom X1C") fall through to no-warning, which is a
+  // reasonable default — the user picked it knowingly.
+  const printerMismatch =
+    !!sourcePrinterModel &&
+    !!printerProfileName &&
+    !printerProfileName.toLowerCase().includes(sourcePrinterModel.toLowerCase());
+
+  // Slice button stays disabled while the printer mismatch warning is
+  // visible: clicking it would silently fall back to embedded settings and
+  // produce a wrong-printer file, the exact UX bug the warning is here to
+  // prevent. Only re-enable when the user picks a matching profile (or
+  // cloud preset whose name we can't parse).
+  const isReady =
+    printerPreset != null &&
+    processPreset != null &&
+    filamentPresets.length > 0 &&
+    filamentPresets.every((r) => r != null) &&
+    !printerMismatch;
   const isEnqueuing = enqueueMutation.isPending;
 
+  // Step 1: plate picker for multi-plate 3MF sources. Cancelling closes the
+  // entire flow (matches the existing PlatePickerModal contract used by the
+  // archive g-code-viewer entry point).
+  if (needsPlatePicker && platesQuery.data) {
+    return (
+      <PlatePickerModal
+        plates={platesQuery.data.plates}
+        onSelect={(plateIndex) => setSelectedPlate(plateIndex)}
+        onClose={onClose}
+      />
+    );
+  }
+
+  // Step 2 (or only step for single-plate / non-3MF / load-failure): preset
+  // picker. While the plates query is in-flight we still render the shell
+  // because the presets query is gated on it; the loader covers both.
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -127,6 +311,9 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
             </h3>
             <p className="text-xs text-bambu-gray mt-1 truncate" title={source.filename}>
               {source.filename}
+              {selectedPlate != null
+                ? ` • ${t('archives.platePicker.plateLabel', { index: selectedPlate })}`
+                : ''}
             </p>
           </div>
           <button
@@ -141,7 +328,10 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {presetsQuery.isLoading && (
+          {/* Preset listing loader — printer/process dropdowns can't render
+              without it. Plate query reuses the same spinner since it's
+              also blocking. */}
+          {(platesQuery.isLoading || presetsQuery.isLoading) && (
             <div className="flex items-center gap-2 text-bambu-gray text-sm">
               <Loader2 className="w-4 h-4 animate-spin" />
               {t('slice.loadingPresets', 'Loading presets…')}
@@ -176,15 +366,60 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                 onChange={setProcessPreset}
                 disabled={isEnqueuing}
               />
-              <PresetDropdown
-                label={t('slice.filament', 'Filament profile')}
-                slot="filament"
-                data={presetsQuery.data}
-                value={filamentPreset}
-                onChange={setFilamentPreset}
-                disabled={isEnqueuing}
-              />
+              {/* Filament reqs may need a server-side preview-slice for
+                  unsliced project files (single-pass, then cached). Show a
+                  scoped spinner so the user sees the printer/process
+                  dropdowns instead of an opaque "Loading presets…" wait. */}
+              {filamentReqsQuery.isLoading ? (
+                <div className="flex items-center gap-2 text-bambu-gray text-sm py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {t('slice.analyzingPlateFilaments', 'Analyzing plate filaments…')}
+                </div>
+              ) : (
+                filamentSlots.map((slot, idx) => (
+                  <PresetDropdown
+                    key={`filament-${idx}`}
+                    label={
+                      filamentSlots.length > 1
+                        ? t('slice.filamentSlot', {
+                            index: idx + 1,
+                            type: slot.type,
+                            defaultValue: `Filament ${idx + 1} (${slot.type || ''})`,
+                          })
+                        : t('slice.filament', 'Filament profile')
+                    }
+                    slot="filament"
+                    data={presetsQuery.data}
+                    value={filamentPresets[idx] ?? null}
+                    onChange={(ref) =>
+                      setFilamentPresets((current) => {
+                        const next = current.length === filamentSlots.length
+                          ? [...current]
+                          : filamentSlots.map((_, i) => current[i] ?? null);
+                        next[idx] = ref;
+                        return next;
+                      })
+                    }
+                    disabled={isEnqueuing}
+                    swatchColor={filamentSlots.length > 1 ? slot.color : undefined}
+                  />
+                ))
+              )}
             </>
+          )}
+
+          {printerMismatch && (
+            <div
+              className="text-sm text-amber-200 bg-amber-900/20 border border-amber-700/40 rounded p-2"
+              role="alert"
+            >
+              {t('slice.printerMismatch', {
+                source: sourcePrinterModel,
+                target: printerProfileName,
+                defaultValue:
+                  'This 3MF was sliced for {{source}}, but you picked {{target}}. The slicer CLI cannot re-slice a 3MF for a different printer — open the source in Bambu Studio, change the printer, and re-export.',
+              })}
+            </div>
           )}
 
           {errorMessage && (
@@ -271,15 +506,22 @@ interface PresetDropdownProps {
   value: PresetRef | null;
   onChange: (ref: PresetRef | null) => void;
   disabled?: boolean;
+  // Optional colour swatch shown next to the label — used for multi-color
+  // filament slots so the user can see at a glance which slot they're
+  // configuring against the source 3MF's per-slot colour.
+  swatchColor?: string;
 }
 
-function PresetDropdown({ label, slot, data, value, onChange, disabled }: PresetDropdownProps) {
+function PresetDropdown({ label, slot, data, value, onChange, disabled, swatchColor }: PresetDropdownProps) {
   const { t } = useTranslation();
 
   const sections: { tierLabel: string; entries: UnifiedPreset[] }[] = useMemo(() => {
+    // Order matches SLICE_MODAL_TIER_ORDER: imported first, then cloud, then
+    // standard fallback. Sections with no entries collapse out so a user
+    // without cloud / local presets only sees the tiers they actually have.
     const tiers: { key: keyof UnifiedPresetsResponse; tier: 'cloud' | 'local' | 'standard'; label: string; fallback: string }[] = [
-      { key: 'cloud', tier: 'cloud', label: 'slice.tier.cloud', fallback: 'Cloud' },
       { key: 'local', tier: 'local', label: 'slice.tier.local', fallback: 'Imported' },
+      { key: 'cloud', tier: 'cloud', label: 'slice.tier.cloud', fallback: 'Cloud' },
       { key: 'standard', tier: 'standard', label: 'slice.tier.standard', fallback: 'Standard' },
     ];
     return tiers
@@ -294,7 +536,16 @@ function PresetDropdown({ label, slot, data, value, onChange, disabled }: Preset
 
   return (
     <label className="block">
-      <span className="block text-xs text-bambu-gray mb-1">{label}</span>
+      <span className="flex items-center gap-2 text-xs text-bambu-gray mb-1">
+        {swatchColor && (
+          <span
+            className="inline-block w-3 h-3 rounded-full border border-bambu-dark-tertiary"
+            style={{ backgroundColor: swatchColor || 'transparent' }}
+            aria-hidden
+          />
+        )}
+        <span>{label}</span>
+      </span>
       <select
         value={toRefValue(value)}
         onChange={(e) => onChange(fromRefValue(e.target.value))}

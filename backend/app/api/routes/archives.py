@@ -27,7 +27,12 @@ from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ReprintRequest
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
-from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
+from backend.app.utils.threemf_tools import (
+    extract_nozzle_mapping_from_3mf,
+    extract_plate_extruder_set_from_3mf,
+    extract_project_filaments_from_3mf,
+    extract_source_printer_model_from_3mf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -3068,12 +3073,20 @@ async def get_archive_plates(
     # to preview gcode — the viewer, skip-objects — can gate on this instead of
     # 404-ing on every plate request.
     has_gcode = bool(gcode_files)
+    # SliceModal pre-check signal — see library.py for rationale.
+    source_printer_model: str | None = None
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            source_printer_model = extract_source_printer_model_from_3mf(zf)
+    except (zipfile.BadZipFile, OSError):
+        pass
     return {
         "archive_id": archive_id,
         "filename": archive.filename,
         "plates": plates,
         "is_multi_plate": len(plates) > 1,
         "has_gcode": has_gcode,
+        "source_printer_model": source_printer_model,
     }
 
 
@@ -3107,6 +3120,47 @@ async def get_plate_thumbnail(
         pass  # Fall through to 404 if archive is unreadable or thumbnail missing
 
     raise HTTPException(404, f"Thumbnail for plate {plate_index} not found")
+
+
+async def _try_preview_slice_filaments(
+    db: AsyncSession,
+    *,
+    kind: str,
+    source_id: int,
+    plate_id: int,
+    file_path: Path,
+) -> list[dict] | None:
+    """Run a preview slice via the user's configured sidecar so the filament
+    list endpoint can return real per-plate filaments for unsliced project
+    files. Returns ``None`` on any failure — the caller falls back to the
+    painted-face heuristic."""
+    from backend.app.api.routes.settings import get_setting
+    from backend.app.services.slice_preview import get_preview_filaments
+
+    preferred = (await get_setting(db, "preferred_slicer")) or "bambu_studio"
+    if preferred == "orcaslicer":
+        configured = await get_setting(db, "orcaslicer_api_url")
+        api_url = (configured or settings.slicer_api_url).strip()
+    elif preferred == "bambu_studio":
+        configured = await get_setting(db, "bambu_studio_api_url")
+        api_url = (configured or settings.bambu_studio_api_url).strip()
+    else:
+        return None
+    if not api_url:
+        return None
+
+    try:
+        file_bytes = file_path.read_bytes()
+    except OSError:
+        return None
+    return await get_preview_filaments(
+        kind=kind,
+        source_id=source_id,
+        plate_id=plate_id,
+        file_bytes=file_bytes,
+        file_name=file_path.name,
+        api_url=api_url,
+    )
 
 
 @router.get("/{archive_id}/filament-requirements")
@@ -3215,6 +3269,39 @@ async def get_filament_requirements(
                                     "tray_info_idx": tray_info_idx,
                                 }
                             )
+
+            # Unsliced project files: slice_info has nothing usable. Try a
+            # preview-slice via the sidecar — the slicer's own logic
+            # determines which filaments the plate actually consumes
+            # (Bambu Studio prunes painted regions whose extruder isn't
+            # used, etc.) — and parse the resulting slice_info. Cached so
+            # the modal opens fast on the second visit. Falls back to the
+            # painted-face heuristic if the sidecar isn't configured or
+            # the preview slice errors out.
+            if not filaments and plate_id is not None:
+                preview = await _try_preview_slice_filaments(
+                    db,
+                    kind="archive",
+                    source_id=archive_id,
+                    plate_id=plate_id,
+                    file_path=file_path,
+                )
+                if preview is not None:
+                    filaments = preview
+
+            # Last-resort fallback for unsliced files when preview slicing
+            # also can't help (no sidecar, slicer errored, etc.). See
+            # library.py for the matching block.
+            if not filaments:
+                project_filaments = extract_project_filaments_from_3mf(zf)
+                if plate_id is not None and project_filaments:
+                    used_slots = extract_plate_extruder_set_from_3mf(zf, plate_id)
+                    if used_slots:
+                        filaments = [f for f in project_filaments if f["slot_id"] in used_slots]
+                    else:
+                        filaments = project_filaments
+                elif project_filaments:
+                    filaments = project_filaments
 
             # Sort by slot ID
             filaments.sort(key=lambda x: x["slot_id"])

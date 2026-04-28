@@ -61,7 +61,12 @@ from backend.app.schemas.library import (
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
 from backend.app.services.stl_thumbnail import generate_stl_thumbnail
-from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
+from backend.app.utils.threemf_tools import (
+    extract_nozzle_mapping_from_3mf,
+    extract_plate_extruder_set_from_3mf,
+    extract_project_filaments_from_3mf,
+    extract_source_printer_model_from_3mf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2298,11 +2303,22 @@ async def get_library_file_plates(
     except Exception as e:
         logger.warning("Failed to parse plates from library file %s: %s", file_id, e)
 
+    # SliceModal pre-check signal: the source 3MF's bound printer model. The
+    # CLI cannot re-slice for a different printer; surface this so the modal
+    # can warn the user before they pick a mismatched profile.
+    source_printer_model: str | None = None
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            source_printer_model = extract_source_printer_model_from_3mf(zf)
+    except (zipfile.BadZipFile, OSError):
+        pass
+
     return {
         "file_id": file_id,
         "filename": lib_file.filename,
         "plates": plates,
         "is_multi_plate": len(plates) > 1,
+        "source_printer_model": source_printer_model,
     }
 
 
@@ -2336,6 +2352,45 @@ async def get_library_file_plate_thumbnail(
         pass  # Archive unreadable or thumbnail missing; fall through to 404
 
     raise HTTPException(status_code=404, detail=f"Thumbnail for plate {plate_index} not found")
+
+
+async def _try_preview_slice_filaments(
+    db: AsyncSession,
+    *,
+    kind: str,
+    source_id: int,
+    plate_id: int,
+    file_path: Path,
+) -> list[dict] | None:
+    """Run a preview slice via the user's configured sidecar. Same shape as
+    the matching helper in archives.py — see that module for rationale."""
+    from backend.app.api.routes.settings import get_setting
+    from backend.app.services.slice_preview import get_preview_filaments
+
+    preferred = (await get_setting(db, "preferred_slicer")) or "bambu_studio"
+    if preferred == "orcaslicer":
+        configured = await get_setting(db, "orcaslicer_api_url")
+        api_url = (configured or app_settings.slicer_api_url).strip()
+    elif preferred == "bambu_studio":
+        configured = await get_setting(db, "bambu_studio_api_url")
+        api_url = (configured or app_settings.bambu_studio_api_url).strip()
+    else:
+        return None
+    if not api_url:
+        return None
+
+    try:
+        file_bytes = file_path.read_bytes()
+    except OSError:
+        return None
+    return await get_preview_filaments(
+        kind=kind,
+        source_id=source_id,
+        plate_id=plate_id,
+        file_bytes=file_bytes,
+        file_name=file_path.name,
+        api_url=api_url,
+    )
 
 
 @router.get("/files/{file_id}/filament-requirements")
@@ -2450,6 +2505,38 @@ async def get_library_file_filament_requirements(
                                     "tray_info_idx": tray_info_idx,
                                 }
                             )
+
+            # Unsliced project files: slice_info has nothing usable. Try a
+            # preview-slice via the sidecar — see archives.py for full
+            # rationale. Cached per (kind, id, plate, content_hash).
+            if not filaments and plate_id is not None:
+                preview = await _try_preview_slice_filaments(
+                    db,
+                    kind="library_file",
+                    source_id=file_id,
+                    plate_id=plate_id,
+                    file_path=file_path,
+                )
+                if preview is not None:
+                    filaments = preview
+
+            # Last-resort fallback when preview slicing also can't help (no
+            # sidecar configured, slicer errored, etc.). project_settings
+            # gives us the full AMS slot config; the plate-extruder filter
+            # narrows it to the slots the painted faces reference.
+            if not filaments:
+                project_filaments = extract_project_filaments_from_3mf(zf)
+                if plate_id is not None and project_filaments:
+                    used_slots = extract_plate_extruder_set_from_3mf(zf, plate_id)
+                    if used_slots:
+                        filaments = [f for f in project_filaments if f["slot_id"] in used_slots]
+                    else:
+                        # No extruder metadata anywhere — return the full
+                        # project list rather than zero so the user still
+                        # gets to pick (over-rendering > under-rendering).
+                        filaments = project_filaments
+                elif project_filaments:
+                    filaments = project_filaments
 
             # Sort by slot ID
             filaments.sort(key=lambda x: x["slot_id"])
@@ -2567,11 +2654,17 @@ async def _run_slicer_with_fallback(
     refs = {
         "printer": request.printer_preset,
         "process": request.process_preset,
-        "filament": request.filament_preset,
     }
     for slot, ref in refs.items():
         assert ref is not None, "schema validator guarantees PresetRef is set"
         presets[slot] = await resolve_preset_ref(db, user, ref, slot)
+    # Multi-color: resolve each filament slot in plate order. The schema
+    # validator backfilled `filament_presets` from the legacy `filament_preset`
+    # field for single-color callers, so this list is always non-empty.
+    filament_jsons: list[str] = []
+    for ref in request.filament_presets:
+        assert ref is not None, "schema validator guarantees filament list is non-None"
+        filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
 
     # Slicer routing — pick the sidecar URL by preferred_slicer.
     # The per-install URL setting (Settings UI → Slicer card) wins; an
@@ -2590,13 +2683,24 @@ async def _run_slicer_with_fallback(
             detail=f"Unknown preferred_slicer setting: '{preferred}'. Expected 'orcaslicer' or 'bambu_studio'.",
         )
 
+    # Note: an earlier version of this code stripped Metadata/project_settings.
+    # config + model_settings.config + slice_info.config + cut_information.xml
+    # before forwarding the 3MF, the theory being that --load-settings would
+    # then take precedence cleanly. That theory was wrong: model_settings.
+    # config carries the plate definitions the CLI needs to map `--slice N`
+    # to a real plate, and slice_info / project_settings supply baseline
+    # config the CLI's StaticPrintConfig pass needs at all. Stripping ANY
+    # of them caused the CLI to silently exit immediately after
+    # "Initializing StaticPrintConfigs" — exit code 0, no result.json, no
+    # stderr — which Node's child_process treated as failure and Bambuddy
+    # then masked by falling back to slice_without_profiles using the
+    # un-stripped bytes (and the source's embedded printer). Net effect:
+    # every 3MF slice with profiles silently produced wrong-printer output.
+    # Forwarding the original bytes lets --load-settings override the
+    # specific fields the user changed (printer/process/filament) while
+    # the embedded plate / model definitions remain intact.
     is_3mf = model_filename.lower().endswith(".3mf")
     primary_bytes = model_bytes
-    if is_3mf:
-        try:
-            primary_bytes = _strip_3mf_embedded_settings(model_bytes)
-        except (zipfile.BadZipFile, KeyError) as exc:
-            raise HTTPException(status_code=400, detail=f"Source 3MF is corrupt: {exc}") from exc
 
     used_embedded_settings = False
     service = SlicerApiService(api_url)
@@ -2607,7 +2711,7 @@ async def _run_slicer_with_fallback(
                 model_filename=model_filename,
                 printer_profile_json=presets["printer"],
                 process_profile_json=presets["process"],
-                filament_profile_json=presets["filament"],
+                filament_profile_jsons=filament_jsons,
                 plate=request.plate,
                 export_3mf=request.export_3mf,
             )
@@ -2818,6 +2922,14 @@ async def slice_and_persist_as_archive(
     if used_embedded_settings:
         metadata["used_embedded_settings"] = True
 
+    # Prefer the actually-used filament list from the sliced output's
+    # slice_info.config (parsed_metadata.filament_* — only entries with
+    # used_g > 0). Falling back to the source_archive's list would
+    # surface every project-wide AMS slot, including ones the picked
+    # plate doesn't use (16+ swatches on the card for a 2-color print).
+    new_filament_type = parsed_metadata.get("filament_type") or source_archive.filament_type
+    new_filament_color = parsed_metadata.get("filament_color") or source_archive.filament_color
+
     new_archive = PrintArchive(
         printer_id=source_archive.printer_id,
         project_id=source_archive.project_id,
@@ -2831,8 +2943,8 @@ async def slice_and_persist_as_archive(
         print_name=(source_archive.print_name or base_name) + " (re-sliced)",
         print_time_seconds=result.print_time_seconds,
         filament_used_grams=result.filament_used_g or None,
-        filament_type=source_archive.filament_type,
-        filament_color=source_archive.filament_color,
+        filament_type=new_filament_type,
+        filament_color=new_filament_color,
         layer_height=source_archive.layer_height,
         nozzle_diameter=source_archive.nozzle_diameter,
         sliced_for_model=source_archive.sliced_for_model,

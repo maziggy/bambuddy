@@ -25,11 +25,19 @@ class UnifiedPreset(BaseModel):
 
     The frontend treats ``id`` as opaque; the slice dispatch path uses
     ``(source, id)`` to fetch / pass the preset content to the sidecar.
+
+    ``filament_type`` and ``filament_colour`` are populated for the filament
+    slot only — they let the SliceModal pre-pick a preset per plate slot in
+    the multi-color flow by matching against the source 3MF's per-slot type
+    and color. Populated when the underlying preset JSON exposes them; left
+    as ``None`` on bundled profiles where colour is a runtime spool attribute.
     """
 
     id: str
     name: str
     source: Literal["cloud", "local", "standard"]
+    filament_type: str | None = None
+    filament_colour: str | None = None
 
 
 class UnifiedPresetsBySlot(BaseModel):

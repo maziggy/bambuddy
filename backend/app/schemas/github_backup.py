@@ -3,7 +3,7 @@
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from backend.app.core.compat import StrEnum
 
@@ -32,7 +32,6 @@ class GitHubBackupConfigCreate(BaseModel):
     access_token: str = Field(..., min_length=1, description="Personal Access Token")
     branch: str = Field(default="main", max_length=100, description="Branch to push to")
     provider: ProviderType = Field(default=ProviderType.GITHUB, description="Git hosting provider")
-    api_base_url: str | None = Field(default=None, max_length=500, description="Base URL for self-hosted instances")
 
     schedule_enabled: bool = Field(default=False, description="Enable scheduled backups")
     schedule_type: ScheduleType = Field(default=ScheduleType.DAILY, description="Schedule frequency")
@@ -58,12 +57,6 @@ class GitHubBackupConfigCreate(BaseModel):
             raise ValueError("Invalid Git repository URL. Expected format: https://host/owner/repo")
         return v
 
-    @model_validator(mode="after")
-    def validate_api_base_url(self) -> "GitHubBackupConfigCreate":
-        if self.provider in (ProviderType.GITHUB_ENTERPRISE, ProviderType.GITEA) and not self.api_base_url:
-            raise ValueError("api_base_url is required for github_enterprise and gitea providers")
-        return self
-
 
 class GitHubBackupConfigUpdate(BaseModel):
     """Schema for updating GitHub backup config (all fields optional)."""
@@ -72,7 +65,6 @@ class GitHubBackupConfigUpdate(BaseModel):
     access_token: str | None = Field(default=None)
     branch: str | None = Field(default=None, max_length=100)
     provider: ProviderType | None = None
-    api_base_url: str | None = Field(default=None, max_length=500)
 
     schedule_enabled: bool | None = None
     schedule_type: ScheduleType | None = None
@@ -99,12 +91,6 @@ class GitHubBackupConfigUpdate(BaseModel):
             raise ValueError("Invalid Git repository URL")
         return v
 
-    @model_validator(mode="after")
-    def validate_api_base_url(self) -> "GitHubBackupConfigUpdate":
-        if self.provider in (ProviderType.GITHUB_ENTERPRISE, ProviderType.GITEA) and not self.api_base_url:
-            raise ValueError("api_base_url is required for github_enterprise and gitea providers")
-        return self
-
 
 class GitHubBackupConfigResponse(BaseModel):
     """Schema for GitHub backup config API response."""
@@ -114,7 +100,6 @@ class GitHubBackupConfigResponse(BaseModel):
     has_token: bool = Field(description="Whether an access token is configured")
     branch: str
     provider: str
-    api_base_url: str | None
 
     schedule_enabled: bool
     schedule_type: str

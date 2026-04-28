@@ -35,7 +35,6 @@ def _config_to_response(config: GitHubBackupConfig) -> dict:
         "has_token": bool(config.access_token),
         "branch": config.branch,
         "provider": getattr(config, "provider", "github") or "github",
-        "api_base_url": getattr(config, "api_base_url", None),
         "schedule_enabled": config.schedule_enabled,
         "schedule_type": config.schedule_type,
         "backup_kprofiles": config.backup_kprofiles,
@@ -89,7 +88,6 @@ async def save_config(
         config.access_token = config_data.access_token
         config.branch = config_data.branch
         config.provider = config_data.provider.value
-        config.api_base_url = config_data.api_base_url
         config.schedule_enabled = config_data.schedule_enabled
         config.schedule_type = config_data.schedule_type.value
         config.backup_kprofiles = config_data.backup_kprofiles
@@ -113,7 +111,6 @@ async def save_config(
             access_token=config_data.access_token,
             branch=config_data.branch,
             provider=config_data.provider.value,
-            api_base_url=config_data.api_base_url,
             schedule_enabled=config_data.schedule_enabled,
             schedule_type=config_data.schedule_type.value,
             backup_kprofiles=config_data.backup_kprofiles,
@@ -197,13 +194,10 @@ async def test_connection(
     repo_url: str = Query(..., description="Repository URL"),
     token: str = Query(..., description="Personal Access Token"),
     provider: str = Query(default="github", description="Git provider key"),
-    api_base_url: str | None = Query(default=None, description="API base URL for self-hosted providers"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Test Git provider connection with provided credentials."""
-    if provider == "gitlab":
-        raise HTTPException(status_code=501, detail="GitLab support is not yet implemented")
-    result = await github_backup_service.test_connection(repo_url, token, provider=provider, api_base_url=api_base_url)
+    result = await github_backup_service.test_connection(repo_url, token, provider=provider)
     return GitHubTestConnectionResponse(**result)
 
 
@@ -223,14 +217,10 @@ async def test_stored_connection(
         raise HTTPException(status_code=400, detail="No access token configured")
 
     provider = getattr(config, "provider", "github") or "github"
-    if provider == "gitlab":
-        raise HTTPException(status_code=501, detail="GitLab support is not yet implemented")
-
     test_result = await github_backup_service.test_connection(
         config.repository_url,
         config.access_token,
         provider=provider,
-        api_base_url=getattr(config, "api_base_url", None),
     )
     return GitHubTestConnectionResponse(**test_result)
 
@@ -249,9 +239,6 @@ async def trigger_backup(
 
     if not config.enabled:
         raise HTTPException(status_code=400, detail="Backup is disabled")
-
-    if (getattr(config, "provider", "github") or "github") == "gitlab":
-        raise HTTPException(status_code=501, detail="GitLab support is not yet implemented")
 
     backup_result = await github_backup_service.run_backup(config.id, trigger="manual")
 

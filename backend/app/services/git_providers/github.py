@@ -17,33 +17,29 @@ logger = logging.getLogger(__name__)
 class GitHubBackend(GitProviderBackend):
     """Backend for github.com using the GitHub Git Data API."""
 
-    def get_api_base(self, repo_url: str, api_base_url: str | None) -> str:
+    def get_api_base(self, repo_url: str) -> str:
         return "https://api.github.com"
 
     def parse_repo_url(self, url: str) -> tuple[str, str]:
-        """Return (owner, repo) from a GitHub HTTPS or SSH URL."""
+        """Return (owner, repo) from a Git HTTPS or SSH URL."""
         if not url or len(url) > 500:
             raise ValueError("Invalid Git URL: URL too long or empty")
 
-        api_base = self.get_api_base(url, None)
-        # Derive host from api_base for HTTPS matching
-        host = api_base.replace("https://", "").replace("http://", "").split("/")[0]
-
         # HTTPS: https://<host>[:<port>]/<owner>/<repo>[.git][/]
         match = re.match(
-            rf"https://{re.escape(host)}(?::\d+)?/([\w.\-]{{1,100}})/([\w.\-]{{1,100}})(?:\.git)?/?$",
+            r"https://[\w.\-]+(:\d+)?/([\w.\-]{1,100})/([\w.\-]{1,100})(?:\.git)?/?$",
             url,
         )
         if match:
-            return match.group(1), match.group(2)
+            return match.group(2), match.group(3).removesuffix(".git")
 
         # SSH: git@<host>:<owner>/<repo>[.git]
         match = re.match(
-            rf"git@{re.escape(host)}:([\w.\-]{{1,100}})/([\w.\-]{{1,100}})(?:\.git)?$",
+            r"git@[\w.\-]+:([\w.\-]{1,100})/([\w.\-]{1,100})(?:\.git)?$",
             url,
         )
         if match:
-            return match.group(1), match.group(2)
+            return match.group(1), match.group(2).removesuffix(".git")
 
         raise ValueError(f"Cannot parse repository URL: {url}")
 
@@ -51,7 +47,7 @@ class GitHubBackend(GitProviderBackend):
         """Test API access and push permission for the repository."""
         try:
             owner, repo = self.parse_repo_url(repo_url)
-            api_base = self.get_api_base(repo_url, None)
+            api_base = self.get_api_base(repo_url)
             headers = self.get_headers(token)
 
             response = await client.get(f"{api_base}/repos/{owner}/{repo}", headers=headers)
@@ -109,12 +105,11 @@ class GitHubBackend(GitProviderBackend):
         branch: str,
         files: dict,
         client: httpx.AsyncClient,
-        api_base_url: str | None = None,
     ) -> dict:
         """Push files to the repository using the Git Data API."""
         try:
             owner, repo = self.parse_repo_url(repo_url)
-            api_base = self.get_api_base(repo_url, api_base_url)
+            api_base = self.get_api_base(repo_url)
             headers = self.get_headers(token)
 
             ref_response = await client.get(
@@ -123,7 +118,7 @@ class GitHubBackend(GitProviderBackend):
 
             if ref_response.status_code == 404:
                 return await self._create_branch_and_push(
-                    client, headers, api_base, owner, repo, branch, files, repo_url, token, api_base_url
+                    client, headers, api_base, owner, repo, branch, files, repo_url, token
                 )
 
             if ref_response.status_code != 200:
@@ -230,7 +225,6 @@ class GitHubBackend(GitProviderBackend):
         files: dict,
         repo_url: str,
         token: str,
-        api_base_url: str | None,
     ) -> dict:
         """Create branch (from default branch or as initial commit) then push."""
         try:
@@ -256,7 +250,7 @@ class GitHubBackend(GitProviderBackend):
             if create_ref.status_code != 201:
                 return {"status": "failed", "message": f"Failed to create branch: {create_ref.text}"}
 
-            return await self.push_files(repo_url, token, branch, files, client, api_base_url)
+            return await self.push_files(repo_url, token, branch, files, client)
 
         except Exception as e:
             return {"status": "failed", "message": str(e)}

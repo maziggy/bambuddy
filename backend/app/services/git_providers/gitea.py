@@ -12,7 +12,7 @@ class GiteaForgejoBackend(GitHubBackend):
     (scheme://host/api/v1) and Accept header differ.
     """
 
-    def get_api_base(self, repo_url: str, api_base_url: str | None) -> str:
+    def get_api_base(self, repo_url: str) -> str:
         """Derive API base from the repository URL's scheme and host."""
         match = re.match(r"(https?://[\w.\-]+(:\d+)?)/", repo_url)
         if match:

@@ -18,7 +18,6 @@ class GitHubBackupConfig(Base):
     access_token: Mapped[str] = mapped_column(Text)  # Personal Access Token
     branch: Mapped[str] = mapped_column(String(100), default="main")
     provider: Mapped[str] = mapped_column(String(30), default="github")
-    api_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Schedule configuration
     schedule_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

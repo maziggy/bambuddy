@@ -226,7 +226,7 @@ export function SpoolBuddyDashboard() {
   const scaleDisplayValue = stableDisplayWeight.current;
 
   // Find spool by tag_id in the loaded spools list
-  const displayedSpool = useMemo(() => {
+  const displayedSpool = useMemo((): InventorySpool | null => {
     if (sbState.matchedSpool?.id) {
       const byId = spools.find((s) => s.id === sbState.matchedSpool?.id);
       if (byId) return byId;
@@ -238,8 +238,9 @@ export function SpoolBuddyDashboard() {
     // _map_spoolman_spool routes it to tray_uuid, not tag_uid. tagsEquivalent only
     // compares tag_uid, so it misses this spool until the device re-scans and
     // sbState.matchedSpool is populated. Hold the spool returned by the link call
-    // as a temporary bridge.
-    if (justLinkedSpool) return justLinkedSpool;
+    // as a temporary bridge. Cast is safe: SpoolInfoCard only reads the 9 fields
+    // present in MatchedSpool; AssignToAmsModal is guarded by !justLinkedSpool below.
+    if (justLinkedSpool) return justLinkedSpool as unknown as InventorySpool;
     return null;
   }, [displayedTagId, sbState.matchedSpool, spools, justLinkedSpool]);
 
@@ -581,8 +582,9 @@ export function SpoolBuddyDashboard() {
         </div>
       </div>
 
-      {/* Assign to AMS Modal */}
-      {displayedSpool && displayedTagId && (
+      {/* Assign to AMS Modal — only when displayedSpool is a real InventorySpool,
+          not the justLinkedSpool bridge (which only has the 9 MatchedSpool fields). */}
+      {displayedSpool && !justLinkedSpool && displayedTagId && (
         <AssignToAmsModal
           isOpen={showAssignAmsModal}
           onClose={() => setShowAssignAmsModal(false)}

@@ -24,6 +24,7 @@ class ProviderType(StrEnum):
     GITEA = "gitea"
     FORGEJO = "forgejo"
 
+
 class GitHubBackupConfigCreate(BaseModel):
     """Schema for creating/updating GitHub backup config."""
 

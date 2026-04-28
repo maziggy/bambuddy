@@ -15,10 +15,10 @@ class TestProviderTypeEnum:
 
 
 class TestGitHubBackupConfigCreate:
-    BASE_FIELDS = dict(
-        repository_url="https://github.com/owner/repo",
-        access_token="ghp_token",
-    )
+    BASE_FIELDS = {
+        "repository_url": "https://github.com/owner/repo",
+        "access_token": "ghp_token",
+    }
 
     def test_plain_github_is_valid(self):
         config = GitHubBackupConfigCreate(**self.BASE_FIELDS)

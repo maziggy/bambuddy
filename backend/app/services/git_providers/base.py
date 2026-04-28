@@ -1,5 +1,6 @@
 """Abstract base class for Git hosting provider backends."""
 
+import hashlib
 from abc import ABC, abstractmethod
 
 import httpx
@@ -7,6 +8,13 @@ import httpx
 
 class GitProviderBackend(ABC):
     """Abstract base for Git hosting provider API backends."""
+
+    @staticmethod
+    def _blob_sha(content_bytes: bytes) -> str:
+        """Compute the git blob SHA for content_bytes (sha1("blob {len}\\0" + data))."""
+        return hashlib.sha1(
+            f"blob {len(content_bytes)}\0".encode() + content_bytes, usedforsecurity=False
+        ).hexdigest()
 
     def get_headers(self, token: str) -> dict:
         """Return HTTP headers for authenticated API requests."""

@@ -45,9 +45,9 @@ async def db_session():
         await engine.dispose()
 
 
-def _status(state: str, subtask_id: str | None = None):
-    """Minimal stand-in for PrinterState — only the two fields the watchdog reads."""
-    return SimpleNamespace(state=state, subtask_id=subtask_id)
+def _status(state: str, subtask_id: str | None = None, gcode_file: str | None = None):
+    """Minimal stand-in for PrinterState — only the fields the watchdog reads."""
+    return SimpleNamespace(state=state, subtask_id=subtask_id, gcode_file=gcode_file)
 
 
 class TestWatchdogExitsEarlyOnPickup:
@@ -258,3 +258,65 @@ class TestWatchdogFallbackBehaviour:
         async with db_session() as db:
             item = await db.get(PrintQueueItem, 1)
             assert item.status == "completed"  # untouched
+
+
+class TestGcodeFileDiscriminator:
+    """#1150 vs #887/#936: skip the forced reconnect when gcode_file changed
+    (project_file landed, slow parse — reconnecting causes 0500_4003).
+    Reconnect when gcode_file is unchanged (publish dropped — half-broken
+    session needs the original recovery)."""
+
+    @pytest.mark.asyncio
+    async def test_skips_reconnect_when_gcode_file_changed(self, db_session):
+        get_status = MagicMock(
+            return_value=_status("FINISH", "OLD_SUBTASK", gcode_file="/new.3mf"),
+        )
+        client = MagicMock()
+        get_client = MagicMock(return_value=client)
+
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
+            patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
+            patch("backend.app.services.print_scheduler.async_session", db_session),
+        ):
+            await PrintScheduler._watchdog_print_start(
+                queue_item_id=1,
+                printer_id=42,
+                pre_state="FINISH",
+                pre_subtask_id="OLD_SUBTASK",
+                pre_gcode_file="/old.3mf",
+                timeout=0.2,
+                poll_interval=0.05,
+            )
+
+        # Item still reverts (the user-facing failure stays correct), but the
+        # MQTT session is left intact so the slow printer can finish parsing.
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "pending"
+        client.force_reconnect_stale_session.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reconnects_when_gcode_file_unchanged(self, db_session):
+        get_status = MagicMock(
+            return_value=_status("FINISH", "OLD_SUBTASK", gcode_file="/old.3mf"),
+        )
+        client = MagicMock()
+        get_client = MagicMock(return_value=client)
+
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
+            patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
+            patch("backend.app.services.print_scheduler.async_session", db_session),
+        ):
+            await PrintScheduler._watchdog_print_start(
+                queue_item_id=1,
+                printer_id=42,
+                pre_state="FINISH",
+                pre_subtask_id="OLD_SUBTASK",
+                pre_gcode_file="/old.3mf",
+                timeout=0.2,
+                poll_interval=0.05,
+            )
+
+        client.force_reconnect_stale_session.assert_called_once()

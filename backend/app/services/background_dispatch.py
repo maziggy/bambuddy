@@ -698,6 +698,7 @@ class BackgroundDispatchService:
                 pre_status = printer_manager.get_status(job.printer_id)
                 pre_state = getattr(pre_status, "state", None) if pre_status else None
                 pre_subtask_id = getattr(pre_status, "subtask_id", None) if pre_status else None
+                pre_gcode_file = getattr(pre_status, "gcode_file", None) if pre_status else None
                 if pre_state:
                     await self._set_active_message(job, f"Waiting for {printer_name} to acknowledge print...")
                     transitioned = await self._verify_print_response(
@@ -705,6 +706,7 @@ class BackgroundDispatchService:
                         printer_name,
                         pre_state,
                         pre_subtask_id=pre_subtask_id,
+                        pre_gcode_file=pre_gcode_file,
                     )
                     if not transitioned:
                         raise RuntimeError(
@@ -889,6 +891,7 @@ class BackgroundDispatchService:
                 pre_status = printer_manager.get_status(job.printer_id)
                 pre_state = getattr(pre_status, "state", None) if pre_status else None
                 pre_subtask_id = getattr(pre_status, "subtask_id", None) if pre_status else None
+                pre_gcode_file = getattr(pre_status, "gcode_file", None) if pre_status else None
                 if pre_state:
                     await self._set_active_message(job, f"Waiting for {printer_name} to acknowledge print...")
                     transitioned = await self._verify_print_response(
@@ -896,6 +899,7 @@ class BackgroundDispatchService:
                         printer_name,
                         pre_state,
                         pre_subtask_id=pre_subtask_id,
+                        pre_gcode_file=pre_gcode_file,
                     )
                     if not transitioned:
                         await db.rollback()
@@ -944,6 +948,7 @@ class BackgroundDispatchService:
         printer_name: str,
         pre_state: str,
         pre_subtask_id: str | None = None,
+        pre_gcode_file: str | None = None,
         timeout: float = 90.0,
         poll_interval: float = 3.0,
     ) -> bool:
@@ -963,6 +968,7 @@ class BackgroundDispatchService:
         landed" signal even while state is still FINISH (#1078).
         """
         deadline = time.monotonic() + timeout
+        last_status = None
         while time.monotonic() < deadline:
             await asyncio.sleep(poll_interval)
             state = printer_manager.get_status(printer_id)
@@ -972,6 +978,7 @@ class BackgroundDispatchService:
                 # failure on the first missed tick; the printer may reconnect
                 # within the remaining timeout and still surface a transition.
                 continue
+            last_status = state
             if state.state != pre_state:
                 return True
             if pre_subtask_id is not None and state.subtask_id is not None and state.subtask_id != pre_subtask_id:
@@ -985,13 +992,34 @@ class BackgroundDispatchService:
             pre_state,
             pre_subtask_id,
         )
-        # Strong signal the MQTT session is half-broken (#887, #936): telemetry
-        # still arrives but our publishes don't reach the printer. Force a fresh
-        # session so the next dispatch can land without a power cycle.
+        # Distinguish #1150 (slow parse) from #887/#936 (half-broken session)
+        # via gcode_file: if the printer is now showing a different file than
+        # before dispatch, the project_file command landed and the printer is
+        # parsing — a forced reconnect mid-parse causes 0500_4003. If
+        # gcode_file is unchanged, the publish was silently swallowed and the
+        # original #936 recovery (force_reconnect → fresh client_id) is what
+        # we want. Caveat: in the rare retry-same-file-after-timeout case the
+        # printer's gcode_file looks identical before and after the publish
+        # lands, so a slow parse on retry-same-file still falls through to the
+        # reconnect (and the original 0500_4003) — accepted to avoid breaking
+        # the half-broken-session recovery path.
         client = printer_manager.get_client(printer_id)
-        if client and hasattr(client, "force_reconnect_stale_session"):
+        current_gcode_file = getattr(last_status, "gcode_file", None) if last_status else None
+        publish_landed = current_gcode_file is not None and current_gcode_file != pre_gcode_file
+        if publish_landed:
+            logger.warning(
+                "Printer %s (%d) gcode_file changed to %r (was %r) — printer "
+                "received the command and is parsing slowly. Skipping forced "
+                "MQTT reconnect to avoid 0500_4003 mid-parse (#1150).",
+                printer_name,
+                printer_id,
+                current_gcode_file,
+                pre_gcode_file,
+            )
+        elif client and hasattr(client, "force_reconnect_stale_session"):
             client.force_reconnect_stale_session(
-                f"print command unacknowledged after {timeout:.0f}s (state still {pre_state})"
+                f"print command unacknowledged after {timeout:.0f}s "
+                f"(state still {pre_state}, gcode_file {current_gcode_file!r})"
             )
         return False
 

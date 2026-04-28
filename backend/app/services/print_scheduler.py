@@ -1851,6 +1851,7 @@ class PrintScheduler:
         pre_status = printer_manager.get_status(item.printer_id)
         pre_state = getattr(pre_status, "state", None) if pre_status else None
         pre_subtask_id = getattr(pre_status, "subtask_id", None) if pre_status else None
+        pre_gcode_file = getattr(pre_status, "gcode_file", None) if pre_status else None
 
         # Start the print with AMS mapping, plate_id and print options
         started = printer_manager.start_print(
@@ -1884,6 +1885,7 @@ class PrintScheduler:
                         item.printer_id,
                         pre_state,
                         pre_subtask_id,
+                        pre_gcode_file,
                     )
                 )
 
@@ -1957,6 +1959,7 @@ class PrintScheduler:
         printer_id: int,
         pre_state: str,
         pre_subtask_id: str | None = None,
+        pre_gcode_file: str | None = None,
         timeout: float = 90.0,
         poll_interval: float = 3.0,
     ) -> None:
@@ -1982,11 +1985,13 @@ class PrintScheduler:
         that also don't emit an early subtask_id tick.
         """
         deadline = time.monotonic() + timeout
+        last_status = None
         while time.monotonic() < deadline:
             await asyncio.sleep(poll_interval)
             status = printer_manager.get_status(printer_id)
             if not status:
                 return  # Printer disconnected — don't mess with the DB
+            last_status = status
             if status.state != pre_state:
                 return  # Printer picked up the job (state transition)
             if pre_subtask_id is not None and status.subtask_id is not None and status.subtask_id != pre_subtask_id:
@@ -2011,12 +2016,28 @@ class PrintScheduler:
                 pre_subtask_id,
             )
 
-        # Same half-broken-session recovery as background_dispatch: force the
-        # MQTT client to reconnect so the next dispatch lands without a power cycle.
+        # Same #1150 / #887/#936 discriminator as background_dispatch: if the
+        # printer's gcode_file changed since pre-dispatch, the project_file
+        # command landed and the printer is parsing — a forced reconnect
+        # mid-parse triggers 0500_4003. If gcode_file is unchanged, the
+        # publish was silently swallowed (#887/#936) and the original
+        # force_reconnect recovery is what we want.
         client = printer_manager.get_client(printer_id)
-        if client and hasattr(client, "force_reconnect_stale_session"):
+        current_gcode_file = getattr(last_status, "gcode_file", None) if last_status else None
+        publish_landed = current_gcode_file is not None and current_gcode_file != pre_gcode_file
+        if publish_landed:
+            logger.warning(
+                "Queue item %s: gcode_file changed to %r (was %r) — printer "
+                "received the command and is parsing slowly. Skipping forced "
+                "MQTT reconnect to avoid 0500_4003 mid-parse (#1150).",
+                queue_item_id,
+                current_gcode_file,
+                pre_gcode_file,
+            )
+        elif client and hasattr(client, "force_reconnect_stale_session"):
             client.force_reconnect_stale_session(
-                f"queue print command unacknowledged after {timeout:.0f}s (state still {pre_state})"
+                f"queue print command unacknowledged after {timeout:.0f}s "
+                f"(state still {pre_state}, gcode_file {current_gcode_file!r})"
             )
 
 

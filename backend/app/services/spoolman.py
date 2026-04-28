@@ -69,9 +69,10 @@ class SpoolmanUnavailableError(Exception):
 class SpoolmanClientError(Exception):
     """Raised when Spoolman returns a 4xx client error (not 404)."""
 
-    def __init__(self, message: str, status_code: int):
+    def __init__(self, message: str, status_code: int, response_text: str = ""):
         super().__init__(message)
         self.status_code = status_code
+        self.response_text = response_text[:200]
 
 
 class SpoolmanClient:
@@ -212,6 +213,7 @@ class SpoolmanClient:
                 raise SpoolmanClientError(
                     f"Spoolman rejected vendor creation (HTTP {response.status_code})",
                     response.status_code,
+                    response.text,
                 )
             response.raise_for_status()
             return response.json()
@@ -292,6 +294,7 @@ class SpoolmanClient:
                 raise SpoolmanClientError(
                     f"Spoolman rejected filament creation (HTTP {response.status_code})",
                     response.status_code,
+                    response.text,
                 )
             response.raise_for_status()
             return response.json()
@@ -333,6 +336,7 @@ class SpoolmanClient:
                 raise SpoolmanClientError(
                     f"Spoolman rejected spool creation (HTTP {response.status_code})",
                     response.status_code,
+                    response.text,
                 )
             response.raise_for_status()
             result = response.json()
@@ -400,6 +404,7 @@ class SpoolmanClient:
                 raise SpoolmanClientError(
                     f"Spoolman rejected {operation} for spool {spool_id} (HTTP {e.response.status_code})",
                     e.response.status_code,
+                    e.response.text,
                 ) from e
             else:
                 logger.error("Failed to %s spool %s in Spoolman: %s", operation, spool_id, e)
@@ -556,6 +561,7 @@ class SpoolmanClient:
                 raise SpoolmanClientError(
                     f"Spoolman rejected use_spool for spool {spool_id} (HTTP {response.status_code})",
                     response.status_code,
+                    response.text,
                 )
             response.raise_for_status()
             return response.json()

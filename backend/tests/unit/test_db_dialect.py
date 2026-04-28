@@ -661,6 +661,41 @@ class TestSpoolmanTableDialect:
         from backend.app.core.database import _safe_execute
 
         captured_sql: list[str] = []
+
+        nested_cm = MagicMock()
+        nested_cm.__aenter__ = AsyncMock(return_value=nested_cm)
+        nested_cm.__aexit__ = AsyncMock(return_value=False)
+
+        async def capturing_execute(sql_or_text, *args, **kwargs):
+            captured_sql.append(str(sql_or_text))
+
+        nested_cm.execute = AsyncMock(side_effect=capturing_execute)
+        mock_conn = MagicMock()
+        mock_conn.begin_nested.return_value = nested_cm
+        mock_conn.execute = AsyncMock(side_effect=capturing_execute)
+
+        pg_sql = """
+        CREATE TABLE IF NOT EXISTS spool_usage_history (
+            id SERIAL PRIMARY KEY,
+            spool_id INTEGER NOT NULL REFERENCES spool(id) ON DELETE CASCADE,
+            printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
+            print_name VARCHAR(500),
+            weight_used REAL NOT NULL DEFAULT 0,
+            percent_used INTEGER NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'completed',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        await _safe_execute(mock_conn, pg_sql)
+
+        assert captured_sql, "execute must have been called"
+        combined = " ".join(captured_sql)
+        assert "SERIAL PRIMARY KEY" in combined
+        assert "TIMESTAMP" in combined
+        assert "AUTOINCREMENT" not in combined
+        assert "DATETIME" not in combined
+
+
 class TestAutoLinkConstraintMigration:
     """Tests for _migrate_update_auto_link_constraint (Fall C / Azure support)."""
 
@@ -794,11 +829,10 @@ class TestAutoLinkConstraintMigration:
     @pytest.mark.asyncio
     async def test_constraint_migration_postgres_drops_and_recreates(self):
         """PostgreSQL path calls DROP CONSTRAINT IF EXISTS then ADD CONSTRAINT with new formula."""
-        from unittest.mock import AsyncMock, MagicMock, call
+        from unittest.mock import AsyncMock, MagicMock
 
         from backend.app.core.database import _migrate_update_auto_link_constraint
 
-        # Track all SQL statements passed to _safe_execute by capturing conn.execute calls
         executed_sqls: list[str] = []
 
         async def fake_safe_execute(conn, sql):
@@ -807,35 +841,6 @@ class TestAutoLinkConstraintMigration:
         nested_cm = MagicMock()
         nested_cm.__aenter__ = AsyncMock(return_value=nested_cm)
         nested_cm.__aexit__ = AsyncMock(return_value=False)
-
-        async def capturing_execute(sql_or_text, *args, **kwargs):
-            captured_sql.append(str(sql_or_text))
-
-        nested_cm.execute = AsyncMock(side_effect=capturing_execute)
-        mock_conn = MagicMock()
-        mock_conn.begin_nested.return_value = nested_cm
-        mock_conn.execute = AsyncMock(side_effect=capturing_execute)
-
-        pg_sql = """
-        CREATE TABLE IF NOT EXISTS spool_usage_history (
-            id SERIAL PRIMARY KEY,
-            spool_id INTEGER NOT NULL REFERENCES spool(id) ON DELETE CASCADE,
-            printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
-            print_name VARCHAR(500),
-            weight_used REAL NOT NULL DEFAULT 0,
-            percent_used INTEGER NOT NULL DEFAULT 0,
-            status VARCHAR(20) NOT NULL DEFAULT 'completed',
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-        await _safe_execute(mock_conn, pg_sql)
-
-        assert captured_sql, "execute must have been called"
-        combined = " ".join(captured_sql)
-        assert "SERIAL PRIMARY KEY" in combined
-        assert "TIMESTAMP" in combined
-        assert "AUTOINCREMENT" not in combined
-        assert "DATETIME" not in combined
         nested_cm.execute = AsyncMock()
 
         mock_conn = MagicMock()

@@ -175,6 +175,7 @@ async def init_db():
         color_catalog,
         external_link,
         filament,
+        filament_sku_settings,
         github_backup,
         group,
         kprofile_note,
@@ -1818,6 +1819,38 @@ async def run_migrations(conn):
                 )
         except (OperationalError, ProgrammingError):
             pass
+
+    # Migration: Create filament_sku_settings table for reorder forecasting
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_sku_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                lead_time_days INTEGER NOT NULL DEFAULT 7,
+                safety_margin_days INTEGER NOT NULL DEFAULT 14,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (material, subtype, brand)
+            )""",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_sku_settings (
+                id SERIAL PRIMARY KEY,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                lead_time_days INTEGER NOT NULL DEFAULT 7,
+                safety_margin_days INTEGER NOT NULL DEFAULT 14,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (material, subtype, brand)
+            )""",
+        )
 
 
 async def seed_notification_templates():

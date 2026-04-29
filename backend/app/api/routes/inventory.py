@@ -1509,3 +1509,74 @@ def _find_tray_in_ams_data(ams_data: list, ams_id: int, tray_id: int) -> dict | 
             if int(tray.get("id", -1)) == tray_id:
                 return tray
     return None
+
+
+# ── Filament SKU Settings (reorder forecasting) ───────────────────────────────
+
+
+class FilamentSkuSettingsResponse(BaseModel):
+    id: int
+    material: str
+    subtype: str | None
+    brand: str | None
+    lead_time_days: int
+    safety_margin_days: int
+
+    class Config:
+        from_attributes = True
+
+
+class FilamentSkuSettingsUpsert(BaseModel):
+    material: str
+    subtype: str | None = None
+    brand: str | None = None
+    lead_time_days: int = 7
+    safety_margin_days: int = 14
+
+
+@router.get("/sku-settings", response_model=list[FilamentSkuSettingsResponse])
+async def list_sku_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """List all filament SKU reorder settings."""
+    from backend.app.models.filament_sku_settings import FilamentSkuSettings
+
+    result = await db.execute(
+        select(FilamentSkuSettings).order_by(FilamentSkuSettings.material, FilamentSkuSettings.brand)
+    )
+    return list(result.scalars().all())
+
+
+@router.post("/sku-settings", response_model=FilamentSkuSettingsResponse)
+async def upsert_sku_settings(
+    data: FilamentSkuSettingsUpsert,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Create or update reorder settings for a filament SKU (material/subtype/brand)."""
+    from backend.app.models.filament_sku_settings import FilamentSkuSettings
+
+    result = await db.execute(
+        select(FilamentSkuSettings).where(
+            FilamentSkuSettings.material == data.material,
+            FilamentSkuSettings.subtype == data.subtype,
+            FilamentSkuSettings.brand == data.brand,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row:
+        row.lead_time_days = data.lead_time_days
+        row.safety_margin_days = data.safety_margin_days
+    else:
+        row = FilamentSkuSettings(
+            material=data.material,
+            subtype=data.subtype,
+            brand=data.brand,
+            lead_time_days=data.lead_time_days,
+            safety_margin_days=data.safety_margin_days,
+        )
+        db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row

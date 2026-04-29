@@ -99,11 +99,11 @@ def make_mock_client(filament=None, all_spools=None, patched_filament=None):
 class TestPatchFilamentOptionB:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_option_b_clears_spools_with_existing_override(
+    async def test_option_b_stamps_new_weight_on_all_affected_spools(
         self, async_client: AsyncClient, spoolman_settings
     ):
-        """Option B: spools that have their own spool_weight get it cleared in Spoolman."""
-        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_7_WITH_OVERRIDE])
+        """Option B: ALL affected spools (inheriting and overridden alike) get the new weight stamped."""
+        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_WITH_FILAMENT_7, SAMPLE_SPOOL_7_WITH_OVERRIDE])
         with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
             response = await async_client.patch(
                 "/api/v1/spoolman/inventory/filaments/7",
@@ -112,14 +112,17 @@ class TestPatchFilamentOptionB:
 
         assert response.status_code == 200
         mock_client.patch_filament.assert_called_once_with(7, {"spool_weight": 196.0})
-        mock_client.update_spool_full.assert_called_once_with(spool_id=43, clear_spool_weight=True)
+        assert mock_client.update_spool_full.call_count == 2
+        calls = {c.kwargs["spool_id"]: c.kwargs["spool_weight"] for c in mock_client.update_spool_full.call_args_list}
+        assert calls[42] == pytest.approx(196.0)
+        assert calls[43] == pytest.approx(196.0)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_option_b_does_not_patch_spools_already_inheriting(
+    async def test_option_b_stamps_inheriting_spool_with_new_weight(
         self, async_client: AsyncClient, spoolman_settings
     ):
-        """Option B: spools already inheriting from filament (spool_weight=None) are not patched."""
+        """Option B: a spool inheriting (spool_weight=None) gets the new weight explicitly stamped."""
         mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_WITH_FILAMENT_7])
         with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
             response = await async_client.patch(
@@ -128,15 +131,15 @@ class TestPatchFilamentOptionB:
             )
 
         assert response.status_code == 200
-        mock_client.update_spool_full.assert_not_called()
+        mock_client.update_spool_full.assert_called_once_with(spool_id=42, spool_weight=pytest.approx(196.0))
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_option_b_only_clears_affected_filament_spools(
+    async def test_option_b_only_stamps_affected_filament_spools(
         self, async_client: AsyncClient, spoolman_settings
     ):
-        """Option B for filament 7 must not patch spools belonging to other filament types."""
-        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_7_WITH_OVERRIDE, SAMPLE_SPOOL_WITH_FILAMENT_99])
+        """Option B for filament 7 must not touch spools belonging to other filament types."""
+        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_WITH_FILAMENT_7, SAMPLE_SPOOL_WITH_FILAMENT_99])
         with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
             response = await async_client.patch(
                 "/api/v1/spoolman/inventory/filaments/7",
@@ -144,8 +147,8 @@ class TestPatchFilamentOptionB:
             )
 
         assert response.status_code == 200
-        # Only spool 43 (filament 7) should be cleared; spool 55 (filament 99) must not be touched
-        mock_client.update_spool_full.assert_called_once_with(spool_id=43, clear_spool_weight=True)
+        # Only spool 42 (filament 7) should be stamped; spool 55 (filament 99) must not be touched
+        mock_client.update_spool_full.assert_called_once_with(spool_id=42, spool_weight=pytest.approx(196.0))
 
 
 class TestPatchFilamentOptionA:

@@ -1176,15 +1176,29 @@ async def patch_spoolman_filament(
                                 )
                             )
             else:
-                spools_to_clear = [s for s in affected_spools if s.get("spool_weight") is not None]
-                if spools_to_clear:
+                new_weight = body.spool_weight
+                if new_weight is not None:
+                    # Stamp the new weight onto every spool of this filament type so
+                    # each spool carries the value explicitly rather than inheriting.
                     async with _translate_spoolman_errors():
                         await asyncio.gather(
                             *(
-                                client.update_spool_full(spool_id=s["id"], clear_spool_weight=True)
-                                for s in spools_to_clear
+                                client.update_spool_full(spool_id=s["id"], spool_weight=new_weight)
+                                for s in affected_spools
                             )
                         )
+                else:
+                    # Filament weight is being cleared — remove any per-spool override
+                    # so spools fall back to whatever the filament now provides.
+                    spools_to_clear = [s for s in affected_spools if s.get("spool_weight") is not None]
+                    if spools_to_clear:
+                        async with _translate_spoolman_errors():
+                            await asyncio.gather(
+                                *(
+                                    client.update_spool_full(spool_id=s["id"], clear_spool_weight=True)
+                                    for s in spools_to_clear
+                                )
+                            )
 
     normalized = _normalize_filament(updated)
     if normalized is None:

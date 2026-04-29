@@ -16,6 +16,11 @@ export interface SpoolFormData {
   brand: string;
   color_name: string;
   rgba: string;
+  // #1154: extra gradient stops + visual effect. Stored as the canonical
+  // server form ("ec984c,6cd4bc,..." — no `#`, lowercase). Empty string means
+  // solid (the default).
+  extra_colors: string;
+  effect_type: string;
   label_weight: number;
   core_weight: number;
   core_weight_catalog_id: number | null;
@@ -38,6 +43,8 @@ export const defaultFormData: SpoolFormData = {
   brand: '',
   color_name: '',
   rgba: '808080FF',
+  extra_colors: '',
+  effect_type: '',
   label_weight: 1000,
   core_weight: 250,
   core_weight_catalog_id: null,

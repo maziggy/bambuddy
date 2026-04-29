@@ -2,13 +2,100 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+# Visual variant applied to a spool's swatch — purely cosmetic, does not
+# affect MQTT/firmware. Kept independent of `subtype` so users can override
+# the rendering hint without touching Bambu's categorical filament label.
+# Mirrors the visual variants the spool form's `KNOWN_VARIANTS` exposes so
+# the catalog and spool form share one vocabulary; structural variants like
+# gradient/dual-color/tri-color/multicolor combine with `extra_colors` for
+# rendering, surface effects (sparkle/wood/marble/glow/matte) layer overlays.
+ALLOWED_EFFECT_TYPES = frozenset(
+    {
+        # Surface effects
+        "sparkle",
+        "wood",
+        "marble",
+        "glow",
+        "matte",
+        # Sheen / finish variants
+        "silk",
+        "galaxy",
+        "rainbow",
+        "metal",
+        "translucent",
+        # Multi-colour structures (drive gradient rendering when paired with extra_colors)
+        "gradient",
+        "dual-color",
+        "tri-color",
+        "multicolor",
+    }
+)
+
+# Cap how many gradient stops we accept on input so a paste of arbitrary text
+# can't blow up the stored value or downstream rendering.
+MAX_EXTRA_COLOR_STOPS = 8
+
+
+def normalize_extra_colors(value: str | None) -> str | None:
+    """Parse comma-separated hex tokens into canonical lowercase form.
+
+    Accepts 6- or 8-char hex per token, with or without leading `#`. Returns
+    None for blank input, raises ValueError for malformed tokens or too many
+    stops. Output is the comma-joined canonical form (no `#`, lowercase).
+    """
+    if value is None:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    tokens = [tok.strip().lstrip("#").lower() for tok in raw.split(",") if tok.strip()]
+    if not tokens:
+        return None
+    if len(tokens) > MAX_EXTRA_COLOR_STOPS:
+        raise ValueError(f"extra_colors accepts at most {MAX_EXTRA_COLOR_STOPS} stops")
+    for tok in tokens:
+        if len(tok) not in (6, 8):
+            raise ValueError(f"extra_colors token '{tok}' must be 6 or 8 hex chars")
+        try:
+            int(tok, 16)
+        except ValueError as exc:
+            raise ValueError(f"extra_colors token '{tok}' is not valid hex") from exc
+    return ",".join(tokens)
+
+
+def normalize_effect_type(value: str | None) -> str | None:
+    if value is None:
+        return None
+    trimmed = value.strip().lower()
+    if not trimmed:
+        return None
+    # Tolerate "Dual Color" / "dual_color" / "dual color" → "dual-color" so
+    # users pasting from spool-subtype labels don't hit a validation wall.
+    canonical = trimmed.replace("_", "-").replace(" ", "-")
+    if canonical not in ALLOWED_EFFECT_TYPES:
+        raise ValueError(f"effect_type must be one of: {sorted(ALLOWED_EFFECT_TYPES)}")
+    return canonical
+
 
 class SpoolBase(BaseModel):
     material: str = Field(..., min_length=1, max_length=50)
     subtype: str | None = None
     color_name: str | None = None
     rgba: str | None = Field(None, pattern=r"^[0-9A-Fa-f]{8}$")
+    extra_colors: str | None = None
+    effect_type: str | None = None
     brand: str | None = None
+
+    @field_validator("extra_colors")
+    @classmethod
+    def _validate_extra_colors(cls, v: str | None) -> str | None:
+        return normalize_extra_colors(v)
+
+    @field_validator("effect_type")
+    @classmethod
+    def _validate_effect_type(cls, v: str | None) -> str | None:
+        return normalize_effect_type(v)
+
     label_weight: int = 1000
     core_weight: int = 250
     core_weight_catalog_id: int | None = None
@@ -18,7 +105,7 @@ class SpoolBase(BaseModel):
     nozzle_temp_min: int | None = None
     nozzle_temp_max: int | None = None
     note: str | None = None
-    tag_uid: str | None = Field(default=None, max_length=32)
+    tag_uid: str | None = None
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
@@ -29,7 +116,6 @@ class SpoolBase(BaseModel):
     # User-defined category + per-spool low-stock threshold override (#729).
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
-    storage_location: str | None = Field(default=None, max_length=255)
 
 
 class SpoolCreate(SpoolBase):
@@ -46,7 +132,20 @@ class SpoolUpdate(BaseModel):
     subtype: str | None = None
     color_name: str | None = None
     rgba: str | None = Field(None, pattern=r"^[0-9A-Fa-f]{8}$")
+    extra_colors: str | None = None
+    effect_type: str | None = None
     brand: str | None = None
+
+    @field_validator("extra_colors")
+    @classmethod
+    def _validate_extra_colors(cls, v: str | None) -> str | None:
+        return normalize_extra_colors(v)
+
+    @field_validator("effect_type")
+    @classmethod
+    def _validate_effect_type(cls, v: str | None) -> str | None:
+        return normalize_effect_type(v)
+
     label_weight: int | None = None
     core_weight: int | None = None
     core_weight_catalog_id: int | None = None
@@ -56,7 +155,7 @@ class SpoolUpdate(BaseModel):
     nozzle_temp_min: int | None = None
     nozzle_temp_max: int | None = None
     note: str | None = None
-    tag_uid: str | None = Field(default=None, max_length=32)
+    tag_uid: str | None = None
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
@@ -65,7 +164,6 @@ class SpoolUpdate(BaseModel):
     # User-defined category + per-spool low-stock threshold override (#729).
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
-    storage_location: str | None = Field(default=None, max_length=255)
 
 
 class SpoolKProfileBase(BaseModel):
@@ -77,14 +175,6 @@ class SpoolKProfileBase(BaseModel):
     name: str | None = None
     cali_idx: int | None = None
     setting_id: str | None = None
-
-    @field_validator("nozzle_diameter")
-    @classmethod
-    def normalize_nozzle_diameter(cls, v: str) -> str:
-        try:
-            return str(float(v))
-        except (ValueError, TypeError):
-            return v
 
 
 class SpoolKProfileResponse(SpoolKProfileBase):
@@ -106,7 +196,7 @@ class SpoolResponse(SpoolBase):
     added_full: bool | None = None
     last_used: datetime | None = None
     encode_time: datetime | None = None
-    tag_uid: str | None = Field(default=None, max_length=32)
+    tag_uid: str | None = None
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None

@@ -1,6 +1,21 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+
+def _validate_project_url(value: str | None) -> str | None:
+    """Reject anything that isn't an http(s) URL — the URL is rendered as a
+    clickable `<a href>` so a `javascript:` / `data:` / `file:` value would be
+    an XSS vector even with React's default escaping (#1155)."""
+    if value is None:
+        return value
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    lowered = trimmed.lower()
+    if not (lowered.startswith("http://") or lowered.startswith("https://")):
+        raise ValueError("url must start with http:// or https://")
+    return trimmed
 
 
 class ProjectCreate(BaseModel):
@@ -17,6 +32,12 @@ class ProjectCreate(BaseModel):
     priority: str = "normal"
     budget: float | None = None
     parent_id: int | None = None  # For sub-projects
+    url: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _check_url(cls, v: str | None) -> str | None:
+        return _validate_project_url(v)
 
 
 class ProjectUpdate(BaseModel):
@@ -34,6 +55,12 @@ class ProjectUpdate(BaseModel):
     priority: str | None = None
     budget: float | None = None
     parent_id: int | None = None
+    url: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _check_url(cls, v: str | None) -> str | None:
+        return _validate_project_url(v)
 
 
 class ProjectStats(BaseModel):
@@ -95,6 +122,8 @@ class ProjectResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     stats: ProjectStats | None = None
+    url: str | None = None
+    cover_image_filename: str | None = None
 
     class Config:
         from_attributes = True
@@ -132,6 +161,9 @@ class ProjectListResponse(BaseModel):
     progress_percent: float | None = None
     # Preview of archives (up to 5)
     archives: list[ArchivePreview] = []
+    # #1155: card-level metadata
+    url: str | None = None
+    cover_image_filename: str | None = None
 
     class Config:
         from_attributes = True

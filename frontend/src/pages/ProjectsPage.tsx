@@ -19,6 +19,9 @@ import {
   MoreVertical,
   Download,
   Upload,
+  ExternalLink,
+  Image as ImageIcon,
+  X,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { ProjectListItem, ProjectCreate, ProjectUpdate, ProjectImport, Permission } from '../api/client';
@@ -62,9 +65,54 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
   const [dueDate, setDueDate] = useState((project as ProjectListItem & { due_date?: string })?.due_date?.split('T')[0] || '');
   const [priority, setPriority] = useState((project as ProjectListItem & { priority?: string })?.priority || 'normal');
   const [budget, setBudget] = useState(project?.budget?.toString() || '');
+  const [url, setUrl] = useState(project?.url || '');
+  const [urlError, setUrlError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [coverImageFilename, setCoverImageFilename] = useState(project?.cover_image_filename || null);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const [coverUploading, setCoverUploading] = useState(false);
+  // Cache-bust the cover image URL when it changes mid-edit so the preview
+  // refreshes after upload/remove.
+  const [coverCacheKey, setCoverCacheKey] = useState(0);
+
+  const handleCoverFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !project) return;
+    setCoverUploading(true);
+    try {
+      const result = await api.uploadProjectCoverImage(project.id, file);
+      setCoverImageFilename(result.filename);
+      setCoverCacheKey((k) => k + 1);
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    } catch {
+      // Upload failed — leave existing cover image in place.
+    } finally {
+      setCoverUploading(false);
+      if (coverFileInputRef.current) coverFileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveCover = async () => {
+    if (!project) return;
+    setCoverUploading(true);
+    try {
+      await api.deleteProjectCoverImage(project.id);
+      setCoverImageFilename(null);
+      setCoverCacheKey((k) => k + 1);
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    } finally {
+      setCoverUploading(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedUrl = url.trim();
+    if (trimmedUrl && !/^https?:\/\//i.test(trimmedUrl)) {
+      setUrlError(t('projects.urlInvalid'));
+      return;
+    }
+    setUrlError(null);
     onSave({
       name: name.trim(),
       description: description.trim() || undefined,
@@ -75,6 +123,10 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
       due_date: dueDate || undefined,
       priority,
       budget: budget.trim() ? parseFloat(budget) : null,
+      // Pydantic accepts null to clear the URL; an empty string would fail the
+      // http(s) prefix validator. Use undefined for create (omit) and null for
+      // edit-with-cleared-value.
+      url: project ? (trimmedUrl || null) : (trimmedUrl || undefined),
       ...(project && { status }),
     });
   };
@@ -115,6 +167,80 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
               rows={2}
             />
           </div>
+
+          {/* #1155: External URL */}
+          <div>
+            <label className="block text-sm font-medium text-white mb-1">
+              {t('projects.urlLabel')}
+            </label>
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => { setUrl(e.target.value); if (urlError) setUrlError(null); }}
+              className={`w-full bg-bambu-dark border rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none ${
+                urlError ? 'border-red-500 focus:border-red-500' : 'border-bambu-dark-tertiary focus:border-bambu-green'
+              }`}
+              placeholder={t('projects.urlPlaceholder')}
+              maxLength={2048}
+            />
+            {urlError && <p className="text-xs text-red-400 mt-1">{urlError}</p>}
+          </div>
+
+          {/* #1155: Cover image — only available when editing an existing project,
+              since uploading needs a project_id. New projects can add it after save. */}
+          {project && (
+            <div>
+              <label className="block text-sm font-medium text-white mb-1">
+                {t('projects.coverImageLabel')}
+              </label>
+              <div className="flex items-center gap-3">
+                <div className="w-20 h-20 rounded bg-bambu-dark border border-bambu-dark-tertiary overflow-hidden flex items-center justify-center flex-shrink-0">
+                  {coverImageFilename ? (
+                    <img
+                      src={`${api.getProjectCoverImageUrl(project.id)}?v=${coverCacheKey}`}
+                      alt={t('projects.coverImageAlt')}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <ImageIcon className="w-6 h-6 text-bambu-gray" />
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <input
+                    ref={coverFileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    onChange={handleCoverFileChange}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => coverFileInputRef.current?.click()}
+                    disabled={coverUploading}
+                  >
+                    {coverUploading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 mr-1" />
+                    )}
+                    {coverImageFilename ? t('projects.coverImageReplace') : t('projects.coverImageUpload')}
+                  </Button>
+                  {coverImageFilename && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleRemoveCover}
+                      disabled={coverUploading}
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      {t('projects.coverImageRemove')}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-white mb-1">
@@ -317,12 +443,37 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission, t }: P
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className={`p-2 rounded-lg ${statusConfig.bg} flex-shrink-0`}>
-              <statusConfig.icon className={`w-5 h-5 ${statusConfig.color}`} />
-            </div>
+            {project.cover_image_filename ? (
+              // #1155: cover photo replaces the status-icon box
+              <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-bambu-dark border border-bambu-dark-tertiary">
+                <img
+                  src={api.getProjectCoverImageUrl(project.id)}
+                  alt={t('projects.coverImageAlt')}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            ) : (
+              <div className={`p-2 rounded-lg ${statusConfig.bg} flex-shrink-0`}>
+                <statusConfig.icon className={`w-5 h-5 ${statusConfig.color}`} />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-semibold text-white truncate">{project.name}</h3>
+                {project.url && (
+                  <a
+                    href={project.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    title={project.url}
+                    aria-label={t('projects.openExternalUrl')}
+                    className="inline-flex items-center justify-center w-6 h-6 rounded bg-bambu-dark border border-bambu-dark-tertiary text-bambu-green hover:bg-bambu-green/10 hover:border-bambu-green transition-colors flex-shrink-0"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
                 {project.target_parts_count ? (
                   <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap font-medium ${
                     partsProgressPercent >= 100

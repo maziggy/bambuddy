@@ -4,7 +4,7 @@ import logging
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -30,6 +30,8 @@ from backend.app.schemas.spool import (
     SpoolKProfileResponse,
     SpoolResponse,
     SpoolUpdate,
+    normalize_effect_type,
+    normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.utils.filament_ids import (
@@ -87,23 +89,52 @@ class ColorEntryResponse(BaseModel):
     hex_color: str
     material: str | None
     is_default: bool
+    extra_colors: str | None = None
+    effect_type: str | None = None
 
     class Config:
         from_attributes = True
 
 
+_HEX_COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+
+
 class ColorEntryCreate(BaseModel):
     manufacturer: str
     color_name: str
-    hex_color: str
+    hex_color: str = Field(..., pattern=_HEX_COLOR_PATTERN)
     material: str | None = None
+    extra_colors: str | None = None
+    effect_type: str | None = None
+
+    @field_validator("extra_colors")
+    @classmethod
+    def _validate_extra_colors(cls, v: str | None) -> str | None:
+        return normalize_extra_colors(v)
+
+    @field_validator("effect_type")
+    @classmethod
+    def _validate_effect_type(cls, v: str | None) -> str | None:
+        return normalize_effect_type(v)
 
 
 class ColorEntryUpdate(BaseModel):
     manufacturer: str
     color_name: str
-    hex_color: str
+    hex_color: str = Field(..., pattern=_HEX_COLOR_PATTERN)
     material: str | None = None
+    extra_colors: str | None = None
+    effect_type: str | None = None
+
+    @field_validator("extra_colors")
+    @classmethod
+    def _validate_extra_colors(cls, v: str | None) -> str | None:
+        return normalize_extra_colors(v)
+
+    @field_validator("effect_type")
+    @classmethod
+    def _validate_effect_type(cls, v: str | None) -> str | None:
+        return normalize_effect_type(v)
 
 
 class ColorLookupResult(BaseModel):
@@ -278,6 +309,8 @@ async def add_color_entry(
         hex_color=entry.hex_color,
         material=entry.material,
         is_default=False,
+        extra_colors=entry.extra_colors,
+        effect_type=entry.effect_type,
     )
     db.add(row)
     await db.commit()
@@ -301,6 +334,8 @@ async def update_color_entry(
     row.color_name = entry.color_name
     row.hex_color = entry.hex_color
     row.material = entry.material
+    row.extra_colors = entry.extra_colors
+    row.effect_type = entry.effect_type
     await db.commit()
     await db.refresh(row)
     return row

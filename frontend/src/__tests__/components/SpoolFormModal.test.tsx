@@ -76,6 +76,8 @@ const existingSpool: InventorySpool = {
   brand: 'Polymaker',
   color_name: 'Red',
   rgba: 'FF0000FF',
+  extra_colors: null,
+  effect_type: null,
   label_weight: 1000,
   core_weight: 250,
   core_weight_catalog_id: null,

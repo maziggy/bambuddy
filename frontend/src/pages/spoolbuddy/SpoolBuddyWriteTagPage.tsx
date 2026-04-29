@@ -644,6 +644,8 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
       brand: formData.brand || null,
       color_name: formData.color_name || null,
       rgba: formData.rgba || null,
+      extra_colors: formData.extra_colors || null,
+      effect_type: formData.effect_type || null,
       label_weight: formData.label_weight,
       core_weight: formData.core_weight,
       core_weight_catalog_id: formData.core_weight_catalog_id,

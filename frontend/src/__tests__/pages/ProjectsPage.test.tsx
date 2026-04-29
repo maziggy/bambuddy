@@ -148,4 +148,87 @@ describe('ProjectsPage', () => {
       });
     });
   });
+
+  // #1155 — URL link icon + cover image thumbnail on project cards.
+  describe('URL link and cover image (#1155)', () => {
+    it('renders an external-link icon next to the project name when URL is set', async () => {
+      server.use(
+        http.get('/api/v1/projects/', () =>
+          HttpResponse.json([
+            {
+              ...mockProjects[0],
+              url: 'https://makerworld.com/models/12345',
+              cover_image_filename: null,
+            },
+          ])
+        )
+      );
+
+      render(<ProjectsPage />);
+
+      const link = await screen.findByLabelText(/Open project URL/i);
+      expect(link).toBeInTheDocument();
+      expect(link.getAttribute('href')).toBe('https://makerworld.com/models/12345');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toContain('noopener');
+    });
+
+    it('does not render the link icon when URL is not set', async () => {
+      // Default fixture has no `url` field — verify the icon is absent.
+      render(<ProjectsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+      });
+      expect(screen.queryByLabelText(/Open project URL/i)).not.toBeInTheDocument();
+    });
+
+    it('clicking the URL link does not bubble to the card onClick', async () => {
+      server.use(
+        http.get('/api/v1/projects/', () =>
+          HttpResponse.json([
+            {
+              ...mockProjects[0],
+              url: 'https://example.com',
+              cover_image_filename: null,
+            },
+          ])
+        )
+      );
+
+      const user = userEvent.setup();
+      render(<ProjectsPage />);
+
+      const link = await screen.findByLabelText(/Open project URL/i);
+      // Prevent the underlying anchor from triggering jsdom navigation noise
+      // — we only need the propagation guard verified.
+      link.addEventListener('click', (e) => e.preventDefault(), { once: true });
+      await user.click(link);
+
+      // No navigate / detail-page transition should have happened. Card root
+      // is still rendered.
+      expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+    });
+
+    it('renders a cover image thumbnail when cover_image_filename is set', async () => {
+      server.use(
+        http.get('/api/v1/projects/', () =>
+          HttpResponse.json([
+            {
+              ...mockProjects[0],
+              url: null,
+              cover_image_filename: 'cover_abc.png',
+            },
+          ])
+        )
+      );
+
+      render(<ProjectsPage />);
+
+      const img = await screen.findByAltText(/Project cover photo/i);
+      expect(img).toBeInTheDocument();
+      // Card thumbnail uses the GET endpoint URL, project.id is 1.
+      expect(img.getAttribute('src')).toContain('/projects/1/cover-image');
+    });
+  });
 });

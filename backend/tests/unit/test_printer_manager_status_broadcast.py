@@ -32,6 +32,23 @@ def manager():
     return PrinterManager()
 
 
+def _close_unawaited(coro):
+    """Side effect for mocked ``_schedule_async``.
+
+    ``set_awaiting_plate_clear`` evaluates the coroutine expressions
+    ``self._persist_awaiting_plate_clear(...)`` and
+    ``self._broadcast_status_change(...)`` before passing them to
+    ``_schedule_async``. When that target is patched, the coroutine objects
+    leak — Python's ``__del__`` then emits ``coroutine was never awaited``
+    during GC, and when GC runs late enough that warning hits the interpreter
+    shutdown path with ``KeyError: '__import__'``. Closing the coroutine here
+    prevents both. Returns ``None`` so the mock's call signature is unchanged.
+    """
+    if asyncio.iscoroutine(coro):
+        coro.close()
+    return None
+
+
 def _fake_state(**overrides):
     """Minimal stand-in for a ``PrinterState`` — only the attributes
     ``printer_state_to_dict`` reads. We use a SimpleNamespace rather than
@@ -58,7 +75,7 @@ class TestSchedulingFromSetAwaitingPlateClear:
         manager._loop = MagicMock()
         manager._loop.is_running.return_value = True
 
-        with patch.object(manager, "_schedule_async") as scheduled:
+        with patch.object(manager, "_schedule_async", side_effect=_close_unawaited) as scheduled:
             manager.set_awaiting_plate_clear(7, True)
 
         # Two coroutines: persist + broadcast. Order doesn't matter.
@@ -96,7 +113,7 @@ class TestSchedulingFromSetAwaitingPlateClear:
         manager._loop = MagicMock()
         manager._loop.is_running.return_value = True
 
-        with patch.object(manager, "_schedule_async") as scheduled:
+        with patch.object(manager, "_schedule_async", side_effect=_close_unawaited) as scheduled:
             manager.set_awaiting_plate_clear(7, True)
             scheduled.reset_mock()
             manager.set_awaiting_plate_clear(7, False)

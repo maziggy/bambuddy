@@ -185,6 +185,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Track plates (print jobs) and parts separately
 - Auto-detect parts count from 3MF files
 - Color-coded project badges
+- **Project URL + cover photo** — paste a MakerWorld/Printables/Thingiverse link and upload a hero image so each card is immediately recognisable; the URL renders as a one-click link beside the project name
 - Bulk assign archives via multi-select toolbar
 - Import/Export projects as ZIP (includes files) or JSON
 - Print or queue files from linked library folders directly in the project view (resulting archive auto-linked to the project)
@@ -216,6 +217,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - **Per-spool cost tracking** — Set cost/kg on each spool; costs are automatically calculated at print completion and aggregated to archives. Print modal shows real-time cost preview. Configurable default cost and currency in Settings.
 - **Bulk spool addition** — Add multiple identical spools at once (quantity 1–100) with a single form submission. Quick Add mode for stock spools that only need material, color, and weight.
 - Spool catalog, color catalog, PA profile matching, and low-stock alerts
+- **Multi-colour gradients, transparency, and visual effects** — Paste a comma-separated hex list (e.g. from 3dfilamentprofiles.com) to render a spool as a gradient or conic colour wheel; transparency shows through a checkerboard so the alpha you set is the alpha you see; pick a visual effect (sparkle, wood, marble, glow, matte) for the swatch overlay. Same fields are editable on the colour catalog so combos can be reused across spools.
 
 ### 🔧 Integrations
 - [Spoolman](https://github.com/Donkie/Spoolman) filament sync with per-filament usage tracking and fill level display

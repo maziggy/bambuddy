@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Palette, Plus, Trash2, RotateCcw, Loader2, Pencil, Check, X, Search, Download, Upload, Cloud } from 'lucide-react';
 import { api, getAuthToken } from '../api/client';
@@ -6,6 +6,8 @@ import type { ColorCatalogEntry } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
 import { ConfirmModal } from './ConfirmModal';
+import { FilamentSwatch } from './FilamentSwatch';
+import { FILAMENT_EFFECT_OPTIONS } from './filamentSwatchHelpers';
 
 export function ColorCatalogSettings() {
   const { t } = useTranslation();
@@ -23,6 +25,8 @@ export function ColorCatalogSettings() {
   const [formColorName, setFormColorName] = useState('');
   const [formHexColor, setFormHexColor] = useState('#FFFFFF');
   const [formMaterial, setFormMaterial] = useState('');
+  const [formExtraColors, setFormExtraColors] = useState('');
+  const [formEffectType, setFormEffectType] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Selection state
@@ -68,6 +72,8 @@ export function ColorCatalogSettings() {
     setFormColorName('');
     setFormHexColor('#FFFFFF');
     setFormMaterial('');
+    setFormExtraColors('');
+    setFormEffectType('');
   };
 
   const handleAdd = async () => {
@@ -82,6 +88,8 @@ export function ColorCatalogSettings() {
         color_name: formColorName.trim(),
         hex_color: formHexColor,
         material: formMaterial.trim() || null,
+        extra_colors: formExtraColors.trim() || null,
+        effect_type: formEffectType.trim() || null,
       });
       setCatalog(prev => [...prev, entry].sort((a, b) =>
         a.manufacturer.localeCompare(b.manufacturer) ||
@@ -104,6 +112,8 @@ export function ColorCatalogSettings() {
     setFormColorName(entry.color_name);
     setFormHexColor(entry.hex_color);
     setFormMaterial(entry.material || '');
+    setFormExtraColors(entry.extra_colors || '');
+    setFormEffectType(entry.effect_type || '');
   };
 
   const cancelEdit = () => {
@@ -123,6 +133,8 @@ export function ColorCatalogSettings() {
         color_name: formColorName.trim(),
         hex_color: formHexColor,
         material: formMaterial.trim() || null,
+        extra_colors: formExtraColors.trim() || null,
+        effect_type: formEffectType.trim() || null,
       });
       setCatalog(prev =>
         prev.map(e => e.id === id ? updated : e).sort((a, b) =>
@@ -254,8 +266,8 @@ export function ColorCatalogSettings() {
   };
 
   const handleExport = () => {
-    const exportData = catalog.map(({ manufacturer, color_name, hex_color, material }) => ({
-      manufacturer, color_name, hex_color, material,
+    const exportData = catalog.map(({ manufacturer, color_name, hex_color, material, extra_colors, effect_type }) => ({
+      manufacturer, color_name, hex_color, material, extra_colors, effect_type,
     }));
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -276,6 +288,7 @@ export function ColorCatalogSettings() {
       const text = await file.text();
       const data = JSON.parse(text) as Array<{
         manufacturer: string; color_name: string; hex_color: string; material?: string | null;
+        extra_colors?: string | null; effect_type?: string | null;
       }>;
       if (!Array.isArray(data)) throw new Error('Invalid format');
 
@@ -295,6 +308,8 @@ export function ColorCatalogSettings() {
             color_name: item.color_name,
             hex_color: item.hex_color,
             material: item.material || null,
+            extra_colors: item.extra_colors || null,
+            effect_type: item.effect_type || null,
           });
           setCatalog(prev => [...prev, entry].sort((a, b) =>
             a.manufacturer.localeCompare(b.manufacturer) ||
@@ -473,6 +488,27 @@ export function ColorCatalogSettings() {
                 </button>
               </div>
             </div>
+            {/* #1154: optional multi-colour stops + visual effect. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+              <input
+                type="text"
+                className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white text-sm font-mono placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                placeholder={t('inventory.extraColorsPlaceholder')}
+                value={formExtraColors}
+                onChange={(e) => setFormExtraColors(e.target.value)}
+              />
+              <select
+                className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
+                value={formEffectType}
+                onChange={(e) => setFormEffectType(e.target.value)}
+              >
+                {FILAMENT_EFFECT_OPTIONS.map((opt) => (
+                  <option key={opt.value || 'none'} value={opt.value}>
+                    {t(opt.labelKey)}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
 
@@ -519,7 +555,8 @@ export function ColorCatalogSettings() {
                   </tr>
                 ) : (
                   filteredCatalog.map(entry => (
-                    <tr key={entry.id} className={`border-t border-bambu-dark-tertiary hover:bg-bambu-dark ${selectedIds.has(entry.id) ? 'bg-bambu-dark' : ''}`}>
+                    <Fragment key={entry.id}>
+                    <tr className={`border-t border-bambu-dark-tertiary hover:bg-bambu-dark ${selectedIds.has(entry.id) ? 'bg-bambu-dark' : ''}`}>
                       {editingId === entry.id ? (
                         <>
                           <td className="px-2 py-2">
@@ -596,9 +633,12 @@ export function ColorCatalogSettings() {
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <div
-                              className="w-8 h-8 rounded border border-bambu-dark-tertiary"
-                              style={{ backgroundColor: entry.hex_color }}
+                            <FilamentSwatch
+                              rgba={entry.hex_color.replace(/^#/, '') + (entry.hex_color.length === 7 ? 'FF' : '')}
+                              extraColors={entry.extra_colors}
+                              effectType={entry.effect_type}
+                              className="w-8 h-8"
+                              shape="square"
                               title={entry.hex_color}
                             />
                           </td>
@@ -625,6 +665,35 @@ export function ColorCatalogSettings() {
                         </>
                       )}
                     </tr>
+                    {editingId === entry.id && (
+                      <tr className="border-t border-bambu-dark-tertiary/50 bg-bambu-dark">
+                        <td colSpan={2}></td>
+                        <td className="px-3 py-2" colSpan={2}>
+                          <input
+                            type="text"
+                            className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm font-mono focus:border-bambu-green focus:outline-none"
+                            placeholder={t('inventory.extraColorsPlaceholder')}
+                            value={formExtraColors}
+                            onChange={(e) => setFormExtraColors(e.target.value)}
+                          />
+                        </td>
+                        <td className="px-3 py-2" colSpan={2}>
+                          <select
+                            className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                            value={formEffectType}
+                            onChange={(e) => setFormEffectType(e.target.value)}
+                          >
+                            {FILAMENT_EFFECT_OPTIONS.map((opt) => (
+                              <option key={opt.value || 'none'} value={opt.value}>
+                                {t(opt.labelKey)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td></td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))
                 )}
               </tbody>

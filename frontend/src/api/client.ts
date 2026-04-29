@@ -660,6 +660,8 @@ export interface Project {
   created_at: string;
   updated_at: string;
   stats?: ProjectStats;
+  url: string | null;  // External link rendered next to project name on the card (#1155)
+  cover_image_filename: string | null;  // Filename within project attachments dir (#1155)
 }
 
 export interface ProjectAttachment {
@@ -695,6 +697,8 @@ export interface ProjectListItem {
   queue_count: number;
   progress_percent: number | null;  // Plates progress
   archives: ArchivePreview[];
+  url: string | null;  // #1155
+  cover_image_filename: string | null;  // #1155
 }
 
 export interface ProjectCreate {
@@ -709,6 +713,7 @@ export interface ProjectCreate {
   priority?: string;
   budget?: number | null;
   parent_id?: number;
+  url?: string | null;  // #1155
 }
 
 export interface ProjectUpdate {
@@ -724,6 +729,7 @@ export interface ProjectUpdate {
   priority?: string;
   budget?: number | null;
   parent_id?: number;
+  url?: string | null;  // #1155 — explicit null clears the URL
 }
 
 // BOM Types - Tracks sourced/purchased parts (hardware, electronics, etc.)
@@ -1070,6 +1076,9 @@ export interface ColorCatalogEntry {
   hex_color: string;
   material: string | null;
   is_default: boolean;
+  // #1154: optional multi-colour gradient stops + visual effect.
+  extra_colors?: string | null;
+  effect_type?: string | null;
 }
 
 export interface ColorLookupResult {
@@ -2253,6 +2262,10 @@ export interface InventorySpool {
   subtype: string | null;
   color_name: string | null;
   rgba: string | null;
+  // Multi-colour gradient stops (#1154): comma-separated 6/8-char hex.
+  extra_colors: string | null;
+  // Visual effect overlay: sparkle | wood | marble | glow | matte.
+  effect_type: string | null;
   brand: string | null;
   label_weight: number;
   core_weight: number;
@@ -4374,10 +4387,26 @@ export const api = {
     request<ColorCatalogEntry[]>('/inventory/colors'),
   getColorNameMap: () =>
     request<{ colors: Record<string, string> }>('/inventory/colors/map'),
-  addColorEntry: (data: { manufacturer: string; color_name: string; hex_color: string; material: string | null }) =>
+  addColorEntry: (data: {
+    manufacturer: string;
+    color_name: string;
+    hex_color: string;
+    material: string | null;
+    extra_colors?: string | null;
+    effect_type?: string | null;
+  }) =>
     request<ColorCatalogEntry>('/inventory/colors', { method: 'POST', body: JSON.stringify(data) }),
-  updateColorEntry: (id: number, data: { manufacturer: string; color_name: string; hex_color: string; material: string | null }) =>
-    request<ColorCatalogEntry>(`/inventory/colors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateColorEntry: (
+    id: number,
+    data: {
+      manufacturer: string;
+      color_name: string;
+      hex_color: string;
+      material: string | null;
+      extra_colors?: string | null;
+      effect_type?: string | null;
+    },
+  ) => request<ColorCatalogEntry>(`/inventory/colors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteColorEntry: (id: number) =>
     request<{ status: string }>(`/inventory/colors/${id}`, { method: 'DELETE' }),
   bulkDeleteColorEntries: (ids: number[]) =>
@@ -4719,6 +4748,35 @@ export const api = {
       `/projects/${projectId}/attachments/${encodeURIComponent(filename)}`,
       { method: 'DELETE' }
     ),
+
+  // #1155: Cover image
+  // Browsers can't attach `Authorization: Bearer ...` to `<img src>`, so we
+  // append the stream-token query string the same way archive thumbnails do.
+  getProjectCoverImageUrl: (projectId: number) =>
+    withStreamToken(`${API_BASE}/projects/${projectId}/cover-image`),
+  uploadProjectCoverImage: async (
+    projectId: number,
+    file: File
+  ): Promise<{ status: string; filename: string; size: number }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE}/projects/${projectId}/cover-image`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+  deleteProjectCoverImage: (projectId: number) =>
+    request<{ status: string }>(`/projects/${projectId}/cover-image`, { method: 'DELETE' }),
 
   // BOM (Bill of Materials)
   getProjectBOM: (projectId: number) =>

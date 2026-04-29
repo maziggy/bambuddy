@@ -2405,7 +2405,11 @@ function ArchiveListRow({
 
 type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'size-desc' | 'size-asc';
 type ViewMode = 'grid' | 'list' | 'calendar' | 'log';
-type Collection = 'all' | 'recent' | 'this-week' | 'this-month' | 'favorites' | 'failed' | 'duplicates';
+type Collection = 'all' | 'recent' | 'this-week' | 'this-month' | 'favorites' | 'not-printed' | 'printed' | 'failed' | 'duplicates';
+
+// status values that indicate a print attempt has finished (regardless of outcome).
+// `archived` is the only status that means "uploaded but never sent to a printer."
+const PRINTED_STATUSES = ['completed', 'failed', 'aborted', 'cancelled', 'stopped'] as const;
 
 const collections: { id: Collection; label: string; icon: React.ReactNode }[] = [
   { id: 'all', label: 'All Archives', icon: <FolderOpen className="w-4 h-4" /> },
@@ -2413,6 +2417,8 @@ const collections: { id: Collection; label: string; icon: React.ReactNode }[] = 
   { id: 'this-week', label: 'This Week', icon: <Calendar className="w-4 h-4" /> },
   { id: 'this-month', label: 'This Month', icon: <Calendar className="w-4 h-4" /> },
   { id: 'favorites', label: 'Favorites', icon: <Star className="w-4 h-4" /> },
+  { id: 'not-printed', label: 'Not Printed', icon: <Upload className="w-4 h-4" /> },
+  { id: 'printed', label: 'Printed', icon: <Printer className="w-4 h-4" /> },
   { id: 'failed', label: 'Failed Prints', icon: <AlertCircle className="w-4 h-4" /> },
   { id: 'duplicates', label: 'Duplicates', icon: <Copy className="w-4 h-4" /> },
 ];
@@ -2758,6 +2764,12 @@ export function ArchivesPage() {
           break;
         case 'favorites':
           matchesCollection = a.is_favorite === true;
+          break;
+        case 'not-printed':
+          matchesCollection = a.status === 'archived';
+          break;
+        case 'printed':
+          matchesCollection = (PRINTED_STATUSES as readonly string[]).includes(a.status);
           break;
         case 'failed':
           matchesCollection = a.status === 'failed' || a.status === 'aborted';

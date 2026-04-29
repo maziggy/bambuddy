@@ -215,10 +215,17 @@ class TestVirtualPrinterInstance:
         mock_archive.id = 1
         mock_archive.print_name = "test"
 
-        with patch(
-            "backend.app.services.archive.ArchiveService.archive_print",
-            new_callable=AsyncMock,
-            return_value=mock_archive,
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
         ):
             await inst._add_to_print_queue(file_path, "192.168.1.100")
 
@@ -266,16 +273,88 @@ class TestVirtualPrinterInstance:
         mock_archive.id = 1
         mock_archive.print_name = "test"
 
-        with patch(
-            "backend.app.services.archive.ArchiveService.archive_print",
-            new_callable=AsyncMock,
-            return_value=mock_archive,
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
         ):
             await inst._add_to_print_queue(file_path, "192.168.1.100")
 
         assert len(added_items) == 1
         queue_item = added_items[0]
         assert queue_item.manual_start is True
+
+    # ========================================================================
+    # Tests for archive_name_source setting (#1152)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("setting_value", "expected_prefer_filename"),
+        [
+            ("filename", True),
+            ("metadata", False),
+            (None, False),  # Default when setting unset
+            ("", False),  # Defensive: empty string is not "filename"
+        ],
+    )
+    async def test_archive_file_passes_prefer_filename_per_setting(
+        self, tmp_path, setting_value, expected_prefer_filename
+    ):
+        """_archive_file reads `virtual_printer_archive_name_source` and forwards
+        prefer_filename_for_name=True only when it equals 'filename' (#1152)."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=20,
+            name="NameSource",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800020",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "user-renamed-job.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "user-renamed-job"
+
+        archive_print_mock = AsyncMock(return_value=mock_archive)
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=setting_value,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                archive_print_mock,
+            ),
+        ):
+            await inst._archive_file(file_path, "192.168.1.100")
+
+        assert archive_print_mock.await_count == 1
+        kwargs = archive_print_mock.await_args.kwargs
+        assert kwargs.get("prefer_filename_for_name") is expected_prefer_filename
 
 
 class TestVirtualPrinterManager:

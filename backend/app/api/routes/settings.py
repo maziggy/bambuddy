@@ -859,6 +859,7 @@ async def get_virtual_printer_settings(
     target_printer_id = await get_setting(db, "virtual_printer_target_printer_id")
     remote_interface_ip = await get_setting(db, "virtual_printer_remote_interface_ip")
     tailscale_disabled_raw = await get_setting(db, "virtual_printer_tailscale_disabled")
+    archive_name_source = await get_setting(db, "virtual_printer_archive_name_source")
 
     return {
         "enabled": enabled == "true" if enabled else False,
@@ -868,6 +869,7 @@ async def get_virtual_printer_settings(
         "target_printer_id": int(target_printer_id) if target_printer_id else None,
         "remote_interface_ip": remote_interface_ip or "",
         "tailscale_disabled": tailscale_disabled_raw == "true" if tailscale_disabled_raw else True,
+        "archive_name_source": archive_name_source if archive_name_source in ("metadata", "filename") else "metadata",
         "status": virtual_printer_manager.get_status(),
     }
 
@@ -881,6 +883,7 @@ async def update_virtual_printer_settings(
     target_printer_id: int = None,
     remote_interface_ip: str = None,
     tailscale_disabled: bool = None,
+    archive_name_source: str = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
@@ -943,6 +946,13 @@ async def update_virtual_printer_settings(
         return JSONResponse(
             status_code=400,
             content={"detail": "Mode must be 'immediate', 'review', 'print_queue', or 'proxy'"},
+        )
+
+    # Validate archive_name_source
+    if archive_name_source is not None and archive_name_source not in ("metadata", "filename"):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "archive_name_source must be 'metadata' or 'filename'"},
         )
     # Normalize legacy "queue" to "review" for storage
     if new_mode == "queue":
@@ -1014,6 +1024,8 @@ async def update_virtual_printer_settings(
         await set_setting(db, "virtual_printer_remote_interface_ip", remote_interface_ip)
     if tailscale_disabled is not None:
         await set_setting(db, "virtual_printer_tailscale_disabled", "true" if tailscale_disabled else "false")
+    if archive_name_source is not None:
+        await set_setting(db, "virtual_printer_archive_name_source", archive_name_source)
 
     # Propagate tailscale_disabled to the first VirtualPrinter row so sync_from_db() picks it up
     if tailscale_disabled is not None:

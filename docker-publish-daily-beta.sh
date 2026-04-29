@@ -296,6 +296,18 @@ else
         CHANGELOG_NOTES="No changelog notes available for this release."
     fi
 
+    # GitHub caps release body at 125000 chars. Reserve ~2000 for the boilerplate
+    # header/pull-commands and truncate the changelog tail with a link to the full file.
+    MAX_NOTES_LEN=122000
+    if [ ${#CHANGELOG_NOTES} -gt $MAX_NOTES_LEN ]; then
+        echo -e "${YELLOW}  Changelog section is ${#CHANGELOG_NOTES} chars; truncating to ${MAX_NOTES_LEN} for GitHub release body${NC}"
+        CHANGELOG_NOTES="${CHANGELOG_NOTES:0:$MAX_NOTES_LEN}
+
+---
+
+_Changelog truncated — see the full [CHANGELOG.md](https://github.com/maziggy/bambuddy/blob/main/CHANGELOG.md) for the complete list._"
+    fi
+
     # Build pull commands for the release body
     PULL_COMMANDS=""
     if [ "$PUSH_GHCR" = true ]; then
@@ -346,11 +358,14 @@ EOF
     git push origin "v${DAILY_TAG}" --force
 
     echo "  Creating release v${DAILY_TAG}..."
+    NOTES_FILE=$(mktemp)
+    trap 'rm -f "$NOTES_FILE"' EXIT
+    printf '%s\n' "$RELEASE_BODY" > "$NOTES_FILE"
     gh release create "v${DAILY_TAG}" \
         --title "Daily Beta Build v${DAILY_TAG}" \
         --prerelease \
         --generate-notes=false \
-        --notes "$RELEASE_BODY"
+        --notes-file "$NOTES_FILE"
     echo -e "${GREEN}  Created GitHub release: v${DAILY_TAG}${NC}"
 fi
 

@@ -116,6 +116,10 @@ class AppSettings(BaseModel):
         default="immediate",
         description="Mode: 'immediate' (archive now), 'review' (pending review), or 'print_queue' (add to print queue)",
     )
+    virtual_printer_archive_name_source: str = Field(
+        default="metadata",
+        description="Source for the archive's display name on virtual-printer uploads: 'metadata' uses the 3MF's embedded print_name (default, matches Bambu's behavior), 'filename' uses the filename Bambu Studio sent over FTP (lets users rename via the slicer's 'send to printer' dialog).",
+    )
 
     # Dark mode theme settings
     dark_style: str = Field(default="classic", description="Dark mode style: classic, glow, vibrant")
@@ -349,6 +353,7 @@ class AppSettingsUpdate(BaseModel):
     virtual_printer_enabled: bool | None = None
     virtual_printer_access_code: str | None = None
     virtual_printer_mode: str | None = None
+    virtual_printer_archive_name_source: str | None = None
     dark_style: str | None = None
     dark_background: str | None = None
     dark_accent: str | None = None

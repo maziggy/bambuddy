@@ -1,15 +1,19 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
-import { Loader2, Plus, Printer, ExternalLink, AlertTriangle, Info } from 'lucide-react';
-import { multiVirtualPrinterApi } from '../api/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Loader2, Plus, Printer, ExternalLink, AlertTriangle, Info, FileText } from 'lucide-react';
+import { multiVirtualPrinterApi, virtualPrinterApi } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
+import { Toggle } from './Toggle';
+import { useToast } from '../contexts/ToastContext';
 import { VirtualPrinterCard } from './VirtualPrinterCard';
 import { VirtualPrinterAddDialog } from './VirtualPrinterAddDialog';
 
 export function VirtualPrinterList() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [showAddDialog, setShowAddDialog] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -17,6 +21,25 @@ export function VirtualPrinterList() {
     queryFn: multiVirtualPrinterApi.list,
     refetchInterval: 10000,
   });
+
+  const { data: globalSettings } = useQuery({
+    queryKey: ['virtual-printer-settings'],
+    queryFn: virtualPrinterApi.getSettings,
+  });
+
+  const archiveNameSourceMutation = useMutation({
+    mutationFn: (source: 'metadata' | 'filename') =>
+      virtualPrinterApi.updateSettings({ archive_name_source: source }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['virtual-printer-settings'] });
+      showToast(t('virtualPrinter.toast.updated'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('virtualPrinter.toast.failedToUpdate'), 'error');
+    },
+  });
+
+  const useFilename = globalSettings?.archive_name_source === 'filename';
 
   if (isLoading) {
     return (
@@ -72,6 +95,38 @@ export function VirtualPrinterList() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Global VP behavior settings */}
+      <Card>
+        <CardContent className="py-3 px-4">
+          <div className="flex items-start gap-3">
+            <FileText className="w-4 h-4 text-bambu-green flex-shrink-0 mt-1" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-white font-medium">
+                  {t('virtualPrinter.archiveNameSource.title')}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs ${useFilename ? 'text-bambu-gray' : 'text-white'}`}>
+                    {t('virtualPrinter.archiveNameSource.metadata')}
+                  </span>
+                  <Toggle
+                    checked={useFilename}
+                    onChange={(checked) => archiveNameSourceMutation.mutate(checked ? 'filename' : 'metadata')}
+                    disabled={archiveNameSourceMutation.isPending}
+                  />
+                  <span className={`text-xs ${useFilename ? 'text-white' : 'text-bambu-gray'}`}>
+                    {t('virtualPrinter.archiveNameSource.filename')}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-bambu-gray mt-1">
+                {t('virtualPrinter.archiveNameSource.description')}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Header with add button */}
       <div className="flex items-center justify-between">

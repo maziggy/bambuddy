@@ -78,6 +78,8 @@ async def archive_all_pending(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
     """Archive all pending uploads."""
+    from backend.app.api.routes.settings import get_setting
+
     result = await db.execute(select(PendingUpload).where(PendingUpload.status == "pending"))
     pending_uploads = result.scalars().all()
 
@@ -85,6 +87,7 @@ async def archive_all_pending(
     failed = 0
 
     service = ArchiveService(db)
+    prefer_filename = (await get_setting(db, "virtual_printer_archive_name_source")) == "filename"
 
     for pending in pending_uploads:
         file_path = Path(pending.file_path)
@@ -102,6 +105,7 @@ async def archive_all_pending(
                     "source": "virtual_printer",
                     "source_ip": pending.source_ip,
                 },
+                prefer_filename_for_name=prefer_filename,
             )
 
             if archive:
@@ -193,6 +197,9 @@ async def archive_pending_upload(
         raise HTTPException(status_code=404, detail="Upload file not found on disk")
 
     # Archive the file
+    from backend.app.api.routes.settings import get_setting
+
+    prefer_filename = (await get_setting(db, "virtual_printer_archive_name_source")) == "filename"
     service = ArchiveService(db)
     archive = await service.archive_print(
         printer_id=None,
@@ -202,6 +209,7 @@ async def archive_pending_upload(
             "source": "virtual_printer",
             "source_ip": pending.source_ip,
         },
+        prefer_filename_for_name=prefer_filename,
     )
 
     if not archive:

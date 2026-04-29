@@ -886,6 +886,7 @@ class ArchiveService:
         original_filename: str | None = None,
         project_id: int | None = None,
         subtask_id: str | None = None,
+        prefer_filename_for_name: bool = False,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -901,6 +902,11 @@ class ArchiveService:
             subtask_id: MQTT-provided task identifier (optional). Used to match an
                 existing archive across a backend restart mid-print so the
                 original row can be resumed instead of cancelled (#972).
+            prefer_filename_for_name: When True, use the uploaded filename stem as the
+                archive's display name even if the 3MF embeds a `print_name` in its
+                metadata. Used by virtual-printer flows so users who rename a job in
+                BambuStudio's "send to printer" dialog see that name instead of the
+                creator-baked title (#1152).
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -1028,7 +1034,7 @@ class ArchiveService:
             file_size=dest_file.stat().st_size,
             content_hash=content_hash,
             thumbnail_path=thumbnail_path,
-            print_name=metadata.get("print_name") or display_stem,
+            print_name=display_stem if prefer_filename_for_name else (metadata.get("print_name") or display_stem),
             print_time_seconds=metadata.get("print_time_seconds"),
             filament_used_grams=metadata.get("filament_used_grams"),
             filament_type=metadata.get("filament_type"),

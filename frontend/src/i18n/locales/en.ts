@@ -4069,6 +4069,12 @@ export default {
       description: 'The virtual printer feature requires additional system configuration before it will work. This includes port forwarding, firewall rules, and platform-specific settings.',
       readGuide: 'Read the setup guide before enabling',
     },
+    archiveNameSource: {
+      title: 'Archive name source',
+      description: 'Choose how new archives are named when files arrive via the virtual printer. "Metadata" uses the slicer-embedded title from the 3MF (default). "Filename" uses the filename Bambu Studio sent over FTP — handy if you renamed the job in the "send to printer" dialog.',
+      metadata: 'Metadata',
+      filename: 'Filename',
+    },
     howItWorks: {
       title: 'How it works',
       step1: 'On the same LAN, virtual printers appear in your slicer (Bambu Studio / OrcaSlicer) automatically via discovery. From other networks, add them manually by IP address and access code.',

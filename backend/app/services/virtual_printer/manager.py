@@ -236,9 +236,12 @@ class VirtualPrinterInstance:
             return
 
         try:
+            from backend.app.api.routes.settings import get_setting
             from backend.app.services.archive import ArchiveService
 
             async with self._session_factory() as db:
+                name_source = await get_setting(db, "virtual_printer_archive_name_source")
+                prefer_filename = name_source == "filename"
                 service = ArchiveService(db)
                 archive = await service.archive_print(
                     printer_id=None,
@@ -248,6 +251,7 @@ class VirtualPrinterInstance:
                         "source": "virtual_printer",
                         "source_ip": source_ip,
                     },
+                    prefer_filename_for_name=prefer_filename,
                 )
                 if archive:
                     logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
@@ -309,10 +313,13 @@ class VirtualPrinterInstance:
             return
 
         try:
+            from backend.app.api.routes.settings import get_setting
             from backend.app.models.print_queue import PrintQueueItem
             from backend.app.services.archive import ArchiveService
 
             async with self._session_factory() as db:
+                name_source = await get_setting(db, "virtual_printer_archive_name_source")
+                prefer_filename = name_source == "filename"
                 service = ArchiveService(db)
                 archive = await service.archive_print(
                     printer_id=None,
@@ -322,6 +329,7 @@ class VirtualPrinterInstance:
                         "source": "virtual_printer",
                         "source_ip": source_ip,
                     },
+                    prefer_filename_for_name=prefer_filename,
                 )
                 if archive:
                     logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)

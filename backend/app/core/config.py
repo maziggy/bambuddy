@@ -60,6 +60,12 @@ class Settings(BaseSettings):
 
     # Paths
     base_dir: Path = _data_dir  # For backwards compatibility
+    # `app_dir` is where the source code is checked out — distinct from `base_dir`
+    # on native installs where DATA_DIR is set to a sibling like INSTALL_PATH/data.
+    # Use this when you need the working tree (requirements.txt, frontend/, etc.)
+    # rather than the data dir. On Docker / local dev where DATA_DIR is unset,
+    # app_dir == base_dir.
+    app_dir: Path = _app_dir
     archive_dir: Path = _data_dir / "archive"
     plate_calibration_dir: Path = _plate_cal_dir  # Plate detection references
     static_dir: Path = _app_dir / "static"  # Static files are part of app, not data

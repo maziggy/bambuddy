@@ -425,7 +425,13 @@ async def _perform_update():
             "error": None,
         }
 
-        # Install Python dependencies
+        # Install Python dependencies — must run from the source-code directory
+        # (where requirements.txt lives), not the data dir. On native installs
+        # systemd sets DATA_DIR=INSTALL_PATH/data, so `base_dir` is the data dir,
+        # not the working tree. `git reset` above worked from base_dir because
+        # git walks up looking for .git, but `pip install -r requirements.txt`
+        # needs the file in cwd literally.
+        app_dir = settings.app_dir
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",
@@ -434,7 +440,7 @@ async def _perform_update():
             "-r",
             "requirements.txt",
             "-q",
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -445,7 +451,7 @@ async def _perform_update():
 
         # Try to build frontend if npm is available (optional - static files are pre-built)
         npm_path = _find_executable("npm")
-        frontend_dir = base_dir / "frontend"
+        frontend_dir = app_dir / "frontend"
 
         if npm_path and frontend_dir.exists():
             _update_status = {

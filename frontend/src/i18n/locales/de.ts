@@ -4022,6 +4022,12 @@ export default {
       description: 'Die virtuelle Druckerfunktion erfordert zusätzliche Systemkonfiguration, bevor sie funktioniert. Dies beinhaltet Portweiterleitung, Firewall-Regeln und plattformspezifische Einstellungen.',
       readGuide: 'Lese die Einrichtungsanleitung vor dem Aktivieren',
     },
+    archiveNameSource: {
+      title: 'Quelle des Archivnamens',
+      description: 'Lege fest, wie neue Archive benannt werden, wenn Dateien über den virtuellen Drucker eintreffen. "Metadaten" verwendet den im 3MF eingebetteten Titel des Slicers (Standard). "Dateiname" nutzt den Dateinamen, den Bambu Studio per FTP gesendet hat — praktisch, wenn der Job im Dialog "Zum Drucker senden" umbenannt wurde.',
+      metadata: 'Metadaten',
+      filename: 'Dateiname',
+    },
     howItWorks: {
       title: 'So funktioniert es',
       step1: 'Im selben LAN erscheinen virtuelle Drucker automatisch in deinem Slicer (Bambu Studio / OrcaSlicer). Aus anderen Netzwerken füge sie manuell per IP-Adresse und Zugangscode hinzu.',

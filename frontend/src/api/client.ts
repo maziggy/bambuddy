@@ -5554,6 +5554,7 @@ export interface VirtualPrinterSettings {
   target_printer_id: number | null;  // For proxy mode
   remote_interface_ip: string | null;  // For SSDP proxy across networks
   tailscale_disabled: boolean;
+  archive_name_source: 'metadata' | 'filename';  // Source for archive's display name
   status: VirtualPrinterStatus;
 }
 
@@ -5597,6 +5598,7 @@ export const virtualPrinterApi = {
     target_printer_id?: number;
     remote_interface_ip?: string;
     tailscale_disabled?: boolean;
+    archive_name_source?: 'metadata' | 'filename';
   }) => {
     const params = new URLSearchParams();
     if (data.enabled !== undefined) params.set('enabled', String(data.enabled));
@@ -5606,6 +5608,7 @@ export const virtualPrinterApi = {
     if (data.target_printer_id !== undefined) params.set('target_printer_id', String(data.target_printer_id));
     if (data.remote_interface_ip !== undefined) params.set('remote_interface_ip', data.remote_interface_ip);
     if (data.tailscale_disabled !== undefined) params.set('tailscale_disabled', String(data.tailscale_disabled));
+    if (data.archive_name_source !== undefined) params.set('archive_name_source', data.archive_name_source);
 
     return request<VirtualPrinterSettings>(`/settings/virtual-printer?${params.toString()}`, {
       method: 'PUT',

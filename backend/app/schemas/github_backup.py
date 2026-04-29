@@ -50,10 +50,10 @@ class GitHubBackupConfigCreate(BaseModel):
         url = self.repository_url.strip().rstrip("/")
         self.repository_url = url
         https_or_ssh = [
-            r"^https://[\w.-]+(:\d+)?/[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?/?$",
-            r"^git@[\w.-]+:[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?$",
+            r"^https://[\w.-]+(:\d+)?/[\w.-]+(\/[\w.-]+)+(?:\.git)?/?$",
+            r"^git@[\w.-]+:[\w.-]+(\/[\w.-]+)+(?:\.git)?$",
         ]
-        http_pattern = r"^http://[\w.-]+(:\d+)?/[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?/?$"
+        http_pattern = r"^http://[\w.-]+(:\d+)?/[\w.-]+(\/[\w.-]+)+(?:\.git)?/?$"
         if any(re.match(p, url) for p in https_or_ssh):
             return self
         if re.match(http_pattern, url):
@@ -96,8 +96,8 @@ class GitHubBackupConfigUpdate(BaseModel):
         url = self.repository_url.strip().rstrip("/")
         self.repository_url = url
         valid_patterns = [
-            r"^https?://[\w.-]+(:\d+)?/[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?/?$",
-            r"^git@[\w.-]+:[\w.-]{1,100}/[\w.-]{1,100}(?:\.git)?$",
+            r"^https?://[\w.-]+(:\d+)?/[\w.-]+(\/[\w.-]+)+(?:\.git)?/?$",
+            r"^git@[\w.-]+:[\w.-]+(\/[\w.-]+)+(?:\.git)?$",
         ]
         if not any(re.match(p, url) for p in valid_patterns):
             raise ValueError(

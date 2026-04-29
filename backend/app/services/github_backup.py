@@ -94,7 +94,7 @@ class GitHubBackupService:
                     logger.info("Running scheduled backup for config %s", config.id)
                     await self.run_backup(config.id, trigger="scheduled")
 
-    def _calculate_next_run(self, schedule_type: str, from_time: datetime | None = None) -> datetime:
+    def calculate_next_run(self, schedule_type: str, from_time: datetime | None = None) -> datetime:
         """Calculate the next scheduled run time."""
         now = from_time or datetime.now(timezone.utc)
         interval = SCHEDULE_INTERVALS.get(schedule_type, SCHEDULE_INTERVALS["daily"])
@@ -155,7 +155,7 @@ class GitHubBackupService:
                         config.last_backup_status = "skipped"
                         config.last_backup_message = "No data to backup"
                         if config.schedule_enabled:
-                            config.next_scheduled_run = self._calculate_next_run(config.schedule_type)
+                            config.next_scheduled_run = self.calculate_next_run(config.schedule_type)
                         await db.commit()
                         return {
                             "success": True,
@@ -182,7 +182,7 @@ class GitHubBackupService:
                     config.last_backup_commit_sha = push_result.get("commit_sha")
 
                     if config.schedule_enabled:
-                        config.next_scheduled_run = self._calculate_next_run(config.schedule_type)
+                        config.next_scheduled_run = self.calculate_next_run(config.schedule_type)
 
                     await db.commit()
 
@@ -205,7 +205,7 @@ class GitHubBackupService:
                     config.last_backup_message = str(e)
 
                     if config.schedule_enabled:
-                        config.next_scheduled_run = self._calculate_next_run(config.schedule_type)
+                        config.next_scheduled_run = self.calculate_next_run(config.schedule_type)
 
                     await db.commit()
                     return {
@@ -521,8 +521,7 @@ class GitHubBackupService:
 
     async def _push_to_github(self, config: GitHubBackupConfig, files: dict) -> dict:
         """Push files to the configured Git provider."""
-        provider = getattr(config, "provider", "github") or "github"
-        backend = get_provider_backend(provider)
+        backend = get_provider_backend(config.provider)
         client = await self._get_client()
         return await backend.push_files(
             repo_url=config.repository_url,

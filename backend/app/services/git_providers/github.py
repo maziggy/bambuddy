@@ -17,6 +17,14 @@ class GitHubBackend(GitProviderBackend):
     """Backend for github.com using the GitHub Git Data API."""
 
     def get_api_base(self, repo_url: str) -> str:
+        m = re.match(r"https?://([\w.\-]+(:\d+)?)/", repo_url)
+        if m:
+            host = m.group(1)
+            return "https://api.github.com" if host == "github.com" else f"https://{host}/api/v3"
+        m = re.match(r"git@([\w.\-]+):", repo_url)
+        if m:
+            host = m.group(1)
+            return "https://api.github.com" if host == "github.com" else f"https://{host}/api/v3"
         return "https://api.github.com"
 
     def parse_repo_url(self, url: str) -> tuple[str, str]:
@@ -122,7 +130,7 @@ class GitHubBackend(GitProviderBackend):
                 return {
                     "status": "failed",
                     "message": f"Failed to get branch ref: {ref_response.status_code}",
-                    "error": ref_response.text,
+                    "error": self._truncated_response_text(ref_response),
                 }
 
             current_commit_sha = ref_response.json()["object"]["sha"]
@@ -161,7 +169,7 @@ class GitHubBackend(GitProviderBackend):
                     json={"content": base64.b64encode(content_bytes).decode(), "encoding": "base64"},
                 )
                 if blob_response.status_code != 201:
-                    logger.error("Failed to create blob for %s: %s", path, blob_response.text)
+                    logger.error("Failed to create blob for %s: %s", path, self._truncated_response_text(blob_response))
                     continue
 
                 tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]})
@@ -176,7 +184,10 @@ class GitHubBackend(GitProviderBackend):
                 json={"base_tree": current_tree_sha, "tree": tree_items},
             )
             if tree_response.status_code != 201:
-                return {"status": "failed", "message": f"Failed to create tree: {tree_response.text}"}
+                return {
+                    "status": "failed",
+                    "message": f"Failed to create tree: {self._truncated_response_text(tree_response)}",
+                }
 
             new_tree_sha = tree_response.json()["sha"]
             commit_message = f"Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
@@ -186,7 +197,10 @@ class GitHubBackend(GitProviderBackend):
                 json={"message": commit_message, "tree": new_tree_sha, "parents": [current_commit_sha]},
             )
             if commit_response.status_code != 201:
-                return {"status": "failed", "message": f"Failed to create commit: {commit_response.text}"}
+                return {
+                    "status": "failed",
+                    "message": f"Failed to create commit: {self._truncated_response_text(commit_response)}",
+                }
 
             new_commit_sha = commit_response.json()["sha"]
 
@@ -196,7 +210,10 @@ class GitHubBackend(GitProviderBackend):
                 json={"sha": new_commit_sha},
             )
             if ref_update.status_code != 200:
-                return {"status": "failed", "message": f"Failed to update branch: {ref_update.text}"}
+                return {
+                    "status": "failed",
+                    "message": f"Failed to update branch: {self._truncated_response_text(ref_update)}",
+                }
 
             return {
                 "status": "success",
@@ -243,7 +260,10 @@ class GitHubBackend(GitProviderBackend):
                 json={"ref": f"refs/heads/{branch}", "sha": base_sha},
             )
             if create_ref.status_code != 201:
-                return {"status": "failed", "message": f"Failed to create branch: {create_ref.text}"}
+                return {
+                    "status": "failed",
+                    "message": f"Failed to create branch: {self._truncated_response_text(create_ref)}",
+                }
 
             return await self.push_files(repo_url, token, branch, files, client)
 

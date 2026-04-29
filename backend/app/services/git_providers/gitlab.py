@@ -27,21 +27,28 @@ class GitLabBackend(GitProviderBackend):
         return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     def parse_repo_url(self, url: str) -> tuple[str, str]:
-        """Return (owner, repo) from HTTPS or SSH URL."""
+        """Return (namespace, repo) from HTTPS or SSH URL.
+
+        namespace may include subgroups, e.g. 'group/subgroup' for
+        gitlab.com/group/subgroup/project. Callers join them with '/' and
+        URL-encode the result for /api/v4/projects/{encoded_path}.
+        """
         if not url or len(url) > 500:
             raise ValueError("Invalid Git URL: URL too long or empty")
-        match = re.match(
-            r"https?://[\w.\-]+(:\d+)?/([\w.\-]{1,100})/([\w.\-]{1,100})(?:\.git)?/?$",
-            url,
-        )
+        match = re.match(r"https?://[\w.\-]+(:\d+)?/(.+?)(?:\.git)?/?$", url)
         if match:
-            return match.group(2), match.group(3).removesuffix(".git")
-        match = re.match(
-            r"git@[\w.\-]+:([\w.\-]{1,100})/([\w.\-]{1,100})(?:\.git)?$",
-            url,
-        )
+            full_path = match.group(2)
+            if "/" not in full_path:
+                raise ValueError(f"Cannot parse repository URL: {url}")
+            namespace, _, repo = full_path.rpartition("/")
+            return namespace, repo
+        match = re.match(r"git@[\w.\-]+:(.+?)(?:\.git)?$", url)
         if match:
-            return match.group(1), match.group(2).removesuffix(".git")
+            full_path = match.group(1)
+            if "/" not in full_path:
+                raise ValueError(f"Cannot parse repository URL: {url}")
+            namespace, _, repo = full_path.rpartition("/")
+            return namespace, repo
         raise ValueError(f"Cannot parse repository URL: {url}")
 
     async def test_connection(self, repo_url: str, token: str, client: httpx.AsyncClient) -> dict:
@@ -144,16 +151,23 @@ class GitLabBackend(GitProviderBackend):
             elif branch_response.status_code != 200:
                 return {"status": "failed", "message": f"Failed to check branch: {branch_response.status_code}"}
 
-            tree_response = await client.get(
-                f"{api_base}/projects/{encoded_path}/repository/tree",
-                headers=headers,
-                params={"recursive": "true", "ref": branch, "per_page": 100},
-            )
             existing_blobs: dict[str, str] = {}
-            if tree_response.status_code == 200:
-                for item in tree_response.json():
+            page = 1
+            while True:
+                tree_response = await client.get(
+                    f"{api_base}/projects/{encoded_path}/repository/tree",
+                    headers=headers,
+                    params={"recursive": "true", "ref": branch, "per_page": 100, "page": page},
+                )
+                if tree_response.status_code != 200:
+                    break
+                items = tree_response.json()
+                if not items:
+                    break
+                for item in items:
                     if item.get("type") == "blob":
                         existing_blobs[item["path"]] = item["id"]
+                page += 1
 
             actions = []
             for path, content in files.items():
@@ -183,7 +197,10 @@ class GitLabBackend(GitProviderBackend):
                 json={"branch": branch, "commit_message": commit_message, "actions": actions},
             )
             if commit_response.status_code not in (200, 201):
-                return {"status": "failed", "message": f"Failed to create commit: {commit_response.text}"}
+                return {
+                    "status": "failed",
+                    "message": f"Failed to create commit: {self._truncated_response_text(commit_response)}",
+                }
 
             return {
                 "status": "success",
@@ -225,7 +242,10 @@ class GitLabBackend(GitProviderBackend):
                 json={"branch": branch, "commit_message": commit_message, "actions": actions, "start_branch": branch},
             )
             if commit_response.status_code not in (200, 201):
-                return {"status": "failed", "message": f"Failed to create initial commit: {commit_response.text}"}
+                return {
+                    "status": "failed",
+                    "message": f"Failed to create initial commit: {self._truncated_response_text(commit_response)}",
+                }
 
             return {
                 "status": "success",

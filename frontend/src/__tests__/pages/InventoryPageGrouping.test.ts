@@ -11,9 +11,12 @@
 import { describe, it, expect } from 'vitest';
 import type { InventorySpool, SpoolAssignment } from '../../api/client';
 
-// Replicate the grouping key function from InventoryPage (not exported)
+// Replicate the grouping key function from InventoryPage (not exported).
+// Must stay in lockstep with InventoryPage.tsx::spoolGroupKey — extra_colors
+// and effect_type are part of the key (#1154) so multi-colour / effect
+// variants don't get collapsed under "Group similar".
 function spoolGroupKey(s: InventorySpool): string {
-  return `${s.material}|${s.subtype || ''}|${s.brand || ''}|${s.color_name || ''}|${s.rgba || ''}|${s.label_weight}`;
+  return `${s.material}|${s.subtype || ''}|${s.brand || ''}|${s.color_name || ''}|${s.rgba || ''}|${s.extra_colors || ''}|${s.effect_type || ''}|${s.label_weight}`;
 }
 
 type DisplayItem =
@@ -66,6 +69,8 @@ function makeSpool(overrides: Partial<InventorySpool> & { id: number }): Invento
     brand: 'Polymaker',
     color_name: 'Red',
     rgba: 'FF0000FF',
+    extra_colors: null,
+    effect_type: null,
     label_weight: 1000,
     core_weight: 250,
     core_weight_catalog_id: null,
@@ -126,6 +131,28 @@ describe('spoolGroupKey', () => {
     const a = makeSpool({ id: 1, label_weight: 1000 });
     const b = makeSpool({ id: 2, label_weight: 500 });
     expect(spoolGroupKey(a)).not.toBe(spoolGroupKey(b));
+  });
+
+  it('generates different key when extra_colors differs (#1154)', () => {
+    // Two spools that share the base hex but have different gradient stops
+    // are visually different — they must not collapse under "Group similar".
+    const a = makeSpool({ id: 1, extra_colors: 'ff0000,00ff00' });
+    const b = makeSpool({ id: 2, extra_colors: 'ff0000,0000ff' });
+    expect(spoolGroupKey(a)).not.toBe(spoolGroupKey(b));
+  });
+
+  it('generates different key when effect_type differs (#1154)', () => {
+    const a = makeSpool({ id: 1, effect_type: 'sparkle' });
+    const b = makeSpool({ id: 2, effect_type: 'matte' });
+    expect(spoolGroupKey(a)).not.toBe(spoolGroupKey(b));
+  });
+
+  it('still groups identical multi-colour spools (#1154)', () => {
+    // Same base + same stops + same effect → same group; the new fields
+    // join the key but don't break the existing identical-grouping case.
+    const a = makeSpool({ id: 1, extra_colors: 'ff0000,00ff00', effect_type: 'multicolor' });
+    const b = makeSpool({ id: 2, extra_colors: 'ff0000,00ff00', effect_type: 'multicolor' });
+    expect(spoolGroupKey(a)).toBe(spoolGroupKey(b));
   });
 
   it('treats null and empty string subtype the same', () => {

@@ -3423,6 +3423,32 @@ export default {
     showAll: 'Alle',
     noColorsFound: 'Keine Farben gefunden',
     noResults: 'Keine Ergebnisse',
+    // Multi-Color-Verlauf + visueller Effekt (#1154)
+    extraColorsLabel: 'Zusätzliche Farben',
+    extraColorsPlaceholder: 'EC984C,#6CD4BC,A66EB9,D87694',
+    extraColorsHint: '2 bis 8 Hex-Stops, durch Kommas getrennt. Wird als Verlauf dargestellt.',
+    extraColorsInvalid: 'Ungültige Hex-Werte ignoriert: {{tokens}}',
+    colorEffectLabel: 'Effekt',
+    colorEffect: {
+      none: 'Keiner',
+      // Oberflächeneffekte
+      sparkle: 'Glitzer',
+      wood: 'Holz',
+      marble: 'Marmor',
+      glow: 'Leuchtend',
+      matte: 'Matt',
+      // Glanz- / Finish-Varianten
+      silk: 'Seide',
+      galaxy: 'Galaxy',
+      rainbow: 'Regenbogen',
+      metal: 'Metallic',
+      translucent: 'Lichtdurchlässig',
+      // Mehrfarbige Varianten
+      gradient: 'Verlauf',
+      dualColor: 'Zweifarbig',
+      triColor: 'Dreifarbig',
+      multicolor: 'Mehrfarbig',
+    },
     selectMaterialFirst: 'Bitte zuerst ein Material im Filament-Info Tab auswählen.',
     noPrintersConfigured: 'Keine Drucker konfiguriert. Fügen Sie Drucker hinzu.',
     matchingFilter: 'Filter',

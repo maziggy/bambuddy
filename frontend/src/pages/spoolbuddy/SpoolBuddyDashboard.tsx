@@ -287,6 +287,8 @@ export function SpoolBuddyDashboard() {
         subtype: null,
         color_name: null,
         rgba: null,
+        extra_colors: null,
+        effect_type: null,
         brand: null,
         label_weight: 1000,
         core_weight: 250,

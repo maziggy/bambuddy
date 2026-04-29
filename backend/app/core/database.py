@@ -647,6 +647,15 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN url VARCHAR(2048)")
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN cover_image_filename VARCHAR(255)")
 
+    # Migration: enhanced filament colour handling on color_catalog (#1154).
+    # Mirrors the Spool columns added below; widens hex_color to VARCHAR(9)
+    # so catalog entries can store an alpha component (#RRGGBBAA). SQLite
+    # ignores VARCHAR length, so the widen only matters on PostgreSQL.
+    await _safe_execute(conn, "ALTER TABLE color_catalog ADD COLUMN extra_colors VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE color_catalog ADD COLUMN effect_type VARCHAR(20)")
+    if not is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE color_catalog ALTER COLUMN hex_color TYPE VARCHAR(9)")
+
     # Migration: Make printer_id nullable in print_queue for unassigned queue items
     # SQLite doesn't support ALTER COLUMN, so we need to recreate the table
     # PostgreSQL gets the correct schema from create_all(), so skip this
@@ -1266,6 +1275,14 @@ async def run_migrations(conn):
     # falls back to the global low_stock_threshold setting.
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN category VARCHAR(50)")
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN low_stock_threshold_pct INTEGER")
+
+    # Migration: enhanced filament colour handling (#1154). `extra_colors` is
+    # a comma-separated list of 6- or 8-char hex tokens (no `#`) for multi-
+    # colour gradients; `effect_type` is one of {sparkle, wood, marble, glow,
+    # matte} as a visual rendering hint. Both nullable — NULL keeps the
+    # current single-rgba/no-effect behaviour.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN extra_colors VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN effect_type VARCHAR(20)")
     # Migration: Add cost field to spool_usage_history table
     await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN cost REAL")
     # Migration: Add archive_id field to spool_usage_history table

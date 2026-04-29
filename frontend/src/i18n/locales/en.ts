@@ -3430,6 +3430,32 @@ export default {
     showAll: 'Show all',
     noColorsFound: 'No colors match your search',
     noResults: 'No matches found',
+    // Multi-colour gradient + visual effect (#1154)
+    extraColorsLabel: 'Extra colours',
+    extraColorsPlaceholder: 'EC984C,#6CD4BC,A66EB9,D87694',
+    extraColorsHint: 'Paste 2 to 8 hex stops, separated by commas. Renders as a gradient.',
+    extraColorsInvalid: 'Ignored invalid hex: {{tokens}}',
+    colorEffectLabel: 'Effect',
+    colorEffect: {
+      none: 'None',
+      // Surface effects
+      sparkle: 'Sparkle',
+      wood: 'Wood',
+      marble: 'Marble',
+      glow: 'Glow',
+      matte: 'Matte',
+      // Sheen / finish variants
+      silk: 'Silk',
+      galaxy: 'Galaxy',
+      rainbow: 'Rainbow',
+      metal: 'Metal',
+      translucent: 'Translucent',
+      // Multi-colour structural variants
+      gradient: 'Gradient',
+      dualColor: 'Dual Color',
+      triColor: 'Tri Color',
+      multicolor: 'Multicolor',
+    },
     // PA Profiles
     selectMaterialFirst: 'Please select a material first in the Filament Info tab.',
     noPrintersConfigured: 'No printers configured. Add printers to use PA profiles.',

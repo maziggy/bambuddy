@@ -10,6 +10,8 @@ import {
 import { api, spoolbuddyApi } from '../api/client';
 import type { InventorySpool, SpoolAssignment, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
+import { FilamentSwatch } from '../components/FilamentSwatch';
+import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
 import { SpoolFormModal } from '../components/SpoolFormModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
@@ -30,7 +32,10 @@ type DisplayItem =
   | { type: 'group'; key: string; spools: InventorySpool[]; representative: InventorySpool };
 
 function spoolGroupKey(s: InventorySpool): string {
-  return `${s.material}|${s.subtype || ''}|${s.brand || ''}|${s.color_name || ''}|${s.rgba || ''}|${s.label_weight}`;
+  // Include extra_colors + effect_type so the "Group similar" toggle does
+  // not collapse two spools that share the base colour but differ on
+  // gradient stops or visual effect (#1154).
+  return `${s.material}|${s.subtype || ''}|${s.brand || ''}|${s.color_name || ''}|${s.rgba || ''}|${s.extra_colors || ''}|${s.effect_type || ''}|${s.label_weight}`;
 }
 
 // Column definitions for the inventory table
@@ -180,10 +185,11 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   ),
   rgba: ({ spool }) => (
     <div className="flex items-center justify-center">
-      <span
-        className="w-5 h-5 rounded-full border border-black/20 flex-shrink-0"
-        style={{ backgroundColor: spool.rgba ? `#${spool.rgba.substring(0, 6)}` : '#808080' }}
-        title={spool.rgba ? `#${spool.rgba.substring(0, 6)}` : undefined}
+      <FilamentSwatch
+        rgba={spool.rgba}
+        extraColors={spool.extra_colors}
+        effectType={spool.effect_type}
+        subtype={spool.subtype}
       />
     </div>
   ),
@@ -1289,7 +1295,12 @@ function InventoryPage() {
               {pagedItems.map((item) => {
                 if (item.type === 'group') {
                   const { key, spools: groupSpools, representative: rep } = item;
-                  const colorStyle = rep.rgba ? `#${rep.rgba.substring(0, 6)}` : '#808080';
+                  const groupBannerImage = buildFilamentBackground({
+                    rgba: rep.rgba,
+                    extraColors: rep.extra_colors,
+                    effectType: rep.effect_type,
+                    subtype: rep.subtype,
+                  });
                   const isExpanded = expandedGroups.has(key);
                   return (
                     <div key={`group-${key}`} className="col-span-full">
@@ -1298,7 +1309,7 @@ function InventoryPage() {
                         className="bg-bambu-dark-secondary rounded-lg overflow-hidden border border-bambu-green/30 hover:border-bambu-green transition-colors cursor-pointer"
                         onClick={() => toggleGroupExpand(key)}
                       >
-                        <div className="h-10 flex items-center px-4 gap-3" style={{ backgroundColor: colorStyle }}>
+                        <div className="h-10 flex items-center px-4 gap-3" style={{ backgroundImage: groupBannerImage, backgroundSize: 'cover' }}>
                           <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
                             {resolveSpoolColorName(rep.color_name, rep.rgba) || '-'}
                           </span>
@@ -1325,14 +1336,12 @@ function InventoryPage() {
                           {groupSpools.map((spool) => {
                             const remaining = Math.max(0, spool.label_weight - spool.weight_used);
                             const pct = spool.label_weight > 0 ? (remaining / spool.label_weight) * 100 : 0;
-                            const spoolColor = spool.rgba ? `#${spool.rgba.substring(0, 6)}` : '#808080';
                             return (
                               <SpoolCard
                                 key={spool.id}
                                 spool={spool}
                                 remaining={remaining}
                                 pct={pct}
-                                colorStyle={spoolColor}
                                 onClick={() => setFormModal({ spool })}
                                 t={t}
                               />
@@ -1346,14 +1355,12 @@ function InventoryPage() {
                 const spool = item.spool;
                 const remaining = Math.max(0, spool.label_weight - spool.weight_used);
                 const pct = spool.label_weight > 0 ? (remaining / spool.label_weight) * 100 : 0;
-                const colorStyle = spool.rgba ? `#${spool.rgba.substring(0, 6)}` : '#808080';
                 return (
                   <SpoolCard
                     key={spool.id}
                     spool={spool}
                     remaining={remaining}
                     pct={pct}
-                    colorStyle={colorStyle}
                     onClick={() => setFormModal({ spool })}
                     t={t}
                   />
@@ -1662,21 +1669,26 @@ function PaginationBar({
 
 /* Spool card for cards view */
 function SpoolCard({
-  spool, remaining, pct, colorStyle, onClick, t,
+  spool, remaining, pct, onClick, t,
 }: {
   spool: InventorySpool;
   remaining: number;
   pct: number;
-  colorStyle: string;
   onClick: () => void;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
+  const bannerImage = buildFilamentBackground({
+    rgba: spool.rgba,
+    extraColors: spool.extra_colors,
+    effectType: spool.effect_type,
+    subtype: spool.subtype,
+  });
   return (
     <div
       className={`bg-bambu-dark-secondary rounded-lg overflow-hidden border border-bambu-dark-tertiary hover:border-bambu-green transition-colors cursor-pointer ${spool.archived_at ? 'opacity-50' : ''}`}
       onClick={onClick}
     >
-      <div className="h-14 flex items-center justify-center" style={{ backgroundColor: colorStyle }}>
+      <div className="h-14 flex items-center justify-center" style={{ backgroundImage: bannerImage, backgroundSize: 'cover' }}>
         <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
           {resolveSpoolColorName(spool.color_name, spool.rgba) || '-'}
         </span>

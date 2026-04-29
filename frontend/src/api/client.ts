@@ -1063,6 +1063,9 @@ export interface ColorCatalogEntry {
   hex_color: string;
   material: string | null;
   is_default: boolean;
+  // #1154: optional multi-colour gradient stops + visual effect.
+  extra_colors?: string | null;
+  effect_type?: string | null;
 }
 
 export interface ColorLookupResult {
@@ -2235,6 +2238,10 @@ export interface InventorySpool {
   subtype: string | null;
   color_name: string | null;
   rgba: string | null;
+  // Multi-colour gradient stops (#1154): comma-separated 6/8-char hex.
+  extra_colors: string | null;
+  // Visual effect overlay: sparkle | wood | marble | glow | matte.
+  effect_type: string | null;
   brand: string | null;
   label_weight: number;
   core_weight: number;
@@ -4346,10 +4353,26 @@ export const api = {
     request<ColorCatalogEntry[]>('/inventory/colors'),
   getColorNameMap: () =>
     request<{ colors: Record<string, string> }>('/inventory/colors/map'),
-  addColorEntry: (data: { manufacturer: string; color_name: string; hex_color: string; material: string | null }) =>
+  addColorEntry: (data: {
+    manufacturer: string;
+    color_name: string;
+    hex_color: string;
+    material: string | null;
+    extra_colors?: string | null;
+    effect_type?: string | null;
+  }) =>
     request<ColorCatalogEntry>('/inventory/colors', { method: 'POST', body: JSON.stringify(data) }),
-  updateColorEntry: (id: number, data: { manufacturer: string; color_name: string; hex_color: string; material: string | null }) =>
-    request<ColorCatalogEntry>(`/inventory/colors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateColorEntry: (
+    id: number,
+    data: {
+      manufacturer: string;
+      color_name: string;
+      hex_color: string;
+      material: string | null;
+      extra_colors?: string | null;
+      effect_type?: string | null;
+    },
+  ) => request<ColorCatalogEntry>(`/inventory/colors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteColorEntry: (id: number) =>
     request<{ status: string }>(`/inventory/colors/${id}`, { method: 'DELETE' }),
   bulkDeleteColorEntries: (ids: number[]) =>

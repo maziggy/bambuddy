@@ -16,6 +16,14 @@ class Spool(Base):
     subtype: Mapped[str | None] = mapped_column(String(50))  # Basic, Matte, Silk, etc.
     color_name: Mapped[str | None] = mapped_column(String(100))  # "Jade White"
     rgba: Mapped[str | None] = mapped_column(String(8))  # RRGGBBAA hex
+    # Multi-colour gradient stops for filaments with more than one colour
+    # (e.g. tri-colour, multi-colour). Stored as comma-separated 6- or 8-char
+    # hex tokens without `#`. Empty/NULL means solid (uses `rgba`). Up to 8
+    # stops; combination mode is driven by `subtype` (Gradient, Multicolor).
+    extra_colors: Mapped[str | None] = mapped_column(String(255))
+    # Visual effect overlay independent of subtype: sparkle, wood, marble,
+    # glow, matte. Purely a rendering hint — does not affect MQTT/firmware.
+    effect_type: Mapped[str | None] = mapped_column(String(20))
     brand: Mapped[str | None] = mapped_column(String(100))  # "Polymaker"
     label_weight: Mapped[int] = mapped_column(Integer, default=1000)  # Advertised net weight (g)
     core_weight: Mapped[int] = mapped_column(Integer, default=250)  # Empty spool weight (g)

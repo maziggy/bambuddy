@@ -1546,6 +1546,9 @@ export default {
     spoolmanAmsSyncing: 'Sincronizando...',
     spoolmanAmsSyncSuccess: '{{synced}} rolo(s) Spoolman sincronizado(s), {{skipped}} ignorado(s)',
     spoolmanAmsSyncError: 'Falha ao sincronizar pesos do Spoolman pelo AMS',
+    // Spoolman filament catalog section in spool catalog settings
+    spoolmanFilamentCatalogTitle: 'Catálogo de filamentos Spoolman',
+    spoolmanFilamentCatalogDesc: 'Visualização somente leitura dos filamentos definidos na sua instância Spoolman. Gerencie os tipos de filamentos diretamente no Spoolman.',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL do seu servidor Spoolman (por exemplo, http://localhost:7912)',
@@ -3461,6 +3464,15 @@ export default {
     assignMismatchConfirm: 'Atribuir mesmo assim',
     assignPartialMismatchMessage: 'O material do carretel "{{spoolMaterial}}" é semelhante, mas não corresponde exatamente a "{{trayMaterial}}" em {{location}}. Deseja prosseguir?',
     assignProfileMismatchMessage: 'O perfil do carretel "{{spoolProfile}}" não corresponde ao perfil da bandeja "{{trayProfile}}" em {{location}}. Deseja prosseguir?',
+    // Spoolman filament catalog picker
+    spoolmanFilamentCatalog: 'Catálogo de filamentos Spoolman',
+    pickFromSpoolmanCatalog: 'Escolher do catálogo Spoolman…',
+    spoolmanFilamentSelected: 'Filamento selecionado do catálogo Spoolman',
+    spoolmanFilamentUnlinked: 'Vínculo com o catálogo de filamentos removido',
+    noSpoolmanFilaments: 'Nenhum filamento encontrado no catálogo Spoolman',
+    spoolmanFilamentColorSwatch: 'Cor do filamento',
+    spoolWeightManagedBySpoolman: 'O peso do carretel vazio é gerenciado por tipo de filamento no Spoolman',
+    spoolmanCatalogLoadFailed: 'Falha ao carregar catálogo de filamentos do Spoolman',
   },
 
   // Timelapse

@@ -10,7 +10,7 @@ import logging
 import math
 import re
 from datetime import datetime, timezone
-from typing import TypedDict
+from typing_extensions import TypedDict
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,26 @@ class MappedSpoolFields(TypedDict, total=False):
     cost_per_kg: float | None
     storage_location: str | None
     k_profiles: list
+
+
+class NormalizedVendorRef(TypedDict):
+    """Vendor reference embedded in a NormalizedFilament."""
+
+    id: int
+    name: str
+
+
+class NormalizedFilament(TypedDict):
+    """Normalised Spoolman filament dict returned by the /filaments catalog endpoint."""
+
+    id: int
+    name: str
+    material: str | None
+    color_hex: str | None
+    color_name: str | None
+    weight: int | None
+    spool_weight: float | None
+    vendor: NormalizedVendorRef | None
 
 
 _CLOUD_METADATA_IPS = frozenset(

@@ -1,11 +1,64 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Database, Plus, Trash2, RotateCcw, Loader2, Pencil, Check, X, Search, Download, Upload } from 'lucide-react';
-import { api } from '../api/client';
-import type { SpoolCatalogEntry } from '../api/client';
+import { api, ApiError } from '../api/client';
+import type { SpoolCatalogEntry, SpoolmanFilamentEntry } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
 import { ConfirmModal } from './ConfirmModal';
+
+function SpoolmanFilamentCatalogSection() {
+  const { t } = useTranslation();
+
+  const { data, isLoading, error } = useQuery<SpoolmanFilamentEntry[], Error>({
+    queryKey: ['spoolman-inventory-filaments'],
+    queryFn: () => api.getSpoolmanInventoryFilaments(),
+    retry: false, // Spoolman may be intentionally disabled (400) — don't retry
+    staleTime: 60_000,
+  });
+
+  // 400 = Spoolman disabled — hide the section silently
+  if (!isLoading && error instanceof ApiError && error.status === 400) return null;
+
+  // Don't flash the header while we're still determining whether Spoolman is enabled
+  if (isLoading) return null;
+
+  return (
+    <div className="mt-8 pt-6 border-t border-bambu-dark-tertiary">
+      <h3 className="text-base font-semibold text-white mb-1">{t('settings.spoolmanFilamentCatalogTitle')}</h3>
+      <p className="text-sm text-bambu-gray mb-4">{t('settings.spoolmanFilamentCatalogDesc')}</p>
+
+      {error && (
+        <p className="text-sm text-red-400">{t('inventory.spoolmanCatalogLoadFailed')}</p>
+      )}
+
+      {data && data.length === 0 && (
+        <p className="text-sm text-bambu-gray">{t('inventory.noSpoolmanFilaments')}</p>
+      )}
+
+      {data && data.length > 0 && (
+        <ul className="space-y-1 max-h-64 overflow-y-auto">
+          {data.map((f) => (
+            <li key={f.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-bambu-dark-tertiary">
+              <span
+                className="w-4 h-4 rounded-full shrink-0 border border-white/20"
+                style={{ backgroundColor: f.color_hex ? `#${f.color_hex.replace('#', '')}` : '#808080' }}
+                aria-label={t('inventory.spoolmanFilamentColorSwatch')}
+              />
+              <span className="text-white text-sm truncate flex-1">
+                {f.vendor?.name ? `${f.vendor.name} — ` : ''}{f.name}
+              </span>
+              <span className="text-bambu-gray text-xs shrink-0">
+                {[f.material, f.weight ? `${f.weight}g` : null].filter(Boolean).join(' · ')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function SpoolCatalogSettings() {
   const { t } = useTranslation();
@@ -482,6 +535,9 @@ export function SpoolCatalogSettings() {
           onCancel={() => setShowResetConfirm(false)}
         />
       )}
+
+      {/* Spoolman filament catalog — read-only, only shown when Spoolman is enabled */}
+      <SpoolmanFilamentCatalogSection />
     </Card>
   );
 }

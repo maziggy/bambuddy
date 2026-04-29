@@ -10,7 +10,6 @@ The only difference for official Bambu filaments is an "S" inserted after "GF".
 User presets (starting with "P") use the same ID in both contexts.
 """
 
-
 MATERIAL_TEMPS: dict[str, tuple[int, int]] = {
     "PLA": (190, 230),
     "PETG": (220, 260),

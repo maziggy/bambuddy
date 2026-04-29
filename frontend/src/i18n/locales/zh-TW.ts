@@ -1598,6 +1598,9 @@ export default {
     spoolmanAmsSyncing: '同步中...',
     spoolmanAmsSyncSuccess: '已同步 {{synced}} 個 Spoolman 耗材，跳過 {{skipped}} 個',
     spoolmanAmsSyncError: '從 AMS 同步 Spoolman 重量失敗',
+    // Spoolman filament catalog section in spool catalog settings
+    spoolmanFilamentCatalogTitle: 'Spoolman 耗材目錄',
+    spoolmanFilamentCatalogDesc: 'Spoolman 中定義的耗材的唯讀檢視。請直接在 Spoolman 中管理耗材類型。',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'Spoolman 伺服器的 URL（例如 http://localhost:7912）',
@@ -3513,6 +3516,15 @@ export default {
     historyCleared: '使用歷史已清除',
     fillSourceLabel: '(庫存)',
     lowStockThresholdError: '閾值必須在 0.1 到 99.9 之間',
+    // Spoolman filament catalog picker
+    spoolmanFilamentCatalog: 'Spoolman 耗材目錄',
+    pickFromSpoolmanCatalog: '從 Spoolman 目錄選擇…',
+    spoolmanFilamentSelected: '已從 Spoolman 目錄選擇耗材',
+    spoolmanFilamentUnlinked: '已解除耗材目錄關聯',
+    noSpoolmanFilaments: 'Spoolman 目錄中未找到耗材',
+    spoolmanFilamentColorSwatch: '耗材顏色',
+    spoolWeightManagedBySpoolman: '空線軸重量在 Spoolman 中按耗材類型管理',
+    spoolmanCatalogLoadFailed: '無法載入 Spoolman 耗材目錄',
   },
 
   // Timelapse

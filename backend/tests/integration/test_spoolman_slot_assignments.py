@@ -81,9 +81,7 @@ def mock_client():
 class TestAssignSpoolmanSlot:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_assign_inserts_local_row(
-        self, async_client: AsyncClient, slot_settings, test_printer, mock_client
-    ):
+    async def test_assign_inserts_local_row(self, async_client: AsyncClient, slot_settings, test_printer, mock_client):
         """POST /slot-assignments creates a row visible via the /all endpoint."""
         response = await async_client.post(
             "/api/v1/spoolman/inventory/slot-assignments",
@@ -189,9 +187,7 @@ class TestAssignSpoolmanSlot:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_assign_printer_not_found(
-        self, async_client: AsyncClient, slot_settings, mock_client
-    ):
+    async def test_assign_printer_not_found(self, async_client: AsyncClient, slot_settings, mock_client):
         """POST /slot-assignments with unknown printer_id returns 404."""
         response = await async_client.post(
             "/api/v1/spoolman/inventory/slot-assignments",
@@ -207,9 +203,7 @@ class TestAssignSpoolmanSlot:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_assign_invalid_spool_id(
-        self, async_client: AsyncClient, slot_settings, test_printer, mock_client
-    ):
+    async def test_assign_invalid_spool_id(self, async_client: AsyncClient, slot_settings, test_printer, mock_client):
         """POST /slot-assignments with spool_id=0 returns 422 (gt=0 validation)."""
         response = await async_client.post(
             "/api/v1/spoolman/inventory/slot-assignments",
@@ -242,9 +236,7 @@ class TestUnassignSpoolmanSlot:
             },
         )
         # Then unassign
-        response = await async_client.delete(
-            "/api/v1/spoolman/inventory/slot-assignments/10"
-        )
+        response = await async_client.delete("/api/v1/spoolman/inventory/slot-assignments/10")
         assert response.status_code == 200
 
         # The /all endpoint must now return an empty list for this printer
@@ -257,26 +249,18 @@ class TestUnassignSpoolmanSlot:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_unassign_does_not_call_update_spool(
-        self, async_client: AsyncClient, slot_settings, mock_client
-    ):
+    async def test_unassign_does_not_call_update_spool(self, async_client: AsyncClient, slot_settings, mock_client):
         """DELETE /slot-assignments/{id} must NOT touch Spoolman's location field."""
-        response = await async_client.delete(
-            "/api/v1/spoolman/inventory/slot-assignments/10"
-        )
+        response = await async_client.delete("/api/v1/spoolman/inventory/slot-assignments/10")
 
         assert response.status_code == 200
         mock_client.update_spool.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_unassign_returns_inventory_spool(
-        self, async_client: AsyncClient, slot_settings, mock_client
-    ):
+    async def test_unassign_returns_inventory_spool(self, async_client: AsyncClient, slot_settings, mock_client):
         """DELETE /slot-assignments/{id} returns the spool in InventorySpool format."""
-        response = await async_client.delete(
-            "/api/v1/spoolman/inventory/slot-assignments/10"
-        )
+        response = await async_client.delete("/api/v1/spoolman/inventory/slot-assignments/10")
 
         assert response.status_code == 200
         body = response.json()
@@ -285,13 +269,9 @@ class TestUnassignSpoolmanSlot:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_unassign_invalid_id(
-        self, async_client: AsyncClient, slot_settings, mock_client
-    ):
+    async def test_unassign_invalid_id(self, async_client: AsyncClient, slot_settings, mock_client):
         """DELETE /slot-assignments/0 returns 422 (gt=0 path validation)."""
-        response = await async_client.delete(
-            "/api/v1/spoolman/inventory/slot-assignments/0"
-        )
+        response = await async_client.delete("/api/v1/spoolman/inventory/slot-assignments/0")
 
         assert response.status_code == 422
 
@@ -319,9 +299,7 @@ class TestUnassignSpoolmanSlot:
         # Spool 10 has since been deleted from Spoolman
         mock_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("spool 10 not found"))
 
-        response = await async_client.delete(
-            "/api/v1/spoolman/inventory/slot-assignments/10"
-        )
+        response = await async_client.delete("/api/v1/spoolman/inventory/slot-assignments/10")
 
         assert response.status_code == 200
         assert response.json().get("id") == 10
@@ -340,9 +318,7 @@ class TestUnassignSpoolmanSlot:
 class TestGetSpoolmanSlotAssignment:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_returns_matched_spool(
-        self, async_client: AsyncClient, slot_settings, test_printer, mock_client
-    ):
+    async def test_get_returns_matched_spool(self, async_client: AsyncClient, slot_settings, test_printer, mock_client):
         """GET /slot-assignments returns the spool whose ID is in the local table."""
         # First assign so the row exists
         await async_client.post(
@@ -378,9 +354,7 @@ class TestGetSpoolmanSlotAssignment:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_printer_not_found(
-        self, async_client: AsyncClient, slot_settings, mock_client
-    ):
+    async def test_get_printer_not_found(self, async_client: AsyncClient, slot_settings, mock_client):
         """GET /slot-assignments with unknown printer_id returns 404."""
         response = await async_client.get(
             "/api/v1/spoolman/inventory/slot-assignments",
@@ -391,13 +365,9 @@ class TestGetSpoolmanSlotAssignment:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_missing_params(
-        self, async_client: AsyncClient, slot_settings, mock_client
-    ):
+    async def test_get_missing_params(self, async_client: AsyncClient, slot_settings, mock_client):
         """GET /slot-assignments without required params returns 422."""
-        response = await async_client.get(
-            "/api/v1/spoolman/inventory/slot-assignments"
-        )
+        response = await async_client.get("/api/v1/spoolman/inventory/slot-assignments")
 
         assert response.status_code == 422
 
@@ -466,22 +436,16 @@ class TestGetSpoolmanSlotAssignment:
 class TestGetAllSpoolmanSlotAssignments:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_all_returns_empty_list(
-        self, async_client: AsyncClient, slot_settings, mock_client
-    ):
+    async def test_get_all_returns_empty_list(self, async_client: AsyncClient, slot_settings, mock_client):
         """GET /slot-assignments/all returns [] when no assignments exist."""
-        response = await async_client.get(
-            "/api/v1/spoolman/inventory/slot-assignments/all"
-        )
+        response = await async_client.get("/api/v1/spoolman/inventory/slot-assignments/all")
 
         assert response.status_code == 200
         assert response.json() == []
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_all_returns_all_rows(
-        self, async_client: AsyncClient, slot_settings, test_printer, mock_client
-    ):
+    async def test_get_all_returns_all_rows(self, async_client: AsyncClient, slot_settings, test_printer, mock_client):
         """GET /slot-assignments/all returns all existing assignments."""
         await async_client.post(
             "/api/v1/spoolman/inventory/slot-assignments",

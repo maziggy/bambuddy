@@ -75,9 +75,7 @@ class TestTagScannedBroadcastsTrayUuid:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_local_match_broadcast_includes_tray_uuid(
-        self, async_client: AsyncClient, spoolman_settings_local
-    ):
+    async def test_local_match_broadcast_includes_tray_uuid(self, async_client: AsyncClient, spoolman_settings_local):
         """Local DB match broadcasts tray_uuid alongside tag_uid."""
         mock_local_spool = MagicMock()
         mock_local_spool.id = 1
@@ -162,9 +160,7 @@ class TestTagScannedBroadcastsTrayUuid:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_unknown_tag_broadcast_includes_tray_uuid(
-        self, async_client: AsyncClient, spoolman_settings_local
-    ):
+    async def test_unknown_tag_broadcast_includes_tray_uuid(self, async_client: AsyncClient, spoolman_settings_local):
         """Unknown tag broadcast includes tray_uuid when Bambu spool is not yet linked."""
         mock_client = _mock_spoolman_client_local()
         mock_client.find_spool_by_tag = AsyncMock(return_value=None)

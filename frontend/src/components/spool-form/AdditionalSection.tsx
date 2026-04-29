@@ -175,6 +175,7 @@ export function AdditionalSection({
   currencySymbol,
   availableCategories,
   globalLowStockThreshold,
+  spoolmanMode = false,
 }: AdditionalSectionProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -200,14 +201,18 @@ export function AdditionalSection({
 
   return (
     <div className="space-y-4">
-      {/* Empty Spool Weight */}
-      <SpoolWeightPicker
-        catalog={spoolCatalog}
-        value={formData.core_weight}
-        onChange={(weight) => updateField('core_weight', weight)}
-        catalogId={formData.core_weight_catalog_id}
-        onCatalogIdChange={(id) => updateField('core_weight_catalog_id', id)}
-      />
+      {/* Empty Spool Weight — hidden in Spoolman mode (managed per filament type in Spoolman) */}
+      {spoolmanMode ? (
+        <p className="text-xs text-bambu-gray px-1">{t('inventory.spoolWeightManagedBySpoolman')}</p>
+      ) : (
+        <SpoolWeightPicker
+          catalog={spoolCatalog}
+          value={formData.core_weight}
+          onChange={(weight) => updateField('core_weight', weight)}
+          catalogId={formData.core_weight_catalog_id}
+          onCatalogIdChange={(id) => updateField('core_weight_catalog_id', id)}
+        />
+      )}
 
       {/* Current Weight (remaining filament) */}
       <div>

@@ -85,9 +85,7 @@ class TestAssignSlotMqtt:
         mqtt_mock.extrusion_cali_sel = MagicMock()
         mqtt_mock.printer_state = None
 
-        with patch(
-            "backend.app.api.routes.spoolman_inventory.printer_manager"
-        ) as pm_mock:
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
             pm_mock.get_client = MagicMock(return_value=mqtt_mock)
 
             response = await async_client.post(
@@ -117,9 +115,7 @@ class TestAssignSlotMqtt:
         mqtt_mock.ams_set_filament_setting = MagicMock(side_effect=RuntimeError("MQTT down"))
         mqtt_mock.printer_state = None
 
-        with patch(
-            "backend.app.api.routes.spoolman_inventory.printer_manager"
-        ) as pm_mock:
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
             pm_mock.get_client = MagicMock(return_value=mqtt_mock)
 
             response = await async_client.post(
@@ -172,9 +168,7 @@ class TestAssignSlotMqtt:
         mqtt_mock.extrusion_cali_sel = MagicMock()
         mqtt_mock.printer_state = printer_state
 
-        with patch(
-            "backend.app.api.routes.spoolman_inventory.printer_manager"
-        ) as pm_mock:
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
             pm_mock.get_client = MagicMock(return_value=mqtt_mock)
 
             response = await async_client.post(
@@ -223,9 +217,7 @@ class TestAssignSlotMqtt:
         mqtt_mock.extrusion_cali_sel = MagicMock()
         mqtt_mock.printer_state = printer_state
 
-        with patch(
-            "backend.app.api.routes.spoolman_inventory.printer_manager"
-        ) as pm_mock:
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
             pm_mock.get_client = MagicMock(return_value=mqtt_mock)
 
             response = await async_client.post(
@@ -270,9 +262,7 @@ class TestAssignSlotMqtt:
         mqtt_mock.extrusion_cali_sel = MagicMock()
         mqtt_mock.printer_state = printer_state
 
-        with patch(
-            "backend.app.api.routes.spoolman_inventory.printer_manager"
-        ) as pm_mock:
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
             pm_mock.get_client = MagicMock(return_value=mqtt_mock)
 
             response = await async_client.post(

@@ -2235,6 +2235,17 @@ export interface LinkedSpoolsMap {
   linked: Record<string, LinkedSpoolInfo>; // tag (uppercase) -> spool info
 }
 
+export interface SpoolmanFilamentEntry {
+  id: number;
+  name: string;
+  material: string | null;
+  color_hex: string | null;
+  color_name: string | null;
+  weight: number | null;
+  spool_weight: number | null;
+  vendor: { id: number; name: string } | null;
+}
+
 // Inventory types
 export interface InventorySpool {
   id: number;
@@ -4267,8 +4278,11 @@ export const api = {
     }),
   getSpoolmanSpools: () =>
     request<{ spools: unknown[] }>('/spoolman/spools'),
+  /** @deprecated Use getSpoolmanInventoryFilaments() — this endpoint has no SSRF guard */
   getSpoolmanFilaments: () =>
     request<{ filaments: unknown[] }>('/spoolman/filaments'),
+  getSpoolmanInventoryFilaments: () =>
+    request<SpoolmanFilamentEntry[]>('/spoolman/inventory/filaments'),
   getUnlinkedSpools: () =>
     request<UnlinkedSpool[]>('/spoolman/spools/unlinked'),
   getLinkedSpools: () =>

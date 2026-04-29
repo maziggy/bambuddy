@@ -21,9 +21,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes._spoolman_helpers import (
+    NormalizedFilament,
     _map_spoolman_spool,
     _safe_float,
     _safe_int,
+    _safe_optional_float,
     assert_safe_spoolman_url,
 )
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -171,7 +173,11 @@ def _validate_storage_location(v: str | None) -> str | None:
 
 
 class SpoolmanInventoryCreate(BaseModel):
-    material: str = Field(..., min_length=1, max_length=64)
+    # When spoolman_filament_id is provided the caller has already chosen a filament from the
+    # Spoolman catalog, so material (and other metadata) are optional — the backend skips
+    # find_or_create_filament() and uses the supplied ID directly.
+    spoolman_filament_id: int | None = Field(None, gt=0)
+    material: str | None = Field(None, min_length=1, max_length=64)
     subtype: str | None = Field(None, max_length=64)
     brand: str | None = Field(None, max_length=128)
     color_name: str | None = Field(None, max_length=64)
@@ -197,6 +203,9 @@ class SpoolmanInventoryCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_weight_consistency(self) -> SpoolmanInventoryCreate:
+        # material is required only when the caller has not pre-selected a Spoolman filament
+        if self.spoolman_filament_id is None and not self.material:
+            raise ValueError("material is required when spoolman_filament_id is not provided")
         if self.weight_used > self.label_weight:
             raise ValueError("weight_used must not exceed label_weight")
         if self.core_weight != 250:
@@ -340,18 +349,21 @@ async def get_spool(
     return mapped
 
 
-@router.post("/spools")
-async def create_spool(
-    data: SpoolmanInventoryCreate,
-    db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
-) -> dict:
-    """Create a new spool in Spoolman, auto-creating vendor and filament as needed."""
-    client = await _get_client(db)
+async def _resolve_filament_id(data: SpoolmanInventoryCreate, client: SpoolmanClient) -> int:
+    """Return the Spoolman filament ID for this spool creation request.
 
+    If spoolman_filament_id is set the caller pre-selected a catalog entry,
+    so find_or_create_filament() is skipped and the ID is used directly.
+    A SpoolmanNotFoundError from create_spool() will surface a 404 with a
+    filament-specific detail message (see create_spool handler).
+    """
+    if data.spoolman_filament_id is not None:
+        return data.spoolman_filament_id
+    # Validator guarantees material is non-None when spoolman_filament_id is None
+    assert data.material is not None  # noqa: S101
     color_hex = (data.rgba or "808080FF")[:6]
     async with _translate_spoolman_errors():
-        filament_id = await client.find_or_create_filament(
+        return await client.find_or_create_filament(
             material=data.material,
             subtype=data.subtype or "",
             brand=data.brand,
@@ -360,14 +372,33 @@ async def create_spool(
             color_name=data.color_name,
         )
 
+
+@router.post("/spools")
+async def create_spool(
+    data: SpoolmanInventoryCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Create a new spool in Spoolman, auto-creating vendor and filament as needed."""
+    client = await _get_client(db)
+    filament_id = await _resolve_filament_id(data, client)
+
     remaining = max(0.0, data.label_weight - data.weight_used)
-    async with _translate_spoolman_errors():
-        spool = await client.create_spool(
-            filament_id=filament_id,
-            remaining_weight=remaining,
-            comment=data.note or None,
-            location=data.storage_location or None,
-        )
+    try:
+        async with _translate_spoolman_errors():
+            spool = await client.create_spool(
+                filament_id=filament_id,
+                remaining_weight=remaining,
+                comment=data.note or None,
+                location=data.storage_location or None,
+            )
+    except HTTPException as exc:
+        if exc.status_code == 404 and data.spoolman_filament_id is not None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Filament {data.spoolman_filament_id} not found in Spoolman",
+            ) from exc
+        raise
 
     spool, price_warnings = await _apply_price_if_set(client, spool, data.cost_per_kg)
     result = _map_spoolman_spool(spool)
@@ -386,15 +417,15 @@ async def bulk_create_spools(
     client = await _get_client(db)
     data = payload.spool
 
-    color_hex = (data.rgba or "808080FF")[:6]
-    async with _translate_spoolman_errors():
-        filament_id = await client.find_or_create_filament(
-            material=data.material,
-            subtype=data.subtype or "",
-            brand=data.brand,
-            color_hex=color_hex,
-            label_weight=data.label_weight,
-        )
+    try:
+        filament_id = await _resolve_filament_id(data, client)
+    except HTTPException as exc:
+        if exc.status_code == 404 and data.spoolman_filament_id is not None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Filament {data.spoolman_filament_id} not found in Spoolman",
+            ) from exc
+        raise
 
     remaining = max(0.0, data.label_weight - data.weight_used)
     created: list[dict] = []
@@ -1051,6 +1082,45 @@ def _k_profile_to_dict(p: SpoolmanKProfile) -> dict:
         "setting_id": p.setting_id,
         "created_at": p.created_at,
     }
+
+
+def _normalize_filament(raw: dict) -> NormalizedFilament | None:
+    """Normalise a raw Spoolman filament dict for the frontend catalog picker.
+
+    Returns None for entries with missing/zero IDs — those are malformed and
+    must be filtered out before returning to the client.
+    weight=0 is collapsed to None — 0g is not a valid filament weight.
+    """
+    filament_id = _safe_int(raw.get("id"), 0)
+    if filament_id == 0:
+        logger.warning("Skipping Spoolman filament with missing or zero id: %r", raw.get("name"))
+        return None
+    vendor = raw.get("vendor") or {}
+    return NormalizedFilament(
+        id=filament_id,
+        name=str(raw.get("name") or ""),
+        material=raw.get("material") or None,
+        color_hex=raw.get("color_hex") or None,
+        color_name=raw.get("color_name") or None,
+        weight=_safe_int(raw.get("weight"), 0) or None,  # 0g is not a valid weight
+        spool_weight=_safe_optional_float(raw.get("spool_weight")),
+        vendor={"id": _safe_int(vendor.get("id"), 0), "name": str(vendor.get("name") or "")} if vendor else None,
+    )
+
+
+@router.get("/filaments")
+async def list_spoolman_filaments(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+) -> list[NormalizedFilament]:
+    """Return all filaments from Spoolman, normalised for the frontend catalog picker."""
+    client = await _get_client(db)
+    async with _translate_spoolman_errors():
+        raw_filaments = await client.get_filaments()
+    if not isinstance(raw_filaments, list):
+        logger.warning("Spoolman get_filaments() returned non-list type: %s", type(raw_filaments).__name__)
+        return []
+    return [f for raw in raw_filaments if (f := _normalize_filament(raw)) is not None]
 
 
 @router.get("/spools/{spool_id}/k-profiles")

@@ -158,6 +158,4 @@ class TestApiKeyDenylistIntegrity:
             Permission.SETTINGS_READ,
         }
         incorrectly_denied = expected_allowed & _APIKEY_DENIED_PERMISSIONS
-        assert not incorrectly_denied, (
-            f"Operational permissions incorrectly in API key denylist: {incorrectly_denied}"
-        )
+        assert not incorrectly_denied, f"Operational permissions incorrectly in API key denylist: {incorrectly_denied}"

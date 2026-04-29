@@ -112,9 +112,7 @@ class TestSyncSpoolmanAmsWeights:
                 "backend.app.api.routes.spoolman_inventory._get_client",
                 AsyncMock(return_value=spoolman_client),
             ),
-            patch(
-                "backend.app.api.routes.spoolman_inventory.printer_manager"
-            ) as pm_mock,
+            patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock,
         ):
             pm_mock.get_status = MagicMock(return_value=printer_state)
 
@@ -139,9 +137,7 @@ class TestSyncSpoolmanAmsWeights:
                 "backend.app.api.routes.spoolman_inventory._get_client",
                 AsyncMock(return_value=spoolman_client),
             ),
-            patch(
-                "backend.app.api.routes.spoolman_inventory.printer_manager"
-            ) as pm_mock,
+            patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock,
         ):
             pm_mock.get_status = MagicMock(return_value=printer_state)
 
@@ -162,9 +158,7 @@ class TestSyncSpoolmanAmsWeights:
                 "backend.app.api.routes.spoolman_inventory._get_client",
                 AsyncMock(return_value=spoolman_client),
             ),
-            patch(
-                "backend.app.api.routes.spoolman_inventory.printer_manager"
-            ) as pm_mock,
+            patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock,
         ):
             pm_mock.get_status = MagicMock(return_value=None)
 
@@ -193,9 +187,7 @@ class TestSyncSpoolmanAmsWeights:
                 "backend.app.api.routes.spoolman_inventory._get_client",
                 AsyncMock(return_value=spoolman_client),
             ),
-            patch(
-                "backend.app.api.routes.spoolman_inventory.printer_manager"
-            ) as pm_mock,
+            patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock,
         ):
             pm_mock.get_status = MagicMock(return_value=printer_state)
 
@@ -220,9 +212,7 @@ class TestSyncSpoolmanAmsWeights:
                 "backend.app.api.routes.spoolman_inventory._get_client",
                 AsyncMock(return_value=spoolman_client),
             ),
-            patch(
-                "backend.app.api.routes.spoolman_inventory.printer_manager"
-            ) as pm_mock,
+            patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock,
         ):
             pm_mock.get_status = MagicMock(return_value=printer_state)
 
@@ -248,9 +238,7 @@ class TestSyncSpoolmanAmsWeights:
                 "backend.app.api.routes.spoolman_inventory._get_client",
                 AsyncMock(return_value=spoolman_client),
             ),
-            patch(
-                "backend.app.api.routes.spoolman_inventory.printer_manager"
-            ) as pm_mock,
+            patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock,
         ):
             pm_mock.get_status = MagicMock(return_value=printer_state)
 

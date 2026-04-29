@@ -3,16 +3,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Unlink } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, SpoolmanBulkCreateResult, SpoolKProfileInput } from '../api/client';
+import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, SpoolmanBulkCreateResult, SpoolKProfileInput, SpoolmanFilamentEntry } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
-import { defaultFormData, validateForm } from './spool-form/types';
+import { defaultFormData, validateForm, SPOOLMAN_LINKED_FIELDS } from './spool-form/types';
 import { buildFilamentOptions, extractBrandsFromPresets, findPresetOption, loadRecentColors, parsePresetName, saveRecentColor } from './spool-form/utils';
 import { MATERIALS } from './spool-form/constants';
 import { FilamentSection } from './spool-form/FilamentSection';
 import { ColorSection } from './spool-form/ColorSection';
 import { AdditionalSection } from './spool-form/AdditionalSection';
+import { SpoolmanFilamentPicker } from './spool-form/SpoolmanFilamentPicker';
 import { PAProfileSection } from './spool-form/PAProfileSection';
 import { SpoolUsageHistory } from './SpoolUsageHistory';
 
@@ -88,6 +89,16 @@ export function SpoolFormModal({
   // Count selected PA profiles for tab badge
   const selectedProfileCount = selectedProfiles.size;
 
+  // Fetch Spoolman filament catalog when in Spoolman mode
+  // retry:false — Spoolman may be intentionally disabled (400); don't flood the server
+  const { data: spoolmanFilaments = [], isLoading: isLoadingFilaments, error: filamentsError } = useQuery<SpoolmanFilamentEntry[], Error>({
+    queryKey: ['spoolman-inventory-filaments'],
+    queryFn: () => api.getSpoolmanInventoryFilaments(),
+    enabled: spoolmanMode && isOpen,
+    staleTime: 60_000,
+    retry: false,
+  });
+
   // Load recent colors on mount
   useEffect(() => {
     setRecentColors(loadRecentColors());
@@ -113,7 +124,9 @@ export function SpoolFormModal({
         }
       };
       fetchData();
-      api.getSpoolCatalog().then(setSpoolCatalog).catch(console.error);
+      if (!spoolmanMode) {
+        api.getSpoolCatalog().then(setSpoolCatalog).catch(console.error);
+      }
       api.getColorCatalog().then(setColorCatalog).catch(console.error);
       api.getLocalPresets().then(r => setLocalPresets(r.filament)).catch(console.error);
 
@@ -285,6 +298,7 @@ export function SpoolFormModal({
           category: spool.category || '',
           low_stock_threshold_pct: spool.low_stock_threshold_pct ?? null,
           storage_location: spool.storage_location || '',
+          spoolman_filament_id: null,
         });
         setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
 
@@ -322,11 +336,43 @@ export function SpoolFormModal({
 
   // Update field helper
   const updateField = <K extends keyof SpoolFormData>(key: K, value: SpoolFormData[K]) => {
-    setFormData(prev => ({ ...prev, [key]: value }));
+    const isLinkedField = SPOOLMAN_LINKED_FIELDS.has(key);
+    if (spoolmanMode && isLinkedField && formData.spoolman_filament_id !== null) {
+      showToast(t('inventory.spoolmanFilamentUnlinked'), 'info');
+    }
+    setFormData(prev => ({
+      ...prev,
+      [key]: value,
+      ...(spoolmanMode && isLinkedField && prev.spoolman_filament_id !== null
+        ? { spoolman_filament_id: null }
+        : {}),
+    }));
     if (key === 'weight_used') setWeightTouched(true);
     if (errors[key]) {
       setErrors(prev => ({ ...prev, [key]: undefined }));
     }
+  };
+
+  // Prefill form from a Spoolman filament catalog entry
+  // subtype extraction mirrors _spoolman_helpers.py logic
+  const handleFilamentSelect = (filament: SpoolmanFilamentEntry) => {
+    const material = filament.material || '';
+    const name = filament.name || '';
+    const subtype = material && name.startsWith(material) ? name.slice(material.length).trim() : name;
+    const rawHex = (filament.color_hex ?? '').replace('#', '').toUpperCase();
+    // Guard against short/malformed hex values — must be exactly 6 hex chars
+    const colorHex = /^[0-9A-F]{6}$/.test(rawHex) ? rawHex : '808080';
+    setFormData(prev => ({
+      ...prev,
+      spoolman_filament_id: filament.id,
+      material,
+      subtype,
+      brand: filament.vendor?.name || '',
+      rgba: `${colorHex}FF`,
+      color_name: filament.color_name || '',
+      label_weight: filament.weight ?? prev.label_weight,
+    }));
+    showToast(t('inventory.spoolmanFilamentSelected'), 'success');
   };
 
   // Handle color selection
@@ -587,7 +633,7 @@ export function SpoolFormModal({
     const presetName = selectedPresetOption?.displayName || presetInputValue || null;
 
     const data: Record<string, unknown> = {
-      material: formData.material,
+      material: formData.material || null,
       subtype: formData.subtype || null,
       brand: formData.brand || null,
       color_name: formData.color_name || null,
@@ -604,6 +650,7 @@ export function SpoolFormModal({
       category: formData.category.trim() || null,
       low_stock_threshold_pct: formData.low_stock_threshold_pct,
       storage_location: formData.storage_location || null,
+      ...(spoolmanMode ? { spoolman_filament_id: formData.spoolman_filament_id } : {}),
     };
 
     // Only send weight_used when creating or when explicitly changed by the user.
@@ -707,6 +754,22 @@ export function SpoolFormModal({
         <div className="p-4 overflow-y-auto flex-1" style={{ scrollbarGutter: 'stable' }}>
           {activeTab === 'filament' ? (
             <div className="space-y-6">
+              {/* Spoolman Filament Catalog Picker — only when creating a spool in Spoolman mode */}
+              {spoolmanMode && !isEditing && (
+                <div>
+                  {filamentsError ? (
+                    <p className="text-sm text-red-400 px-1">{t('inventory.spoolmanCatalogLoadFailed')}</p>
+                  ) : (
+                    <SpoolmanFilamentPicker
+                      filaments={spoolmanFilaments}
+                      isLoading={isLoadingFilaments}
+                      selectedId={formData.spoolman_filament_id}
+                      onSelect={handleFilamentSelect}
+                    />
+                  )}
+                </div>
+              )}
+
               {/* Filament Info Section */}
               <div>
                 <h3 className="text-sm font-semibold text-bambu-gray uppercase tracking-wide mb-3">
@@ -756,6 +819,7 @@ export function SpoolFormModal({
                   currencySymbol={currencySymbol}
                   availableCategories={availableCategories}
                   globalLowStockThreshold={globalLowStockThreshold}
+                  spoolmanMode={spoolmanMode}
                 />
               </div>
 

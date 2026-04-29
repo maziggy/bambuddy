@@ -661,6 +661,8 @@ class TestSpoolmanTableDialect:
         from backend.app.core.database import _safe_execute
 
         captured_sql: list[str] = []
+
+
 class TestAutoLinkConstraintMigration:
     """Tests for _migrate_update_auto_link_constraint (Fall C / Azure support)."""
 

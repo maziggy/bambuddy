@@ -1600,6 +1600,9 @@ export default {
     spoolmanAmsSyncing: 'Syncing...',
     spoolmanAmsSyncSuccess: '{{synced}} spool(s) synced, {{skipped}} skipped',
     spoolmanAmsSyncError: 'Failed to sync Spoolman weights from AMS',
+    // Spoolman filament catalog section in spool catalog settings
+    spoolmanFilamentCatalogTitle: 'Spoolman Filament Catalog',
+    spoolmanFilamentCatalogDesc: 'Read-only view of filaments defined in your Spoolman instance. Manage filament types directly in Spoolman.',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL of your Spoolman server (e.g., http://localhost:7912)',
@@ -3531,6 +3534,15 @@ export default {
     assignMismatchConfirm: 'Assign Anyway',
     assignPartialMismatchMessage: 'The spool material "{{spoolMaterial}}" is similar to but not exactly matching "{{trayMaterial}}" in {{location}}. Do you want to proceed?',
     assignProfileMismatchMessage: 'The spool profile "{{spoolProfile}}" does not match the tray profile "{{trayProfile}}" in {{location}}. Do you want to proceed?',
+    // Spoolman filament catalog picker
+    spoolmanFilamentCatalog: 'Spoolman Filament Catalog',
+    pickFromSpoolmanCatalog: 'Pick from Spoolman catalog…',
+    spoolmanFilamentSelected: 'Filament selected from Spoolman catalog',
+    spoolmanFilamentUnlinked: 'Filament catalog link cleared',
+    noSpoolmanFilaments: 'No filaments found in Spoolman catalog',
+    spoolmanFilamentColorSwatch: 'Filament color',
+    spoolWeightManagedBySpoolman: 'Empty spool weight is managed per filament type in Spoolman',
+    spoolmanCatalogLoadFailed: 'Failed to load Spoolman filament catalog',
   },
 
   // Timelapse

@@ -78,13 +78,9 @@ def mock_spoolman_client():
 class TestGetSpoolmanKProfiles:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_returns_empty_list_when_none(
-        self, async_client: AsyncClient, kp_settings, mock_spoolman_client
-    ):
+    async def test_returns_empty_list_when_none(self, async_client: AsyncClient, kp_settings, mock_spoolman_client):
         """GET /spools/7/k-profiles returns [] when no profiles exist."""
-        response = await async_client.get(
-            "/api/v1/spoolman/inventory/spools/7/k-profiles"
-        )
+        response = await async_client.get("/api/v1/spoolman/inventory/spools/7/k-profiles")
         assert response.status_code == 200
         assert response.json() == []
 
@@ -107,9 +103,7 @@ class TestGetSpoolmanKProfiles:
         db_session.add(kp)
         await db_session.commit()
 
-        response = await async_client.get(
-            "/api/v1/spoolman/inventory/spools/7/k-profiles"
-        )
+        response = await async_client.get("/api/v1/spoolman/inventory/spools/7/k-profiles")
         assert response.status_code == 200
         profiles = response.json()
         assert len(profiles) == 1
@@ -208,9 +202,7 @@ class TestSaveSpoolmanKProfiles:
         assert response.json() == []
 
         # Verify gone in DB
-        get_resp = await async_client.get(
-            "/api/v1/spoolman/inventory/spools/7/k-profiles"
-        )
+        get_resp = await async_client.get("/api/v1/spoolman/inventory/spools/7/k-profiles")
         assert get_resp.json() == []
 
 

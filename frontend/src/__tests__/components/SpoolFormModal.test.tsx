@@ -26,6 +26,7 @@ vi.mock('../../api/client', () => ({
     getPrinters: vi.fn().mockResolvedValue([]),
     getSpoolUsageHistory: vi.fn().mockResolvedValue([]),
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
+    createSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 88 }),
     updateSpool: vi.fn().mockResolvedValue({ id: 1 }),
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
     saveSpoolmanKProfiles: vi.fn().mockResolvedValue([]),
@@ -35,6 +36,14 @@ vi.mock('../../api/client', () => ({
       requested_count: 1,
       failed_count: 0,
     }),
+    getSpoolmanInventoryFilaments: vi.fn().mockResolvedValue([]),
+  },
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
   },
 }));
 
@@ -650,5 +659,156 @@ describe('SpoolFormModal Spoolman K-profile support', () => {
       expect(api.saveSpoolmanKProfiles).toHaveBeenCalledWith(42, []);
     });
     expect(api.saveSpoolKProfiles).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2: SpoolmanFilamentPicker integration with SpoolFormModal
+// ---------------------------------------------------------------------------
+
+vi.mock('../../components/spool-form/SpoolmanFilamentPicker', () => ({
+  SpoolmanFilamentPicker: ({ onSelect, selectedId }: { onSelect: (f: unknown) => void; selectedId: number | null; isLoading: boolean; filaments: unknown[] }) => {
+    return (
+      <div>
+        <span data-testid="picker-selected-id">{selectedId ?? 'none'}</span>
+        <button data-testid="picker-select-btn" onClick={() => onSelect({
+          id: 7,
+          name: 'PLA Basic',
+          material: 'PLA',
+          color_hex: 'FF0000',
+          color_name: 'Red',
+          weight: 1000,
+          spool_weight: 196,
+          vendor: { id: 1, name: 'Bambu Lab' },
+        })}>
+          Select Filament
+        </button>
+      </div>
+    );
+  },
+}));
+
+describe('SpoolFormModal — SpoolmanFilamentPicker integration (T2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders SpoolmanFilamentPicker in Spoolman create mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-btn')).toBeInTheDocument();
+    });
+  });
+
+  it('does NOT render SpoolmanFilamentPicker in local inventory mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('picker-select-btn')).not.toBeInTheDocument();
+    });
+  });
+
+  it('prefills form fields when a filament is selected from the picker', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('picker-select-btn'));
+
+    // After selection, the picker should reflect the selected ID
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-selected-id').textContent).toBe('7');
+    });
+  });
+
+  it('includes spoolman_filament_id in the submit payload when a filament is pre-selected', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+        spoolsQueryKey={['spoolman-spools']}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-btn')).toBeInTheDocument();
+    });
+
+    // Select a filament
+    fireEvent.click(screen.getByTestId('picker-select-btn'));
+
+    // Submit the form
+    const saveButton = screen.getByRole('button', { name: /save|add spool/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.createSpoolmanInventorySpool).toHaveBeenCalledTimes(1);
+    });
+
+    const callArg = vi.mocked(api.createSpoolmanInventorySpool).mock.calls[0][0] as Record<string, unknown>;
+    expect(callArg.spoolman_filament_id).toBe(7);
+  });
+
+  it('clears spoolman_filament_id and shows unlink toast when user edits a linked field', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-btn')).toBeInTheDocument();
+    });
+
+    // Select a filament from the catalog picker
+    fireEvent.click(screen.getByTestId('picker-select-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-selected-id').textContent).toBe('7');
+    });
+
+    // Manually edit the color_name field (a linked field)
+    const colorNameInput = screen.getByPlaceholderText('Jade White, Fire Red...');
+    fireEvent.change(colorNameInput, { target: { value: 'Custom Blue' } });
+
+    // spoolman_filament_id must be cleared (picker shows 'none')
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-selected-id').textContent).toBe('none');
+    });
+
+    // Unlink toast must have been shown
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining('catalog link'),
+      'info',
+    );
   });
 });

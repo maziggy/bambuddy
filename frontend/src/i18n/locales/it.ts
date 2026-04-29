@@ -1546,6 +1546,9 @@ export default {
     spoolmanAmsSyncing: 'Sincronizzazione...',
     spoolmanAmsSyncSuccess: '{{synced}} bobina/e sincronizzata/e, {{skipped}} saltata/e',
     spoolmanAmsSyncError: 'Impossibile sincronizzare i pesi Spoolman dall\'AMS',
+    // Spoolman filament catalog section in spool catalog settings
+    spoolmanFilamentCatalogTitle: 'Catalogo filamenti Spoolman',
+    spoolmanFilamentCatalogDesc: 'Vista in sola lettura dei filamenti definiti nella tua istanza Spoolman. Gestisci i tipi di filamenti direttamente in Spoolman.',
     // Spoolman settings
     spoolmanUrl: 'URL Spoolman',
     spoolmanUrlHint: 'URL del server Spoolman (es. http://localhost:7912)',
@@ -3447,6 +3450,15 @@ export default {
     assignMismatchConfirm: 'Assegna comunque',
     assignPartialMismatchMessage: 'Il materiale della bobina "{{spoolMaterial}}" è simile ma non corrisponde esattamente a "{{trayMaterial}}" in {{location}}. Vuoi procedere?',
     assignProfileMismatchMessage: 'Il profilo della bobina "{{spoolProfile}}" non corrisponde al profilo del vassoio "{{trayProfile}}" in {{location}}. Vuoi procedere?',
+    // Spoolman filament catalog picker
+    spoolmanFilamentCatalog: 'Catalogo filamenti Spoolman',
+    pickFromSpoolmanCatalog: 'Scegli dal catalogo Spoolman…',
+    spoolmanFilamentSelected: 'Filamento selezionato dal catalogo Spoolman',
+    spoolmanFilamentUnlinked: 'Collegamento al catalogo filamenti rimosso',
+    noSpoolmanFilaments: 'Nessun filamento trovato nel catalogo Spoolman',
+    spoolmanFilamentColorSwatch: 'Colore del filamento',
+    spoolWeightManagedBySpoolman: 'Il peso della bobina vuota è gestito per tipo di filamento in Spoolman',
+    spoolmanCatalogLoadFailed: 'Impossibile caricare il catalogo Spoolman',
   },
 
   // Timelapse

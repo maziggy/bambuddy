@@ -1571,6 +1571,9 @@ export default {
     spoolmanAmsSyncing: '同期中...',
     spoolmanAmsSyncSuccess: '{{synced}}個のSpoolmanスプールを同期、{{skipped}}個をスキップ',
     spoolmanAmsSyncError: 'AMSからのSpoolman重量同期に失敗しました',
+    // Spoolman filament catalog section in spool catalog settings
+    spoolmanFilamentCatalogTitle: 'Spoolmanフィラメントカタログ',
+    spoolmanFilamentCatalogDesc: 'Spoolmanインスタンスで定義されたフィラメントの読み取り専用ビュー。フィラメントタイプはSpoolmanで直接管理してください。',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'Spoolmanサーバーのurl（例：http://localhost:7912）',
@@ -3486,6 +3489,15 @@ export default {
     assignMismatchConfirm: '強制的に割り当て',
     assignPartialMismatchMessage: 'スプールの材料「{{spoolMaterial}}」は「{{trayMaterial}}」に似ていますが、{{location}} と完全には一致しません。続行しますか？',
     assignProfileMismatchMessage: 'スプールのプロファイル「{{spoolProfile}}」は {{location}} のトレイプロファイル「{{trayProfile}}」と一致しません。続行しますか？',
+    // Spoolman filament catalog picker
+    spoolmanFilamentCatalog: 'Spoolmanフィラメントカタログ',
+    pickFromSpoolmanCatalog: 'Spoolmanカタログから選択…',
+    spoolmanFilamentSelected: 'Spoolmanカタログからフィラメントを選択しました',
+    spoolmanFilamentUnlinked: 'フィラメントカタログのリンクを解除しました',
+    noSpoolmanFilaments: 'Spoolmanカタログにフィラメントが見つかりません',
+    spoolmanFilamentColorSwatch: 'フィラメントの色',
+    spoolWeightManagedBySpoolman: '空スプールの重量はSpoolmanでフィラメントタイプごとに管理されています',
+    spoolmanCatalogLoadFailed: 'Spoolmanのフィラメントカタログを読み込めませんでした',
   },
 
   // Timelapse

@@ -77,5 +77,20 @@ describe('validateForm', () => {
       const result = validateForm(data, true, true);
       expect(result.isValid).toBe(true);
     });
+
+    it('passes when spoolman_filament_id is set and material is empty', () => {
+      // When a catalog entry is pre-selected, material is not required
+      const data = { ...defaultFormData, material: '', spoolman_filament_id: 7 };
+      const result = validateForm(data, false, true);
+      expect(result.isValid).toBe(true);
+      expect(result.errors.material).toBeUndefined();
+    });
+
+    it('fails when both material and spoolman_filament_id are absent', () => {
+      const data = { ...defaultFormData, material: '', spoolman_filament_id: null };
+      const result = validateForm(data, false, true);
+      expect(result.isValid).toBe(false);
+      expect(result.errors.material).toBeDefined();
+    });
   });
 });

@@ -7,6 +7,7 @@ translates between Spoolman's data model and Bambuddy's InventorySpool format.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
 
 # ---------------------------------------------------------------------------
@@ -1562,9 +1563,7 @@ class TestSpoolTagLinkValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_tag_uid_6_chars_rejected(
-        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
-    ):
+    async def test_tag_uid_6_chars_rejected(self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client):
         """tag_uid with 6 hex chars is rejected — minimum is 8 chars (4-byte UID)."""
         resp = await async_client.patch(
             "/api/v1/spoolman/inventory/spools/42/tag",
@@ -1574,9 +1573,7 @@ class TestSpoolTagLinkValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_tag_uid_all_zeros_rejected(
-        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
-    ):
+    async def test_tag_uid_all_zeros_rejected(self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client):
         """tag_uid that is all-zero bytes is rejected as an unwritten/blank tag."""
         resp = await async_client.patch(
             "/api/v1/spoolman/inventory/spools/42/tag",
@@ -1599,9 +1596,7 @@ class TestSpoolTagLinkValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_tag_uid_8_chars_accepted(
-        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
-    ):
+    async def test_tag_uid_8_chars_accepted(self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client):
         """tag_uid with 8 hex chars (4-byte Bambu Lab NFC UID) is accepted after min_length fix."""
         resp = await async_client.patch(
             "/api/v1/spoolman/inventory/spools/42/tag",
@@ -1611,9 +1606,7 @@ class TestSpoolTagLinkValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_tag_uid_8_zeros_rejected(
-        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
-    ):
+    async def test_tag_uid_8_zeros_rejected(self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client):
         """tag_uid with 8 zero chars is rejected — all-zeros validator applies at the new minimum."""
         resp = await async_client.patch(
             "/api/v1/spoolman/inventory/spools/42/tag",
@@ -1757,3 +1750,195 @@ class TestUnlinkSpool:
         sent_extra = kwargs.get("extra")
         assert sent_extra is not None
         assert sent_extra.get("custom") == "keep", "unrelated extra keys must survive unlink"
+
+
+# ---------------------------------------------------------------------------
+# B1: GET /spoolman/inventory/filaments
+# B2: POST /spools with spoolman_filament_id bypasses find_or_create_filament
+# ---------------------------------------------------------------------------
+
+SAMPLE_FILAMENT_DICT = {
+    "id": 7,
+    "name": "PLA Basic",
+    "material": "PLA",
+    "color_hex": "FF0000",
+    "color_name": "Red",
+    "weight": 1000,
+    "spool_weight": 196,
+    "vendor": {"id": 3, "name": "Bambu Lab"},
+}
+
+
+class TestListSpoolmanFilaments:
+    """Tests for GET /api/v1/spoolman/inventory/filaments (B1)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_filaments_disabled_returns_400(self, async_client: AsyncClient):
+        """Without Spoolman enabled the endpoint returns 400."""
+        resp = await async_client.get("/api/v1/spoolman/inventory/filaments")
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_filaments_unreachable_returns_503(self, async_client: AsyncClient, spoolman_settings):
+        """503 is returned when _get_client raises HTTPException(503)."""
+        with patch(
+            "backend.app.api.routes.spoolman_inventory._get_client",
+            AsyncMock(side_effect=HTTPException(status_code=503, detail="Spoolman server is not reachable")),
+        ):
+            resp = await async_client.get("/api/v1/spoolman/inventory/filaments")
+        assert resp.status_code == 503
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_filaments_success(self, async_client: AsyncClient, spoolman_settings):
+        """Success path returns normalised filament list including spool_weight."""
+        mock_client = MagicMock()
+        mock_client.get_filaments = AsyncMock(return_value=[SAMPLE_FILAMENT_DICT])
+        with patch(
+            "backend.app.api.routes.spoolman_inventory._get_client",
+            AsyncMock(return_value=mock_client),
+        ):
+            resp = await async_client.get("/api/v1/spoolman/inventory/filaments")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        entry = data[0]
+        assert entry["id"] == 7
+        assert entry["material"] == "PLA"
+        assert entry["spool_weight"] == 196
+        assert entry["vendor"]["name"] == "Bambu Lab"
+
+
+class TestCreateSpoolWithFilamentId:
+    """Tests for POST /api/v1/spoolman/inventory/spools with spoolman_filament_id (B2)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_with_filament_id_skips_find_or_create(self, async_client: AsyncClient, spoolman_settings):
+        """When spoolman_filament_id is provided, find_or_create_filament must NOT be called."""
+        mock_client = MagicMock()
+        mock_client.find_or_create_filament = AsyncMock(return_value=7)
+        mock_client.create_spool = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
+        mock_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
+        with patch(
+            "backend.app.api.routes.spoolman_inventory._get_client",
+            AsyncMock(return_value=mock_client),
+        ):
+            resp = await async_client.post(
+                "/api/v1/spoolman/inventory/spools",
+                json={"spoolman_filament_id": 7},
+            )
+
+        assert resp.status_code == 200
+        mock_client.find_or_create_filament.assert_not_called()
+        mock_client.create_spool.assert_called_once()
+        _, kwargs = mock_client.create_spool.call_args
+        assert kwargs.get("filament_id") == 7
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_with_invalid_filament_id_returns_404(self, async_client: AsyncClient, spoolman_settings):
+        """An invalid spoolman_filament_id (not in Spoolman) must return 404."""
+        from backend.app.services.spoolman import SpoolmanNotFoundError
+
+        mock_client = MagicMock()
+        mock_client.create_spool = AsyncMock(side_effect=SpoolmanNotFoundError("filament not found"))
+        with patch(
+            "backend.app.api.routes.spoolman_inventory._get_client",
+            AsyncMock(return_value=mock_client),
+        ):
+            resp = await async_client.post(
+                "/api/v1/spoolman/inventory/spools",
+                json={"spoolman_filament_id": 9999},
+            )
+
+        assert resp.status_code == 404
+        assert "9999" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# WICHTIG-12: Additional edge-case tests
+# ---------------------------------------------------------------------------
+
+
+class TestBulkCreateWithFilamentId:
+    """Bulk create with spoolman_filament_id skips find_or_create_filament."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_create_with_filament_id_skips_find_or_create(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """Bulk POST with spoolman_filament_id must NOT call find_or_create_filament."""
+        mock_client = MagicMock()
+        mock_client.find_or_create_filament = AsyncMock(return_value=7)
+        mock_client.create_spool = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
+        mock_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
+        with patch(
+            "backend.app.api.routes.spoolman_inventory._get_client",
+            AsyncMock(return_value=mock_client),
+        ):
+            resp = await async_client.post(
+                "/api/v1/spoolman/inventory/spools/bulk",
+                json={"spool": {"spoolman_filament_id": 7}, "quantity": 2},
+            )
+
+        assert resp.status_code == 200
+        mock_client.find_or_create_filament.assert_not_called()
+        assert mock_client.create_spool.call_count == 2
+        for call in mock_client.create_spool.call_args_list:
+            _, kwargs = call
+            assert kwargs.get("filament_id") == 7
+
+
+class TestCreateSpoolValidation:
+    """Validation edge cases for SpoolmanInventoryCreate."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_spool_filament_id_zero_returns_422(self, async_client: AsyncClient, spoolman_settings):
+        """spoolman_filament_id=0 must fail Field(gt=0) validation → 422."""
+        resp = await async_client.post(
+            "/api/v1/spoolman/inventory/spools",
+            json={"spoolman_filament_id": 0},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_spool_without_material_or_filament_id_returns_422(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """Neither material nor spoolman_filament_id → model_validator must reject → 422."""
+        resp = await async_client.post(
+            "/api/v1/spoolman/inventory/spools",
+            json={"label_weight": 1000},
+        )
+        assert resp.status_code == 422
+
+
+class TestNormalizeFilament:
+    """Unit-style tests for _normalize_filament helper (imported directly)."""
+
+    def test_normalize_filament_null_vendor(self):
+        from backend.app.api.routes.spoolman_inventory import _normalize_filament
+
+        result = _normalize_filament({"id": 5, "name": "PLA", "vendor": None})
+        assert result is not None
+        assert result["vendor"] is None
+
+    def test_normalize_filament_null_id_returns_none(self):
+        from backend.app.api.routes.spoolman_inventory import _normalize_filament
+
+        result = _normalize_filament({"id": None, "name": "PLA"})
+        assert result is None
+
+    def test_normalize_filament_zero_id_returns_none(self):
+        from backend.app.api.routes.spoolman_inventory import _normalize_filament
+
+        result = _normalize_filament({"id": 0, "name": "PLA"})
+        assert result is None

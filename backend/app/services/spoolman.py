@@ -509,6 +509,8 @@ class SpoolmanClient:
         location: str | None = None,
         clear_location: bool = False,
         extra: dict | None = None,
+        spool_weight: float | None = None,
+        clear_spool_weight: bool = False,
     ) -> dict:
         """Update a spool with full field support; unlike update_spool, does not auto-set last_used."""
         data: dict = {}
@@ -526,6 +528,10 @@ class SpoolmanClient:
             data["location"] = location
         if extra is not None:
             data["extra"] = extra
+        if clear_spool_weight:
+            data["spool_weight"] = None
+        elif spool_weight is not None:
+            data["spool_weight"] = spool_weight
 
         response = await self._request_spool("PATCH", spool_id, json_body=data, operation="update")
         return response.json()

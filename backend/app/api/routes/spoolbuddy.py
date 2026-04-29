@@ -18,7 +18,6 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
-from backend.app.models.spoolman_spool_weight_override import SpoolmanSpoolWeightOverride
 from backend.app.models.user import User
 from backend.app.schemas.spoolbuddy import (
     CalibrationResponse,
@@ -819,29 +818,19 @@ async def update_spool_weight(
     async with _translate_spoolbuddy_errors():
         sm_spool = await sm_client.get_spool(req.spool_id)
 
-    override_row = (
-        await db.execute(
-            select(SpoolmanSpoolWeightOverride).where(
-                SpoolmanSpoolWeightOverride.spoolman_spool_id == req.spool_id
-            )
-        )
-    ).scalar_one_or_none()
-
     filament = sm_spool.get("filament") or {}
+    spool_tare = sm_spool.get("spool_weight")
+    raw_tare = spool_tare if spool_tare is not None else filament.get("spool_weight")
     spool_weight_warning: str | None = None
-    if override_row is not None:
-        core_weight = float(override_row.core_weight)
-    else:
-        raw_spool_weight = filament.get("spool_weight")
-        if raw_spool_weight is None:
-            logger.warning(
-                "Spoolman spool %d has no spool_weight set; using 250g fallback for tare",
-                req.spool_id,
-            )
-            spool_weight_warning = (
-                "spool_weight_not_set: Spoolman filament has no spool_weight configured; weight estimate uses 250g fallback"
-            )
-        core_weight = _safe_float(raw_spool_weight, 250.0)
+    if raw_tare is None:
+        logger.warning(
+            "Spoolman spool %d has no spool_weight set; using 250g fallback for tare",
+            req.spool_id,
+        )
+        spool_weight_warning = (
+            "spool_weight_not_set: Spoolman filament has no spool_weight configured; weight estimate uses 250g fallback"
+        )
+    core_weight = _safe_float(raw_tare, 250.0)
     label_weight = _safe_float(filament.get("weight"), 1000.0)
     remaining_weight = max(0.0, req.weight_grams - core_weight)
 

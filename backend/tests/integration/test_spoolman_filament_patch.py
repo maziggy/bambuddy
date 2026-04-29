@@ -1,18 +1,17 @@
 """Integration tests for PATCH /spoolman/inventory/filaments/{filament_id}.
 
 Covers:
-- Option A (keep_existing_spools=True): inserts override rows for existing spools
-- Option B (keep_existing_spools=False): deletes override rows for affected spools
-- Name-only patch: no get_all_spools call, no override changes
+- Option A (keep_existing_spools=True): stamps old filament weight onto spools that currently inherit
+- Option B (keep_existing_spools=False): clears per-spool overrides in Spoolman so all inherit new value
+- Name-only patch: no get_all_spools call
 - Edge cases: disabled Spoolman, not found, invalid inputs
-- Override lookup in update_spool_weight (spoolbuddy) and sync_spool_weight (spoolman_inventory)
+- Spool-level tare priority in sync_spool_weight (spoolman_inventory) and update_spool_weight (spoolbuddy)
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
 
 SAMPLE_FILAMENT = {
     "id": 7,
@@ -27,6 +26,7 @@ SAMPLE_FILAMENT = {
 
 SAMPLE_SPOOL_WITH_FILAMENT_7 = {
     "id": 42,
+    "spool_weight": None,  # inheriting from filament
     "filament": {"id": 7, "name": "PLA Basic", "material": "PLA", "spool_weight": 250.0, "weight": 1000},
     "remaining_weight": 750.0,
     "used_weight": 250.0,
@@ -38,6 +38,7 @@ SAMPLE_SPOOL_WITH_FILAMENT_7 = {
 
 SAMPLE_SPOOL_WITH_FILAMENT_99 = {
     "id": 55,
+    "spool_weight": 196.0,  # has its own spool-level override
     "filament": {"id": 99, "name": "PETG HF", "material": "PETG", "spool_weight": 196.0, "weight": 1000},
     "remaining_weight": 500.0,
     "used_weight": 500.0,
@@ -49,9 +50,22 @@ SAMPLE_SPOOL_WITH_FILAMENT_99 = {
 
 SPOOL_WITH_NULL_FILAMENT = {
     "id": 77,
+    "spool_weight": None,
     "filament": None,
     "remaining_weight": 100.0,
     "used_weight": 900.0,
+    "location": None,
+    "comment": None,
+    "archived": False,
+    "extra": {},
+}
+
+SAMPLE_SPOOL_7_WITH_OVERRIDE = {
+    "id": 43,
+    "spool_weight": 300.0,  # has its own spool-level override
+    "filament": {"id": 7, "name": "PLA Basic", "material": "PLA", "spool_weight": 250.0, "weight": 1000},
+    "remaining_weight": 700.0,
+    "used_weight": 300.0,
     "location": None,
     "comment": None,
     "archived": False,
@@ -74,6 +88,7 @@ def make_mock_client(filament=None, all_spools=None, patched_filament=None):
     mock_client.get_filament = AsyncMock(return_value=filament or SAMPLE_FILAMENT)
     mock_client.patch_filament = AsyncMock(return_value=patched_filament or SAMPLE_FILAMENT)
     mock_client.get_all_spools = AsyncMock(return_value=all_spools if all_spools is not None else [SAMPLE_SPOOL_WITH_FILAMENT_7])
+    mock_client.update_spool_full = AsyncMock(return_value={})
     return mock_client
 
 
@@ -84,17 +99,11 @@ def make_mock_client(filament=None, all_spools=None, patched_filament=None):
 class TestPatchFilamentOptionB:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_option_b_calls_spoolman_and_clears_overrides(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_option_b_clears_spools_with_existing_override(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """Option B: patch_filament called; override rows for affected spools deleted."""
-        from backend.app.models.spoolman_spool_weight_override import SpoolmanSpoolWeightOverride
-
-        # Pre-insert an override row for spool 42 (filament 7)
-        db_session.add(SpoolmanSpoolWeightOverride(spoolman_spool_id=42, core_weight=250))
-        await db_session.commit()
-
-        mock_client = make_mock_client()
+        """Option B: spools that have their own spool_weight get it cleared in Spoolman."""
+        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_7_WITH_OVERRIDE])
         with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
             response = await async_client.patch(
                 "/api/v1/spoolman/inventory/filaments/7",
@@ -103,28 +112,15 @@ class TestPatchFilamentOptionB:
 
         assert response.status_code == 200
         mock_client.patch_filament.assert_called_once_with(7, {"spool_weight": 196.0})
-
-        # Override row should be deleted
-        result = await db_session.execute(
-            select(SpoolmanSpoolWeightOverride).where(SpoolmanSpoolWeightOverride.spoolman_spool_id == 42)
-        )
-        assert result.scalar_one_or_none() is None
+        mock_client.update_spool_full.assert_called_once_with(spool_id=43, clear_spool_weight=True)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_option_b_only_deletes_affected_filament_overrides(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_option_b_does_not_patch_spools_already_inheriting(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """Option B for filament 7 must not delete overrides for filament 99 spools."""
-        from backend.app.models.spoolman_spool_weight_override import SpoolmanSpoolWeightOverride
-
-        db_session.add(SpoolmanSpoolWeightOverride(spoolman_spool_id=42, core_weight=250))  # filament 7
-        db_session.add(SpoolmanSpoolWeightOverride(spoolman_spool_id=55, core_weight=196))  # filament 99
-        await db_session.commit()
-
-        mock_client = make_mock_client(
-            all_spools=[SAMPLE_SPOOL_WITH_FILAMENT_7, SAMPLE_SPOOL_WITH_FILAMENT_99]
-        )
+        """Option B: spools already inheriting from filament (spool_weight=None) are not patched."""
+        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_WITH_FILAMENT_7])
         with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
             response = await async_client.patch(
                 "/api/v1/spoolman/inventory/filaments/7",
@@ -132,30 +128,34 @@ class TestPatchFilamentOptionB:
             )
 
         assert response.status_code == 200
+        mock_client.update_spool_full.assert_not_called()
 
-        # Filament 7's override should be gone
-        r7 = await db_session.execute(
-            select(SpoolmanSpoolWeightOverride).where(SpoolmanSpoolWeightOverride.spoolman_spool_id == 42)
-        )
-        assert r7.scalar_one_or_none() is None
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_option_b_only_clears_affected_filament_spools(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """Option B for filament 7 must not patch spools belonging to other filament types."""
+        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_7_WITH_OVERRIDE, SAMPLE_SPOOL_WITH_FILAMENT_99])
+        with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
+            response = await async_client.patch(
+                "/api/v1/spoolman/inventory/filaments/7",
+                json={"spool_weight": 196.0, "keep_existing_spools": False},
+            )
 
-        # Filament 99's override must remain
-        r99 = await db_session.execute(
-            select(SpoolmanSpoolWeightOverride).where(SpoolmanSpoolWeightOverride.spoolman_spool_id == 55)
-        )
-        assert r99.scalar_one_or_none() is not None
+        assert response.status_code == 200
+        # Only spool 43 (filament 7) should be cleared; spool 55 (filament 99) must not be touched
+        mock_client.update_spool_full.assert_called_once_with(spool_id=43, clear_spool_weight=True)
 
 
 class TestPatchFilamentOptionA:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_option_a_writes_override_rows(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_option_a_stamps_old_weight_on_inheriting_spools(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """Option A: override row written for each existing spool of the filament."""
-        from backend.app.models.spoolman_spool_weight_override import SpoolmanSpoolWeightOverride
-
-        mock_client = make_mock_client()
+        """Option A: spools inheriting from filament (spool_weight=None) get old weight stamped on them."""
+        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_WITH_FILAMENT_7])
         with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
             response = await async_client.patch(
                 "/api/v1/spoolman/inventory/filaments/7",
@@ -163,27 +163,16 @@ class TestPatchFilamentOptionA:
             )
 
         assert response.status_code == 200
-
-        result = await db_session.execute(
-            select(SpoolmanSpoolWeightOverride).where(SpoolmanSpoolWeightOverride.spoolman_spool_id == 42)
-        )
-        row = result.scalar_one_or_none()
-        assert row is not None
-        assert row.core_weight == 250  # old weight preserved
+        # old_weight = SAMPLE_FILAMENT["spool_weight"] = 250.0
+        mock_client.update_spool_full.assert_called_once_with(spool_id=42, spool_weight=pytest.approx(250.0))
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_option_a_does_not_overwrite_existing_overrides(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_option_a_does_not_patch_spools_with_existing_override(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """Option A ON CONFLICT DO NOTHING: existing override stays unchanged."""
-        from backend.app.models.spoolman_spool_weight_override import SpoolmanSpoolWeightOverride
-
-        # Pre-existing override with custom weight
-        db_session.add(SpoolmanSpoolWeightOverride(spoolman_spool_id=42, core_weight=200))
-        await db_session.commit()
-
-        mock_client = make_mock_client()
+        """Option A: spools already having their own spool_weight are left unchanged."""
+        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_7_WITH_OVERRIDE])
         with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
             response = await async_client.patch(
                 "/api/v1/spoolman/inventory/filaments/7",
@@ -191,22 +180,31 @@ class TestPatchFilamentOptionA:
             )
 
         assert response.status_code == 200
+        mock_client.update_spool_full.assert_not_called()
 
-        result = await db_session.execute(
-            select(SpoolmanSpoolWeightOverride).where(SpoolmanSpoolWeightOverride.spoolman_spool_id == 42)
-        )
-        row = result.scalar_one_or_none()
-        assert row is not None
-        assert row.core_weight == 200  # not overwritten
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_option_a_mixed_spools_stamps_only_inheriting(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """Option A: only inheriting spools (spool_weight=None) get old weight; overridden spools are skipped."""
+        mock_client = make_mock_client(all_spools=[SAMPLE_SPOOL_WITH_FILAMENT_7, SAMPLE_SPOOL_7_WITH_OVERRIDE])
+        with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
+            response = await async_client.patch(
+                "/api/v1/spoolman/inventory/filaments/7",
+                json={"spool_weight": 196.0, "keep_existing_spools": True},
+            )
+
+        assert response.status_code == 200
+        # Only spool 42 (inheriting) should be stamped; spool 43 (has override) must not be touched
+        mock_client.update_spool_full.assert_called_once_with(spool_id=42, spool_weight=pytest.approx(250.0))
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_option_a_zero_spools_no_error(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """Option A with zero spools for this filament: no error, no rows inserted."""
-        from backend.app.models.spoolman_spool_weight_override import SpoolmanSpoolWeightOverride
-
+        """Option A with zero spools for this filament: no error, no Spoolman calls."""
         mock_client = make_mock_client(all_spools=[])
         with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
             response = await async_client.patch(
@@ -215,8 +213,23 @@ class TestPatchFilamentOptionA:
             )
 
         assert response.status_code == 200
-        result = await db_session.execute(select(SpoolmanSpoolWeightOverride))
-        assert result.scalars().all() == []
+        mock_client.update_spool_full.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_option_a_filament_no_old_weight_skips_stamping(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """Option A: if the filament has no old spool_weight, no stamping occurs."""
+        mock_client = make_mock_client(filament={**SAMPLE_FILAMENT, "spool_weight": None})
+        with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
+            response = await async_client.patch(
+                "/api/v1/spoolman/inventory/filaments/7",
+                json={"spool_weight": 196.0, "keep_existing_spools": True},
+            )
+
+        assert response.status_code == 200
+        mock_client.update_spool_full.assert_not_called()
 
 
 class TestPatchFilamentNameOnly:
@@ -344,23 +357,17 @@ class TestPatchFilamentErrors:
 
 
 # ---------------------------------------------------------------------------
-# Override lookup in weight calculation endpoints
+# Spool-level tare priority in sync_spool_weight (spoolman_inventory)
 # ---------------------------------------------------------------------------
 
-class TestOverrideLookupInWeightCalc:
+class TestSyncSpoolWeightPriority:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_sync_spool_weight_uses_override_when_present(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_spool_level_spool_weight_takes_priority(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """sync_spool_weight uses override row instead of Spoolman filament spool_weight."""
-        from backend.app.models.spoolman_spool_weight_override import SpoolmanSpoolWeightOverride
-
-        # Override: spool 42 uses 100g tare
-        db_session.add(SpoolmanSpoolWeightOverride(spoolman_spool_id=42, core_weight=100))
-        await db_session.commit()
-
-        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7, "remaining_weight": 900.0}
+        """sync_spool_weight uses spool.spool_weight over filament.spool_weight for tare."""
+        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7, "spool_weight": 100.0}
         mock_client = make_mock_client()
         mock_client.get_spool = AsyncMock(return_value=spool_data)
         mock_client.update_spool_full = AsyncMock(return_value=spool_data)
@@ -372,17 +379,17 @@ class TestOverrideLookupInWeightCalc:
             )
 
         assert response.status_code == 200
-        # remaining = 600 - 100 (override) = 500; weight_used = 1000 - 500 = 500
+        # remaining = 600 - 100 (spool-level tare) = 500
         update_call = mock_client.update_spool_full.call_args
         assert update_call.kwargs["remaining_weight"] == pytest.approx(500.0)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_sync_spool_weight_uses_spoolman_when_no_override(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_filament_spool_weight_used_as_fallback(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """sync_spool_weight uses Spoolman spool_weight when no override exists."""
-        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7, "remaining_weight": 500.0}
+        """sync_spool_weight falls back to filament.spool_weight when spool.spool_weight is None."""
+        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7}  # spool_weight=None → filament fallback 250.0
         mock_client = make_mock_client()
         mock_client.get_spool = AsyncMock(return_value=spool_data)
         mock_client.update_spool_full = AsyncMock(return_value=spool_data)
@@ -394,20 +401,17 @@ class TestOverrideLookupInWeightCalc:
             )
 
         assert response.status_code == 200
-        # remaining = 600 - 250 (spoolman spool_weight) = 350
+        # remaining = 600 - 250 (filament.spool_weight) = 350
         update_call = mock_client.update_spool_full.call_args
         assert update_call.kwargs["remaining_weight"] == pytest.approx(350.0)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_sync_spool_weight_zero_spool_weight_not_treated_as_missing(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_spool_level_zero_not_treated_as_missing(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """spool_weight=0 is a valid tare, not treated as missing (falsy-bug fix in spoolbuddy.py is separate)."""
-        spool_data = {
-            **SAMPLE_SPOOL_WITH_FILAMENT_7,
-            "filament": {**SAMPLE_SPOOL_WITH_FILAMENT_7["filament"], "spool_weight": 0},
-        }
+        """spool.spool_weight=0 is a valid 0g tare, not treated as missing."""
+        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7, "spool_weight": 0}
         mock_client = make_mock_client()
         mock_client.get_spool = AsyncMock(return_value=spool_data)
         mock_client.update_spool_full = AsyncMock(return_value=spool_data)
@@ -423,25 +427,45 @@ class TestOverrideLookupInWeightCalc:
         update_call = mock_client.update_spool_full.call_args
         assert update_call.kwargs["remaining_weight"] == pytest.approx(600.0)
 
-
-# ---------------------------------------------------------------------------
-# Override lookup in update_spool_weight (spoolbuddy.py scale endpoint)
-# ---------------------------------------------------------------------------
-
-class TestUpdateSpoolWeightOverrideLookup:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_spool_weight_uses_override_when_present(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_both_levels_none_uses_250g_fallback(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """update_spool_weight uses override row instead of Spoolman filament spool_weight."""
-        from backend.app.models.spoolman_spool_weight_override import SpoolmanSpoolWeightOverride
+        """When both spool.spool_weight and filament.spool_weight are None, 250g fallback is used."""
+        spool_data = {
+            **SAMPLE_SPOOL_WITH_FILAMENT_7,
+            "spool_weight": None,
+            "filament": {**SAMPLE_SPOOL_WITH_FILAMENT_7["filament"], "spool_weight": None},
+        }
+        mock_client = make_mock_client()
+        mock_client.get_spool = AsyncMock(return_value=spool_data)
+        mock_client.update_spool_full = AsyncMock(return_value=spool_data)
 
-        # Override: spool 42 uses 100g tare
-        db_session.add(SpoolmanSpoolWeightOverride(spoolman_spool_id=42, core_weight=100))
-        await db_session.commit()
+        with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
+            response = await async_client.patch(
+                "/api/v1/spoolman/inventory/spools/42/weight",
+                json={"weight_grams": 600.0},
+            )
 
-        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7}
+        assert response.status_code == 200
+        # remaining = 600 - 250 (fallback) = 350
+        update_call = mock_client.update_spool_full.call_args
+        assert update_call.kwargs["remaining_weight"] == pytest.approx(350.0)
+
+
+# ---------------------------------------------------------------------------
+# Spool-level tare priority in update_spool_weight (spoolbuddy.py scale endpoint)
+# ---------------------------------------------------------------------------
+
+class TestUpdateSpoolWeightPriority:
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spool_level_spool_weight_takes_priority(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """update_spool_weight uses spool.spool_weight over filament.spool_weight for tare."""
+        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7, "spool_weight": 100.0}
         mock_client = MagicMock()
         mock_client.get_spool = AsyncMock(return_value=spool_data)
         mock_client.update_spool = AsyncMock(return_value=None)
@@ -456,16 +480,16 @@ class TestUpdateSpoolWeightOverrideLookup:
             )
 
         assert response.status_code == 200
-        # remaining = 600 - 100 (override) = 500
+        # remaining = 600 - 100 (spool-level tare) = 500
         mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(500.0))
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_spool_weight_uses_spoolman_when_no_override(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_filament_spool_weight_used_as_fallback(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """update_spool_weight uses Spoolman spool_weight when no override exists."""
-        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7}
+        """update_spool_weight falls back to filament.spool_weight when spool.spool_weight is None."""
+        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7}  # spool_weight=None → filament fallback 250.0
         mock_client = MagicMock()
         mock_client.get_spool = AsyncMock(return_value=spool_data)
         mock_client.update_spool = AsyncMock(return_value=None)
@@ -480,18 +504,43 @@ class TestUpdateSpoolWeightOverrideLookup:
             )
 
         assert response.status_code == 200
-        # remaining = 600 - 250 (spoolman spool_weight) = 350
+        # remaining = 600 - 250 (filament.spool_weight) = 350
         mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(350.0))
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_spool_weight_zero_spool_weight_not_treated_as_missing(
-        self, async_client: AsyncClient, db_session, spoolman_settings
+    async def test_spool_level_zero_not_treated_as_missing(
+        self, async_client: AsyncClient, spoolman_settings
     ):
-        """spool_weight=0 is valid — the falsy-bug fix (was: if not raw_spool_weight) ensures 0g tare is used."""
+        """spool.spool_weight=0 is a valid 0g tare, not treated as missing."""
+        spool_data = {**SAMPLE_SPOOL_WITH_FILAMENT_7, "spool_weight": 0}
+        mock_client = MagicMock()
+        mock_client.get_spool = AsyncMock(return_value=spool_data)
+        mock_client.update_spool = AsyncMock(return_value=None)
+
+        with patch(
+            "backend.app.api.routes.spoolbuddy._get_spoolman_client_or_none",
+            AsyncMock(return_value=mock_client),
+        ):
+            response = await async_client.post(
+                "/api/v1/spoolbuddy/scale/update-spool-weight",
+                json={"spool_id": 42, "weight_grams": 600.0},
+            )
+
+        assert response.status_code == 200
+        # remaining = 600 - 0 = 600 (not 600 - 250 fallback)
+        mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(600.0))
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_both_levels_none_uses_250g_fallback_and_warns(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """When both spool.spool_weight and filament.spool_weight are None, 250g fallback is used with a warning."""
         spool_data = {
             **SAMPLE_SPOOL_WITH_FILAMENT_7,
-            "filament": {**SAMPLE_SPOOL_WITH_FILAMENT_7["filament"], "spool_weight": 0},
+            "spool_weight": None,
+            "filament": {**SAMPLE_SPOOL_WITH_FILAMENT_7["filament"], "spool_weight": None},
         }
         mock_client = MagicMock()
         mock_client.get_spool = AsyncMock(return_value=spool_data)
@@ -507,5 +556,6 @@ class TestUpdateSpoolWeightOverrideLookup:
             )
 
         assert response.status_code == 200
-        # remaining = 600 - 0 = 600 (not 600 - 250 fallback from falsy-bug)
-        mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(600.0))
+        # remaining = 600 - 250 (fallback) = 350
+        mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(350.0))
+        assert response.json().get("warnings")

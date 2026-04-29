@@ -1290,13 +1290,21 @@ def _mock_spoolman_client(base_url: str = "http://spoolman.local:7912") -> Magic
     return client
 
 
-def _spoolman_spool_fixture(spool_id: int, spool_weight: float = 196.0, filament_weight: float = 1000.0) -> dict:
+def _spoolman_spool_fixture(
+    spool_id: int,
+    spool_weight: float = 196.0,
+    filament_weight: float = 1000.0,
+    spool_level_spool_weight=None,
+) -> dict:
     """Build a minimal Spoolman spool dict with realistic core weight from filament.spool_weight."""
-    return {
+    raw = {
         "id": spool_id,
         "filament": {"weight": filament_weight, "spool_weight": spool_weight},
         "used_weight": 0.0,
     }
+    if spool_level_spool_weight is not None:
+        raw["spool_weight"] = spool_level_spool_weight
+    return raw
 
 
 class TestUpdateSpoolWeightSpoolman:
@@ -1423,6 +1431,79 @@ class TestUpdateSpoolWeightSpoolman:
 
         assert resp.status_code == 200
         assert resp.json()["weight_used"] == 500
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spool_level_spool_weight_takes_priority(self, async_client: AsyncClient, spoolman_settings):
+        """spool.spool_weight overrides filament.spool_weight for tare calculation."""
+        sm_spool = _spoolman_spool_fixture(42, spool_weight=196.0, filament_weight=1000.0, spool_level_spool_weight=300)
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
+        mock_client.update_spool = AsyncMock(return_value=sm_spool)
+
+        with (
+            patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=mock_client)),
+            patch("backend.app.services.spoolman.init_spoolman_client", AsyncMock(return_value=mock_client)),
+        ):
+            resp = await async_client.post(
+                f"{API}/scale/update-spool-weight",
+                json={"spool_id": 42, "weight_grams": 750},
+            )
+
+        assert resp.status_code == 200
+        # remaining = 750 - 300 = 450; weight_used = 1000 - 450 = 550
+        assert resp.json()["weight_used"] == pytest.approx(550.0)
+        mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(450.0))
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spool_level_zero_spool_weight_not_treated_as_missing(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """spool.spool_weight=0 is valid (0g tare), not treated as missing/fallback."""
+        sm_spool = _spoolman_spool_fixture(42, spool_weight=196.0, filament_weight=1000.0, spool_level_spool_weight=0)
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
+        mock_client.update_spool = AsyncMock(return_value=sm_spool)
+
+        with (
+            patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=mock_client)),
+            patch("backend.app.services.spoolman.init_spoolman_client", AsyncMock(return_value=mock_client)),
+        ):
+            resp = await async_client.post(
+                f"{API}/scale/update-spool-weight",
+                json={"spool_id": 42, "weight_grams": 750},
+            )
+
+        assert resp.status_code == 200
+        # remaining = 750 - 0 = 750; weight_used = 1000 - 750 = 250
+        assert resp.json()["weight_used"] == pytest.approx(250.0)
+        mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(750.0))
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_both_levels_none_uses_250g_fallback_and_warns(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """When both spool_weight and filament.spool_weight are None, 250g fallback is used with a warning."""
+        sm_spool = {"id": 42, "filament": {"weight": 1000.0, "spool_weight": None}, "used_weight": 0.0}
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
+        mock_client.update_spool = AsyncMock(return_value=sm_spool)
+
+        with (
+            patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=mock_client)),
+            patch("backend.app.services.spoolman.init_spoolman_client", AsyncMock(return_value=mock_client)),
+        ):
+            resp = await async_client.post(
+                f"{API}/scale/update-spool-weight",
+                json={"spool_id": 42, "weight_grams": 750},
+            )
+
+        assert resp.status_code == 200
+        # remaining = 750 - 250 = 500; weight_used = 1000 - 500 = 500
+        assert resp.json()["weight_used"] == pytest.approx(500.0)
+        assert resp.json().get("warnings")
 
 
 class TestTagScannedSpoolmanFallback:

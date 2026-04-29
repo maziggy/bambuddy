@@ -7,6 +7,7 @@ regardless of whether data comes from the local database or Spoolman.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -30,13 +31,11 @@ from backend.app.api.routes._spoolman_helpers import (
 )
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
-from backend.app.core.db_dialect import is_sqlite
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
-from backend.app.models.spoolman_spool_weight_override import SpoolmanSpoolWeightOverride
 from backend.app.models.user import User
 from backend.app.schemas.spool import SpoolKProfileBase
 from backend.app.schemas.spoolman import SpoolmanFilamentPatch
@@ -612,28 +611,18 @@ async def sync_spool_weight(
 ) -> dict:
     """Update a spool's remaining weight from a measured gross weight.
 
-    Computes remaining = gross_weight - filament.spool_weight (empty-spool
-    weight from Spoolman; falls back to 250 g when unset) and updates
-    Spoolman accordingly.
+    Computes remaining = gross_weight - tare, where tare = spool.spool_weight
+    if set, else filament.spool_weight; falls back to 250 g when both unset.
     """
     client = await _get_client(db)
 
     async with _translate_spoolman_errors():
         current = await client.get_spool(spool_id)
 
-    override_row = (
-        await db.execute(
-            select(SpoolmanSpoolWeightOverride).where(
-                SpoolmanSpoolWeightOverride.spoolman_spool_id == spool_id
-            )
-        )
-    ).scalar_one_or_none()
-
     cur_filament = current.get("filament") or {}
-    if override_row is not None:
-        core_weight = float(override_row.core_weight)
-    else:
-        core_weight = _safe_float(cur_filament.get("spool_weight"), 250.0)
+    spool_tare = current.get("spool_weight")
+    raw_tare = spool_tare if spool_tare is not None else cur_filament.get("spool_weight")
+    core_weight = _safe_float(raw_tare, 250.0)
     remaining = max(0.0, data.weight_grams - core_weight)
 
     async with _translate_spoolman_errors():
@@ -1147,10 +1136,11 @@ async def patch_spoolman_filament(
 ) -> NormalizedFilament:
     """Update a Spoolman filament's name and/or spool_weight.
 
-    When spool_weight changes, Option A (keep_existing_spools=True) stores the
-    old weight as a local override for all existing spools of this filament type
-    so their weight calculations are unaffected. Option B (keep_existing_spools=False,
-    the default) clears any existing overrides so all spools use the new value.
+    When spool_weight changes, Option A (keep_existing_spools=True) stamps the
+    old filament weight onto spools currently inheriting it (spool.spool_weight is
+    None) so their weight calculations are unaffected by the filament change.
+    Option B (keep_existing_spools=False, the default) clears per-spool overrides
+    in Spoolman so all spools inherit the new filament weight.
     """
     client = await _get_client(db)
 
@@ -1168,38 +1158,33 @@ async def patch_spoolman_filament(
         updated = await client.patch_filament(filament_id, patch_data)
 
     if "spool_weight" in body.model_fields_set:
-        all_spools = await client.get_all_spools()
-        affected_ids = [s["id"] for s in all_spools if (s.get("filament") or {}).get("id") == filament_id]
+        async with _translate_spoolman_errors():
+            all_spools = await client.get_all_spools()
+        affected_spools = [s for s in all_spools if (s.get("filament") or {}).get("id") == filament_id]
 
-        if affected_ids:
+        if affected_spools:
             if body.keep_existing_spools:
                 old_weight = _safe_optional_float(current.get("spool_weight"))
                 if old_weight is not None:
-                    for spool_id in affected_ids:
-                        if is_sqlite():
-                            await db.execute(
-                                text(
-                                    "INSERT OR IGNORE INTO spoolman_spool_weight_override"
-                                    " (spoolman_spool_id, core_weight) VALUES (:sid, :w)"
-                                ),
-                                {"sid": spool_id, "w": int(old_weight)},
-                            )
-                        else:
-                            await db.execute(
-                                text(
-                                    "INSERT INTO spoolman_spool_weight_override"
-                                    " (spoolman_spool_id, core_weight) VALUES (:sid, :w)"
-                                    " ON CONFLICT (spoolman_spool_id) DO NOTHING"
-                                ),
-                                {"sid": spool_id, "w": int(old_weight)},
+                    spools_to_fix = [s for s in affected_spools if s.get("spool_weight") is None]
+                    if spools_to_fix:
+                        async with _translate_spoolman_errors():
+                            await asyncio.gather(
+                                *(
+                                    client.update_spool_full(spool_id=s["id"], spool_weight=old_weight)
+                                    for s in spools_to_fix
+                                )
                             )
             else:
-                await db.execute(
-                    delete(SpoolmanSpoolWeightOverride).where(
-                        SpoolmanSpoolWeightOverride.spoolman_spool_id.in_(affected_ids)
-                    )
-                )
-        await db.commit()
+                spools_to_clear = [s for s in affected_spools if s.get("spool_weight") is not None]
+                if spools_to_clear:
+                    async with _translate_spoolman_errors():
+                        await asyncio.gather(
+                            *(
+                                client.update_spool_full(spool_id=s["id"], clear_spool_weight=True)
+                                for s in spools_to_clear
+                            )
+                        )
 
     normalized = _normalize_filament(updated)
     if normalized is None:

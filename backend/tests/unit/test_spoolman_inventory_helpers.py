@@ -244,3 +244,23 @@ class TestMapSpoolmanSpool:
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 180.9}}
         result = _map_spoolman_spool(spool)
         assert result["core_weight"] == 180
+
+    def test_spool_level_spool_weight_takes_priority_over_filament(self):
+        spool = {**MINIMAL_SPOOL, "spool_weight": 300, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
+        assert _map_spoolman_spool(spool)["core_weight"] == 300
+
+    def test_spool_level_zero_spool_weight_not_treated_as_missing(self):
+        spool = {**MINIMAL_SPOOL, "spool_weight": 0, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
+        assert _map_spoolman_spool(spool)["core_weight"] == 0
+
+    def test_spool_level_none_falls_back_to_filament(self):
+        spool = {**MINIMAL_SPOOL, "spool_weight": None, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
+        assert _map_spoolman_spool(spool)["core_weight"] == 196
+
+    def test_spool_level_absent_falls_back_to_filament(self):
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
+        assert _map_spoolman_spool(spool)["core_weight"] == 196
+
+    def test_both_levels_none_uses_fallback(self):
+        spool = {**MINIMAL_SPOOL, "spool_weight": None, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": None}}
+        assert _map_spoolman_spool(spool)["core_weight"] == 250

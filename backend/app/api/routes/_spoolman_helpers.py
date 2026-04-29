@@ -10,8 +10,9 @@ import logging
 import math
 import re
 from datetime import datetime, timezone
-from typing_extensions import TypedDict
 from urllib.parse import urlparse
+
+from typing_extensions import TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +263,7 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "rgba": rgba,
         "brand": vendor.get("name") or None,
         "label_weight": label_weight,
-        "core_weight": _safe_int(filament.get("spool_weight"), 250),
+        "core_weight": _safe_int(spool.get("spool_weight") if spool.get("spool_weight") is not None else filament.get("spool_weight"), 250),
         "core_weight_catalog_id": None,
         "weight_used": used_weight,
         "weight_locked": False,

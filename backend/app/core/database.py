@@ -205,7 +205,6 @@ async def init_db():
         spoolbuddy_device,
         spoolman_k_profile,
         spoolman_slot_assignment,
-        spoolman_spool_weight_override,
         user,
         user_email_pref,
         user_otp_code,
@@ -1908,30 +1907,6 @@ async def run_migrations(conn):
         conn,
         "CREATE INDEX IF NOT EXISTS ix_spoolman_k_profile_spool ON spoolman_k_profile (spoolman_spool_id)",
     )
-
-    # Migration: Create spoolman_spool_weight_override table for per-spool tare weight overrides.
-    if is_sqlite():
-        await _safe_execute(
-            conn,
-            """
-            CREATE TABLE IF NOT EXISTS spoolman_spool_weight_override (
-                spoolman_spool_id INTEGER PRIMARY KEY,
-                core_weight INTEGER NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """,
-        )
-    else:
-        await _safe_execute(
-            conn,
-            """
-            CREATE TABLE IF NOT EXISTS spoolman_spool_weight_override (
-                spoolman_spool_id INTEGER PRIMARY KEY,
-                core_weight INTEGER NOT NULL,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-            """,
-        )
 
     # Seed default settings keys that must exist on fresh install
     default_settings = [

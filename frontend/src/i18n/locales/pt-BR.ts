@@ -1895,6 +1895,9 @@ export default {
       bulkDeleteConfirm: 'Tem certeza de que deseja excluir {{count}} entradas?',
       bulkDeleted: '{{count}} entradas excluídas',
       bulkDeleteFailed: 'Falha ao excluir entradas',
+      material: 'Material',
+      spoolWeight: 'Peso do carretel',
+      color: 'Cor',
     },
     colorCatalog: {
       title: 'Catálogo de Cores',

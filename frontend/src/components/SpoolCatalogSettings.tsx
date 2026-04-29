@@ -8,58 +8,6 @@ import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
 import { ConfirmModal } from './ConfirmModal';
 
-function SpoolmanFilamentCatalogSection() {
-  const { t } = useTranslation();
-
-  const { data, isLoading, error } = useQuery<SpoolmanFilamentEntry[], Error>({
-    queryKey: ['spoolman-inventory-filaments'],
-    queryFn: () => api.getSpoolmanInventoryFilaments(),
-    retry: false, // Spoolman may be intentionally disabled (400) — don't retry
-    staleTime: 60_000,
-  });
-
-  // 400 = Spoolman disabled — hide the section silently
-  if (!isLoading && error instanceof ApiError && error.status === 400) return null;
-
-  // Don't flash the header while we're still determining whether Spoolman is enabled
-  if (isLoading) return null;
-
-  return (
-    <div className="mt-8 pt-6 border-t border-bambu-dark-tertiary">
-      <h3 className="text-base font-semibold text-white mb-1">{t('settings.spoolmanFilamentCatalogTitle')}</h3>
-      <p className="text-sm text-bambu-gray mb-4">{t('settings.spoolmanFilamentCatalogDesc')}</p>
-
-      {error && (
-        <p className="text-sm text-red-400">{t('inventory.spoolmanCatalogLoadFailed')}</p>
-      )}
-
-      {data && data.length === 0 && (
-        <p className="text-sm text-bambu-gray">{t('inventory.noSpoolmanFilaments')}</p>
-      )}
-
-      {data && data.length > 0 && (
-        <ul className="space-y-1 max-h-64 overflow-y-auto">
-          {data.map((f) => (
-            <li key={f.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-bambu-dark-tertiary">
-              <span
-                className="w-4 h-4 rounded-full shrink-0 border border-white/20"
-                style={{ backgroundColor: f.color_hex ? `#${f.color_hex.replace('#', '')}` : '#808080' }}
-                aria-label={t('inventory.spoolmanFilamentColorSwatch')}
-              />
-              <span className="text-white text-sm truncate flex-1">
-                {f.vendor?.name ? `${f.vendor.name} — ` : ''}{f.name}
-              </span>
-              <span className="text-bambu-gray text-xs shrink-0">
-                {[f.material, f.weight ? `${f.weight}g` : null].filter(Boolean).join(' · ')}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 export function SpoolCatalogSettings() {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -83,6 +31,25 @@ export function SpoolCatalogSettings() {
   const [deleteEntry, setDeleteEntry] = useState<SpoolCatalogEntry | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
+  // Spoolman filament query — hoisted to determine display mode
+  const {
+    data: spoolmanFilaments,
+    isLoading: spoolmanLoading,
+    error: spoolmanError,
+  } = useQuery<SpoolmanFilamentEntry[], Error>({
+    queryKey: ['spoolman-inventory-filaments'],
+    queryFn: () => api.getSpoolmanInventoryFilaments(),
+    retry: false, // Spoolman may be intentionally disabled (400) — don't retry
+    staleTime: 60_000,
+  });
+
+  // 400 = Spoolman explicitly disabled; all other states (data / 503 / …) mean Spoolman mode
+  const isSpoolmanDisabled =
+    !spoolmanLoading &&
+    spoolmanError instanceof ApiError &&
+    spoolmanError.status === 400;
+  const isSpoolmanMode = !spoolmanLoading && !isSpoolmanDisabled;
+
   const loadCatalog = useCallback(async () => {
     try {
       const entries = await api.getSpoolCatalog();
@@ -100,6 +67,11 @@ export function SpoolCatalogSettings() {
 
   const filteredCatalog = catalog.filter(entry =>
     entry.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const filteredSpoolmanFilaments = (spoolmanFilaments ?? []).filter(f =>
+    f.name.toLowerCase().includes(search.toLowerCase()) ||
+    (f.vendor?.name ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
   const handleAdd = async () => {
@@ -256,44 +228,56 @@ export function SpoolCatalogSettings() {
       <CardHeader>
         <div className="flex items-center gap-2 mb-3">
           <Database className="w-5 h-5 text-bambu-gray" />
-          <h2 className="text-lg font-semibold text-white">{t('settings.catalog.spoolCatalog')}</h2>
-          <span className="text-sm text-bambu-gray">({catalog.length})</span>
+          <h2 className="text-lg font-semibold text-white">
+            {isSpoolmanMode
+              ? t('settings.spoolmanFilamentCatalogTitle')
+              : t('settings.catalog.spoolCatalog')}
+          </h2>
+          <span className="text-sm text-bambu-gray">
+            ({spoolmanLoading ? '…' : isSpoolmanMode ? (spoolmanFilaments?.length ?? 0) : catalog.length})
+          </span>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={handleExport}
-            className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
-            title={t('settings.catalog.exportTooltip')}
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('common.export')}</span>
-          </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
-            title={t('settings.catalog.importTooltip')}
-          >
-            <Upload className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('common.import')}</span>
-          </button>
-          <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-          <button
-            onClick={() => setShowResetConfirm(true)}
-            className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
-            title={t('settings.catalog.resetTooltip')}
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('common.reset')}</span>
-          </button>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="px-3 py-1.5 text-sm bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 transition-colors flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('common.add')}</span>
-          </button>
-        </div>
-        {selectedIds.size > 0 && (
+
+        {/* CRUD buttons — local mode only */}
+        {!isSpoolmanMode && !spoolmanLoading && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleExport}
+              className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
+              title={t('settings.catalog.exportTooltip')}
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('common.export')}</span>
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
+              title={t('settings.catalog.importTooltip')}
+            >
+              <Upload className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('common.import')}</span>
+            </button>
+            <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
+              title={t('settings.catalog.resetTooltip')}
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('common.reset')}</span>
+            </button>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="px-3 py-1.5 text-sm bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 transition-colors flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('common.add')}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Bulk-delete bar — local mode only */}
+        {!isSpoolmanMode && selectedIds.size > 0 && (
           <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
             <span className="text-sm text-red-400">
               {t('settings.catalog.selectedCount', { count: selectedIds.size })}
@@ -314,12 +298,16 @@ export function SpoolCatalogSettings() {
           </div>
         )}
       </CardHeader>
+
       <CardContent className="space-y-4">
+        {/* Description */}
         <p className="text-sm text-bambu-gray">
-          {t('settings.catalog.spoolCatalogDescription')}
+          {isSpoolmanMode
+            ? t('settings.spoolmanFilamentCatalogDesc')
+            : t('settings.catalog.spoolCatalogDescription')}
         </p>
 
-        {/* Search */}
+        {/* Search — always shown */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
           <input
@@ -331,177 +319,242 @@ export function SpoolCatalogSettings() {
           />
         </div>
 
-        {/* Add form */}
-        {showAddForm && (
-          <div className="p-4 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
-            <h3 className="text-sm font-medium text-white mb-3">{t('settings.catalog.addNewEntry')}</h3>
-            <div className="flex gap-2 items-center">
-              <div className="flex-1 min-w-0">
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
-                  placeholder={t('settings.catalog.namePlaceholder')}
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                />
-              </div>
-              <input
-                type="number"
-                className="w-20 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white text-center focus:border-bambu-green focus:outline-none"
-                placeholder="g"
-                value={formWeight}
-                onChange={(e) => setFormWeight(e.target.value)}
-              />
-              <span className="text-bambu-gray shrink-0">g</span>
-              <button
-                onClick={handleAdd}
-                disabled={saving}
-                className="px-3 py-2 bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 flex items-center gap-1 shrink-0"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                {t('common.add')}
-              </button>
-              <button
-                onClick={() => { setShowAddForm(false); setFormName(''); setFormWeight(''); }}
-                className="p-2 rounded-lg text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Catalog list */}
-        {loading ? (
+        {/* Mode-determination loading spinner */}
+        {spoolmanLoading && (
           <div className="flex items-center justify-center py-8 text-bambu-gray">
             <Loader2 className="w-5 h-5 animate-spin mr-2" />
             {t('common.loading')}
           </div>
-        ) : (
-          <div className="max-h-[600px] overflow-y-auto border border-bambu-dark-tertiary rounded-lg">
-            <table className="w-full text-sm">
-              <thead className="bg-bambu-dark sticky top-0">
-                <tr>
-                  <th className="px-2 py-2 w-10">
+        )}
+
+        {/* ── LOCAL MODE ── */}
+        {!spoolmanLoading && !isSpoolmanMode && (
+          <>
+            {/* Add form */}
+            {showAddForm && (
+              <div className="p-4 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
+                <h3 className="text-sm font-medium text-white mb-3">{t('settings.catalog.addNewEntry')}</h3>
+                <div className="flex gap-2 items-center">
+                  <div className="flex-1 min-w-0">
                     <input
-                      type="checkbox"
-                      checked={filteredCatalog.length > 0 && selectedIds.size === filteredCatalog.length}
-                      onChange={toggleSelectAll}
-                      className="w-4 h-4 accent-bambu-green cursor-pointer"
+                      type="text"
+                      className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                      placeholder={t('settings.catalog.namePlaceholder')}
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
                     />
-                  </th>
-                  <th className="px-4 py-2 text-left text-bambu-gray font-medium">{t('common.name')}</th>
-                  <th className="px-4 py-2 text-right text-bambu-gray font-medium w-24">{t('settings.catalog.weight')}</th>
-                  <th className="px-4 py-2 text-center text-bambu-gray font-medium w-20">{t('settings.catalog.type')}</th>
-                  <th className="px-4 py-2 w-24"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCatalog.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-bambu-gray">
-                      {search ? t('settings.catalog.noMatch') : t('settings.catalog.empty')}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredCatalog.map(entry => (
-                    <tr key={entry.id} className={`border-t border-bambu-dark-tertiary hover:bg-bambu-dark ${selectedIds.has(entry.id) ? 'bg-bambu-dark' : ''}`}>
-                      {editingId === entry.id ? (
-                        <>
-                          <td className="px-2 py-2">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(entry.id)}
-                              onChange={() => toggleSelect(entry.id)}
-                              className="w-4 h-4 accent-bambu-green cursor-pointer"
-                            />
-                          </td>
-                          <td className="px-4 py-2">
-                            <input
-                              type="text"
-                              className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white focus:border-bambu-green focus:outline-none"
-                              value={formName}
-                              onChange={(e) => setFormName(e.target.value)}
-                            />
-                          </td>
-                          <td className="px-4 py-2">
-                            <input
-                              type="number"
-                              className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-right focus:border-bambu-green focus:outline-none"
-                              value={formWeight}
-                              onChange={(e) => setFormWeight(e.target.value)}
-                            />
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                            <span className="text-xs text-bambu-gray">-</span>
-                          </td>
-                          <td className="px-4 py-2">
-                            <div className="flex justify-end gap-1">
-                              <button
-                                onClick={() => handleUpdate(entry.id)}
-                                disabled={saving}
-                                className="p-1.5 rounded hover:bg-green-500/20 text-green-500"
-                              >
-                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                              </button>
-                              <button onClick={cancelEdit} className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray">
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="px-2 py-2">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(entry.id)}
-                              onChange={() => toggleSelect(entry.id)}
-                              className="w-4 h-4 accent-bambu-green cursor-pointer"
-                            />
-                          </td>
-                          <td className="px-4 py-2 text-white">{entry.name}</td>
-                          <td className="px-4 py-2 text-right font-mono text-white">{entry.weight}g</td>
-                          <td className="px-4 py-2 text-center">
-                            {entry.is_default ? (
-                              <span className="text-xs px-2 py-0.5 rounded bg-bambu-dark-tertiary text-bambu-gray">
-                                {t('settings.catalog.default')}
-                              </span>
-                            ) : (
-                              <span className="text-xs px-2 py-0.5 rounded bg-bambu-green/20 text-bambu-green">
-                                {t('settings.catalog.custom')}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2">
-                            <div className="flex justify-end gap-1">
-                              <button
-                                onClick={() => startEdit(entry)}
-                                className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => setDeleteEntry(entry)}
-                                className="p-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-500"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </>
-                      )}
+                  </div>
+                  <input
+                    type="number"
+                    className="w-20 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white text-center focus:border-bambu-green focus:outline-none"
+                    placeholder="g"
+                    value={formWeight}
+                    onChange={(e) => setFormWeight(e.target.value)}
+                  />
+                  <span className="text-bambu-gray shrink-0">g</span>
+                  <button
+                    onClick={handleAdd}
+                    disabled={saving}
+                    className="px-3 py-2 bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 flex items-center gap-1 shrink-0"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    {t('common.add')}
+                  </button>
+                  <button
+                    onClick={() => { setShowAddForm(false); setFormName(''); setFormWeight(''); }}
+                    className="p-2 rounded-lg text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Local catalog table */}
+            {loading ? (
+              <div className="flex items-center justify-center py-8 text-bambu-gray">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                {t('common.loading')}
+              </div>
+            ) : (
+              <div className="max-h-[600px] overflow-y-auto border border-bambu-dark-tertiary rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-bambu-dark sticky top-0">
+                    <tr>
+                      <th className="px-2 py-2 w-10">
+                        <input
+                          type="checkbox"
+                          checked={filteredCatalog.length > 0 && selectedIds.size === filteredCatalog.length}
+                          onChange={toggleSelectAll}
+                          className="w-4 h-4 accent-bambu-green cursor-pointer"
+                        />
+                      </th>
+                      <th className="px-4 py-2 text-left text-bambu-gray font-medium">{t('common.name')}</th>
+                      <th className="px-4 py-2 text-right text-bambu-gray font-medium w-24">{t('settings.catalog.weight')}</th>
+                      <th className="px-4 py-2 text-center text-bambu-gray font-medium w-20">{t('settings.catalog.type')}</th>
+                      <th className="px-4 py-2 w-24"></th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {filteredCatalog.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-bambu-gray">
+                          {search ? t('settings.catalog.noMatch') : t('settings.catalog.empty')}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredCatalog.map(entry => (
+                        <tr key={entry.id} className={`border-t border-bambu-dark-tertiary hover:bg-bambu-dark ${selectedIds.has(entry.id) ? 'bg-bambu-dark' : ''}`}>
+                          {editingId === entry.id ? (
+                            <>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(entry.id)}
+                                  onChange={() => toggleSelect(entry.id)}
+                                  className="w-4 h-4 accent-bambu-green cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input
+                                  type="text"
+                                  className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white focus:border-bambu-green focus:outline-none"
+                                  value={formName}
+                                  onChange={(e) => setFormName(e.target.value)}
+                                />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input
+                                  type="number"
+                                  className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-right focus:border-bambu-green focus:outline-none"
+                                  value={formWeight}
+                                  onChange={(e) => setFormWeight(e.target.value)}
+                                />
+                              </td>
+                              <td className="px-4 py-2 text-center">
+                                <span className="text-xs text-bambu-gray">-</span>
+                              </td>
+                              <td className="px-4 py-2">
+                                <div className="flex justify-end gap-1">
+                                  <button
+                                    onClick={() => handleUpdate(entry.id)}
+                                    disabled={saving}
+                                    className="p-1.5 rounded hover:bg-green-500/20 text-green-500"
+                                  >
+                                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                  </button>
+                                  <button onClick={cancelEdit} className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray">
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(entry.id)}
+                                  onChange={() => toggleSelect(entry.id)}
+                                  className="w-4 h-4 accent-bambu-green cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-4 py-2 text-white">{entry.name}</td>
+                              <td className="px-4 py-2 text-right font-mono text-white">{entry.weight}g</td>
+                              <td className="px-4 py-2 text-center">
+                                {entry.is_default ? (
+                                  <span className="text-xs px-2 py-0.5 rounded bg-bambu-dark-tertiary text-bambu-gray">
+                                    {t('settings.catalog.default')}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs px-2 py-0.5 rounded bg-bambu-green/20 text-bambu-green">
+                                    {t('settings.catalog.custom')}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2">
+                                <div className="flex justify-end gap-1">
+                                  <button
+                                    onClick={() => startEdit(entry)}
+                                    className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteEntry(entry)}
+                                    className="p-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-500"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── SPOOLMAN MODE ── */}
+        {!spoolmanLoading && isSpoolmanMode && (
+          <div className="max-h-[600px] overflow-y-auto border border-bambu-dark-tertiary rounded-lg">
+            {spoolmanError ? (
+              <p className="px-4 py-8 text-center text-sm text-red-400">
+                {t('inventory.spoolmanCatalogLoadFailed')}
+              </p>
+            ) : filteredSpoolmanFilaments.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-bambu-gray">
+                {t('inventory.noSpoolmanFilaments')}
+              </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-bambu-dark sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 w-8"></th>
+                    <th className="px-4 py-2 text-left text-bambu-gray font-medium">{t('common.name')}</th>
+                    <th className="px-4 py-2 text-left text-bambu-gray font-medium w-28">{t('settings.catalog.material')}</th>
+                    <th className="px-4 py-2 text-right text-bambu-gray font-medium w-24">{t('settings.catalog.weight')}</th>
+                    <th className="px-4 py-2 text-right text-bambu-gray font-medium w-28">{t('settings.catalog.spoolWeight')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSpoolmanFilaments.map(f => (
+                    <tr key={f.id} className="border-t border-bambu-dark-tertiary hover:bg-bambu-dark">
+                      <td className="px-3 py-2">
+                        <span
+                          className="w-4 h-4 rounded-full block shrink-0 border border-white/20"
+                          style={{ backgroundColor: f.color_hex ? `#${f.color_hex.replace('#', '')}` : '#808080' }}
+                          aria-label={t('inventory.spoolmanFilamentColorSwatch')}
+                        />
+                      </td>
+                      <td className="px-4 py-2 text-white truncate max-w-0">
+                        <span className="block truncate">
+                          {f.vendor?.name ? `${f.vendor.name} — ` : ''}{f.name}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-bambu-gray">{f.material ?? '—'}</td>
+                      <td className="px-4 py-2 text-right font-mono text-white">
+                        {f.weight ? `${f.weight}g` : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono text-bambu-gray">
+                        {f.spool_weight ? `${f.spool_weight}g` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </CardContent>
 
-      {/* Delete confirmation */}
-      {deleteEntry && (
+      {/* Confirmation modals — local mode only */}
+      {!isSpoolmanMode && deleteEntry && (
         <ConfirmModal
           title={t('settings.catalog.deleteEntry')}
           message={t('settings.catalog.deleteConfirm', { name: deleteEntry.name })}
@@ -512,8 +565,7 @@ export function SpoolCatalogSettings() {
         />
       )}
 
-      {/* Bulk delete confirmation */}
-      {showBulkDeleteConfirm && (
+      {!isSpoolmanMode && showBulkDeleteConfirm && (
         <ConfirmModal
           title={t('settings.catalog.deleteSelected')}
           message={t('settings.catalog.bulkDeleteConfirm', { count: selectedIds.size })}
@@ -524,8 +576,7 @@ export function SpoolCatalogSettings() {
         />
       )}
 
-      {/* Reset confirmation */}
-      {showResetConfirm && (
+      {!isSpoolmanMode && showResetConfirm && (
         <ConfirmModal
           title={t('settings.catalog.resetCatalog')}
           message={t('settings.catalog.resetConfirm')}
@@ -535,9 +586,6 @@ export function SpoolCatalogSettings() {
           onCancel={() => setShowResetConfirm(false)}
         />
       )}
-
-      {/* Spoolman filament catalog — read-only, only shown when Spoolman is enabled */}
-      <SpoolmanFilamentCatalogSection />
     </Card>
   );
 }

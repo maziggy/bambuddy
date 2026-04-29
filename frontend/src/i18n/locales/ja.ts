@@ -1920,6 +1920,9 @@ export default {
       bulkDeleteConfirm: '{{count}}件のエントリーを削除してもよろしいですか？',
       bulkDeleted: '{{count}}件のエントリーを削除しました',
       bulkDeleteFailed: 'エントリーの削除に失敗しました',
+      material: '材料',
+      spoolWeight: 'スプール重量',
+      color: '色',
     },
     colorCatalog: {
       title: 'カラーカタログ',

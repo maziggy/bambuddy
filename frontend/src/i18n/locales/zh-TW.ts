@@ -1947,6 +1947,9 @@ export default {
       bulkDeleteConfirm: '確定要刪除 {{count}} 個條目嗎？',
       bulkDeleted: '已刪除 {{count}} 個條目',
       bulkDeleteFailed: '刪除條目失敗',
+      material: '材料',
+      spoolWeight: '線軸重量',
+      color: '顏色',
     },
     colorCatalog: {
       title: '顏色目錄',

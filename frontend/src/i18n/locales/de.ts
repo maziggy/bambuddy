@@ -1946,6 +1946,9 @@ export default {
       bulkDeleteConfirm: 'Möchten Sie {{count}} Einträge wirklich löschen?',
       bulkDeleted: '{{count}} Einträge gelöscht',
       bulkDeleteFailed: 'Fehler beim Löschen der Einträge',
+      material: 'Material',
+      spoolWeight: 'Spulengewicht',
+      color: 'Farbe',
     },
     colorCatalog: {
       title: 'Farbkatalog',

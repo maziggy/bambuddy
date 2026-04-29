@@ -1949,6 +1949,9 @@ export default {
       bulkDeleteConfirm: 'Are you sure you want to delete {{count}} entries?',
       bulkDeleted: 'Deleted {{count}} entries',
       bulkDeleteFailed: 'Failed to delete entries',
+      material: 'Material',
+      spoolWeight: 'Spool Weight',
+      color: 'Color',
     },
     colorCatalog: {
       title: 'Color Catalog',

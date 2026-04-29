@@ -1947,6 +1947,9 @@ export default {
       bulkDeleteConfirm: '确定要删除 {{count}} 个条目吗？',
       bulkDeleted: '已删除 {{count}} 个条目',
       bulkDeleteFailed: '删除条目失败',
+      material: '材料',
+      spoolWeight: '线轴重量',
+      color: '颜色',
     },
     colorCatalog: {
       title: '颜色目录',

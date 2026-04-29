@@ -1895,6 +1895,9 @@ export default {
       bulkDeleteConfirm: 'Supprimer {{count}} entrées ?',
       bulkDeleted: '{{count}} entrées supprimées',
       bulkDeleteFailed: 'Échec de la suppression',
+      material: 'Matériau',
+      spoolWeight: 'Poids bobine',
+      color: 'Couleur',
     },
     colorCatalog: {
       title: 'Catalogue de Couleurs',

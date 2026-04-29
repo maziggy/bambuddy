@@ -1895,6 +1895,9 @@ export default {
       bulkDeleteConfirm: 'Eliminare {{count}} voci?',
       bulkDeleted: '{{count}} voci eliminate',
       bulkDeleteFailed: 'Impossibile eliminare le voci',
+      material: 'Materiale',
+      spoolWeight: 'Peso bobina',
+      color: 'Colore',
     },
     colorCatalog: {
       title: 'Catalogo colori',

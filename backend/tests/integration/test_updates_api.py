@@ -23,9 +23,16 @@ class TestUpdatesAPI:
 
     @pytest.mark.asyncio
     async def test_apply_update_non_docker(self, async_client: AsyncClient):
-        """Test non-Docker path - mock _perform_update to prevent side effects."""
+        """Test non-Docker path - mock _perform_update + _discover_target_release
+        to prevent side effects (network call to GitHub releases API + actual
+        git/pip subprocesses)."""
         with (
             patch("backend.app.api.routes.updates._is_docker_environment", return_value=False),
+            patch(
+                "backend.app.api.routes.updates._discover_target_release",
+                new_callable=AsyncMock,
+                return_value="v9.9.9",
+            ),
             patch("backend.app.api.routes.updates._perform_update", new_callable=AsyncMock),
         ):
             response = await async_client.post("/api/v1/updates/apply")
@@ -118,7 +125,7 @@ class TestUpdatesAPI:
                 side_effect=fake_create_subprocess_exec,
             ),
         ):
-            await updates_module._perform_update()
+            await updates_module._perform_update("v0.2.4b1")
 
         # The updater MUST NOT have run `git remote set-url origin <https>`
         # because origin already pointed at the right repo over SSH.
@@ -167,7 +174,7 @@ class TestUpdatesAPI:
                 side_effect=fake_create_subprocess_exec,
             ),
         ):
-            await updates_module._perform_update()
+            await updates_module._perform_update("v0.2.4b1")
 
         set_url_calls = [c for c in calls if "set-url" in c["args"] and "origin" in c["args"]]
         assert set_url_calls, "Updater must rewrite origin when it points at a fork."
@@ -175,6 +182,121 @@ class TestUpdatesAPI:
         assert rewritten_to == f"https://github.com/{GITHUB_REPO}.git", (
             f"Expected origin to be reset to canonical HTTPS URL; got: {rewritten_to}"
         )
+
+    @pytest.mark.asyncio
+    async def test_perform_update_resets_to_target_ref_not_hardcoded_main(self, tmp_path):
+        """Regression for the hardcoded-`origin/main` limitation: the in-app
+        updater must reset to the caller-supplied target ref (typically a
+        release tag like `v0.2.4b1` discovered from the GitHub releases API)
+        so beta releases that don't live on main can actually be installed.
+        Pre-fix, `_perform_update` issued `git reset --hard origin/main`
+        verbatim and silently no-op'd whenever the latest release wasn't on
+        main — leaving a 0.2.3.x user clicking *Apply Update* stranded on
+        0.2.3.x. Also asserts the fetch step uses `--tags` so a tag ref is
+        actually resolvable post-fetch."""
+        from backend.app.api.routes import updates as updates_module
+
+        app_dir = tmp_path / "app"
+        data_dir = tmp_path / "app" / "data"
+        app_dir.mkdir()
+        data_dir.mkdir()
+        (app_dir / "requirements.txt").write_text("fastapi\n")
+
+        calls: list[dict] = []
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            calls.append({"args": args, "cwd": kwargs.get("cwd")})
+            proc = MagicMock()
+            if "get-url" in args and "origin" in args:
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:maziggy/bambuddy.git\n", b""))
+            else:
+                proc.communicate = AsyncMock(return_value=(b"", b""))
+            proc.returncode = 0
+            return proc
+
+        with (
+            patch.object(updates_module.settings, "base_dir", data_dir),
+            patch.object(updates_module.settings, "app_dir", app_dir),
+            patch.object(updates_module, "_find_executable", return_value="/usr/bin/git"),
+            patch.object(
+                updates_module.asyncio,
+                "create_subprocess_exec",
+                side_effect=fake_create_subprocess_exec,
+            ),
+        ):
+            await updates_module._perform_update("v0.2.4b1")
+
+        # Reset target must be the caller-supplied ref, not "origin/main".
+        reset_calls = [c for c in calls if "reset" in c["args"] and "--hard" in c["args"]]
+        assert reset_calls, "git reset must be invoked"
+        reset_target = reset_calls[0]["args"][-1]
+        assert reset_target == "v0.2.4b1", (
+            f"Expected reset target to be the caller-supplied ref 'v0.2.4b1'; "
+            f"got {reset_target!r}. Regression to a hardcoded 'origin/main' "
+            "would re-introduce the in-app-updater-can't-install-betas bug."
+        )
+
+        # Fetch must include --tags so v0.2.4b1 (a tag) is locally resolvable.
+        fetch_calls = [c for c in calls if "fetch" in c["args"]]
+        assert fetch_calls
+        assert "--tags" in fetch_calls[0]["args"], (
+            "Fetch must use --tags so release-tag refs (the production path "
+            "for tag-based updates) are resolvable for the subsequent reset. "
+            f"Captured fetch call: {fetch_calls[0]['args']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_apply_update_passes_discovered_release_to_perform_update(self, async_client: AsyncClient):
+        """End-to-end glue: the route handler calls `_discover_target_release`
+        to pick the tag (respecting include_beta_updates), then schedules
+        `_perform_update` with that tag — not with no arg, not with main."""
+        from backend.app.api.routes import updates as updates_module
+
+        captured_ref: list[str] = []
+
+        async def fake_perform_update(target_ref):
+            captured_ref.append(target_ref)
+
+        async def fake_discover(_db):
+            return "v0.2.4b1"
+
+        with (
+            patch.object(updates_module, "_is_docker_environment", return_value=False),
+            patch.object(updates_module, "_perform_update", side_effect=fake_perform_update),
+            patch.object(updates_module, "_discover_target_release", side_effect=fake_discover),
+        ):
+            response = await async_client.post("/api/v1/updates/apply")
+
+        assert response.json()["success"] is True
+        assert captured_ref == ["v0.2.4b1"], (
+            f"apply_update must pass the discovered tag to _perform_update; captured invocations: {captured_ref}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_apply_update_returns_clear_error_when_no_release_resolves(self, async_client: AsyncClient):
+        """If GitHub is unreachable or no release matches the user's channel,
+        the route returns a useful error instead of silently kicking off an
+        update that can't possibly land. Avoids the previous failure mode
+        where in-app update appeared to succeed but did nothing."""
+        from backend.app.api.routes import updates as updates_module
+
+        async def fake_discover(_db):
+            return None
+
+        # The route guards against a concurrent update via the module-global
+        # `_update_status` — reset it so a previous test that left the status
+        # mid-flight doesn't short-circuit this one.
+        updates_module._update_status = {"status": "idle", "progress": 0, "message": "", "error": None}
+
+        with (
+            patch.object(updates_module, "_is_docker_environment", return_value=False),
+            patch.object(updates_module, "_discover_target_release", side_effect=fake_discover),
+        ):
+            response = await async_client.post("/api/v1/updates/apply")
+
+        body = response.json()
+        assert body["success"] is False
+        assert "release" in body["message"].lower()
 
     @pytest.mark.asyncio
     async def test_perform_update_runs_pip_in_app_dir_not_data_dir(self, tmp_path):
@@ -220,7 +342,7 @@ class TestUpdatesAPI:
                 side_effect=fake_create_subprocess_exec,
             ),
         ):
-            await updates_module._perform_update()
+            await updates_module._perform_update("v0.2.4b1")
 
         # Find the pip invocation (sys.executable + "-m" + "pip" + "install").
         pip_calls = [c for c in calls if "pip" in c["args"] and "install" in c["args"]]

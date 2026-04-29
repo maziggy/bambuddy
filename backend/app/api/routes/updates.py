@@ -383,8 +383,61 @@ async def check_for_updates(
         }
 
 
-async def _perform_update():
-    """Perform the actual update using git fetch and reset."""
+async def _discover_target_release(db: AsyncSession) -> str | None:
+    """Look up the tag we should install from GitHub releases.
+
+    Same selection logic the GUI's update-check uses: respect
+    `include_beta_updates`, skip prereleases when the user opted out, take
+    the first matching release. Returns the raw tag name (e.g. `v0.2.4b1`)
+    so the git ref is unambiguous, or None if there's no release to install.
+
+    The previous in-app updater path was hardcoded to `git fetch origin main
+    && git reset --hard origin/main`, which silently no-ops whenever main
+    isn't where the latest release lives — e.g. during a beta release cycle
+    where the next stable hasn't been merged to main yet. Anchoring to the
+    release tag instead lets the GUI install whatever GitHub says is latest.
+    """
+    result = await db.execute(select(Settings).where(Settings.key == "include_beta_updates"))
+    beta_setting = result.scalar_one_or_none()
+    include_beta = beta_setting and beta_setting.value.lower() == "true"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=20",
+                headers={"Accept": "application/vnd.github.v3+json"},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            releases = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.error("Could not fetch GitHub releases for update target: %s", exc)
+        return None
+
+    for release in releases:
+        tag = release.get("tag_name", "")
+        if not tag:
+            continue
+        if include_beta:
+            return tag
+        # Skip prereleases (parsed from version, not GitHub flag — GitHub's
+        # is_prerelease flag isn't always set on dailies).
+        parsed = parse_version(tag)
+        if parsed[4] == 0:
+            return tag
+    return None
+
+
+async def _perform_update(target_ref: str):
+    """Perform the actual update using git fetch and reset.
+
+    `target_ref` is whatever git ref the caller wants to land on — typically
+    a release tag like `v0.2.4b1` resolved by `_discover_target_release`,
+    but accepts any ref `git reset --hard` understands (`origin/main`, a
+    branch, a sha). Tag-based refs are the production path because they pin
+    the install to a specific release artifact instead of whatever happens
+    to be on a moving branch.
+    """
     global _update_status
 
     try:
@@ -447,13 +500,18 @@ async def _perform_update():
             "error": None,
         }
 
-        # Fetch from origin
+        # Fetch branches AND tags from origin so any ref the caller passes
+        # (release tag like `v0.2.4b1`, a branch like `main`, or a sha) is
+        # locally resolvable for the reset below. `--tags` is required —
+        # plain `git fetch origin` doesn't bring tags by default, so a
+        # release tag would not be resolvable.
         process = await asyncio.create_subprocess_exec(
             git_path,
             *git_config,
             "fetch",
+            "--prune",
+            "--tags",
             "origin",
-            "main",
             cwd=str(base_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -478,13 +536,18 @@ async def _perform_update():
             "error": None,
         }
 
-        # Hard reset to origin/main (clean update, no merge conflicts)
+        # Hard reset to the target ref (clean update, no merge conflicts).
+        # `target_ref` is typically a release tag like `v0.2.4b1` resolved
+        # from the GitHub releases API by `_discover_target_release`. The
+        # local branch name doesn't change — only HEAD moves. Falling back
+        # to `origin/main` here was the source of the "in-app updater can't
+        # reach beta releases" bug.
         process = await asyncio.create_subprocess_exec(
             git_path,
             *git_config,
             "reset",
             "--hard",
-            "origin/main",
+            target_ref,
             cwd=str(base_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -593,6 +656,7 @@ async def _perform_update():
 @router.post("/apply")
 async def apply_update(
     background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Apply available update (git pull + rebuild)."""
@@ -617,8 +681,22 @@ async def apply_update(
             ),
         }
 
+    # Discover which release tag to install. Resolved here (where we have
+    # a DB session) and passed into the background task; the BG task can't
+    # reuse this request's session since FastAPI closes it on response.
+    target_ref = await _discover_target_release(db)
+    if target_ref is None:
+        return {
+            "success": False,
+            "message": (
+                "Could not determine a release to install. Either GitHub is "
+                "unreachable or no release matches your update channel "
+                "(check the include_beta_updates setting)."
+            ),
+        }
+
     # Start update in background
-    background_tasks.add_task(_perform_update)
+    background_tasks.add_task(_perform_update, target_ref)
 
     _update_status = {
         "status": "downloading",

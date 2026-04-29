@@ -1602,7 +1602,7 @@ export default {
     spoolmanAmsSyncError: 'Failed to sync Spoolman weights from AMS',
     // Spoolman filament catalog section in spool catalog settings
     spoolmanFilamentCatalogTitle: 'Spoolman Filament Catalog',
-    spoolmanFilamentCatalogDesc: 'Read-only view of filaments defined in your Spoolman instance. Manage filament types directly in Spoolman.',
+    spoolmanFilamentCatalogDesc: 'Filament names and tare weights from your Spoolman instance. Name and spool weight are editable here; all other properties are managed directly in Spoolman.',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL of your Spoolman server (e.g., http://localhost:7912)',
@@ -1952,6 +1952,13 @@ export default {
       material: 'Material',
       spoolWeight: 'Spool Weight',
       color: 'Color',
+      updateSpoolWeight: 'Update Spool Weight',
+      filamentUpdated: 'Filament updated',
+      filamentUpdateFailed: 'Failed to update filament',
+      keepExistingSpoolWeight: 'Keep old weight for existing spools',
+      keepExistingSpoolWeightDesc: 'Spools already created with this filament type retain the old tare weight. New spools use the updated value.',
+      applyToAllSpools: 'Apply to all spools',
+      applyToAllSpoolsDesc: 'All weight calculations for this filament type immediately use the new tare weight.',
     },
     colorCatalog: {
       title: 'Color Catalog',

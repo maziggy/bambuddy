@@ -1548,7 +1548,7 @@ export default {
     spoolmanAmsSyncError: 'Falha ao sincronizar pesos do Spoolman pelo AMS',
     // Spoolman filament catalog section in spool catalog settings
     spoolmanFilamentCatalogTitle: 'Catálogo de filamentos Spoolman',
-    spoolmanFilamentCatalogDesc: 'Visualização somente leitura dos filamentos definidos na sua instância Spoolman. Gerencie os tipos de filamentos diretamente no Spoolman.',
+    spoolmanFilamentCatalogDesc: 'Nomes de filamentos e pesos tara da sua instância Spoolman. Nome e peso do carretel são editáveis aqui; todas as outras propriedades são gerenciadas diretamente no Spoolman.',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL do seu servidor Spoolman (por exemplo, http://localhost:7912)',
@@ -1898,6 +1898,13 @@ export default {
       material: 'Material',
       spoolWeight: 'Peso do carretel',
       color: 'Cor',
+      updateSpoolWeight: 'Atualizar peso do carretel',
+      filamentUpdated: 'Filamento atualizado',
+      filamentUpdateFailed: 'Falha ao atualizar filamento',
+      keepExistingSpoolWeight: 'Manter peso antigo para carretéis existentes',
+      keepExistingSpoolWeightDesc: 'Os carretéis já criados com este tipo de filamento mantêm o peso tara antigo. Novos carretéis usam o valor atualizado.',
+      applyToAllSpools: 'Aplicar a todos os carretéis',
+      applyToAllSpoolsDesc: 'Todos os cálculos de peso para este tipo de filamento usam imediatamente o novo peso tara.',
     },
     colorCatalog: {
       title: 'Catálogo de Cores',

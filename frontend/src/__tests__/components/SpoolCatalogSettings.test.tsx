@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../utils';
 import { SpoolCatalogSettings } from '../../components/SpoolCatalogSettings';
 
@@ -21,6 +21,16 @@ vi.mock('../../api/client', () => ({
     getSettings: vi.fn().mockResolvedValue({}),
     getSpoolCatalog: vi.fn().mockResolvedValue([]),
     getSpoolmanInventoryFilaments: vi.fn().mockResolvedValue([]),
+    patchSpoolmanFilament: vi.fn().mockResolvedValue({
+      id: 1,
+      name: 'PLA Basic',
+      material: 'PLA',
+      color_hex: 'FF0000',
+      color_name: 'Red',
+      weight: 1000,
+      spool_weight: 196,
+      vendor: { id: 1, name: 'Bambu Lab' },
+    }),
   },
   ApiError: class ApiError extends Error {
     status: number;
@@ -232,5 +242,238 @@ describe('SpoolCatalogSettings — mode switching', () => {
     });
 
     expect(screen.queryByText('settings.catalog.spoolCatalog')).toBeNull();
+  });
+
+  // ── Phase 3: Inline-edit tests ──
+
+  it('(spoolman mode) shows pencil edit button in each filament row', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Bambu Lab — PLA Basic/)).toBeTruthy();
+    });
+
+    const editButtons = screen.getAllByLabelText('common.edit');
+    expect(editButtons.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('(spoolman mode) clicking pencil shows name and weight inputs', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.edit')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.name')).toBeTruthy();
+      expect(screen.getByLabelText('settings.catalog.spoolWeight')).toBeTruthy();
+    });
+  });
+
+  it('(spoolman mode) name input is pre-filled with current name', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.edit')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => {
+      const nameInput = screen.getByLabelText('common.name') as HTMLInputElement;
+      expect(nameInput.value).toBe('PLA Basic');
+    });
+  });
+
+  it('(spoolman mode) weight input is pre-filled with current spool_weight', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.edit')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => {
+      const weightInput = screen.getByLabelText('settings.catalog.spoolWeight') as HTMLInputElement;
+      expect(weightInput.value).toBe('196');
+    });
+  });
+
+  it('(spoolman mode) cancel edit restores read-only display', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.edit')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.cancel')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('common.cancel'));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('common.name')).toBeNull();
+      expect(screen.getByLabelText('common.edit')).toBeTruthy();
+    });
+  });
+
+  it('(spoolman mode) empty name input disables save button', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.edit')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.name')).toBeTruthy();
+    });
+
+    const nameInput = screen.getByLabelText('common.name');
+    fireEvent.change(nameInput, { target: { value: '' } });
+
+    const saveBtn = screen.getByLabelText('common.save') as HTMLButtonElement;
+    expect(saveBtn.disabled).toBe(true);
+  });
+
+  it('(spoolman mode) saving name-only calls patchSpoolmanFilament without modal', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.edit')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.name')).toBeTruthy();
+    });
+
+    const nameInput = screen.getByLabelText('common.name');
+    fireEvent.change(nameInput, { target: { value: 'PLA Basic Renamed' } });
+
+    fireEvent.click(screen.getByLabelText('common.save'));
+
+    await waitFor(() => {
+      expect(vi.mocked(api.patchSpoolmanFilament)).toHaveBeenCalledWith(1, { name: 'PLA Basic Renamed' });
+    });
+
+    // Modal must NOT appear
+    expect(screen.queryByText('settings.catalog.updateSpoolWeight')).toBeNull();
+  });
+
+  it('(spoolman mode) saving changed spool_weight opens SpoolWeightUpdateModal', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('common.edit')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('settings.catalog.spoolWeight')).toBeTruthy();
+    });
+
+    const weightInput = screen.getByLabelText('settings.catalog.spoolWeight');
+    fireEvent.change(weightInput, { target: { value: '100' } });
+
+    fireEvent.click(screen.getByLabelText('common.save'));
+
+    await waitFor(() => {
+      expect(screen.getByText('settings.catalog.updateSpoolWeight')).toBeTruthy();
+    });
+  });
+
+  it('(spoolman mode) confirming option B calls patchSpoolmanFilament with keep_existing_spools=false', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => { expect(screen.getByLabelText('common.edit')).toBeTruthy(); });
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => { expect(screen.getByLabelText('settings.catalog.spoolWeight')).toBeTruthy(); });
+    fireEvent.change(screen.getByLabelText('settings.catalog.spoolWeight'), { target: { value: '100' } });
+    fireEvent.click(screen.getByLabelText('common.save'));
+
+    await waitFor(() => { expect(screen.getByText('settings.catalog.updateSpoolWeight')).toBeTruthy(); });
+
+    // Confirm with option B selected by default
+    fireEvent.click(screen.getByText('common.confirm'));
+
+    await waitFor(() => {
+      expect(vi.mocked(api.patchSpoolmanFilament)).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ spool_weight: 100, keep_existing_spools: false }),
+      );
+    });
+  });
+
+  it('(spoolman mode) confirming option A calls patchSpoolmanFilament with keep_existing_spools=true', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => { expect(screen.getByLabelText('common.edit')).toBeTruthy(); });
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => { expect(screen.getByLabelText('settings.catalog.spoolWeight')).toBeTruthy(); });
+    fireEvent.change(screen.getByLabelText('settings.catalog.spoolWeight'), { target: { value: '100' } });
+    fireEvent.click(screen.getByLabelText('common.save'));
+
+    await waitFor(() => { expect(screen.getByText('settings.catalog.updateSpoolWeight')).toBeTruthy(); });
+
+    // Select option A (keep existing)
+    const radios = screen.getAllByRole('radio');
+    fireEvent.click(radios[1]); // Option A = second radio = keepExisting=true
+
+    fireEvent.click(screen.getByText('common.confirm'));
+
+    await waitFor(() => {
+      expect(vi.mocked(api.patchSpoolmanFilament)).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ spool_weight: 100, keep_existing_spools: true }),
+      );
+    });
+  });
+
+  it('(spoolman mode) negative weight input disables save button', async () => {
+    vi.mocked(api.getSpoolmanInventoryFilaments).mockResolvedValue([sampleFilament]);
+
+    render(<SpoolCatalogSettings />);
+
+    await waitFor(() => { expect(screen.getByLabelText('common.edit')).toBeTruthy(); });
+    fireEvent.click(screen.getByLabelText('common.edit'));
+
+    await waitFor(() => { expect(screen.getByLabelText('settings.catalog.spoolWeight')).toBeTruthy(); });
+
+    fireEvent.change(screen.getByLabelText('settings.catalog.spoolWeight'), { target: { value: '-5' } });
+
+    const saveBtn = screen.getByLabelText('common.save') as HTMLButtonElement;
+    expect(saveBtn.disabled).toBe(true);
   });
 });

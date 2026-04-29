@@ -1599,7 +1599,7 @@ export default {
     spoolmanAmsSyncError: 'Synchronisierung der Spoolman-Gewichte vom AMS fehlgeschlagen',
     // Spoolman filament catalog section in spool catalog settings
     spoolmanFilamentCatalogTitle: 'Spoolman-Filamentkatalog',
-    spoolmanFilamentCatalogDesc: 'Schreibgeschützte Ansicht der in Spoolman definierten Filamente. Filamenttypen direkt in Spoolman verwalten.',
+    spoolmanFilamentCatalogDesc: 'Filamentnamen und Leergewichte aus deiner Spoolman-Instanz. Name und Spulengewicht sind hier editierbar; alle anderen Eigenschaften werden direkt in Spoolman verwaltet.',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL Ihres Spoolman-Servers (z.B. http://localhost:7912)',
@@ -1949,6 +1949,13 @@ export default {
       material: 'Material',
       spoolWeight: 'Spulengewicht',
       color: 'Farbe',
+      updateSpoolWeight: 'Spulengewicht aktualisieren',
+      filamentUpdated: 'Filament aktualisiert',
+      filamentUpdateFailed: 'Filament konnte nicht aktualisiert werden',
+      keepExistingSpoolWeight: 'Altes Gewicht für bestehende Spulen behalten',
+      keepExistingSpoolWeightDesc: 'Bereits erstellte Spulen dieses Filamenttyps behalten das alte Leergewicht. Neue Spulen nutzen den neuen Wert.',
+      applyToAllSpools: 'Auf alle Spulen anwenden',
+      applyToAllSpoolsDesc: 'Alle Gewichtsberechnungen für diesen Filamenttyp nutzen sofort das neue Leergewicht.',
     },
     colorCatalog: {
       title: 'Farbkatalog',

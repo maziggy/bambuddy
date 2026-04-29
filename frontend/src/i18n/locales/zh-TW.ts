@@ -1600,7 +1600,7 @@ export default {
     spoolmanAmsSyncError: '從 AMS 同步 Spoolman 重量失敗',
     // Spoolman filament catalog section in spool catalog settings
     spoolmanFilamentCatalogTitle: 'Spoolman 耗材目錄',
-    spoolmanFilamentCatalogDesc: 'Spoolman 中定義的耗材的唯讀檢視。請直接在 Spoolman 中管理耗材類型。',
+    spoolmanFilamentCatalogDesc: '來自 Spoolman 的耗材名稱和皮重。名稱和線軸重量可在此處編輯；其他屬性請直接在 Spoolman 中管理。',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'Spoolman 伺服器的 URL（例如 http://localhost:7912）',
@@ -1950,6 +1950,13 @@ export default {
       material: '材料',
       spoolWeight: '線軸重量',
       color: '顏色',
+      updateSpoolWeight: '更新線軸重量',
+      filamentUpdated: '耗材已更新',
+      filamentUpdateFailed: '更新耗材失敗',
+      keepExistingSpoolWeight: '保留現有線軸的舊重量',
+      keepExistingSpoolWeightDesc: '已使用此耗材類型建立的線軸保留舊的皮重。新線軸使用更新後的值。',
+      applyToAllSpools: '套用至所有線軸',
+      applyToAllSpoolsDesc: '此耗材類型的所有重量計算立即使用新的皮重。',
     },
     colorCatalog: {
       title: '顏色目錄',

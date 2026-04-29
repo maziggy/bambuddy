@@ -1548,7 +1548,7 @@ export default {
     spoolmanAmsSyncError: 'Impossibile sincronizzare i pesi Spoolman dall\'AMS',
     // Spoolman filament catalog section in spool catalog settings
     spoolmanFilamentCatalogTitle: 'Catalogo filamenti Spoolman',
-    spoolmanFilamentCatalogDesc: 'Vista in sola lettura dei filamenti definiti nella tua istanza Spoolman. Gestisci i tipi di filamenti direttamente in Spoolman.',
+    spoolmanFilamentCatalogDesc: 'Nomi dei filamenti e pesi tara dalla tua istanza Spoolman. Nome e peso bobina sono modificabili qui; tutte le altre proprietà sono gestite direttamente in Spoolman.',
     // Spoolman settings
     spoolmanUrl: 'URL Spoolman',
     spoolmanUrlHint: 'URL del server Spoolman (es. http://localhost:7912)',
@@ -1898,6 +1898,13 @@ export default {
       material: 'Materiale',
       spoolWeight: 'Peso bobina',
       color: 'Colore',
+      updateSpoolWeight: 'Aggiorna peso bobina',
+      filamentUpdated: 'Filamento aggiornato',
+      filamentUpdateFailed: 'Aggiornamento filamento non riuscito',
+      keepExistingSpoolWeight: 'Mantieni vecchio peso per le bobine esistenti',
+      keepExistingSpoolWeightDesc: 'Le bobine già create con questo tipo di filamento mantengono il vecchio peso tara. Le nuove bobine usano il valore aggiornato.',
+      applyToAllSpools: 'Applica a tutte le bobine',
+      applyToAllSpoolsDesc: 'Tutti i calcoli del peso per questo tipo di filamento usano immediatamente il nuovo peso tara.',
     },
     colorCatalog: {
       title: 'Catalogo colori',

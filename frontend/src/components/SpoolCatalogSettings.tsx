@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Database, Plus, Trash2, RotateCcw, Loader2, Pencil, Check, X, Search, Download, Upload } from 'lucide-react';
 import { api, ApiError } from '../api/client';
@@ -7,14 +7,27 @@ import type { SpoolCatalogEntry, SpoolmanFilamentEntry } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
 import { ConfirmModal } from './ConfirmModal';
+import { SpoolWeightUpdateModal } from './SpoolWeightUpdateModal';
 
 export function SpoolCatalogSettings() {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [catalog, setCatalog] = useState<SpoolCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Spoolman inline-edit state
+  const [editingFilamentId, setEditingFilamentId] = useState<number | null>(null);
+  const [editingFilamentName, setEditingFilamentName] = useState('');
+  const [editingFilamentWeight, setEditingFilamentWeight] = useState('');
+  const [pendingWeightEdit, setPendingWeightEdit] = useState<{
+    filamentId: number;
+    name: string;
+    oldWeight: number | null;
+    newWeight: number;
+  } | null>(null);
 
   // Add/Edit form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -49,6 +62,59 @@ export function SpoolCatalogSettings() {
     spoolmanError instanceof ApiError &&
     spoolmanError.status === 400;
   const isSpoolmanMode = !spoolmanLoading && !isSpoolmanDisabled;
+
+  const patchFilamentMutation = useMutation<
+    SpoolmanFilamentEntry,
+    Error,
+    { filamentId: number; data: { name?: string; spool_weight?: number | null; keep_existing_spools?: boolean } }
+  >({
+    mutationFn: ({ filamentId, data }) => api.patchSpoolmanFilament(filamentId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-filaments'] });
+      showToast(t('settings.catalog.filamentUpdated'), 'success');
+      setEditingFilamentId(null);
+      setEditingFilamentName('');
+      setEditingFilamentWeight('');
+      setPendingWeightEdit(null);
+    },
+    onError: () => showToast(t('settings.catalog.filamentUpdateFailed'), 'error'),
+  });
+
+  const handleFilamentSave = (f: SpoolmanFilamentEntry) => {
+    const nameChanged = editingFilamentName.trim() !== f.name;
+    const weightChanged = editingFilamentWeight !== '' && editingFilamentWeight !== String(f.spool_weight ?? '');
+    const parsedWeight = editingFilamentWeight !== '' ? parseFloat(editingFilamentWeight) : null;
+
+    if (weightChanged && parsedWeight !== null && !isNaN(parsedWeight)) {
+      setPendingWeightEdit({
+        filamentId: f.id,
+        name: nameChanged ? editingFilamentName.trim() : f.name,
+        oldWeight: f.spool_weight,
+        newWeight: parsedWeight,
+      });
+    } else {
+      const data: { name?: string } = {};
+      if (nameChanged && editingFilamentName.trim()) data.name = editingFilamentName.trim();
+      if (Object.keys(data).length > 0) {
+        patchFilamentMutation.mutate({ filamentId: f.id, data });
+      } else {
+        setEditingFilamentId(null);
+      }
+    }
+  };
+
+  const handleWeightModalConfirm = (keepExisting: boolean) => {
+    if (!pendingWeightEdit) return;
+    const { filamentId, name, newWeight } = pendingWeightEdit;
+    const currentFilament = spoolmanFilaments?.find(f => f.id === filamentId);
+    const nameChanged = currentFilament && name !== currentFilament.name;
+    const data: { name?: string; spool_weight: number; keep_existing_spools: boolean } = {
+      spool_weight: newWeight,
+      keep_existing_spools: keepExisting,
+    };
+    if (nameChanged) data.name = name;
+    patchFilamentMutation.mutate({ filamentId, data });
+  };
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -520,32 +586,92 @@ export function SpoolCatalogSettings() {
                     <th className="px-4 py-2 text-left text-bambu-gray font-medium w-28">{t('settings.catalog.material')}</th>
                     <th className="px-4 py-2 text-right text-bambu-gray font-medium w-24">{t('settings.catalog.weight')}</th>
                     <th className="px-4 py-2 text-right text-bambu-gray font-medium w-28">{t('settings.catalog.spoolWeight')}</th>
+                    <th className="px-3 py-2 w-20"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSpoolmanFilaments.map(f => (
-                    <tr key={f.id} className="border-t border-bambu-dark-tertiary hover:bg-bambu-dark">
-                      <td className="px-3 py-2">
-                        <span
-                          className="w-4 h-4 rounded-full block shrink-0 border border-white/20"
-                          style={{ backgroundColor: f.color_hex ? `#${f.color_hex.replace('#', '')}` : '#808080' }}
-                          aria-label={t('inventory.spoolmanFilamentColorSwatch')}
-                        />
-                      </td>
-                      <td className="px-4 py-2 text-white truncate max-w-0">
-                        <span className="block truncate">
-                          {f.vendor?.name ? `${f.vendor.name} — ` : ''}{f.name}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-bambu-gray">{f.material ?? '—'}</td>
-                      <td className="px-4 py-2 text-right font-mono text-white">
-                        {f.weight ? `${f.weight}g` : '—'}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-bambu-gray">
-                        {f.spool_weight ? `${f.spool_weight}g` : '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredSpoolmanFilaments.map(f => {
+                    const isEditing = editingFilamentId === f.id;
+                    const isSaving = patchFilamentMutation.isPending && editingFilamentId === f.id;
+                    return (
+                      <tr key={f.id} className="border-t border-bambu-dark-tertiary hover:bg-bambu-dark">
+                        <td className="px-3 py-2">
+                          <span
+                            className="w-4 h-4 rounded-full block shrink-0 border border-white/20"
+                            style={{ backgroundColor: f.color_hex ? `#${f.color_hex.replace('#', '')}` : '#808080' }}
+                            aria-label={t('inventory.spoolmanFilamentColorSwatch')}
+                          />
+                        </td>
+                        <td className="px-4 py-2 text-white truncate max-w-0">
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editingFilamentName}
+                              onChange={e => setEditingFilamentName(e.target.value)}
+                              className="w-full bg-bambu-dark-tertiary text-white rounded px-2 py-0.5 text-sm border border-bambu-dark-secondary focus:outline-none focus:border-bambu-green"
+                              aria-label={t('common.name')}
+                            />
+                          ) : (
+                            <span className="block truncate">
+                              {f.vendor?.name ? `${f.vendor.name} — ` : ''}{f.name}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-bambu-gray">{f.material ?? '—'}</td>
+                        <td className="px-4 py-2 text-right font-mono text-white">
+                          {f.weight ? `${f.weight}g` : '—'}
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-bambu-gray">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              value={editingFilamentWeight}
+                              onChange={e => setEditingFilamentWeight(e.target.value)}
+                              min="0"
+                              step="1"
+                              className="w-20 bg-bambu-dark-tertiary text-white rounded px-2 py-0.5 text-sm border border-bambu-dark-secondary focus:outline-none focus:border-bambu-green text-right"
+                              aria-label={t('settings.catalog.spoolWeight')}
+                            />
+                          ) : (
+                            f.spool_weight != null ? `${f.spool_weight}g` : '—'
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {isEditing ? (
+                            <div className="flex items-center gap-1 justify-end">
+                              <button
+                                onClick={() => handleFilamentSave(f)}
+                                disabled={isSaving || !editingFilamentName.trim() || (editingFilamentWeight !== '' && (isNaN(parseFloat(editingFilamentWeight)) || parseFloat(editingFilamentWeight) < 0))}
+                                className="p-1 text-bambu-green hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                                aria-label={t('common.save')}
+                              >
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                              </button>
+                              <button
+                                onClick={() => { setEditingFilamentId(null); setEditingFilamentName(''); setEditingFilamentWeight(''); }}
+                                className="p-1 text-bambu-gray hover:text-white"
+                                aria-label={t('common.cancel')}
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingFilamentId(f.id);
+                                setEditingFilamentName(f.name);
+                                setEditingFilamentWeight(f.spool_weight != null ? String(f.spool_weight) : '');
+                              }}
+                              className="p-1 text-bambu-gray hover:text-white"
+                              aria-label={t('common.edit')}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -586,6 +712,15 @@ export function SpoolCatalogSettings() {
           onCancel={() => setShowResetConfirm(false)}
         />
       )}
+
+      <SpoolWeightUpdateModal
+        isOpen={pendingWeightEdit !== null}
+        filamentName={pendingWeightEdit?.name ?? ''}
+        oldWeight={pendingWeightEdit?.oldWeight ?? null}
+        newWeight={pendingWeightEdit?.newWeight ?? 0}
+        onConfirm={handleWeightModalConfirm}
+        onClose={() => setPendingWeightEdit(null)}
+      />
     </Card>
   );
 }

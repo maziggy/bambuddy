@@ -181,6 +181,13 @@ class SpoolmanClient:
             logger.error("Failed to get filaments from Spoolman: %s", e)
             raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
 
+    async def get_filament(self, filament_id: int) -> dict:
+        """Fetch a single filament by ID from Spoolman."""
+        if filament_id <= 0:
+            raise ValueError(f"Invalid filament_id: {filament_id}")
+        response = await self._request_filament("GET", filament_id, operation="get_filament")
+        return response.json()
+
     async def get_external_filaments(self) -> list[dict]:
         """Fetch external/library filaments from Spoolman."""
         try:
@@ -301,6 +308,15 @@ class SpoolmanClient:
             logger.error("Failed to create filament in Spoolman: %s", e)
             raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
 
+    async def patch_filament(self, filament_id: int, data: dict) -> dict:
+        """PATCH a filament entry in Spoolman (e.g. update name or spool_weight)."""
+        if filament_id <= 0:
+            raise ValueError(f"Invalid filament_id: {filament_id}")
+        response = await self._request_filament(
+            "PATCH", filament_id, json_body=data, operation="patch_filament"
+        )
+        return response.json()
+
     async def create_spool(
         self,
         filament_id: int,
@@ -407,6 +423,47 @@ class SpoolmanClient:
         except Exception as e:
             logger.error("Failed to %s spool %s in Spoolman: %s", operation, spool_id, e)
             raise SpoolmanUnavailableError(f"Failed to {operation} spool {spool_id}") from e
+
+    async def _request_filament(
+        self,
+        method: Literal["GET", "PATCH"],
+        filament_id: int,
+        *,
+        json_body: dict | None = None,
+        operation: str,
+    ) -> httpx.Response:
+        """Perform a filament-scoped HTTP request, translating 404 and errors to named exceptions."""
+        try:
+            client = await self._get_client()
+            response = await client.request(
+                method,
+                f"{self.api_url}/filament/{filament_id}",
+                json=json_body,
+            )
+            if response.status_code == 404:
+                raise SpoolmanNotFoundError(f"Filament {filament_id} not found in Spoolman")
+            response.raise_for_status()
+            return response
+        except SpoolmanNotFoundError:
+            raise
+        except httpx.HTTPStatusError as e:
+            if 400 <= e.response.status_code < 500:
+                logger.warning(
+                    "Spoolman returned %d for %s filament %s",
+                    e.response.status_code,
+                    operation,
+                    filament_id,
+                )
+                raise SpoolmanClientError(
+                    f"Spoolman rejected {operation} for filament {filament_id} (HTTP {e.response.status_code})",
+                    e.response.status_code,
+                ) from e
+            else:
+                logger.error("Failed to %s filament %s in Spoolman: %s", operation, filament_id, e)
+                raise SpoolmanUnavailableError(f"Failed to {operation} filament {filament_id}") from e
+        except Exception as e:
+            logger.error("Failed to %s filament %s in Spoolman: %s", operation, filament_id, e)
+            raise SpoolmanUnavailableError(f"Failed to {operation} filament {filament_id}") from e
 
     async def get_spool(self, spool_id: int) -> dict:
         """Fetch a single spool by ID from Spoolman."""

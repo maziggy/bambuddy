@@ -1573,7 +1573,7 @@ export default {
     spoolmanAmsSyncError: 'AMSからのSpoolman重量同期に失敗しました',
     // Spoolman filament catalog section in spool catalog settings
     spoolmanFilamentCatalogTitle: 'Spoolmanフィラメントカタログ',
-    spoolmanFilamentCatalogDesc: 'Spoolmanインスタンスで定義されたフィラメントの読み取り専用ビュー。フィラメントタイプはSpoolmanで直接管理してください。',
+    spoolmanFilamentCatalogDesc: 'Spoolmanインスタンスのフィラメント名と風袋重量。名前とスプール重量はここで編集できます。その他の属性はSpoolmanで直接管理してください。',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'Spoolmanサーバーのurl（例：http://localhost:7912）',
@@ -1923,6 +1923,13 @@ export default {
       material: '材料',
       spoolWeight: 'スプール重量',
       color: '色',
+      updateSpoolWeight: 'スプール重量を更新',
+      filamentUpdated: 'フィラメントを更新しました',
+      filamentUpdateFailed: 'フィラメントの更新に失敗しました',
+      keepExistingSpoolWeight: '既存スプールの旧重量を保持',
+      keepExistingSpoolWeightDesc: 'このフィラメントタイプで既に作成されたスプールは旧風袋重量を保持します。新しいスプールは更新後の値を使用します。',
+      applyToAllSpools: '全スプールに適用',
+      applyToAllSpoolsDesc: 'このフィラメントタイプの全重量計算に新しい風袋重量が即座に適用されます。',
     },
     colorCatalog: {
       title: 'カラーカタログ',

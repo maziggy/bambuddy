@@ -4296,6 +4296,14 @@ export const api = {
     request<{ filaments: unknown[] }>('/spoolman/filaments'),
   getSpoolmanInventoryFilaments: () =>
     request<SpoolmanFilamentEntry[]>('/spoolman/inventory/filaments'),
+  patchSpoolmanFilament: (
+    filamentId: number,
+    data: { name?: string; spool_weight?: number | null; keep_existing_spools?: boolean },
+  ) =>
+    request<SpoolmanFilamentEntry>(`/spoolman/inventory/filaments/${filamentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   getUnlinkedSpools: () =>
     request<UnlinkedSpool[]>('/spoolman/spools/unlinked'),
   getLinkedSpools: () =>

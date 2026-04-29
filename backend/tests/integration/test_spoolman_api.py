@@ -44,6 +44,7 @@ class TestSpoolmanAPI:
         mock_client.get_filaments = AsyncMock(return_value=[])
         mock_client.create_spool = AsyncMock(return_value={"id": 1})
         mock_client.update_spool = AsyncMock(return_value={"id": 1})
+        mock_client.merge_spool_extra = AsyncMock(return_value={"id": 1, "extra": {}})
         mock_client.close = AsyncMock()
 
         with (
@@ -448,8 +449,8 @@ class TestSpoolmanAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_link_spool_success(self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client):
-        """Verify successfully linking a spool to AMS tray."""
-        mock_spoolman_client.update_spool = AsyncMock(
+        """Verify successfully linking a spool — uses merge_spool_extra to preserve custom fields."""
+        mock_spoolman_client.merge_spool_extra = AsyncMock(
             return_value={"id": 1, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
         )
 
@@ -462,14 +463,67 @@ class TestSpoolmanAPI:
         assert data["success"] is True
         assert "linked" in data["message"].lower()
 
-        # Verify update_spool was called
-        mock_spoolman_client.update_spool.assert_called_once()
+        mock_spoolman_client.merge_spool_extra.assert_called_once_with(1, {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'})
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_link_spool_with_printer_context_creates_slot_assignment(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client, printer_factory
+    ):
+        """link with printer_id+ams_id+tray_id upserts into local slot-assignment table."""
+        mock_spoolman_client.merge_spool_extra = AsyncMock(
+            return_value={"id": 5, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
+        )
+        printer = await printer_factory()
+
+        response = await async_client.post(
+            "/api/v1/spoolman/spools/5/link",
+            json={
+                "tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+                "printer_id": printer.id,
+                "ams_id": 0,
+                "tray_id": 1,
+            },
+        )
+        assert response.status_code == 200
+
+        # Verify the slot assignment row was written via the /all endpoint
+        all_resp = await async_client.get(
+            "/api/v1/spoolman/inventory/slot-assignments/all",
+            params={"printer_id": printer.id},
+        )
+        assert all_resp.status_code == 200
+        rows = all_resp.json()
+        assert len(rows) == 1
+        assert rows[0]["spoolman_spool_id"] == 5
+        assert rows[0]["ams_id"] == 0
+        assert rows[0]["tray_id"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_link_spool_without_printer_context_no_slot_assignment(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """link without printer context calls merge_spool_extra and no slot assignment is created."""
+        mock_spoolman_client.merge_spool_extra = AsyncMock(
+            return_value={"id": 5, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
+        )
+
+        response = await async_client.post(
+            "/api/v1/spoolman/spools/5/link",
+            json={"tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"},
+        )
+        assert response.status_code == 200
+        mock_spoolman_client.merge_spool_extra.assert_called_once_with(5, {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'})
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_unlink_spool_success(self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client):
-        """Verify successfully unlinking a spool clears extra.tag."""
-        mock_spoolman_client.update_spool = AsyncMock(return_value={"id": 1, "extra": {"tag": '""'}})
+        """Verify successfully unlinking a spool pops extra.tag without overwriting other extra fields."""
+        mock_spoolman_client.get_spool = AsyncMock(
+            return_value={"id": 1, "extra": {"tag": '"AABB1122334455FF"', "custom": "keep"}}
+        )
+        mock_spoolman_client.update_spool_full = AsyncMock(return_value={"id": 1, "extra": {}})
 
         response = await async_client.post("/api/v1/spoolman/spools/1/unlink")
         assert response.status_code == 200
@@ -477,11 +531,95 @@ class TestSpoolmanAPI:
         assert data["success"] is True
         assert "unlinked" in data["message"].lower()
 
-        mock_spoolman_client.update_spool.assert_called_once_with(
-            spool_id=1,
-            clear_location=True,
-            extra={"tag": '""'},
+        mock_spoolman_client.update_spool_full.assert_called_once()
+        _, kwargs = mock_spoolman_client.update_spool_full.call_args
+        sent_extra = kwargs.get("extra")
+        assert "tag" not in sent_extra
+        assert sent_extra.get("custom") == "keep"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unlink_spool_deletes_slot_assignment(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client, printer_factory
+    ):
+        """unlink removes the local slot assignment for the spool."""
+        # link_spool calls merge_spool_extra; unlink_spool uses get_spool + update_spool_full.
+        mock_spoolman_client.merge_spool_extra = AsyncMock(
+            return_value={"id": 7, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
         )
+        printer = await printer_factory()
+
+        # First link to create the slot assignment
+        await async_client.post(
+            "/api/v1/spoolman/spools/7/link",
+            json={
+                "tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+                "printer_id": printer.id,
+                "ams_id": 0,
+                "tray_id": 0,
+            },
+        )
+
+        # Set up the mocks needed by the new unlink_spool implementation.
+        mock_spoolman_client.get_spool = AsyncMock(
+            return_value={"id": 7, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
+        )
+        mock_spoolman_client.update_spool_full = AsyncMock(return_value={"id": 7, "extra": {}})
+        response = await async_client.post("/api/v1/spoolman/spools/7/unlink")
+        assert response.status_code == 200
+
+        # Slot assignment must be gone
+        all_resp = await async_client.get(
+            "/api/v1/spoolman/inventory/slot-assignments/all",
+            params={"printer_id": printer.id},
+        )
+        assert all_resp.status_code == 200
+        assert all_resp.json() == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_link_spool_spoolman_not_found(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """link returns 404 when Spoolman reports the spool does not exist."""
+        from backend.app.services.spoolman import SpoolmanNotFoundError
+
+        mock_spoolman_client.merge_spool_extra = AsyncMock(side_effect=SpoolmanNotFoundError("not found"))
+
+        response = await async_client.post(
+            "/api/v1/spoolman/spools/99/link",
+            json={"tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"},
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_link_spool_spoolman_unavailable(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """link returns 503 when Spoolman is unreachable."""
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+
+        mock_spoolman_client.merge_spool_extra = AsyncMock(side_effect=SpoolmanUnavailableError("down"))
+
+        response = await async_client.post(
+            "/api/v1/spoolman/spools/1/link",
+            json={"tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"},
+        )
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unlink_spool_spoolman_not_found(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """unlink returns 404 when Spoolman reports the spool does not exist."""
+        from backend.app.services.spoolman import SpoolmanNotFoundError
+
+        mock_spoolman_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("not found"))
+
+        response = await async_client.post("/api/v1/spoolman/spools/99/unlink")
+        assert response.status_code == 404
 
     # =========================================================================
     # Sync Tests
@@ -551,6 +689,164 @@ class TestSpoolmanAPI:
             response = await async_client.post(f"/api/v1/spoolman/sync/{printer.id}")
             assert response.status_code == 404
             assert "not connected" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_writes_slot_assignment_to_db(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+        printer_factory,
+        db_session,
+    ):
+        """sync persists a slot assignment row for each successfully synced spool."""
+        from sqlalchemy import select
+
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+        from backend.app.services.spoolman import AMSTray
+
+        printer = await printer_factory()
+        synced_spool = {"id": 42, "filament": {"material": "PLA"}, "remaining_weight": 500}
+
+        fake_tray = AMSTray(
+            ams_id=0,
+            tray_id=2,
+            tray_type="PLA",
+            tray_sub_brands="PLA Basic",
+            tray_color="FF0000FF",
+            remain=80,
+            tag_uid="",
+            tray_uuid="A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+            tray_info_idx="",
+            tray_weight=1000,
+        )
+        mock_spoolman_client.parse_ams_tray = MagicMock(return_value=fake_tray)
+        mock_spoolman_client.sync_ams_tray = AsyncMock(return_value=synced_spool)
+
+        with patch("backend.app.api.routes.spoolman.printer_manager") as pm_mock:
+            mock_state = MagicMock()
+            mock_state.raw_data = {"ams": [{"id": 0, "tray": [{"id": 2}]}]}
+            pm_mock.get_status = MagicMock(return_value=mock_state)
+
+            response = await async_client.post(f"/api/v1/spoolman/sync/{printer.id}")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["synced_count"] == 1
+
+        # Verify slot assignment was written to the DB
+        result = await db_session.execute(
+            select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer.id)
+        )
+        rows = result.scalars().all()
+        assert len(rows) == 1
+        assert rows[0].ams_id == 0
+        assert rows[0].tray_id == 2
+        assert rows[0].spoolman_spool_id == 42
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_passes_slot_hint_when_no_rfid(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+        printer_factory,
+        db_session,
+    ):
+        """sync passes the spoolman_spool_id_hint from the local slot-assignment table when no RFID tag is present."""
+        from sqlalchemy import text
+
+        from backend.app.services.spoolman import AMSTray
+
+        printer = await printer_factory()
+
+        # Pre-seed a slot assignment to serve as the hint
+        await db_session.execute(
+            text(
+                "INSERT INTO spoolman_slot_assignments (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                " VALUES (:p, :a, :t, :s)"
+            ),
+            {"p": printer.id, "a": 0, "t": 1, "s": 55},
+        )
+        await db_session.commit()
+
+        captured_hints: list = []
+
+        async def capturing_sync(tray, printer_name, **kwargs):
+            captured_hints.append(kwargs.get("spoolman_spool_id_hint"))
+            return None
+
+        fake_tray_no_rfid = AMSTray(
+            ams_id=0,
+            tray_id=1,
+            tray_type="PLA",
+            tray_sub_brands="Generic PLA",
+            tray_color="FFFFFFFF",
+            remain=-1,
+            tag_uid="",
+            tray_uuid="",
+            tray_info_idx="",
+            tray_weight=1000,
+        )
+        mock_spoolman_client.parse_ams_tray = MagicMock(return_value=fake_tray_no_rfid)
+        mock_spoolman_client.sync_ams_tray = capturing_sync
+
+        with patch("backend.app.api.routes.spoolman.printer_manager") as pm_mock:
+            mock_state = MagicMock()
+            mock_state.raw_data = {"ams": [{"id": 0, "tray": [{"id": 1}]}]}
+            pm_mock.get_status = MagicMock(return_value=mock_state)
+
+            response = await async_client.post(f"/api/v1/spoolman/sync/{printer.id}")
+            assert response.status_code == 200
+
+        assert len(captured_hints) == 1
+        assert captured_hints[0] == 55
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_no_rfid_no_hint_produces_skipped_entry(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+        printer_factory,
+    ):
+        """sync reports a SkippedSpool for a tray with no RFID tag and no prior slot assignment."""
+        from backend.app.services.spoolman import AMSTray
+
+        printer = await printer_factory()
+
+        fake_tray = AMSTray(
+            ams_id=0,
+            tray_id=3,
+            tray_type="ABS",
+            tray_sub_brands="Generic ABS",
+            tray_color="333333FF",
+            remain=60,
+            tag_uid="",
+            tray_uuid="",
+            tray_info_idx="",
+            tray_weight=1000,
+        )
+        mock_spoolman_client.parse_ams_tray = MagicMock(return_value=fake_tray)
+        mock_spoolman_client.sync_ams_tray = AsyncMock(return_value=None)
+
+        with patch("backend.app.api.routes.spoolman.printer_manager") as pm_mock:
+            mock_state = MagicMock()
+            mock_state.raw_data = {"ams": [{"id": 0, "tray": [{"id": 3}]}]}
+            pm_mock.get_status = MagicMock(return_value=mock_state)
+
+            response = await async_client.post(f"/api/v1/spoolman/sync/{printer.id}")
+            assert response.status_code == 200
+
+        data = response.json()
+        assert data["synced_count"] == 0
+        assert data["skipped_count"] == 1
+        assert len(data["skipped"]) == 1
+        skipped = data["skipped"][0]
+        assert "No RFID" in skipped["reason"]
+        assert skipped["filament_type"] == "ABS"
 
     # =========================================================================
     # Filaments Endpoint Tests
@@ -650,14 +946,14 @@ class TestSpoolmanAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_sync_with_weight_sync_disabled_updates_location_only(
+    async def test_sync_with_weight_sync_disabled_passes_flag(
         self,
         async_client: AsyncClient,
         spoolman_settings_weight_sync_disabled,
         mock_spoolman_client,
         printer_factory,
     ):
-        """Verify sync only updates location when disable_weight_sync is enabled."""
+        """Verify sync passes disable_weight_sync=True to sync_ams_tray when the setting is on."""
         printer = await printer_factory()
 
         # Mock existing spool
@@ -686,7 +982,6 @@ class TestSpoolmanAPI:
             tray_weight=1000,
         )
         mock_spoolman_client.parse_ams_tray.return_value = mock_tray
-        mock_spoolman_client.is_bambu_lab_spool = MagicMock(return_value=True)
         mock_spoolman_client.convert_ams_slot_to_location = MagicMock(return_value="AMS A1")
         mock_spoolman_client.sync_ams_tray = AsyncMock(return_value={"id": 42})
         mock_spoolman_client.clear_location_for_removed_spools = AsyncMock(return_value=0)

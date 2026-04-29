@@ -2,10 +2,11 @@
 
 import json
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,9 +16,13 @@ from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool_assignment import SpoolAssignment
+from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.user import User
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.spoolman import (
+    SpoolmanClientError,
+    SpoolmanNotFoundError,
+    SpoolmanUnavailableError,
     close_spoolman_client,
     get_spoolman_client,
     init_spoolman_client,
@@ -39,10 +44,10 @@ class SpoolmanStatus(BaseModel):
 class SkippedSpool(BaseModel):
     """Information about a skipped spool during sync."""
 
-    location: str  # e.g., "AMS A1" or "External Spool"
-    reason: str  # e.g., "Not a Bambu Lab spool", "Empty tray"
-    filament_type: str | None = None  # e.g., "PLA", "PETG"
-    color: str | None = None  # Hex color
+    location: str
+    reason: Literal["No RFID tag and no slot assignment"]
+    filament_type: str | None = None
+    color: str | None = None
 
 
 class SyncResult(BaseModel):
@@ -132,6 +137,9 @@ async def connect_spoolman(
         await client.ensure_tag_extra_field()
 
         return {"success": True, "message": f"Connected to Spoolman at {url}"}
+    except ValueError as exc:
+        logger.warning("Spoolman URL rejected: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:
         logger.error("Failed to connect to Spoolman: %s", e)
         raise HTTPException(status_code=503, detail=str(e))
@@ -195,9 +203,6 @@ async def sync_printer_ams(
     synced = 0
     skipped: list[SkippedSpool] = []
     errors = []
-    # Track tray UUIDs currently in the AMS (for clearing removed spools)
-    current_tray_uuids: set[str] = set()
-    synced_spool_ids: set[int] = set()
 
     # Handle different AMS data structures
     # Traditional AMS: list of {"id": N, "tray": [...]} dicts
@@ -218,7 +223,10 @@ async def sync_printer_ams(
     if not ams_units:
         raise HTTPException(
             status_code=400,
-            detail=f"AMS data format not supported. Keys: {list(ams_data.keys()) if isinstance(ams_data, dict) else type(ams_data).__name__}",
+            detail=(
+                "AMS data format not supported. Keys: "
+                f"{list(ams_data.keys()) if isinstance(ams_data, dict) else type(ams_data).__name__}"
+            ),
         )
 
     # OPTIMIZATION: Fetch all spools once before processing trays
@@ -250,6 +258,20 @@ async def sync_printer_ams(
     except Exception as e:
         logger.debug("Could not load inventory weights for printer %s: %s", printer_id, e)
 
+    # Load existing Spoolman slot assignments for the no-RFID fallback path
+    spoolman_slot_map: dict[tuple[int, int], int] = {}
+    try:
+        slot_result = await db.execute(
+            select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id)
+        )
+        for slot in slot_result.scalars().all():
+            spoolman_slot_map[(slot.ams_id, slot.tray_id)] = slot.spoolman_spool_id
+    except Exception as e:
+        logger.warning("Could not load Spoolman slot assignments for printer %s: %s", printer_id, e)
+
+    slot_changes: list[tuple[int, int, int]] = []  # (ams_id, tray_id, spoolman_spool_id)
+    empty_slots: list[tuple[int, int]] = []  # (ams_id, tray_id) now empty
+
     for ams_unit in ams_units:
         if not isinstance(ams_unit, dict):
             continue
@@ -261,33 +283,19 @@ async def sync_printer_ams(
             if not isinstance(tray_data, dict):
                 continue
 
+            tray_id_raw = int(tray_data.get("id", 0))
             tray = client.parse_ams_tray(ams_id, tray_data)
             if not tray:
-                continue  # Empty tray - nothing to sync
-
-            # Build location string for reporting
-            location = client.convert_ams_slot_to_location(ams_id, tray.tray_id)
-
-            # Skip non-Bambu Lab spools (SpoolEase/third-party) - track as skipped
-            if not client.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
-                skipped.append(
-                    SkippedSpool(
-                        location=location,
-                        reason="Non-Bambu Lab spool (no RFID tag)",
-                        filament_type=tray.tray_type if tray.tray_type else None,
-                        color=tray.tray_color[:6] if tray.tray_color else None,
-                    )
-                )
+                empty_slots.append((ams_id, tray_id_raw))
                 continue
 
-            # Track this spool tag as currently present in the AMS (prefer tray_uuid, fallback to tag_uid)
             spool_tag = (
                 tray.tray_uuid
                 if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000"
                 else tray.tag_uid
             )
-            if spool_tag:
-                current_tray_uuids.add(spool_tag.upper())
+
+            hint = spoolman_slot_map.get((ams_id, tray.tray_id)) if not spool_tag else None
 
             try:
                 inv_remaining = inv_weights.get((ams_id, tray.tray_id))
@@ -297,12 +305,12 @@ async def sync_printer_ams(
                     disable_weight_sync=disable_weight_sync,
                     cached_spools=cached_spools,
                     inventory_remaining=inv_remaining,
+                    spoolman_spool_id_hint=hint,
                 )
                 if sync_result:
                     synced += 1
-                    # Add newly created spool to cache and track synced ID
                     if sync_result.get("id"):
-                        synced_spool_ids.add(sync_result["id"])
+                        slot_changes.append((ams_id, tray.tray_id, sync_result["id"]))
                         spool_exists = any(s.get("id") == sync_result["id"] for s in cached_spools)
                         if not spool_exists:
                             cached_spools.append(sync_result)
@@ -310,23 +318,49 @@ async def sync_printer_ams(
                     logger.info(
                         "Synced %s from %s AMS %s tray %s", tray.tray_sub_brands, printer.name, ams_id, tray.tray_id
                     )
-                else:
-                    # Bambu Lab spool that wasn't synced (not found in Spoolman)
+                elif spool_tag:
                     errors.append(f"Spool not found in Spoolman: AMS {ams_id}:{tray.tray_id}")
+                elif not hint:
+                    skipped.append(
+                        SkippedSpool(
+                            location=f"AMS {ams_id} T{tray.tray_id}",
+                            reason="No RFID tag and no slot assignment",
+                            filament_type=tray.tray_type or None,
+                            color=tray.tray_color[:6] if tray.tray_color else None,
+                        )
+                    )
             except Exception as e:
                 error_msg = f"Error syncing AMS {ams_id} tray {tray.tray_id}: {e}"
                 logger.error(error_msg)
                 errors.append(error_msg)
 
-    # Clear location for spools that were removed from this printer's AMS
-    try:
-        cleared = await client.clear_location_for_removed_spools(
-            printer.name, current_tray_uuids, cached_spools=cached_spools, synced_spool_ids=synced_spool_ids
-        )
-        if cleared > 0:
-            logger.info("Cleared location for %s spools removed from %s", cleared, printer.name)
-    except Exception as e:
-        logger.error("Error clearing locations for removed spools: %s", e)
+    # Persist slot assignment changes to the local table
+    if slot_changes or empty_slots:
+        try:
+            for ams_id, tray_id, spool_id in slot_changes:
+                await db.execute(
+                    text(
+                        "INSERT INTO spoolman_slot_assignments"
+                        " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                        " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+                        " ON CONFLICT(printer_id, ams_id, tray_id)"
+                        " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+                    ),
+                    {"printer_id": printer_id, "ams_id": ams_id, "tray_id": tray_id, "spool_id": spool_id},
+                )
+            for ams_id, tray_id in empty_slots:
+                await db.execute(
+                    delete(SpoolmanSlotAssignment).where(
+                        SpoolmanSlotAssignment.printer_id == printer_id,
+                        SpoolmanSlotAssignment.ams_id == ams_id,
+                        SpoolmanSlotAssignment.tray_id == tray_id,
+                    )
+                )
+            await db.commit()
+        except Exception as e:
+            await db.rollback()
+            logger.error("Error persisting Spoolman slot assignments for printer %s: %s", printer_id, e)
+            errors.append(f"Failed to persist slot assignments: {type(e).__name__}")
 
     return SyncResult(
         success=len(errors) == 0,
@@ -366,10 +400,6 @@ async def sync_all_printers(
     total_synced = 0
     all_skipped: list[SkippedSpool] = []
     all_errors = []
-    # Track tray UUIDs per printer (for clearing removed spools)
-    printer_tray_uuids: dict[str, set[str]] = {}
-    # Track synced spool IDs per printer (for location-based cleanup when no UUIDs available)
-    printer_synced_ids: dict[str, set[int]] = {}
 
     # OPTIMIZATION: Fetch all spools once before processing ALL printers/trays
     # This eliminates redundant API calls across all printers
@@ -397,6 +427,20 @@ async def sync_all_printers(
     except Exception as e:
         logger.debug("Could not load inventory assignments for weight fallback: %s", e)
 
+    # Load all Spoolman slot assignments for the no-RFID fallback
+    # Key: (printer_id, ams_id, tray_id) → spoolman_spool_id
+    all_slot_map: dict[tuple[int, int, int], int] = {}
+    try:
+        slot_result = await db.execute(select(SpoolmanSlotAssignment))
+        for slot in slot_result.scalars().all():
+            all_slot_map[(slot.printer_id, slot.ams_id, slot.tray_id)] = slot.spoolman_spool_id
+    except Exception as e:
+        logger.warning("Could not load Spoolman slot assignments: %s", e)
+
+    # Collect slot changes across all printers for a single DB write at the end
+    all_slot_changes: list[tuple[int, int, int, int]] = []  # (printer_id, ams_id, tray_id, spool_id)
+    all_empty_slots: list[tuple[int, int, int]] = []  # (printer_id, ams_id, tray_id)
+
     for printer in printers:
         state = printer_manager.get_status(printer.id)
         if not state or not state.raw_data:
@@ -405,10 +449,6 @@ async def sync_all_printers(
         ams_data = state.raw_data.get("ams")
         if not ams_data:
             continue
-
-        # Initialize tracking sets for this printer
-        printer_tray_uuids[printer.name] = set()
-        printer_synced_ids[printer.name] = set()
 
         # Handle different AMS data structures
         # Traditional AMS: list of {"id": N, "tray": [...]} dicts
@@ -442,36 +482,21 @@ async def sync_all_printers(
                 if not isinstance(tray_data, dict):
                     continue
 
+                tray_id_raw = int(tray_data.get("id", 0))
                 tray = client.parse_ams_tray(ams_id, tray_data)
                 if not tray:
+                    all_empty_slots.append((printer.id, ams_id, tray_id_raw))
                     continue
 
-                # Build location string for reporting
-                location = f"{printer.name} - {client.convert_ams_slot_to_location(ams_id, tray.tray_id)}"
-
-                # Skip non-Bambu Lab spools (SpoolEase/third-party) - track as skipped
-                if not client.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
-                    all_skipped.append(
-                        SkippedSpool(
-                            location=location,
-                            reason="Non-Bambu Lab spool (no RFID tag)",
-                            filament_type=tray.tray_type if tray.tray_type else None,
-                            color=tray.tray_color[:6] if tray.tray_color else None,
-                        )
-                    )
-                    continue
-
-                # Track this spool tag as currently present in the AMS (prefer tray_uuid, fallback to tag_uid)
                 spool_tag = (
                     tray.tray_uuid
                     if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000"
                     else tray.tag_uid
                 )
-                if spool_tag:
-                    printer_tray_uuids[printer.name].add(spool_tag.upper())
+
+                hint = all_slot_map.get((printer.id, ams_id, tray.tray_id)) if not spool_tag else None
 
                 try:
-                    # Look up inventory weight as fallback when AMS data is invalid
                     inv_remaining = inventory_weights.get((printer.id, ams_id, tray.tray_id))
                     sync_result = await client.sync_ams_tray(
                         tray,
@@ -479,33 +504,57 @@ async def sync_all_printers(
                         disable_weight_sync=disable_weight_sync,
                         cached_spools=cached_spools,
                         inventory_remaining=inv_remaining,
+                        spoolman_spool_id_hint=hint,
                     )
                     if sync_result:
                         total_synced += 1
-                        # Track synced spool ID for cleanup
                         if sync_result.get("id"):
-                            printer_synced_ids[printer.name].add(sync_result["id"])
-                            # Add newly created spool to cache
+                            all_slot_changes.append((printer.id, ams_id, tray.tray_id, sync_result["id"]))
                             spool_exists = any(s.get("id") == sync_result["id"] for s in cached_spools)
                             if not spool_exists:
                                 cached_spools.append(sync_result)
                                 logger.debug("Added newly created spool %s to cache", sync_result["id"])
+                    elif spool_tag:
+                        all_errors.append(f"Spool not found in Spoolman: {printer.name} AMS {ams_id}:{tray.tray_id}")
+                    elif not hint:
+                        all_skipped.append(
+                            SkippedSpool(
+                                location=f"{printer.name} AMS {ams_id} T{tray.tray_id}",
+                                reason="No RFID tag and no slot assignment",
+                                filament_type=tray.tray_type or None,
+                                color=tray.tray_color[:6] if tray.tray_color else None,
+                            )
+                        )
                 except Exception as e:
                     all_errors.append(f"{printer.name} AMS {ams_id}:{tray.tray_id}: {e}")
 
-    # Clear location for spools that were removed from each printer's AMS
-    for printer_name, current_tray_uuids in printer_tray_uuids.items():
+    # Persist slot assignment changes across all printers
+    if all_slot_changes or all_empty_slots:
         try:
-            cleared = await client.clear_location_for_removed_spools(
-                printer_name,
-                current_tray_uuids,
-                cached_spools=cached_spools,
-                synced_spool_ids=printer_synced_ids.get(printer_name, set()),
-            )
-            if cleared > 0:
-                logger.info("Cleared location for %s spools removed from %s", cleared, printer_name)
+            for p_id, ams_id, tray_id, spool_id in all_slot_changes:
+                await db.execute(
+                    text(
+                        "INSERT INTO spoolman_slot_assignments"
+                        " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                        " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+                        " ON CONFLICT(printer_id, ams_id, tray_id)"
+                        " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+                    ),
+                    {"printer_id": p_id, "ams_id": ams_id, "tray_id": tray_id, "spool_id": spool_id},
+                )
+            for p_id, ams_id, tray_id in all_empty_slots:
+                await db.execute(
+                    delete(SpoolmanSlotAssignment).where(
+                        SpoolmanSlotAssignment.printer_id == p_id,
+                        SpoolmanSlotAssignment.ams_id == ams_id,
+                        SpoolmanSlotAssignment.tray_id == tray_id,
+                    )
+                )
+            await db.commit()
         except Exception as e:
-            logger.error("Error clearing locations for %s: %s", printer_name, e)
+            await db.rollback()
+            logger.error("Error persisting Spoolman slot assignments: %s", e)
+            all_errors.append(f"Failed to persist slot assignments: {type(e).__name__}")
 
     return SyncResult(
         success=len(all_errors) == 0,
@@ -717,29 +766,60 @@ async def link_spool(
 
     spool_tag = spool_tag.upper()
 
-    # Build location like: "{Printer Name} - {AMS Name} {Slot Number}"
-    location: str | None = None
+    # Validate printer context when provided, but do NOT write spool.location —
+    # that field is user-managed in Spoolman. Slot assignment is stored locally.
+    printer_context: tuple[int, int, int] | None = None
     if request.printer_id is not None and request.ams_id is not None and request.tray_id is not None:
         printer_result = await db.execute(select(Printer).where(Printer.id == request.printer_id))
-        printer = printer_result.scalar_one_or_none()
-        if not printer:
+        if not printer_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Printer not found")
+        printer_context = (request.printer_id, request.ams_id, request.tray_id)
 
-        location = f"{printer.name} - {client.convert_ams_slot_to_location(request.ams_id, request.tray_id)}"
+    try:
+        await client.merge_spool_extra(spool_id, {"tag": json.dumps(spool_tag)})
+    except SpoolmanNotFoundError:
+        raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+    except SpoolmanClientError:
+        raise HTTPException(status_code=502, detail="Spoolman rejected the request")
+    except SpoolmanUnavailableError:
+        raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
-    # Update spool with tag
-    # Note: Spoolman extra field values must be valid JSON, so we encode the string
-    result = await client.update_spool(
-        spool_id=spool_id,
-        location=location,
-        extra={"tag": json.dumps(spool_tag)},
-    )
+    # Upsert slot assignment locally when printer context was supplied
+    if printer_context:
+        p_id, a_id, t_id = printer_context
+        try:
+            await db.execute(
+                text(
+                    "INSERT INTO spoolman_slot_assignments"
+                    " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                    " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+                    " ON CONFLICT(printer_id, ams_id, tray_id)"
+                    " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+                ),
+                {"printer_id": p_id, "ams_id": a_id, "tray_id": t_id, "spool_id": spool_id},
+            )
+            await db.commit()
+        except Exception as e:
+            await db.rollback()
+            logger.error(
+                "Linked spool %s in Spoolman but failed to persist local slot assignment "
+                "(printer=%s ams=%s tray=%s): %s",
+                spool_id,
+                p_id,
+                a_id,
+                t_id,
+                e,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Spool linked in Spoolman but the local slot assignment could not be saved. "
+                    "Please re-open the link dialog to retry."
+                ),
+            ) from e
 
-    if result:
-        logger.info("Linked Spoolman spool %s to tag %s", spool_id, spool_tag)
-        return {"success": True, "message": f"Spool {spool_id} linked to AMS tag"}
-    else:
-        raise HTTPException(status_code=500, detail="Failed to update spool")
+    logger.info("Linked Spoolman spool %s to tag %s", spool_id, spool_tag)
+    return {"success": True, "message": f"Spool {spool_id} linked to AMS tag"}
 
 
 @router.post("/spools/{spool_id}/unlink")
@@ -764,14 +844,27 @@ async def unlink_spool(
     if not await client.health_check():
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
-    result = await client.update_spool(
-        spool_id=spool_id,
-        clear_location=True,
-        extra={"tag": json.dumps("")},
-    )
+    async with client.extra_lock(spool_id):
+        try:
+            cur_spool = await client.get_spool(spool_id)
+            cur_extra = dict(cur_spool.get("extra") or {})
+            cur_extra.pop("tag", None)
+            await client.update_spool_full(spool_id=spool_id, extra=cur_extra)
+        except SpoolmanNotFoundError:
+            raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
+        except SpoolmanClientError:
+            raise HTTPException(status_code=502, detail="Spoolman rejected the request")
+        except SpoolmanUnavailableError:
+            raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
-    if result:
-        logger.info("Unlinked Spoolman spool %s", spool_id)
-        return {"success": True, "message": f"Spool {spool_id} unlinked from AMS"}
-    else:
-        raise HTTPException(status_code=500, detail="Failed to update spool")
+    # Remove local slot assignment for this spool (all slots — a spool can only be in one at a time)
+    try:
+        await db.execute(delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spool_id))
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("DB error removing slot assignment for spool %s", spool_id)
+        raise HTTPException(status_code=500, detail="Failed to remove local slot assignment")
+
+    logger.info("Unlinked Spoolman spool %s", spool_id)
+    return {"success": True, "message": f"Spool {spool_id} unlinked from AMS"}

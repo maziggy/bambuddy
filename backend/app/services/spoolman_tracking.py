@@ -12,7 +12,13 @@ from sqlalchemy import delete, select
 
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
-from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+from backend.app.services.spoolman import (
+    SpoolmanClientError,
+    SpoolmanNotFoundError,
+    SpoolmanUnavailableError,
+    get_spoolman_client,
+    init_spoolman_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +77,7 @@ def _resolve_spool_tag(tray_info: dict, printer_serial: str = "", global_tray_id
     """
     tray_uuid = str(tray_info.get("tray_uuid", "") or "")
     tag_uid = str(tray_info.get("tag_uid", "") or "")
+
     if tray_uuid and tray_uuid != _ZERO_UUID and _is_non_zero_identifier(tray_uuid):
         return tray_uuid
     if tag_uid and tag_uid != _ZERO_TAG_UID and _is_non_zero_identifier(tag_uid):
@@ -312,9 +319,16 @@ async def _get_spoolman_client_with_fallback():
 
             spoolman_url = await get_setting(db, "spoolman_url")
             if spoolman_url:
-                client = await init_spoolman_client(spoolman_url)
+                try:
+                    client = await init_spoolman_client(spoolman_url)
+                except ValueError as exc:
+                    logger.warning("Spoolman URL %r rejected by SSRF guard: %s", spoolman_url, exc)
+                    return None
 
-    if not client or not await client.health_check():
+    if not client:
+        return None
+    if not await client.health_check():
+        logger.warning("Spoolman health check failed; skipping usage reporting")
         return None
 
     return client
@@ -363,10 +377,12 @@ async def _report_spool_usage_for_slots(
             logger.debug("[SPOOLMAN] Slot %s: no spool for tag %s...", slot_id, spool_tag[:16])
             continue
 
-        result = await client.use_spool(spool["id"], grams_used)
-        if result:
+        try:
+            await client.use_spool(spool["id"], grams_used)
             logger.info("[SPOOLMAN] %s: slot %s: %sg -> spool %s", method_label, slot_id, grams_used, spool["id"])
             spools_updated += 1
+        except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
+            logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", spool["id"], exc)
 
     return spools_updated
 

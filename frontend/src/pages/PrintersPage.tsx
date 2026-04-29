@@ -60,7 +60,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -87,6 +87,13 @@ import { getPrinterImage, getWifiStrength, filterCompatibleQueueItems } from '..
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
+
+export interface SpoolmanSlotAssignmentRow {
+  printer_id: number;
+  ams_id: number;
+  tray_id: number;
+  spoolman_spool_id: number;
+}
 
 // Color names resolve via getColorName() which reads the backend color_catalog
 // (loaded once by ColorCatalogProvider). No hardcoded tables here — see #857.
@@ -762,9 +769,7 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, on
   );
 }
 
-// Get AMS label: AMS-A/B/C/D for regular AMS, HT-A/B for AMS-HT (single spool)
-// Always use tray count as the source of truth (1 tray = AMS-HT, 4 trays = regular AMS)
-// AMS-HT uses IDs 128+ while regular AMS uses 0-3
+
 function getAmsLabel(amsId: number | string, trayCount: number): string {
   // Ensure amsId is a number (backend might send string)
   const id = typeof amsId === 'string' ? parseInt(amsId, 10) : amsId;
@@ -1335,6 +1340,9 @@ function PrinterCard({
   spoolmanSyncMode,
   onGetAssignment,
   onUnassignSpool,
+  spoolmanSpools,
+  spoolmanSlotAssignments,
+  onUnassignSpoolmanSpool,
   timeFormat = 'system',
   cameraViewMode = 'window',
   onOpenEmbeddedCamera,
@@ -1364,6 +1372,9 @@ function PrinterCard({
   spoolAssignments?: SpoolAssignment[];
   onGetAssignment?: (printerId: number, amsId: number, trayId: number) => SpoolAssignment | undefined;
   onUnassignSpool?: (printerId: number, amsId: number, trayId: number) => void;
+  spoolmanSpools?: InventorySpool[];
+  spoolmanSlotAssignments?: SpoolmanSlotAssignmentRow[];
+  onUnassignSpoolmanSpool?: (spoolmanSpoolId: number) => void;
   timeFormat?: 'system' | '12h' | '24h';
   cameraViewMode?: 'window' | 'embedded';
   onOpenEmbeddedCamera?: (printerId: number, printerName: string) => void;
@@ -1753,6 +1764,7 @@ function PrinterCard({
       showToast(t('spoolman.unlinkSuccess') || result?.message, 'success');
       queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
       queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
     },
     onError: (error: Error) => {
       showToast(error.message || t('spoolman.unlinkFailed'), 'error');
@@ -3559,7 +3571,39 @@ function PrinterCard({
                                           } : undefined,
                                           onUnlinkSpool: linkedSpool?.id ? () => unlinkSpoolMutation.mutate(linkedSpool.id) : undefined,
                                         }}
-                                        inventory={spoolmanEnabled ? undefined : (() => {
+                                        inventory={(() => {
+                                          if (spoolmanEnabled) {
+                                            const slotAssignment = spoolmanSlotAssignments?.find(
+                                              a => a.printer_id === printer.id && a.ams_id === ams.id && a.tray_id === slotIdx
+                                            );
+                                            const spoolmanSpool = slotAssignment
+                                              ? spoolmanSpools?.find(s => s.id === slotAssignment.spoolman_spool_id)
+                                              : undefined;
+                                            return {
+                                              assignedSpool: spoolmanSpool ? {
+                                                id: spoolmanSpool.id,
+                                                material: spoolmanSpool.material,
+                                                brand: spoolmanSpool.brand ?? null,
+                                                color_name: spoolmanSpool.color_name ?? null,
+                                                remainingWeightGrams: spoolmanSpool.label_weight
+                                                  ? Math.max(0, Math.round(spoolmanSpool.label_weight - spoolmanSpool.weight_used))
+                                                  : undefined,
+                                              } : null,
+                                              onAssignSpool: () => setAssignSpoolModal({
+                                                printerId: printer.id,
+                                                amsId: ams.id,
+                                                trayId: slotIdx,
+                                                trayInfo: {
+                                                  type: tray?.tray_type || filamentData.profile,
+                                                  material: tray?.tray_type ?? undefined,
+                                                  profile: filamentData.profile,
+                                                  color: filamentData.colorHex || '',
+                                                  location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
+                                                },
+                                              }),
+                                              onUnassignSpool: spoolmanSpool ? () => onUnassignSpoolmanSpool?.(spoolmanSpool.id) : undefined,
+                                            };
+                                          }
                                           const assignment = onGetAssignment?.(printer.id, ams.id, slotIdx);
                                           return {
                                             assignedSpool: assignment?.spool ? {
@@ -3865,7 +3909,39 @@ function PrinterCard({
                                       } : undefined,
                                       onUnlinkSpool: htLinkedSpool?.id ? () => unlinkSpoolMutation.mutate(htLinkedSpool.id) : undefined,
                                     }}
-                                    inventory={spoolmanEnabled ? undefined : (() => {
+                                    inventory={(() => {
+                                      if (spoolmanEnabled) {
+                                        const slotAssignment = spoolmanSlotAssignments?.find(
+                                          a => a.printer_id === printer.id && a.ams_id === ams.id && a.tray_id === htSlotId
+                                        );
+                                        const spoolmanSpool = slotAssignment
+                                          ? spoolmanSpools?.find(s => s.id === slotAssignment.spoolman_spool_id)
+                                          : undefined;
+                                        return {
+                                          assignedSpool: spoolmanSpool ? {
+                                            id: spoolmanSpool.id,
+                                            material: spoolmanSpool.material,
+                                            brand: spoolmanSpool.brand ?? null,
+                                            color_name: spoolmanSpool.color_name ?? null,
+                                            remainingWeightGrams: spoolmanSpool.label_weight
+                                              ? Math.max(0, Math.round(spoolmanSpool.label_weight - spoolmanSpool.weight_used))
+                                              : undefined,
+                                          } : null,
+                                          onAssignSpool: () => setAssignSpoolModal({
+                                            printerId: printer.id,
+                                            amsId: ams.id,
+                                            trayId: htSlotId,
+                                            trayInfo: {
+                                              type: tray?.tray_type || filamentData.profile,
+                                              material: tray?.tray_type ?? undefined,
+                                              profile: filamentData.profile,
+                                              color: filamentData.colorHex || '',
+                                              location: getAmsLabel(ams.id, ams.tray.length),
+                                            },
+                                          }),
+                                          onUnassignSpool: spoolmanSpool ? () => onUnassignSpoolmanSpool?.(spoolmanSpool.id) : undefined,
+                                        };
+                                      }
                                       const assignment = onGetAssignment?.(printer.id, ams.id, htSlotId);
                                       return {
                                         assignedSpool: assignment?.spool ? {
@@ -4067,7 +4143,39 @@ function PrinterCard({
                                         } : undefined,
                                         onUnlinkSpool: extLinkedSpool?.id ? () => unlinkSpoolMutation.mutate(extLinkedSpool.id) : undefined,
                                       }}
-                                      inventory={spoolmanEnabled ? undefined : (() => {
+                                      inventory={(() => {
+                                        if (spoolmanEnabled) {
+                                          const slotAssignment = spoolmanSlotAssignments?.find(
+                                            a => a.printer_id === printer.id && a.ams_id === 255 && a.tray_id === slotTrayId
+                                          );
+                                          const spoolmanSpool = slotAssignment
+                                            ? spoolmanSpools?.find(s => s.id === slotAssignment.spoolman_spool_id)
+                                            : undefined;
+                                          return {
+                                            assignedSpool: spoolmanSpool ? {
+                                              id: spoolmanSpool.id,
+                                              material: spoolmanSpool.material,
+                                              brand: spoolmanSpool.brand ?? null,
+                                              color_name: spoolmanSpool.color_name ?? null,
+                                              remainingWeightGrams: spoolmanSpool.label_weight
+                                                ? Math.max(0, Math.round(spoolmanSpool.label_weight - spoolmanSpool.weight_used))
+                                                : undefined,
+                                            } : null,
+                                            onAssignSpool: () => setAssignSpoolModal({
+                                              printerId: printer.id,
+                                              amsId: 255,
+                                              trayId: slotTrayId,
+                                              trayInfo: {
+                                                type: extTray.tray_type || extFilamentData.profile,
+                                                material: extTray.tray_type ?? undefined,
+                                                profile: extFilamentData.profile,
+                                                color: extFilamentData.colorHex || '',
+                                                location: extLabel || t('printers.external'),
+                                              },
+                                            }),
+                                            onUnassignSpool: spoolmanSpool ? () => onUnassignSpoolmanSpool?.(spoolmanSpool.id) : undefined,
+                                          };
+                                        }
                                         const assignment = onGetAssignment?.(printer.id, 255, slotTrayId);
                                         return {
                                           assignedSpool: assignment?.spool ? {
@@ -4868,6 +4976,7 @@ function PrinterCard({
           amsId={assignSpoolModal.amsId}
           trayId={assignSpoolModal.trayId}
           trayInfo={assignSpoolModal.trayInfo}
+          spoolmanEnabled={!!spoolmanEnabled}
         />
       )}
 
@@ -6113,6 +6222,28 @@ export function PrintersPage() {
     },
   });
 
+  const { data: spoolmanSpools } = useQuery({
+    queryKey: ['spoolman-inventory-spools'],
+    queryFn: () => api.getSpoolmanInventorySpools(false),
+    enabled: !!spoolmanEnabled,
+    staleTime: 30 * 1000,
+  });
+
+  const { data: spoolmanSlotAssignments } = useQuery({
+    queryKey: ['spoolman-slot-assignments'],
+    queryFn: () => api.getSpoolmanSlotAssignments(),
+    enabled: !!spoolmanEnabled,
+    staleTime: 30 * 1000,
+  });
+
+  const unassignSpoolmanMutation = useMutation({
+    mutationFn: (spoolmanSpoolId: number) => api.unassignSpoolmanSlot(spoolmanSpoolId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
+    },
+  });
+
   // Helper to find assignment for a specific slot
   const getAssignment = (printerId: number, amsId: number | string, trayId: number | string): SpoolAssignment | undefined => {
     return spoolAssignments?.find(
@@ -6775,6 +6906,9 @@ export function PrintersPage() {
                       spoolmanSyncMode={spoolmanSyncMode}
                       onGetAssignment={getAssignment}
                       onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
+                      spoolmanSpools={spoolmanSpools}
+                      spoolmanSlotAssignments={spoolmanSlotAssignments}
+                      onUnassignSpoolmanSpool={(id) => unassignSpoolmanMutation.mutate(id)}
                       timeFormat={settings?.time_format || 'system'}
                       cameraViewMode={settings?.camera_view_mode || 'window'}
                       onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
@@ -6809,6 +6943,9 @@ export function PrintersPage() {
               spoolmanSyncMode={spoolmanSyncMode}
               onGetAssignment={getAssignment}
               onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
+              spoolmanSpools={spoolmanSpools}
+              spoolmanSlotAssignments={spoolmanSlotAssignments}
+              onUnassignSpoolmanSpool={(id) => unassignSpoolmanMutation.mutate(id)}
               amsThresholds={settings ? {
                 humidityGood: Number(settings.ams_humidity_good) || 40,
                 humidityFair: Number(settings.ams_humidity_fair) || 60,

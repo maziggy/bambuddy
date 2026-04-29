@@ -34,27 +34,19 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
-from backend.app.utils.filament_ids import filament_id_to_setting_id, normalize_slicer_filament
+from backend.app.utils.filament_ids import (
+    GENERIC_FILAMENT_IDS,
+    MATERIAL_TEMPS,
+    filament_id_to_setting_id,
+    normalize_slicer_filament,
+)
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/inventory", tags=["inventory"])
+_GENERIC_ID_VALUES = set(GENERIC_FILAMENT_IDS.values())
 
-# Material temperature defaults (nozzle min/max)
-MATERIAL_TEMPS: dict[str, tuple[int, int]] = {
-    "PLA": (190, 230),
-    "PETG": (220, 260),
-    "ABS": (240, 270),
-    "ASA": (240, 270),
-    "TPU": (200, 240),
-    "PA": (260, 290),
-    "PC": (250, 280),
-    "PVA": (190, 210),
-    "PLA-CF": (210, 240),
-    "PETG-CF": (240, 270),
-    "PA-CF": (270, 300),
-}
+router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 # FilamentColors.xyz API
 FILAMENT_COLORS_API = "https://filamentcolors.xyz/api"
@@ -910,24 +902,6 @@ async def assign_spool(
             )
             tray_color = spool.rgba or "FFFFFFFF"
 
-            _GENERIC_IDS = {
-                "PLA": "GFL99",
-                "PETG": "GFG99",
-                "ABS": "GFB99",
-                "ASA": "GFB98",
-                "PC": "GFC99",
-                "PA": "GFN99",
-                "NYLON": "GFN99",
-                "TPU": "GFU99",
-                "PVA": "GFS99",
-                "HIPS": "GFS98",
-                "PLA-CF": "GFL98",
-                "PETG-CF": "GFG98",
-                "PA-CF": "GFN98",
-                "PETG HF": "GFG96",
-            }
-            _GENERIC_ID_VALUES = set(_GENERIC_IDS.values())
-
             # Resolve tray_info_idx + setting_id for the MQTT command.
             # Three sources in priority order:
             #   1. Cloud profile (if cloud connected) — resolve filament_id
@@ -1001,7 +975,9 @@ async def assign_spool(
                         if lp:
                             mat = (spool.material or lp.filament_type or "").upper().strip()
                             tray_info_idx = (
-                                _GENERIC_IDS.get(mat) or _GENERIC_IDS.get(mat.split("-")[0].split(" ")[0]) or ""
+                                GENERIC_FILAMENT_IDS.get(mat)
+                                or GENERIC_FILAMENT_IDS.get(mat.split("-")[0].split(" ")[0])
+                                or ""
                             )
                             # Use local preset name for tray_sub_brands
                             if lp.name:
@@ -1053,7 +1029,11 @@ async def assign_spool(
                     tray_info_idx = current_tray_info_idx
                 elif tray_type:
                     material = tray_type.upper().strip()
-                    generic = _GENERIC_IDS.get(material) or _GENERIC_IDS.get(material.split("-")[0].split(" ")[0]) or ""
+                    generic = (
+                        GENERIC_FILAMENT_IDS.get(material)
+                        or GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
+                        or ""
+                    )
                     if generic:
                         logger.info("Spool assign: falling back to generic %r for material %r", generic, tray_type)
                         tray_info_idx = generic

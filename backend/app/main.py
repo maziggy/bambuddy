@@ -52,6 +52,7 @@ from backend.app.api.routes import (
     smart_plugs,
     spoolbuddy,
     spoolman,
+    spoolman_inventory,
     support,
     system,
     updates,
@@ -1209,7 +1210,11 @@ async def on_ams_change(printer_id: int, ams_data: list):
             # Get or create Spoolman client
             client = await get_spoolman_client()
             if not client:
-                client = await init_spoolman_client(spoolman_url)
+                try:
+                    client = await init_spoolman_client(spoolman_url)
+                except ValueError as exc:
+                    logger.warning("Spoolman URL %r rejected by SSRF guard: %s", spoolman_url, exc)
+                    return
 
             # Check if Spoolman is reachable
             if not await client.health_check():
@@ -1239,6 +1244,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from sqlalchemy.orm import selectinload
 
             from backend.app.models.spool_assignment import SpoolAssignment
+            from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 
             inventory_weights: dict[tuple[int, int], float] = {}
             try:
@@ -1253,29 +1259,47 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         remaining = max(0.0, spool.label_weight - (spool.weight_used or 0))
                         inventory_weights[(assignment.ams_id, assignment.tray_id)] = remaining
             except Exception as e:
-                logger.debug("Could not load inventory weights for printer %s: %s", printer_id, e)
+                logger.warning("Could not load inventory weights for printer %s: %s", printer_id, e)
 
-            # Sync each AMS tray, tracking UUIDs and spool IDs for cleanup
+            # Load existing Spoolman slot assignments for the no-RFID fallback path
+            spoolman_slot_map: dict[tuple[int, int], int] = {}
+            try:
+                slot_result = await db.execute(
+                    select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id)
+                )
+                for slot in slot_result.scalars().all():
+                    spoolman_slot_map[(slot.ams_id, slot.tray_id)] = slot.spoolman_spool_id
+            except Exception as e:
+                logger.warning("Could not load Spoolman slot assignments for printer %s: %s", printer_id, e)
+
+            # Sync each AMS tray and collect slot changes for DB persistence
             synced = 0
-            current_tray_uuids: set[str] = set()
-            synced_spool_ids: set[int] = set()
+            slot_changes: list[tuple[int, int, int]] = []  # (ams_id, tray_id, spoolman_spool_id) to upsert
+            empty_slots: list[tuple[int, int]] = []  # (ams_id, tray_id) whose tray is now empty
             for ams_unit in ams_data:
+                if not isinstance(ams_unit, dict):
+                    continue
                 ams_id = int(ams_unit.get("id", 0))
                 trays = ams_unit.get("tray", [])
 
                 for tray_data in trays:
+                    if not isinstance(tray_data, dict):
+                        continue
+                    tray_id_raw = int(tray_data.get("id", 0))
                     tray = client.parse_ams_tray(ams_id, tray_data)
                     if not tray:
-                        continue  # Empty tray
+                        # Empty tray slot — record for local assignment cleanup
+                        empty_slots.append((ams_id, tray_id_raw))
+                        continue
 
-                    # Track this spool's UUID as currently present in the AMS
                     spool_tag = (
                         tray.tray_uuid
                         if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000"
                         else tray.tag_uid
                     )
-                    if spool_tag:
-                        current_tray_uuids.add(spool_tag.upper())
+
+                    # Provide the hint only when no RFID is available
+                    hint = spoolman_slot_map.get((ams_id, tray.tray_id)) if not spool_tag else None
 
                     try:
                         inv_remaining = inventory_weights.get((ams_id, tray.tray_id))
@@ -1285,14 +1309,14 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             disable_weight_sync=disable_weight_sync,
                             cached_spools=cached_spools,
                             inventory_remaining=inv_remaining,
+                            spoolman_spool_id_hint=hint,
                         )
                         if result:
                             synced += 1
                             if result.get("id"):
-                                synced_spool_ids.add(result["id"])
+                                slot_changes.append((ams_id, tray.tray_id, result["id"]))
                                 # If a new spool was created, add it to the cache
                                 # so subsequent trays can find it if they reference the same tag
-                                # Check if this spool already exists in cache
                                 spool_exists = any(s.get("id") == result["id"] for s in cached_spools)
                                 if not spool_exists:
                                     cached_spools.append(result)
@@ -1307,18 +1331,40 @@ async def on_ams_change(printer_id: int, ams_data: list):
             if synced > 0:
                 logger.info("Auto-synced %s AMS trays to Spoolman for printer %s", synced, printer_id)
 
-            # Clear location for spools no longer in this printer's AMS
-            try:
-                cleared = await client.clear_location_for_removed_spools(
-                    printer_name, current_tray_uuids, cached_spools=cached_spools, synced_spool_ids=synced_spool_ids
-                )
-                if cleared > 0:
-                    logger.info("Auto-cleared location for %s spools removed from printer %s", cleared, printer_id)
-            except Exception as e:
-                logger.error("Error clearing locations for removed spools on printer %s: %s", printer_id, e)
+            # Persist slot assignment changes to the local table
+            if slot_changes or empty_slots:
+                try:
+                    for ams_id, tray_id, spool_id in slot_changes:
+                        await db.execute(
+                            text(
+                                "INSERT INTO spoolman_slot_assignments"
+                                " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                                " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+                                " ON CONFLICT(printer_id, ams_id, tray_id)"
+                                " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+                            ),
+                            {
+                                "printer_id": printer_id,
+                                "ams_id": ams_id,
+                                "tray_id": tray_id,
+                                "spool_id": spool_id,
+                            },
+                        )
+                    for ams_id, tray_id in empty_slots:
+                        await db.execute(
+                            delete(SpoolmanSlotAssignment).where(
+                                SpoolmanSlotAssignment.printer_id == printer_id,
+                                SpoolmanSlotAssignment.ams_id == ams_id,
+                                SpoolmanSlotAssignment.tray_id == tray_id,
+                            )
+                        )
+                    await db.commit()
+                except Exception as e:
+                    await db.rollback()
+                    logger.error("Error persisting Spoolman slot assignments for printer %s: %s", printer_id, e)
 
     except Exception as e:
-        logging.getLogger(__name__).warning(f"Spoolman AMS sync failed: {e}")
+        logging.getLogger(__name__).error("Spoolman AMS sync failed for printer %s: %s", printer_id, e)
 
 
 async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -> bytes | None:
@@ -4792,6 +4838,7 @@ app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)
 app.include_router(user_notifications.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman.router, prefix=app_settings.api_prefix)
+app.include_router(spoolman_inventory.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
 app.include_router(camera.router, prefix=app_settings.api_prefix)

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Droplets, Link2, Copy, Check, Settings2, ExternalLink, Package, Unlink } from 'lucide-react';
+import { Droplets, Link2, Copy, Check, Settings2, Package, Unlink } from 'lucide-react';
 import { isLightColor } from '../utils/colors';
 
 interface FilamentData {
@@ -51,6 +52,7 @@ interface FilamentHoverCardProps {
  */
 export function FilamentHoverCard({ data, children, disabled, className = '', spoolman, inventory, configureSlot }: FilamentHoverCardProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
   const [copied, setCopied] = useState(false);
@@ -291,20 +293,20 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     )}
                   </div>
 
-                  {/* Open in Spoolman button (when already linked) */}
-                  {spoolman.linkedSpoolId && spoolman.spoolmanUrl && (
+                  {/* Open in inventory button (when already linked to a Spoolman spool) */}
+                  {spoolman.linkedSpoolId && (
                     <>
-                      <a
-                        href={`${spoolman.spoolmanUrl.replace(/\/$/, '')}/spool/show/${spoolman.linkedSpoolId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/inventory?spool=${spoolman.linkedSpoolId}`);
+                        }}
                         className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green"
-                        title={t('spoolman.openInSpoolman')}
+                        title={t('inventory.openInInventory')}
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        {t('spoolman.openInSpoolman')}
-                      </a>
+                        <Package className="w-3.5 h-3.5" />
+                        {t('inventory.openInInventory')}
+                      </button>
 
                       {spoolman.onUnlinkSpool && (data.vendor !== 'Bambu Lab' || spoolman.syncMode === 'manual') && (
                         <button
@@ -365,6 +367,17 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         {inventory.assignedSpool.material}
                         {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
                       </p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/inventory?spool=${inventory.assignedSpool!.id}`);
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green"
+                        title={t('inventory.openInInventory')}
+                      >
+                        <Package className="w-3.5 h-3.5" />
+                        {t('inventory.openInInventory')}
+                      </button>
                       {inventory.onUnassignSpool && (
                         <button
                           onClick={(e) => {

@@ -2,6 +2,19 @@ import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/
 
 const API_BASE = '/api/v1';
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+// Auth token storage
+// By default tokens are stored in sessionStorage (tab-scoped, cleared on close).
+// When the token originates from the ?token= URL param (kiosk bootstrap), it is
+// additionally persisted in localStorage so the kiosk survives page reloads.
 // 'persistent' also writes to localStorage so the token survives tab close
 // (used by Remember Me and the ?token= kiosk bootstrap).
 let authToken: string | null =
@@ -110,7 +123,7 @@ async function request<T>(
       }
     }
 
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   // Handle empty responses (204 No Content, etc.)
@@ -2231,6 +2244,17 @@ export interface LinkedSpoolsMap {
   linked: Record<string, LinkedSpoolInfo>; // tag (uppercase) -> spool info
 }
 
+export interface SpoolmanFilamentEntry {
+  id: number;
+  name: string;
+  material: string | null;
+  color_hex: string | null;
+  color_name: string | null;
+  weight: number | null;
+  spool_weight: number | null;
+  vendor: { id: number; name: string } | null;
+}
+
 // Inventory types
 export interface InventorySpool {
   id: number;
@@ -2269,6 +2293,13 @@ export interface InventorySpool {
   category: string | null;
   low_stock_threshold_pct: number | null;
   k_profiles?: SpoolKProfile[];
+  storage_location?: string | null;
+}
+
+export interface SpoolmanBulkCreateResult {
+  created: InventorySpool[];
+  requested_count: number;
+  failed_count: number;
 }
 
 export interface SpoolUsageRecord {
@@ -4260,8 +4291,19 @@ export const api = {
     }),
   getSpoolmanSpools: () =>
     request<{ spools: unknown[] }>('/spoolman/spools'),
+  /** @deprecated Use getSpoolmanInventoryFilaments() — this endpoint has no SSRF guard */
   getSpoolmanFilaments: () =>
     request<{ filaments: unknown[] }>('/spoolman/filaments'),
+  getSpoolmanInventoryFilaments: () =>
+    request<SpoolmanFilamentEntry[]>('/spoolman/inventory/filaments'),
+  patchSpoolmanFilament: (
+    filamentId: number,
+    data: { name?: string; spool_weight?: number | null; keep_existing_spools?: boolean },
+  ) =>
+    request<SpoolmanFilamentEntry>(`/spoolman/inventory/filaments/${filamentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   getUnlinkedSpools: () =>
     request<UnlinkedSpool[]>('/spoolman/spools/unlinked'),
   getLinkedSpools: () =>
@@ -4398,6 +4440,77 @@ export const api = {
     request<{ synced: number; skipped: number }>('/inventory/sync-ams-weights', { method: 'POST' }),
   getFilamentPresets: () =>
     request<SlicerSetting[]>('/cloud/filaments'),
+
+  // Spoolman Inventory proxy (unified UI when Spoolman is enabled)
+  getSpoolmanInventorySpools: (includeArchived = false) =>
+    request<InventorySpool[]>(`/spoolman/inventory/spools?include_archived=${includeArchived}`),
+  getSpoolmanInventorySpool: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}`),
+  createSpoolmanInventorySpool: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>) =>
+    request<InventorySpool>('/spoolman/inventory/spools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  bulkCreateSpoolmanInventorySpools: (
+    data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>,
+    quantity: number,
+  ) =>
+    request<SpoolmanBulkCreateResult | InventorySpool[]>('/spoolman/inventory/spools/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ spool: data, quantity }),
+    }),
+  updateSpoolmanInventorySpool: (
+    id: number,
+    data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>,
+  ) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteSpoolmanInventorySpool: (id: number) =>
+    request<{ status: string }>(`/spoolman/inventory/spools/${id}`, { method: 'DELETE' }),
+  archiveSpoolmanInventorySpool: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}/archive`, { method: 'POST' }),
+  restoreSpoolmanInventorySpool: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}/restore`, { method: 'POST' }),
+  linkTagToSpoolmanSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string }) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${spoolId}/tag`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  syncSpoolmanSpoolWeight: (spoolId: number, weightGrams: number) =>
+    request<{ status: string; weight_used: number }>(`/spoolman/inventory/spools/${spoolId}/weight`, {
+      method: 'PATCH',
+      body: JSON.stringify({ weight_grams: weightGrams }),
+    }),
+  assignSpoolmanSlot: (data: { spoolman_spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
+    request<InventorySpool>('/spoolman/inventory/slot-assignments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  unassignSpoolmanSlot: (spoolmanSpoolId: number) =>
+    request<InventorySpool>(`/spoolman/inventory/slot-assignments/${spoolmanSpoolId}`, { method: 'DELETE' }),
+  getSpoolmanSlotAssignment: (printerId: number, amsId: number, trayId: number) =>
+    request<InventorySpool | null>(
+      `/spoolman/inventory/slot-assignments?printer_id=${printerId}&ams_id=${amsId}&tray_id=${trayId}`,
+    ),
+  getSpoolmanSlotAssignments: (printerId?: number) =>
+    request<Array<{ printer_id: number; ams_id: number; tray_id: number; spoolman_spool_id: number }>>(
+      printerId !== undefined
+        ? `/spoolman/inventory/slot-assignments/all?printer_id=${printerId}`
+        : '/spoolman/inventory/slot-assignments/all',
+    ),
+  syncSpoolmanAmsWeights: () =>
+    request<{ synced: number; skipped: number }>('/spoolman/inventory/sync-ams-weights', { method: 'POST' }),
+
+  getSpoolmanKProfiles: (spoolId: number) =>
+    request<SpoolKProfile[]>(`/spoolman/inventory/spools/${spoolId}/k-profiles`),
+
+  saveSpoolmanKProfiles: (spoolId: number, profiles: SpoolKProfileInput[]) =>
+    request<SpoolKProfile[]>(`/spoolman/inventory/spools/${spoolId}/k-profiles`, {
+      method: 'PUT',
+      body: JSON.stringify(profiles),
+    }),
 
   // Updates
   getVersion: () => request<VersionInfo>('/updates/version'),
@@ -6014,7 +6127,7 @@ export const spoolbuddyApi = {
     request<{ public_key: string }>('/spoolbuddy/ssh/public-key'),
 
   writeTag: (deviceId: string, spoolId: number) =>
-    request<{ status: string }>('/spoolbuddy/nfc/write-tag', {
+    request<{ status: string; warnings?: string[] }>('/spoolbuddy/nfc/write-tag', {
       method: 'POST',
       body: JSON.stringify({ device_id: deviceId, spool_id: spoolId }),
     }),

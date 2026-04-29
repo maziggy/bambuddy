@@ -4,12 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { useOutletContext } from 'react-router-dom';
 import { Search, X, Package } from 'lucide-react';
 import { api } from '../../api/client';
-import type { InventorySpool, SpoolAssignment } from '../../api/client';
+import type { InventorySpool } from '../../api/client';
 import { resolveSpoolColorName } from '../../utils/colors';
 import { formatSlotLabel } from '../../utils/amsHelpers';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
+
+type SlotInfo = { ams_id: number; tray_id: number; printer_name?: string | null };
 
 type FilterMode = 'all' | 'in_ams' | string; // string = material name
 
@@ -33,7 +35,7 @@ function spoolDisplayName(spool: InventorySpool): string {
   return parts.join(' ');
 }
 
-function assignmentLabel(a: SpoolAssignment): string {
+function assignmentLabel(a: SlotInfo): string {
   const isExternal = a.ams_id === 254 || a.ams_id === 255;
   const isHt = !isExternal && a.ams_id >= 128;
   return formatSlotLabel(a.ams_id, a.tray_id, isHt, isExternal);
@@ -52,6 +54,13 @@ function SpoolCircle({ color, size = 56 }: { color: string; size?: number }) {
   );
 }
 
+// Renders inventory directly via React instead of embedding Spoolman's own UI in an
+// iframe. The iframe approach was dropped because this component lives inside the
+// SpoolBuddy shell and already has direct access to the same auth/query context,
+// making the iframe an unnecessary dependency on the Spoolman server being reachable
+// from the browser. No feature flag guards this: the internal UI is strictly superior
+// (works offline, supports local spools) and the raw Spoolman URL remains accessible
+// directly from the Settings page for users who want it.
 export function SpoolBuddyInventoryPage() {
   const { sbState, selectedPrinterId } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
@@ -66,9 +75,12 @@ export function SpoolBuddyInventoryPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const spoolmanMode = spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
+
   const { data: spools = [], isLoading, refetch: refetchSpools } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(false),
+    queryKey: spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'],
+    queryFn: () => spoolmanMode ? api.getSpoolmanInventorySpools(false) : api.getSpools(false),
+    enabled: spoolmanSettings !== undefined,
     refetchInterval: 30000,
   });
 
@@ -76,19 +88,32 @@ export function SpoolBuddyInventoryPage() {
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     refetchInterval: 30000,
+    enabled: !spoolmanMode,
   });
 
-  // Build assignment lookup: spool_id → assignment
-  const assignmentMap = useMemo(() => {
-    const map: Record<number, SpoolAssignment> = {};
-    assignments.forEach(a => { map[a.spool_id] = a; });
+  const { data: spoolmanAssignments = [] } = useQuery({
+    queryKey: ['spoolman-slot-assignments'],
+    queryFn: () => api.getSpoolmanSlotAssignments(),
+    refetchInterval: 30000,
+    enabled: spoolmanMode,
+  });
+
+  // Build assignment lookup: spool_id → SlotInfo
+  const assignmentMap = useMemo((): Record<number, SlotInfo> => {
+    if (spoolmanMode) {
+      const map: Record<number, SlotInfo> = {};
+      spoolmanAssignments.forEach(a => { map[a.spoolman_spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id }; });
+      return map;
+    }
+    const map: Record<number, SlotInfo> = {};
+    assignments.forEach(a => { map[a.spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id, printer_name: a.printer_name }; });
     return map;
-  }, [assignments]);
+  }, [spoolmanMode, assignments, spoolmanAssignments]);
 
   const activeSpools = useMemo(() => spools.filter(s => !s.archived_at), [spools]);
 
   // Spools that have an AMS assignment
-  const assignedSpoolIds = useMemo(() => new Set(assignments.map(a => a.spool_id)), [assignments]);
+  const assignedSpoolIds = useMemo(() => new Set(Object.keys(assignmentMap).map(Number)), [assignmentMap]);
   const inAmsCount = useMemo(() => activeSpools.filter(s => assignedSpoolIds.has(s.id)).length, [activeSpools, assignedSpoolIds]);
 
   // Unique materials for filter pills
@@ -127,21 +152,6 @@ export function SpoolBuddyInventoryPage() {
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
   }, [activeSpools, filterMode, searchQuery, assignedSpoolIds]);
-
-  // Spoolman iframe mode
-  const spoolmanEnabled = spoolmanSettings?.spoolman_enabled === 'true' && spoolmanSettings?.spoolman_url;
-  if (spoolmanEnabled) {
-    return (
-      <div className="h-full flex flex-col">
-        <iframe
-          src={`${spoolmanSettings.spoolman_url.replace(/\/+$/, '')}/spool`}
-          className="flex-1 w-full border-0"
-          title="Spoolman"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="h-full flex flex-col">
@@ -247,6 +257,7 @@ export function SpoolBuddyInventoryPage() {
               onClose={() => setShowAssignAmsModal(false)}
               spool={liveSpool}
               printerId={selectedPrinterId}
+              spoolmanMode={spoolmanMode}
             />
           </>
         );
@@ -281,7 +292,7 @@ function FilterPill({ active, onClick, label, green }: {
 /* Catalog-style spool card matching the mockup */
 function CatalogCard({ spool, assignment, onClick }: {
   spool: InventorySpool;
-  assignment?: SpoolAssignment;
+  assignment?: SlotInfo;
   onClick: () => void;
 }) {
   const color = spoolColor(spool);
@@ -339,7 +350,7 @@ function CatalogCard({ spool, assignment, onClick }: {
 /* Detail bottom sheet */
 function SpoolDetailModal({ spool, assignment, sbState, onSyncWeight, onAssignToAms, onClose }: {
   spool: InventorySpool;
-  assignment?: SpoolAssignment;
+  assignment?: SlotInfo;
   sbState: SpoolBuddyOutletContext['sbState'];
   onSyncWeight: () => void;
   onAssignToAms: () => void;

@@ -108,7 +108,7 @@ export function SpoolBuddyLayout() {
   // Blanking itself is handled by swayidle/wlopm at the OS level on the kiosk device —
   // when the HDMI output powers off and the user taps the screen, labwc delivers the
   // input event to swayidle's `resume` command which re-powers HDMI. See issue #937.
-  const tagDetected = Boolean(sbState.matchedSpool || sbState.unknownTagUid);
+  const tagDetected = Boolean(sbState.matchedSpool || sbState.unknownTagUid || sbState.unknownTrayUuid);
   const prevTagDetected = useRef(false);
   useEffect(() => {
     if (tagDetected && !prevTagDetected.current) {

@@ -19,15 +19,15 @@ from backend.app.services.spoolman_tracking import (
 class TestResolveSpoolTag:
     """Tests for _resolve_spool_tag()."""
 
-    def test_prefers_tray_uuid(self):
+    def test_prefers_tray_uuid_over_tag_uid(self):
         tray = {"tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4", "tag_uid": "DEADBEEF"}
         assert _resolve_spool_tag(tray) == "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"
 
-    def test_falls_back_to_tag_uid(self):
+    def test_falls_back_to_tag_uid_when_no_uuid(self):
         tray = {"tray_uuid": "", "tag_uid": "DEADBEEF"}
         assert _resolve_spool_tag(tray) == "DEADBEEF"
 
-    def test_skips_zero_uuid(self):
+    def test_falls_back_to_tag_uid_when_uuid_zero(self):
         tray = {"tray_uuid": "00000000000000000000000000000000", "tag_uid": "DEADBEEF"}
         assert _resolve_spool_tag(tray) == "DEADBEEF"
 
@@ -44,6 +44,10 @@ class TestResolveSpoolTag:
         tray = {"tray_uuid": "00000000000000000000000000000000", "tag_uid": "0000000000000000"}
         # global_tray_id 5 -> ams_id 1, tray_id 1
         assert _resolve_spool_tag(tray, "01P00A000000000", 5) == "ABA7845700010001"
+
+    def test_prefers_tray_uuid_over_fallback_when_non_zero(self):
+        tray = {"tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4", "tag_uid": ""}
+        assert _resolve_spool_tag(tray, "01P00A000000000", 0) == "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"
 
     def test_empty_both(self):
         tray = {"tray_uuid": "", "tag_uid": ""}

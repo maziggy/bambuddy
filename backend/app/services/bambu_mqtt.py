@@ -857,8 +857,20 @@ class BambuMQTTClient:
                     and print_data.get("sequence_id") == self._dev_mode_probe_seq
                 ):
                     self._handle_dev_mode_probe_response(print_data)
-                # Track user-initiated ams_filament_setting responses (#887 zombie detection)
-                elif cmd == "ams_filament_setting" and self._last_ams_cmd_time > 0:
+                # Track user-initiated ams_filament_setting responses (#887
+                # zombie detection). Reset both the timer AND the unanswered
+                # counter on ANY response — the response proves the channel is
+                # alive, so the counter must not stay armed even when the
+                # watchdog already zeroed `_last_ams_cmd_time` on a previous
+                # tick. The original `and self._last_ams_cmd_time > 0` guard
+                # caused #1164: one sluggish response (>10s) would set the
+                # counter to 1 and zero the timer; the late response arrived
+                # but was ignored by this branch (timer is 0); the counter
+                # stayed at 1 indefinitely; the very next slow response —
+                # possibly hours later, on a totally unrelated command — would
+                # take it to 2 and force-reconnect, surfacing as "filament
+                # config doesn't reach the printer ~6 changes in".
+                elif cmd == "ams_filament_setting":
                     self._last_ams_cmd_time = 0.0
                     self._ams_cmd_unanswered = 0
             if "command" in print_data and print_data.get("command") == "extrusion_cali_get":

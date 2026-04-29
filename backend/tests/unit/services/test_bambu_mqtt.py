@@ -4140,6 +4140,54 @@ class TestZombieSessionDetection:
         assert mqtt_client._ams_cmd_unanswered == 1
         assert mqtt_client.state.connected is True  # no reconnect
 
+    def test_late_response_after_watchdog_clears_counter_issue_1164(self, mqtt_client):
+        """Regression for #1164: a late ams_filament_setting response — one
+        that arrives AFTER the watchdog has already zeroed
+        `_last_ams_cmd_time` and incremented the unanswered counter — must
+        still reset the counter. Without this, a single sluggish response
+        leaves the counter armed at 1 indefinitely; the next slow response
+        on a totally unrelated command (possibly minutes or hours later)
+        takes it to 2 and force-reconnects, surfacing as 'AMS slot config
+        doesn't reach the printer ~6 changes in'."""
+        import time
+
+        # First command publishes, then doesn't get a response for >10s.
+        # Watchdog fires: counter=1, _last_ams_cmd_time zeroed.
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 11.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+        assert mqtt_client._ams_cmd_unanswered == 1
+        assert mqtt_client._last_ams_cmd_time == 0.0  # watchdog cleared it
+
+        # Late response arrives — the `_process_message` path used to require
+        # `_last_ams_cmd_time > 0` before resetting the counter, so this would
+        # have silently been ignored.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "ams_filament_setting",
+                    "sequence_id": "0",
+                    "result": "success",
+                    "reason": "success",
+                }
+            }
+        )
+
+        # Counter MUST be reset — the response proves the channel is alive.
+        assert mqtt_client._ams_cmd_unanswered == 0, (
+            "Late ams_filament_setting response must reset the unanswered "
+            "counter even when the watchdog already zeroed _last_ams_cmd_time. "
+            "If this assertion fails the #1164 regression is back: a single "
+            "sluggish response will leave the counter armed and cause a "
+            "spurious force_reconnect on the next slow response."
+        )
+
+        # Now even if a future command times out, the counter starts fresh
+        # and a single timeout doesn't trip the 2x reconnect threshold.
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 11.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+        assert mqtt_client._ams_cmd_unanswered == 1
+        assert mqtt_client.state.connected is True  # no force reconnect
+
     def test_on_connect_resets_tracking(self, mqtt_client):
         """_on_connect resets zombie tracking fields."""
         import time

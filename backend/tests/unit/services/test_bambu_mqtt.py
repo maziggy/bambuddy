@@ -4391,3 +4391,79 @@ class TestHardResetClientDirect:
         # loop_stop is still attempted after the disconnect failure.
         original.loop_stop.assert_called()
         assert mqtt_client._client is None
+
+
+class TestFilamentTrackSwitchDetection:
+    """Tests for Filament Track Switch (FTS) accessory detection (#1162).
+
+    The FTS is an accessory that sits between an AMS and the printer's
+    extruders, dynamically routing any slot to either nozzle. When installed,
+    each AMS unit reports info bits 8-11 = 0xE (uninitialized) since slots are
+    no longer tied to a specific extruder. Detection comes from the presence of
+    the print.device.fila_switch object in MQTT push_status.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    def test_fts_default_not_installed(self, mqtt_client):
+        """Without any MQTT data, fila_switch.installed must be False so the
+        frontend keeps applying the per-extruder filter on regular dual-nozzle
+        printers."""
+        assert mqtt_client.state.fila_switch.installed is False
+        assert mqtt_client.state.fila_switch.in_slots == []
+        assert mqtt_client.state.fila_switch.out_extruders == []
+
+    def test_fts_detected_from_device_fila_switch(self, mqtt_client):
+        """A push_status with print.device.fila_switch present must mark FTS
+        installed and capture its routing arrays. Mirrors the user's MQTT
+        bundle in #1162."""
+        data = {
+            "gcode_state": "RUNNING",
+            "device": {
+                "fila_switch": {
+                    "in": [-1, 2],
+                    "info": 2,
+                    "out": [0, 1],
+                    "stat": 0,
+                }
+            },
+        }
+        mqtt_client._update_state(data)
+        fs = mqtt_client.state.fila_switch
+        assert fs.installed is True
+        assert fs.in_slots == [-1, 2]
+        assert fs.out_extruders == [0, 1]
+        assert fs.stat == 0
+        assert fs.info == 2
+
+    def test_fts_absent_when_no_fila_switch_field(self, mqtt_client):
+        """A push_status that has device.* but no fila_switch must leave
+        fila_switch.installed = False — only that specific field flips it on."""
+        data = {
+            "gcode_state": "IDLE",
+            "device": {"extruder": {"state": 0}},
+        }
+        mqtt_client._update_state(data)
+        assert mqtt_client.state.fila_switch.installed is False
+
+    def test_fts_handles_missing_in_out_arrays(self, mqtt_client):
+        """If the firmware sends fila_switch with missing or non-list in/out,
+        we must still mark it installed (presence is the signal) and default
+        the arrays to empty lists rather than crashing."""
+        data = {
+            "gcode_state": "IDLE",
+            "device": {"fila_switch": {"stat": 0, "info": 0}},
+        }
+        mqtt_client._update_state(data)
+        fs = mqtt_client.state.fila_switch
+        assert fs.installed is True
+        assert fs.in_slots == []
+        assert fs.out_extruders == []

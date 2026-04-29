@@ -92,7 +92,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Duplicate detection & full-text search
 - Photo attachments & failure analysis
 - Timelapse editor (trim, speed, music) with automatic AVI-to-MP4 conversion for P1-series printers, manual upload & remove
-- Re-print to any connected printer with AMS mapping (auto-match or manual slot selection, multi-plate support, nozzle-aware matching for dual-nozzle H2D/H2D Pro)
+- Re-print to any connected printer with AMS mapping (auto-match or manual slot selection, multi-plate support, nozzle-aware matching for dual-nozzle H2D/H2D Pro, **Filament Track Switch (FTS) support** — when the FTS accessory is installed the per-nozzle filter is suppressed since the FTS routes any AMS slot to either extruder)
 - Plate thumbnail browsing for multi-plate archives (hover to navigate between plates)
 - Archive comparison (side-by-side diff)
 - Tag management (rename/delete across all archives)

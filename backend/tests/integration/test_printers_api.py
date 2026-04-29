@@ -257,6 +257,78 @@ class TestPrintersAPI:
 
         assert response.status_code == 404
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_printer_status_includes_fila_switch_when_installed(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """When the FTS accessory is installed, the status response must include
+        the fila_switch object with the routing arrays. See #1162.
+
+        The accessory is detected from print.device.fila_switch in MQTT;
+        we feed a PrinterState with FilaSwitchState(installed=True, ...) and
+        confirm it survives the schema serialization round-trip.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import FilaSwitchState, PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        state.fila_switch = FilaSwitchState(
+            installed=True,
+            in_slots=[-1, 2],
+            out_extruders=[0, 1],
+            stat=0,
+            info=2,
+        )
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["fila_switch"] is not None
+        assert result["fila_switch"]["installed"] is True
+        assert result["fila_switch"]["in_slots"] == [-1, 2]
+        assert result["fila_switch"]["out_extruders"] == [0, 1]
+        assert result["fila_switch"]["stat"] == 0
+        assert result["fila_switch"]["info"] == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_printer_status_omits_fila_switch_when_not_installed(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """Without the FTS accessory, fila_switch must be null so the frontend
+        keeps applying the per-extruder filter on regular dual-nozzle printers."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        # default fila_switch — installed = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["fila_switch"] is None
+
     # ========================================================================
     # Test connection endpoint
     # ========================================================================

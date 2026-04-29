@@ -19,6 +19,7 @@ from backend.app.schemas.printer import (
     AmsLabelBody,
     AMSTray,
     AMSUnit,
+    FilaSwitchResponse,
     HMSErrorResponse,
     NozzleInfoResponse,
     NozzleRackSlot,
@@ -635,6 +636,17 @@ async def get_printer_status(
         supports_drying=supports_drying(printer.model, state.firmware_version),
         current_archive_id=current_archive_id,
         current_plate_id=current_plate_id,
+        fila_switch=(
+            FilaSwitchResponse(
+                installed=state.fila_switch.installed,
+                in_slots=list(state.fila_switch.in_slots),
+                out_extruders=list(state.fila_switch.out_extruders),
+                stat=state.fila_switch.stat,
+                info=state.fila_switch.info,
+            )
+            if state.fila_switch and state.fila_switch.installed
+            else None
+        ),
     )
 
 

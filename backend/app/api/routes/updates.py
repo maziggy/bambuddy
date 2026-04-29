@@ -78,6 +78,78 @@ def _find_executable(name: str) -> str | None:
     return None
 
 
+def _parse_github_remote(url: str) -> tuple[str, str] | None:
+    """Extract `(owner, repo)` from a GitHub remote URL, or None if it isn't a
+    GitHub URL we recognise.
+
+    Handles the four forms `git remote -v` typically prints:
+      - `git@github.com:owner/repo.git`         (SSH, the dev default)
+      - `git@github.com:owner/repo`             (SSH without .git suffix)
+      - `https://github.com/owner/repo.git`     (HTTPS, what _perform_update sets)
+      - `https://github.com/owner/repo`         (HTTPS without .git)
+
+    Anything else (a fork URL, a different host, a malformed value, the empty
+    string from a missing origin) returns None so the caller treats it as
+    "not pointing at our repo" and resets it.
+    """
+    s = url.strip()
+    if not s:
+        return None
+    # SSH form: git@github.com:owner/repo[.git]
+    ssh_prefix = "git@github.com:"
+    https_prefix_a = "https://github.com/"
+    https_prefix_b = "http://github.com/"  # tolerated for legacy
+    if s.startswith(ssh_prefix):
+        path = s[len(ssh_prefix) :]
+    elif s.startswith(https_prefix_a):
+        path = s[len(https_prefix_a) :]
+    elif s.startswith(https_prefix_b):
+        path = s[len(https_prefix_b) :]
+    else:
+        return None
+    if path.endswith(".git"):
+        path = path[:-4]
+    parts = path.strip("/").split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    return (parts[0], parts[1])
+
+
+async def _origin_points_at_repo(git_path: str, git_config: list[str], base_dir, expected_repo: str) -> bool:
+    """Return True iff the working tree's `origin` already resolves to
+    `<owner>/<repo>` matching `expected_repo` (e.g. "maziggy/bambuddy"),
+    regardless of whether it's the SSH or HTTPS form. Used to skip the
+    `git remote set-url origin https://...` rewrite when the developer's
+    SSH origin is already correct — see `_perform_update` for context."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            git_path,
+            *git_config,
+            "remote",
+            "get-url",
+            "origin",
+            cwd=str(base_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await process.communicate()
+    except (OSError, asyncio.CancelledError):
+        # Fail closed: let the caller go through the rewrite branch if we
+        # can't even invoke git. The unconditional set-url is the safer
+        # fallback, only mildly destructive.
+        return False
+    if process.returncode != 0:
+        # Most likely cause: no `origin` defined yet (fresh clone-style
+        # checkout). Caller will set it.
+        return False
+    parsed = _parse_github_remote(stdout.decode().strip())
+    if parsed is None:
+        return False
+    owner, repo = parsed
+    expected_owner, expected_repo_name = expected_repo.split("/", 1)
+    return owner == expected_owner and repo == expected_repo_name
+
+
 def parse_version(version: str) -> tuple:
     """Parse version string into tuple for comparison.
 
@@ -341,20 +413,32 @@ async def _perform_update():
             "error": None,
         }
 
-        # Ensure remote uses HTTPS (SSH may not be available)
+        # Ensure remote points at the expected repo. We previously rewrote
+        # origin to HTTPS unconditionally on the assumption that systemd
+        # service users wouldn't have SSH keys configured — which is fine
+        # for that case, but stomps on developer checkouts where origin is
+        # legitimately `git@github.com:maziggy/bambuddy.git` and the user
+        # auths via SSH keys. After the rewrite, `git push` prompts for
+        # HTTPS credentials and fails.
+        # New behaviour: read the current origin, parse out the
+        # `<owner>/<repo>` pair, and only rewrite if it doesn't already
+        # resolve to the right GitHub repo. SSH origins pointing at the
+        # correct repo are preserved; only missing / wrong / corrupted
+        # origins get reset to HTTPS.
         https_url = f"https://github.com/{GITHUB_REPO}.git"
-        process = await asyncio.create_subprocess_exec(
-            git_path,
-            *git_config,
-            "remote",
-            "set-url",
-            "origin",
-            https_url,
-            cwd=str(base_dir),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await process.communicate()
+        if not await _origin_points_at_repo(git_path, git_config, base_dir, GITHUB_REPO):
+            process = await asyncio.create_subprocess_exec(
+                git_path,
+                *git_config,
+                "remote",
+                "set-url",
+                "origin",
+                https_url,
+                cwd=str(base_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await process.communicate()
 
         _update_status = {
             "status": "downloading",
@@ -425,7 +509,13 @@ async def _perform_update():
             "error": None,
         }
 
-        # Install Python dependencies
+        # Install Python dependencies — must run from the source-code directory
+        # (where requirements.txt lives), not the data dir. On native installs
+        # systemd sets DATA_DIR=INSTALL_PATH/data, so `base_dir` is the data dir,
+        # not the working tree. `git reset` above worked from base_dir because
+        # git walks up looking for .git, but `pip install -r requirements.txt`
+        # needs the file in cwd literally.
+        app_dir = settings.app_dir
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",
@@ -434,7 +524,7 @@ async def _perform_update():
             "-r",
             "requirements.txt",
             "-q",
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -445,7 +535,7 @@ async def _perform_update():
 
         # Try to build frontend if npm is available (optional - static files are pre-built)
         npm_path = _find_executable("npm")
-        frontend_dir = base_dir / "frontend"
+        frontend_dir = app_dir / "frontend"
 
         if npm_path and frontend_dir.exists():
             _update_status = {

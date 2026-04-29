@@ -555,7 +555,26 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
                     table.constraints.discard(fk)
 
         async with pg_engine.begin() as conn:
-            await conn.run_sync(metadata.drop_all)
+            # Drop every existing table in the public schema with CASCADE
+            # rather than `metadata.drop_all`. Two reasons:
+            #   1. The user's live DB may carry orphan tables from removed
+            #      features (e.g. the legacy `spoolman_slot_assignments`,
+            #      `spoolman_k_profile`) that hold FK constraints back to
+            #      ORM tables. `drop_all` doesn't know they exist and emits
+            #      `DROP TABLE printers` without CASCADE — Postgres refuses
+            #      and the whole restore aborts (#XXXX).
+            #   2. Even within the metadata, `drop_all` is FK-ordered and
+            #      breaks if a future schema rename leaves old constraints
+            #      around. CASCADE is the right tool for a destructive
+            #      restore: the user is intentionally wiping state.
+            await conn.execute(
+                text(
+                    "DO $$ DECLARE r RECORD; BEGIN "
+                    "FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP "
+                    "EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE'; "
+                    "END LOOP; END $$;"
+                )
+            )
             await conn.run_sync(metadata.create_all)
 
         # Restore FK definitions in metadata (needed for re-adding later)

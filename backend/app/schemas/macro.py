@@ -64,6 +64,24 @@ class RunMacroRequest(BaseModel):
     printer_id: int | None = None
 
 
+# ── Function catalogue schemas ────────────────────────────────────────────────
+
+
+class ArgSpecResponse(BaseModel):
+    description: str
+    required: bool
+    default: str | None
+
+
+class FunctionSpecResponse(BaseModel):
+    name: str
+    description: str
+    args: dict[str, ArgSpecResponse]
+    context_var: str | None
+    requires_printer: bool
+    allowed_in_embed: bool
+
+
 # ── Terminal / exec schemas ────────────────────────────────────────────────────
 
 

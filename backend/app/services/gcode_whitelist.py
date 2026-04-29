@@ -34,11 +34,11 @@ GCODE_WHITELIST: frozenset[str] = frozenset(
         # Always specify P1/P2/P3 — M106 without P is silently ignored on Bambu
         "M106",  # Set fan speed (P1=part, P2=aux, P3=chamber)
         "M107",  # Fan off
-        "M142",  # Aux fan / chamber temp (X1C/X1E)
+        "M142",  # Aux fan / chamber temp
         # ── Motor control ─────────────────────────────────────────────────────
-        "M17",  # Enable steppers / set motor current
+        "M17",  # Enable steppers
         "M18",  # Disable steppers
-        "M84",  # Disable steppers (Marlin alias for M18)
+        "M84",  # Disable steppers
         # ── Extruder mode ─────────────────────────────────────────────────────
         "M82",  # Absolute extruder mode
         "M83",  # Relative extruder mode

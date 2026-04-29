@@ -43,6 +43,7 @@ class Macro(Base):
 
     cfg_file: Mapped["MacroCfgFile | None"] = relationship(back_populates="macros")
     runs: Mapped[list["MacroRun"]] = relationship(back_populates="macro", cascade="all, delete-orphan")
+    vars: Mapped[list["MacroVar"]] = relationship(back_populates="macro", cascade="all, delete-orphan")
 
 
 class MacroRun(Base):
@@ -60,3 +61,6 @@ class MacroRun(Base):
     log: Mapped[str] = mapped_column(Text, default="")
 
     macro: Mapped["Macro"] = relationship(back_populates="runs")
+
+
+from backend.app.models.macro_var import MacroVar  # noqa: E402, F401

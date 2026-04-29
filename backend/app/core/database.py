@@ -184,6 +184,7 @@ async def init_db():
         location,
         long_lived_token,
         macro,
+        macro_var,
         maintenance,
         notification,
         notification_template,
@@ -2683,6 +2684,23 @@ async def run_migrations(conn):
                 logger.info("macros table rebuilt: removed file_path/status columns")
         except Exception:
             logger.exception("macros table rebuild failed — manual intervention may be needed")
+
+    # Migration: Create macro_vars table for persistent macro key-value storage
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS macro_vars (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key VARCHAR(200) NOT NULL,
+            value_json TEXT NOT NULL,
+            macro_id INTEGER REFERENCES macros(id) ON DELETE CASCADE,
+            expires_at DATETIME,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+    )
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_macro_vars_key ON macro_vars(key)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_macro_vars_macro_id ON macro_vars(macro_id)")
 
     # Seed default settings keys that must exist on fresh install
     default_settings = [

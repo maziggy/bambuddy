@@ -5,21 +5,12 @@ import { python } from '@codemirror/lang-python';
 import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Save, ArrowLeft, Loader2, AlertCircle, Download, Upload } from 'lucide-react';
-import { api, type MacroCfgFile } from '../api/client';
+import { api, type MacroCfgFile, type MacroFunctionSpec } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 
-const SYSTEM_COMMANDS = [
-  { cmd: 'AMS_DRYING --ams=0 --temp=65 --duration=30', desc: 'Dry AMS filament' },
-  { cmd: 'PRINTER_PAUSE', desc: 'Pause current print' },
-  { cmd: 'PRINTER_RESUME', desc: 'Resume paused print' },
-  { cmd: 'PRINTER_STOP', desc: 'Stop current print' },
-  { cmd: 'NOTIFY --message="Done!"', desc: 'Send a notification' },
-  { cmd: 'WAIT --seconds=10', desc: 'Wait N seconds (max 300)' },
-  { cmd: 'WAIT_FOR_TEMP --target=200 --tolerance=5', desc: 'Wait for nozzle temp' },
-];
-
-const CONTEXT_VARS = [
+// Printer state and Jinja2 variables always available in context
+const STATIC_CONTEXT_VARS = [
   { name: 'printer.state', desc: 'Current state string' },
   { name: 'printer.nozzle_temp', desc: 'Nozzle temperature (°C)' },
   { name: 'printer.bed_temp', desc: 'Bed temperature (°C)' },
@@ -27,6 +18,14 @@ const CONTEXT_VARS = [
   { name: 'printer.layer', desc: 'Current layer number' },
   { name: 'ams', desc: 'List of AMS unit dicts' },
 ];
+
+function buildExampleCall(fn: MacroFunctionSpec): string {
+  const requiredArgs = Object.entries(fn.args)
+    .filter(([, a]) => a.required)
+    .map(([k, a]) => `--${k}=${a.default ?? 'VALUE'}`)
+    .join(' ');
+  return requiredArgs ? `${fn.name} ${requiredArgs}` : fn.name;
+}
 
 interface CfgFileEditorProps {
   file: MacroCfgFile;
@@ -77,6 +76,12 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
     queryFn: api.getGcodeWhitelist,
   });
 
+  const { data: functionCatalogue = [] } = useQuery({
+    queryKey: ['macro-functions'],
+    queryFn: api.getFunctionCatalogue,
+    staleTime: Infinity, // catalogue only changes on server restart
+  });
+
   const { data: allMacros = [] } = useQuery({
     queryKey: ['macros'],
     queryFn: () => api.getMacros(),
@@ -93,18 +98,26 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
     onError: () => showToast('Failed to save file', 'error'),
   });
 
+  // Context variables include static printer fields + any context_var from the registry
+  const contextVars = [
+    ...STATIC_CONTEXT_VARS,
+    ...functionCatalogue
+      .filter((fn) => fn.context_var !== null)
+      .map((fn) => ({ name: fn.context_var as string, desc: fn.description })),
+  ];
+
   const completions = useCallback(
     (context: CompletionContext): CompletionResult | null => {
       const word = context.matchBefore(/[\w._-]*/);
       if (!word || (word.from === word.to && !context.explicit)) return null;
 
       const options = [
-        ...CONTEXT_VARS.map((v) => ({ label: v.name, type: 'variable', detail: v.desc })),
-        ...SYSTEM_COMMANDS.map((c) => ({
-          label: c.cmd.split(' ')[0],
+        ...contextVars.map((v) => ({ label: v.name, type: 'variable', detail: v.desc })),
+        ...functionCatalogue.map((fn) => ({
+          label: fn.name,
           type: 'keyword',
-          detail: c.desc,
-          apply: c.cmd,
+          detail: fn.description,
+          apply: buildExampleCall(fn),
         })),
         { label: 'if', type: 'keyword', apply: '{% if  %}\n{% endif %}' },
         { label: 'for', type: 'keyword', apply: '{% for item in  %}\n{% endfor %}' },
@@ -120,26 +133,21 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
 
       return { from: word.from, options };
     },
-    [gcodeWhitelist, allMacros]
+    [gcodeWhitelist, allMacros, functionCatalogue, contextVars]
   );
 
   const extensions = [python(), autocompletion({ override: [completions] })];
 
-  function handleChange(value: string) {
-    setContent(value);
-    setDirty(true);
-  }
-
-  function handleBack() {
-    onBack();
-  }
+  // Split catalogue into command-only and context-providing functions
+  const commandFns = functionCatalogue.filter((fn) => fn.context_var === null);
+  const contextFns = functionCatalogue.filter((fn) => fn.context_var !== null);
 
   return (
     <div className="flex flex-col" style={{ height: '100vh' }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-bambu-dark-tertiary shrink-0">
         <button
-          onClick={handleBack}
+          onClick={onBack}
           className="p-1.5 rounded hover:bg-bambu-dark-secondary text-bambu-text-secondary hover:text-bambu-text transition-colors"
           title="Back"
         >
@@ -152,13 +160,7 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
           </div>
           <p className="text-xs text-bambu-text-secondary">{file.file_path}</p>
         </div>
-        <input
-          ref={uploadRef}
-          type="file"
-          accept=".cfg,.txt"
-          className="hidden"
-          onChange={handleUpload}
-        />
+        <input ref={uploadRef} type="file" accept=".cfg,.txt" className="hidden" onChange={handleUpload} />
         <button
           onClick={handleDownload}
           className="p-1.5 rounded hover:bg-bambu-dark-secondary text-bambu-text-secondary hover:text-bambu-text transition-colors"
@@ -179,11 +181,7 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending || !dirty}
         >
-          {saveMutation.isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4 mr-1" />
-          )}
+          {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
           Save
         </Button>
       </div>
@@ -207,7 +205,7 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
           ) : (
             <CodeMirror
               value={content}
-              onChange={handleChange}
+              onChange={(value) => { setContent(value); setDirty(true); }}
               extensions={extensions}
               theme={oneDark}
               minHeight="600px"
@@ -217,22 +215,24 @@ export function CfgFileEditor({ file, onBack }: CfgFileEditorProps) {
         </div>
 
         {/* Hints panel */}
-        <div className="w-56 shrink-0 border-l border-bambu-dark-tertiary overflow-y-auto flex flex-col gap-0">
+        <div className="w-60 shrink-0 border-l border-bambu-dark-tertiary overflow-y-auto flex flex-col">
+
+          {/* Format */}
           <div className="p-3 border-b border-bambu-dark-tertiary">
             <div className="text-xs font-semibold text-bambu-text mb-2">Format</div>
             <pre className="text-xs text-bambu-text-secondary font-mono whitespace-pre-wrap leading-relaxed">{`[macro name]
-description: optional text
+description: optional
 trigger: manual|webhook|schedule
 cron: 0 8 * * *
 printer: My Printer Name
 G28
-M104 S200
-NOTIFY --message="Done"`}</pre>
+M104 S200`}</pre>
           </div>
 
+          {/* Printer context */}
           <div className="p-3 border-b border-bambu-dark-tertiary">
-            <div className="text-xs font-semibold text-bambu-text mb-2">Context</div>
-            {CONTEXT_VARS.map((v) => (
+            <div className="text-xs font-semibold text-bambu-text mb-2">Printer context</div>
+            {STATIC_CONTEXT_VARS.map((v) => (
               <div key={v.name} className="mb-1.5">
                 <code className="text-bambu-green text-xs">{`{{ ${v.name} }}`}</code>
                 <div className="text-bambu-text-secondary text-xs">{v.desc}</div>
@@ -240,30 +240,53 @@ NOTIFY --message="Done"`}</pre>
             ))}
           </div>
 
+          {/* Context-providing functions (injected variables) */}
+          {contextFns.length > 0 && (
+            <div className="p-3 border-b border-bambu-dark-tertiary">
+              <div className="text-xs font-semibold text-bambu-text mb-2">Injected variables</div>
+              {contextFns.map((fn) => (
+                <div key={fn.name} className="mb-1.5">
+                  <code className="text-bambu-green text-xs">{`{{ ${fn.context_var} }}`}</code>
+                  <div className="text-bambu-text-secondary text-xs">{fn.description}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Command-only functions */}
           <div className="p-3 border-b border-bambu-dark-tertiary">
             <div className="text-xs font-semibold text-bambu-text mb-2">Commands</div>
-            {SYSTEM_COMMANDS.map((c) => (
-              <div key={c.cmd} className="mb-2">
-                <code className="text-yellow-400 text-xs block break-all">{c.cmd}</code>
-                <span className="text-bambu-text-secondary text-xs">{c.desc}</span>
+            {commandFns.map((fn) => (
+              <div key={fn.name} className="mb-2">
+                <code className="text-yellow-400 text-xs block break-all">{buildExampleCall(fn)}</code>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <span className="text-bambu-text-secondary text-xs">{fn.description}</span>
+                  {!fn.allowed_in_embed && (
+                    <span className="text-xs text-zinc-500" title="Blocked in gcode_embed mode">⊘</span>
+                  )}
+                </div>
+                {Object.entries(fn.args).filter(([k]) => !['m', 'a', 't', 'd', 's'].includes(k)).map(([k, a]) => (
+                  <div key={k} className="ml-2 text-xs text-zinc-500 font-mono">
+                    --{k}{a.default ? `=${a.default}` : ''}{a.required ? ' *' : ''}
+                  </div>
+                ))}
               </div>
             ))}
           </div>
 
+          {/* G-code whitelist */}
           <div className="p-3 border-b border-bambu-dark-tertiary">
             <div className="text-xs font-semibold text-bambu-text mb-2">G-code</div>
             <div className="flex flex-wrap gap-1">
               {gcodeWhitelist.map((g) => (
-                <span
-                  key={g}
-                  className="px-1 py-0.5 rounded bg-bambu-dark-secondary text-xs font-mono text-bambu-text-secondary"
-                >
+                <span key={g} className="px-1 py-0.5 rounded bg-bambu-dark-secondary text-xs font-mono text-bambu-text-secondary">
                   {g}
                 </span>
               ))}
             </div>
           </div>
 
+          {/* Call other macros */}
           {allMacros.length > 0 && (
             <div className="p-3">
               <div className="text-xs font-semibold text-bambu-text mb-2">Call macro</div>

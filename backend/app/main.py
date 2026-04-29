@@ -6217,6 +6217,11 @@ async def lifespan(app: FastAPI):
     # Resume any pending auto-offs that were interrupted by restart
     await smart_plug_manager.resume_pending_auto_offs()
 
+    # Discover and load all macro integration modules
+    from backend.app.services.macro_functions import discover as discover_macro_functions
+
+    discover_macro_functions()
+
     # Scan macro cfg files on startup and sync DB
     from backend.app.services.macro_cfg_watcher import scan_all as scan_macro_cfg_files
 

@@ -14,6 +14,7 @@ from backend.app.models.macro import Macro, MacroCfgFile, MacroRun
 from backend.app.schemas.macro import (
     ExecLineRequest,
     ExecLineResponse,
+    FunctionSpecResponse,
     MacroCfgFileCreate,
     MacroCfgFileResponse,
     MacroCfgFileSave,
@@ -39,6 +40,28 @@ async def get_gcode_whitelist(
     _=RequirePermissionIfAuthEnabled(Permission.MACROS_READ),
 ):
     return sorted(GCODE_WHITELIST)
+
+
+@router.get("/functions", response_model=list[FunctionSpecResponse])
+async def get_function_catalogue(
+    _=RequirePermissionIfAuthEnabled(Permission.MACROS_READ),
+):
+    from backend.app.services.macro_functions import all_specs
+
+    return [
+        FunctionSpecResponse(
+            name=s.name,
+            description=s.description,
+            args={
+                k: {"description": v.description, "required": v.required, "default": v.default}
+                for k, v in s.args.items()
+            },
+            context_var=s.context_var,
+            requires_printer=s.requires_printer,
+            allowed_in_embed=s.allowed_in_embed,
+        )
+        for s in all_specs()
+    ]
 
 
 @router.get("/runs/{run_id}", response_model=MacroRunResponse)

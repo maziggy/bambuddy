@@ -19,6 +19,7 @@ from backend.app.schemas.github_backup import (
     GitHubBackupStatus,
     GitHubBackupTriggerResponse,
     GitHubTestConnectionResponse,
+    ProviderType,
 )
 from backend.app.services.github_backup import github_backup_service
 
@@ -34,7 +35,7 @@ def _config_to_response(config: GitHubBackupConfig) -> dict:
         "repository_url": config.repository_url,
         "has_token": bool(config.access_token),
         "branch": config.branch,
-        "provider": getattr(config, "provider", "github") or "github",
+        "provider": config.provider,
         "allow_insecure_http": config.allow_insecure_http,
         "schedule_enabled": config.schedule_enabled,
         "schedule_type": config.schedule_type,
@@ -101,7 +102,7 @@ async def save_config(
 
         # Calculate next scheduled run if enabled
         if config.schedule_enabled:
-            config.next_scheduled_run = github_backup_service._calculate_next_run(config.schedule_type)
+            config.next_scheduled_run = github_backup_service.calculate_next_run(config.schedule_type)
         else:
             config.next_scheduled_run = None
 
@@ -125,7 +126,7 @@ async def save_config(
         )
 
         if config.schedule_enabled:
-            config.next_scheduled_run = github_backup_service._calculate_next_run(config.schedule_type)
+            config.next_scheduled_run = github_backup_service.calculate_next_run(config.schedule_type)
 
         db.add(config)
         logger.info("Created GitHub backup config: %s", config.repository_url)
@@ -171,7 +172,7 @@ async def update_config(
     # Recalculate next scheduled run if schedule settings changed
     if "schedule_enabled" in update_dict or "schedule_type" in update_dict:
         if config.schedule_enabled:
-            config.next_scheduled_run = github_backup_service._calculate_next_run(config.schedule_type)
+            config.next_scheduled_run = github_backup_service.calculate_next_run(config.schedule_type)
         else:
             config.next_scheduled_run = None
 
@@ -207,7 +208,7 @@ async def delete_config(
 async def test_connection(
     repo_url: str = Query(..., description="Repository URL"),
     token: str = Query(..., description="Personal Access Token"),
-    provider: str = Query(default="github", description="Git provider key"),
+    provider: ProviderType = Query(default=ProviderType.GITHUB, description="Git provider key"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Test Git provider connection with provided credentials."""
@@ -230,11 +231,10 @@ async def test_stored_connection(
     if not config.access_token:
         raise HTTPException(status_code=400, detail="No access token configured")
 
-    provider = getattr(config, "provider", "github") or "github"
     test_result = await github_backup_service.test_connection(
         config.repository_url,
         config.access_token,
-        provider=provider,
+        provider=config.provider,
     )
     return GitHubTestConnectionResponse(**test_result)
 

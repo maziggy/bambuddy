@@ -16,6 +16,14 @@ class GitProviderBackend(ABC):
             f"blob {len(content_bytes)}\0".encode() + content_bytes, usedforsecurity=False
         ).hexdigest()
 
+    @staticmethod
+    def _truncated_response_text(response: httpx.Response, max_length: int = 200) -> str:
+        """Return a bounded response body for errors surfaced to logs/UI."""
+        text = response.text
+        if len(text) <= max_length:
+            return text
+        return f"{text[: max_length - 3]}..."
+
     def get_headers(self, token: str) -> dict:
         """Return HTTP headers for authenticated API requests."""
         return {

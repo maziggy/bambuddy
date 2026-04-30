@@ -1572,7 +1572,21 @@ async def oidc_callback(
                     if provider_email:
                         raw = provider_email.split("@")[0]
                     else:
-                        raw = provider_sub[:30]
+                        # Prefer a human-readable IdP claim over the opaque sub.
+                        # isinstance guards are required: claims may carry non-string
+                        # values (e.g. a list) that would break .strip().
+                        # Sanitization is applied per-candidate so that a value that
+                        # strips to empty (e.g. "!!!") correctly falls through to the
+                        # next candidate rather than silently becoming "oidcuser".
+                        _pref = claims.get("preferred_username")
+                        _name = claims.get("name")
+                        raw = ""
+                        if isinstance(_pref, str):
+                            raw = re.sub(r"[^a-zA-Z0-9._-]", "", _pref.strip())[:30]
+                        if not raw and isinstance(_name, str):
+                            raw = re.sub(r"[^a-zA-Z0-9._-]", "", _name.strip())[:30]
+                        if not raw:
+                            raw = provider_sub[:30]
                     candidate = re.sub(r"[^a-zA-Z0-9._-]", "", raw)[:30] or "oidcuser"
 
                     username = candidate

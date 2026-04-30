@@ -4240,3 +4240,224 @@ class TestOIDCFallCAutoLinkE2E:
             link = result.scalar_one_or_none()
         assert link is not None, "UserOIDCLink must have been created by auto-link"
         assert link.provider_user_id == "azure-sub-alice"
+
+
+class TestOIDCAutoCreateUsername:
+    """Username derivation priority for auto-created OIDC users (#1173).
+
+    Priority order: email local-part > preferred_username > name > provider_sub.
+    Covers: plain claim, spaces-sanitized, name fallback, sub fallback,
+    non-string isinstance guard, sanitizes-to-empty fallback, collision counter.
+    """
+
+    # ── shared helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    async def _create_provider(async_client: AsyncClient, admin_token: str, issuer: str, client_id: str) -> int:
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": f"AutoUser-{secrets.token_hex(4)}",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "secret",
+                "scopes": "openid profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+                "email_claim": "email",
+                "require_email_verified": True,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    @staticmethod
+    async def _exchange_username(async_client: AsyncClient, location: str) -> str:
+        assert "oidc_token=" in location, f"No oidc_token in redirect: {location}"
+        token = location.split("oidc_token=")[1].split("&")[0].split("#")[-1]
+        resp = await async_client.post("/api/v1/auth/oidc/exchange", json={"oidc_token": token})
+        assert resp.status_code == 200, resp.text
+        return resp.json()["user"]["username"]
+
+    # ── tests ────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preferred_username_used_when_no_email(self, async_client: AsyncClient, db_session: AsyncSession):
+        """preferred_username='johndoe' → username 'johndoe' (no email claim present)."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-pref.example"
+        client_id = "au-pref-client"
+        admin_token = await _setup_and_login(async_client, "au_pref_adm", "AuPrefAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "pref-sub-1", "preferred_username": "johndoe"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "johndoe"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preferred_username_spaces_sanitized(self, async_client: AsyncClient, db_session: AsyncSession):
+        """preferred_username='John Doe' → sanitized to 'JohnDoe'."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-spaces.example"
+        client_id = "au-spaces-client"
+        admin_token = await _setup_and_login(async_client, "au_spaces_adm", "AuSpacesAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "spaces-sub-1", "preferred_username": "John Doe"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "JohnDoe"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_name_claim_used_when_no_preferred_username(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """name='Jane Smith', no preferred_username → username 'JaneSmith'."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-name.example"
+        client_id = "au-name-client"
+        admin_token = await _setup_and_login(async_client, "au_name_adm", "AuNameAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "name-sub-1", "name": "Jane Smith"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "JaneSmith"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_provider_sub_fallback_when_no_claims(self, async_client: AsyncClient, db_session: AsyncSession):
+        """No preferred_username, no name, no email → username derived from provider_sub."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-sub.example"
+        client_id = "au-sub-client"
+        admin_token = await _setup_and_login(async_client, "au_sub_adm", "AuSubAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "abc123xyz"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "abc123xyz"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_string_preferred_username_falls_through_to_name(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """preferred_username is a list (non-string) → isinstance guard skips it, uses name."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-nonstr.example"
+        client_id = "au-nonstr-client"
+        admin_token = await _setup_and_login(async_client, "au_nonstr_adm", "AuNonstrAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "nonstr-sub-2", "preferred_username": ["listval"], "name": "BobJones"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "BobJones"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preferred_username_sanitizes_to_empty_falls_through_to_name(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """preferred_username='!!!' sanitizes to '' → falls through to name claim."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-empty.example"
+        client_id = "au-empty-client"
+        admin_token = await _setup_and_login(async_client, "au_empty_adm", "AuEmptyAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "empty-sub-1", "preferred_username": "!!!", "name": "bob"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "bob"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_username_collision_appends_counter(self, async_client: AsyncClient, db_session: AsyncSession):
+        """When preferred_username 'collider' is already taken, counter suffix is appended."""
+        from backend.app.core.auth import get_password_hash
+
+        # Pre-create a user occupying the candidate username
+        existing = User(
+            username="collider",
+            email="collider@example.com",
+            password_hash=get_password_hash("irrelevant"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(existing)
+        await db_session.commit()
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-collision.example"
+        client_id = "au-collision-client"
+        admin_token = await _setup_and_login(async_client, "au_col_adm", "AuColAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "col-sub-1", "preferred_username": "collider"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "collider1"

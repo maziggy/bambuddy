@@ -307,6 +307,13 @@ class AppSettings(BaseModel):
         description="JSON array of printer IDs to monitor (empty = all connected printers)",
     )
 
+    # Inventory forecasting
+    forecast_global_lead_time_days: int = Field(
+        default=0,
+        ge=0,
+        description="Global lead time floor (days) used in reorder point calculation for all SKUs",
+    )
+
     # Default sidebar order (admin-set for all users)
     default_sidebar_order: str = Field(
         default="",
@@ -418,6 +425,7 @@ class AppSettingsUpdate(BaseModel):
     obico_poll_interval: int | None = Field(default=None, ge=5, le=120)
     obico_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
+    forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
 
     @field_validator("gcode_snippets")
     @classmethod

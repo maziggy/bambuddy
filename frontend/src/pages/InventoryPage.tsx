@@ -5,9 +5,9 @@ import {
   Plus, Loader2, Trash2, Archive, RotateCcw, Edit2, Package,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
-  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, TrendingUp,
+  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, TrendingUp, Lock,
 } from 'lucide-react';
-import { ForecastPanel, ForecastColumnHeaders } from '../components/ForecastPanel';
+import { ForecastPanel } from '../components/ForecastPanel';
 import { api, spoolbuddyApi } from '../api/client';
 import type { InventorySpool, SpoolAssignment, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
@@ -17,6 +17,7 @@ import { SpoolFormModal } from '../components/SpoolFormModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { resolveSpoolColorName } from '../utils/colors';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
@@ -481,6 +482,8 @@ function InventoryPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
+  const canViewForecast = hasPermission('inventory:forecast_read');
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
 
@@ -1077,15 +1080,17 @@ function InventoryPage() {
               <span className="hidden sm:inline">{t('inventory.cards')}</span>
             </button>
             <button
-              onClick={() => setViewMode('forecast')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors ${
+              onClick={() => canViewForecast && setViewMode('forecast')}
+              disabled={!canViewForecast}
+              title={canViewForecast ? undefined : t('forecast.noReadAccess')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                 viewMode === 'forecast'
                   ? 'bg-bambu-green text-white'
                   : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
               }`}
             >
-              <TrendingUp className="w-4 h-4" />
-              <span className="hidden sm:inline">Forecast</span>
+              {canViewForecast ? <TrendingUp className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+              <span className="hidden sm:inline">{t('forecast.title')}</span>
             </button>
           </div>
         </div>
@@ -1305,12 +1310,7 @@ function InventoryPage() {
         </div>
       ) : viewMode === 'forecast' ? (
         /* Forecast view */
-        <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-hidden">
-          <ForecastColumnHeaders />
-          <div className="p-4">
-            <ForecastPanel spools={spools || []} />
-          </div>
-        </div>
+        <ForecastPanel spools={spools || []} />
       ) : viewMode === 'cards' ? (
         /* Cards view */
         pagedItems.length > 0 ? (

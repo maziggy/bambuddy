@@ -195,6 +195,7 @@ async def init_db():
         project,
         project_bom,
         settings,
+        shopping_list,
         slot_preset,
         smart_plug,
         smart_plug_energy_snapshot,
@@ -1829,13 +1830,43 @@ async def run_migrations(conn):
                 material VARCHAR(50) NOT NULL,
                 subtype VARCHAR(50),
                 brand VARCHAR(100),
-                lead_time_days INTEGER NOT NULL DEFAULT 7,
-                safety_margin_days INTEGER NOT NULL DEFAULT 14,
+                lead_time_days INTEGER NOT NULL DEFAULT 0,
+                safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (material, subtype, brand)
             )""",
         )
+        await _safe_execute(conn, "UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7")
+        await _safe_execute(
+            conn, "ALTER TABLE filament_sku_settings ADD COLUMN safety_margin_value INTEGER NOT NULL DEFAULT 14"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE filament_sku_settings ADD COLUMN safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days'"
+        )
+        await _safe_execute(
+            conn,
+            "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14",
+        )
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_shopping_list (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                quantity_spools INTEGER NOT NULL DEFAULT 1,
+                note VARCHAR(500),
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                purchased_at DATETIME,
+                added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE filament_shopping_list ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'"
+        )
+        await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN purchased_at DATETIME")
     else:
         await _safe_execute(
             conn,
@@ -1844,13 +1875,50 @@ async def run_migrations(conn):
                 material VARCHAR(50) NOT NULL,
                 subtype VARCHAR(50),
                 brand VARCHAR(100),
-                lead_time_days INTEGER NOT NULL DEFAULT 7,
-                safety_margin_days INTEGER NOT NULL DEFAULT 14,
+                lead_time_days INTEGER NOT NULL DEFAULT 0,
+                safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (material, subtype, brand)
             )""",
         )
+        await _safe_execute(conn, "UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7")
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS safety_margin_value INTEGER NOT NULL DEFAULT 14",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days'",
+        )
+        await _safe_execute(
+            conn,
+            "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14",
+        )
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_shopping_list (
+                id SERIAL PRIMARY KEY,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                quantity_spools INTEGER NOT NULL DEFAULT 1,
+                note VARCHAR(500),
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                purchased_at TIMESTAMP,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending'",
+        )
+        await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS purchased_at TIMESTAMP")
+
+    # Migration: Add inventory stock alert columns to notification_providers
+    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT 0")
+    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT 0")
 
 
 async def seed_notification_templates():

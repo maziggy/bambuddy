@@ -40,6 +40,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onPrinterError, setOnPrinterError] = useState(provider?.on_printer_error ?? false);
   const [onFilamentLow, setOnFilamentLow] = useState(provider?.on_filament_low ?? false);
   const [onMaintenanceDue, setOnMaintenanceDue] = useState(provider?.on_maintenance_due ?? false);
+  const [onStockReorderAlert, setOnStockReorderAlert] = useState(provider?.on_stock_reorder_alert ?? false);
+  const [onStockBreakAlert, setOnStockBreakAlert] = useState(provider?.on_stock_break_alert ?? false);
   const [onBedCooled, setOnBedCooled] = useState(provider?.on_bed_cooled ?? false);
   const [onFirstLayerComplete, setOnFirstLayerComplete] = useState(provider?.on_first_layer_complete ?? false);
 
@@ -167,6 +169,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_printer_error: onPrinterError,
       on_filament_low: onFilamentLow,
       on_maintenance_due: onMaintenanceDue,
+      on_stock_reorder_alert: onStockReorderAlert,
+      on_stock_break_alert: onStockBreakAlert,
       on_bed_cooled: onBedCooled,
       on_first_layer_complete: onFirstLayerComplete,
     };
@@ -554,6 +558,27 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               </div>
             </div>
 
+            {/* Inventory Stock Alerts */}
+            <div className="space-y-2 p-3 bg-bambu-dark rounded-lg">
+              <p className="text-xs text-bambu-gray uppercase tracking-wide mb-2">{t('notifications.inventoryAlerts')}</p>
+              <div className="grid grid-cols-1 gap-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm text-white">{t('notifications.stockReorderAlert')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.stockReorderAlertDescription')}</span>
+                  </div>
+                  <Toggle checked={onStockReorderAlert} onChange={setOnStockReorderAlert} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm text-white">{t('notifications.stockBreakAlert')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.stockBreakAlertDescription')}</span>
+                  </div>
+                  <Toggle checked={onStockBreakAlert} onChange={setOnStockBreakAlert} />
+                </div>
+              </div>
+            </div>
+
             {/* Per-event ntfy priority (#990) */}
             {providerType === 'ntfy' && (() => {
               const enabledEvents: Array<{ key: string; label: string }> = [];
@@ -568,6 +593,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               if (onPrinterError) enabledEvents.push({ key: 'on_printer_error', label: t('notifications.error') });
               if (onFilamentLow) enabledEvents.push({ key: 'on_filament_low', label: t('notifications.lowFilament') });
               if (onMaintenanceDue) enabledEvents.push({ key: 'on_maintenance_due', label: t('notifications.maintenance') });
+              if (onStockReorderAlert) enabledEvents.push({ key: 'on_stock_reorder_alert', label: t('notifications.stockReorderAlert') });
+              if (onStockBreakAlert) enabledEvents.push({ key: 'on_stock_break_alert', label: t('notifications.stockBreakAlert') });
 
               if (enabledEvents.length === 0) return null;
 

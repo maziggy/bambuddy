@@ -56,6 +56,8 @@ function buildProvider(overrides: Partial<NotificationProvider> = {}): Notificat
     on_queue_job_skipped: true,
     on_queue_job_failed: true,
     on_queue_completed: false,
+    on_stock_reorder_alert: false,
+    on_stock_break_alert: false,
     quiet_hours_enabled: false,
     quiet_hours_start: null,
     quiet_hours_end: null,
@@ -217,5 +219,120 @@ describe('AddNotificationModal — ntfy Priority (#990)', () => {
     const payload = captured as { provider_type: string; config: Record<string, unknown> };
     expect(payload.provider_type).toBe('email');
     expect(payload.config).not.toHaveProperty('event_priorities');
+  });
+});
+
+describe('AddNotificationModal — stock alert toggles', () => {
+  it('renders Inventory Alerts section with both stock alert toggles', async () => {
+    render(<AddNotificationModal provider={buildProvider()} onClose={() => undefined} />);
+
+    const section = await screen.findByText(/inventory alerts/i);
+    const sectionRoot = section.closest('div')!;
+
+    expect(section).toBeInTheDocument();
+    expect(sectionRoot.textContent).toMatch(/reorder alert/i);
+    expect(sectionRoot.textContent).toMatch(/stock break alert/i);
+  });
+
+  it('pre-fills toggles from existing provider values', async () => {
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ on_stock_reorder_alert: true, on_stock_break_alert: false })}
+        onClose={() => undefined}
+      />,
+    );
+
+    await screen.findByText(/inventory alerts/i);
+
+    // Reorder alert switch should be ON, break alert switch OFF
+    const switches = screen.getAllByRole('switch');
+    const reorderSwitch = switches.find((s) => {
+      const row = s.closest('div');
+      return row?.textContent?.match(/reorder alert/i);
+    });
+    const breakSwitch = switches.find((s) => {
+      const row = s.closest('div');
+      return row?.textContent?.match(/stock break alert/i);
+    });
+
+    expect(reorderSwitch).toHaveAttribute('aria-checked', 'true');
+    expect(breakSwitch).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('persists on_stock_reorder_alert on save', async () => {
+    let captured: unknown = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = await request.json();
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={buildProvider()} onClose={onClose} />);
+
+    await screen.findByText(/inventory alerts/i);
+
+    // Enable the reorder alert toggle
+    const switches = screen.getAllByRole('switch');
+    const reorderSwitch = switches.find((s) => {
+      const row = s.closest('div');
+      return row?.textContent?.match(/reorder alert/i);
+    })!;
+    await user.click(reorderSwitch);
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+
+    const payload = captured as Record<string, unknown>;
+    expect(payload.on_stock_reorder_alert).toBe(true);
+  });
+
+  it('persists on_stock_break_alert on save', async () => {
+    let captured: unknown = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = await request.json();
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={buildProvider()} onClose={onClose} />);
+
+    await screen.findByText(/inventory alerts/i);
+
+    const switches = screen.getAllByRole('switch');
+    const breakSwitch = switches.find((s) => {
+      const row = s.closest('div');
+      return row?.textContent?.match(/stock break alert/i);
+    })!;
+    await user.click(breakSwitch);
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+
+    const payload = captured as Record<string, unknown>;
+    expect(payload.on_stock_break_alert).toBe(true);
+  });
+
+  it('stock alert events appear in ntfy priority section when enabled', async () => {
+    const user = userEvent.setup();
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ on_stock_reorder_alert: true, on_stock_break_alert: true })}
+        onClose={() => undefined}
+      />,
+    );
+
+    const priorityHeader = await screen.findByText(/ntfy priority/i);
+    const priorityRoot = priorityHeader.closest('div')!;
+
+    // Both stock alert events should appear in the priority list since they are enabled
+    expect(within(priorityRoot).getByText('Reorder Alert')).toBeInTheDocument();
+    expect(within(priorityRoot).getByText('Stock Break Alert')).toBeInTheDocument();
+    void user; // referenced to avoid unused-var lint warning
   });
 });

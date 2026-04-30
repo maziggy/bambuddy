@@ -1520,7 +1520,8 @@ class FilamentSkuSettingsResponse(BaseModel):
     subtype: str | None
     brand: str | None
     lead_time_days: int
-    safety_margin_days: int
+    safety_margin_value: int
+    safety_margin_unit: str
 
     class Config:
         from_attributes = True
@@ -1530,8 +1531,9 @@ class FilamentSkuSettingsUpsert(BaseModel):
     material: str
     subtype: str | None = None
     brand: str | None = None
-    lead_time_days: int = 7
-    safety_margin_days: int = 14
+    lead_time_days: int = 0
+    safety_margin_value: int = 14
+    safety_margin_unit: str = "days"
 
 
 @router.get("/sku-settings", response_model=list[FilamentSkuSettingsResponse])
@@ -1552,7 +1554,7 @@ async def list_sku_settings(
 async def upsert_sku_settings(
     data: FilamentSkuSettingsUpsert,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
 ):
     """Create or update reorder settings for a filament SKU (material/subtype/brand)."""
     from backend.app.models.filament_sku_settings import FilamentSkuSettings
@@ -1567,16 +1569,181 @@ async def upsert_sku_settings(
     row = result.scalar_one_or_none()
     if row:
         row.lead_time_days = data.lead_time_days
-        row.safety_margin_days = data.safety_margin_days
+        row.safety_margin_value = data.safety_margin_value
+        row.safety_margin_unit = data.safety_margin_unit
     else:
         row = FilamentSkuSettings(
             material=data.material,
             subtype=data.subtype,
             brand=data.brand,
             lead_time_days=data.lead_time_days,
-            safety_margin_days=data.safety_margin_days,
+            safety_margin_value=data.safety_margin_value,
+            safety_margin_unit=data.safety_margin_unit,
         )
         db.add(row)
     await db.commit()
     await db.refresh(row)
     return row
+
+
+# ── Shopping List ─────────────────────────────────────────────────────────────
+
+
+class ShoppingListItemResponse(BaseModel):
+    id: int
+    material: str
+    subtype: str | None
+    brand: str | None
+    quantity_spools: int
+    note: str | None
+    status: str
+    purchased_at: str | None
+    added_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class ShoppingListItemCreate(BaseModel):
+    material: str
+    subtype: str | None = None
+    brand: str | None = None
+    quantity_spools: int = 1
+    note: str | None = None
+
+
+class ShoppingListItemStatusUpdate(BaseModel):
+    status: str  # pending | purchased | received
+
+
+@router.get("/shopping-list", response_model=list[ShoppingListItemResponse])
+async def get_shopping_list(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Get the filament shopping list."""
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    result = await db.execute(select(ShoppingListItem).order_by(ShoppingListItem.added_at.desc()))
+    items = result.scalars().all()
+    return [
+        ShoppingListItemResponse(
+            id=i.id,
+            material=i.material,
+            subtype=i.subtype,
+            brand=i.brand,
+            quantity_spools=i.quantity_spools,
+            note=i.note,
+            status=i.status or "pending",
+            purchased_at=i.purchased_at.isoformat() if i.purchased_at else None,
+            added_at=i.added_at.isoformat() if i.added_at else "",
+        )
+        for i in items
+    ]
+
+
+@router.post("/shopping-list", response_model=ShoppingListItemResponse)
+async def add_to_shopping_list(
+    data: ShoppingListItemCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
+):
+    """Add a filament SKU to the shopping list."""
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    item = ShoppingListItem(
+        material=data.material,
+        subtype=data.subtype,
+        brand=data.brand,
+        quantity_spools=data.quantity_spools,
+        note=data.note,
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return ShoppingListItemResponse(
+        id=item.id,
+        material=item.material,
+        subtype=item.subtype,
+        brand=item.brand,
+        quantity_spools=item.quantity_spools,
+        note=item.note,
+        status=item.status or "pending",
+        purchased_at=item.purchased_at.isoformat() if item.purchased_at else None,
+        added_at=item.added_at.isoformat() if item.added_at else "",
+    )
+
+
+@router.patch("/shopping-list/{item_id}/status", response_model=ShoppingListItemResponse)
+async def update_shopping_list_status(
+    item_id: int,
+    data: ShoppingListItemStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
+):
+    """Update the purchase status of a shopping list item."""
+    from datetime import datetime, timezone
+
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    if data.status not in ("pending", "purchased", "received"):
+        raise HTTPException(400, "Invalid status")
+
+    result = await db.execute(select(ShoppingListItem).where(ShoppingListItem.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "Item not found")
+
+    item.status = data.status
+    if data.status == "purchased" and item.purchased_at is None:
+        item.purchased_at = datetime.now(timezone.utc)
+    elif data.status == "pending":
+        item.purchased_at = None
+
+    await db.commit()
+    await db.refresh(item)
+    return ShoppingListItemResponse(
+        id=item.id,
+        material=item.material,
+        subtype=item.subtype,
+        brand=item.brand,
+        quantity_spools=item.quantity_spools,
+        note=item.note,
+        status=item.status or "pending",
+        purchased_at=item.purchased_at.isoformat() if item.purchased_at else None,
+        added_at=item.added_at.isoformat() if item.added_at else "",
+    )
+
+
+@router.delete("/shopping-list/{item_id}")
+async def remove_from_shopping_list(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
+):
+    """Remove a single item from the shopping list."""
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    result = await db.execute(select(ShoppingListItem).where(ShoppingListItem.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "Item not found")
+    await db.delete(item)
+    await db.commit()
+    return {"status": "deleted"}
+
+
+@router.delete("/shopping-list")
+async def clear_shopping_list(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
+):
+    """Clear all items from the shopping list."""
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    result = await db.execute(select(ShoppingListItem))
+    items = result.scalars().all()
+    for item in items:
+        await db.delete(item)
+    await db.commit()
+    return {"deleted": len(items)}

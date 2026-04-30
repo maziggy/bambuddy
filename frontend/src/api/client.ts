@@ -93,7 +93,9 @@ async function request<T>(
     const detail = error.detail;
     const message = typeof detail === 'string'
       ? detail
-      : (detail ? JSON.stringify(detail) : `HTTP ${response.status}`);
+      : Array.isArray(detail)
+        ? detail.map((e: { msg?: string }) => (e.msg ?? '').replace(/^Value error,\s*/i, '')).filter(Boolean).join('; ')
+        : `HTTP ${response.status}`;
 
     // Handle 401 Unauthorized - only clear token if it's actually invalid
     // Don't clear on "Authentication required" which might be a timing issue
@@ -1968,12 +1970,15 @@ export interface NotificationProviderUpdate {
 
 // GitHub Backup types
 export type ScheduleType = 'hourly' | 'daily' | 'weekly';
+export type GitProviderType = 'github' | 'gitea' | 'forgejo' | 'gitlab';
 
 export interface GitHubBackupConfig {
   id: number;
   repository_url: string;
   has_token: boolean;
   branch: string;
+  provider: GitProviderType;
+  allow_insecure_http: boolean;
   schedule_enabled: boolean;
   schedule_type: ScheduleType;
   backup_kprofiles: boolean;
@@ -1995,6 +2000,8 @@ export interface GitHubBackupConfigCreate {
   repository_url: string;
   access_token: string;
   branch?: string;
+  provider?: GitProviderType;
+  allow_insecure_http?: boolean;
   schedule_enabled?: boolean;
   schedule_type?: ScheduleType;
   backup_kprofiles?: boolean;
@@ -5061,9 +5068,9 @@ export const api = {
   deleteGitHubBackupConfig: () =>
     request<{ message: string }>('/github-backup/config', { method: 'DELETE' }),
 
-  testGitHubConnection: (repoUrl: string, token: string) =>
+  testGitHubConnection: (repoUrl: string, token: string, provider: GitProviderType = 'github') =>
     request<GitHubTestConnectionResponse>(
-      `/github-backup/test?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}`,
+      `/github-backup/test?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}&provider=${encodeURIComponent(provider)}`,
       { method: 'POST' }
     ),
 

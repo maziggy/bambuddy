@@ -4,11 +4,7 @@ Handles scheduled and on-demand backups of K-profiles and cloud profiles to GitH
 """
 
 import asyncio
-import base64
-import hashlib
-import json
 import logging
-import re
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -22,6 +18,7 @@ from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
 from backend.app.models.spool_usage_history import SpoolUsageHistory
+from backend.app.services.git_providers.factory import get_provider_backend
 from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
@@ -97,104 +94,17 @@ class GitHubBackupService:
                     logger.info("Running scheduled backup for config %s", config.id)
                     await self.run_backup(config.id, trigger="scheduled")
 
-    def _calculate_next_run(self, schedule_type: str, from_time: datetime | None = None) -> datetime:
+    def calculate_next_run(self, schedule_type: str, from_time: datetime | None = None) -> datetime:
         """Calculate the next scheduled run time."""
         now = from_time or datetime.now(timezone.utc)
         interval = SCHEDULE_INTERVALS.get(schedule_type, SCHEDULE_INTERVALS["daily"])
         return now + timedelta(seconds=interval)
 
-    async def test_connection(self, repo_url: str, token: str) -> dict:
-        """Test GitHub connection and permissions.
-
-        Args:
-            repo_url: GitHub repository URL
-            token: Personal Access Token
-
-        Returns:
-            dict with success, message, repo_name, permissions
-        """
-        try:
-            owner, repo = self._parse_repo_url(repo_url)
-            client = await self._get_client()
-
-            # Test API access
-            response = await client.get(
-                f"https://api.github.com/repos/{owner}/{repo}",
-                headers={
-                    "Authorization": f"token {token}",
-                    "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Bambuddy-Backup",
-                },
-            )
-
-            if response.status_code == 401:
-                return {"success": False, "message": "Invalid access token", "repo_name": None, "permissions": None}
-
-            if response.status_code == 404:
-                return {
-                    "success": False,
-                    "message": "Repository not found. Check URL and token permissions.",
-                    "repo_name": None,
-                    "permissions": None,
-                }
-
-            if response.status_code != 200:
-                return {
-                    "success": False,
-                    "message": f"GitHub API error: {response.status_code}",
-                    "repo_name": None,
-                    "permissions": None,
-                }
-
-            data = response.json()
-            permissions = data.get("permissions", {})
-
-            # Check for push permission
-            if not permissions.get("push", False):
-                return {
-                    "success": False,
-                    "message": "Token does not have push permission to this repository",
-                    "repo_name": data.get("full_name"),
-                    "permissions": permissions,
-                }
-
-            return {
-                "success": True,
-                "message": "Connection successful",
-                "repo_name": data.get("full_name"),
-                "permissions": permissions,
-            }
-
-        except Exception as e:
-            logger.error("GitHub connection test failed: %s", e)
-            # Sanitize error - don't expose internal details
-            error_type = type(e).__name__
-            return {
-                "success": False,
-                "message": f"Connection failed: {error_type}",
-                "repo_name": None,
-                "permissions": None,
-            }
-
-    def _parse_repo_url(self, url: str) -> tuple[str, str]:
-        """Parse owner and repo from GitHub URL."""
-        # Limit URL length to prevent ReDoS attacks
-        if not url or len(url) > 500:
-            raise ValueError("Invalid GitHub URL: URL too long or empty")
-
-        # Handle HTTPS URLs - use atomic groups via limited character classes
-        # GitHub usernames: 1-39 chars, alphanumeric and hyphens
-        # Repo names: 1-100 chars, alphanumeric, hyphens, underscores, dots
-        match = re.match(r"https://github\.com/([\w-]{1,39})/([\w.\-]{1,100})(?:\.git)?/?$", url)
-        if match:
-            return match.group(1), match.group(2)
-
-        # Handle SSH URLs
-        match = re.match(r"git@github\.com:([\w-]{1,39})/([\w.\-]{1,100})(?:\.git)?$", url)
-        if match:
-            return match.group(1), match.group(2)
-
-        raise ValueError(f"Invalid GitHub URL: {url}")
+    async def test_connection(self, repo_url: str, token: str, provider: str = "github") -> dict:
+        """Test connection and permissions for the given provider."""
+        backend = get_provider_backend(provider)
+        client = await self._get_client()
+        return await backend.test_connection(repo_url, token, client)
 
     async def run_backup(self, config_id: int, trigger: str = "manual") -> dict:
         """Run a backup operation.
@@ -245,7 +155,7 @@ class GitHubBackupService:
                         config.last_backup_status = "skipped"
                         config.last_backup_message = "No data to backup"
                         if config.schedule_enabled:
-                            config.next_scheduled_run = self._calculate_next_run(config.schedule_type)
+                            config.next_scheduled_run = self.calculate_next_run(config.schedule_type)
                         await db.commit()
                         return {
                             "success": True,
@@ -272,7 +182,7 @@ class GitHubBackupService:
                     config.last_backup_commit_sha = push_result.get("commit_sha")
 
                     if config.schedule_enabled:
-                        config.next_scheduled_run = self._calculate_next_run(config.schedule_type)
+                        config.next_scheduled_run = self.calculate_next_run(config.schedule_type)
 
                     await db.commit()
 
@@ -295,7 +205,7 @@ class GitHubBackupService:
                     config.last_backup_message = str(e)
 
                     if config.schedule_enabled:
-                        config.next_scheduled_run = self._calculate_next_run(config.schedule_type)
+                        config.next_scheduled_run = self.calculate_next_run(config.schedule_type)
 
                     await db.commit()
                     return {
@@ -610,251 +520,16 @@ class GitHubBackupService:
         logger.info("Collected %d print archives", len(archive_list))
 
     async def _push_to_github(self, config: GitHubBackupConfig, files: dict) -> dict:
-        """Push files to GitHub using the GitHub API.
-
-        Uses the Git Data API to create blobs, tree, and commit.
-
-        Returns:
-            dict with status, message, commit_sha, files_changed
-        """
-        try:
-            owner, repo = self._parse_repo_url(config.repository_url)
-            branch = config.branch
-            client = await self._get_client()
-            headers = {
-                "Authorization": f"token {config.access_token}",
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "Bambuddy-Backup",
-            }
-
-            # Get current branch reference
-            ref_response = await client.get(
-                f"https://api.github.com/repos/{owner}/{repo}/git/refs/heads/{branch}", headers=headers
-            )
-
-            if ref_response.status_code == 404:
-                # Branch doesn't exist, need to create it from default branch
-                return await self._create_branch_and_push(client, headers, owner, repo, branch, files)
-
-            if ref_response.status_code != 200:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to get branch ref: {ref_response.status_code}",
-                    "error": ref_response.text,
-                }
-
-            ref_data = ref_response.json()
-            current_commit_sha = ref_data["object"]["sha"]
-
-            # Get the current tree
-            commit_response = await client.get(
-                f"https://api.github.com/repos/{owner}/{repo}/git/commits/{current_commit_sha}", headers=headers
-            )
-            if commit_response.status_code != 200:
-                return {"status": "failed", "message": "Failed to get current commit"}
-
-            current_tree_sha = commit_response.json()["tree"]["sha"]
-
-            # Get existing files to check for changes
-            tree_response = await client.get(
-                f"https://api.github.com/repos/{owner}/{repo}/git/trees/{current_tree_sha}?recursive=1", headers=headers
-            )
-            existing_files = {}
-            if tree_response.status_code == 200:
-                for item in tree_response.json().get("tree", []):
-                    if item["type"] == "blob":
-                        existing_files[item["path"]] = item["sha"]
-
-            # Create blobs for changed files
-            tree_items = []
-            files_changed = 0
-
-            for path, content in files.items():
-                content_str = json.dumps(content, indent=2, default=str)
-                content_bytes = content_str.encode("utf-8")
-                content_sha = hashlib.sha1(
-                    f"blob {len(content_bytes)}\0".encode() + content_bytes, usedforsecurity=False
-                ).hexdigest()
-
-                # Skip if file hasn't changed
-                if path in existing_files and existing_files[path] == content_sha:
-                    continue
-
-                # Create blob
-                blob_response = await client.post(
-                    f"https://api.github.com/repos/{owner}/{repo}/git/blobs",
-                    headers=headers,
-                    json={"content": base64.b64encode(content_bytes).decode(), "encoding": "base64"},
-                )
-
-                if blob_response.status_code != 201:
-                    logger.error("Failed to create blob for %s: %s", path, blob_response.text)
-                    continue
-
-                blob_sha = blob_response.json()["sha"]
-                tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_sha})
-                files_changed += 1
-
-            if not tree_items:
-                return {"status": "skipped", "message": "No changes to commit", "commit_sha": None, "files_changed": 0}
-
-            # Create new tree
-            tree_response = await client.post(
-                f"https://api.github.com/repos/{owner}/{repo}/git/trees",
-                headers=headers,
-                json={"base_tree": current_tree_sha, "tree": tree_items},
-            )
-
-            if tree_response.status_code != 201:
-                return {"status": "failed", "message": f"Failed to create tree: {tree_response.text}"}
-
-            new_tree_sha = tree_response.json()["sha"]
-
-            # Create commit
-            commit_message = f"Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
-            commit_response = await client.post(
-                f"https://api.github.com/repos/{owner}/{repo}/git/commits",
-                headers=headers,
-                json={"message": commit_message, "tree": new_tree_sha, "parents": [current_commit_sha]},
-            )
-
-            if commit_response.status_code != 201:
-                return {"status": "failed", "message": f"Failed to create commit: {commit_response.text}"}
-
-            new_commit_sha = commit_response.json()["sha"]
-
-            # Update branch reference
-            ref_update = await client.patch(
-                f"https://api.github.com/repos/{owner}/{repo}/git/refs/heads/{branch}",
-                headers=headers,
-                json={"sha": new_commit_sha},
-            )
-
-            if ref_update.status_code != 200:
-                return {"status": "failed", "message": f"Failed to update branch: {ref_update.text}"}
-
-            return {
-                "status": "success",
-                "message": f"Backup successful - {files_changed} files updated",
-                "commit_sha": new_commit_sha,
-                "files_changed": files_changed,
-            }
-
-        except Exception as e:
-            logger.error("Push to GitHub failed: %s", e)
-            return {"status": "failed", "message": str(e), "error": str(e)}
-
-    async def _create_branch_and_push(
-        self, client: httpx.AsyncClient, headers: dict, owner: str, repo: str, branch: str, files: dict
-    ) -> dict:
-        """Create a new branch and push files when branch doesn't exist."""
-        try:
-            # Get default branch
-            repo_response = await client.get(f"https://api.github.com/repos/{owner}/{repo}", headers=headers)
-            if repo_response.status_code != 200:
-                return {"status": "failed", "message": "Failed to get repo info"}
-
-            default_branch = repo_response.json().get("default_branch", "main")
-
-            # Get default branch ref
-            ref_response = await client.get(
-                f"https://api.github.com/repos/{owner}/{repo}/git/refs/heads/{default_branch}", headers=headers
-            )
-            if ref_response.status_code != 200:
-                # Empty repo - create initial commit
-                return await self._create_initial_commit(client, headers, owner, repo, branch, files)
-
-            base_sha = ref_response.json()["object"]["sha"]
-
-            # Create new branch
-            create_ref = await client.post(
-                f"https://api.github.com/repos/{owner}/{repo}/git/refs",
-                headers=headers,
-                json={"ref": f"refs/heads/{branch}", "sha": base_sha},
-            )
-
-            if create_ref.status_code != 201:
-                return {"status": "failed", "message": f"Failed to create branch: {create_ref.text}"}
-
-            # Now push to the new branch (recursive call will find the branch)
-            return await self._push_to_github(
-                type(
-                    "Config",
-                    (),
-                    {
-                        "repository_url": f"https://github.com/{owner}/{repo}",
-                        "access_token": headers["Authorization"].replace("token ", ""),
-                        "branch": branch,
-                    },
-                )(),
-                files,
-            )
-
-        except Exception as e:
-            return {"status": "failed", "message": str(e)}
-
-    async def _create_initial_commit(
-        self, client: httpx.AsyncClient, headers: dict, owner: str, repo: str, branch: str, files: dict
-    ) -> dict:
-        """Create initial commit in an empty repository."""
-        try:
-            # Create blobs
-            tree_items = []
-            for path, content in files.items():
-                content_str = json.dumps(content, indent=2, default=str)
-                blob_response = await client.post(
-                    f"https://api.github.com/repos/{owner}/{repo}/git/blobs",
-                    headers=headers,
-                    json={"content": base64.b64encode(content_str.encode()).decode(), "encoding": "base64"},
-                )
-                if blob_response.status_code == 201:
-                    tree_items.append(
-                        {"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]}
-                    )
-
-            # Create tree
-            tree_response = await client.post(
-                f"https://api.github.com/repos/{owner}/{repo}/git/trees",
-                headers=headers,
-                json={"tree": tree_items},
-            )
-            if tree_response.status_code != 201:
-                return {"status": "failed", "message": "Failed to create tree"}
-
-            tree_sha = tree_response.json()["sha"]
-
-            # Create commit (no parents for initial)
-            commit_response = await client.post(
-                f"https://api.github.com/repos/{owner}/{repo}/git/commits",
-                headers=headers,
-                json={
-                    "message": f"Initial Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
-                    "tree": tree_sha,
-                },
-            )
-            if commit_response.status_code != 201:
-                return {"status": "failed", "message": "Failed to create commit"}
-
-            commit_sha = commit_response.json()["sha"]
-
-            # Create branch ref
-            ref_response = await client.post(
-                f"https://api.github.com/repos/{owner}/{repo}/git/refs",
-                headers=headers,
-                json={"ref": f"refs/heads/{branch}", "sha": commit_sha},
-            )
-            if ref_response.status_code != 201:
-                return {"status": "failed", "message": "Failed to create branch ref"}
-
-            return {
-                "status": "success",
-                "message": f"Initial backup created - {len(files)} files",
-                "commit_sha": commit_sha,
-                "files_changed": len(files),
-            }
-
-        except Exception as e:
-            return {"status": "failed", "message": str(e)}
+        """Push files to the configured Git provider."""
+        backend = get_provider_backend(config.provider)
+        client = await self._get_client()
+        return await backend.push_files(
+            repo_url=config.repository_url,
+            token=config.access_token,
+            branch=config.branch,
+            files=files,
+            client=client,
+        )
 
     @property
     def is_running(self) -> bool:

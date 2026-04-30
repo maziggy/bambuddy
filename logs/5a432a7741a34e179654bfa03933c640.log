@@ -1,0 +1,200 @@
+2026-04-30 21:09:44,088 INFO [backend.app.services.camera] Saved camera frame to: /app/data/archive/1/20260430_210823_v2-reinforced-parallel-2-car-display-1-18_plate_1.gcode/photos/finish_20260430_210942_5052904a.jpg
+2026-04-30 21:09:44,088 INFO [backend.app.services.camera] Finish photo saved: finish_20260430_210942_5052904a.jpg
+2026-04-30 21:09:44,156 INFO [backend.app.main] [PHOTO-BG] Saved: finish_20260430_210942_5052904a.jpg
+2026-04-30 21:09:44,157 INFO [backend.app.main] [PHOTO-NOTIFY] Photo task returned: finish_20260430_210942_5052904a.jpg
+2026-04-30 21:09:44,157 INFO [backend.app.main] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260430_210942_5052904a.jpg
+2026-04-30 21:09:44,169 INFO [backend.app.main] [NOTIFY-BG] Loaded finish photo bytes: 92951 bytes
+2026-04-30 21:09:44,169 INFO [backend.app.services.notification_service] on_print_complete called for printer 1 ([PRINTER]), status=failed
+2026-04-30 21:09:44,176 INFO [backend.app.services.notification_service] No notification providers configured for on_print_failed event on printer 1
+2026-04-30 21:09:44,176 INFO [backend.app.main] [NOTIFY-BG] Completed
+2026-04-30 21:10:45,807 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-30 21:10:45,808 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-30 21:10:45,809 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-30 21:11:08,098 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-30 21:11:31,590 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-30 21:11:31,591 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-30 21:11:31,595 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-30 21:11:46,244 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-30 21:12:11,597 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-30 21:12:29,428 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-30 21:12:29,429 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-30 21:12:29,433 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-30 21:16:46,472 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-30 21:21:46,653 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-30 21:26:46,856 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-30 21:31:47,139 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-30 21:36:47,422 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-30 21:41:47,596 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-30 21:46:47,847 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-30 21:50:38,769 WARNING [backend.app.core.encryption] MFA_ENCRYPTION_KEY is not set — TOTP secrets and OIDC client_secrets are stored in plaintext. Generate a key with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+2026-04-30 21:50:40,833 INFO [backend.app.api.routes.mfa] OIDC provider 1: ignoring email for sub='[USER]' because email_verified=False
+2026-04-30 21:50:42,460 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-30 21:50:42,460 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-30 21:50:42,463 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-30 21:50:44,690 INFO [backend.app.api.routes.cloud] get_filament_info called with 3 IDs: ['GFL99', 'GFG99', 'GFU99']
+2026-04-30 21:50:45,615 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: qlInJoEY-IkhFrtF0HKX1
+2026-04-30 21:51:19,280 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=X1C, prot_c=False)
+2026-04-30 21:51:19,285 WARNING [backend.app.services.bambu_ftp] Failed to delete /v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.3mf: 550 Delete operation failed.
+2026-04-30 21:51:19,296 INFO [backend.app.services.bambu_ftp] FTP connecting to [IP] for upload (model=X1C, mode=prot_p, socket_timeout=30.0s)...
+2026-04-30 21:51:19,466 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=X1C, prot_c=False)
+2026-04-30 21:51:19,467 INFO [backend.app.services.bambu_ftp] FTP connected to [IP]
+2026-04-30 21:51:19,468 INFO [backend.app.services.bambu_ftp] FTP uploading /app/data/archive/library/files/e0810482ecf44b30854b57976eca1162.3mf (6898670 bytes) to /v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.3mf
+2026-04-30 21:51:19,506 INFO [backend.app.services.bambu_ftp] FTP data channel ready in 0.0s (PASV + TLS handshake)
+2026-04-30 21:51:21,190 WARNING [backend.app.services.bambu_ftp] FTP STOR confirmation not received for /v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.3mf (proceeding): 426 Failure reading network stream. (error_temp)
+2026-04-30 21:51:21,191 INFO [backend.app.services.bambu_ftp] FTP upload complete: /v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.3mf (6898670 bytes in 1.7s, 3912 KB/s)
+2026-04-30 21:51:21,191 INFO [backend.app.services.bambu_ftp] FTP mode cached for [IP]: prot_p
+2026-04-30 21:51:21,211 INFO [backend.app.main] Registered expected print: printer=1, file=v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.3mf, archive=10, ams_mapping=[2]
+2026-04-30 21:51:21,216 INFO [backend.app.services.printer_manager] PRINT COMMAND: printer=1, file=v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.3mf, caller=background_dispatch.py:542:_process_job
+2026-04-30 21:51:21,217 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.3mf", "file": "v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.3mf", "md5": "", "bed_type": "auto", "timelapse": true, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": true, "vibration_cali": true, "layer_inspect": true, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m", "profile_id": "0", "project_id": "1609705148", "subtask_id": "1609705148", "task_id": "1609705148", "ams_mapping": [2], "ams_mapping2": [{"ams_id": 0, "slot_id": 2}]}}
+2026-04-30 21:51:21,223 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Captured ams_mapping from print command: [2]
+2026-04-30 21:51:36,224 WARNING [backend.app.services.background_dispatch] Printer [PRINTER] (1) did not respond to print command within 15s (state still FAILED) — printer may need restart
+2026-04-30 21:51:36,225 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Forcing MQTT reconnect: print command unacknowledged after 15s (state still FAILED)
+2026-04-30 21:51:36,288 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Unspecified error
+2026-04-30 21:51:37,393 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-04-30 21:51:48,084 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-30 21:52:27,723 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-04-30 21:52:34,359 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] PRINT START detected - file: /data/Metadata/plate_1.gcode, subtask: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m, is_new: True, is_file_change: False
+2026-04-30 21:52:34,361 INFO [backend.app.main] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-04-30 21:52:34,439 INFO [backend.app.main] [PLATE CHECK] printer_id=1, plate_detection_enabled=True
+2026-04-30 21:52:34,440 INFO [backend.app.main] [PLATE CHECK] ENTERING plate detection code for printer 1
+2026-04-30 21:52:34,440 INFO [backend.app.main] [PLATE CHECK] Running plate detection for printer 1
+2026-04-30 21:52:34,445 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-04-30 21:52:35,564 INFO [backend.app.api.routes.printers] Detected plate number 1 from gcode_file: /data/Metadata/plate_1.gcode
+2026-04-30 21:52:35,565 INFO [backend.app.api.routes.printers] Trying to download cover for 'v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m' from [IP] (trying 8 paths)
+2026-04-30 21:52:35,691 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=X1C, prot_c=False)
+2026-04-30 21:52:35,727 INFO [backend.app.services.bambu_ftp] FTP download failed for /v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-30 21:52:35,769 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-30 21:52:35,797 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-30 21:52:35,847 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-04-30 21:52:36,394 INFO [backend.app.services.camera] Successfully captured camera frame bytes: 90701 bytes
+2026-04-30 21:52:36,395 INFO [backend.app.services.camera] Saved camera frame to: /tmp/tmpgdxnjop2.jpg
+2026-04-30 21:52:36,583 WARNING [backend.app.main] [PLATE CHECK] Objects detected on plate for printer 1! Confidence: 100%, Diff: 5.1%
+2026-04-30 21:52:36,584 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Sent pause print command
+2026-04-30 21:52:36,584 INFO [backend.app.main] [PLATE CHECK] Print paused for printer 1
+2026-04-30 21:52:36,589 INFO [backend.app.main] [CALLBACK] Print start detected - filename: /data/Metadata/plate_1.gcode, subtask: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:52:36,589 INFO [backend.app.main] Using expected archive 10 for print (skipping duplicate)
+2026-04-30 21:52:36,840 INFO [backend.app.main] [ENERGY] No smart plug for printer 1 (archive 10)
+2026-04-30 21:52:36,847 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-30 21:52:36,848 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-04-30 21:52:38,467 INFO [backend.app.services.camera] Successfully captured camera frame bytes: 98800 bytes
+2026-04-30 21:52:38,467 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 98800 bytes
+2026-04-30 21:52:38,468 INFO [backend.app.services.notification_service] on_print_start called for printer 1 ([PRINTER])
+2026-04-30 21:52:38,474 INFO [backend.app.services.notification_service] No notification providers configured for print_start event on printer 1
+2026-04-30 21:52:38,487 INFO [backend.app.main] Loaded 2 printable objects for printer 1
+2026-04-30 21:52:39,525 INFO [backend.app.services.bambu_ftp] Successfully downloaded /v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.3mf to /app/data/archive/temp/cover_1_v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m.gcode.3mf (6898670 bytes)
+2026-04-30 21:52:39,534 INFO [backend.app.api.routes.printers] Downloaded file size: 6898670 bytes
+2026-04-30 21:53:07,763 INFO [backend.app.api.routes.mfa] OIDC provider 1: ignoring email for sub='[USER]' because email_verified=False
+2026-04-30 21:53:11,236 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-04-30 21:53:11,237 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-04-30 21:53:11,241 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-04-30 21:53:13,441 INFO [backend.app.api.routes.printers] Detected plate number 1 from gcode_file: /data/Metadata/plate_1.gcode
+2026-04-30 21:53:14,520 INFO [backend.app.api.routes.cloud] get_filament_info called with 3 IDs: ['GFL99', 'GFG99', 'GFU99']
+2026-04-30 21:53:31,579 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-04-30 21:53:31,580 INFO [backend.app.api.routes.bug_report] Bug report: enabled debug logging
+2026-04-30 21:53:31,581 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-30 21:53:31,625 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-04-30 21:53:31,794 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-30 21:53:31,795 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-30 21:53:31,796 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:53:31,797 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 0, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 146}
+2026-04-30 21:53:31,798 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-30 21:53:31,799 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-30 21:53:31,800 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-30 21:53:31,801 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-30 21:53:31,803 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-30 21:53:31,803 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-30 21:53:31,804 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-30 21:53:31,805 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 26°C (heater OFF)
+2026-04-30 21:53:31,806 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-30 21:53:31,807 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=26.0, heating=False, respect_local=False
+2026-04-30 21:53:31,808 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 26.0, target: 0.0, heating: False
+2026-04-30 21:53:31,809 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-30 21:53:31,810 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-30 21:53:31,811 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-04-30 21:53:31,812 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-30 21:53:31,813 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [2]
+2026-04-30 21:53:31,814 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: /data/Metadata/plate_1.gcode, subtask: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:53:32,865 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-30 21:53:32,865 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-30 21:53:32,865 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:53:32,865 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 0, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 146}
+2026-04-30 21:53:32,866 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-30 21:53:32,866 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-30 21:53:32,866 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-30 21:53:32,867 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-30 21:53:32,867 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-30 21:53:32,867 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-30 21:53:32,868 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-30 21:53:32,868 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 26°C (heater OFF)
+2026-04-30 21:53:32,868 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-30 21:53:32,868 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=26.0, heating=False, respect_local=False
+2026-04-30 21:53:32,869 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 26.0, target: 0.0, heating: False
+2026-04-30 21:53:32,869 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-30 21:53:32,869 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-30 21:53:32,870 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-04-30 21:53:32,870 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-30 21:53:32,870 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [2]
+2026-04-30 21:53:32,871 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: /data/Metadata/plate_1.gcode, subtask: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:53:33,993 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-30 21:53:33,994 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-30 21:53:33,994 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:53:33,994 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 0, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 146}
+2026-04-30 21:53:33,995 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-30 21:53:33,995 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-30 21:53:33,995 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-30 21:53:33,995 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-30 21:53:33,995 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-30 21:53:33,996 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-30 21:53:33,996 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-30 21:53:33,996 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 26°C (heater OFF)
+2026-04-30 21:53:33,996 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-30 21:53:33,997 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=26.0, heating=False, respect_local=False
+2026-04-30 21:53:33,997 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 26.0, target: 0.0, heating: False
+2026-04-30 21:53:33,997 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-30 21:53:33,997 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-30 21:53:33,997 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-04-30 21:53:33,998 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-30 21:53:33,998 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [2]
+2026-04-30 21:53:33,998 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: /data/Metadata/plate_1.gcode, subtask: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:53:35,076 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-30 21:53:35,077 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-30 21:53:35,077 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:53:35,078 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 0, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 146}
+2026-04-30 21:53:35,079 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-30 21:53:35,081 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-30 21:53:35,081 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-30 21:53:35,082 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-30 21:53:35,083 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-30 21:53:35,084 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-30 21:53:35,085 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-30 21:53:35,086 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 26°C (heater OFF)
+2026-04-30 21:53:35,087 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-30 21:53:35,088 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=26.0, heating=False, respect_local=False
+2026-04-30 21:53:35,089 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 26.0, target: 0.0, heating: False
+2026-04-30 21:53:35,090 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-30 21:53:35,091 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-30 21:53:35,092 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-04-30 21:53:35,093 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-30 21:53:35,094 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [2]
+2026-04-30 21:53:35,095 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: /data/Metadata/plate_1.gcode, subtask: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:53:36,175 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-04-30 21:53:36,176 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-04-30 21:53:36,176 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m
+2026-04-30 21:53:36,177 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 0, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 146}
+2026-04-30 21:53:36,177 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-04-30 21:53:36,178 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-30 21:53:36,179 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-04-30 21:53:36,179 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-30 21:53:36,181 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-04-30 21:53:36,182 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-30 21:53:36,182 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-04-30 21:53:36,183 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] info.temp direct: 26°C (heater OFF)
+2026-04-30 21:53:36,183 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ctc_info keys: ['temp']
+2026-04-30 21:53:36,184 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=26.0, heating=False, respect_local=False
+2026-04-30 21:53:36,185 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 26.0, target: 0.0, heating: False
+2026-04-30 21:53:36,185 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-30 21:53:36,186 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-04-30 21:53:36,187 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-04-30 21:53:36,187 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-04-30 21:53:36,188 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] MQTT mapping field: [2]
+2026-04-30 21:53:36,188 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: /data/Metadata/plate_1.gcode, subtask: v2-reinforced-parallel-2-car-display-1-18_PETG_7h44m

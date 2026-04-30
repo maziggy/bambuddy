@@ -255,7 +255,7 @@ function CfgFileItem({
         <div className="text-xs text-bambu-text-secondary truncate">{file.file_path}</div>
       </div>
       {file.parse_error && (
-        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" title={file.parse_error} />
+        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" aria-label={file.parse_error} />
       )}
       {isSelected && <ChevronRight className="w-4 h-4 shrink-0" />}
     </button>

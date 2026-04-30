@@ -179,6 +179,24 @@ class AmsLabelBody(BaseModel):
     ams_serial: str = Field(default="", max_length=50)
 
 
+class FilaSwitchResponse(BaseModel):
+    """Filament Track Switch (FTS) state — accessory that mediates AMS-to-extruder routing.
+
+    When installed, the AMS info field reports bits 8-11 = 0xE (uninitialized)
+    because slots are dynamically routed via the FTS rather than tied to a
+    specific extruder. Frontend uses `installed` to suppress the per-extruder
+    slot filter in the print modal. See #1162.
+    """
+
+    installed: bool = False
+    # in[track] = currently loaded slot for that track (-1 = empty)
+    in_slots: list[int] = []
+    # out[track] = extruder this track terminates at (0 = right, 1 = left)
+    out_extruders: list[int] = []
+    stat: int = 0
+    info: int = 0
+
+
 class PrintOptionsResponse(BaseModel):
     """AI detection and print options from xcam data."""
 
@@ -245,6 +263,9 @@ class PrinterStatus(BaseModel):
     ams_mapping: list[int] = []
     # Per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
     ams_extruder_map: dict[str, int] = {}
+    # Filament Track Switch (FTS) accessory — when installed, AMS reports
+    # bits 8-11 = 0xE (uninitialized) and routing is dynamic via the FTS. See #1162.
+    fila_switch: FilaSwitchResponse | None = None
     # Currently loaded tray (global ID): 254 = external spool, 255 = no filament
     tray_now: int = 255
     # AMS status for filament change tracking

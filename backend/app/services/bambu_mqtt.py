@@ -91,6 +91,26 @@ class NozzleInfo:
 
 
 @dataclass
+class FilaSwitchState:
+    """Filament Track Switch (FTS) accessory state.
+
+    The FTS is an external accessory that mediates filament routing between an
+    AMS and the printer's extruders. When installed, the AMS no longer has a
+    fixed extruder assignment — any slot can be routed to any extruder via the
+    track switch. Detected from print.device.fila_switch in MQTT.
+    """
+
+    installed: bool = False
+    # in[track] = currently loaded slot for that track (-1 = empty). The slot
+    # value is reported as observed in MQTT (treated as a global tray ID).
+    in_slots: list[int] = field(default_factory=list)
+    # out[track] = extruder this track terminates at (0 = right/main, 1 = left)
+    out_extruders: list[int] = field(default_factory=list)
+    stat: int = 0  # status flags (0 = idle)
+    info: int = 0  # info flags
+
+
+@dataclass
 class PrintOptions:
     """AI detection and print options from xcam data."""
 
@@ -170,6 +190,20 @@ class PrinterState:
     ams_mapping: list = field(default_factory=list)
     # Per-AMS extruder map: {ams_id: extruder_id} where 0=right/main, 1=left/deputy
     ams_extruder_map: dict = field(default_factory=dict)
+    # Filament Track Switch (FTS) accessory — when installed, AMS info reports
+    # bits 8-11 = 0xE (uninitialized) because routing is dynamic. See #1162.
+    fila_switch: "FilaSwitchState" = field(default_factory=lambda: FilaSwitchState())
+    # Plate dispatched by Bambuddy for the current print. Some firmware versions
+    # (P1S 01.10.00.00) only put the .3mf filename in print.gcode_file, so the
+    # regex used to derive the plate number from the path always falls back to
+    # plate 1 — and the printer card shows the wrong thumbnail (#1166). When
+    # Bambuddy dispatches the print itself we know the plate authoritatively;
+    # we record it here and prefer it over the gcode_file regex. The subtask
+    # field guards against staleness: if the printer is currently running a
+    # different subtask (e.g. a Studio-direct dispatch), these values are
+    # ignored. Cleared on disconnect.
+    dispatched_plate_id: int | None = None
+    dispatched_subtask: str | None = None
     # H2D per-extruder tray_now from snow field: {extruder_id: normalized_global_tray_id}
     # snow encodes AMS ID in high byte: ams_id = snow >> 8, slot = snow & 0xFF
     h2d_extruder_snow: dict = field(default_factory=dict)
@@ -1922,6 +1956,22 @@ class BambuMQTTClient:
                 # Log 'cur' field if present (might indicate current/active extruder)
                 if "cur" in ext_data:
                     logger.debug("[%s] device.extruder.cur: %s", self.serial_number, ext_data["cur"])
+
+        # Filament Track Switch (FTS) detection — #1162. Presence of
+        # device.fila_switch in MQTT means the FTS accessory is installed.
+        if "device" in data and isinstance(data.get("device"), dict):
+            fs_data = data["device"].get("fila_switch")
+            if isinstance(fs_data, dict):
+                in_raw = fs_data.get("in")
+                out_raw = fs_data.get("out")
+                self.state.fila_switch = FilaSwitchState(
+                    installed=True,
+                    in_slots=list(in_raw) if isinstance(in_raw, list) else [],
+                    out_extruders=list(out_raw) if isinstance(out_raw, list) else [],
+                    stat=int(fs_data.get("stat", 0) or 0),
+                    info=int(fs_data.get("info", 0) or 0),
+                )
+
         if "bed_temper" in data:
             temps["bed"] = float(data["bed_temper"])
         if "bed_target_temper" in data:
@@ -3187,6 +3237,13 @@ class BambuMQTTClient:
 
             logger.info("[%s] Sending print command: %s", self.serial_number, json.dumps(command))
             self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+            # Record what we dispatched so /cover can pick the right plate
+            # thumbnail even when the printer's gcode_file echo is just the
+            # 3MF filename without a plate path (#1166). Match the same
+            # subtask_name shape we send so the comparison in the cover route
+            # works against state.subtask_name reflected back via MQTT.
+            self.state.dispatched_plate_id = plate_id
+            self.state.dispatched_subtask = command["print"]["subtask_name"]
             return True
         else:
             # Log why we couldn't send the command

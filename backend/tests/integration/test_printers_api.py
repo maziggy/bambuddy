@@ -257,6 +257,166 @@ class TestPrintersAPI:
 
         assert response.status_code == 404
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_printer_status_includes_fila_switch_when_installed(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """When the FTS accessory is installed, the status response must include
+        the fila_switch object with the routing arrays. See #1162.
+
+        The accessory is detected from print.device.fila_switch in MQTT;
+        we feed a PrinterState with FilaSwitchState(installed=True, ...) and
+        confirm it survives the schema serialization round-trip.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import FilaSwitchState, PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        state.fila_switch = FilaSwitchState(
+            installed=True,
+            in_slots=[-1, 2],
+            out_extruders=[0, 1],
+            stat=0,
+            info=2,
+        )
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["fila_switch"] is not None
+        assert result["fila_switch"]["installed"] is True
+        assert result["fila_switch"]["in_slots"] == [-1, 2]
+        assert result["fila_switch"]["out_extruders"] == [0, 1]
+        assert result["fila_switch"]["stat"] == 0
+        assert result["fila_switch"]["info"] == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cover_uses_dispatched_plate_when_gcode_file_lacks_path(
+        self, async_client: AsyncClient, printer_factory, db_session, tmp_path
+    ):
+        """When firmware drops the plate path from gcode_file (e.g. P1S
+        01.10.00.00, #1166), the dispatched-plate record must take precedence
+        and serve plate 4's thumbnail instead of falling back to plate_1.png."""
+        import io
+        import zipfile
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_ftp import cache_3mf_download
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        # Build a 3MF that mimics a "true" multi-plate archive: thumbnails
+        # for plates 1..4 are all present, gcode files for plates 1..4 are
+        # all present. Without the dispatch record we'd default to plate_1.png.
+        threemf_path = tmp_path / "MyModel.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            for plate in range(1, 5):
+                zf.writestr(f"Metadata/plate_{plate}.png", f"PLATE_{plate}_PNG".encode())
+                zf.writestr(f"Metadata/plate_{plate}.gcode", f"; plate {plate} gcode\n")
+
+        cache_3mf_download(printer.id, "MyModel.3mf", threemf_path)
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.subtask_name = "MyModel"
+        state.gcode_file = "MyModel.3mf"  # firmware drops plate path
+        state.dispatched_plate_id = 4
+        state.dispatched_subtask = "MyModel"
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert response.status_code == 200
+        assert response.content == b"PLATE_4_PNG"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cover_3mf_scan_fallback_for_per_plate_archive(
+        self, async_client: AsyncClient, printer_factory, db_session, tmp_path
+    ):
+        """Per-plate archives sliced separately in Bambu Studio contain a
+        single Metadata/plate_N.gcode (the active plate) but bundle thumbnails
+        for every plate. With no dispatch record (e.g. dispatched via Studio
+        directly) and no plate path in gcode_file, the route must scan the
+        3MF and pick plate N's thumbnail. See #1166 option 4."""
+        import zipfile
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_ftp import cache_3mf_download
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        # Per-plate archive: thumbnails for all plates, gcode for plate 3 only.
+        threemf_path = tmp_path / "PerPlate.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            for plate in range(1, 5):
+                zf.writestr(f"Metadata/plate_{plate}.png", f"PLATE_{plate}_PNG".encode())
+            zf.writestr("Metadata/plate_3.gcode", "; only plate 3 has gcode\n")
+
+        cache_3mf_download(printer.id, "PerPlate.3mf", threemf_path)
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.subtask_name = "PerPlate"
+        state.gcode_file = "PerPlate.3mf"
+        # No dispatch record (Studio-direct dispatch).
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert response.status_code == 200
+        assert response.content == b"PLATE_3_PNG"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_printer_status_omits_fila_switch_when_not_installed(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """Without the FTS accessory, fila_switch must be null so the frontend
+        keeps applying the per-extruder filter on regular dual-nozzle printers."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        # default fila_switch — installed = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["fila_switch"] is None
+
     # ========================================================================
     # Test connection endpoint
     # ========================================================================

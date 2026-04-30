@@ -240,6 +240,16 @@ export interface PrintOptions {
   filament_tangle_detect: boolean;
 }
 
+export interface FilaSwitchState {
+  installed: boolean;
+  // in[track] = currently loaded slot for that track (-1 = empty)
+  in_slots: number[];
+  // out[track] = extruder this track terminates at (0 = right, 1 = left)
+  out_extruders: number[];
+  stat: number;
+  info: number;
+}
+
 export interface PrinterStatus {
   id: number;
   name: string;
@@ -301,6 +311,10 @@ export interface PrinterStatus {
   // Format: {ams_id: extruder_id} where extruder 0=right, 1=left
   // Note: JSON keys are always strings
   ams_extruder_map: Record<string, number>;
+  // Filament Track Switch accessory — null when not installed. When present,
+  // AMS slots aren't tied to a specific extruder; the FTS routes any slot to
+  // either extruder, so per-extruder slot filtering must be skipped.
+  fila_switch: FilaSwitchState | null;
   // Currently loaded tray (global tray ID, 255 = no filament loaded, 254 = external spool)
   tray_now: number;
   // AMS status for filament change tracking (0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration)

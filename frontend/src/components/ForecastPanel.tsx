@@ -333,13 +333,6 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     else { setSortKey(key); setSortDir(key === 'days_left' ? 'asc' : 'desc'); }
   }
 
-  function SortIcon({ col }: { col: SortKey }) {
-    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 opacity-40 ml-1" />;
-    return sortDir === 'asc'
-      ? <ArrowUp className="w-3 h-3 ml-1 text-bambu-green" />
-      : <ArrowDown className="w-3 h-3 ml-1 text-bambu-green" />;
-  }
-
   const shoppingListBadge = shoppingList.length > 0 ? shoppingList.length : null;
 
   return (
@@ -669,7 +662,7 @@ function UsageChart({ forecasts, days: maxDays, onDaysChange }: {
             itemStyle={{ color: '#E5E7EB' }}
             formatter={(value: number, name: string) => {
               const s = series.find((x) => x.key === name);
-              return [`${value}g`, s?.label ?? name];
+              return `${value}g — ${s?.label ?? name}`;
             }}
           />
           <Legend
@@ -1158,7 +1151,7 @@ function ShoppingListPanel({
           note: item.note ?? null,
           tag_uid: null, tray_uuid: null,
           data_origin: 'manual', tag_type: null,
-          cost_per_kg: null, weight_locked: false,
+          cost_per_kg: null,
           last_scale_weight: null, last_weighed_at: null,
           weight_used: 0,
           slicer_filament: null, slicer_filament_name: null,
@@ -1589,10 +1582,10 @@ function CartLogisticsRow({
                 contentStyle={{ background: '#1a1a2e', border: '1px solid #374151', borderRadius: 8, fontSize: 11 }}
                 labelStyle={{ color: '#9CA3AF' }}
                 formatter={(value: number, name: string) => {
-                  if (name === 'stock') return [`${value}g`, t('forecast.stock')];
-                  if (name === 'rop') return [`${value}g`, t('forecast.reorderPoint')];
-                  if (name === 'safetyStock') return [`${value}g`, t('forecast.safetyMarginLabel')];
-                  return [`${value}`, name];
+                  if (name === 'stock') return `${value}g — ${t('forecast.stock')}`;
+                  if (name === 'rop') return `${value}g — ${t('forecast.reorderPoint')}`;
+                  if (name === 'safetyStock') return `${value}g — ${t('forecast.safetyMarginLabel')}`;
+                  return `${value}`;
                 }}
               />
               {/* Single stock area — linear interpolation renders the vertical step correctly

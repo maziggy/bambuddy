@@ -198,7 +198,7 @@ async def execute(name: str, ctx: FunctionContext) -> FunctionResult:
         return FunctionResult(ok=False, message=msg)
 
 
-async def build_context_values(printer_id: int | None, log_fn) -> dict[str, Any]:
+async def build_context_values(printer_id: int | None, log_fn, run_id: int | None = None) -> dict[str, Any]:
     """Call all context_var functions eagerly; return {var_name: value}.
 
     Errors are swallowed: the variable is set to None and a warning is logged.
@@ -207,7 +207,7 @@ async def build_context_values(printer_id: int | None, log_fn) -> dict[str, Any]
     for spec, fn in _REGISTRY.values():
         if spec.context_var is None:
             continue
-        ctx = FunctionContext(flags={}, printer_id=printer_id, run_id=None, log=log_fn)
+        ctx = FunctionContext(flags={}, printer_id=printer_id, run_id=run_id, log=log_fn)
         try:
             result = await fn(ctx)
             out[spec.context_var] = result.value

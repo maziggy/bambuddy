@@ -110,15 +110,22 @@ async def exec_line(
     if not line:
         raise HTTPException(422, "line must not be empty")
 
-    # Check if line matches a macro name (allows running macros by name from terminal)
-    token = line.split()[0]
-    macro_result = await db.execute(select(Macro).where(Macro.name == token))
-    macro = macro_result.scalar_one_or_none()
-    if macro is None:
-        from sqlalchemy import func as sa_func
+    # Explicit "run: macro_name" syntax invokes a macro by name from the terminal.
+    # This avoids the ambiguity of a macro named "G28" shadowing the actual G-code.
+    macro: Macro | None = None
+    if line.lower().startswith("run:") or line.lower().startswith("run "):
+        sep = ":" if line[3] == ":" else " "
+        macro_name = line.split(sep, 1)[1].strip()
+        if macro_name:
+            from sqlalchemy import func as sa_func
 
-        macro_result = await db.execute(select(Macro).where(sa_func.lower(Macro.name) == token.lower()))
-        macro = macro_result.scalar_one_or_none()
+            macro_result = await db.execute(select(Macro).where(sa_func.lower(Macro.name) == macro_name.lower()))
+            macro = macro_result.scalar_one_or_none()
+            if macro is None:
+                return ExecLineResponse(
+                    status="error",
+                    log=f"[ERROR] Macro '{macro_name}' not found\n",
+                )
 
     if macro is not None:
         printer_id = body.printer_id if body.printer_id is not None else macro.printer_id

@@ -19,6 +19,7 @@ from sqlalchemy import select
 from backend.app.core.database import async_session
 from backend.app.models.macro import Macro, MacroCfgFile, MacroRun
 from backend.app.services import macro_functions as mf
+from backend.app.services.gcode_whitelist import is_whitelisted
 from backend.app.services.macro_cfg_parser import get_macro_body
 from backend.app.services.macro_files import read as read_cfg_file
 
@@ -28,6 +29,9 @@ _jinja_env = SandboxedEnvironment(keep_trailing_newline=True)
 
 # How long to wait after a G-code command before sampling HMS for new errors
 _HMS_POLL_DELAY = 0.5
+
+# Flush log buffer to DB every N lines to reduce round-trips
+_LOG_FLUSH_EVERY = 10
 
 
 # ── Result types (kept here for API route compatibility) ───────────────────────
@@ -52,6 +56,37 @@ class CommandResult:
         return not self.ok
 
 
+# ── Log buffer ─────────────────────────────────────────────────────────────────
+
+
+class _LogBuffer:
+    """Batches log writes to reduce DB round-trips during macro runs."""
+
+    def __init__(self, run_id: int, flush_every: int = _LOG_FLUSH_EVERY) -> None:
+        self._run_id = run_id
+        self._flush_every = flush_every
+        self._lines: list[str] = []
+        self._count = 0
+
+    async def write(self, text: str) -> None:
+        self._lines.append(text)
+        self._count += 1
+        if self._count >= self._flush_every:
+            await self.flush()
+
+    async def flush(self) -> None:
+        if not self._lines:
+            return
+        blob = "".join(self._lines)
+        self._lines.clear()
+        self._count = 0
+        async with async_session() as db:
+            run = await db.get(MacroRun, self._run_id)
+            if run:
+                run.log = (run.log or "") + blob
+                await db.commit()
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
@@ -74,6 +109,9 @@ def _preflight(client, line: str) -> str | None:
     state = client.state.state
     tokens = line.upper().split() if line.strip() else []
     token = tokens[0] if tokens else ""
+
+    if not is_whitelisted(line):
+        return f"G-code '{token}' is not in the allowed whitelist"
 
     if token in ("G0", "G1"):
         if any(t.startswith(("X", "Y")) for t in tokens[1:]):
@@ -118,6 +156,22 @@ async def _load_macro_body(macro: Macro) -> str | None:
     return get_macro_body(text, macro.name)
 
 
+async def _get_queue_count() -> int:
+    """Return number of pending/queued print queue items."""
+    try:
+        from sqlalchemy import func as sa_func
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        async with async_session() as db:
+            result = await db.execute(
+                select(sa_func.count()).select_from(PrintQueueItem).where(PrintQueueItem.status == "pending")
+            )
+            return result.scalar_one() or 0
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 # ── Runner ─────────────────────────────────────────────────────────────────────
 
 
@@ -149,17 +203,10 @@ class MacroRunner:
             async def _capture(run_id, text: str) -> None:
                 log_lines.append(text)
 
-            orig_log = self._log
-            self._log = _capture  # type: ignore[method-assign]
-            try:
-                result = await self._dispatch_system(line, printer_id, run_id=None)
-            finally:
-                self._log = orig_log  # type: ignore[method-assign]
+            result = await self._dispatch_system(line, printer_id, run_id=None, log_fn=_capture)
+            return CommandResult(ok=result.ok, log="".join(log_lines))
 
-            log = "".join(log_lines)
-            return CommandResult(ok=result.ok, log=log)
-
-        return await self._send_gcode(line, printer_id, run_id=None)
+        return await self._send_gcode(line, printer_id, run_id=None, log_fn=_default_log)
 
     async def run_macro(
         self,
@@ -191,16 +238,25 @@ class MacroRunner:
             macro_name = macro.name
             await db.commit()
 
+        buf = _LogBuffer(run_id)
+
+        async def log_fn(rid, text: str) -> None:
+            await buf.write(text)
+
         script = await _load_macro_body(macro)
         if script is None:
-            await self._finish_run(run_id, "error", f"[ERROR] Macro body not found for '{macro_name}'\n")
+            await buf.write(f"[ERROR] Macro body not found for '{macro_name}'\n")
+            await buf.flush()
+            await self._finish_run(run_id, "error")
             return run_id
 
         try:
-            context = await self._build_context(printer_id, call_stack={macro_name}, run_id=run_id)
+            context = await self._build_context(printer_id, call_stack={macro_name}, run_id=run_id, log_fn=log_fn)
             rendered = _jinja_env.from_string(script).render(**context)
         except Exception as exc:  # noqa: BLE001
-            await self._finish_run(run_id, "error", f"[ERROR] Template render failed: {exc}\n")
+            await buf.write(f"[ERROR] Template render failed: {exc}\n")
+            await buf.flush()
+            await self._finish_run(run_id, "error")
             return run_id
 
         current_task = asyncio.current_task()
@@ -217,7 +273,7 @@ class MacroRunner:
                     return True
                 combined = "\n".join(gcode_batch) + "\n"
                 gcode_batch.clear()
-                result = await self._send_gcode(combined, printer_id, run_id)
+                result = await self._send_gcode(combined, printer_id, run_id, log_fn)
                 if result.failed:
                     error_occurred = True
                     return False
@@ -233,7 +289,7 @@ class MacroRunner:
                     if token in mf.command_names():
                         if not await _flush_batch():
                             break
-                        result = await self._dispatch_system(line, printer_id, run_id, allow_printer_commands)
+                        result = await self._dispatch_system(line, printer_id, run_id, allow_printer_commands, log_fn)
                         if result is not None and result.failed:
                             error_occurred = True
                             break
@@ -245,18 +301,18 @@ class MacroRunner:
                             if client:
                                 err = _preflight(client, line)
                                 if err:
-                                    await self._append_log(run_id, f"[PREFLIGHT] {err}\n")
+                                    await log_fn(run_id, f"[PREFLIGHT] {err}\n")
                                     error_occurred = True
                                     break
                         if not allow_printer_commands:
-                            await self._append_log(run_id, f"[SKIP] G-code blocked in gcode_embed mode: {line}\n")
+                            await log_fn(run_id, f"[SKIP] G-code blocked in gcode_embed mode: {line}\n")
                         else:
-                            await self._append_log(run_id, f"[GCODE] {line}\n")
+                            await log_fn(run_id, f"[GCODE] {line}\n")
                             gcode_batch.append(line)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001
-                    await self._append_log(run_id, f"[ERROR] {line}: {exc}\n")
+                    await log_fn(run_id, f"[ERROR] {line}: {exc}\n")
                     error_occurred = True
                     break
 
@@ -265,11 +321,14 @@ class MacroRunner:
 
             status = "error" if error_occurred else "success"
         except asyncio.CancelledError:
-            await self._finish_run(run_id, "error", "[CANCELLED] Run was cancelled by user\n")
+            await buf.write("[CANCELLED] Run was cancelled by user\n")
+            await buf.flush()
+            await self._finish_run(run_id, "error")
             return run_id
         finally:
             self._running_tasks.pop(run_id, None)
 
+        await buf.flush()
         await self._finish_run(run_id, status)
         return run_id
 
@@ -286,6 +345,8 @@ class MacroRunner:
         from croniter import croniter
 
         tick = 0
+        last_fired: dict[int, datetime] = {}
+
         while True:
             try:
                 await asyncio.sleep(60)
@@ -296,8 +357,20 @@ class MacroRunner:
                     macros = result.scalars().all()
 
                 for macro in macros:
-                    if macro.cron_expression and croniter.match(macro.cron_expression, now):
-                        asyncio.create_task(self.run_macro(macro.id, macro.printer_id, "schedule"))
+                    if not macro.cron_expression:
+                        continue
+                    prev = last_fired.get(macro.id)
+                    try:
+                        should_fire = croniter.match(macro.cron_expression, now)
+                        # Also check we haven't already fired this minute
+                        already_fired = prev and prev.replace(second=0, microsecond=0) == now.replace(
+                            second=0, microsecond=0
+                        )
+                        if should_fire and not already_fired:
+                            last_fired[macro.id] = now
+                            asyncio.create_task(self.run_macro(macro.id, macro.printer_id, "schedule"))
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("Cron match error for macro %d (%r): %s", macro.id, macro.cron_expression, exc)
 
                 # Prune expired macro vars every 60 minutes
                 if tick % 60 == 0:
@@ -332,8 +405,12 @@ class MacroRunner:
         printer_id: int | None,
         call_stack: set[str],
         run_id: int | None = None,
+        log_fn=None,
     ) -> dict:
         from backend.app.services.printer_manager import printer_manager
+
+        if log_fn is None:
+            log_fn = _default_log
 
         printer_ctx: dict = {}
         ams_ctx: list = []
@@ -355,39 +432,60 @@ class MacroRunner:
                 }
                 ams_ctx = s.raw_data.get("ams", [])
 
+        queue_count = await _get_queue_count()
+
+        async def _run_macro_inline(name: str) -> str:
+            if name in call_stack:
+                raise RecursionError(f"Macro cycle detected: {name} -> {' -> '.join(call_stack)}")
+            await self._run_sub_macro(name, printer_id, call_stack | {name}, run_id=run_id, log_fn=log_fn)
+            return ""
+
         def _run_macro_fn(name: str) -> str:
             if name in call_stack:
                 raise RecursionError(f"Macro cycle detected: {name} -> {' -> '.join(call_stack)}")
-            asyncio.create_task(self._run_sub_macro(name, printer_id, call_stack | {name}))
+            # Schedule inline; Jinja2 render is synchronous so we fire-and-collect
+            # via a task but it runs before the next await in the dispatch loop
+            asyncio.ensure_future(
+                self._run_sub_macro(name, printer_id, call_stack | {name}, run_id=run_id, log_fn=log_fn)
+            )
             return ""
 
-        # Eager context values from the function registry
-        extra = await mf.build_context_values(printer_id, self._log)
+        extra = await mf.build_context_values(printer_id, log_fn, run_id=run_id)
 
         return {
             "printer": printer_ctx,
             "ams": ams_ctx,
-            "queue": 0,
+            "queue": queue_count,
             "run_macro": _run_macro_fn,
             **extra,
         }
 
-    async def _run_sub_macro(self, name: str, printer_id: int | None, call_stack: set[str]) -> None:
+    async def _run_sub_macro(
+        self,
+        name: str,
+        printer_id: int | None,
+        call_stack: set[str],
+        run_id: int | None = None,
+        log_fn=None,
+    ) -> None:
+        if log_fn is None:
+            log_fn = _default_log
+
         async with async_session() as db:
             result = await db.execute(select(Macro).where(Macro.name == name))
             macro = result.scalar_one_or_none()
         if not macro:
-            logger.warning("Sub-macro not found: %s", name)
+            await log_fn(run_id, f"[WARN] Sub-macro '{name}' not found\n")
             return
         try:
             script = await _load_macro_body(macro)
             if script is None:
-                logger.warning("Sub-macro body not found: %s", name)
+                await log_fn(run_id, f"[WARN] Sub-macro '{name}' body not found\n")
                 return
-            context = await self._build_context(printer_id, call_stack)
+            context = await self._build_context(printer_id, call_stack, run_id=run_id, log_fn=log_fn)
             rendered = _jinja_env.from_string(script).render(**context)
         except Exception as exc:  # noqa: BLE001
-            logger.error("Sub-macro %s render failed: %s", name, exc)
+            await log_fn(run_id, f"[ERROR] Sub-macro '{name}' render failed: {exc}\n")
             return
         gcode_batch: list[str] = []
         for raw_line in rendered.splitlines():
@@ -398,16 +496,16 @@ class MacroRunner:
                 token = line.split()[0].upper()
                 if token in mf.command_names():
                     if gcode_batch:
-                        await self._send_gcode("\n".join(gcode_batch), printer_id, run_id=None)
+                        await self._send_gcode("\n".join(gcode_batch), printer_id, run_id, log_fn)
                         gcode_batch.clear()
-                    await self._dispatch_system(line, printer_id, run_id=None)
+                    await self._dispatch_system(line, printer_id, run_id, log_fn=log_fn)
                 else:
                     gcode_batch.append(line)
             except Exception as exc:  # noqa: BLE001
-                logger.error("Sub-macro %s dispatch error: %s", name, exc)
+                await log_fn(run_id, f"[ERROR] Sub-macro '{name}' dispatch error: {exc}\n")
                 break
         if gcode_batch:
-            await self._send_gcode("\n".join(gcode_batch), printer_id, run_id=None)
+            await self._send_gcode("\n".join(gcode_batch), printer_id, run_id, log_fn)
 
     # ── Dispatch ───────────────────────────────────────────────────────────────
 
@@ -417,12 +515,16 @@ class MacroRunner:
         printer_id: int | None,
         run_id: int | None,
         allow_printer_commands: bool = True,
+        log_fn=None,
     ) -> CommandResult:
+        if log_fn is None:
+            log_fn = _default_log
+
         token = line.split()[0].upper()
 
         if not allow_printer_commands and token in mf.embed_blocked_names():
             msg = f"[SKIP] Command blocked in gcode_embed mode: {line}\n"
-            await self._log(run_id, msg)
+            await log_fn(run_id, msg)
             return CommandResult(ok=True)
 
         try:
@@ -435,7 +537,7 @@ class MacroRunner:
             flags=flags,
             printer_id=printer_id,
             run_id=run_id,
-            log=self._log,
+            log=log_fn,
             allow_printer_commands=allow_printer_commands,
         )
         fn_result = await mf.execute(token, ctx)
@@ -443,18 +545,27 @@ class MacroRunner:
 
     # ── G-code ─────────────────────────────────────────────────────────────────
 
-    async def _send_gcode(self, payload: str, printer_id: int | None, run_id: int | None) -> CommandResult:
+    async def _send_gcode(
+        self,
+        payload: str,
+        printer_id: int | None,
+        run_id: int | None,
+        log_fn=None,
+    ) -> CommandResult:
         from backend.app.services.printer_manager import printer_manager
+
+        if log_fn is None:
+            log_fn = _default_log
 
         if printer_id is None:
             msg = "[WARN] No printer selected for G-code\n"
-            await self._log(run_id, msg)
+            await log_fn(run_id, msg)
             return CommandResult(ok=False, log=msg)
 
         client = printer_manager.get_client(printer_id)
         if not client:
             msg = f"[ERROR] Printer {printer_id} not connected\n"
-            await self._log(run_id, msg)
+            await log_fn(run_id, msg)
             return CommandResult(ok=False, log=msg)
 
         for line in payload.splitlines():
@@ -464,7 +575,7 @@ class MacroRunner:
             err = _preflight(client, line)
             if err:
                 msg = f"[PREFLIGHT] {err}\n"
-                await self._log(run_id, msg)
+                await log_fn(run_id, msg)
                 return CommandResult(ok=False, log=msg, printer_state=client.state.state)
 
         hms_before = _snapshot_hms(client)
@@ -473,12 +584,12 @@ class MacroRunner:
         sent = client.send_gcode(payload)
         if not sent:
             msg = "[ERROR] Failed to send G-code (MQTT publish failed)\n"
-            await self._log(run_id, msg)
+            await log_fn(run_id, msg)
             return CommandResult(ok=False, log=msg, printer_state=client.state.state)
 
         for line in payload.splitlines():
             if line.strip():
-                await self._log(run_id, f"[GCODE] {line.strip()}\n")
+                await log_fn(run_id, f"[GCODE] {line.strip()}\n")
 
         await asyncio.sleep(_HMS_POLL_DELAY)
         new_hms = _new_hms_errors(client, hms_before)
@@ -486,34 +597,23 @@ class MacroRunner:
         if new_hms:
             ok = False
             for e in new_hms:
-                await self._log(run_id, f"[HMS ERROR] code={e.code} severity={e.severity} {e.message}\n")
+                await log_fn(run_id, f"[HMS ERROR] code={e.code} severity={e.severity} {e.message}\n")
 
         return CommandResult(ok=ok, new_hms_errors=new_hms, printer_state=client.state.state)
 
     # ── DB helpers ─────────────────────────────────────────────────────────────
 
-    async def _log(self, run_id: int | None, text: str) -> None:
-        if run_id:
-            await self._append_log(run_id, text)
-        else:
-            logger.info(text.strip())
-
-    async def _append_log(self, run_id: int, text: str) -> None:
+    async def _finish_run(self, run_id: int, status: str) -> None:
         async with async_session() as db:
             run = await db.get(MacroRun, run_id)
             if run:
-                run.log = (run.log or "") + text
-                await db.commit()
-
-    async def _finish_run(self, run_id: int, status: str, extra_log: str = "") -> None:
-        async with async_session() as db:
-            run = await db.get(MacroRun, run_id)
-            if run:
-                if extra_log:
-                    run.log = (run.log or "") + extra_log
                 run.status = status
                 run.finished_at = datetime.now(timezone.utc)
                 await db.commit()
+
+
+async def _default_log(run_id, text: str) -> None:
+    logger.info(text.strip())
 
 
 macro_runner = MacroRunner()

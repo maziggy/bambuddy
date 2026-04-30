@@ -1,14 +1,19 @@
 """Pydantic schemas for the macro system."""
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+TriggerType = Literal["manual", "webhook", "schedule"]
+RunStatus = Literal["pending", "running", "success", "error"]
+
 
 # ── Cfg file schemas ───────────────────────────────────────────────────────────
 
 
 class MacroCfgFileCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=200)
     content: str = ""
 
 
@@ -92,7 +97,7 @@ class HMSErrorInfo(BaseModel):
 
 
 class ExecLineRequest(BaseModel):
-    line: str
+    line: str = Field(min_length=1, max_length=2000)
     printer_id: int | None = None
 
 

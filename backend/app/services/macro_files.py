@@ -17,6 +17,14 @@ def _macros_dir() -> Path:
     return d
 
 
+def _safe_path(macros_dir: Path, relative: str) -> Path:
+    """Resolve path and reject anything that escapes macros_dir."""
+    full = (macros_dir / relative).resolve()
+    if not str(full).startswith(str(macros_dir.resolve()) + "/") and full != macros_dir.resolve():
+        raise ValueError(f"Path traversal rejected: {relative!r}")
+    return full
+
+
 def _slug(name: str) -> str:
     slug = name.strip().lower()
     slug = re.sub(r"[^\w\s-]", "", slug)
@@ -26,7 +34,8 @@ def _slug(name: str) -> str:
 
 def read(relative_path: str) -> str:
     """Read and return the raw text of a .cfg file."""
-    full = _macros_dir() / relative_path
+    d = _macros_dir()
+    full = _safe_path(d, relative_path)
     if not full.exists():
         raise FileNotFoundError(f"Macro cfg file not found: {relative_path}")
     return full.read_text(encoding="utf-8")
@@ -34,7 +43,8 @@ def read(relative_path: str) -> str:
 
 def write(relative_path: str, content: str) -> None:
     """Overwrite an existing .cfg file with new content."""
-    full = _macros_dir() / relative_path
+    d = _macros_dir()
+    full = _safe_path(d, relative_path)
     full.write_text(content, encoding="utf-8")
 
 
@@ -56,7 +66,11 @@ def create(name: str, content: str = "") -> str:
 
 def delete(relative_path: str) -> None:
     """Delete a .cfg file. Silently ignores missing files."""
-    (_macros_dir() / relative_path).unlink(missing_ok=True)
+    try:
+        full = _safe_path(_macros_dir(), relative_path)
+        full.unlink(missing_ok=True)
+    except ValueError:
+        pass  # traversal attempt on delete is a no-op
 
 
 def list_cfg_files() -> list[str]:

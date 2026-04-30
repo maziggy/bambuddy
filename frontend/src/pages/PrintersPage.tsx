@@ -87,7 +87,7 @@ import {
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
-import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
+import { api, discoveryApi, firmwareApi, withStreamToken, getAuthToken, ApiError } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';

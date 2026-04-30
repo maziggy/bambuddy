@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
+
+if TYPE_CHECKING:
+    from backend.app.models.macro import Macro
 
 
 class MacroVar(Base):
@@ -24,7 +30,4 @@ class MacroVar(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    macro: Mapped["Macro | None"] = relationship(back_populates="vars")
-
-
-from backend.app.models.macro import Macro  # noqa: E402, F401
+    macro: Mapped[Macro | None] = relationship(back_populates="vars")

@@ -9,7 +9,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_auth_if_enabled
+from backend.app.core.auth import (
+    RequireAnyPermissionIfAuthEnabled,
+    RequirePermissionIfAuthEnabled,
+    require_auth_if_enabled,
+)
 from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG, DEFAULT_SPOOL_CATALOG
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -1554,7 +1558,9 @@ async def list_sku_settings(
 async def upsert_sku_settings(
     data: FilamentSkuSettingsUpsert,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
 ):
     """Create or update reorder settings for a filament SKU (material/subtype/brand)."""
     from backend.app.models.filament_sku_settings import FilamentSkuSettings
@@ -1646,7 +1652,9 @@ async def get_shopping_list(
 async def add_to_shopping_list(
     data: ShoppingListItemCreate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
 ):
     """Add a filament SKU to the shopping list."""
     from backend.app.models.shopping_list import ShoppingListItem
@@ -1679,7 +1687,9 @@ async def update_shopping_list_status(
     item_id: int,
     data: ShoppingListItemStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
 ):
     """Update the purchase status of a shopping list item."""
     from datetime import datetime, timezone
@@ -1719,7 +1729,9 @@ async def update_shopping_list_status(
 async def remove_from_shopping_list(
     item_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
 ):
     """Remove a single item from the shopping list."""
     from backend.app.models.shopping_list import ShoppingListItem
@@ -1736,7 +1748,9 @@ async def remove_from_shopping_list(
 @router.delete("/shopping-list")
 async def clear_shopping_list(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_FORECAST_WRITE),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
 ):
     """Clear all items from the shopping list."""
     from backend.app.models.shopping_list import ShoppingListItem

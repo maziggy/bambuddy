@@ -660,9 +660,9 @@ function UsageChart({ forecasts, days: maxDays, onDaysChange }: {
             contentStyle={{ background: '#1a1a2e', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
             labelStyle={{ color: '#9CA3AF' }}
             itemStyle={{ color: '#E5E7EB' }}
-            formatter={(value: number, name: string) => {
+            formatter={(value, name) => {
               if (typeof value !== 'number') return '';
-              const s = series.find((x) => x.key === name);
+              const s = series.find((x) => x.key === String(name));
               return `${value}g — ${s?.label ?? name}`;
             }}
           />
@@ -1582,7 +1582,7 @@ function CartLogisticsRow({
               <Tooltip
                 contentStyle={{ background: '#1a1a2e', border: '1px solid #374151', borderRadius: 8, fontSize: 11 }}
                 labelStyle={{ color: '#9CA3AF' }}
-                formatter={(value: number, name: string) => {
+                formatter={(value, name) => {
                   if (typeof value !== 'number') return '';
                   if (name === 'stock') return `${value}g — ${t('forecast.stock')}`;
                   if (name === 'rop') return `${value}g — ${t('forecast.reorderPoint')}`;

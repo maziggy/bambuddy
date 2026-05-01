@@ -8,6 +8,199 @@ from unittest.mock import patch
 
 import pytest
 
+JPEG_START = b"\xff\xd8"
+JPEG_END = b"\xff\xd9"
+
+
+def _make_jpeg(payload: bytes = b"\x00" * 100) -> bytes:
+    """Build a synthetic JPEG byte sequence (SOI + payload + EOI)."""
+    return JPEG_START + payload + JPEG_END
+
+
+class _FakeMjpegResponse:
+    """Drop-in for aiohttp's response that drives `iter_chunked` from a fixed
+    list of byte chunks. Each chunk is yielded once; if the iterator runs out
+    the response is treated as closed (which is the realistic behaviour for an
+    MJPEG stream the upstream server has finished). An optional `raise_after`
+    raises the supplied exception after N chunks to simulate timeout / IO
+    failure mid-stream."""
+
+    def __init__(self, chunks, status=200, raise_after=None, raise_exc=None):
+        self.status = status
+        self._chunks = list(chunks)
+        self._raise_after = raise_after
+        self._raise_exc = raise_exc
+        self.content = self  # the function calls `response.content.iter_chunked(...)`
+
+    def iter_chunked(self, _size):  # noqa: ARG002 — chunk size is informational
+        chunks = self._chunks
+        raise_after = self._raise_after
+        raise_exc = self._raise_exc
+
+        async def _gen():
+            for i, chunk in enumerate(chunks):
+                if raise_after is not None and i >= raise_after:
+                    raise raise_exc
+                yield chunk
+
+        return _gen()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+
+class _FakeMjpegSession:
+    """Drop-in for aiohttp.ClientSession; `get(url)` returns a pre-baked
+    `_FakeMjpegResponse`."""
+
+    def __init__(self, response):
+        self._response = response
+
+    def get(self, _url):
+        return self._response
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return None
+
+
+def _patch_mjpeg_session(response):
+    """Patch `aiohttp.ClientSession` inside the external_camera module so the
+    real `_capture_mjpeg_frame` runs against our fake stream."""
+
+    def _factory(*_args, **_kwargs):
+        return _FakeMjpegSession(response)
+
+    return patch("backend.app.services.external_camera.aiohttp.ClientSession", _factory)
+
+
+class TestCaptureMjpegFrameWarmupSkip:
+    """Regression for #1177. Many MJPEG sources (notably go2rtc) emit a
+    warm-up / black frame on the first byte that follows connection accept;
+    `_capture_mjpeg_frame` must skip past it and return the second frame.
+    Where the stream ends or times out before a second frame ever arrives the
+    function falls back to the warm-up frame so callers still get *something*
+    — returning None there would regress every code path that consumed the
+    pre-fix behaviour (snapshot UX, plate-detection CV, finish photo,
+    timelapse, Obico inference)."""
+
+    @pytest.mark.asyncio
+    async def test_skips_warmup_frame_returns_second_frame(self):
+        # Two frames arriving in two chunks — typical of a steady MJPEG feed.
+        # Pre-fix this returned `warm`; post-fix returns `live`.
+        from backend.app.services.external_camera import _capture_mjpeg_frame
+
+        warm = _make_jpeg(b"\x10" * 50)  # warm-up — encoder hasn't caught up
+        live = _make_jpeg(b"\x20" * 200)  # representative scene
+        response = _FakeMjpegResponse(chunks=[warm, live])
+
+        with _patch_mjpeg_session(response):
+            frame = await _capture_mjpeg_frame("http://camera.example/stream", timeout=15)
+
+        assert frame == live
+        assert frame != warm
+
+    @pytest.mark.asyncio
+    async def test_two_frames_in_single_chunk_returns_second(self):
+        # High-FPS sources often pack multiple frames into one chunk delivered
+        # in a single iteration of `iter_chunked`. The inner while-loop must
+        # drain every complete frame from the buffer before reading more.
+        from backend.app.services.external_camera import _capture_mjpeg_frame
+
+        warm = _make_jpeg(b"\x10" * 50)
+        live = _make_jpeg(b"\x20" * 200)
+        response = _FakeMjpegResponse(chunks=[warm + live])
+
+        with _patch_mjpeg_session(response):
+            frame = await _capture_mjpeg_frame("http://camera.example/stream", timeout=15)
+
+        assert frame == live
+
+    @pytest.mark.asyncio
+    async def test_partial_frame_split_across_chunks_assembles_correctly(self):
+        # Realistic chunking: TCP doesn't respect frame boundaries, so a
+        # single frame can straddle two chunks. The fix's buffer-trim path
+        # must still find the SOI / EOI pair across the boundary.
+        from backend.app.services.external_camera import _capture_mjpeg_frame
+
+        warm = _make_jpeg(b"\x10" * 50)
+        live = _make_jpeg(b"\x20" * 200)
+        # Split `live` mid-payload
+        split_at = len(JPEG_START) + 100
+        chunks = [warm + live[:split_at], live[split_at:]]
+        response = _FakeMjpegResponse(chunks=chunks)
+
+        with _patch_mjpeg_session(response):
+            frame = await _capture_mjpeg_frame("http://camera.example/stream", timeout=15)
+
+        assert frame == live
+
+    @pytest.mark.asyncio
+    async def test_single_frame_stream_falls_back_to_first_frame(self):
+        # Critical no-regression case. A snapshot-style endpoint that emits
+        # exactly one frame and closes the connection (or a slow stream that
+        # only delivers one frame within the timeout window) must still hand
+        # back that one frame — not None. Pre-fix users on these sources got
+        # the frame; the warm-up skip would otherwise turn that into None
+        # silently.
+        from backend.app.services.external_camera import _capture_mjpeg_frame
+
+        only = _make_jpeg(b"\xab" * 80)
+        response = _FakeMjpegResponse(chunks=[only])
+
+        with _patch_mjpeg_session(response):
+            frame = await _capture_mjpeg_frame("http://camera.example/stream", timeout=15)
+
+        assert frame == only
+
+    @pytest.mark.asyncio
+    async def test_timeout_after_first_frame_falls_back_to_first(self):
+        # Timeout mid-stream — the warm-up frame has already arrived but the
+        # second hasn't. Same fallback: hand back what we have, never None.
+        from backend.app.services.external_camera import _capture_mjpeg_frame
+
+        warm = _make_jpeg(b"\x10" * 50)
+        response = _FakeMjpegResponse(
+            chunks=[warm, b""],  # second yield will raise instead
+            raise_after=1,
+            raise_exc=TimeoutError(),
+        )
+
+        with _patch_mjpeg_session(response):
+            frame = await _capture_mjpeg_frame("http://camera.example/stream", timeout=15)
+
+        assert frame == warm
+
+    @pytest.mark.asyncio
+    async def test_no_frames_returns_none(self):
+        # Server replied 200 but emitted zero JPEG bytes before closing —
+        # there's nothing to return, so None is the correct answer.
+        from backend.app.services.external_camera import _capture_mjpeg_frame
+
+        response = _FakeMjpegResponse(chunks=[b"\x00\x01\x02\x03"])
+
+        with _patch_mjpeg_session(response):
+            frame = await _capture_mjpeg_frame("http://camera.example/stream", timeout=15)
+
+        assert frame is None
+
+    @pytest.mark.asyncio
+    async def test_non_200_status_returns_none(self):
+        # Invariant: a 4xx/5xx is never a valid frame source.
+        from backend.app.services.external_camera import _capture_mjpeg_frame
+
+        response = _FakeMjpegResponse(chunks=[], status=404)
+
+        with _patch_mjpeg_session(response):
+            frame = await _capture_mjpeg_frame("http://camera.example/stream", timeout=15)
+
+        assert frame is None
+
 
 class TestFormatMjpegFrame:
     """Tests for MJPEG frame formatting."""

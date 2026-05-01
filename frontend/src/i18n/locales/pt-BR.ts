@@ -2018,6 +2018,7 @@ export default {
     updateAvailableVersion: 'Atualização disponível: v{{version}}',
     releaseNotes: 'Notas da versão',
     updateViaDocker: 'Atualizar via Docker Compose:',
+    updateViaHomeAssistant: 'As atualizações são gerenciadas pelo Supervisor do Home Assistant. Abra Configurações → Complementos → Bambuddy no Home Assistant para instalar a nova versão.',
     installUpdate: 'Instalar atualização',
     latestVersionRunning: 'Você está usando a versão mais recente',
     failedToCheckUpdates: 'Falha ao verificar atualizações: {{error}}',

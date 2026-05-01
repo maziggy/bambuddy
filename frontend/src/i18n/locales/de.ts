@@ -2068,6 +2068,7 @@ export default {
     updateAvailableVersion: 'Update verfügbar: v{{version}}',
     releaseNotes: 'Versionshinweise',
     updateViaDocker: 'Update über Docker Compose:',
+    updateViaHomeAssistant: 'Updates werden vom Home Assistant Supervisor verwaltet. Öffne Einstellungen → Add-ons → Bambuddy in Home Assistant, um die neue Version zu installieren.',
     installUpdate: 'Update installieren',
     latestVersionRunning: 'Sie verwenden die neueste Version',
     failedToCheckUpdates: 'Update-Prüfung fehlgeschlagen: {{error}}',

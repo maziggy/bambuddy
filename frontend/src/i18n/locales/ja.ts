@@ -2067,6 +2067,7 @@ export default {
     updateAvailableVersion: 'アップデート利用可能: v{{version}}',
     releaseNotes: 'リリースノート',
     updateViaDocker: 'Docker Composeでアップデート:',
+    updateViaHomeAssistant: 'アップデートはHome Assistant Supervisorによって管理されます。Home Assistantの設定→アドオン→Bambuddyを開いて新しいバージョンをインストールしてください。',
     installUpdate: 'アップデートをインストール',
     latestVersionRunning: '最新バージョンを使用しています',
     failedToCheckUpdates: 'アップデートの確認に失敗しました: {{error}}',

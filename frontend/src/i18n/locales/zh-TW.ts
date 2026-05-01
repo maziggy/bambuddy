@@ -2062,6 +2062,7 @@ export default {
     updateAvailableVersion: '可用更新：v{{version}}',
     releaseNotes: '發布說明',
     updateViaDocker: '透過 Docker Compose 更新：',
+    updateViaHomeAssistant: '更新由 Home Assistant Supervisor 管理。請在 Home Assistant 中開啟 設定 → 附加元件 → Bambuddy 以安裝新版本。',
     installUpdate: '安裝更新',
     latestVersionRunning: '您正在執行最新版本',
     failedToCheckUpdates: '檢查更新失敗：{{error}}',

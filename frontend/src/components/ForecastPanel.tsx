@@ -768,6 +768,8 @@ function ForecastRow({
     onError: () => showToast(t('forecast.failedSaveSettings'), 'error'),
   });
 
+  const snoozed = f.settings?.alerts_snoozed ?? false;
+
   const label = [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' ');
   const colorStyle = f.group.spools[0]?.rgba ? `#${f.group.spools[0].rgba.substring(0, 6)}` : '#4B5563';
   const remainPct = f.totalLabelG > 0 ? Math.round((f.totalRemainingG / f.totalLabelG) * 100) : 0;
@@ -778,8 +780,6 @@ function ForecastRow({
     : f.reorderAlert ? 'text-yellow-400'
     : f.daysRemaining < 30 ? 'text-yellow-400'
     : 'text-green-400';
-
-  const snoozed = f.settings?.alerts_snoozed ?? false;
 
   function upsert(lead: number, marginVal: number, marginUnitArg: 'days' | 'g', alertsSnoozed = snoozed) {
     upsertMutation.mutate({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, lead_time_days: lead, safety_margin_value: marginVal, safety_margin_unit: marginUnitArg, alerts_snoozed: alertsSnoozed });

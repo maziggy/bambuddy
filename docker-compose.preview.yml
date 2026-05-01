@@ -1,0 +1,17 @@
+services:
+  bambuddy-preview:
+    build: .
+    container_name: bambuddy-preview
+    ports:
+      - "8765:8000"
+    volumes:
+      - bambuddy_preview_data:/app/data
+      - bambuddy_preview_logs:/app/logs
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
+      - PORT=8000
+    restart: "no"
+
+volumes:
+  bambuddy_preview_data:
+  bambuddy_preview_logs:

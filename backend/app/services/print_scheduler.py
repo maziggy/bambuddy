@@ -20,7 +20,13 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
-from backend.app.services.bambu_ftp import delete_file_async, get_ftp_retry_settings, upload_file_async, with_ftp_retry
+from backend.app.services.bambu_ftp import (
+    cache_3mf_download,
+    delete_file_async,
+    get_ftp_retry_settings,
+    upload_file_async,
+    with_ftp_retry,
+)
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager, supports_drying
 from backend.app.services.smart_plug_manager import smart_plug_manager
@@ -1963,6 +1969,12 @@ class PrintScheduler:
 
         if started:
             logger.info("Queue item %s: Print started successfully - %s", item.id, filename)
+
+            # Register the local 3MF in the cover-cache so /cover skips FTP
+            # (#1166 follow-up). file_path was resolved earlier from either the
+            # archive or the library file row.
+            if file_path is not None:
+                cache_3mf_download(item.printer_id, remote_filename, file_path)
 
             # Hold the printer against further dispatches until the watchdog
             # confirms the printer transitioned (or until the hard timeout).

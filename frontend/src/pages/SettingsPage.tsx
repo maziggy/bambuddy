@@ -197,6 +197,7 @@ export function SettingsPage() {
     can_queue: true,
     can_control_printer: false,
     can_read_status: true,
+    can_access_cloud: false,
   });
   const [createdAPIKey, setCreatedAPIKey] = useState<string | null>(null);
   const [showDeleteAPIKeyConfirm, setShowDeleteAPIKeyConfirm] = useState<number | null>(null);
@@ -387,7 +388,7 @@ export function SettingsPage() {
   });
 
   const createAPIKeyMutation = useMutation({
-    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean }) =>
+    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean; can_access_cloud: boolean }) =>
       api.createAPIKey(data),
     onSuccess: (data) => {
       setCreatedAPIKey(data.key || null);
@@ -769,7 +770,7 @@ export function SettingsPage() {
   const applyUpdateMutation = useMutation({
     mutationFn: api.applyUpdate,
     onSuccess: (data) => {
-      if (data.is_docker) {
+      if (data.is_ha_addon || data.is_docker) {
         showToast(data.message, 'error');
       } else {
         refetchUpdateStatus();
@@ -2271,6 +2272,12 @@ export function SettingsPage() {
                       <div className="mt-3 p-2 bg-red-500/20 rounded text-sm text-red-400">
                         {updateStatus.error || updateStatus.message}
                       </div>
+                    ) : updateCheck?.is_ha_addon ? (
+                      <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
+                        <p className="text-sm text-bambu-gray">
+                          {t('settings.updateViaHomeAssistant')}
+                        </p>
+                      </div>
                     ) : updateCheck?.is_docker ? (
                       <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
                         <p className="text-sm text-bambu-gray mb-2">
@@ -3642,6 +3649,18 @@ export function SettingsPage() {
                           <p className="text-xs text-bambu-gray">{t('settings.controlPrinterDescription')}</p>
                         </div>
                       </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAPIKeyPermissions.can_access_cloud}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_access_cloud: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">{t('settings.cloudAccess', 'Allow cloud access')}</span>
+                          <p className="text-xs text-bambu-gray">{t('settings.cloudAccessDescription', 'Read Bambu Cloud presets and filaments on your behalf. Requires you to be signed into Bambu Cloud.')}</p>
+                        </div>
+                      </label>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 pt-2">
@@ -3689,7 +3708,7 @@ export function SettingsPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <div className="flex gap-1 text-xs">
+                          <div className="flex gap-1 text-xs flex-wrap justify-end">
                             {key.can_read_status && (
                               <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">{t('settings.read')}</span>
                             )}
@@ -3698,6 +3717,17 @@ export function SettingsPage() {
                             )}
                             {key.can_control_printer && (
                               <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded">{t('settings.control')}</span>
+                            )}
+                            {key.can_access_cloud && (
+                              <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">{t('settings.cloudBadge', 'Cloud')}</span>
+                            )}
+                            {key.user_id === null && (
+                              <span
+                                className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded"
+                                title={t('settings.legacyKeyTooltip', 'Created before per-user ownership; recreate to use cloud access')}
+                              >
+                                {t('settings.legacyKey', 'Legacy')}
+                              </span>
                             )}
                           </div>
                           <Button

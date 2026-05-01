@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Clock, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ColorSectionProps, CatalogDisplayColor } from './types';
@@ -170,6 +170,22 @@ export function ColorSection({
   // commit the canonical form to formData on blur or when valid.
   const [extraColorsDraft, setExtraColorsDraft] = useState<string>(formData.extra_colors);
   const [extraColorsErrors, setExtraColorsErrors] = useState<string[]>([]);
+
+  // #1154 follow-up: when the modal opens to edit an existing spool, the
+  // parent's ``setFormData(...)`` lands in a useEffect AFTER ColorSection
+  // already mounted with the default-empty formData. Without resyncing,
+  // ``extraColorsDraft`` stays at the initial '' and the field appears
+  // empty even though the spool has saved colours (visible as the gradient
+  // banner above). Track our own commits via a ref so external formData
+  // updates resync the draft without clobbering live user typing.
+  const lastCommittedExtraColorsRef = useRef<string>(formData.extra_colors);
+  useEffect(() => {
+    if (formData.extra_colors !== lastCommittedExtraColorsRef.current) {
+      setExtraColorsDraft(formData.extra_colors);
+      setExtraColorsErrors([]);
+      lastCommittedExtraColorsRef.current = formData.extra_colors;
+    }
+  }, [formData.extra_colors]);
   const previewBackground = useMemo(
     () =>
       buildFilamentBackground({
@@ -185,11 +201,13 @@ export function ColorSection({
     setExtraColorsDraft(text);
     if (!text.trim()) {
       setExtraColorsErrors([]);
+      lastCommittedExtraColorsRef.current = '';
       updateField('extra_colors', '');
       return;
     }
     const { value, invalid } = normalizeExtraColorsInput(text);
     setExtraColorsErrors(invalid);
+    lastCommittedExtraColorsRef.current = value;
     updateField('extra_colors', value);
   };
 
@@ -198,7 +216,7 @@ export function ColorSection({
       {/* Color preview banner — shows gradient + effect overlay. */}
       <div
         className="h-10 rounded-lg border border-bambu-dark-tertiary"
-        style={{ backgroundImage: previewBackground, backgroundSize: 'cover' }}
+        style={previewBackground}
         data-testid="color-preview-banner"
       />
 

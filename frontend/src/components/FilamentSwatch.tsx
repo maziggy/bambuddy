@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import {
   CHECKERBOARD_BG,
+  CHECKERBOARD_TILE_SIZE,
   EFFECT_OVERLAYS,
   buildColorLayer,
   parseStops,
@@ -52,11 +53,16 @@ export function FilamentSwatch({
   const effectLayer = effectKey ? EFFECT_OVERLAYS[effectKey] ?? null : null;
 
   // Layer order (top → bottom): effect overlay → colour layer → checkerboard.
-  // Set as `background-image` (not the `background` shorthand) so the value
-  // remains a pure list-of-images that browsers and test runners parse cleanly.
-  const backgroundImage = [effectLayer, colorLayer, CHECKERBOARD_BG]
-    .filter((layer): layer is string => Boolean(layer))
-    .join(', ');
+  // Per-layer background-size: 'cover' on the painted layers, fixed tile on
+  // the checkerboard so its cell density doesn't scale with element size
+  // (a card-sized swatch with `cover` checker would render only 4 huge
+  // cells; #1154 follow-up).
+  const layers: { image: string; size: string }[] = [];
+  if (effectLayer) layers.push({ image: effectLayer, size: 'cover' });
+  layers.push({ image: colorLayer, size: 'cover' });
+  layers.push({ image: CHECKERBOARD_BG, size: CHECKERBOARD_TILE_SIZE });
+  const backgroundImage = layers.map((l) => l.image).join(', ');
+  const backgroundSize = layers.map((l) => l.size).join(', ');
 
   const shapeClass =
     shape === 'circle' ? 'rounded-full' : shape === 'pill' ? 'rounded-full' : 'rounded';
@@ -74,7 +80,7 @@ export function FilamentSwatch({
     <span
       data-testid="filament-swatch"
       className={`${className} ${shapeClass} border border-black/20 inline-block flex-shrink-0`}
-      style={{ backgroundImage, backgroundSize: 'cover', ...style }}
+      style={{ backgroundImage, backgroundSize, ...style }}
       title={computedTitle}
     />
   );

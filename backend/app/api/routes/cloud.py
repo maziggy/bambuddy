@@ -9,13 +9,21 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    _user_from_api_key,
+    _validate_api_key,
+    require_permission_if_auth_enabled,
+    security,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.api_key import APIKey
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.schemas.cloud import (
@@ -42,7 +50,81 @@ from backend.app.utils.filament_ids import filament_id_to_setting_id
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/cloud", tags=["cloud"])
+
+async def _cloud_api_key_gate(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Router-level dependency: enforce API-key cloud-access fences (#1182).
+
+    Runs before every /cloud/* handler. JWT-authed and anonymous callers are
+    no-ops — their access is gated by the per-route ``Permission.CLOUD_AUTH``
+    / ``Permission.FILAMENTS_READ`` / etc. dependency. API-keyed callers
+    must have an owner and ``can_access_cloud=True``; legacy ownerless keys
+    and keys without the cloud scope are rejected here.
+
+    On a successful API-keyed request the owner User is stashed on
+    ``request.state.api_key_owner`` so route handlers can resolve it via
+    ``cloud_caller`` (the auth gate returns None for API keys to avoid a
+    wider behaviour change in non-cloud routes — see auth.py).
+
+    The dep duplicates the API-key validation done by the regular auth gate
+    (which runs as a route-level dep, *after* router-level deps). The cost
+    is one extra ``SELECT FROM api_keys`` per /cloud/* request — bounded and
+    cheap (key_prefix is indexed).
+    """
+    api_key_value: str | None = None
+    if x_api_key:
+        api_key_value = x_api_key
+    elif credentials and credentials.credentials.startswith("bb_"):
+        api_key_value = credentials.credentials
+
+    if api_key_value is None:
+        return  # JWT or anonymous — no-op
+
+    api_key = await _validate_api_key(db, api_key_value)
+    if api_key is None:
+        # Invalid key — let the route-level auth gate produce the 401 so the
+        # error matches what every other route returns for a bad key.
+        return
+    _assert_api_key_can_access_cloud(api_key)
+    # All fences passed. Stash the owner so cloud routes can resolve their
+    # caller User without going through the auth gate (which intentionally
+    # returns None for API keys to keep #1182 surface-bounded to /cloud/*).
+    request.state.api_key_owner = await _user_from_api_key(db, api_key)
+
+
+def cloud_caller(*permissions: Permission):
+    """Route-level dep factory for /cloud/* handlers.
+
+    Returns a Depends that resolves to:
+      - the JWT-authenticated User (when a JWT is present and the route's
+        permission set is satisfied), OR
+      - the API-key owner User stashed by the router-level gate
+        (``request.state.api_key_owner``), OR
+      - None when auth is disabled.
+
+    Replaces the direct ``RequirePermissionIfAuthEnabled(...)`` dep on cloud
+    routes so API-keyed callers get the *owner* in ``current_user`` rather
+    than None — without that the route falls back to the global Settings
+    cloud_token, which is empty in auth-enabled deployments.
+    """
+    base_dep = require_permission_if_auth_enabled(*permissions)
+
+    async def resolved(
+        request: Request,
+        base_user: User | None = Depends(base_dep),
+    ) -> User | None:
+        if base_user is not None:
+            return base_user
+        return getattr(request.state, "api_key_owner", None)
+
+    return Depends(resolved)
+
+
+router = APIRouter(prefix="/cloud", tags=["cloud"], dependencies=[Depends(_cloud_api_key_gate)])
 
 
 # Keys for storing cloud credentials in settings
@@ -132,6 +214,35 @@ async def clear_token(db: AsyncSession, user: User | None = None) -> None:
     await db.commit()
 
 
+def _assert_api_key_can_access_cloud(api_key: APIKey) -> None:
+    """Reject API keys that aren't authorised to read cloud data.
+
+    Three independent fences for API keys (#1182):
+      1. user_id IS NOT NULL — legacy keys created before per-user ownership
+         have no owner whose cloud_token we could read; force recreate.
+      2. can_access_cloud=True — opt-in scope so existing automation doesn't
+         start reading cloud data without the operator explicitly enabling it.
+      3. owner has stored cloud_token — enforced separately at the route
+         level via ``build_authenticated_cloud`` returning None.
+    """
+    if api_key.user_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "This API key was created before per-user cloud access was supported. "
+                "Recreate it from Settings → API Keys to use /cloud/* endpoints."
+            ),
+        )
+    if not api_key.can_access_cloud:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This API key is not authorised to access Bambu Cloud data. "
+                "Enable 'Allow cloud access' on the key in Settings → API Keys."
+            ),
+        )
+
+
 async def build_authenticated_cloud(db: AsyncSession, user: User | None) -> BambuCloudService | None:
     """Build a per-request cloud service seeded with the caller's stored token + region.
 
@@ -149,7 +260,7 @@ async def build_authenticated_cloud(db: AsyncSession, user: User | None) -> Bamb
 @router.get("/status", response_model=CloudAuthStatus)
 async def get_auth_status(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """Get current cloud authentication status.
 
@@ -179,7 +290,7 @@ async def get_auth_status(
 async def login(
     request: CloudLoginRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
     Initiate login to Bambu Cloud.
@@ -219,7 +330,7 @@ async def login(
 async def verify_code(
     request: CloudVerifyRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
     Complete login with verification code (email or TOTP).
@@ -264,7 +375,7 @@ async def verify_code(
 async def set_token(
     request: CloudTokenRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
     Set access token directly.
@@ -290,7 +401,7 @@ async def set_token(
 @router.post("/logout")
 async def logout(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """Log out of Bambu Cloud."""
     await clear_token(db, current_user)
@@ -301,7 +412,7 @@ async def logout(
 async def get_slicer_settings(
     version: str = "02.04.00.70",
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
     Get all slicer settings (filament, printer, process presets).
@@ -372,7 +483,7 @@ async def get_slicer_settings(
 async def get_setting_detail(
     setting_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
     Get detailed information for a specific setting/preset.
@@ -399,7 +510,7 @@ async def get_setting_detail(
 async def get_filament_presets(
     version: str = "02.04.00.70",
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+    current_user: User | None = cloud_caller(Permission.FILAMENTS_READ),
 ):
     """
     Get just filament presets (convenience endpoint).
@@ -594,7 +705,7 @@ _filament_id_to_setting_id = filament_id_to_setting_id
 async def get_filament_info(
     setting_ids: list[str] = Body(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+    current_user: User | None = cloud_caller(Permission.FILAMENTS_READ),
 ):
     """
     Get filament preset info (name and K value) for multiple setting IDs.
@@ -673,7 +784,7 @@ async def get_filament_info(
 @router.get("/devices", response_model=list[CloudDevice])
 async def get_devices(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    current_user: User | None = cloud_caller(Permission.PRINTERS_READ),
 ):
     """
     Get list of bound printer devices.
@@ -710,7 +821,7 @@ async def get_devices(
 @router.get("/firmware-updates", response_model=FirmwareUpdatesResponse)
 async def get_firmware_updates(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
+    current_user: User | None = cloud_caller(Permission.FIRMWARE_READ),
 ):
     """
     Check for firmware updates for all bound devices.
@@ -786,7 +897,7 @@ async def get_firmware_updates(
 async def create_setting(
     request: SlicerSettingCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
     Create a new slicer preset/setting.
@@ -823,7 +934,7 @@ async def update_setting(
     setting_id: str,
     request: SlicerSettingUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
     Update an existing slicer preset/setting.
@@ -854,7 +965,7 @@ async def update_setting(
 async def delete_setting(
     setting_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
     Delete a slicer preset/setting.
@@ -937,7 +1048,7 @@ _filament_id_name_cache_time: float = 0
 @router.get("/filament-id-map")
 async def get_filament_id_map(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+    current_user: User | None = cloud_caller(Permission.FILAMENTS_READ),
 ):
     """
     Get filament_id → name mapping for user cloud presets.

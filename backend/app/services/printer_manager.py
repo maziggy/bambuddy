@@ -688,6 +688,29 @@ def parse_plate_id(gcode_file: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def resolve_plate_id(state) -> int | None:
+    """Resolve the active plate number from a PrinterState.
+
+    Some firmware versions (e.g. P1S 01.10.00.00, #1166) put only the .3mf
+    filename in print.gcode_file, so parse_plate_id() returns None and the
+    printer card falls back to plate 1 — wrong thumbnail. When Bambuddy
+    dispatched the print itself we already know the right plate, so we prefer
+    that over the gcode_file echo. The subtask check prevents stale values
+    from a previous Bambuddy-dispatched print bleeding into a Studio-direct
+    print on the same printer.
+    """
+    dispatched_plate = getattr(state, "dispatched_plate_id", None)
+    dispatched_subtask = getattr(state, "dispatched_subtask", None)
+    if (
+        dispatched_plate is not None
+        and dispatched_subtask is not None
+        and state.subtask_name
+        and dispatched_subtask == state.subtask_name
+    ):
+        return dispatched_plate
+    return parse_plate_id(state.gcode_file)
+
+
 def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, model: str | None = None) -> dict:
     """Convert PrinterState to a JSON-serializable dict.
 
@@ -909,7 +932,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         # a multi-plate 3MF without waiting for the 30 s REST poll (#881 follow-up).
         # current_archive_id is intentionally REST-only — it's stable for the life
         # of a print and needs a DB lookup the WebSocket path shouldn't pay for.
-        "current_plate_id": parse_plate_id(state.gcode_file),
+        "current_plate_id": resolve_plate_id(state),
         # Plate-clear gate (#939). Lives on the PrinterManager rather than PrinterState,
         # so surface it here — without this, WebSocket merges drop the flag and the
         # "Clear Plate" button only appears when the 30 s REST fallback poll runs.

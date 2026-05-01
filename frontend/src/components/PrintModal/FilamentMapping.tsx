@@ -88,6 +88,19 @@ export function FilamentMapping({
   const hasFilamentReqs = filamentReqs?.filaments && filamentReqs.filaments.length > 0;
   const isDualNozzle = filamentReqs?.filaments?.some((f) => f.nozzle_id != null) ?? false;
 
+  // Filament Track Switch: when installed, AMS-to-extruder mapping is dynamic
+  // (any slot can be routed to either extruder), so the per-nozzle dropdown
+  // filter is suppressed. fila_switch.in_slots[track] = currently fed slot,
+  // fila_switch.out_extruders[track] = extruder that track terminates at. See #1162.
+  const ftsInstalled = printerStatus?.fila_switch?.installed === true;
+  const ftsExtruderForSlot = (globalTrayId: number): number | null => {
+    const fs = printerStatus?.fila_switch;
+    if (!fs?.installed) return null;
+    const track = fs.in_slots.indexOf(globalTrayId);
+    if (track < 0) return null;
+    return fs.out_extruders[track] ?? null;
+  };
+
   // Don't render if no filament requirements
   if (!hasFilamentReqs) {
     return null;
@@ -212,7 +225,12 @@ export function FilamentMapping({
                   -- Select slot --
                 </option>
                 {loadedFilaments
-                  .filter((f) => item.nozzle_id == null || f.extruderId === item.nozzle_id)
+                  .filter(
+                    (f) =>
+                      item.nozzle_id == null ||
+                      ftsInstalled ||
+                      f.extruderId === item.nozzle_id,
+                  )
                   .map((f) => {
                     const remainingWeight = trayRemainingWeightMap.get(f.globalTrayId);
                     const remainingLabel = remainingWeight != null
@@ -221,9 +239,19 @@ export function FilamentMapping({
                           defaultValue: ` - ${remainingWeight}g left`,
                         })
                       : '';
+                    // FTS routing badge: if this slot is currently fed into an FTS
+                    // track, show the destination extruder. Idle (not-loaded) slots
+                    // get no badge — they can be routed to either extruder on demand.
+                    const ftsTargetExtruder = ftsInstalled
+                      ? ftsExtruderForSlot(f.globalTrayId)
+                      : null;
+                    const ftsBadge =
+                      ftsTargetExtruder == null
+                        ? ''
+                        : ` [${ftsTargetExtruder === 1 ? t('printModal.leftNozzle') : t('printModal.rightNozzle')}]`;
                     return (
                       <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                        {f.label}: {f.traySubBrands || f.type} ({f.colorName}){remainingLabel}
+                        {f.label}: {f.traySubBrands || f.type} ({f.colorName}){remainingLabel}{ftsBadge}
                       </option>
                     );
                 })}

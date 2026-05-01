@@ -25,6 +25,7 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.printer import Printer
 from backend.app.services.archive import ArchiveService
 from backend.app.services.bambu_ftp import (
+    cache_3mf_download,
     delete_file_async,
     get_ftp_retry_settings,
     upload_file_async,
@@ -684,6 +685,12 @@ class BackgroundDispatchService:
                     )
                     raise RuntimeError("Failed to start print")
 
+                # Register the archive's local 3MF in the cover-cache so the
+                # /cover endpoint can skip FTP — we already have the file on
+                # disk, no need to refetch 36 MB from a printer whose FTP is
+                # busy serving the active print (#1166 follow-up).
+                cache_3mf_download(job.printer_id, remote_filename, file_path)
+
                 # Wait for the printer to actually pick up the command before
                 # marking the dispatch job complete (#1042). MQTT-publish success
                 # only proves the command queued locally; the printer can still
@@ -883,6 +890,10 @@ class BackgroundDispatchService:
                     )
                     await db.rollback()
                     raise RuntimeError("Failed to start print")
+
+                # Same as the archive path: register the library file's local
+                # 3MF in the cover-cache so /cover skips FTP (#1166 follow-up).
+                cache_3mf_download(job.printer_id, remote_filename, file_path)
 
                 # See _run_reprint_archive for rationale (#1042). On timeout
                 # also rolls back the freshly-created archive so the library

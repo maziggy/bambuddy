@@ -20,6 +20,12 @@ class PendingUpload(Base):
     file_path: Mapped[str] = mapped_column(String(500))  # Temp storage path
     file_size: Mapped[int] = mapped_column(Integer)
 
+    # Embedded 3MF Title metadata, captured at FTP-receive time so the review
+    # card and the eventual archive's print_name agree on which name to show
+    # (#1152 follow-up). NULL when the 3MF has no title or the metadata read
+    # failed — the response model falls back to the filename stem in that case.
+    metadata_print_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Source info
     source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
 

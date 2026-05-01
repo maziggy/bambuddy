@@ -238,6 +238,16 @@ export interface PrintOptions {
   filament_tangle_detect: boolean;
 }
 
+export interface FilaSwitchState {
+  installed: boolean;
+  // in[track] = currently loaded slot for that track (-1 = empty)
+  in_slots: number[];
+  // out[track] = extruder this track terminates at (0 = right, 1 = left)
+  out_extruders: number[];
+  stat: number;
+  info: number;
+}
+
 export interface PrinterStatus {
   id: number;
   name: string;
@@ -299,6 +309,10 @@ export interface PrinterStatus {
   // Format: {ams_id: extruder_id} where extruder 0=right, 1=left
   // Note: JSON keys are always strings
   ams_extruder_map: Record<string, number>;
+  // Filament Track Switch accessory — null when not installed. When present,
+  // AMS slots aren't tied to a specific extruder; the FTS routes any slot to
+  // either extruder, so per-extruder slot filtering must be skipped.
+  fila_switch: FilaSwitchState | null;
   // Currently loaded tray (global tray ID, 255 = no filament loaded, 254 = external spool)
   tray_now: number;
   // AMS status for filament change tracking (0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration)
@@ -820,9 +834,11 @@ export interface APIKey {
   id: number;
   name: string;
   key_prefix: string;
+  user_id: number | null;  // Owner; null on legacy keys created before per-user ownership (#1182)
   can_queue: boolean;
   can_control_printer: boolean;
   can_read_status: boolean;
+  can_access_cloud: boolean;
   printer_ids: number[] | null;
   enabled: boolean;
   last_used: string | null;
@@ -835,6 +851,7 @@ export interface APIKeyCreate {
   can_queue?: boolean;
   can_control_printer?: boolean;
   can_read_status?: boolean;
+  can_access_cloud?: boolean;
   printer_ids?: number[] | null;
   expires_at?: string | null;
 }
@@ -848,6 +865,7 @@ export interface APIKeyUpdate {
   can_queue?: boolean;
   can_control_printer?: boolean;
   can_read_status?: boolean;
+  can_access_cloud?: boolean;
   printer_ids?: number[] | null;
   enabled?: boolean;
   expires_at?: string | null;
@@ -2382,7 +2400,8 @@ export interface UpdateCheckResult {
   error?: string;
   message?: string;
   is_docker?: boolean;
-  update_method?: 'docker' | 'git';
+  is_ha_addon?: boolean;
+  update_method?: 'docker' | 'git' | 'ha_addon';
 }
 
 export interface UpdateStatus {
@@ -4469,7 +4488,7 @@ export const api = {
   getVersion: () => request<VersionInfo>('/updates/version'),
   checkForUpdates: () => request<UpdateCheckResult>('/updates/check'),
   applyUpdate: () =>
-    request<{ success: boolean; message: string; status?: UpdateStatus; is_docker?: boolean }>('/updates/apply', {
+    request<{ success: boolean; message: string; status?: UpdateStatus; is_docker?: boolean; is_ha_addon?: boolean }>('/updates/apply', {
       method: 'POST',
     }),
   getUpdateStatus: () => request<UpdateStatus>('/updates/status'),
@@ -5699,6 +5718,11 @@ export interface VirtualPrinterModels {
 export interface PendingUpload {
   id: number;
   filename: string;
+  // Resolved name the review card should show — mirrors what archive_print
+  // will eventually write to PrintArchive.print_name (#1152 follow-up). Falls
+  // back to the stripped filename stem when the 3MF has no embedded title or
+  // the operator has chosen the "filename" archive-name source.
+  display_name: string;
   file_size: number;
   source_ip: string | null;
   status: string;

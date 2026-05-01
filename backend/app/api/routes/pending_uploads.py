@@ -13,7 +13,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.pending_upload import PendingUpload
 from backend.app.models.user import User
-from backend.app.services.archive import ArchiveService
+from backend.app.services.archive import ArchiveService, resolve_display_stem
 
 router = APIRouter(prefix="/pending-uploads", tags=["pending-uploads"])
 
@@ -31,6 +31,7 @@ class PendingUploadResponse(BaseModel):
 
     id: int
     filename: str
+    display_name: str  # Resolved name that mirrors the eventual archive's print_name (#1152 follow-up)
     file_size: int
     source_ip: str | None
     status: str
@@ -43,6 +44,50 @@ class PendingUploadResponse(BaseModel):
         from_attributes = True
 
 
+def _resolve_display_name(pending: PendingUpload, prefer_filename: bool) -> str:
+    """Compute the name the review card should show, matching what archive_print
+    will eventually write to ``PrintArchive.print_name`` so the user sees the
+    same name in both places (#1152 follow-up).
+
+    Mirrors ``ArchiveService.archive_print``:
+      - ``prefer_filename=True`` → stripped filename stem.
+      - ``prefer_filename=False`` → ``metadata_print_name`` if set, else stem.
+    """
+    stem = resolve_display_stem(pending.filename)
+    if prefer_filename:
+        return stem
+    return (pending.metadata_print_name or "").strip() or stem
+
+
+async def _augment_with_display_name(
+    db: AsyncSession,
+    pendings: list[PendingUpload],
+) -> list[PendingUploadResponse]:
+    """Build response objects with display_name resolved against the toggle.
+
+    Reads the ``virtual_printer_archive_name_source`` setting once per request
+    rather than per row.
+    """
+    from backend.app.api.routes.settings import get_setting
+
+    prefer_filename = (await get_setting(db, "virtual_printer_archive_name_source")) == "filename"
+    return [
+        PendingUploadResponse(
+            id=p.id,
+            filename=p.filename,
+            display_name=_resolve_display_name(p, prefer_filename),
+            file_size=p.file_size,
+            source_ip=p.source_ip,
+            status=p.status,
+            tags=p.tags,
+            notes=p.notes,
+            project_id=p.project_id,
+            uploaded_at=p.uploaded_at,
+        )
+        for p in pendings
+    ]
+
+
 @router.get("/", response_model=list[PendingUploadResponse])
 async def list_pending_uploads(
     db: AsyncSession = Depends(get_db),
@@ -53,7 +98,7 @@ async def list_pending_uploads(
         select(PendingUpload).where(PendingUpload.status == "pending").order_by(PendingUpload.uploaded_at.desc())
     )
 
-    return result.scalars().all()
+    return await _augment_with_display_name(db, list(result.scalars().all()))
 
 
 @router.get("/count")
@@ -172,7 +217,7 @@ async def get_pending_upload(
     if not pending:
         raise HTTPException(status_code=404, detail="Upload not found")
 
-    return pending
+    return (await _augment_with_display_name(db, [pending]))[0]
 
 
 @router.post("/{upload_id}/archive")

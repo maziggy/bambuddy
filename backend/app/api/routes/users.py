@@ -21,6 +21,7 @@ from backend.app.core.auth import (
 )
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
@@ -404,6 +405,17 @@ async def delete_user(
             update(PrintQueueItem).where(PrintQueueItem.created_by_id == user_id).values(created_by_id=None)
         )
         await db.execute(update(LibraryFile).where(LibraryFile.created_by_id == user_id).values(created_by_id=None))
+
+    # Drop API keys owned by this user. The model declares ON DELETE CASCADE
+    # so Postgres handles this automatically, but SQLite ships with FK
+    # enforcement off (the project's existing pattern — same reason the
+    # blocks above set created_by_id = NULL by hand). Without an explicit
+    # DELETE here, deleting a user on SQLite would leave their API keys
+    # with a dangling user_id and ``_user_from_api_key`` would return None,
+    # silently degrading the keys to anonymous (and locking them out of
+    # /cloud/* — but the rest of the API would still accept them, which is
+    # exactly the orphan-key state the CASCADE was meant to prevent).
+    await db.execute(delete(APIKey).where(APIKey.user_id == user_id))
 
     await db.delete(user)
     await db.commit()

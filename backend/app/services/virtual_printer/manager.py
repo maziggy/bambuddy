@@ -279,6 +279,22 @@ class VirtualPrinterInstance:
                 pass
             return
 
+        # Peek at the 3MF for the embedded title BEFORE we hand it off to the
+        # DB. Storing it now means the /pending-uploads/ list doesn't have to
+        # reopen every 3MF on every render to keep the review card and the
+        # eventual archive name in sync (#1152 follow-up). Failure to parse is
+        # not fatal — the response model falls back to the filename stem.
+        metadata_print_name: str | None = None
+        try:
+            from backend.app.services.archive import ThreeMFParser
+
+            parsed = ThreeMFParser(file_path).parse()
+            raw_name = parsed.get("print_name")
+            if isinstance(raw_name, str) and raw_name.strip():
+                metadata_print_name = raw_name.strip()[:255]
+        except Exception as e:
+            logger.debug("[VP %s] Metadata title peek failed for %s: %s", self.name, file_path.name, e)
+
         try:
             from backend.app.models.pending_upload import PendingUpload
 
@@ -290,6 +306,7 @@ class VirtualPrinterInstance:
                     source_ip=source_ip,
                     status="pending",
                     uploaded_at=datetime.now(timezone.utc),
+                    metadata_print_name=metadata_print_name,
                 )
                 db.add(pending)
                 await db.commit()

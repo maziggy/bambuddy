@@ -54,7 +54,7 @@ function PendingUploadItem({
           <div className="flex items-center gap-3">
             <FileBox className="w-8 h-8 text-bambu-green flex-shrink-0" />
             <div>
-              <p className="text-white font-medium">{upload.filename}</p>
+              <p className="text-white font-medium" title={upload.filename}>{upload.display_name || upload.filename}</p>
               <div className="flex items-center gap-2 text-xs text-bambu-gray">
                 <span>{formatFileSize(upload.file_size)}</span>
                 <span>·</span>

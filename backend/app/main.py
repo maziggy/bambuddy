@@ -2654,11 +2654,17 @@ async def on_print_complete(printer_id: int, data: dict):
         data = {**data, "status": "cancelled"}
     _user_stopped_printers.discard(printer_id)
 
-    # Raise the plate-clear gate for queued dispatch (#961). Only for completed/failed —
-    # user-cancelled prints don't require a plate-clear ack (nothing printed on the bed).
-    # Persisted to DB so the gate survives Auto Off power cycles and Bambuddy restarts.
+    # Raise the plate-clear gate for queued dispatch (#961). Any terminal status
+    # may have left material on the bed: a user can cancel ten hours into a
+    # twelve-hour print, a printer can self-abort mid-job after a clog, and a
+    # touchscreen-stop reports `aborted` rather than `cancelled` because
+    # `_user_stopped_printers` is only populated when the user stops via the
+    # Bambuddy queue UI. Earlier code raised the flag only for completed/failed,
+    # which auto-dispatched the next queued print onto a fouled bed two seconds
+    # after a touchscreen-abort (#1171). Persisted to DB so the gate survives
+    # Auto Off power cycles and Bambuddy restarts.
     _final_status = data.get("status", "completed")
-    if _final_status in ("completed", "failed"):
+    if _final_status in ("completed", "failed", "aborted", "cancelled"):
         printer_manager.set_awaiting_plate_clear(printer_id, True)
 
     # MQTT relay - publish print complete

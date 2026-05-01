@@ -1762,6 +1762,42 @@ async def run_migrations(conn):
         "CREATE INDEX IF NOT EXISTS ix_library_files_source_url ON library_files(source_url)",
     )
 
+    # Migration: Cache metadata title on pending uploads (#1152 follow-up).
+    # Without this column the review card always shows the FTP filename while
+    # the eventual archive's print_name comes from the 3MF metadata title,
+    # creating a confusing review→archive name mismatch. Captured at upload
+    # time so /pending-uploads/ list calls don't have to reopen each 3MF.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE pending_uploads ADD COLUMN metadata_print_name VARCHAR(255)",
+    )
+
+    # Migration: Per-user API key ownership + cloud-access scope (#1182).
+    # user_id is nullable so legacy keys (created before #1182) survive the
+    # migration; cloud routes reject calls from keys without an owner so the
+    # operator is forced to recreate them. ON DELETE CASCADE so deleting a user
+    # takes their keys with them — orphan keys must never authenticate.
+    # SQLite ignores REFERENCES on ADD COLUMN (not enforced but not an error);
+    # PostgreSQL enforces the FK from this point forward. Indexed for the
+    # auth-gate's owner→keys lookup that runs on every API-keyed request.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_api_keys_user_id ON api_keys(user_id)",
+    )
+    # ``DEFAULT 0`` works on SQLite (boolean is just integer-coerced) but
+    # asyncpg's strict type-check rejects it: "column is of type boolean but
+    # default expression is of type integer". Use ``DEFAULT FALSE`` so both
+    # dialects accept the same statement — same pattern as the print_queue
+    # gcode_injection migration above.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_access_cloud BOOLEAN DEFAULT FALSE",
+    )
+
     # Migration: Soft-delete column for trash bin (Issue #1008). Indexed so the
     # sweeper's "SELECT ... WHERE deleted_at < cutoff" and the trash list's
     # "WHERE deleted_at IS NOT NULL" stay cheap as the table grows.

@@ -54,6 +54,16 @@ def _is_docker_environment() -> bool:
     return False
 
 
+def _is_ha_addon() -> bool:
+    """Detect if running as a Home Assistant Supervisor addon.
+
+    HA Supervisor injects ``SUPERVISOR_TOKEN`` into every addon container;
+    the variable is not set in any other environment, so a single env-var
+    check is sufficient with no false-positive surface.
+    """
+    return bool(os.environ.get("SUPERVISOR_TOKEN"))
+
+
 def _find_executable(name: str) -> str | None:
     """Find an executable in PATH or common locations."""
     # Try standard PATH first
@@ -355,6 +365,13 @@ async def check_for_updates(
             }
 
             is_docker = _is_docker_environment()
+            is_ha_addon = _is_ha_addon()
+            if is_ha_addon:
+                update_method = "ha_addon"
+            elif is_docker:
+                update_method = "docker"
+            else:
+                update_method = "git"
             return {
                 "update_available": update_available,
                 "current_version": APP_VERSION,
@@ -364,7 +381,8 @@ async def check_for_updates(
                 "release_url": release_url,
                 "published_at": published_at,
                 "is_docker": is_docker,
-                "update_method": "docker" if is_docker else "git",
+                "is_ha_addon": is_ha_addon,
+                "update_method": update_method,
             }
 
     except httpx.HTTPError as e:
@@ -669,7 +687,20 @@ async def apply_update(
             "status": _update_status,
         }
 
-    # Check if running in Docker
+    # Check for managed deployment shapes that own the update lifecycle.
+    # HA addons are also Docker, so check HA first to surface the more
+    # specific message.
+    if _is_ha_addon():
+        return {
+            "success": False,
+            "is_ha_addon": True,
+            "is_docker": True,
+            "message": (
+                "Bambuddy is running as a Home Assistant addon. "
+                "Updates are managed by the Home Assistant Supervisor "
+                "(Settings → Add-ons → Bambuddy → Update)."
+            ),
+        }
     if _is_docker_environment():
         return {
             "success": False,

@@ -92,7 +92,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Duplicate detection & full-text search
 - Photo attachments & failure analysis
 - Timelapse editor (trim, speed, music) with automatic AVI-to-MP4 conversion for P1-series printers, manual upload & remove
-- Re-print to any connected printer with AMS mapping (auto-match or manual slot selection, multi-plate support, nozzle-aware matching for dual-nozzle H2D/H2D Pro)
+- Re-print to any connected printer with AMS mapping (auto-match or manual slot selection, multi-plate support, nozzle-aware matching for dual-nozzle H2D/H2D Pro, **Filament Track Switch (FTS) support** — when the FTS accessory is installed the per-nozzle filter is suppressed since the FTS routes any AMS slot to either extruder)
 - Plate thumbnail browsing for multi-plate archives (hover to navigate between plates)
 - Archive comparison (side-by-side diff)
 - Tag management (rename/delete across all archives)
@@ -230,6 +230,8 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - **Scheduled local backups** - Automatic backup snapshots on hourly/daily/weekly schedule with retention management and NAS-mountable output
 - External sidebar links
 - Webhooks & API keys
+  - Per-user ownership — each key acts on behalf of its creator
+  - Optional **cloud-access scope** — opt in to let an API key read its owner's Bambu Cloud presets / filament catalogue / device list (off by default)
 - Interactive API browser with live testing
 
 ### 🖨️ Virtual Printer & Remote Printing

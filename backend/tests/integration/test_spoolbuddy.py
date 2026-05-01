@@ -205,6 +205,54 @@ class TestDeviceEndpoints:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_heartbeat_returns_ssh_public_key(self, async_client: AsyncClient, device_factory):
+        """Heartbeat response carries the current SSH public key so the daemon
+        can re-deploy it whenever Bambuddy's keypair rotates without waiting
+        for a service restart."""
+        await device_factory(device_id="sb-ssh-hb")
+
+        fake_key = "ssh-ed25519 AAAATESTKEY bambuddy-spoolbuddy"
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.services.spoolbuddy_ssh.get_public_key",
+                AsyncMock(return_value=fake_key),
+            ),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/devices/sb-ssh-hb/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 5},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["ssh_public_key"] == fake_key
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_heartbeat_ssh_key_failure_does_not_break_heartbeat(self, async_client: AsyncClient, device_factory):
+        """If the backend can't read its own SSH key, the heartbeat must still
+        succeed — telemetry/commands are far more critical than key sync."""
+        await device_factory(device_id="sb-ssh-fail")
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.services.spoolbuddy_ssh.get_public_key",
+                AsyncMock(side_effect=OSError("disk full")),
+            ),
+        ):
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/devices/sb-ssh-fail/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 5},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["ssh_public_key"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_heartbeat_returns_pending_command(self, async_client: AsyncClient, device_factory):
         await device_factory(device_id="sb-cmd", pending_command="tare")
 

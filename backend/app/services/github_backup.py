@@ -30,6 +30,13 @@ SCHEDULE_INTERVALS = {
     "weekly": 604800,
 }
 
+_PROVIDER_DISPLAY_NAMES = {
+    "github": "GitHub",
+    "gitlab": "GitLab",
+    "gitea": "Gitea",
+    "forgejo": "Forgejo",
+}
+
 
 class GitHubBackupService:
     """Service for backing up profiles to GitHub."""
@@ -165,9 +172,9 @@ class GitHubBackupService:
                             "files_changed": 0,
                         }
 
-                    # Push to GitHub
-                    self._backup_progress = "Pushing to GitHub..."
-                    push_result = await self._push_to_github(config, backup_data)
+                    provider_name = _PROVIDER_DISPLAY_NAMES.get(config.provider, config.provider)
+                    self._backup_progress = f"Pushing to {provider_name}..."
+                    push_result = await self._push_to_provider(config, backup_data)
 
                     # Update log and config
                     log.status = push_result["status"]
@@ -519,7 +526,7 @@ class GitHubBackupService:
 
         logger.info("Collected %d print archives", len(archive_list))
 
-    async def _push_to_github(self, config: GitHubBackupConfig, files: dict) -> dict:
+    async def _push_to_provider(self, config: GitHubBackupConfig, files: dict) -> dict:
         """Push files to the configured Git provider."""
         backend = get_provider_backend(config.provider)
         client = await self._get_client()

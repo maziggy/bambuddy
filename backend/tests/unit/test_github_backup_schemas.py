@@ -66,5 +66,20 @@ class TestGitHubBackupConfigCreate:
         with pytest.raises(ValidationError):
             GitHubBackupConfigCreate(
                 **self.BASE_FIELDS,
-                provider="bitbucket",
+                provider="not-a-provider",
             )
+
+    def test_http_url_without_allow_insecure_raises(self):
+        with pytest.raises(ValidationError, match="Allow insecure HTTP"):
+            GitHubBackupConfigCreate(
+                repository_url="http://git.example.com/owner/repo",
+                access_token="token",
+            )
+
+    def test_http_url_with_allow_insecure_is_valid(self):
+        config = GitHubBackupConfigCreate(
+            repository_url="http://git.example.com/owner/repo",
+            access_token="token",
+            allow_insecure_http=True,
+        )
+        assert config.repository_url == "http://git.example.com/owner/repo"

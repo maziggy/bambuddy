@@ -5504,6 +5504,8 @@ export default {
     shoppingListItems_other: '({{count}} itens)',
     shoppingListEmpty: 'A lista de compras está vazia. Clique no ícone do carrinho em qualquer linha para adicionar itens.',
     addToCart: 'Adicionar à lista de compras',
+    alertsSnoozed: 'Silenciar alertas para este SKU',
+    alertsEnabled: 'Ativar alertas para este SKU',
     addedToCart: 'Adicionado à lista de compras',
     failedAddItem: 'Falha ao adicionar item',
     listView: 'Lista',

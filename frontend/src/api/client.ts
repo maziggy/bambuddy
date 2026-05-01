@@ -2342,6 +2342,7 @@ export interface FilamentSkuSettings {
   lead_time_days: number;
   safety_margin_value: number;
   safety_margin_unit: 'days' | 'g';
+  alerts_snoozed: boolean;
 }
 
 export interface ShoppingListItem {
@@ -4440,7 +4441,7 @@ export const api = {
     request<{ synced: number; skipped: number }>('/inventory/sync-ams-weights', { method: 'POST' }),
   getSkuSettings: () =>
     request<FilamentSkuSettings[]>('/inventory/sku-settings'),
-  upsertSkuSettings: (data: { material: string; subtype: string | null; brand: string | null; lead_time_days: number; safety_margin_value: number; safety_margin_unit: 'days' | 'g' }) =>
+  upsertSkuSettings: (data: { material: string; subtype: string | null; brand: string | null; lead_time_days: number; safety_margin_value: number; safety_margin_unit: 'days' | 'g'; alerts_snoozed: boolean }) =>
     request<FilamentSkuSettings>('/inventory/sku-settings', {
       method: 'POST',
       body: JSON.stringify(data),

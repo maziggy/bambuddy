@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertTriangle, TrendingDown, ShoppingCart, Check,
+  AlertTriangle, TrendingDown, ShoppingCart, Check, BellOff,
   ChevronDown, ChevronUp, Info, Edit2, X, Lock,
   ArrowUp, ArrowDown, ArrowUpDown, Package, Trash2, BarChart2,
   CreditCard, PackageCheck, Download, RotateCcw,
@@ -772,15 +772,22 @@ function ForecastRow({
   const colorStyle = f.group.spools[0]?.rgba ? `#${f.group.spools[0].rgba.substring(0, 6)}` : '#4B5563';
   const remainPct = f.totalLabelG > 0 ? Math.round((f.totalRemainingG / f.totalLabelG) * 100) : 0;
 
-  const daysColor =
-    f.daysRemaining === null ? 'text-bambu-gray'
+  const daysColor = snoozed ? 'text-bambu-gray'
+    : f.daysRemaining === null ? 'text-bambu-gray'
     : f.stockBreakAlert ? 'text-red-400'
     : f.reorderAlert ? 'text-yellow-400'
     : f.daysRemaining < 30 ? 'text-yellow-400'
     : 'text-green-400';
 
-  function upsert(lead: number, marginVal: number, marginUnitArg: 'days' | 'g') {
-    upsertMutation.mutate({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, lead_time_days: lead, safety_margin_value: marginVal, safety_margin_unit: marginUnitArg });
+  const snoozed = f.settings?.alerts_snoozed ?? false;
+
+  function upsert(lead: number, marginVal: number, marginUnitArg: 'days' | 'g', alertsSnoozed = snoozed) {
+    upsertMutation.mutate({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, lead_time_days: lead, safety_margin_value: marginVal, safety_margin_unit: marginUnitArg, alerts_snoozed: alertsSnoozed });
+  }
+
+  function toggleSnooze(e: React.MouseEvent) {
+    e.stopPropagation();
+    upsert(f.settings?.lead_time_days ?? 0, f.settings?.safety_margin_value ?? 14, f.settings?.safety_margin_unit ?? 'days', !snoozed);
   }
 
   const tierBadge = f.rateTier === 'history'
@@ -789,12 +796,12 @@ function ForecastRow({
     ? <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-400/15 text-blue-400"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" />{t('forecast.estimated')}</span>
     : <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-bambu-dark-tertiary text-bambu-gray/60"><span className="w-1.5 h-1.5 rounded-full bg-bambu-gray/40" />{t('forecast.noData')}</span>;
 
-  const rowAlertBorder = f.stockBreakAlert ? 'bg-red-500/5' : f.reorderAlert ? 'bg-yellow-500/5' : '';
+  const rowAlertBorder = snoozed ? '' : f.stockBreakAlert ? 'bg-red-500/5' : f.reorderAlert ? 'bg-yellow-500/5' : '';
 
   return (
     <>
       <tr
-        className={`cursor-pointer hover:bg-bambu-dark-tertiary/40 transition-colors ${rowAlertBorder}`}
+        className={`cursor-pointer hover:bg-bambu-dark-tertiary/40 transition-colors ${rowAlertBorder} ${snoozed ? 'opacity-50' : ''}`}
         onClick={() => setExpanded((e) => !e)}
       >
         {/* Color dot */}
@@ -861,13 +868,22 @@ function ForecastRow({
                 <ShoppingCart className="w-4 h-4" />
               </button>
             )}
-            {f.stockBreakAlert ? (
+            {!snoozed && (f.stockBreakAlert ? (
               <AlertTriangle className="w-4 h-4 text-red-400" aria-label={t('forecast.stockBreakRisk')} />
             ) : f.reorderAlert ? (
               <AlertTriangle className="w-4 h-4 text-yellow-400" aria-label={t('forecast.reorderNow')} />
             ) : f.daysRemaining !== null ? (
               <Check className="w-4 h-4 text-bambu-green/50" />
-            ) : null}
+            ) : null)}
+            {canWrite && (
+              <button
+                onClick={toggleSnooze}
+                className={`p-1 rounded transition-colors ${snoozed ? 'text-bambu-gray/70 hover:text-white' : 'text-bambu-dark-tertiary hover:text-bambu-gray'}`}
+                title={t(snoozed ? 'forecast.alertsEnabled' : 'forecast.alertsSnoozed')}
+              >
+                <BellOff className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
               className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors"

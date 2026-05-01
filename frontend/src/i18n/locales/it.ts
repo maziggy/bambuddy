@@ -5504,6 +5504,8 @@ export default {
     shoppingListItems_other: '({{count}} articoli)',
     shoppingListEmpty: 'La lista della spesa è vuota. Clicca sull\'icona del carrello in qualsiasi riga per aggiungere articoli.',
     addToCart: 'Aggiungi alla lista della spesa',
+    alertsSnoozed: 'Silenzia avvisi per questo SKU',
+    alertsEnabled: 'Riattiva avvisi per questo SKU',
     addedToCart: 'Aggiunto alla lista della spesa',
     failedAddItem: 'Impossibile aggiungere l\'articolo',
     listView: 'Lista',

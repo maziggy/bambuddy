@@ -5528,6 +5528,8 @@ export default {
     shoppingListItems_other: '({{count}} items)',
     shoppingListEmpty: 'Shopping list is empty. Click the cart icon on any row to add items.',
     addToCart: 'Add to shopping list',
+    alertsSnoozed: 'Mute alerts for this SKU',
+    alertsEnabled: 'Unmute alerts for this SKU',
     addedToCart: 'Added to shopping list',
     failedAddItem: 'Failed to add item',
     listView: 'List',

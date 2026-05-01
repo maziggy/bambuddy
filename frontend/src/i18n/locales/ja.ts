@@ -5517,6 +5517,8 @@ export default {
     shoppingListItems_other: '（{{count}}件）',
     shoppingListEmpty: '購入リストは空です。行のカートアイコンをクリックしてアイテムを追加してください。',
     addToCart: '購入リストに追加',
+    alertsSnoozed: 'このSKUのアラートをミュート',
+    alertsEnabled: 'このSKUのアラートを有効にする',
     addedToCart: '買い物リストに追加しました',
     failedAddItem: 'アイテムの追加に失敗しました',
     listView: 'リスト',

@@ -1846,6 +1846,9 @@ async def run_migrations(conn):
             conn, "ALTER TABLE filament_sku_settings ADD COLUMN safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days'"
         )
         await _safe_execute(
+            conn, "ALTER TABLE filament_sku_settings ADD COLUMN alerts_snoozed BOOLEAN NOT NULL DEFAULT 0"
+        )
+        await _safe_execute(
             conn,
             "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14",
         )
@@ -1925,6 +1928,10 @@ async def run_migrations(conn):
         await _safe_execute(
             conn,
             "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days'",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS alerts_snoozed BOOLEAN NOT NULL DEFAULT FALSE",
         )
         await _safe_execute(
             conn,

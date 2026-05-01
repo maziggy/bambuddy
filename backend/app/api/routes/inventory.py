@@ -1526,6 +1526,7 @@ class FilamentSkuSettingsResponse(BaseModel):
     lead_time_days: int
     safety_margin_value: int
     safety_margin_unit: str
+    alerts_snoozed: bool = False
 
     class Config:
         from_attributes = True
@@ -1538,6 +1539,7 @@ class FilamentSkuSettingsUpsert(BaseModel):
     lead_time_days: int = 0
     safety_margin_value: int = 14
     safety_margin_unit: str = "days"
+    alerts_snoozed: bool = False
 
 
 @router.get("/sku-settings", response_model=list[FilamentSkuSettingsResponse])
@@ -1577,6 +1579,7 @@ async def upsert_sku_settings(
         row.lead_time_days = data.lead_time_days
         row.safety_margin_value = data.safety_margin_value
         row.safety_margin_unit = data.safety_margin_unit
+        row.alerts_snoozed = data.alerts_snoozed
     else:
         row = FilamentSkuSettings(
             material=data.material,
@@ -1585,6 +1588,7 @@ async def upsert_sku_settings(
             lead_time_days=data.lead_time_days,
             safety_margin_value=data.safety_margin_value,
             safety_margin_unit=data.safety_margin_unit,
+            alerts_snoozed=data.alerts_snoozed,
         )
         db.add(row)
     await db.commit()

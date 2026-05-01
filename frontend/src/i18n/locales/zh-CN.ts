@@ -5504,6 +5504,8 @@ export default {
     shoppingListItems_other: '（{{count}}项）',
     shoppingListEmpty: '购物清单为空。点击任意行的购物车图标以添加商品。',
     addToCart: '添加到购物清单',
+    alertsSnoozed: '静音此SKU的提醒',
+    alertsEnabled: '启用此SKU的提醒',
     addedToCart: '已添加到购物清单',
     failedAddItem: '添加项目失败',
     listView: '列表',

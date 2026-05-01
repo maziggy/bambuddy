@@ -5519,6 +5519,8 @@ export default {
     shoppingListItems_other: '({{count}} Artikel)',
     shoppingListEmpty: 'Einkaufsliste ist leer. Klicken Sie auf das Warenkorbsymbol in einer Zeile, um Artikel hinzuzufügen.',
     addToCart: 'Zur Einkaufsliste hinzufügen',
+    alertsSnoozed: 'Benachrichtigungen für diese SKU stummschalten',
+    alertsEnabled: 'Benachrichtigungen für diese SKU aktivieren',
     addedToCart: 'Zur Einkaufsliste hinzugefügt',
     failedAddItem: 'Artikel konnte nicht hinzugefügt werden',
     listView: 'Liste',

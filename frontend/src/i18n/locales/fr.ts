@@ -5505,6 +5505,8 @@ export default {
     shoppingListItems_other: '({{count}} articles)',
     shoppingListEmpty: 'La liste d\'achats est vide. Cliquez sur l\'icône panier d\'une ligne pour ajouter des articles.',
     addToCart: 'Ajouter à la liste d\'achats',
+    alertsSnoozed: 'Désactiver les alertes pour ce SKU',
+    alertsEnabled: 'Activer les alertes pour ce SKU',
     addedToCart: 'Ajouté à la liste de courses',
     failedAddItem: 'Impossible d\'ajouter l\'article',
     listView: 'Liste',

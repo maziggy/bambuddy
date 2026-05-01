@@ -2838,6 +2838,12 @@ export const api = {
       method: 'POST',
     }),
 
+  // Fan Speed Control (fan: 1=part cooling, 2=auxiliary, 3=chamber; speed: 0-255)
+  setFanSpeed: (printerId: number, fan: 1 | 2 | 3, speed: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/fan-speed?fan=${fan}&speed=${speed}`, {
+      method: 'POST',
+    }),
+
   // AMS Drying Control
   startDrying: (printerId: number, amsId: number, temp: number, duration: number, filament: string = '', rotateTray: boolean = false) =>
     request<{ status: string; ams_id: number; temp: number; duration: number }>(

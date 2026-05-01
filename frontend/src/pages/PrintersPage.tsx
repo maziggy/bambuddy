@@ -1356,6 +1356,8 @@ function PrinterCard({
   const [showSpeedMenu, setShowSpeedMenu] = useState<number | null>(null);
   const [showAirductMenu, setShowAirductMenu] = useState<number | null>(null);
   const [showBedJogMenu, setShowBedJogMenu] = useState<number | null>(null);
+  const [showFanMenu, setShowFanMenu] = useState<1 | 2 | 3 | null>(null);
+  const [fanSliderSpeed, setFanSliderSpeed] = useState<number>(0);
   const [bedJogStep, setBedJogStep] = useState<number>(10);
   const [showNotHomedModal, setShowNotHomedModal] = useState<null | { distance: number }>(null);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
@@ -1865,6 +1867,28 @@ function PrinterCard({
       queryClient.setQueryData(['printerStatus', printer.id], (old: typeof status) => ({
         ...old,
         airduct_mode: mode === 'cooling' ? 0 : 1,
+      }));
+      return { previousStatus };
+    },
+    onError: (error: Error, _, context) => {
+      if (context?.previousStatus) {
+        queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
+      }
+      showToast(error.message || t('printers.toast.failedToSendCommand'), 'error');
+    },
+  });
+
+  const fanSpeedMutation = useMutation({
+    mutationFn: ({ fan, speed }: { fan: 1 | 2 | 3; speed: number }) =>
+      api.setFanSpeed(printer.id, fan, Math.round(speed * 255 / 100)),
+    onMutate: async ({ fan, speed }) => {
+      await queryClient.cancelQueries({ queryKey: ['printerStatus', printer.id] });
+      const previousStatus = queryClient.getQueryData(['printerStatus', printer.id]);
+      queryClient.setQueryData(['printerStatus', printer.id], (old: typeof status) => ({
+        ...old,
+        ...(fan === 1 ? { cooling_fan_speed: speed } : {}),
+        ...(fan === 2 ? { big_fan1_speed: speed } : {}),
+        ...(fan === 3 ? { big_fan2_speed: speed } : {}),
       }));
       return { previousStatus };
     },
@@ -2947,36 +2971,168 @@ function PrinterCard({
                     {/* Left: Fan Status - always visible, dynamic coloring */}
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
                       {/* Part Cooling Fan */}
-                      <div
-                        className={`flex items-center gap-1 px-1.5 py-1 rounded ${partFan && partFan > 0 ? 'bg-cyan-500/10' : 'bg-bambu-dark'}`}
-                        title={t('printers.fans.partCooling')}
-                      >
-                        <Fan className={`w-3.5 h-3.5 ${partFan && partFan > 0 ? 'text-cyan-400' : 'text-bambu-gray/50'}`} />
-                        <span className={`text-[10px] ${partFan && partFan > 0 ? 'text-cyan-400' : 'text-bambu-gray/50'}`}>
-                          {partFan ?? 0}%
-                        </span>
+                      <div className="relative">
+                        <button
+                          onClick={() => {
+                            setShowFanMenu(showFanMenu === 1 ? null : 1);
+                            setFanSliderSpeed(partFan ?? 0);
+                          }}
+                          disabled={!hasPermission('printers:control')}
+                          className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
+                            partFan && partFan > 0 ? 'bg-cyan-500/10 hover:bg-cyan-500/20' : 'bg-bambu-dark hover:bg-bambu-dark-tertiary/50'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={t('printers.fans.partCooling')}
+                        >
+                          <Fan className={`w-3.5 h-3.5 ${partFan && partFan > 0 ? 'text-cyan-400' : 'text-bambu-gray/50'}`} />
+                          <span className={`text-[10px] ${partFan && partFan > 0 ? 'text-cyan-400' : 'text-bambu-gray/50'}`}>
+                            {partFan ?? 0}%
+                          </span>
+                        </button>
+                        {showFanMenu === 1 && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowFanMenu(null)} />
+                            <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg p-3 w-44">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] text-bambu-gray">{t('printers.fans.partCooling')}</span>
+                                <button
+                                  onClick={() => {
+                                    const next = fanSliderSpeed > 0 ? 0 : 100;
+                                    setFanSliderSpeed(next);
+                                    fanSpeedMutation.mutate({ fan: 1, speed: next });
+                                  }}
+                                  className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
+                                    fanSliderSpeed > 0
+                                      ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30'
+                                      : 'bg-bambu-dark text-bambu-gray hover:bg-bambu-dark-tertiary'
+                                  }`}
+                                >
+                                  {fanSliderSpeed > 0 ? 'ON' : 'OFF'}
+                                </button>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                step={5}
+                                value={fanSliderSpeed}
+                                onChange={(e) => setFanSliderSpeed(Number(e.target.value))}
+                                onPointerUp={(e) => fanSpeedMutation.mutate({ fan: 1, speed: Number((e.target as HTMLInputElement).value) })}
+                                className="w-full accent-cyan-400 cursor-pointer"
+                              />
+                              <div className="text-center text-[10px] text-bambu-gray mt-1">{fanSliderSpeed}%</div>
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {/* Auxiliary Fan */}
-                      <div
-                        className={`flex items-center gap-1 px-1.5 py-1 rounded ${auxFan && auxFan > 0 ? 'bg-blue-500/10' : 'bg-bambu-dark'}`}
-                        title={t('printers.fans.auxiliary')}
-                      >
-                        <Wind className={`w-3.5 h-3.5 ${auxFan && auxFan > 0 ? 'text-blue-400' : 'text-bambu-gray/50'}`} />
-                        <span className={`text-[10px] ${auxFan && auxFan > 0 ? 'text-blue-400' : 'text-bambu-gray/50'}`}>
-                          {auxFan ?? 0}%
-                        </span>
+                      <div className="relative">
+                        <button
+                          onClick={() => {
+                            setShowFanMenu(showFanMenu === 2 ? null : 2);
+                            setFanSliderSpeed(auxFan ?? 0);
+                          }}
+                          disabled={!hasPermission('printers:control')}
+                          className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
+                            auxFan && auxFan > 0 ? 'bg-blue-500/10 hover:bg-blue-500/20' : 'bg-bambu-dark hover:bg-bambu-dark-tertiary/50'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={t('printers.fans.auxiliary')}
+                        >
+                          <Wind className={`w-3.5 h-3.5 ${auxFan && auxFan > 0 ? 'text-blue-400' : 'text-bambu-gray/50'}`} />
+                          <span className={`text-[10px] ${auxFan && auxFan > 0 ? 'text-blue-400' : 'text-bambu-gray/50'}`}>
+                            {auxFan ?? 0}%
+                          </span>
+                        </button>
+                        {showFanMenu === 2 && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowFanMenu(null)} />
+                            <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg p-3 w-44">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] text-bambu-gray">{t('printers.fans.auxiliary')}</span>
+                                <button
+                                  onClick={() => {
+                                    const next = fanSliderSpeed > 0 ? 0 : 100;
+                                    setFanSliderSpeed(next);
+                                    fanSpeedMutation.mutate({ fan: 2, speed: next });
+                                  }}
+                                  className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
+                                    fanSliderSpeed > 0
+                                      ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                                      : 'bg-bambu-dark text-bambu-gray hover:bg-bambu-dark-tertiary'
+                                  }`}
+                                >
+                                  {fanSliderSpeed > 0 ? 'ON' : 'OFF'}
+                                </button>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                step={5}
+                                value={fanSliderSpeed}
+                                onChange={(e) => setFanSliderSpeed(Number(e.target.value))}
+                                onPointerUp={(e) => fanSpeedMutation.mutate({ fan: 2, speed: Number((e.target as HTMLInputElement).value) })}
+                                className="w-full accent-blue-400 cursor-pointer"
+                              />
+                              <div className="text-center text-[10px] text-bambu-gray mt-1">{fanSliderSpeed}%</div>
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {/* Chamber Fan */}
-                      <div
-                        className={`flex items-center gap-1 px-1.5 py-1 rounded ${chamberFan && chamberFan > 0 ? 'bg-green-500/10' : 'bg-bambu-dark'}`}
-                        title={t('printers.fans.chamber')}
-                      >
-                        <AirVent className={`w-3.5 h-3.5 ${chamberFan && chamberFan > 0 ? 'text-green-400' : 'text-bambu-gray/50'}`} />
-                        <span className={`text-[10px] ${chamberFan && chamberFan > 0 ? 'text-green-400' : 'text-bambu-gray/50'}`}>
-                          {chamberFan ?? 0}%
-                        </span>
+                      <div className="relative">
+                        <button
+                          onClick={() => {
+                            setShowFanMenu(showFanMenu === 3 ? null : 3);
+                            setFanSliderSpeed(chamberFan ?? 0);
+                          }}
+                          disabled={!hasPermission('printers:control')}
+                          className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
+                            chamberFan && chamberFan > 0 ? 'bg-green-500/10 hover:bg-green-500/20' : 'bg-bambu-dark hover:bg-bambu-dark-tertiary/50'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={t('printers.fans.chamber')}
+                        >
+                          <AirVent className={`w-3.5 h-3.5 ${chamberFan && chamberFan > 0 ? 'text-green-400' : 'text-bambu-gray/50'}`} />
+                          <span className={`text-[10px] ${chamberFan && chamberFan > 0 ? 'text-green-400' : 'text-bambu-gray/50'}`}>
+                            {chamberFan ?? 0}%
+                          </span>
+                        </button>
+                        {showFanMenu === 3 && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowFanMenu(null)} />
+                            <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg p-3 w-44">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] text-bambu-gray">{t('printers.fans.chamber')}</span>
+                                <button
+                                  onClick={() => {
+                                    const next = fanSliderSpeed > 0 ? 0 : 100;
+                                    setFanSliderSpeed(next);
+                                    fanSpeedMutation.mutate({ fan: 3, speed: next });
+                                  }}
+                                  className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
+                                    fanSliderSpeed > 0
+                                      ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                                      : 'bg-bambu-dark text-bambu-gray hover:bg-bambu-dark-tertiary'
+                                  }`}
+                                >
+                                  {fanSliderSpeed > 0 ? 'ON' : 'OFF'}
+                                </button>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                step={5}
+                                value={fanSliderSpeed}
+                                onChange={(e) => setFanSliderSpeed(Number(e.target.value))}
+                                onPointerUp={(e) => fanSpeedMutation.mutate({ fan: 3, speed: Number((e.target as HTMLInputElement).value) })}
+                                className="w-full accent-green-400 cursor-pointer"
+                              />
+                              <div className="text-center text-[10px] text-bambu-gray mt-1">{fanSliderSpeed}%</div>
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {/* Separator */}

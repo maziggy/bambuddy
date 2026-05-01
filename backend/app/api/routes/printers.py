@@ -2484,6 +2484,37 @@ async def set_chamber_light(
     return {"success": True, "message": f"Chamber light {'on' if on else 'off'}"}
 
 
+@router.post("/{printer_id}/fan-speed")
+async def set_fan_speed(
+    printer_id: int,
+    fan: int = Query(..., description="Fan index (1=part cooling, 2=auxiliary, 3=chamber)"),
+    speed: int = Query(..., description="Fan speed 0-255 (0=off, 255=full)"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a fan speed via M106 G-code."""
+    if fan not in (1, 2, 3):
+        raise HTTPException(400, "Fan must be 1 (part cooling), 2 (auxiliary), or 3 (chamber)")
+    if not (0 <= speed <= 255):
+        raise HTTPException(400, "Speed must be 0-255")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.set_fan_speed(fan, speed)
+    if not success:
+        raise HTTPException(500, "Failed to set fan speed")
+
+    fan_names = {1: "Part cooling", 2: "Auxiliary", 3: "Chamber"}
+    return {"success": True, "message": f"{fan_names[fan]} fan set to {round(speed * 100 / 255)}%"}
+
+
 @router.post("/{printer_id}/bed-jog")
 async def bed_jog(
     printer_id: int,

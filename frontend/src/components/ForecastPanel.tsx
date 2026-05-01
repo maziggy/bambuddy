@@ -308,7 +308,7 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     return arr;
   }, [forecasts, sortKey, sortDir]);
 
-  const alerts = useMemo(() => forecasts.filter((f) => f.stockBreakAlert || f.reorderAlert), [forecasts]);
+  const alerts = useMemo(() => forecasts.filter((f) => !f.settings?.alerts_snoozed && (f.stockBreakAlert || f.reorderAlert)), [forecasts]);
 
   const top5 = useMemo(() =>
     [...forecasts]
@@ -851,7 +851,7 @@ function ForecastRow({
 
         {/* Reorder by */}
         <td className="px-4 py-3">
-          <span className={`text-sm font-medium ${f.reorderAlert ? 'text-yellow-400' : 'text-bambu-gray'}`}>
+          <span className={`text-sm font-medium ${!snoozed && f.reorderAlert ? 'text-yellow-400' : 'text-bambu-gray'}`}>
             {f.reorderTriggerDate ? formatDate(f.reorderTriggerDate) : '—'}
           </span>
         </td>

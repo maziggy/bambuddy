@@ -2,14 +2,15 @@ services:
   bambuddy-preview:
     build: .
     container_name: bambuddy-preview
-    ports:
-      - "8765:8000"
+    cap_add:
+      - NET_BIND_SERVICE
+    network_mode: host
     volumes:
       - bambuddy_preview_data:/app/data
       - bambuddy_preview_logs:/app/logs
     environment:
       - TZ=${TZ:-Europe/Berlin}
-      - PORT=8000
+      - PORT=8001
     restart: "no"
 
 volumes:

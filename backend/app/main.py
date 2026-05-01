@@ -39,6 +39,7 @@ from backend.app.api.routes import (
     projects,
     settings as settings_routes,
     smart_plugs,
+    spoolbuddy,
     spoolman,
     support,
     system,
@@ -586,7 +587,21 @@ async def on_ams_change(printer_id: int, ams_data: list):
             result = await db.execute(select(SA).where(SA.printer_id == printer_id).options(selectinload(SA.spool)))
             stale = []
             for assignment in result.scalars().all():
-                current_tray = _find_tray_in_ams_data(ams_data, assignment.ams_id, assignment.tray_id)
+                # External spool assignments (ams_id=255) live in vt_tray, not AMS data
+                if assignment.ams_id == 255:
+                    ps = printer_manager.get_status(printer_id)
+                    vt_tray_raw = ps.raw_data.get("vt_tray", []) if ps else []
+                    ext_id = assignment.tray_id + 254  # 0→254, 1→255
+                    current_tray = None
+                    for vt in vt_tray_raw:
+                        if isinstance(vt, dict) and int(vt.get("id", 254)) == ext_id:
+                            current_tray = vt
+                            break
+                    if not current_tray:
+                        # vt_tray data may not have arrived yet — keep assignment
+                        continue
+                else:
+                    current_tray = _find_tray_in_ams_data(ams_data, assignment.ams_id, assignment.tray_id)
                 if not current_tray:
                     logger.info(
                         "Auto-unlink: spool %d AMS%d-T%d — tray not found in AMS data (slot empty?)",
@@ -2267,6 +2282,88 @@ async def on_print_complete(printer_id: int, data: dict):
 
     log_timing("Queue item update")
 
+    # Start bed cooldown monitor (polls bed temp until it drops below threshold)
+    # Must run before archive_id early-return so it fires for all prints (including
+    # prints started from BambuStudio/touchscreen that have no archive).
+    async def _background_bed_cooldown():
+        """Monitor bed temperature after print and notify when cooled."""
+        try:
+            from backend.app.api.routes.settings import get_setting
+
+            # Check threshold setting
+            async with async_session() as db:
+                threshold_str = await get_setting(db, "bed_cooled_threshold")
+            threshold = float(threshold_str) if threshold_str else 35.0
+
+            # Check if any provider has on_bed_cooled enabled (early exit if none)
+            async with async_session() as db:
+                providers = await notification_service._get_providers_for_event(db, "on_bed_cooled", printer_id)
+                if not providers:
+                    logger.debug("[BED-COOL] No providers enabled for bed_cooled on printer %s", printer_id)
+                    return
+
+            logger.info("[BED-COOL] Monitoring bed temp for printer %s (threshold: %.0f°C)", printer_id, threshold)
+
+            max_polls = 120  # 120 * 15s = 30 min timeout
+            for _ in range(max_polls):
+                await asyncio.sleep(15)
+
+                # Check if printer is still connected
+                status = printer_manager.get_status(printer_id)
+                if status is None:
+                    logger.info("[BED-COOL] Printer %s disconnected, stopping monitor", printer_id)
+                    return
+
+                # Check if a new print started (state == RUNNING)
+                if hasattr(status, "state") and status.state == "RUNNING":
+                    logger.info("[BED-COOL] New print started on printer %s, stopping monitor", printer_id)
+                    return
+
+                # Get bed temperature
+                bed_temp = None
+                if hasattr(status, "temperatures") and isinstance(status.temperatures, dict):
+                    bed_temp = status.temperatures.get("bed")
+
+                if bed_temp is None:
+                    continue
+
+                if bed_temp <= threshold:
+                    logger.info(
+                        "[BED-COOL] Bed cooled to %.1f°C on printer %s (threshold: %.0f°C)",
+                        bed_temp,
+                        printer_id,
+                        threshold,
+                    )
+                    printer_info = printer_manager.get_printer(printer_id)
+                    p_name = printer_info.name if printer_info else "Unknown"
+                    async with async_session() as db:
+                        await notification_service.on_bed_cooled(
+                            printer_id=printer_id,
+                            printer_name=p_name,
+                            bed_temp=bed_temp,
+                            threshold=threshold,
+                            filename=filename or subtask_name or "",
+                            db=db,
+                        )
+                    return
+
+            logger.info("[BED-COOL] Timeout waiting for bed to cool on printer %s", printer_id)
+        except asyncio.CancelledError:
+            logger.info("[BED-COOL] Bed cooldown monitor cancelled for printer %s", printer_id)
+        except Exception as e:
+            logger.warning("[BED-COOL] Failed: %s", e)
+        finally:
+            _bed_cooldown_tasks.pop(printer_id, None)
+
+    # Only start bed cooldown for completed prints
+    if data.get("status") == "completed":
+        # Cancel any existing task for this printer
+        existing_task = _bed_cooldown_tasks.pop(printer_id, None)
+        if existing_task and not existing_task.done():
+            existing_task.cancel()
+        task = asyncio.create_task(_background_bed_cooldown())
+        _bed_cooldown_tasks[printer_id] = task
+
     if not archive_id:
         logger.warning("Could not find archive for print complete: filename=%s, subtask=%s", filename, subtask_name)
         return
@@ -2776,86 +2873,6 @@ async def on_print_complete(printer_id: int, data: dict):
 
     asyncio.create_task(_background_layer_timelapse())
 
-    # Start bed cooldown monitor (polls bed temp until it drops below threshold)
-    async def _background_bed_cooldown():
-        """Monitor bed temperature after print and notify when cooled."""
-        try:
-            from backend.app.api.routes.settings import get_setting
-
-            # Check threshold setting
-            async with async_session() as db:
-                threshold_str = await get_setting(db, "bed_cooled_threshold")
-            threshold = float(threshold_str) if threshold_str else 35.0
-
-            # Check if any provider has on_bed_cooled enabled (early exit if none)
-            async with async_session() as db:
-                providers = await notification_service._get_providers_for_event(db, "on_bed_cooled", printer_id)
-                if not providers:
-                    logger.debug("[BED-COOL] No providers enabled for bed_cooled on printer %s", printer_id)
-                    return
-
-            logger.info("[BED-COOL] Monitoring bed temp for printer %s (threshold: %.0f°C)", printer_id, threshold)
-
-            max_polls = 120  # 120 * 15s = 30 min timeout
-            for _ in range(max_polls):
-                await asyncio.sleep(15)
-
-                # Check if printer is still connected
-                status = printer_manager.get_status(printer_id)
-                if status is None:
-                    logger.info("[BED-COOL] Printer %s disconnected, stopping monitor", printer_id)
-                    return
-
-                # Check if a new print started (state == RUNNING)
-                if hasattr(status, "state") and status.state == "RUNNING":
-                    logger.info("[BED-COOL] New print started on printer %s, stopping monitor", printer_id)
-                    return
-
-                # Get bed temperature
-                bed_temp = None
-                if hasattr(status, "temperatures") and status.temperatures:
-                    bed_temp = status.temperatures.get("bed")
-
-                if bed_temp is None:
-                    continue
-
-                if bed_temp <= threshold:
-                    logger.info(
-                        "[BED-COOL] Bed cooled to %.1f°C on printer %s (threshold: %.0f°C)",
-                        bed_temp,
-                        printer_id,
-                        threshold,
-                    )
-                    printer_info = printer_manager.get_printer(printer_id)
-                    p_name = printer_info.name if printer_info else "Unknown"
-                    async with async_session() as db:
-                        await notification_service.on_bed_cooled(
-                            printer_id=printer_id,
-                            printer_name=p_name,
-                            bed_temp=bed_temp,
-                            threshold=threshold,
-                            filename=filename or subtask_name or "",
-                            db=db,
-                        )
-                    return
-
-            logger.info("[BED-COOL] Timeout waiting for bed to cool on printer %s", printer_id)
-        except asyncio.CancelledError:
-            logger.info("[BED-COOL] Bed cooldown monitor cancelled for printer %s", printer_id)
-        except Exception as e:
-            logger.warning("[BED-COOL] Failed: %s", e)
-        finally:
-            _bed_cooldown_tasks.pop(printer_id, None)
-
-    # Only start bed cooldown for completed prints
-    if data.get("status") == "completed":
-        # Cancel any existing task for this printer
-        existing_task = _bed_cooldown_tasks.pop(printer_id, None)
-        if existing_task and not existing_task.done():
-            existing_task.cancel()
-        task = asyncio.create_task(_background_bed_cooldown())
-        _bed_cooldown_tasks[printer_id] = task
-
     log_timing("All background tasks scheduled")
 
     # Auto-scan for timelapse if recording was active during the print
@@ -3175,6 +3192,40 @@ def stop_runtime_tracking():
         logging.getLogger(__name__).info("Printer runtime tracking stopped")
 
 
+# SpoolBuddy device watchdog
+_spoolbuddy_watchdog_task: asyncio.Task | None = None
+SPOOLBUDDY_WATCHDOG_INTERVAL = 15
+
+
+async def _spoolbuddy_watchdog_loop():
+    """Periodic check for SpoolBuddy devices that have gone offline."""
+    from backend.app.api.routes.spoolbuddy import spoolbuddy_watchdog
+
+    while True:
+        try:
+            await spoolbuddy_watchdog()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logging.getLogger(__name__).warning("SpoolBuddy watchdog failed: %s", e)
+        await asyncio.sleep(SPOOLBUDDY_WATCHDOG_INTERVAL)
+
+
+def start_spoolbuddy_watchdog():
+    global _spoolbuddy_watchdog_task
+    if _spoolbuddy_watchdog_task is None:
+        _spoolbuddy_watchdog_task = asyncio.create_task(_spoolbuddy_watchdog_loop())
+        logging.getLogger(__name__).info("SpoolBuddy watchdog started")
+
+
+def stop_spoolbuddy_watchdog():
+    global _spoolbuddy_watchdog_task
+    if _spoolbuddy_watchdog_task:
+        _spoolbuddy_watchdog_task.cancel()
+        _spoolbuddy_watchdog_task = None
+        logging.getLogger(__name__).info("SpoolBuddy watchdog stopped")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -3281,6 +3332,9 @@ async def lifespan(app: FastAPI):
     # Start printer runtime tracking
     start_runtime_tracking()
 
+    # Start SpoolBuddy device watchdog
+    start_spoolbuddy_watchdog()
+
     # Initialize virtual printer manager and sync from DB
     from backend.app.services.virtual_printer import virtual_printer_manager
 
@@ -3301,6 +3355,7 @@ async def lifespan(app: FastAPI):
     github_backup_service.stop_scheduler()
     stop_ams_history_recording()
     stop_runtime_tracking()
+    stop_spoolbuddy_watchdog()
     printer_manager.disconnect_all()
     await close_spoolman_client()
 
@@ -3505,6 +3560,7 @@ app.include_router(firmware.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
 app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
+app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)
 
 
 # Serve static files (React build)

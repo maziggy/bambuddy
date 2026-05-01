@@ -228,6 +228,107 @@ class TestFormatBytes:
         assert _format_bytes(0) == "0 B"
 
 
+class TestSanitizeLogContent:
+    """Tests for _sanitize_log_content() redaction."""
+
+    def test_ipv4_addresses_redacted(self):
+        """IPv4 addresses in log lines are replaced with [IP]."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "2024-01-15 Connected to printer at 192.168.1.100 on port 8883"
+        result = _sanitize_log_content(content)
+        assert "192.168.1.100" not in result
+        assert "[IP]" in result
+        assert "on port 8883" in result
+
+    def test_multiple_ipv4_addresses_redacted(self):
+        """Multiple different IPs in the same line are all redacted."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "Proxy 10.0.0.1 -> 192.168.1.50"
+        result = _sanitize_log_content(content)
+        assert result == "Proxy [IP] -> [IP]"
+
+    def test_firmware_versions_with_leading_zeros_preserved(self):
+        """Firmware versions like 01.09.01.00 have leading zeros and should NOT be redacted."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "Firmware version: 01.09.01.00"
+        result = _sanitize_log_content(content)
+        assert "01.09.01.00" in result
+
+    def test_firmware_version_mixed_with_ip(self):
+        """Firmware versions preserved while real IPs are redacted in the same line."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "Printer at 192.168.1.5 running firmware 01.07.02.00"
+        result = _sanitize_log_content(content)
+        assert "192.168.1.5" not in result
+        assert "01.07.02.00" in result
+        assert "[IP] running firmware 01.07.02.00" in result
+
+    def test_printer_ip_from_sensitive_strings(self):
+        """Printer IPs in sensitive_strings are replaced before regex pass."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "Connecting to 192.168.1.100"
+        result = _sanitize_log_content(content, sensitive_strings={"192.168.1.100": "[IP]"})
+        assert result == "Connecting to [IP]"
+
+    def test_edge_case_zero_ip(self):
+        """0.0.0.0 is a valid IP and should be redacted."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "Binding to 0.0.0.0"
+        result = _sanitize_log_content(content)
+        assert result == "Binding to [IP]"
+
+    def test_edge_case_broadcast_ip(self):
+        """255.255.255.255 is a valid IP and should be redacted."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "Broadcast to 255.255.255.255"
+        result = _sanitize_log_content(content)
+        assert result == "Broadcast to [IP]"
+
+    def test_invalid_octet_not_redacted(self):
+        """Octets >255 are not valid IPs and should not be redacted."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "Value 999.999.999.999"
+        result = _sanitize_log_content(content)
+        assert "999.999.999.999" in result
+
+    def test_existing_serial_redaction_still_works(self):
+        """Serial number redaction still functions alongside IP redaction."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "Printer 01SABCDEF1234 at 10.0.0.5"
+        result = _sanitize_log_content(content)
+        assert "[SERIAL]" in result
+        assert "[IP]" in result
+        assert "01SABCDEF1234" not in result
+        assert "10.0.0.5" not in result
+
+    def test_existing_email_redaction_still_works(self):
+        """Email redaction still functions alongside IP redaction."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "User user@example.com from 172.16.0.1"
+        result = _sanitize_log_content(content)
+        assert "[EMAIL]" in result
+        assert "[IP]" in result
+
+    def test_existing_path_redaction_still_works(self):
+        """Path redaction still functions alongside IP redaction."""
+        from backend.app.api.routes.support import _sanitize_log_content
+
+        content = "Config at /home/john/config.yaml from 192.168.0.1"
+        result = _sanitize_log_content(content)
+        assert "/home/[user]/" in result
+        assert "[IP]" in result
+
+
 class TestCollectSupportInfo:
     """Tests for _collect_support_info() new diagnostic sections."""
 

@@ -341,11 +341,12 @@ export function SystemInfoPage() {
                   <li>• {t('support.notItem4', 'API keys and tokens')}</li>
                   <li>• {t('support.notItem5', 'Webhook URLs')}</li>
                   <li>• {t('support.notItem6', 'Your hostname or username')}</li>
+                  <li>• {t('support.notItem7', 'IP addresses')}</li>
                 </ul>
               </div>
             </div>
             <p className="text-xs text-bambu-gray/70">
-              {t('support.privacyNote', 'Email addresses in logs are replaced with [EMAIL], printer names with [PRINTER], and serial numbers with [SERIAL].')}
+              {t('support.privacyNote', 'Email addresses in logs are replaced with [EMAIL], printer names with [PRINTER], serial numbers with [SERIAL], and IP addresses with [IP].')}
             </p>
           </div>
 

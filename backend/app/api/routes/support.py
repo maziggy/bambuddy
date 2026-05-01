@@ -684,6 +684,13 @@ def _sanitize_log_content(content: str, sensitive_strings: dict[str, str] | None
     # Replace Bambu Lab printer serial numbers (format: 00M/01D/01S/01P/03W + alphanumeric, 12-16 chars total)
     content = re.sub(r"\b0[0-3][A-Z0-9][A-Z0-9]{9,13}\b", "[SERIAL]", content, flags=re.IGNORECASE)
 
+    # Replace IPv4 addresses (skip firmware versions like 01.09.01.00 which have leading zeros)
+    content = re.sub(
+        r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\b",
+        "[IP]",
+        content,
+    )
+
     # Replace paths with usernames
     content = re.sub(r"/home/[^/\s]+/", "/home/[user]/", content)
     content = re.sub(r"/Users/[^/\s]+/", "/Users/[user]/", content)
@@ -733,13 +740,15 @@ async def generate_support_bundle(
         # Collect known sensitive values for log redaction
         sensitive_strings: dict[str, str] = {}
 
-        # Printer names and serial numbers
-        result = await db.execute(select(Printer.name, Printer.serial_number))
-        for name, serial in result.all():
+        # Printer names, serial numbers, and IP addresses
+        result = await db.execute(select(Printer.name, Printer.serial_number, Printer.ip_address))
+        for name, serial, ip_address in result.all():
             if name:
                 sensitive_strings[name] = "[PRINTER]"
             if serial:
                 sensitive_strings[serial] = "[SERIAL]"
+            if ip_address:
+                sensitive_strings[ip_address] = "[IP]"
 
         # Auth usernames
         result = await db.execute(select(User.username))

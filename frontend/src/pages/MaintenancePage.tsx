@@ -145,7 +145,7 @@ function getMaintenanceWikiUrl(typeName: string, printerModel: string | null): s
       // X1, P1, P2S series have carbon rods
       if (isX1) return 'https://wiki.bambulab.com/en/x1/maintenance/basic-maintenance';
       if (isP1) return 'https://wiki.bambulab.com/en/p1/maintenance/p1p-maintenance';
-      if (isP2S) return 'https://wiki.bambulab.com/en/p2s/maintenance/belt-tension';
+      if (isP2S) return 'https://wiki.bambulab.com/en/p2s/maintenance/lubricate-x-y-z-axis';
       return null;
 
     case 'Lubricate Linear Rails':

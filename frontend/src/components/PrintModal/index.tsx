@@ -13,6 +13,7 @@ import { toDateTimeLocalValue } from '../../utils/date';
 import { Button } from '../Button';
 import { Card, CardContent } from '../Card';
 import { FilamentMapping } from './FilamentMapping';
+import { FilamentOverride } from './FilamentOverride';
 import { PlateSelector } from './PlateSelector';
 import { PrinterSelector } from './PrinterSelector';
 import { PrintOptionsPanel } from './PrintOptions';
@@ -148,6 +149,18 @@ export function PrintModal({
     return null;
   });
 
+  // Filament overrides for model-based assignment: slot_id -> {type, color}
+  const [filamentOverrides, setFilamentOverrides] = useState<Record<number, { type: string; color: string }>>(() => {
+    if (mode === 'edit-queue-item' && queueItem?.filament_overrides) {
+      const overrides: Record<number, { type: string; color: string }> = {};
+      for (const o of queueItem.filament_overrides) {
+        overrides[o.slot_id] = { type: o.type, color: o.color };
+      }
+      return overrides;
+    }
+    return {};
+  });
+
   // Track initial values for clearing mappings on change (edit mode only)
   const [initialPrinterIds] = useState(() => (mode === 'edit-queue-item' && queueItem?.printer_id ? [queueItem.printer_id] : []));
   const [initialPlateId] = useState(() => (mode === 'edit-queue-item' && queueItem ? queueItem.plate_id : null));
@@ -241,6 +254,13 @@ export function PrintModal({
     return platesData.plates.find((plate) => plate.index === selectedPlate)?.name || undefined;
   }, [platesData, selectedPlate]);
 
+  // Fetch available filaments for model-based assignment (for filament override UI)
+  const { data: availableFilaments } = useQuery({
+    queryKey: ['available-filaments', targetModel, targetLocation],
+    queryFn: () => api.getAvailableFilaments(targetModel!, targetLocation ?? undefined),
+    enabled: assignmentMode === 'model' && !!targetModel,
+  });
+
   // Only fetch printer status when single printer selected (for filament mapping)
   const { data: printerStatus } = useQuery({
     queryKey: ['printer-status', effectivePrinterId],
@@ -294,6 +314,20 @@ export function PrintModal({
       setInitialExpandApplied(new Set());
     }
   }, [mode, selectedPrinters, selectedPlate, initialPrinterIds, initialPlateId]);
+
+  // Clear filament overrides when target model or plate changes (but not on initial mount for edit mode)
+  const [prevTargetModel, setPrevTargetModel] = useState(targetModel);
+  const [prevPlateForOverrides, setPrevPlateForOverrides] = useState(selectedPlate);
+  useEffect(() => {
+    if (targetModel !== prevTargetModel || selectedPlate !== prevPlateForOverrides) {
+      setPrevTargetModel(targetModel);
+      setPrevPlateForOverrides(selectedPlate);
+      // Don't clear on initial render in edit mode (values are initialized from queueItem)
+      if (mode !== 'edit-queue-item' || prevTargetModel !== null) {
+        setFilamentOverrides({});
+      }
+    }
+  }, [targetModel, selectedPlate, prevTargetModel, prevPlateForOverrides, mode]);
 
   // Auto-expand per-printer mapping when setting is enabled and multiple printers selected
   // Only applies once per printer on initial selection, not when user unchecks
@@ -394,11 +428,21 @@ export function PrintModal({
       return amsMapping;
     };
 
+    // Convert filament overrides from Record to array format for API
+    const filamentOverridesArray = Object.keys(filamentOverrides).length > 0
+      ? Object.entries(filamentOverrides).map(([slotId, { type, color }]) => ({
+          slot_id: parseInt(slotId, 10),
+          type,
+          color,
+        }))
+      : undefined;
+
     // Common queue data for add-to-queue and edit modes
     const getQueueData = (printerId: number | null): PrintQueueItemCreate => ({
       printer_id: assignmentMode === 'printer' ? printerId : null,
       target_model: assignmentMode === 'model' ? targetModel : null,
       target_location: assignmentMode === 'model' ? targetLocation : null,
+      filament_overrides: assignmentMode === 'model' ? filamentOverridesArray : undefined,
       // Use library_file_id for library files, archive_id for archives
       archive_id: isLibraryFile ? undefined : archiveId,
       library_file_id: isLibraryFile ? libraryFileId : undefined,
@@ -428,6 +472,7 @@ export function PrintModal({
             printer_id: null,
             target_model: targetModel,
             target_location: targetLocation,
+            filament_overrides: filamentOverridesArray || null,
             require_previous_success: scheduleOptions.requirePreviousSuccess,
             auto_off_after: scheduleOptions.autoOffAfter,
             manual_start: scheduleOptions.scheduleType === 'manual',
@@ -668,6 +713,16 @@ export function PrintModal({
               onTargetLocationChange={mode !== 'reprint' ? setTargetLocation : undefined}
               slicedForModel={slicedForModel}
             />
+
+            {/* Filament override - shown in model mode when filament requirements are available */}
+            {assignmentMode === 'model' && targetModel && effectiveFilamentReqs && availableFilaments && availableFilaments.length > 0 && (
+              <FilamentOverride
+                filamentReqs={effectiveFilamentReqs}
+                availableFilaments={availableFilaments}
+                overrides={filamentOverrides}
+                onChange={setFilamentOverrides}
+              />
+            )}
 
             {/* Compatibility warning when sliced model doesn't match selected printer */}
             {slicedForModel && assignmentMode === 'printer' && selectedPrinters.length === 1 && (() => {

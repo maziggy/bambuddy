@@ -49,6 +49,11 @@ class PrintQueueItem(Base):
     # Format: "[5, -1, 2, -1]" where position = slot_id-1, value = global tray ID (-1 = unused)
     ams_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Filament overrides for model-based assignment: JSON array of override objects
+    # Format: '[{"slot_id": 1, "type": "PLA", "color": "#FFFFFF"}]'
+    # Only slots with overrides are included (sparse). null = use original 3MF values.
+    filament_overrides: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Plate ID for multi-plate 3MF files (1-indexed, None = auto-detect/plate 1)
     plate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

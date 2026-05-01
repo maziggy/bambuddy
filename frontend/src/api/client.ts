@@ -1222,6 +1222,7 @@ export interface PrintQueueItem {
   auto_off_after: boolean;
   manual_start: boolean;  // Requires manual trigger to start (staged)
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
+  filament_overrides: Array<{ slot_id: number; type: string; color: string }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
   bed_levelling: boolean;
@@ -1251,6 +1252,7 @@ export interface PrintQueueItemCreate {
   printer_id?: number | null;  // null = unassigned
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string }> | null;
   // Either archive_id OR library_file_id must be provided
   archive_id?: number | null;
   library_file_id?: number | null;
@@ -1273,6 +1275,7 @@ export interface PrintQueueItemUpdate {
   printer_id?: number | null;  // null = unassign
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string }> | null;
   position?: number;
   scheduled_time?: string | null;
   require_previous_success?: boolean;
@@ -2296,6 +2299,11 @@ export const api = {
     ),
   getDeveloperModeWarnings: () =>
     request<{ printer_id: number; name: string }[]>('/printers/developer-mode-warnings'),
+  getAvailableFilaments: (model: string, location?: string) => {
+    const params = new URLSearchParams({ model });
+    if (location) params.set('location', location);
+    return request<Array<{ type: string; color: string; tray_info_idx: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
+  },
   getPrinterStatus: (id: number) =>
     request<PrinterStatus>(`/printers/${id}/status`),
   refreshPrinterStatus: (id: number) =>
@@ -4797,4 +4805,50 @@ export const supportApi = {
 
   clearLogs: () =>
     request<{ message: string }>('/support/logs', { method: 'DELETE' }),
+};
+
+// SpoolBuddy types
+export interface SpoolBuddyDevice {
+  id: number;
+  device_id: string;
+  hostname: string;
+  ip_address: string;
+  firmware_version: string | null;
+  has_nfc: boolean;
+  has_scale: boolean;
+  tare_offset: number;
+  calibration_factor: number;
+  last_seen: string | null;
+  pending_command: string | null;
+  nfc_ok: boolean;
+  scale_ok: boolean;
+  uptime_s: number;
+  online: boolean;
+}
+
+// SpoolBuddy API
+export const spoolbuddyApi = {
+  getDevices: () =>
+    request<SpoolBuddyDevice[]>('/spoolbuddy/devices'),
+
+  tare: (deviceId: string) =>
+    request<{ status: string }>(`/spoolbuddy/devices/${deviceId}/calibration/tare`, {
+      method: 'POST',
+      body: '{}',
+    }),
+
+  getCalibration: (deviceId: string) =>
+    request<{ tare_offset: number; calibration_factor: number }>(`/spoolbuddy/devices/${deviceId}/calibration`),
+
+  setCalibrationFactor: (deviceId: string, knownWeightGrams: number, rawAdc: number) =>
+    request<{ tare_offset: number; calibration_factor: number }>(`/spoolbuddy/devices/${deviceId}/calibration/set-factor`, {
+      method: 'POST',
+      body: JSON.stringify({ known_weight_grams: knownWeightGrams, raw_adc: rawAdc }),
+    }),
+
+  updateSpoolWeight: (spoolId: number, weightGrams: number) =>
+    request<{ status: string; weight_used: number }>('/spoolbuddy/scale/update-spool-weight', {
+      method: 'POST',
+      body: JSON.stringify({ spool_id: spoolId, weight_grams: weightGrams }),
+    }),
 };

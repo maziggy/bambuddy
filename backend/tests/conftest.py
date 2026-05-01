@@ -50,6 +50,8 @@ def event_loop():
     """Create an instance of the default event loop for each test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
+    # Drain pending callbacks so aiosqlite threads can finish before loop closes
+    loop.run_until_complete(asyncio.sleep(0.05))
     loop.close()
 
 
@@ -89,6 +91,10 @@ async def test_engine():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+    # Allow aiosqlite's background thread to finish processing the close
+    # response before the per-function event loop shuts down, preventing
+    # "RuntimeError: Event loop is closed" in call_soon_threadsafe.
+    await asyncio.sleep(0.05)
 
 
 @pytest.fixture

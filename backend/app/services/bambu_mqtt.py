@@ -242,6 +242,8 @@ STAGE_NAMES = {
     64: "Preparing Hotend",
     65: "Calibrating nozzle clumping detection",
     66: "Purifying the chamber air",
+    74: "Preparing",  # Seen on H2D during print preparation
+    77: "Preparing AMS",
 }
 
 

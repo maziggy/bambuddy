@@ -19,8 +19,11 @@ def _macros_dir() -> Path:
 
 def _safe_path(macros_dir: Path, relative: str) -> Path:
     """Resolve path and reject anything that escapes macros_dir."""
+    resolved_dir = macros_dir.resolve()
     full = (macros_dir / relative).resolve()
-    if not str(full).startswith(str(macros_dir.resolve()) + "/") and full != macros_dir.resolve():
+    try:
+        full.relative_to(resolved_dir)
+    except ValueError:
         raise ValueError(f"Path traversal rejected: {relative!r}")
     return full
 

@@ -353,7 +353,10 @@ function NewFileModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
       showToast(`Created ${file.name}`);
       onCreated(file.id);
     },
-    onError: () => showToast('Failed to create file', 'error'),
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : 'Failed to create file';
+      showToast(msg, 'error');
+    },
   });
 
   return (

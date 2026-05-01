@@ -174,8 +174,14 @@ async def create_cfg_file(
     data: MacroCfgFileCreate,
     _=RequirePermissionIfAuthEnabled(Permission.MACROS_CREATE),
 ):
+    from sqlalchemy.exc import IntegrityError
+
     relative_path = macro_files.create(data.name, data.content)
-    cfg_file = await sync_file(relative_path)
+    try:
+        cfg_file = await sync_file(relative_path)
+    except IntegrityError:
+        macro_files.delete(relative_path)
+        raise HTTPException(409, f"A cfg file named '{data.name}' already exists")
     return cfg_file
 
 

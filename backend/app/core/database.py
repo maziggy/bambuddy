@@ -2702,6 +2702,30 @@ async def run_migrations(conn):
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_macro_vars_key ON macro_vars(key)")
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_macro_vars_macro_id ON macro_vars(macro_id)")
 
+    # Migration: Add can_run_macros column to api_keys for the macro system
+    await _safe_execute(conn, "ALTER TABLE api_keys ADD COLUMN can_run_macros BOOLEAN DEFAULT 0")
+    # Legacy SQLite installs created `settings` without a UNIQUE constraint on `key`,
+    # so `INSERT OR IGNORE` below silently degrades to a plain INSERT and dupes rows on
+    # every restart. Dedupe (keep lowest id per key) and add the missing unique index
+    # before seeding. Safe/idempotent on both dialects — fresh installs already have
+    # no dupes and `create_all` already emits the index.
+    async with conn.begin_nested():
+        await conn.execute(text("DELETE FROM settings WHERE id NOT IN (SELECT MIN(id) FROM settings GROUP BY key)"))
+    await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_settings_key ON settings(key)")
+
+    # Migration: Normalise provider_email to lowercase (SEC-3).
+    # Required for Entra ID where UPN/email claims may arrive in mixed case.
+    # LOWER() is supported by both SQLite and PostgreSQL; the UPDATE is idempotent.
+    # Executed directly (not via _safe_execute) so any column-reference failure
+    # is always fatal and never silently swallowed.
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "UPDATE user_oidc_links SET provider_email = LOWER(provider_email) "
+                "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)"
+            )
+        )
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

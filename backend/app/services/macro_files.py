@@ -30,9 +30,10 @@ def _safe_path(macros_dir: Path, relative: str) -> Path:
 
 def _slug(name: str) -> str:
     slug = name.strip().lower()
-    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[^\w\s-]", "", slug)  # strip non-word chars (keeps ASCII + unicode letters)
     slug = re.sub(r"[\s_-]+", "_", slug)
-    return slug or "macros"
+    slug = slug.strip("_")
+    return slug or "macro"
 
 
 def read(relative_path: str) -> str:

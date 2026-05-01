@@ -132,9 +132,10 @@ async def _ams_drying(ctx: FunctionContext) -> FunctionResult:
 
 @macro_function(
     name="WAIT_FOR_TEMP",
-    description="Wait until the nozzle reaches the target temperature.",
+    description="Wait until a heater (nozzle, bed, or chamber) reaches the target temperature.",
     args={
-        "target": ArgSpec("Target nozzle temperature °C (0-350)", required=True),
+        "sensor": ArgSpec("Which sensor to read: nozzle | bed | chamber", required=True),
+        "target": ArgSpec("Target temperature °C (sensor-dependent range)", required=True),
         "tolerance": ArgSpec("Acceptable deviation in °C (>0)", default="5"),
         "max_wait": ArgSpec("Timeout in seconds (>0, max 600)", default="300"),
     },
@@ -143,6 +144,16 @@ async def _ams_drying(ctx: FunctionContext) -> FunctionResult:
 )
 async def _wait_for_temp(ctx: FunctionContext) -> FunctionResult:
     from backend.app.services.printer_manager import printer_manager
+
+    sensor = ctx.flags.get("sensor", "").strip("'\"").lower()
+    if not sensor:
+        msg = "[WAIT_FOR_TEMP] error: --sensor is required (nozzle, bed, or chamber)\n"
+        await ctx.log(ctx.run_id, msg)
+        return FunctionResult(ok=False, message=msg)
+    if sensor not in ("nozzle", "bed", "chamber"):
+        msg = f"[WAIT_FOR_TEMP] invalid --sensor={sensor!r} (use nozzle, bed, or chamber)\n"
+        await ctx.log(ctx.run_id, msg)
+        return FunctionResult(ok=False, message=msg)
 
     try:
         target = float(ctx.flags.get("target", "0"))
@@ -153,8 +164,9 @@ async def _wait_for_temp(ctx: FunctionContext) -> FunctionResult:
         await ctx.log(ctx.run_id, msg)
         return FunctionResult(ok=False, message=msg)
 
-    if not (0 <= target <= 350):
-        msg = f"[WAIT_FOR_TEMP] invalid --target={target} (use 0-350°C)\n"
+    sensor_max = {"nozzle": 350, "bed": 120, "chamber": 80}[sensor]
+    if not (0 <= target <= sensor_max):
+        msg = f"[WAIT_FOR_TEMP] invalid --target={target} for {sensor} (use 0-{sensor_max}°C)\n"
         await ctx.log(ctx.run_id, msg)
         return FunctionResult(ok=False, message=msg)
     if tolerance <= 0:
@@ -167,19 +179,22 @@ async def _wait_for_temp(ctx: FunctionContext) -> FunctionResult:
         return FunctionResult(ok=False, message=msg)
     max_wait = min(max_wait, 600)
 
-    await ctx.log(ctx.run_id, f"[WAIT_FOR_TEMP] waiting for {target}°C ±{tolerance}°C (timeout {max_wait}s)\n")
+    await ctx.log(
+        ctx.run_id,
+        f"[WAIT_FOR_TEMP] waiting for {sensor} to reach {target}°C ±{tolerance}°C (timeout {max_wait:.0f}s)\n",
+    )
     elapsed = 0.0
     while elapsed < max_wait:
         client = printer_manager.get_client(ctx.printer_id)
         if client:
-            nozzle = client.state.temperatures.get("nozzle", 0.0)
-            if abs(nozzle - target) <= tolerance:
-                msg = f"[WAIT_FOR_TEMP] ok: reached {nozzle:.1f}°C after {elapsed:.0f}s\n"
+            current = client.state.temperatures.get(sensor, 0.0)
+            if abs(current - target) <= tolerance:
+                msg = f"[WAIT_FOR_TEMP] ok: {sensor} reached {current:.1f}°C after {elapsed:.0f}s\n"
                 await ctx.log(ctx.run_id, msg)
                 return FunctionResult(ok=True, message=msg)
         await asyncio.sleep(2)
         elapsed += 2
 
-    msg = f"[WAIT_FOR_TEMP] error: timeout after {max_wait:.0f}s (target {target}°C not reached)\n"
+    msg = f"[WAIT_FOR_TEMP] error: timeout after {max_wait:.0f}s ({sensor} target {target}°C not reached)\n"
     await ctx.log(ctx.run_id, msg)
     return FunctionResult(ok=False, message=msg)

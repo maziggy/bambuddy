@@ -168,10 +168,10 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { t } = useTranslation();
-  const { hasPermission } = useAuth();
+  const { hasPermission, hasAnyPermission } = useAuth();
 
   const canRead = hasPermission('inventory:forecast_read');
-  const canWrite = hasPermission('inventory:forecast_write');
+  const canWrite = hasAnyPermission('inventory:forecast_write', 'inventory:update');
 
   // All hooks must run unconditionally — guard render is deferred until after hooks
   const [alertsOpen, setAlertsOpen] = useState(false);

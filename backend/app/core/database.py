@@ -1849,6 +1849,40 @@ async def run_migrations(conn):
             conn,
             "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14",
         )
+        # Drop legacy safety_margin_days column — SQLite requires a table rebuild.
+        # Only run if the stale column still exists.
+        try:
+            cols_result = await conn.execute(text("PRAGMA table_info(filament_sku_settings)"))
+            col_names = [row[1] for row in cols_result.fetchall()]
+            if "safety_margin_days" in col_names:
+                await conn.execute(
+                    text(
+                        """CREATE TABLE filament_sku_settings_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        material VARCHAR(50) NOT NULL,
+                        subtype VARCHAR(50),
+                        brand VARCHAR(100),
+                        lead_time_days INTEGER NOT NULL DEFAULT 0,
+                        safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                        safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (material, subtype, brand)
+                    )"""
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """INSERT INTO filament_sku_settings_new
+                        (id, material, subtype, brand, lead_time_days, safety_margin_value, safety_margin_unit, created_at, updated_at)
+                       SELECT id, material, subtype, brand, lead_time_days, safety_margin_value, safety_margin_unit, created_at, updated_at
+                       FROM filament_sku_settings"""
+                    )
+                )
+                await conn.execute(text("DROP TABLE filament_sku_settings"))
+                await conn.execute(text("ALTER TABLE filament_sku_settings_new RENAME TO filament_sku_settings"))
+        except Exception:
+            pass
         await _safe_execute(
             conn,
             """CREATE TABLE IF NOT EXISTS filament_shopping_list (
@@ -2117,6 +2151,28 @@ async def seed_default_groups():
                     logger.info("Added %s to Administrators group (backfill)", new_perm)
             if added:
                 admin_group.permissions = perms
+        await session.commit()
+
+        # Backfill inventory forecast permissions for existing groups.
+        # inventory:forecast_read was added after initial seeding, so groups
+        # that already have inventory:read (or inventory:update) need it added.
+        # inventory:forecast_write goes to any group with inventory:update.
+        result = await session.execute(select(Group))
+        for group in result.scalars().all():
+            if not group.permissions:
+                continue
+            perms = list(group.permissions)
+            changed = False
+            if "inventory:read" in perms and "inventory:forecast_read" not in perms:
+                perms.append("inventory:forecast_read")
+                changed = True
+                logger.info("Added inventory:forecast_read to group '%s' (backfill)", group.name)
+            if "inventory:update" in perms and "inventory:forecast_write" not in perms:
+                perms.append("inventory:forecast_write")
+                changed = True
+                logger.info("Added inventory:forecast_write to group '%s' (backfill)", group.name)
+            if changed:
+                group.permissions = perms
         await session.commit()
 
         # Migrate existing users to groups if they're not already in any group

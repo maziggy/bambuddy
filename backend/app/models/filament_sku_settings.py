@@ -10,7 +10,11 @@ class FilamentSkuSettings(Base):
     """User-configured reorder settings for a filament SKU (material/subtype/brand group)."""
 
     __tablename__ = "filament_sku_settings"
-    __table_args__ = (UniqueConstraint("material", "subtype", "brand", name="uq_filament_sku"),)
+    __table_args__ = (
+        # sqlite_where ensures NULL columns participate in uniqueness (NULLS NOT DISTINCT).
+        # On PostgreSQL the partial index is not needed — standard UNIQUE handles it.
+        UniqueConstraint("material", "subtype", "brand", name="uq_filament_sku"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     material: Mapped[str] = mapped_column(String(50))

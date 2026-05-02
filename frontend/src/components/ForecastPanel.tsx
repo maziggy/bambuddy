@@ -82,8 +82,8 @@ function formatDateShort(date: Date): string {
  * Algorithm:
  *   1. Sort all usage events by timestamp (oldest → newest).
  *   2. Convert each event into a g/day intensity = weight_used / elapsed_days,
- *      where elapsed_days is the gap to the previous event (or 1 day floor to
- *      avoid divide-by-zero on same-day prints).
+ *      where elapsed_days is the gap to the previous event (floor: 0.5d to
+ *      avoid inflated rates from same-day prints).
  *   3. Apply exponential age-decay: each observation is weighted by
  *      exp(-λ * age_days) so recent prints dominate. λ = ln(2)/30 gives a
  *      30-day half-life — prints from a month ago count half as much.
@@ -1099,10 +1099,15 @@ function SafetyMarginField({
   onEdit: () => void; onSave: () => void; onCancel: () => void; isPending: boolean;
   saveLabel?: string; cancelLabel?: string; safetyMarginLabel?: string;
 }) {
+  const { t } = useTranslation();
   const displayG = unit === 'g' ? value : (dailyRateG !== null ? Math.round(dailyRateG * value) : null);
   const hint = unit === 'days'
-    ? `Buffer added on top of statistical safety stock. ${displayG !== null ? `≈ ${displayG}g at current rate.` : ''}`
-    : `Fixed weight buffer added on top of statistical safety stock. ${dailyRateG !== null ? `≈ ${Math.round(value / dailyRateG)}d at current rate.` : ''}`;
+    ? t('forecast.safetyMarginHintDays', {
+        approx: displayG !== null ? t('forecast.safetyMarginHintDaysApprox', { g: displayG }) : '',
+      })
+    : t('forecast.safetyMarginHintG', {
+        approx: dailyRateG !== null ? t('forecast.safetyMarginHintGApprox', { days: Math.round(value / dailyRateG) }) : '',
+      });
 
   return (
     <div className="bg-bambu-dark-tertiary/40 rounded-lg p-3 space-y-1">

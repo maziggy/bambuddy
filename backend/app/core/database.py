@@ -1952,10 +1952,15 @@ async def run_migrations(conn):
                 added_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )""",
         )
+        # SQLite has no implicit updated_at trigger — add one so the column stays current.
         await _safe_execute(
-            conn, "ALTER TABLE filament_shopping_list ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'"
+            conn,
+            """CREATE TRIGGER IF NOT EXISTS trg_filament_sku_settings_updated_at
+               AFTER UPDATE ON filament_sku_settings FOR EACH ROW
+               BEGIN
+                 UPDATE filament_sku_settings SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+               END""",
         )
-        await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN purchased_at DATETIME")
     else:
         await _safe_execute(
             conn,

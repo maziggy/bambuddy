@@ -41,6 +41,31 @@ def _copy_and_fsync(src: Path, dst: Path, chunk_size: int = 1024 * 1024) -> None
     shutil.copystat(src, dst)
 
 
+def resolve_display_stem(filename: str) -> str:
+    """Return a clean human-readable stem from a 3MF/gcode filename.
+
+    Bambu Studio's "Send to printer" dialog typically writes files like
+    ``Plate_1.gcode.3mf`` (a sliced gcode payload wrapped in a 3MF container).
+    The naive ``Path(filename).stem`` only drops the last suffix, leaving
+    ``Plate_1.gcode`` — which then surfaces in the archive UI as a confusing
+    ``Plate_1.gcode`` rather than ``Plate_1`` (#1152 follow-up).
+
+    Strip the recognised print-format suffixes in order:
+
+    - ``.gcode.3mf`` → bare stem (Bambu Studio FTP send)
+    - ``.3mf``       → bare stem
+    - ``.gcode``     → bare stem (rare standalone gcode upload)
+
+    Anything else passes through unchanged.
+    """
+    name = Path(filename).name  # drop any path components
+    lower = name.lower()
+    for suffix in (".gcode.3mf", ".3mf", ".gcode"):
+        if lower.endswith(suffix):
+            return name[: -len(suffix)]
+    return Path(name).stem
+
+
 class ThreeMFParser:
     """Parser for Bambu Lab 3MF files."""
 
@@ -917,7 +942,7 @@ class ArchiveService:
 
         # Create archive directory structure
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        display_stem = Path(original_filename).stem if original_filename else source_file.stem
+        display_stem = resolve_display_stem(original_filename if original_filename else source_file.name)
         archive_name = f"{timestamp}_{display_stem}"
         # Use "unassigned" folder for archives without a printer
         printer_folder = str(printer_id) if printer_id is not None else "unassigned"

@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
     require_ownership_permission,
@@ -3027,6 +3028,7 @@ async def slice_library_file(
     request: SliceRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
+    api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
 ):
     """Enqueue a slice job for a library file. Returns 202 + job_id; the
     slice runs in the background, the caller polls `GET /slice-jobs/{id}`.
@@ -3060,7 +3062,12 @@ async def slice_library_file(
     model_bytes = src_path.read_bytes()
     folder_id = lib_file.folder_id
     source_lib_file_id = lib_file.id
-    user_id = current_user.id if current_user else None
+    # API-keyed callers get None from the auth gate (auth.py keeps that
+    # behaviour to avoid a wider scope expansion). Fall back to the API
+    # key's owner so cloud-preset resolution can read the stored
+    # cloud_token (#1182 follow-up).
+    cloud_token_user = current_user or api_key_cloud_owner
+    user_id = cloud_token_user.id if cloud_token_user else None
 
     # If the source has a `print_name` in its metadata (BambuStudio always
     # sets this; OrcaSlicer often leaves it blank), derive the sliced

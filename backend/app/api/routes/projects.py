@@ -667,10 +667,15 @@ async def list_project_archives(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Get archives with project relationship eagerly loaded
+    # Get archives with both ``project`` and ``created_by`` eagerly loaded.
+    # ``archive_to_response`` accesses ``archive.created_by.username`` to
+    # surface the creator on the archive card; without selectinload that's
+    # a lazy attribute access on a closed async session, which throws
+    # ``MissingGreenlet`` and produces a 500. ``ArchiveService.list_archives``
+    # already loads both — this route just got out of step.
     query = (
         select(PrintArchive)
-        .options(selectinload(PrintArchive.project))
+        .options(selectinload(PrintArchive.project), selectinload(PrintArchive.created_by))
         .where(PrintArchive.project_id == project_id)
         .order_by(PrintArchive.created_at.desc())
         .limit(limit)

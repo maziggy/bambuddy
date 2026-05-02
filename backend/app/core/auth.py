@@ -370,6 +370,28 @@ async def is_auth_enabled(db: AsyncSession) -> bool:
         return False
 
 
+async def _user_from_api_key(db: AsyncSession, api_key: APIKey) -> User | None:
+    """Resolve the owner of a validated API key, or None for legacy ownerless keys.
+
+    Cloud routes (and any route that needs caller identity) read the returned
+    User to look up per-user state like ``cloud_token``. Legacy keys created
+    before #1182 have ``user_id IS NULL`` and stay anonymous — they keep working
+    against non-cloud routes for backward compatibility, but cloud routes will
+    surface a "recreate this key" error rather than 200 with empty results.
+    """
+    if api_key.user_id is None:
+        return None
+    result = await db.execute(select(User).where(User.id == api_key.user_id))
+    user = result.scalar_one_or_none()
+    if user is None or not user.is_active:
+        # CASCADE on user delete should prevent a dangling user_id, but if
+        # someone manually deactivates the owner the key shouldn't suddenly
+        # gain an "anonymous" identity — drop the request to None so cloud
+        # access fails closed.
+        return None
+    return user
+
+
 async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | None:
     """Validate an API key and return the APIKey object if valid, None otherwise.
 
@@ -500,7 +522,13 @@ async def require_auth_if_enabled(
     """Require authentication if auth is enabled, otherwise return None.
 
     Accepts both JWT tokens (via Authorization: Bearer header) and API keys
-    (via X-API-Key header or Authorization: Bearer bb_xxx).
+    (via X-API-Key header or Authorization: Bearer bb_xxx). API keys return
+    None for backward compatibility — routes that need the API-key owner (i.e.
+    cloud routes for #1182) resolve it via their own router-level dependency
+    that stashes ``request.state.api_key_owner``. Returning the owner here
+    instead would silently grant API-keyed callers access to every route that
+    fences via ``if current_user is None``, which is a wider surface than
+    #1182 was designed to expose.
     """
     async with async_session() as db:
         auth_enabled = await is_auth_enabled(db)
@@ -846,7 +874,14 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
             if not auth_enabled:
                 return None  # Auth disabled, allow access
 
-            # Check for API key first (X-API-Key header)
+            # Check for API key first (X-API-Key header). API-keyed requests
+            # bypass the JWT permission check entirely — their scopes live on
+            # the APIKey row (can_queue / can_control_printer / can_read_status
+            # / can_access_cloud / printer_ids), and the dep returns None so
+            # routes don't gain a synthetic User identity that would grant
+            # access to fenced surfaces like long-lived-token management.
+            # Cloud routes (#1182) resolve the API-key owner separately via
+            # their own router-level dependency; see ``cloud.py``.
             if x_api_key:
                 api_key = await _validate_api_key(db, x_api_key)
                 if api_key:

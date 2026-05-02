@@ -1703,6 +1703,11 @@ export default {
     manageQueueDescription: 'Add and remove items from print queue',
     controlPrinter: 'Control Printer',
     controlPrinterDescription: 'Pause, resume, and stop prints',
+    cloudAccess: 'Allow cloud access',
+    cloudAccessDescription: 'Read Bambu Cloud presets and filaments on your behalf. Requires you to be signed into Bambu Cloud.',
+    cloudBadge: 'Cloud',
+    legacyKey: 'Legacy',
+    legacyKeyTooltip: 'Created before per-user ownership; recreate to use cloud access',
     unnamedKey: 'Unnamed Key',
     lastUsed: 'Last used',
     read: 'Read',
@@ -2071,6 +2076,7 @@ export default {
     updateAvailableVersion: 'Update available: v{{version}}',
     releaseNotes: 'Release Notes',
     updateViaDocker: 'Update via Docker Compose:',
+    updateViaHomeAssistant: 'Updates are managed by the Home Assistant Supervisor. Open Settings → Add-ons → Bambuddy in Home Assistant to install the new version.',
     installUpdate: 'Install Update',
     latestVersionRunning: "You're running the latest version",
     failedToCheckUpdates: 'Failed to check for updates: {{error}}',
@@ -4056,6 +4062,10 @@ export default {
     autoDispatch: {
       title: 'Auto-dispatch',
       description: 'Automatically start prints when added to queue. When off, prints wait for manual dispatch.',
+    },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
     },
     tailscaleDisabled: {
       title: 'Tailscale integration',

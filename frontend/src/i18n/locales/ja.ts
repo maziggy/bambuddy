@@ -1699,6 +1699,11 @@ export default {
     manageQueueDescription: '印刷キューへのアイテムの追加と削除',
     controlPrinter: 'プリンターの制御',
     controlPrinterDescription: '印刷の一時停止、再開、停止',
+    cloudAccess: 'Allow cloud access',
+    cloudAccessDescription: 'Read Bambu Cloud presets and filaments on your behalf. Requires you to be signed into Bambu Cloud.',
+    cloudBadge: 'Cloud',
+    legacyKey: 'Legacy',
+    legacyKeyTooltip: 'Created before per-user ownership; recreate to use cloud access',
     unnamedKey: '名前なしキー',
     lastUsed: '最終使用:',
     read: '読み取り',
@@ -2067,6 +2072,7 @@ export default {
     updateAvailableVersion: 'アップデート利用可能: v{{version}}',
     releaseNotes: 'リリースノート',
     updateViaDocker: 'Docker Composeでアップデート:',
+    updateViaHomeAssistant: 'アップデートはHome Assistant Supervisorによって管理されます。Home Assistantの設定→アドオン→Bambuddyを開いて新しいバージョンをインストールしてください。',
     installUpdate: 'アップデートをインストール',
     latestVersionRunning: '最新バージョンを使用しています',
     failedToCheckUpdates: 'アップデートの確認に失敗しました: {{error}}',
@@ -4047,6 +4053,10 @@ export default {
     autoDispatch: {
       title: '自動ディスパッチ',
       description: 'キューに追加されたときに自動的に印刷を開始します。オフの場合、手動ディスパッチを待ちます。',
+    },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
     },
     tailscaleDisabled: {
       title: 'Tailscale統合',

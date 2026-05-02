@@ -66,8 +66,18 @@ def _get_ip() -> str:
         return "unknown"
 
 
+SSH_KEY_TAG = "bambuddy-spoolbuddy"
+
+
 def _deploy_ssh_key(public_key: str) -> None:
-    """Write Bambuddy's SSH public key to authorized_keys if not already present."""
+    """Sync Bambuddy's SSH public key into authorized_keys.
+
+    Replaces any prior key tagged ``bambuddy-spoolbuddy`` so the file always
+    reflects Bambuddy's *current* keypair. Without this, every Bambuddy key
+    rotation (data dir wipe, container recreate, etc.) leaves a stale entry
+    behind and the file grows unbounded.
+    """
+    target = public_key.strip()
     home = Path.home()
     ssh_dir = home / ".ssh"
     auth_keys = ssh_dir / "authorized_keys"
@@ -75,17 +85,24 @@ def _deploy_ssh_key(public_key: str) -> None:
     try:
         ssh_dir.mkdir(mode=0o700, exist_ok=True)
 
-        # Check if key already deployed
+        existing_lines: list[str] = []
         if auth_keys.exists():
-            existing = auth_keys.read_text()
-            if public_key.strip() in existing:
-                return
+            existing_lines = auth_keys.read_text().splitlines()
 
-        # Append key
-        with auth_keys.open("a") as f:
-            f.write(public_key.strip() + "\n")
+        kept = [line for line in existing_lines if SSH_KEY_TAG not in line]
+        new_lines = kept + [target]
+
+        # Already in sync — current key present and no stale Bambuddy entries.
+        if existing_lines == new_lines:
+            return
+
+        auth_keys.write_text("\n".join(new_lines) + "\n")
         auth_keys.chmod(0o600)
-        logger.info("SSH public key deployed to %s", auth_keys)
+        removed = len(existing_lines) - len(kept)
+        if removed:
+            logger.info("SSH public key updated in %s (replaced %d stale entries)", auth_keys, removed)
+        else:
+            logger.info("SSH public key deployed to %s", auth_keys)
     except Exception as e:
         logger.warning("Failed to deploy SSH key: %s", e)
 
@@ -233,6 +250,10 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
         )
 
         if result:
+            ssh_key = result.get("ssh_public_key")
+            if ssh_key:
+                _deploy_ssh_key(ssh_key)
+
             cmd = result.get("pending_command")
             if cmd == "tare":
                 scale = shared.get("scale")

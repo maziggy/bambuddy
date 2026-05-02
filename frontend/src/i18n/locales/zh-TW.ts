@@ -1701,6 +1701,11 @@ export default {
     manageQueueDescription: '新增和移除列印佇列中的項目',
     controlPrinter: '控制印表機',
     controlPrinterDescription: '暫停、繼續和停止列印',
+    cloudAccess: 'Allow cloud access',
+    cloudAccessDescription: 'Read Bambu Cloud presets and filaments on your behalf. Requires you to be signed into Bambu Cloud.',
+    cloudBadge: 'Cloud',
+    legacyKey: 'Legacy',
+    legacyKeyTooltip: 'Created before per-user ownership; recreate to use cloud access',
     unnamedKey: '未命名金鑰',
     lastUsed: '上次使用',
     read: '讀取',
@@ -2062,6 +2067,7 @@ export default {
     updateAvailableVersion: '可用更新：v{{version}}',
     releaseNotes: '發布說明',
     updateViaDocker: '透過 Docker Compose 更新：',
+    updateViaHomeAssistant: '更新由 Home Assistant Supervisor 管理。請在 Home Assistant 中開啟 設定 → 附加元件 → Bambuddy 以安裝新版本。',
     installUpdate: '安裝更新',
     latestVersionRunning: '您正在執行最新版本',
     failedToCheckUpdates: '檢查更新失敗：{{error}}',
@@ -4035,6 +4041,10 @@ export default {
     autoDispatch: {
       title: '自動派發',
       description: '新增到佇列時自動開始列印。關閉後，列印任務等待手動派發。',
+    },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
     },
     tailscaleDisabled: {
       title: 'Tailscale 整合',

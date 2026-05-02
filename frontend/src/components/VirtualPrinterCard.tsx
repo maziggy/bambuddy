@@ -43,6 +43,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState(printer.remote_interface_ip || '');
   const [localModel, setLocalModel] = useState(printer.model || '');
   const [localAutoDispatch, setLocalAutoDispatch] = useState(printer.auto_dispatch ?? true);
+  const [localQueueForceColorMatch, setLocalQueueForceColorMatch] = useState(printer.queue_force_color_match ?? false);
   const [localTailscaleDisabled, setLocalTailscaleDisabled] = useState(printer.tailscale_disabled ?? true);
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -99,6 +100,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalRemoteInterfaceIp(printer.remote_interface_ip || '');
       setLocalModel(printer.model || '');
       setLocalAutoDispatch(printer.auto_dispatch ?? true);
+      setLocalQueueForceColorMatch(printer.queue_force_color_match ?? false);
       setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
     }
   }, [printer, pendingAction]);
@@ -373,6 +375,36 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                     <span
                       className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
                         localAutoDispatch ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Force-color-match toggle - only for print_queue mode (#1188) */}
+            {localMode === 'print_queue' && (
+              <div className="pt-2 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-white text-sm font-medium">{t('virtualPrinter.queueForceColorMatch.title')}</div>
+                    <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.queueForceColorMatch.description')}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newVal = !localQueueForceColorMatch;
+                      setLocalQueueForceColorMatch(newVal);
+                      setPendingAction('queueForceColorMatch');
+                      updateMutation.mutate({ queue_force_color_match: newVal });
+                    }}
+                    disabled={pendingAction === 'queueForceColorMatch'}
+                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
+                      localQueueForceColorMatch ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                    } ${pendingAction === 'queueForceColorMatch' ? 'opacity-50' : ''}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        localQueueForceColorMatch ? 'translate-x-5' : ''
                       }`}
                     />
                   </button>

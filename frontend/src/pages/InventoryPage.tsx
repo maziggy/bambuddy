@@ -1295,7 +1295,7 @@ function InventoryPage() {
               {pagedItems.map((item) => {
                 if (item.type === 'group') {
                   const { key, spools: groupSpools, representative: rep } = item;
-                  const groupBannerImage = buildFilamentBackground({
+                  const groupBannerStyle = buildFilamentBackground({
                     rgba: rep.rgba,
                     extraColors: rep.extra_colors,
                     effectType: rep.effect_type,
@@ -1309,7 +1309,7 @@ function InventoryPage() {
                         className="bg-bambu-dark-secondary rounded-lg overflow-hidden border border-bambu-green/30 hover:border-bambu-green transition-colors cursor-pointer"
                         onClick={() => toggleGroupExpand(key)}
                       >
-                        <div className="h-10 flex items-center px-4 gap-3" style={{ backgroundImage: groupBannerImage, backgroundSize: 'cover' }}>
+                        <div className="h-10 flex items-center px-4 gap-3" style={groupBannerStyle}>
                           <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
                             {resolveSpoolColorName(rep.color_name, rep.rgba) || '-'}
                           </span>
@@ -1677,7 +1677,7 @@ function SpoolCard({
   onClick: () => void;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
-  const bannerImage = buildFilamentBackground({
+  const bannerStyle = buildFilamentBackground({
     rgba: spool.rgba,
     extraColors: spool.extra_colors,
     effectType: spool.effect_type,
@@ -1688,7 +1688,7 @@ function SpoolCard({
       className={`bg-bambu-dark-secondary rounded-lg overflow-hidden border border-bambu-dark-tertiary hover:border-bambu-green transition-colors cursor-pointer ${spool.archived_at ? 'opacity-50' : ''}`}
       onClick={onClick}
     >
-      <div className="h-14 flex items-center justify-center" style={{ backgroundImage: bannerImage, backgroundSize: 'cover' }}>
+      <div className="h-14 flex items-center justify-center" style={bannerStyle}>
         <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
           {resolveSpoolColorName(spool.color_name, spool.rgba) || '-'}
         </span>

@@ -230,6 +230,8 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - **Scheduled local backups** - Automatic backup snapshots on hourly/daily/weekly schedule with retention management and NAS-mountable output
 - External sidebar links
 - Webhooks & API keys
+  - Per-user ownership — each key acts on behalf of its creator
+  - Optional **cloud-access scope** — opt in to let an API key read its owner's Bambu Cloud presets / filament catalogue / device list (off by default)
 - Interactive API browser with live testing
 
 ### 🖨️ Virtual Printer & Remote Printing
@@ -238,6 +240,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Send prints directly from Bambu Studio/Orca Slicer
 - Configurable printer model (X1C, P1S, A1, H2D, etc.)
 - Archive mode, Review mode, Queue mode, or Proxy mode
+- Queue mode: optional **force-color-match** so the scheduler refuses to dispatch onto a printer with the wrong filament loaded
 - SSDP discovery (same LAN) or manual IP entry (VPN/remote)
 - Network interface override for multi-NIC/Docker/VPN setups
 - Secure TLS/MQTT/FTP communication

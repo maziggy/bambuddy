@@ -834,9 +834,11 @@ export interface APIKey {
   id: number;
   name: string;
   key_prefix: string;
+  user_id: number | null;  // Owner; null on legacy keys created before per-user ownership (#1182)
   can_queue: boolean;
   can_control_printer: boolean;
   can_read_status: boolean;
+  can_access_cloud: boolean;
   printer_ids: number[] | null;
   enabled: boolean;
   last_used: string | null;
@@ -849,6 +851,7 @@ export interface APIKeyCreate {
   can_queue?: boolean;
   can_control_printer?: boolean;
   can_read_status?: boolean;
+  can_access_cloud?: boolean;
   printer_ids?: number[] | null;
   expires_at?: string | null;
 }
@@ -862,6 +865,7 @@ export interface APIKeyUpdate {
   can_queue?: boolean;
   can_control_printer?: boolean;
   can_read_status?: boolean;
+  can_access_cloud?: boolean;
   printer_ids?: number[] | null;
   enabled?: boolean;
   expires_at?: string | null;
@@ -2354,7 +2358,8 @@ export interface UpdateCheckResult {
   error?: string;
   message?: string;
   is_docker?: boolean;
-  update_method?: 'docker' | 'git';
+  is_ha_addon?: boolean;
+  update_method?: 'docker' | 'git' | 'ha_addon';
 }
 
 export interface UpdateStatus {
@@ -4417,7 +4422,7 @@ export const api = {
   getVersion: () => request<VersionInfo>('/updates/version'),
   checkForUpdates: () => request<UpdateCheckResult>('/updates/check'),
   applyUpdate: () =>
-    request<{ success: boolean; message: string; status?: UpdateStatus; is_docker?: boolean }>('/updates/apply', {
+    request<{ success: boolean; message: string; status?: UpdateStatus; is_docker?: boolean; is_ha_addon?: boolean }>('/updates/apply', {
       method: 'POST',
     }),
   getUpdateStatus: () => request<UpdateStatus>('/updates/status'),
@@ -5647,6 +5652,11 @@ export interface VirtualPrinterModels {
 export interface PendingUpload {
   id: number;
   filename: string;
+  // Resolved name the review card should show — mirrors what archive_print
+  // will eventually write to PrintArchive.print_name (#1152 follow-up). Falls
+  // back to the stripped filename stem when the 3MF has no embedded title or
+  // the operator has chosen the "filename" archive-name source.
+  display_name: string;
   file_size: number;
   source_ip: string | null;
   status: string;
@@ -5700,6 +5710,7 @@ export interface VirtualPrinterConfig {
   serial: string;
   target_printer_id: number | null;
   auto_dispatch: boolean;
+  queue_force_color_match: boolean;
   tailscale_disabled: boolean;
   bind_ip: string | null;
   remote_interface_ip: string | null;
@@ -5725,6 +5736,7 @@ export const multiVirtualPrinterApi = {
     access_code?: string;
     target_printer_id?: number;
     auto_dispatch?: boolean;
+    queue_force_color_match?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
   }) =>
@@ -5741,6 +5753,7 @@ export const multiVirtualPrinterApi = {
     access_code?: string;
     target_printer_id?: number;
     auto_dispatch?: boolean;
+    queue_force_color_match?: boolean;
     tailscale_disabled?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;

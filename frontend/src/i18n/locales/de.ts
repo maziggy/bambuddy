@@ -1700,6 +1700,11 @@ export default {
     manageQueueDescription: 'Elemente zur Druckwarteschlange hinzufügen und entfernen',
     controlPrinter: 'Drucker steuern',
     controlPrinterDescription: 'Drucke pausieren, fortsetzen und stoppen',
+    cloudAccess: 'Cloud-Zugriff erlauben',
+    cloudAccessDescription: 'Liest Bambu-Cloud-Presets und -Filamente in Ihrem Namen. Erfordert eine Anmeldung in Bambu Cloud.',
+    cloudBadge: 'Cloud',
+    legacyKey: 'Alt',
+    legacyKeyTooltip: 'Wurde vor der nutzerbezogenen Eigentümerschaft erstellt; neu erstellen, um Cloud-Zugriff zu nutzen',
     unnamedKey: 'Unbenannter Schlüssel',
     lastUsed: 'Zuletzt verwendet',
     read: 'Lesen',
@@ -2068,6 +2073,7 @@ export default {
     updateAvailableVersion: 'Update verfügbar: v{{version}}',
     releaseNotes: 'Versionshinweise',
     updateViaDocker: 'Update über Docker Compose:',
+    updateViaHomeAssistant: 'Updates werden vom Home Assistant Supervisor verwaltet. Öffne Einstellungen → Add-ons → Bambuddy in Home Assistant, um die neue Version zu installieren.',
     installUpdate: 'Update installieren',
     latestVersionRunning: 'Sie verwenden die neueste Version',
     failedToCheckUpdates: 'Update-Prüfung fehlgeschlagen: {{error}}',
@@ -4047,6 +4053,10 @@ export default {
     autoDispatch: {
       title: 'Automatisch starten',
       description: 'Drucke automatisch starten, wenn sie zur Warteschlange hinzugefügt werden. Wenn deaktiviert, warten Drucke auf manuellen Start.',
+    },
+    queueForceColorMatch: {
+      title: 'Farbabgleich erzwingen',
+      description: 'Druckaufträge nur an Drucker senden, bei denen der genaue Filament-Typ und die genaue Farbe geladen sind. Standardmäßig deaktiviert — ohne diese Option verwendet die Warteschlange nur den Drucker-Modell-Abgleich und wählt möglicherweise einen Drucker mit der falschen Farbe.',
     },
     tailscaleDisabled: {
       title: 'Tailscale-Integration',

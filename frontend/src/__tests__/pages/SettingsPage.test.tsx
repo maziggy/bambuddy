@@ -174,6 +174,73 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('update CTA per deployment shape', () => {
+    // The update card branches on the deployment shape returned by
+    // /updates/check. Each branch is mutually exclusive — verify the right
+    // one wins so HA addon users never see the docker-compose snippet
+    // (which they can't run from inside an HA addon container) and Docker
+    // users never see the in-app Install button (which would no-op).
+    const renderWithUpdateCheck = async (
+      checkBody: Record<string, unknown>,
+    ) => {
+      server.use(
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ ...mockSettings, check_updates: true }),
+        ),
+        http.get('/api/v1/updates/check', () => HttpResponse.json(checkBody)),
+      );
+      render(<SettingsPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Updates')).toBeInTheDocument();
+      });
+    };
+
+    it('shows the HA Supervisor message when running as an HA addon', async () => {
+      await renderWithUpdateCheck({
+        update_available: true,
+        current_version: '0.2.4',
+        latest_version: '0.2.5',
+        release_name: '0.2.5',
+        release_notes: '',
+        release_url: 'https://example.invalid/r',
+        published_at: '2099-01-01T00:00:00Z',
+        is_docker: true,
+        is_ha_addon: true,
+        update_method: 'ha_addon',
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Home Assistant Supervisor/i),
+        ).toBeInTheDocument();
+      });
+      // Docker hint must NOT render — HA branch wins.
+      expect(screen.queryByText('docker compose pull && docker compose up -d')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
+    });
+
+    it('shows the docker-compose snippet for Docker (non-HA) deployments', async () => {
+      await renderWithUpdateCheck({
+        update_available: true,
+        current_version: '0.2.4',
+        latest_version: '0.2.5',
+        release_name: '0.2.5',
+        release_notes: '',
+        release_url: 'https://example.invalid/r',
+        published_at: '2099-01-01T00:00:00Z',
+        is_docker: true,
+        is_ha_addon: false,
+        update_method: 'docker',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('docker compose pull && docker compose up -d')).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/Home Assistant Supervisor/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
+    });
+  });
+
   describe('tabs navigation', () => {
     it('can switch to Network tab', async () => {
       const user = userEvent.setup();
@@ -507,6 +574,147 @@ describe('SettingsPage', () => {
       });
 
       expect(deleteCallCount).toBe(1);
+    });
+  });
+
+  describe('API Keys tab — #1182 cloud access + ownership UI', () => {
+    // The list now exposes two new bits of information per row:
+    //   - "Cloud" badge when can_access_cloud=true
+    //   - "Legacy" badge when user_id IS NULL (created before per-user ownership)
+    // These tell the operator at a glance which keys can read /cloud/* data
+    // and which keys need to be recreated to gain that capability.
+    it('renders the Cloud badge for keys with can_access_cloud=true and the Legacy badge for ownerless keys', async () => {
+      const keys = [
+        {
+          id: 1,
+          name: 'cloud-reader',
+          key_prefix: 'bk_cloud123',
+          user_id: 7,
+          can_queue: false,
+          can_control_printer: false,
+          can_read_status: true,
+          can_access_cloud: true,
+          printer_ids: null,
+          enabled: true,
+          last_used: null,
+          created_at: '2026-04-30T00:00:00Z',
+          expires_at: null,
+        },
+        {
+          id: 2,
+          name: 'legacy-key',
+          key_prefix: 'bk_legacy01',
+          user_id: null,
+          can_queue: true,
+          can_control_printer: false,
+          can_read_status: true,
+          can_access_cloud: false,
+          printer_ids: null,
+          enabled: true,
+          last_used: null,
+          created_at: '2025-01-01T00:00:00Z',
+          expires_at: null,
+        },
+      ];
+
+      server.use(http.get('/api/v1/api-keys/', () => HttpResponse.json(keys)));
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0);
+      });
+      const tabButton = screen.getAllByText('API Keys').find((el) => el.tagName === 'BUTTON');
+      await user.click(tabButton!);
+
+      await waitFor(() => {
+        expect(screen.getByText('cloud-reader')).toBeInTheDocument();
+        expect(screen.getByText('legacy-key')).toBeInTheDocument();
+      });
+
+      // Cloud-enabled key gets the Cloud badge but NOT the Legacy badge.
+      const cloudRow = screen.getByText('cloud-reader').closest('.flex.items-center.justify-between');
+      expect(cloudRow).not.toBeNull();
+      expect(cloudRow!.textContent).toContain('Cloud');
+      expect(cloudRow!.textContent).not.toContain('Legacy');
+
+      // Ownerless key gets Legacy but NOT Cloud (can_access_cloud=false).
+      const legacyRow = screen.getByText('legacy-key').closest('.flex.items-center.justify-between');
+      expect(legacyRow).not.toBeNull();
+      expect(legacyRow!.textContent).toContain('Legacy');
+      // Strip the Cloud-flag check by limiting to badge area — the
+      // "Allow cloud access" text from the create form isn't visible here.
+      expect(legacyRow!.querySelector('.bg-purple-500\\/20')).toBeNull();
+    });
+
+    it('passes can_access_cloud through to the create call when the toggle is checked', async () => {
+      let posted: { name?: string; can_access_cloud?: boolean } | null = null;
+
+      server.use(
+        http.get('/api/v1/api-keys/', () => HttpResponse.json([])),
+        http.post('/api/v1/api-keys/', async ({ request }) => {
+          posted = (await request.json()) as { name?: string; can_access_cloud?: boolean };
+          return HttpResponse.json({
+            id: 99,
+            key: 'bk_returnedkey',
+            name: posted.name,
+            key_prefix: 'bk_returne',
+            user_id: 1,
+            can_queue: true,
+            can_control_printer: false,
+            can_read_status: true,
+            can_access_cloud: posted.can_access_cloud ?? false,
+            printer_ids: null,
+            enabled: true,
+            last_used: null,
+            created_at: '2026-05-01T00:00:00Z',
+            expires_at: null,
+          });
+        })
+      );
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0);
+      });
+      const tabButton = screen.getAllByText('API Keys').find((el) => el.tagName === 'BUTTON');
+      await user.click(tabButton!);
+
+      // Open the create form. With an empty key list the empty-state card
+      // shows "Create Your First Key" — click that to open the form.
+      const openButton = await screen.findByRole('button', { name: /Create Your First Key/i });
+      await user.click(openButton);
+
+      // Tick the new "Allow cloud access" checkbox. The label wraps the
+      // input AND a sibling description div, so getByLabelText doesn't
+      // resolve via implicit-label traversal — locate via text + closest
+      // label, then grab the checkbox from the same scope.
+      const cloudLabelText = await screen.findByText(/Allow cloud access/i);
+      const cloudLabel = cloudLabelText.closest('label');
+      expect(cloudLabel).not.toBeNull();
+      const cloudCheckbox = cloudLabel!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      expect(cloudCheckbox).not.toBeNull();
+      await user.click(cloudCheckbox);
+
+      // Submit. Two "Create Key" buttons exist once the form is open (header
+      // CTA + form footer); the form-footer one is the actual submit and
+      // calls the mutation — find it by walking up from the cloud checkbox
+      // we just clicked, since both share the same form container.
+      const submitButtons = screen.getAllByRole('button', { name: /^Create Key$/i });
+      // Footer submit is the one inside the same form section as the
+      // checkbox. The header CTA is in a separate flex row.
+      const formSubmit = submitButtons.find(
+        (b) => b.closest('div')?.contains(cloudCheckbox) || cloudLabel?.parentElement?.parentElement?.contains(b),
+      );
+      await user.click(formSubmit ?? submitButtons[submitButtons.length - 1]);
+
+      await waitFor(() => {
+        expect(posted).not.toBeNull();
+        expect(posted!.can_access_cloud).toBe(true);
+      });
     });
   });
 });

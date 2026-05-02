@@ -637,6 +637,18 @@ async def run_migrations(conn):
     # Migration: Add ams_mapping column to print_queue for storing filament slot assignments
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN ams_mapping TEXT")
 
+    # Migration: Add queue_force_color_match column to virtual_printers (#1188).
+    # Opt-in flag: when true, VP queue-mode uploads pin the per-slot type+color
+    # from the 3MF onto the queue item's filament_overrides so the scheduler
+    # refuses to dispatch onto a printer with the wrong filament loaded.
+    # Default false to preserve current behaviour for upgraders.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN queue_force_color_match BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE virtual_printers ADD COLUMN queue_force_color_match BOOLEAN DEFAULT FALSE"
+        )
+
     # Migration: Add target_parts_count column to projects for tracking total parts needed
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_parts_count INTEGER")
 
@@ -1758,6 +1770,42 @@ async def run_migrations(conn):
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_library_files_source_url ON library_files(source_url)",
+    )
+
+    # Migration: Cache metadata title on pending uploads (#1152 follow-up).
+    # Without this column the review card always shows the FTP filename while
+    # the eventual archive's print_name comes from the 3MF metadata title,
+    # creating a confusing review→archive name mismatch. Captured at upload
+    # time so /pending-uploads/ list calls don't have to reopen each 3MF.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE pending_uploads ADD COLUMN metadata_print_name VARCHAR(255)",
+    )
+
+    # Migration: Per-user API key ownership + cloud-access scope (#1182).
+    # user_id is nullable so legacy keys (created before #1182) survive the
+    # migration; cloud routes reject calls from keys without an owner so the
+    # operator is forced to recreate them. ON DELETE CASCADE so deleting a user
+    # takes their keys with them — orphan keys must never authenticate.
+    # SQLite ignores REFERENCES on ADD COLUMN (not enforced but not an error);
+    # PostgreSQL enforces the FK from this point forward. Indexed for the
+    # auth-gate's owner→keys lookup that runs on every API-keyed request.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_api_keys_user_id ON api_keys(user_id)",
+    )
+    # ``DEFAULT 0`` works on SQLite (boolean is just integer-coerced) but
+    # asyncpg's strict type-check rejects it: "column is of type boolean but
+    # default expression is of type integer". Use ``DEFAULT FALSE`` so both
+    # dialects accept the same statement — same pattern as the print_queue
+    # gcode_injection migration above.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_access_cloud BOOLEAN DEFAULT FALSE",
     )
 
     # Migration: Soft-delete column for trash bin (Issue #1008). Indexed so the

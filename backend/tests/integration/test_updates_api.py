@@ -15,11 +15,34 @@ class TestUpdatesAPI:
 
     @pytest.mark.asyncio
     async def test_apply_update_docker_rejection(self, async_client: AsyncClient):
-        with patch("backend.app.api.routes.updates._is_docker_environment", return_value=True):
+        with (
+            patch("backend.app.api.routes.updates._is_ha_addon", return_value=False),
+            patch("backend.app.api.routes.updates._is_docker_environment", return_value=True),
+        ):
             response = await async_client.post("/api/v1/updates/apply")
         result = response.json()
         assert result["success"] is False
         assert result["is_docker"] is True
+        assert result.get("is_ha_addon") is not True
+        # Docker message tells the user to docker compose, not HA.
+        assert "Docker Compose" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_apply_update_ha_addon_rejection(self, async_client: AsyncClient):
+        """HA addons are also Docker, so the route must check HA first and
+        return the HA-specific message — otherwise users see "run docker
+        compose" advice they can't follow."""
+        with (
+            patch("backend.app.api.routes.updates._is_ha_addon", return_value=True),
+            patch("backend.app.api.routes.updates._is_docker_environment", return_value=True),
+        ):
+            response = await async_client.post("/api/v1/updates/apply")
+        result = response.json()
+        assert result["success"] is False
+        assert result["is_ha_addon"] is True
+        assert result["is_docker"] is True
+        assert "Home Assistant" in result["message"]
+        assert "Docker Compose" not in result["message"]
 
     @pytest.mark.asyncio
     async def test_apply_update_non_docker(self, async_client: AsyncClient):
@@ -27,6 +50,7 @@ class TestUpdatesAPI:
         to prevent side effects (network call to GitHub releases API + actual
         git/pip subprocesses)."""
         with (
+            patch("backend.app.api.routes.updates._is_ha_addon", return_value=False),
             patch("backend.app.api.routes.updates._is_docker_environment", return_value=False),
             patch(
                 "backend.app.api.routes.updates._discover_target_release",
@@ -43,6 +67,119 @@ class TestUpdatesAPI:
 
         with patch("os.path.exists", return_value=True):
             assert _is_docker_environment() is True
+
+    def test_is_ha_addon_detects_supervisor_token(self):
+        """HA Supervisor sets SUPERVISOR_TOKEN on every addon container.
+        That env-var alone is the canonical HA-addon signal."""
+        from backend.app.api.routes.updates import _is_ha_addon
+
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": "abc123"}, clear=False):
+            assert _is_ha_addon() is True
+
+    def test_is_ha_addon_false_outside_supervisor(self):
+        from backend.app.api.routes.updates import _is_ha_addon
+
+        with patch.dict("os.environ", {}, clear=True):
+            assert _is_ha_addon() is False
+
+    def test_is_ha_addon_empty_token_treated_as_unset(self):
+        """An empty string is not a real token — guard against shells that
+        export the variable empty."""
+        from backend.app.api.routes.updates import _is_ha_addon
+
+        with patch.dict("os.environ", {"SUPERVISOR_TOKEN": ""}, clear=False):
+            assert _is_ha_addon() is False
+
+    @pytest.mark.asyncio
+    async def test_check_returns_ha_addon_flag_and_method(self, async_client: AsyncClient):
+        """`/updates/check` must surface the deployment shape so the frontend
+        can pick the right CTA. HA must take precedence over Docker because
+        HA addons run *inside* a Docker container — checking docker first
+        would mis-classify them."""
+        import httpx as _httpx
+
+        fake_release = {
+            "tag_name": "v999.9.9",
+            "name": "Far Future Release",
+            "body": "",
+            "html_url": "https://example.invalid/r",
+            "published_at": "2099-01-01T00:00:00Z",
+        }
+
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return [fake_release]
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def get(self, *_, **__):
+                return _Resp()
+
+        with (
+            patch.object(_httpx, "AsyncClient", _FakeClient),
+            patch("backend.app.api.routes.updates._is_ha_addon", return_value=True),
+            patch("backend.app.api.routes.updates._is_docker_environment", return_value=True),
+        ):
+            response = await async_client.get("/api/v1/updates/check")
+        body = response.json()
+        assert body["is_ha_addon"] is True
+        assert body["update_method"] == "ha_addon"
+        # is_docker is preserved alongside so older frontend bundles still
+        # hit a managed-deployment branch (degrades to Docker UX) instead of
+        # rendering the in-app Install button.
+        assert body["is_docker"] is True
+
+    @pytest.mark.asyncio
+    async def test_check_docker_only_returns_docker_method(self, async_client: AsyncClient):
+        import httpx as _httpx
+
+        fake_release = {
+            "tag_name": "v999.9.9",
+            "name": "Far Future Release",
+            "body": "",
+            "html_url": "https://example.invalid/r",
+            "published_at": "2099-01-01T00:00:00Z",
+        }
+
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return [fake_release]
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def get(self, *_, **__):
+                return _Resp()
+
+        with (
+            patch.object(_httpx, "AsyncClient", _FakeClient),
+            patch("backend.app.api.routes.updates._is_ha_addon", return_value=False),
+            patch("backend.app.api.routes.updates._is_docker_environment", return_value=True),
+        ):
+            response = await async_client.get("/api/v1/updates/check")
+        body = response.json()
+        assert body["is_ha_addon"] is False
+        assert body["is_docker"] is True
+        assert body["update_method"] == "docker"
 
     def test_parse_version(self):
         from backend.app.api.routes.updates import parse_version
@@ -261,6 +398,7 @@ class TestUpdatesAPI:
             return "v0.2.4b1"
 
         with (
+            patch.object(updates_module, "_is_ha_addon", return_value=False),
             patch.object(updates_module, "_is_docker_environment", return_value=False),
             patch.object(updates_module, "_perform_update", side_effect=fake_perform_update),
             patch.object(updates_module, "_discover_target_release", side_effect=fake_discover),
@@ -289,6 +427,7 @@ class TestUpdatesAPI:
         updates_module._update_status = {"status": "idle", "progress": 0, "message": "", "error": None}
 
         with (
+            patch.object(updates_module, "_is_ha_addon", return_value=False),
             patch.object(updates_module, "_is_docker_environment", return_value=False),
             patch.object(updates_module, "_discover_target_release", side_effect=fake_discover),
         ):

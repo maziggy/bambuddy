@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.cloud import get_stored_token
+from backend.app.api.routes.cloud import get_stored_token, resolve_api_key_cloud_owner
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
@@ -337,6 +337,7 @@ def _dedupe_by_name(
 async def list_unified_presets(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
+    api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
 ) -> UnifiedPresetsResponse:
     """List slicer presets across cloud / local / standard tiers, deduped by name.
 
@@ -346,8 +347,14 @@ async def list_unified_presets(
     gated on ``CLOUD_AUTH`` inside ``_fetch_cloud_presets`` so a user with
     only ``LIBRARY_UPLOAD`` doesn't see cloud presets they shouldn't have
     access to.
+
+    API-keyed callers (which return None from ``current_user``) get the
+    owner User via ``resolve_api_key_cloud_owner`` when the key has the
+    cloud-access scope, so the cloud tier surfaces correctly for them
+    too — matching the slice route (#1182 follow-up).
     """
-    cloud, cloud_status = await _fetch_cloud_presets(db, current_user)
+    cloud_token_user = current_user or api_key_cloud_owner
+    cloud, cloud_status = await _fetch_cloud_presets(db, cloud_token_user)
     local = await _fetch_local_presets(db)
     standard = await _fetch_bundled_presets(db)
 

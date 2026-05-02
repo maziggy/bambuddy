@@ -320,6 +320,7 @@ async def nfc_tag_scanned(
                 "type": "spoolbuddy_tag_matched",
                 "device_id": req.device_id,
                 "tag_uid": req.tag_uid,
+                "tray_uuid": req.tray_uuid,
                 "spool": {
                     "id": spool.id,
                     "material": spool.material,
@@ -340,6 +341,7 @@ async def nfc_tag_scanned(
                 "type": "spoolbuddy_unknown_tag",
                 "device_id": req.device_id,
                 "tag_uid": req.tag_uid,
+                "tray_uuid": req.tray_uuid,
                 "sak": req.sak,
                 "tag_type": req.tag_type,
             }

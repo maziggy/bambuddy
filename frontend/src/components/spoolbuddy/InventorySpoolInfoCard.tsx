@@ -211,8 +211,13 @@ export function InventorySpoolInfoCard({
         </div>
         <div className="flex justify-between items-center">
           <span className="text-zinc-500">{t('spoolbuddy.dashboard.tagId', 'Tag')}</span>
-          <span className="font-mono text-xs text-zinc-400 truncate max-w-[120px]" title={spool.tag_uid || ''}>
-            {spool.tag_uid ? spool.tag_uid.slice(-8) : '\u2014'}
+          <span
+            className="font-mono text-xs text-zinc-400 truncate max-w-[120px]"
+            title={[spool.tag_uid, spool.tag_uid_2].filter(Boolean).join(' / ') || ''}
+          >
+            {(spool.tag_uid || spool.tag_uid_2)
+              ? (spool.tag_uid || spool.tag_uid_2)!.slice(-8)
+              : '\u2014'}
           </span>
         </div>
         {nozzleTempRange && (

@@ -33,6 +33,7 @@ const manualSpool = {
   label_weight: 1000,
   weight_used: 0,
   tag_uid: null,
+  tag_uid_2: null,
   tray_uuid: null,
   slicer_filament_name: 'PLA',
 };
@@ -47,6 +48,7 @@ const blSpool = {
   label_weight: 1000,
   weight_used: 50,
   tag_uid: '05CC1E0F00000100',
+  tag_uid_2: null,
   tray_uuid: 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4',
   slicer_filament_name: 'PLA',
 };
@@ -61,6 +63,7 @@ const anotherManualSpool = {
   label_weight: 1000,
   weight_used: 200,
   tag_uid: null,
+  tag_uid_2: null,
   tray_uuid: null,
   slicer_filament_name: 'PLA',
 };

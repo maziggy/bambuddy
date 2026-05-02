@@ -193,6 +193,7 @@ export function SpoolBuddyDashboard() {
 
   // Current Spool card state - persists until user closes or new tag detected
   const [displayedTagId, setDisplayedTagId] = useState<string | null>(null);
+  const [displayedTrayUuid, setDisplayedTrayUuid] = useState<string | null>(null);
   const [displayedWeight, setDisplayedWeight] = useState<number | null>(null);
   const [hiddenTagId, setHiddenTagId] = useState<string | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -202,6 +203,7 @@ export function SpoolBuddyDashboard() {
 
   // Track current tag from state
   const currentTagId = sbState.matchedSpool?.tag_uid ?? sbState.unknownTagUid ?? null;
+  const currentTrayUuid = sbState.currentTrayUuid ?? null;
   const currentWeight = sbState.weight;
   const weightStable = sbState.weightStable;
 
@@ -227,7 +229,7 @@ export function SpoolBuddyDashboard() {
 
   // Untagged spools for the Link feature
   const untaggedSpools = useMemo(() => {
-    return spools.filter((s) => !s.tag_uid && !s.archived_at);
+    return spools.filter((s) => !s.tag_uid && !s.tag_uid_2 && !s.tray_uuid && !s.archived_at);
   }, [spools]);
 
   // Handle tag detection - show card when tag detected, keep until user closes or new tag
@@ -238,6 +240,7 @@ export function SpoolBuddyDashboard() {
 
       if (isDifferentTag || (!isHidden && displayedTagId !== currentTagId)) {
         setDisplayedTagId(currentTagId);
+        setDisplayedTrayUuid(currentTrayUuid);
         setDisplayedWeight(null);
         setHiddenTagId(null);
       }
@@ -250,11 +253,12 @@ export function SpoolBuddyDashboard() {
       // Tag removed - clear hidden state so same tag can show when re-placed
       if (hiddenTagId) {
         setDisplayedTagId(null);
+        setDisplayedTrayUuid(null);
         setHiddenTagId(null);
         setDisplayedWeight(null);
       }
     }
-  }, [currentTagId, currentWeight, weightStable, displayedTagId, hiddenTagId]);
+  }, [currentTagId, currentTrayUuid, currentWeight, weightStable, displayedTagId, hiddenTagId]);
 
   // Auto-sync weight once when known spool first detected
 
@@ -263,11 +267,12 @@ export function SpoolBuddyDashboard() {
   };
 
   const handleLinkTagToSpool = async (spool: InventorySpool) => {
-    if (!displayedTagId) return;
+    if (!displayedTagId && !displayedTrayUuid) return;
     try {
       await api.linkTagToSpool(spool.id, {
-        tag_uid: displayedTagId,
-        tag_type: 'generic',
+        tag_uid: displayedTagId || undefined,
+        tray_uuid: displayedTrayUuid || undefined,
+        tag_type: displayedTrayUuid ? 'bambulab' : 'generic',
         data_origin: 'nfc_link',
       });
       setShowLinkModal(false);
@@ -278,7 +283,7 @@ export function SpoolBuddyDashboard() {
   };
 
   const handleQuickAddToInventory = async () => {
-    if (!displayedTagId) return;
+    if (!displayedTagId && !displayedTrayUuid) return;
     setQuickAddBusy(true);
     try {
       const weight = liveWeight ?? displayedWeight;
@@ -303,9 +308,9 @@ export function SpoolBuddyDashboard() {
         last_used: null,
         encode_time: null,
         tag_uid: displayedTagId,
-        tray_uuid: null,
+        tray_uuid: displayedTrayUuid,
         data_origin: 'spoolbuddy',
-        tag_type: 'generic',
+        tag_type: displayedTrayUuid ? 'bambulab' : 'generic',
         cost_per_kg: null,
         last_scale_weight: weight !== null ? Math.round(weight) : null,
         last_weighed_at: weight !== null ? new Date().toISOString() : null,
@@ -468,7 +473,7 @@ export function SpoolBuddyDashboard() {
             <div className="flex-1 flex items-center justify-center min-h-0">
               {!sbState.deviceOnline ? (
                 <DeviceOfflineState />
-              ) : (displayedSpool || sbState.matchedSpool) && displayedTagId && hiddenTagId !== displayedTagId ? (
+              ) : (displayedSpool || sbState.matchedSpool) && (displayedTagId || displayedTrayUuid) && hiddenTagId !== displayedTagId ? (
                 <SpoolInfoCard
                   spool={(() => {
                     const s = displayedSpool ?? sbState.matchedSpool!;
@@ -490,7 +495,7 @@ export function SpoolBuddyDashboard() {
                   onAssignToAms={() => setShowAssignAmsModal(true)}
                   onClose={handleCloseSpoolCard}
                 />
-              ) : currentTagId && displayedTagId && !displayedSpool && !sbState.matchedSpool && hiddenTagId !== displayedTagId ? (
+              ) : (currentTagId || currentTrayUuid) && (displayedTagId || displayedTrayUuid) && !displayedSpool && !sbState.matchedSpool && hiddenTagId !== displayedTagId ? (
                 <UnknownTagCard
                   tagUid={displayedTagId}
                   scaleWeight={liveWeight ?? displayedWeight}
@@ -507,7 +512,7 @@ export function SpoolBuddyDashboard() {
       </div>
 
       {/* Assign to AMS Modal */}
-      {displayedSpool && displayedTagId && (
+      {displayedSpool && (displayedTagId || displayedTrayUuid) && (
         <AssignToAmsModal
           isOpen={showAssignAmsModal}
           onClose={() => setShowAssignAmsModal(false)}
@@ -517,7 +522,7 @@ export function SpoolBuddyDashboard() {
       )}
 
       {/* Link Tag to Spool Modal */}
-      {displayedTagId && (
+      {(displayedTagId || displayedTrayUuid) && (
         <LinkSpoolModal
           isOpen={showLinkModal}
           onClose={() => setShowLinkModal(false)}

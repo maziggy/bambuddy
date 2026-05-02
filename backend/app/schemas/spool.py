@@ -106,6 +106,7 @@ class SpoolBase(BaseModel):
     nozzle_temp_max: int | None = None
     note: str | None = None
     tag_uid: str | None = None
+    tag_uid_2: str | None = None
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
@@ -156,6 +157,7 @@ class SpoolUpdate(BaseModel):
     nozzle_temp_max: int | None = None
     note: str | None = None
     tag_uid: str | None = None
+    tag_uid_2: str | None = None
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
@@ -197,6 +199,7 @@ class SpoolResponse(SpoolBase):
     last_used: datetime | None = None
     encode_time: datetime | None = None
     tag_uid: str | None = None
+    tag_uid_2: str | None = None
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None

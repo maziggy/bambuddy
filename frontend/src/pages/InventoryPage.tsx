@@ -257,11 +257,14 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     );
   },
   tag_id: ({ spool }) => {
-    const tag = spool.tag_uid || spool.tray_uuid;
-    if (!tag) return <span className="text-sm text-bambu-gray/50">-</span>;
+    const uids = [spool.tag_uid, spool.tag_uid_2, spool.tray_uuid].filter(Boolean) as string[];
+    if (uids.length === 0) return <span className="text-sm text-bambu-gray/50">-</span>;
+    const primary = uids[0];
+    const tooltip = uids.join(' / ');
     return (
-      <span className="text-sm text-bambu-gray font-mono" title={tag}>
-        {tag.length > 12 ? `${tag.slice(0, 6)}...${tag.slice(-4)}` : tag}
+      <span className="text-sm text-bambu-gray font-mono" title={tooltip}>
+        {primary.length > 12 ? `${primary.slice(0, 6)}...${primary.slice(-4)}` : primary}
+        {uids.length > 1 && <span className="text-xs text-bambu-gray/50 ml-1">+{uids.length - 1}</span>}
       </span>
     );
   },

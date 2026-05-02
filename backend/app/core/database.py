@@ -1855,6 +1855,11 @@ async def run_migrations(conn):
             )
         )
 
+    # Migration: Add secondary tag UID column for spools that can be identified by
+    # two different NFC reader hardware UIDs (e.g. same spool read by two readers
+    # that report different first-byte values due to hardware variance).
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN tag_uid_2 VARCHAR(16)")
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

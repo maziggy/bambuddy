@@ -386,7 +386,7 @@ export function SpoolFormModal({
 
   const deleteTagMutation = useMutation({
     mutationFn: () =>
-      api.updateSpool(spool!.id, { tag_uid: null, tray_uuid: null, tag_type: null, data_origin: null } as Parameters<typeof api.updateSpool>[1]),
+      api.updateSpool(spool!.id, { tag_uid: null, tag_uid_2: null, tray_uuid: null, tag_type: null, data_origin: null } as Parameters<typeof api.updateSpool>[1]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
       showToast(t('inventory.rfidCleared', 'RFID tag cleared'), 'success');
@@ -715,7 +715,7 @@ export function SpoolFormModal({
               <Button
                 variant="secondary"
                 onClick={() => deleteTagMutation.mutate()}
-                disabled={isPending || !spool?.tag_uid}
+                disabled={isPending || (!spool?.tag_uid && !spool?.tag_uid_2 && !spool?.tray_uuid)}
               >
                 <Tag className="w-4 h-4" />
                 {t('inventory.clearRfid', 'Clear RFID Tag')}

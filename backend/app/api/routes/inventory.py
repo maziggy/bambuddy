@@ -1709,7 +1709,7 @@ async def update_shopping_list_status(
         raise HTTPException(404, "Item not found")
 
     item.status = data.status
-    if data.status == "purchased" and item.purchased_at is None:
+    if data.status in ("purchased", "received") and item.purchased_at is None:
         item.purchased_at = datetime.now(timezone.utc)
     elif data.status == "pending":
         item.purchased_at = None

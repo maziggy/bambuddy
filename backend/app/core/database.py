@@ -1886,7 +1886,8 @@ async def run_migrations(conn):
                 UNIQUE (material, subtype, brand)
             )""",
         )
-        await _safe_execute(conn, "UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7")
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7"))
         await _safe_execute(
             conn, "ALTER TABLE filament_sku_settings ADD COLUMN safety_margin_value INTEGER NOT NULL DEFAULT 14"
         )
@@ -1896,23 +1897,18 @@ async def run_migrations(conn):
         await _safe_execute(
             conn, "ALTER TABLE filament_sku_settings ADD COLUMN alerts_snoozed BOOLEAN NOT NULL DEFAULT 0"
         )
-        # Only backfill from safety_margin_days if that column still exists (SQLite pre-rebuild).
-        try:
-            cols_result = await conn.execute(text("PRAGMA table_info(filament_sku_settings)"))
-            if any(row[1] == "safety_margin_days" for row in cols_result.fetchall()):
+        # Backfill and drop legacy safety_margin_days column — SQLite requires a table rebuild.
+        # Only run if the stale column still exists.
+        cols_result = await conn.execute(text("PRAGMA table_info(filament_sku_settings)"))
+        col_names = [row[1] for row in cols_result.fetchall()]
+        if "safety_margin_days" in col_names:
+            async with conn.begin_nested():
                 await conn.execute(
                     text(
-                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14"
+                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days "
+                        "WHERE safety_margin_value = 14 AND safety_margin_days != 14"
                     )
                 )
-        except Exception:
-            pass
-        # Drop legacy safety_margin_days column — SQLite requires a table rebuild.
-        # Only run if the stale column still exists.
-        try:
-            cols_result = await conn.execute(text("PRAGMA table_info(filament_sku_settings)"))
-            col_names = [row[1] for row in cols_result.fetchall()]
-            if "safety_margin_days" in col_names:
                 await conn.execute(
                     text(
                         """CREATE TABLE filament_sku_settings_new (
@@ -1923,6 +1919,7 @@ async def run_migrations(conn):
                         lead_time_days INTEGER NOT NULL DEFAULT 0,
                         safety_margin_value INTEGER NOT NULL DEFAULT 14,
                         safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                        alerts_snoozed BOOLEAN NOT NULL DEFAULT 0,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE (material, subtype, brand)
@@ -1932,15 +1929,15 @@ async def run_migrations(conn):
                 await conn.execute(
                     text(
                         """INSERT INTO filament_sku_settings_new
-                        (id, material, subtype, brand, lead_time_days, safety_margin_value, safety_margin_unit, created_at, updated_at)
-                       SELECT id, material, subtype, brand, lead_time_days, safety_margin_value, safety_margin_unit, created_at, updated_at
+                        (id, material, subtype, brand, lead_time_days, safety_margin_value,
+                         safety_margin_unit, alerts_snoozed, created_at, updated_at)
+                       SELECT id, material, subtype, brand, lead_time_days, safety_margin_value,
+                              safety_margin_unit, COALESCE(alerts_snoozed, 0), created_at, updated_at
                        FROM filament_sku_settings"""
                     )
                 )
                 await conn.execute(text("DROP TABLE filament_sku_settings"))
                 await conn.execute(text("ALTER TABLE filament_sku_settings_new RENAME TO filament_sku_settings"))
-        except Exception:
-            pass
         await _safe_execute(
             conn,
             """CREATE TABLE IF NOT EXISTS filament_shopping_list (
@@ -1975,7 +1972,8 @@ async def run_migrations(conn):
                 UNIQUE (material, subtype, brand)
             )""",
         )
-        await _safe_execute(conn, "UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7")
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7"))
         await _safe_execute(
             conn,
             "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS safety_margin_value INTEGER NOT NULL DEFAULT 14",

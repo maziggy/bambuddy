@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -222,7 +222,7 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     return groups.map((group): SkuForecast => {
       const skuSettings = settingsMap.get(group.key) ?? null;
       const skuLeadTime = skuSettings?.lead_time_days ?? 0;
-      const effectiveLeadTimeDays = Math.max(globalLeadTime, skuLeadTime) || 1;
+      const effectiveLeadTimeDays = Math.max(globalLeadTime, skuLeadTime);
       const marginValue = skuSettings?.safety_margin_value ?? 14;
       const marginUnit = skuSettings?.safety_margin_unit ?? 'days';
 
@@ -266,8 +266,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
         : null;
 
       const reorderTriggerDate = daysUntilROP !== null ? addDays(today, Math.max(0, daysUntilROP)) : null;
-      const reorderAlert = daysUntilROP !== null && daysUntilROP <= 0;
-      const stockBreakAlert = daysRemaining !== null && daysRemaining <= effectiveLeadTimeDays;
+      const stockBreakAlert = daysRemaining !== null && effectiveLeadTimeDays > 0 && daysRemaining <= effectiveLeadTimeDays;
+      const reorderAlert = !stockBreakAlert && daysUntilROP !== null && daysUntilROP <= 0;
 
       return {
         group, settings: skuSettings,
@@ -402,10 +402,14 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
           canWrite={canWrite}
           onClose={() => setListOpen(false)}
           onRemove={(id) => {
-            api.removeFromShoppingList(id).then(() => queryClient.invalidateQueries({ queryKey: ['shopping-list'] }));
+            api.removeFromShoppingList(id)
+              .then(() => queryClient.invalidateQueries({ queryKey: ['shopping-list'] }))
+              .catch(() => showToast(t('forecast.failedSaveSettings'), 'error'));
           }}
           onClear={() => {
-            api.clearShoppingList().then(() => queryClient.invalidateQueries({ queryKey: ['shopping-list'] }));
+            api.clearShoppingList()
+              .then(() => queryClient.invalidateQueries({ queryKey: ['shopping-list'] }))
+              .catch(() => showToast(t('forecast.failedSaveSettings'), 'error'));
           }}
         />
       )}
@@ -761,6 +765,17 @@ function ForecastRow({
   const [leadInput, setLeadInput] = useState(String(f.settings?.lead_time_days ?? 0));
   const [marginInput, setMarginInput] = useState(String(f.settings?.safety_margin_value ?? 14));
   const [marginUnit, setMarginUnit] = useState<'days' | 'g'>(f.settings?.safety_margin_unit ?? 'days');
+
+  // Sync inputs when remote settings change and the field is not actively being edited.
+  useEffect(() => {
+    if (!editingLead) setLeadInput(String(f.settings?.lead_time_days ?? 0));
+  }, [f.settings?.lead_time_days, editingLead]);
+  useEffect(() => {
+    if (!editingMargin) {
+      setMarginInput(String(f.settings?.safety_margin_value ?? 14));
+      setMarginUnit(f.settings?.safety_margin_unit ?? 'days');
+    }
+  }, [f.settings?.safety_margin_value, f.settings?.safety_margin_unit, editingMargin]);
 
   const upsertMutation = useMutation({
     mutationFn: api.upsertSkuSettings,
@@ -1239,7 +1254,7 @@ function ShoppingListPanel({
     a.href = url;
     a.download = `shopping-list-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   }
 
   return (

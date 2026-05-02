@@ -179,16 +179,15 @@ describe('ForecastPanel — write permission guard (auth disabled baseline)', ()
     expect(await screen.findByTitle(/add to shopping list/i)).toBeInTheDocument();
   });
 
-  it('shows no-write toast hint for clear-all when canWrite is false', async () => {
-    // With auth disabled, the shopping list clear button is visible.
-    // Verify the panel renders at all with a shopping list mock.
+  it('shows cart button and shopping list when auth is disabled (canWrite=true)', async () => {
+    // Auth disabled → all permissions granted → canWrite=true, shopping list visible.
     server.use(
       http.get('*/api/v1/inventory/shopping-list', () =>
         HttpResponse.json([
           {
             id: 1, material: 'PLA', subtype: null, brand: 'Polymaker',
             quantity_spools: 2, status: 'pending', note: null,
-            created_at: '2025-01-01T00:00:00Z',
+            added_at: '2025-01-01T00:00:00Z',
           },
         ]),
       ),

@@ -5,7 +5,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1545,7 +1545,7 @@ class FilamentSkuSettingsUpsert(BaseModel):
 @router.get("/sku-settings", response_model=list[FilamentSkuSettingsResponse])
 async def list_sku_settings(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.INVENTORY_FORECAST_READ),
 ):
     """List all filament SKU reorder settings."""
     from backend.app.models.filament_sku_settings import FilamentSkuSettings
@@ -1629,7 +1629,7 @@ class ShoppingListItemStatusUpdate(BaseModel):
 @router.get("/shopping-list", response_model=list[ShoppingListItemResponse])
 async def get_shopping_list(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.INVENTORY_FORECAST_READ),
 ):
     """Get the filament shopping list."""
     from backend.app.models.shopping_list import ShoppingListItem
@@ -1759,9 +1759,7 @@ async def clear_shopping_list(
     """Clear all items from the shopping list."""
     from backend.app.models.shopping_list import ShoppingListItem
 
-    result = await db.execute(select(ShoppingListItem))
-    items = result.scalars().all()
-    for item in items:
-        await db.delete(item)
+    result = await db.execute(delete(ShoppingListItem).returning(ShoppingListItem.id))
+    deleted = len(result.fetchall())
     await db.commit()
-    return {"deleted": len(items)}
+    return {"deleted": deleted}

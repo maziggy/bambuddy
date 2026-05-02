@@ -482,8 +482,8 @@ function InventoryPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission } = useAuth();
-  const canViewForecast = hasPermission('inventory:forecast_read');
+  const { hasPermission, loading: authLoading } = useAuth();
+  const canViewForecast = !authLoading && hasPermission('inventory:forecast_read');
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
 

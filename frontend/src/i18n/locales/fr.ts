@@ -4042,6 +4042,10 @@ export default {
       title: 'Lancement automatique',
       description: 'Lancer automatiquement les impressions ajoutées à la file. Désactivé, les impressions attendent un lancement manuel.',
     },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+    },
     tailscaleDisabled: {
       title: 'Intégration Tailscale',
       description: 'Lorsqu\'activé, utilise Tailscale pour des certificats TLS de confiance. Désactiver pour n\'utiliser que des certificats auto-signés.',

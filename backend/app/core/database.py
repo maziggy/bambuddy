@@ -639,6 +639,18 @@ async def run_migrations(conn):
     # Migration: Add ams_mapping column to print_queue for storing filament slot assignments
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN ams_mapping TEXT")
 
+    # Migration: Add queue_force_color_match column to virtual_printers (#1188).
+    # Opt-in flag: when true, VP queue-mode uploads pin the per-slot type+color
+    # from the 3MF onto the queue item's filament_overrides so the scheduler
+    # refuses to dispatch onto a printer with the wrong filament loaded.
+    # Default false to preserve current behaviour for upgraders.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN queue_force_color_match BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE virtual_printers ADD COLUMN queue_force_color_match BOOLEAN DEFAULT FALSE"
+        )
+
     # Migration: Add target_parts_count column to projects for tracking total parts needed
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_parts_count INTEGER")
 

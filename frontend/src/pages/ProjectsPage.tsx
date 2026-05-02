@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -394,6 +395,91 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
   );
 }
 
+/**
+ * Cover thumbnail with portal-rendered hover preview (#1155 follow-up).
+ *
+ * Why a portal: the parent ``ProjectCard`` carries ``overflow-hidden`` for
+ * its rounded-corner clipping and color accent bar; an in-tree popover
+ * gets clipped by that and only the part that overlaps the card is
+ * visible. Rendering the preview via ``createPortal`` to ``document.body``
+ * escapes every ancestor clipping context, and ``position: fixed`` with
+ * ``getBoundingClientRect()`` keeps it pinned next to the thumbnail
+ * regardless of where the card sits in the grid.
+ */
+function ProjectCoverThumbnail({
+  projectId,
+  altText,
+}: {
+  projectId: number;
+  altText: string;
+}) {
+  const thumbRef = useRef<HTMLDivElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  const handleEnter = () => {
+    if (!thumbRef.current) return;
+    const rect = thumbRef.current.getBoundingClientRect();
+    // Anchor the 384px preview just to the right of the thumbnail (8px gap).
+    // Clamp ``top`` so the preview never overflows the viewport vertically;
+    // similar story for ``left`` if the card is near the right edge — flip
+    // to the LEFT side of the thumbnail in that case.
+    const PREVIEW = 384;
+    const GAP = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = rect.right + GAP;
+    if (left + PREVIEW > vw - 8) {
+      left = rect.left - PREVIEW - GAP;
+    }
+    let top = rect.top;
+    if (top + PREVIEW > vh - 8) {
+      top = vh - PREVIEW - 8;
+    }
+    if (top < 8) top = 8;
+    setPos({ left, top });
+    setHovered(true);
+  };
+
+  const handleLeave = () => setHovered(false);
+
+  return (
+    <div
+      ref={thumbRef}
+      className="relative flex-shrink-0"
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="w-10 h-10 rounded-lg overflow-hidden bg-bambu-dark border border-bambu-dark-tertiary">
+        <img
+          src={api.getProjectCoverImageUrl(projectId)}
+          alt={altText}
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+      </div>
+      {hovered && pos &&
+        createPortal(
+          <div
+            className="fixed z-[100] w-96 h-96 rounded-lg overflow-hidden border border-bambu-dark-tertiary shadow-2xl bg-bambu-dark pointer-events-none"
+            style={{ left: pos.left, top: pos.top }}
+            aria-hidden="true"
+          >
+            <img
+              src={api.getProjectCoverImageUrl(projectId)}
+              alt=""
+              className="w-full h-full object-contain"
+              loading="lazy"
+            />
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+
 interface ProjectCardProps {
   project: ProjectListItem;
   onClick: () => void;
@@ -444,15 +530,17 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission, t }: P
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             {project.cover_image_filename ? (
-              // #1155: cover photo replaces the status-icon box
-              <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-bambu-dark border border-bambu-dark-tertiary">
-                <img
-                  src={api.getProjectCoverImageUrl(project.id)}
-                  alt={t('projects.coverImageAlt')}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              </div>
+              // #1155: cover photo replaces the status-icon box. The thumbnail
+              // itself stays small so the card layout doesn't shift; on hover
+              // a portal-rendered 384×384 preview pops out beside the card
+              // so the user can identify the print without navigating into
+              // the project view. The portal is needed because ProjectCard's
+              // own ``overflow-hidden`` (for rounded corners) clips any
+              // in-tree popover before it can extend outside the card.
+              <ProjectCoverThumbnail
+                projectId={project.id}
+                altText={t('projects.coverImageAlt')}
+              />
             ) : (
               <div className={`p-2 rounded-lg ${statusConfig.bg} flex-shrink-0`}>
                 <statusConfig.icon className={`w-5 h-5 ${statusConfig.color}`} />

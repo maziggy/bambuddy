@@ -240,6 +240,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Send prints directly from Bambu Studio/Orca Slicer
 - Configurable printer model (X1C, P1S, A1, H2D, etc.)
 - Archive mode, Review mode, Queue mode, or Proxy mode
+- Queue mode: optional **force-color-match** so the scheduler refuses to dispatch onto a printer with the wrong filament loaded
 - SSDP discovery (same LAN) or manual IP entry (VPN/remote)
 - Network interface override for multi-NIC/Docker/VPN setups
 - Secure TLS/MQTT/FTP communication

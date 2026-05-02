@@ -4054,6 +4054,10 @@ export default {
       title: '自動ディスパッチ',
       description: 'キューに追加されたときに自動的に印刷を開始します。オフの場合、手動ディスパッチを待ちます。',
     },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+    },
     tailscaleDisabled: {
       title: 'Tailscale統合',
       description: '有効にすると、Tailscaleを使用して信頼できるTLS証明書を使用します。自己署名証明書のみを使用する場合は無効にします。',

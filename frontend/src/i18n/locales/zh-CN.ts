@@ -4042,6 +4042,10 @@ export default {
       title: '自动派发',
       description: '添加到队列时自动开始打印。关闭后，打印任务等待手动派发。',
     },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+    },
     tailscaleDisabled: {
       title: 'Tailscale 集成',
       description: '启用后，使用 Tailscale 获取受信任的 TLS 证书。禁用则仅使用自签名证书。',

@@ -111,6 +111,7 @@ class VirtualPrinterInstance:
         target_printer_serial: str = "",
         target_printer_id: int | None = None,
         auto_dispatch: bool = True,
+        queue_force_color_match: bool = False,
         bind_ip: str = "",
         remote_interface_ip: str = "",
         tailscale_disabled: bool = True,
@@ -127,6 +128,7 @@ class VirtualPrinterInstance:
         self.target_printer_serial = target_printer_serial
         self.target_printer_id = target_printer_id
         self.auto_dispatch = auto_dispatch
+        self.queue_force_color_match = queue_force_color_match
         self.bind_ip = bind_ip
         self.remote_interface_ip = remote_interface_ip
         self.tailscale_disabled = tailscale_disabled
@@ -330,9 +332,12 @@ class VirtualPrinterInstance:
             return
 
         try:
+            import json
+
             from backend.app.api.routes.settings import get_setting
             from backend.app.models.print_queue import PrintQueueItem
             from backend.app.services.archive import ArchiveService
+            from backend.app.services.filament_requirements import extract_filament_requirements
 
             async with self._session_factory() as db:
                 name_source = await get_setting(db, "virtual_printer_archive_name_source")
@@ -355,6 +360,38 @@ class VirtualPrinterInstance:
                     if not self.target_printer_id and self.model:
                         target_model = VIRTUAL_PRINTER_MODELS.get(self.model)
                     plate_id = self._extract_plate_id(file_path)
+
+                    # Parse the 3MF for per-slot filament requirements (#1188).
+                    # The manual /print-queue/ POST flow does this at queue-add
+                    # time; the VP path used to skip it, so the scheduler fell
+                    # through to model-only matching and dispatched onto whatever
+                    # printer happened to be free regardless of loaded colour.
+                    # required_filament_types is populated unconditionally — it's
+                    # cheap, lets the scheduler reject obvious mis-matches even
+                    # without force_color_match. filament_overrides only carries
+                    # force_color_match=True when the per-VP setting is on, so
+                    # upgraders keep the old behaviour by default.
+                    required_filament_types_json: str | None = None
+                    filament_overrides_json: str | None = None
+                    requirements = extract_filament_requirements(file_path, plate_id)
+                    if requirements:
+                        types = sorted({r["type"] for r in requirements if r.get("type")})
+                        if types:
+                            required_filament_types_json = json.dumps(types)
+                        if self.queue_force_color_match:
+                            overrides = [
+                                {
+                                    "slot_id": r["slot_id"],
+                                    "type": r.get("type", ""),
+                                    "color": r.get("color", ""),
+                                    "force_color_match": True,
+                                }
+                                for r in requirements
+                                if r.get("type") and r.get("color")
+                            ]
+                            if overrides:
+                                filament_overrides_json = json.dumps(overrides)
+
                     queue_item = PrintQueueItem(
                         printer_id=self.target_printer_id,
                         target_model=target_model,
@@ -363,6 +400,8 @@ class VirtualPrinterInstance:
                         position=1,
                         status="pending",
                         manual_start=not self.auto_dispatch,
+                        required_filament_types=required_filament_types_json,
+                        filament_overrides=filament_overrides_json,
                     )
                     db.add(queue_item)
                     await db.commit()
@@ -894,6 +933,7 @@ class VirtualPrinterManager:
                     serial_suffix=vp.serial_suffix,
                     target_printer_id=vp.target_printer_id,
                     auto_dispatch=vp.auto_dispatch,
+                    queue_force_color_match=vp.queue_force_color_match,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
                     tailscale_disabled=vp.tailscale_disabled,

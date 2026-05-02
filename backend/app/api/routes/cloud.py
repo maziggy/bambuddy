@@ -124,6 +124,41 @@ def cloud_caller(*permissions: Permission):
     return Depends(resolved)
 
 
+async def resolve_api_key_cloud_owner(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """Route-level dep for non-/cloud/* endpoints that need to read the
+    caller's stored Bambu Cloud token (e.g. the slice path resolving cloud
+    presets — #1182 follow-up).
+
+    Returns the API key's owner User when the caller is an API-keyed
+    request *and* the key has ``can_access_cloud=True``; returns None for
+    JWT, anonymous, or API keys without the cloud scope. The caller is
+    expected to fall back to the JWT-authed ``current_user`` first and use
+    this dep's result only when ``current_user`` is None.
+
+    Unlike ``_cloud_api_key_gate`` (which 403s legacy/non-cloud keys at the
+    router level), this dep is permissive: it returns None instead of
+    raising, so a slice request via an API key without cloud scope still
+    runs against local presets. The downstream cloud-token check in
+    ``preset_resolver._resolve_cloud`` produces the right 400 if the
+    request actually selects a cloud preset.
+    """
+    api_key_value: str | None = None
+    if x_api_key:
+        api_key_value = x_api_key
+    elif credentials and credentials.credentials.startswith("bb_"):
+        api_key_value = credentials.credentials
+    if api_key_value is None:
+        return None
+    api_key = await _validate_api_key(db, api_key_value)
+    if api_key is None or api_key.user_id is None or not api_key.can_access_cloud:
+        return None
+    return await _user_from_api_key(db, api_key)
+
+
 router = APIRouter(prefix="/cloud", tags=["cloud"], dependencies=[Depends(_cloud_api_key_gate)])
 
 

@@ -4042,6 +4042,10 @@ export default {
       title: '自動派發',
       description: '新增到佇列時自動開始列印。關閉後，列印任務等待手動派發。',
     },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+    },
     tailscaleDisabled: {
       title: 'Tailscale 整合',
       description: '啟用後，使用 Tailscale 取得受信任的 TLS 憑證。停用則僅使用自簽憑證。',

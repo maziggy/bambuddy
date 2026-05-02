@@ -4041,6 +4041,10 @@ export default {
       title: 'Envio automático',
       description: 'Iniciar impressões automaticamente quando adicionadas à fila. Quando desativado, as impressões aguardam envio manual.',
     },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+    },
     tailscaleDisabled: {
       title: 'Integração Tailscale',
       description: 'Quando ativado, usa Tailscale para certificados TLS confiáveis. Desative para usar apenas certificado autoassinado.',

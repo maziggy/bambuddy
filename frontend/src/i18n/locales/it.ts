@@ -4041,6 +4041,10 @@ export default {
       title: 'Avvio automatico',
       description: 'Avvia automaticamente le stampe aggiunte alla coda. Se disattivato, le stampe attendono l\'avvio manuale.',
     },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+    },
     tailscaleDisabled: {
       title: 'Integrazione Tailscale',
       description: 'Quando abilitato, utilizza Tailscale per certificati TLS affidabili. Disabilita per utilizzare solo certificati auto-firmati.',

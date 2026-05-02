@@ -1884,10 +1884,17 @@ async def run_migrations(conn):
         await _safe_execute(
             conn, "ALTER TABLE filament_sku_settings ADD COLUMN alerts_snoozed BOOLEAN NOT NULL DEFAULT 0"
         )
-        await _safe_execute(
-            conn,
-            "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14",
-        )
+        # Only backfill from safety_margin_days if that column still exists (SQLite pre-rebuild).
+        try:
+            cols_result = await conn.execute(text("PRAGMA table_info(filament_sku_settings)"))
+            if any(row[1] == "safety_margin_days" for row in cols_result.fetchall()):
+                await conn.execute(
+                    text(
+                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14"
+                    )
+                )
+        except Exception:
+            pass
         # Drop legacy safety_margin_days column — SQLite requires a table rebuild.
         # Only run if the stale column still exists.
         try:
@@ -1969,10 +1976,22 @@ async def run_migrations(conn):
             conn,
             "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS alerts_snoozed BOOLEAN NOT NULL DEFAULT FALSE",
         )
-        await _safe_execute(
-            conn,
-            "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14",
-        )
+        # Only backfill from safety_margin_days if that column still exists (PostgreSQL).
+        try:
+            col_check = await conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'filament_sku_settings' AND column_name = 'safety_margin_days'"
+                )
+            )
+            if col_check.fetchone():
+                await conn.execute(
+                    text(
+                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14"
+                    )
+                )
+        except Exception:
+            pass
         await _safe_execute(
             conn,
             """CREATE TABLE IF NOT EXISTS filament_shopping_list (

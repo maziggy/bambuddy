@@ -2682,6 +2682,7 @@ export interface OIDCProvider {
   email_claim: string;
   require_email_verified: boolean;
   icon_url?: string | null;
+  default_group_id?: number | null;
 }
 
 export interface OIDCProviderCreate {
@@ -2696,6 +2697,7 @@ export interface OIDCProviderCreate {
   email_claim?: string;
   require_email_verified?: boolean;
   icon_url?: string | null;
+  default_group_id?: number | null;
 }
 
 export interface OIDCLink {

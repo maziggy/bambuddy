@@ -2168,6 +2168,9 @@ export default {
         requireEmailVerifiedDesc: "Accetta il claim email solo se il provider lo contrassegna come verificato.",
         requireEmailVerifiedWarning: 'Attenzione: l\'email sarà accettata senza verifica. Usare solo con provider affidabili.',
         requireEmailVerifiedAutoLink: 'Disabilitare prima il collegamento automatico per modificare questa impostazione.',
+        defaultGroup: 'Gruppo predefinito',
+        defaultGroupDesc: 'Gruppo assegnato agli utenti creati automaticamente. Ritorno a Viewers se non impostato.',
+        defaultGroupViewersFallback: 'Viewers (predefinito)',
       },
     },
 

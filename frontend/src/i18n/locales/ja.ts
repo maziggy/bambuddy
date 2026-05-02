@@ -2224,6 +2224,9 @@ export default {
         requireEmailVerifiedDesc: 'プロバイダーが確認済みとしてマークした場合にのみメールクレームを受け入れます。',
         requireEmailVerifiedWarning: '警告：確認なしでメールが受け入れられます。信頼できるプロバイダーのみで使用してください。',
         requireEmailVerifiedAutoLink: 'この設定を変更するには、まず自動リンクを無効にしてください。',
+        defaultGroup: 'デフォルトグループ',
+        defaultGroupDesc: '自動作成ユーザーに割り当てられるグループ。未設定の場合はViewersにフォールバックします。',
+        defaultGroupViewersFallback: 'Viewers（デフォルト）',
       },
     },
 

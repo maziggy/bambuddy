@@ -371,6 +371,7 @@ class OIDCProviderCreate(BaseModel):
     email_claim: str = Field(default="email", max_length=64)
     require_email_verified: bool = True
     icon_url: str | None = None
+    default_group_id: int | None = None
 
     @field_validator("issuer_url")
     @classmethod
@@ -426,6 +427,7 @@ class OIDCProviderUpdate(BaseModel):
     email_claim: str | None = Field(default=None, max_length=64)
     require_email_verified: bool | None = None
     icon_url: str | None = None
+    default_group_id: int | None = None
 
     @field_validator("scopes")
     @classmethod
@@ -471,6 +473,7 @@ class OIDCProviderResponse(BaseModel):
     email_claim: str = "email"
     require_email_verified: bool = True
     icon_url: str | None = None
+    default_group_id: int | None = None
 
     class Config:
         from_attributes = True

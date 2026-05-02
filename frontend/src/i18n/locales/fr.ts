@@ -2169,6 +2169,9 @@ export default {
         requireEmailVerifiedDesc: "N'accepter le claim e-mail que si le fournisseur le marque comme vérifié.",
         requireEmailVerifiedWarning: "Avertissement : l'e-mail sera accepté sans vérification. À utiliser uniquement avec des fournisseurs de confiance.",
         requireEmailVerifiedAutoLink: 'Désactiver le lien automatique d\'abord pour modifier ce paramètre.',
+        defaultGroup: 'Groupe par défaut',
+        defaultGroupDesc: 'Groupe attribué aux utilisateurs créés automatiquement. Repli sur Viewers si non défini.',
+        defaultGroupViewersFallback: 'Viewers (par défaut)',
       },
     },
 

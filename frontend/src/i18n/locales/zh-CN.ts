@@ -2212,6 +2212,9 @@ export default {
         requireEmailVerifiedDesc: '仅在提供商将邮箱声明标记为已验证时才接受。',
         requireEmailVerifiedWarning: '警告：将在未经验证的情况下接受邮箱。仅对受信任的提供商使用。',
         requireEmailVerifiedAutoLink: '请先禁用自动关联以更改此设置。',
+        defaultGroup: '默认组',
+        defaultGroupDesc: '自动创建用户时分配的组。未设置时回退到 Viewers。',
+        defaultGroupViewersFallback: 'Viewers（默认）',
       },
     },
 

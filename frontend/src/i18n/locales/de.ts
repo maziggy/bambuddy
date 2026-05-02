@@ -2225,6 +2225,9 @@ export default {
         requireEmailVerifiedDesc: 'E-Mail-Claim nur akzeptieren, wenn der Provider ihn als verifiziert markiert.',
         requireEmailVerifiedWarning: 'Warnung: E-Mail wird auch ohne Verifizierung akzeptiert. Nur bei vertrauenswürdigen Providern verwenden.',
         requireEmailVerifiedAutoLink: 'Auto-Verknüpfung zuerst deaktivieren, um diese Einstellung zu ändern.',
+        defaultGroup: 'Standardgruppe',
+        defaultGroupDesc: 'Gruppe, der automatisch erstellte Benutzer zugewiesen werden. Fallback auf Viewers, wenn nicht gesetzt.',
+        defaultGroupViewersFallback: 'Viewers (Standard)',
       },
     },
 

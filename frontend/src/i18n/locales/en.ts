@@ -2228,6 +2228,9 @@ export default {
         requireEmailVerifiedDesc: 'Only accept the email claim when the provider marks it as verified.',
         requireEmailVerifiedWarning: 'Warning: email will be accepted even without verification. Use only with trusted providers.',
         requireEmailVerifiedAutoLink: 'Disable auto-link first to change this setting.',
+        defaultGroup: 'Default Group',
+        defaultGroupDesc: 'Group assigned to auto-created users. Falls back to Viewers if not set.',
+        defaultGroupViewersFallback: 'Viewers (default)',
       },
     },
 

@@ -2212,6 +2212,9 @@ export default {
         requireEmailVerifiedAutoLink: '請先停用自動連結以變更此設定。',
         secretHint: '留空以保留目前',
         secretPlaceholder: '新金鑰',
+        defaultGroup: '預設群組',
+        defaultGroupDesc: '自動建立使用者時分配的群組。未設定時回退到 Viewers。',
+        defaultGroupViewersFallback: 'Viewers（預設）',
       },
     },
 

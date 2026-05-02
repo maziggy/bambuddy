@@ -1745,6 +1745,14 @@ async def run_migrations(conn):
     # is still present in sqlite_master (SQLite cannot ALTER TABLE DROP/ADD CONSTRAINT).
     await _migrate_update_auto_link_constraint(conn)
 
+    # Migration: Add default_group_id to oidc_providers.
+    # Must run AFTER _migrate_update_auto_link_constraint to avoid being dropped during
+    # the SQLite table recreation that function performs on stale-formula databases.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE oidc_providers ADD COLUMN default_group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL",
+    )
+
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat
     # predates this timestamp are rejected in all six auth validation paths.

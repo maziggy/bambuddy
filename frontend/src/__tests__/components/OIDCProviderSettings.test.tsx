@@ -24,6 +24,7 @@ const mockProviders = [
     email_claim: 'email',
     require_email_verified: true,
     icon_url: null,
+    default_group_id: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   },
@@ -147,6 +148,82 @@ describe('OIDCProviderSettings', () => {
       // The provider card shows field labels in the details section
       expect(screen.getByText(/Email Claim/i)).toBeInTheDocument();
       expect(screen.getByText(/Require Email Verified/i)).toBeInTheDocument();
+    });
+
+    it('renders Default Group label in provider details', async () => {
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('TestIdP')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Default Group/i)).toBeInTheDocument();
+    });
+
+    it('shows Viewers fallback label when default_group_id is null', async () => {
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('TestIdP')).toBeInTheDocument();
+      });
+
+      // null default_group_id should display the Viewers fallback text
+      expect(screen.getByText(/Viewers.*default/i)).toBeInTheDocument();
+    });
+
+    it('shows group name when default_group_id matches a known group', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers/all', () =>
+          HttpResponse.json([{ ...mockProviders[0], default_group_id: 2 }])
+        )
+      );
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('TestIdP')).toBeInTheDocument();
+      });
+
+      // default_group_id=2 matches Operators in the global MSW mock
+      expect(screen.getByText('Operators')).toBeInTheDocument();
+    });
+  });
+
+  describe('ProviderForm — default group dropdown', () => {
+    it('renders a Default Group select in the create form', async () => {
+      server.use(http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([])));
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getAllByRole('button', { name: /Add Provider/i })[0]).toBeInTheDocument();
+      });
+      await userEvent.click(screen.getAllByRole('button', { name: /Add Provider/i })[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Default Group/i)).toBeInTheDocument();
+      });
+
+      // Dropdown should render with Viewers fallback option
+      const select = screen.getByRole('combobox');
+      expect(select).toBeInTheDocument();
+      expect(screen.getByText(/Viewers.*default/i)).toBeInTheDocument();
+    });
+
+    it('populates Default Group dropdown with groups from API', async () => {
+      server.use(http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([])));
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getAllByRole('button', { name: /Add Provider/i })[0]).toBeInTheDocument();
+      });
+      await userEvent.click(screen.getAllByRole('button', { name: /Add Provider/i })[0]);
+
+      await waitFor(() => {
+        // Global MSW mock returns Administrators, Operators, Viewers
+        const options = screen.getAllByRole('option');
+        const optionTexts = options.map((o) => o.textContent);
+        expect(optionTexts).toContain('Operators');
+        expect(optionTexts).toContain('Administrators');
+      });
     });
   });
 });

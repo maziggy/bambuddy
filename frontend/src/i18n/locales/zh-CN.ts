@@ -311,6 +311,10 @@ export default {
       calibrationSaved: '校准已保存！',
       calibrationFailed: '校准失败',
       rfidRereadInitiated: '已发起 RFID 重新读取',
+      loadInitiated: 'Loading filament…',
+      unloadInitiated: 'Unloading filament…',
+      failedToLoad: 'Failed to load filament',
+      failedToUnload: 'Failed to unload filament',
     },
     // Connection status
     connection: {
@@ -333,6 +337,11 @@ export default {
     // RFID
     rfid: {
       reread: '重新读取 RFID',
+    },
+    // AMS load/unload (#891)
+    ams: {
+      load: 'Load',
+      unload: 'Unload',
     },
     bedJog: {
       title: '移动热床',
@@ -2212,6 +2221,9 @@ export default {
         requireEmailVerifiedDesc: '仅在提供商将邮箱声明标记为已验证时才接受。',
         requireEmailVerifiedWarning: '警告：将在未经验证的情况下接受邮箱。仅对受信任的提供商使用。',
         requireEmailVerifiedAutoLink: '请先禁用自动关联以更改此设置。',
+        defaultGroup: '默认组',
+        defaultGroupDesc: '自动创建用户时分配的组。未设置时回退到 Viewers。',
+        defaultGroupViewersFallback: 'Viewers（默认）',
       },
     },
 

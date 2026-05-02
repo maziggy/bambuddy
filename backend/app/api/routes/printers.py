@@ -2953,6 +2953,68 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
         logger.warning("Failed to apply PA profile after RFID re-read: %s", e)
 
 
+@router.post("/{printer_id}/ams/load")
+async def ams_load(
+    printer_id: int,
+    tray_id: int = Query(..., description="Tray ID: 0-15 for AMS slots (ams_id*4+slot_id), 254 for external spool"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Load filament from a specific AMS slot or external spool.
+
+    Tray ID encoding (matches Bambu firmware convention):
+    - 0..15: AMS slot, computed as ams_id * 4 + slot_id
+    - 254: external spool (single-external printers, or Ext-L on dual-nozzle H2D)
+    - 255: Ext-R on dual-nozzle H2D
+    """
+    if tray_id not in range(16) and tray_id not in (254, 255):
+        raise HTTPException(400, "tray_id must be 0..15 (AMS slot), 254 (external / Ext-L), or 255 (Ext-R)")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.ams_load_filament(tray_id)
+    if not success:
+        raise HTTPException(500, "Failed to send load command")
+
+    if tray_id == 254:
+        target = "external spool"
+    elif tray_id == 255:
+        target = "Ext-R"
+    else:
+        target = f"AMS {tray_id // 4} slot {tray_id % 4 + 1}"
+    return {"success": True, "message": f"Loading filament from {target}"}
+
+
+@router.post("/{printer_id}/ams/unload")
+async def ams_unload(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unload the currently loaded filament."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.ams_unload_filament()
+    if not success:
+        raise HTTPException(500, "Failed to send unload command")
+
+    return {"success": True, "message": "Unloading filament"}
+
+
 @router.get("/{printer_id}/runtime-debug")
 async def get_runtime_debug(
     printer_id: int,

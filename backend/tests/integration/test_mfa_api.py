@@ -862,6 +862,151 @@ class TestOIDCProviders:
         )
         assert response.status_code == 404
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_provider_with_default_group_id(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Creating a provider with a valid default_group_id stores and returns the value."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        token = await _setup_and_login(async_client, "oidcdg_create", "OidcDgCreate1!")
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Operators"))
+        operators = grp_result.scalar_one()
+
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgCreateProvider",
+                "issuer_url": "https://dgcreate.example.com",
+                "client_id": "dgcreate-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+                "default_group_id": operators.id,
+            },
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["default_group_id"] == operators.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_provider_invalid_default_group_id_returns_422(self, async_client: AsyncClient):
+        """A default_group_id referencing a non-existent group returns 422."""
+        token = await _setup_and_login(async_client, "oidcdg_bad", "OidcDgBad1!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgBadProvider",
+                "issuer_url": "https://dgbad.example.com",
+                "client_id": "dgbad-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+                "default_group_id": 999999,
+            },
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_provider_omit_default_group_id_stores_null(self, async_client: AsyncClient):
+        """Omitting default_group_id results in null in the response."""
+        token = await _setup_and_login(async_client, "oidcdg_null", "OidcDgNull1!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgNullProvider",
+                "issuer_url": "https://dgnull.example.com",
+                "client_id": "dgnull-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["default_group_id"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_provider_default_group_id(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Updating default_group_id via PUT stores the new value."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        token = await _setup_and_login(async_client, "oidcdg_update", "OidcDgUpdate1!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgUpdateProvider",
+                "issuer_url": "https://dgupdate.example.com",
+                "client_id": "dgupdate-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(token),
+        )
+        provider_id = create_resp.json()["id"]
+        assert create_resp.json()["default_group_id"] is None
+
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Operators"))
+        operators = grp_result.scalar_one()
+
+        put_resp = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"default_group_id": operators.id},
+            headers=_auth_header(token),
+        )
+        assert put_resp.status_code == 200, put_resp.text
+        assert put_resp.json()["default_group_id"] == operators.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_default_group_id_in_public_and_admin_list(self, async_client: AsyncClient, db_session: AsyncSession):
+        """default_group_id appears in both the public and admin list responses."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        token = await _setup_and_login(async_client, "oidcdg_list", "OidcDgList1!")
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Operators"))
+        operators = grp_result.scalar_one()
+
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgListProvider",
+                "issuer_url": "https://dglist.example.com",
+                "client_id": "dglist-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+                "default_group_id": operators.id,
+            },
+            headers=_auth_header(token),
+        )
+        provider_id = create_resp.json()["id"]
+
+        all_resp = await async_client.get("/api/v1/auth/oidc/providers/all", headers=_auth_header(token))
+        match = next((p for p in all_resp.json() if p["id"] == provider_id), None)
+        assert match is not None
+        assert match["default_group_id"] == operators.id
+
+        pub_resp = await async_client.get("/api/v1/auth/oidc/providers")
+        pub_match = next((p for p in pub_resp.json() if p["id"] == provider_id), None)
+        assert pub_match is not None
+        assert pub_match["default_group_id"] == operators.id
+
 
 # ===========================================================================
 # Security: pre-auth token single-use
@@ -4240,3 +4385,461 @@ class TestOIDCFallCAutoLinkE2E:
             link = result.scalar_one_or_none()
         assert link is not None, "UserOIDCLink must have been created by auto-link"
         assert link.provider_user_id == "azure-sub-alice"
+
+
+class TestOIDCAutoCreateUsername:
+    """Username derivation priority for auto-created OIDC users (#1173).
+
+    Priority order: email local-part > preferred_username > name > provider_sub.
+    Covers: plain claim, spaces-sanitized, name fallback, sub fallback,
+    non-string isinstance guard, sanitizes-to-empty fallback, collision counter.
+    """
+
+    # ── shared helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    async def _create_provider(async_client: AsyncClient, admin_token: str, issuer: str, client_id: str) -> int:
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": f"AutoUser-{secrets.token_hex(4)}",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "secret",
+                "scopes": "openid profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+                "email_claim": "email",
+                "require_email_verified": True,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    @staticmethod
+    async def _exchange_username(async_client: AsyncClient, location: str) -> str:
+        assert "oidc_token=" in location, f"No oidc_token in redirect: {location}"
+        token = location.split("oidc_token=")[1].split("&")[0].split("#")[-1]
+        resp = await async_client.post("/api/v1/auth/oidc/exchange", json={"oidc_token": token})
+        assert resp.status_code == 200, resp.text
+        return resp.json()["user"]["username"]
+
+    # ── tests ────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preferred_username_used_when_no_email(self, async_client: AsyncClient, db_session: AsyncSession):
+        """preferred_username='johndoe' → username 'johndoe' (no email claim present)."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-pref.example"
+        client_id = "au-pref-client"
+        admin_token = await _setup_and_login(async_client, "au_pref_adm", "AuPrefAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "pref-sub-1", "preferred_username": "johndoe"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "johndoe"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preferred_username_spaces_sanitized(self, async_client: AsyncClient, db_session: AsyncSession):
+        """preferred_username='John Doe' → sanitized to 'JohnDoe'."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-spaces.example"
+        client_id = "au-spaces-client"
+        admin_token = await _setup_and_login(async_client, "au_spaces_adm", "AuSpacesAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "spaces-sub-1", "preferred_username": "John Doe"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "JohnDoe"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_name_claim_used_when_no_preferred_username(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """name='Jane Smith', no preferred_username → username 'JaneSmith'."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-name.example"
+        client_id = "au-name-client"
+        admin_token = await _setup_and_login(async_client, "au_name_adm", "AuNameAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "name-sub-1", "name": "Jane Smith"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "JaneSmith"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_provider_sub_fallback_when_no_claims(self, async_client: AsyncClient, db_session: AsyncSession):
+        """No preferred_username, no name, no email → username derived from provider_sub."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-sub.example"
+        client_id = "au-sub-client"
+        admin_token = await _setup_and_login(async_client, "au_sub_adm", "AuSubAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "abc123xyz"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "abc123xyz"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_string_preferred_username_falls_through_to_name(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """preferred_username is a list (non-string) → isinstance guard skips it, uses name."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-nonstr.example"
+        client_id = "au-nonstr-client"
+        admin_token = await _setup_and_login(async_client, "au_nonstr_adm", "AuNonstrAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "nonstr-sub-2", "preferred_username": ["listval"], "name": "BobJones"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "BobJones"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preferred_username_sanitizes_to_empty_falls_through_to_name(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """preferred_username='!!!' sanitizes to '' → falls through to name claim."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-empty.example"
+        client_id = "au-empty-client"
+        admin_token = await _setup_and_login(async_client, "au_empty_adm", "AuEmptyAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "empty-sub-1", "preferred_username": "!!!", "name": "bob"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "bob"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_username_collision_appends_counter(self, async_client: AsyncClient, db_session: AsyncSession):
+        """When preferred_username 'collider' is already taken, counter suffix is appended."""
+        from backend.app.core.auth import get_password_hash
+
+        # Pre-create a user occupying the candidate username
+        existing = User(
+            username="collider",
+            email="collider@example.com",
+            password_hash=get_password_hash("irrelevant"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(existing)
+        await db_session.commit()
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-collision.example"
+        client_id = "au-collision-client"
+        admin_token = await _setup_and_login(async_client, "au_col_adm", "AuColAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "col-sub-1", "preferred_username": "collider"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "collider1"
+
+
+# ===========================================================================
+# OIDC auto-create: configurable default group (#1173 Thread 2)
+# ===========================================================================
+
+
+class TestOIDCAutoCreateDefaultGroup:
+    """Auto-created OIDC users receive the provider's configured default group.
+
+    Resolution order:
+      1. provider.default_group_id (configured)
+      2. "Viewers" system group (fallback when default_group_id is None)
+      3. no group (last resort when both are unavailable)
+
+    All tests are DB-agnostic: they verify group membership via the OIDC
+    exchange response, which includes the user's group list.
+    """
+
+    @staticmethod
+    async def _create_provider(
+        async_client: AsyncClient,
+        admin_token: str,
+        *,
+        issuer: str,
+        client_id: str,
+        default_group_id: int | None = None,
+    ) -> int:
+        payload: dict = {
+            "name": f"DgAutoProvider-{secrets.token_hex(4)}",
+            "issuer_url": issuer,
+            "client_id": client_id,
+            "client_secret": "secret",
+            "scopes": "openid profile",
+            "is_enabled": True,
+            "auto_create_users": True,
+            "email_claim": "email",
+            "require_email_verified": True,
+        }
+        if default_group_id is not None:
+            payload["default_group_id"] = default_group_id
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json=payload,
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    @staticmethod
+    async def _run_autocreate_and_get_groups(
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        *,
+        provider_id: int,
+        sub: str,
+        issuer: str,
+        client_id: str,
+        private_pem: bytes,
+        jwks_data: dict,
+    ) -> list[str]:
+        """Complete OIDC callback + exchange and return the new user's group names."""
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": sub},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        assert "oidc_token=" in location, f"No oidc_token in redirect: {location}"
+        token = location.split("oidc_token=")[1].split("&")[0].split("#")[-1]
+        resp = await async_client.post("/api/v1/auth/oidc/exchange", json={"oidc_token": token})
+        assert resp.status_code == 200, resp.text
+        return [g["name"] for g in resp.json()["user"]["groups"]]
+
+    # ── tests ────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configured_group_assigned_to_auto_created_user(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Auto-created user is placed in the provider's configured default_group_id."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://dg-configured.example"
+        client_id = "dg-configured-client"
+        admin_token = await _setup_and_login(async_client, "dg_cfg_adm", "DgCfgAdm1!")
+
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Operators"))
+        operators = grp_result.scalar_one()
+
+        provider_id = await self._create_provider(
+            async_client,
+            admin_token,
+            issuer=issuer,
+            client_id=client_id,
+            default_group_id=operators.id,
+        )
+
+        group_names = await self._run_autocreate_and_get_groups(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            sub="dg-cfg-sub-1",
+            issuer=issuer,
+            client_id=client_id,
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+        )
+        assert "Operators" in group_names, f"Expected Operators, got {group_names}"
+        assert "Viewers" not in group_names
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_null_default_group_id_falls_back_to_viewers(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """When default_group_id is None, auto-created user falls back to Viewers."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://dg-null.example"
+        client_id = "dg-null-client"
+        admin_token = await _setup_and_login(async_client, "dg_null_adm", "DgNullAdm1!")
+
+        provider_id = await self._create_provider(
+            async_client,
+            admin_token,
+            issuer=issuer,
+            client_id=client_id,
+        )
+
+        group_names = await self._run_autocreate_and_get_groups(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            sub="dg-null-sub-1",
+            issuer=issuer,
+            client_id=client_id,
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+        )
+        assert "Viewers" in group_names, f"Expected Viewers, got {group_names}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dangling_default_group_id_falls_back_to_viewers(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """When configured group is deleted, auto-created user falls back to Viewers.
+
+        SQLite does not enforce FK ON DELETE SET NULL (no PRAGMA foreign_keys=ON),
+        so provider.default_group_id may point to a deleted group. The runtime
+        resolution chain must handle this and fall back to Viewers.
+        """
+        from sqlalchemy import delete as sa_delete, select
+
+        from backend.app.models.group import Group
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://dg-dangling.example"
+        client_id = "dg-dangling-client"
+        admin_token = await _setup_and_login(async_client, "dg_dangle_adm", "DgDangleAdm1!")
+
+        # Create a temporary group and use it as default_group_id
+        temp_group = Group(name="TempGroup-DgDangle", permissions=[])
+        db_session.add(temp_group)
+        await db_session.commit()
+        await db_session.refresh(temp_group)
+        temp_group_id = temp_group.id
+
+        provider_id = await self._create_provider(
+            async_client,
+            admin_token,
+            issuer=issuer,
+            client_id=client_id,
+            default_group_id=temp_group_id,
+        )
+
+        # Delete the group — simulates dangling FK (especially on SQLite)
+        await db_session.execute(sa_delete(Group).where(Group.id == temp_group_id))
+        await db_session.commit()
+
+        group_names = await self._run_autocreate_and_get_groups(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            sub="dg-dangle-sub-1",
+            issuer=issuer,
+            client_id=client_id,
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+        )
+        assert "Viewers" in group_names, f"Expected Viewers fallback, got {group_names}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_administrators_group_can_be_set_as_default(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Operators can configure Administrators as the default group (e.g. single-tenant IdP)."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://dg-admin.example"
+        client_id = "dg-admin-client"
+        admin_token = await _setup_and_login(async_client, "dg_admgrp_adm", "DgAdmgrpAdm1!")
+
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Administrators"))
+        administrators = grp_result.scalar_one()
+
+        provider_id = await self._create_provider(
+            async_client,
+            admin_token,
+            issuer=issuer,
+            client_id=client_id,
+            default_group_id=administrators.id,
+        )
+
+        group_names = await self._run_autocreate_and_get_groups(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            sub="dg-admin-sub-1",
+            issuer=issuer,
+            client_id=client_id,
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+        )
+        assert "Administrators" in group_names, f"Expected Administrators, got {group_names}"

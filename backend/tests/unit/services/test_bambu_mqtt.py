@@ -4536,3 +4536,89 @@ class TestFilamentTrackSwitchDetection:
         assert fs.installed is True
         assert fs.in_slots == []
         assert fs.out_extruders == []
+
+
+class TestAmsLoadFilamentEncoding:
+    """Per-target ams_change_filament command encoding (#891)."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        # Pretend the MQTT layer is connected so the publish path is reached.
+        client._client = MagicMock()
+        client.state.connected = True
+        return client
+
+    @staticmethod
+    def _published(client) -> dict:
+        """Return the JSON of the most recent publish() call."""
+        last_call = client._client.publish.call_args_list[-1]
+        topic, payload, *_ = last_call.args
+        return json.loads(payload)
+
+    def test_ams_slot_uses_local_index_and_minus_one_temps(self, mqtt_client):
+        """tray_id=5 → ams_id=1, slot_id=1, target=5, curr/tar=-1."""
+        assert mqtt_client.ams_load_filament(5) is True
+        cmd = self._published(mqtt_client)["print"]
+        assert cmd["command"] == "ams_change_filament"
+        assert cmd["ams_id"] == 1
+        assert cmd["slot_id"] == 1
+        assert cmd["target"] == 5
+        assert cmd["curr_temp"] == -1
+        assert cmd["tar_temp"] == -1
+
+    def test_external_left_keeps_legacy_encoding(self, mqtt_client):
+        """tray_id=254 → ams_id=255, slot_id=254, target=254, curr/tar=-1.
+
+        This is the original capture from a single-extruder printer; preserved
+        verbatim so existing single-external setups don't regress.
+        """
+        assert mqtt_client.ams_load_filament(254) is True
+        cmd = self._published(mqtt_client)["print"]
+        assert cmd["ams_id"] == 255
+        assert cmd["slot_id"] == 254
+        assert cmd["target"] == 254
+        assert cmd["curr_temp"] == -1
+        assert cmd["tar_temp"] == -1
+
+    def test_external_right_uses_extruder_index_and_actual_temp(self, mqtt_client):
+        """tray_id=255 → captured BambuStudio shape on dual-nozzle H2D:
+        ams_id=255, slot_id=0 (right extruder), target=255, curr/tar = right
+        nozzle temp.
+        """
+        # Simulate a heated right nozzle.
+        mqtt_client.state.temperatures["nozzle_2"] = 215.0
+
+        assert mqtt_client.ams_load_filament(255) is True
+        cmd = self._published(mqtt_client)["print"]
+        assert cmd["ams_id"] == 255
+        assert cmd["slot_id"] == 0
+        assert cmd["target"] == 255
+        assert cmd["curr_temp"] == 215
+        assert cmd["tar_temp"] == 215
+
+    def test_external_right_falls_back_when_nozzle_cold(self, mqtt_client):
+        """If the right nozzle reports < 180 °C, fall back to a sane default
+        so the printer accepts the command rather than rejecting it on a
+        nonsensical temperature.
+        """
+        mqtt_client.state.temperatures["nozzle_2"] = 25.0
+
+        assert mqtt_client.ams_load_filament(255) is True
+        cmd = self._published(mqtt_client)["print"]
+        assert cmd["curr_temp"] == 215
+        assert cmd["tar_temp"] == 215
+
+    def test_returns_false_when_disconnected(self, mqtt_client):
+        """Disconnected client must not publish anything."""
+        mqtt_client.state.connected = False
+        assert mqtt_client.ams_load_filament(0) is False
+        mqtt_client._client.publish.assert_not_called()

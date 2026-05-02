@@ -740,6 +740,163 @@ class TestAMSRefreshAPI:
             assert "unload" in response.json()["detail"].lower()
 
 
+class TestAMSLoadUnloadAPI:
+    """Integration tests for AMS load / unload endpoints (#891)."""
+
+    # ── load ─────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_invalid_tray_id(self, async_client: AsyncClient, printer_factory):
+        """tray_id outside {0..15, 254, 255} is rejected."""
+        printer = await printer_factory(name="P")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=99")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/ams/load?tray_id=0")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="Disconnected")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=0")
+
+            assert response.status_code == 400
+            assert "not connected" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_ams_slot_success(self, async_client: AsyncClient, printer_factory):
+        """tray_id=5 → AMS 1 slot 2 (1-indexed in the message)."""
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=5")
+
+            assert response.status_code == 200
+            mock_client.ams_load_filament.assert_called_once_with(5)
+            assert "AMS 1" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_external_left_success(self, async_client: AsyncClient, printer_factory):
+        """tray_id=254 → external spool / Ext-L."""
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=254")
+
+            assert response.status_code == 200
+            mock_client.ams_load_filament.assert_called_once_with(254)
+            assert "external" in response.json()["message"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_external_right_success(self, async_client: AsyncClient, printer_factory):
+        """tray_id=255 → Ext-R on dual-nozzle H2D."""
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=255")
+
+            assert response.status_code == 200
+            mock_client.ams_load_filament.assert_called_once_with(255)
+            assert "Ext-R" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_mqtt_failure_returns_500(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=0")
+
+            assert response.status_code == 500
+            assert "failed" in response.json()["detail"].lower()
+
+    # ── unload ───────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/ams/unload")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="Disconnected")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload")
+
+            assert response.status_code == 400
+            assert "not connected" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_success(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_unload_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload")
+
+            assert response.status_code == 200
+            mock_client.ams_unload_filament.assert_called_once_with()
+            assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_mqtt_failure_returns_500(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_unload_filament.return_value = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload")
+
+            assert response.status_code == 500
+            assert "failed" in response.json()["detail"].lower()
+
+
 class TestConfigureAMSSlotAPI:
     """Integration tests for AMS slot configure endpoint — tray_info_idx resolution."""
 

@@ -311,6 +311,10 @@ export default {
       calibrationSaved: 'Calibration saved!',
       calibrationFailed: 'Calibration failed',
       rfidRereadInitiated: 'RFID re-read initiated',
+      loadInitiated: 'Loading filament…',
+      unloadInitiated: 'Unloading filament…',
+      failedToLoad: 'Failed to load filament',
+      failedToUnload: 'Failed to unload filament',
     },
     // Connection status
     connection: {
@@ -333,6 +337,11 @@ export default {
     // RFID
     rfid: {
       reread: 'Re-read RFID',
+    },
+    // AMS load/unload (#891)
+    ams: {
+      load: 'Load',
+      unload: 'Unload',
     },
     bedJog: {
       title: 'Move build plate',
@@ -2228,6 +2237,9 @@ export default {
         requireEmailVerifiedDesc: 'Only accept the email claim when the provider marks it as verified.',
         requireEmailVerifiedWarning: 'Warning: email will be accepted even without verification. Use only with trusted providers.',
         requireEmailVerifiedAutoLink: 'Disable auto-link first to change this setting.',
+        defaultGroup: 'Default Group',
+        defaultGroupDesc: 'Group assigned to auto-created users. Falls back to Viewers if not set.',
+        defaultGroupViewersFallback: 'Viewers (default)',
       },
     },
 

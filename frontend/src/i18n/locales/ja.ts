@@ -310,6 +310,10 @@ export default {
       calibrationSaved: 'キャリブレーションを保存しました！',
       calibrationFailed: 'キャリブレーションに失敗しました',
       rfidRereadInitiated: 'RFID再読み取りを開始しました',
+      loadInitiated: 'Loading filament…',
+      unloadInitiated: 'Unloading filament…',
+      failedToLoad: 'Failed to load filament',
+      failedToUnload: 'Failed to unload filament',
     },
     // Connection status
     connection: {
@@ -332,6 +336,11 @@ export default {
     // RFID
     rfid: {
       reread: 'RFID再読み取り',
+    },
+    // AMS load/unload (#891)
+    ams: {
+      load: 'Load',
+      unload: 'Unload',
     },
     bedJog: {
       title: 'ビルドプレートを移動',
@@ -2224,6 +2233,9 @@ export default {
         requireEmailVerifiedDesc: 'プロバイダーが確認済みとしてマークした場合にのみメールクレームを受け入れます。',
         requireEmailVerifiedWarning: '警告：確認なしでメールが受け入れられます。信頼できるプロバイダーのみで使用してください。',
         requireEmailVerifiedAutoLink: 'この設定を変更するには、まず自動リンクを無効にしてください。',
+        defaultGroup: 'デフォルトグループ',
+        defaultGroupDesc: '自動作成ユーザーに割り当てられるグループ。未設定の場合はViewersにフォールバックします。',
+        defaultGroupViewersFallback: 'Viewers（デフォルト）',
       },
     },
 

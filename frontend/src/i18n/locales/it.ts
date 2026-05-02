@@ -311,6 +311,10 @@ export default {
       calibrationSaved: 'Calibrazione salvata!',
       calibrationFailed: 'Calibrazione non riuscita',
       rfidRereadInitiated: 'Rilettura RFID avviata',
+      loadInitiated: 'Loading filament…',
+      unloadInitiated: 'Unloading filament…',
+      failedToLoad: 'Failed to load filament',
+      failedToUnload: 'Failed to unload filament',
     },
     // Connection status
     connection: {
@@ -333,6 +337,11 @@ export default {
     // RFID
     rfid: {
       reread: 'Rileggi RFID',
+    },
+    // AMS load/unload (#891)
+    ams: {
+      load: 'Load',
+      unload: 'Unload',
     },
     bedJog: {
       title: 'Muovi il piano di stampa',
@@ -2168,6 +2177,9 @@ export default {
         requireEmailVerifiedDesc: "Accetta il claim email solo se il provider lo contrassegna come verificato.",
         requireEmailVerifiedWarning: 'Attenzione: l\'email sarà accettata senza verifica. Usare solo con provider affidabili.',
         requireEmailVerifiedAutoLink: 'Disabilitare prima il collegamento automatico per modificare questa impostazione.',
+        defaultGroup: 'Gruppo predefinito',
+        defaultGroupDesc: 'Gruppo assegnato agli utenti creati automaticamente. Ritorno a Viewers se non impostato.',
+        defaultGroupViewersFallback: 'Viewers (predefinito)',
       },
     },
 

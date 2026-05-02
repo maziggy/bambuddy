@@ -2725,6 +2725,7 @@ export interface OIDCProvider {
   email_claim: string;
   require_email_verified: boolean;
   icon_url?: string | null;
+  default_group_id?: number | null;
 }
 
 export interface OIDCProviderCreate {
@@ -2739,6 +2740,7 @@ export interface OIDCProviderCreate {
   email_claim?: string;
   require_email_verified?: boolean;
   icon_url?: string | null;
+  default_group_id?: number | null;
 }
 
 export interface OIDCLink {
@@ -3135,6 +3137,20 @@ export const api = {
   refreshAmsSlot: (printerId: number, amsId: number, slotId: number) =>
     request<{ success: boolean; message: string }>(
       `/printers/${printerId}/ams/${amsId}/slot/${slotId}/refresh`,
+      { method: 'POST' }
+    ),
+
+  // Load filament from a tray. trayId: 0-15 for AMS (amsId*4+slotId), 254 for external spool.
+  loadAmsTray: (printerId: number, trayId: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/ams/load?tray_id=${trayId}`,
+      { method: 'POST' }
+    ),
+
+  // Unload the currently loaded filament.
+  unloadAms: (printerId: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/ams/unload`,
       { method: 'POST' }
     ),
 

@@ -55,6 +55,8 @@ import {
   DoorOpen,
   DoorClosed,
   MoveVertical,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -1997,6 +1999,27 @@ function PrinterCard({
     },
   });
 
+  // AMS load/unload mutations (#891)
+  const loadAmsTrayMutation = useMutation({
+    mutationFn: ({ trayId }: { trayId: number }) => api.loadAmsTray(printer.id, trayId),
+    onSuccess: (data) => {
+      showToast(data.message || t('printers.toast.loadInitiated'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('printers.toast.failedToLoad'), 'error');
+    },
+  });
+
+  const unloadAmsMutation = useMutation({
+    mutationFn: () => api.unloadAms(printer.id),
+    onSuccess: (data) => {
+      showToast(data.message || t('printers.toast.unloadInitiated'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('printers.toast.failedToUnload'), 'error');
+    },
+  });
+
   // Plate references state
   const [plateReferences, setPlateReferences] = useState<{
     references: Array<{ index: number; label: string; timestamp: string; has_image: boolean; thumbnail_url: string }>;
@@ -3534,6 +3557,42 @@ function PrinterCard({
                                           <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                                           {t('printers.rfid.reread')}
                                         </button>
+                                        <button
+                                          className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                            hasPermission('printers:control')
+                                              ? 'text-white hover:bg-bambu-dark-tertiary'
+                                              : 'text-bambu-gray/50 cursor-not-allowed'
+                                          }`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (!hasPermission('printers:control')) return;
+                                            loadAmsTrayMutation.mutate({ trayId: ams.id * 4 + slotIdx });
+                                            setAmsSlotMenu(null);
+                                          }}
+                                          disabled={!hasPermission('printers:control')}
+                                          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                        >
+                                          <LogIn className="w-3 h-3" />
+                                          {t('printers.ams.load')}
+                                        </button>
+                                        <button
+                                          className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                            hasPermission('printers:control')
+                                              ? 'text-white hover:bg-bambu-dark-tertiary'
+                                              : 'text-bambu-gray/50 cursor-not-allowed'
+                                          }`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (!hasPermission('printers:control')) return;
+                                            unloadAmsMutation.mutate();
+                                            setAmsSlotMenu(null);
+                                          }}
+                                          disabled={!hasPermission('printers:control')}
+                                          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                        >
+                                          <LogOut className="w-3 h-3" />
+                                          {t('printers.ams.unload')}
+                                        </button>
                                       </div>
                                     )}
                                     {/* Hover card wraps only the visual content */}
@@ -3840,6 +3899,42 @@ function PrinterCard({
                                       <RefreshCw className={`w-3 h-3 ${isHtRefreshing ? 'animate-spin' : ''}`} />
                                       {t('printers.rfid.reread')}
                                     </button>
+                                    <button
+                                      className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                        hasPermission('printers:control')
+                                          ? 'text-white hover:bg-bambu-dark-tertiary'
+                                          : 'text-bambu-gray/50 cursor-not-allowed'
+                                      }`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!hasPermission('printers:control')) return;
+                                        loadAmsTrayMutation.mutate({ trayId: ams.id * 4 + htSlotId });
+                                        setAmsSlotMenu(null);
+                                      }}
+                                      disabled={!hasPermission('printers:control')}
+                                      title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                    >
+                                      <LogIn className="w-3 h-3" />
+                                      {t('printers.ams.load')}
+                                    </button>
+                                    <button
+                                      className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                        hasPermission('printers:control')
+                                          ? 'text-white hover:bg-bambu-dark-tertiary'
+                                          : 'text-bambu-gray/50 cursor-not-allowed'
+                                      }`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!hasPermission('printers:control')) return;
+                                        unloadAmsMutation.mutate();
+                                        setAmsSlotMenu(null);
+                                      }}
+                                      disabled={!hasPermission('printers:control')}
+                                      title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                    >
+                                      <LogOut className="w-3 h-3" />
+                                      {t('printers.ams.unload')}
+                                    </button>
                                   </div>
                                 )}
                                 {/* Hover card wraps only the visual content */}
@@ -4043,8 +4138,65 @@ function PrinterCard({
                                 </div>
                               );
 
+                              const extMenuKey = 255 * 10 + slotTrayId; // unique slotId space for external menu state
+                              const isExtMenuOpen = amsSlotMenu?.amsId === 255 && amsSlotMenu?.slotId === extMenuKey;
+
                               return (
                                 <div key={extTrayId} className="relative group">
+                                  {/* Menu button - appears on hover, hidden when printer busy */}
+                                  {status?.state !== 'RUNNING' && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setAmsSlotMenu(isExtMenuOpen ? null : { amsId: 255, slotId: extMenuKey });
+                                      }}
+                                      className="absolute -top-1 -right-1 w-4 h-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-bambu-dark-tertiary"
+                                      title={t('printers.slotOptions')}
+                                    >
+                                      <MoreVertical className="w-2.5 h-2.5 text-bambu-gray" />
+                                    </button>
+                                  )}
+                                  {/* Dropdown menu */}
+                                  {status?.state !== 'RUNNING' && isExtMenuOpen && (
+                                    <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
+                                      <button
+                                        className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                          hasPermission('printers:control')
+                                            ? 'text-white hover:bg-bambu-dark-tertiary'
+                                            : 'text-bambu-gray/50 cursor-not-allowed'
+                                        }`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (!hasPermission('printers:control')) return;
+                                          loadAmsTrayMutation.mutate({ trayId: extTrayId });
+                                          setAmsSlotMenu(null);
+                                        }}
+                                        disabled={!hasPermission('printers:control')}
+                                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                      >
+                                        <LogIn className="w-3 h-3" />
+                                        {t('printers.ams.load')}
+                                      </button>
+                                      <button
+                                        className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                          hasPermission('printers:control')
+                                            ? 'text-white hover:bg-bambu-dark-tertiary'
+                                            : 'text-bambu-gray/50 cursor-not-allowed'
+                                        }`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (!hasPermission('printers:control')) return;
+                                          unloadAmsMutation.mutate();
+                                          setAmsSlotMenu(null);
+                                        }}
+                                        disabled={!hasPermission('printers:control')}
+                                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                      >
+                                        <LogOut className="w-3 h-3" />
+                                        {t('printers.ams.unload')}
+                                      </button>
+                                    </div>
+                                  )}
                                   {!isEmpty ? (
                                     <FilamentHoverCard
                                       data={extFilamentData}

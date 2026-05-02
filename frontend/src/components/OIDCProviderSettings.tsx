@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit2, Trash2, Globe, Check, X, RefreshCw, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import type { OIDCProvider, OIDCProviderCreate } from '../api/client';
+import type { Group, OIDCProvider, OIDCProviderCreate } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
@@ -22,18 +22,21 @@ const EMPTY_FORM: OIDCProviderCreate = {
   email_claim: 'email',
   require_email_verified: true,
   icon_url: undefined,
+  default_group_id: null,
 };
 
 // ─── Provider form (create / edit) ───────────────────────────────────────────
 function ProviderForm({
   initial,
   isEdit = false,
+  groups = [],
   onSave,
   onCancel,
   isPending,
 }: {
   initial: OIDCProviderCreate;
   isEdit?: boolean;
+  groups?: Group[];
   onSave: (data: OIDCProviderCreate) => void;
   onCancel: () => void;
   isPending: boolean;
@@ -157,6 +160,21 @@ function ProviderForm({
         )}
       </div>
 
+      <div>
+        <label className={labelCls}>{t('settings.oidc.form.defaultGroup')}</label>
+        <select
+          className={inputCls}
+          value={form.default_group_id ?? ''}
+          onChange={(e) => set('default_group_id', e.target.value ? Number(e.target.value) : null)}
+        >
+          <option value="">{t('settings.oidc.form.defaultGroupViewersFallback')}</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+        <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.defaultGroupDesc')}</p>
+      </div>
+
       <div className="flex gap-3 pt-2">
         <Button variant="secondary" onClick={onCancel} className="flex-1">
           {t('common.cancel')}
@@ -187,6 +205,11 @@ export function OIDCProviderSettings() {
   const { data: providers, isLoading } = useQuery({
     queryKey: ['oidc-providers-all'],
     queryFn: () => api.getOIDCProvidersAll(),
+  });
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ['groups'],
+    queryFn: () => api.getGroups(),
   });
 
   const createMutation = useMutation({
@@ -256,6 +279,7 @@ export function OIDCProviderSettings() {
               <h4 className="text-white font-medium mb-4">{t('settings.oidc.newProvider')}</h4>
               <ProviderForm
                 initial={EMPTY_FORM}
+                groups={groups}
                 onSave={(data) => createMutation.mutate(data)}
                 onCancel={() => setShowCreate(false)}
                 isPending={createMutation.isPending}
@@ -335,6 +359,7 @@ export function OIDCProviderSettings() {
               <div className="border-t border-bambu-dark-tertiary pt-4">
                 <ProviderForm
                   isEdit={true}
+                  groups={groups}
                   initial={{
                     name: provider.name,
                     issuer_url: provider.issuer_url,
@@ -347,6 +372,7 @@ export function OIDCProviderSettings() {
                     email_claim: provider.email_claim,
                     require_email_verified: provider.require_email_verified,
                     icon_url: provider.icon_url ?? undefined,
+                    default_group_id: provider.default_group_id ?? null,
                   }}
                   onSave={(data) => updateMutation.mutate({ id: provider.id, data })}
                   onCancel={() => setEditingId(null)}
@@ -387,6 +413,14 @@ export function OIDCProviderSettings() {
                   <dt className="text-bambu-gray">{t('settings.oidc.form.requireEmailVerified')}</dt>
                   <dd className={provider.require_email_verified ? 'text-green-400' : 'text-red-400'}>
                     {provider.require_email_verified ? t('common.yes') : t('common.no')}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-bambu-gray">{t('settings.oidc.form.defaultGroup')}</dt>
+                  <dd className="text-white">
+                    {provider.default_group_id
+                      ? (groups.find((g) => g.id === provider.default_group_id)?.name ?? t('settings.oidc.form.defaultGroupViewersFallback'))
+                      : t('settings.oidc.form.defaultGroupViewersFallback')}
                   </dd>
                 </div>
               </dl>

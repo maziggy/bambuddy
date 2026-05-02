@@ -1911,6 +1911,9 @@ async def run_migrations(conn):
         col_names = [row[1] for row in cols_result.fetchall()]
         if "safety_margin_days" in col_names:
             async with conn.begin_nested():
+                # Defensive: a previous startup may have crashed mid-rebuild leaving
+                # filament_sku_settings_new behind, which would break the CREATE below.
+                await conn.execute(text("DROP TABLE IF EXISTS filament_sku_settings_new"))
                 await conn.execute(
                     text(
                         "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days "

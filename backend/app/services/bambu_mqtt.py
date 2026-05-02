@@ -4313,7 +4313,9 @@ class BambuMQTTClient:
         """Load filament from a specific AMS tray.
 
         Args:
-            tray_id: Global tray ID (0-15 for AMS slots, or 254 for external spool)
+            tray_id: Global tray ID — 0..15 for AMS slots, 254 for external spool
+                (single-external printers and Ext-L on dual-nozzle H2D),
+                255 for Ext-R on dual-nozzle H2D.
             extruder_id: Unused - kept for API compatibility
 
         Returns:
@@ -4323,18 +4325,33 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot load filament: not connected", self.serial_number)
             return False
 
-        # Calculate ams_id and slot_id for logging
-        if tray_id == 254:
-            ams_id = 255  # External spool
-            slot_id = 254
-        else:
-            ams_id = tray_id // 4  # AMS unit (0, 1, 2, 3...)
-            slot_id = tray_id % 4  # Slot within AMS (0, 1, 2, 3)
-
-        # Command format from BambuStudio traffic capture:
-        # - No extruder_id field
-        # - curr_temp and tar_temp are -1 (not 0)
+        # Build the ams_change_filament command. Encoding differs by target type:
+        #   - AMS slots (0..15): slot_id is the local slot, curr/tar_temp = -1.
+        #   - External spool (tray_id=254): legacy capture from a single-extruder
+        #     printer used slot_id=254, curr/tar_temp=-1; preserved here.
+        #   - Ext-R on dual-nozzle H2D (tray_id=255): captured shape from
+        #     BambuStudio uses slot_id=0 (extruder index, 0=right), and
+        #     curr_temp/tar_temp = the actual right-nozzle temp.  See #891.
         self._sequence_id += 1
+        if tray_id == 255:
+            ams_id = 255
+            slot_id = 0  # extruder index for the right nozzle
+            right_temp = int(self.state.temperatures.get("nozzle_2", 0) or 0)
+            if right_temp < 180:
+                right_temp = 215  # Reasonable default if right nozzle is cold/unknown
+            curr_temp = right_temp
+            tar_temp = right_temp
+        elif tray_id == 254:
+            ams_id = 255
+            slot_id = 254
+            curr_temp = -1
+            tar_temp = -1
+        else:
+            ams_id = tray_id // 4
+            slot_id = tray_id % 4
+            curr_temp = -1
+            tar_temp = -1
+
         command = {
             "print": {
                 "command": "ams_change_filament",
@@ -4342,8 +4359,8 @@ class BambuMQTTClient:
                 "ams_id": ams_id,
                 "slot_id": slot_id,
                 "target": tray_id,
-                "curr_temp": -1,
-                "tar_temp": -1,
+                "curr_temp": curr_temp,
+                "tar_temp": tar_temp,
             }
         }
 

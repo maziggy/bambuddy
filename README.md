@@ -114,6 +114,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Resizable printer cards (S/M/L/XL)
 - Skip objects during print
 - AMS slot RFID re-read
+- **AMS slot Load / Unload from the printer card** — Hover any AMS slot or external spool, click the menu button, and load that tray or unload the currently-loaded one without going to the touchscreen; supports dual-extruder H2D (Ext-L / Ext-R drive their own nozzle)
 - AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
 - AMS info card (hover for serial number, firmware version) with custom friendly names that persist across printers
 - **AMS remote drying** — Start, monitor, and stop drying sessions for AMS 2 Pro and AMS-HT directly from the Printers page with filament-based temperature/duration presets, optional spool rotation; automatic PSU detection and HMS power error reporting

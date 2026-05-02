@@ -3097,6 +3097,20 @@ export const api = {
       { method: 'POST' }
     ),
 
+  // Load filament from a tray. trayId: 0-15 for AMS (amsId*4+slotId), 254 for external spool.
+  loadAmsTray: (printerId: number, trayId: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/ams/load?tray_id=${trayId}`,
+      { method: 'POST' }
+    ),
+
+  // Unload the currently loaded filament.
+  unloadAms: (printerId: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/ams/unload`,
+      { method: 'POST' }
+    ),
+
   // MQTT Debug Logging
   enableMQTTLogging: (printerId: number) =>
     request<{ logging_enabled: boolean }>(`/printers/${printerId}/logging/enable`, {

@@ -311,6 +311,10 @@ export default {
       calibrationSaved: '校准已保存！',
       calibrationFailed: '校准失败',
       rfidRereadInitiated: '已发起 RFID 重新读取',
+      loadInitiated: 'Loading filament…',
+      unloadInitiated: 'Unloading filament…',
+      failedToLoad: 'Failed to load filament',
+      failedToUnload: 'Failed to unload filament',
     },
     // Connection status
     connection: {
@@ -333,6 +337,11 @@ export default {
     // RFID
     rfid: {
       reread: '重新读取 RFID',
+    },
+    // AMS load/unload (#891)
+    ams: {
+      load: 'Load',
+      unload: 'Unload',
     },
     bedJog: {
       title: '移动热床',

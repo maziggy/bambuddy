@@ -311,6 +311,10 @@ export default {
       calibrationSaved: 'Calibration enregistrée !',
       calibrationFailed: 'Échec de la calibration',
       rfidRereadInitiated: 'Lecture RFID initiée',
+      loadInitiated: 'Loading filament…',
+      unloadInitiated: 'Unloading filament…',
+      failedToLoad: 'Failed to load filament',
+      failedToUnload: 'Failed to unload filament',
     },
     // Connection status
     connection: {
@@ -333,6 +337,11 @@ export default {
     // RFID
     rfid: {
       reread: 'Relire RFID',
+    },
+    // AMS load/unload (#891)
+    ams: {
+      load: 'Load',
+      unload: 'Unload',
     },
     bedJog: {
       title: 'Déplacer le plateau',

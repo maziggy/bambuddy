@@ -311,6 +311,10 @@ export default {
       calibrationSaved: 'Kalibrierung gespeichert!',
       calibrationFailed: 'Kalibrierung fehlgeschlagen',
       rfidRereadInitiated: 'RFID-Neueinlesen gestartet',
+      loadInitiated: 'Filament wird geladen…',
+      unloadInitiated: 'Filament wird entladen…',
+      failedToLoad: 'Filament konnte nicht geladen werden',
+      failedToUnload: 'Filament konnte nicht entladen werden',
     },
     // Connection status
     connection: {
@@ -333,6 +337,11 @@ export default {
     // RFID
     rfid: {
       reread: 'RFID neu lesen',
+    },
+    // AMS Laden/Entladen (#891)
+    ams: {
+      load: 'Laden',
+      unload: 'Entladen',
     },
     bedJog: {
       title: 'Druckbett bewegen',

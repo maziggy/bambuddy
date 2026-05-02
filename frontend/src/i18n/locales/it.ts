@@ -311,6 +311,10 @@ export default {
       calibrationSaved: 'Calibrazione salvata!',
       calibrationFailed: 'Calibrazione non riuscita',
       rfidRereadInitiated: 'Rilettura RFID avviata',
+      loadInitiated: 'Loading filament…',
+      unloadInitiated: 'Unloading filament…',
+      failedToLoad: 'Failed to load filament',
+      failedToUnload: 'Failed to unload filament',
     },
     // Connection status
     connection: {
@@ -333,6 +337,11 @@ export default {
     // RFID
     rfid: {
       reread: 'Rileggi RFID',
+    },
+    // AMS load/unload (#891)
+    ams: {
+      load: 'Load',
+      unload: 'Unload',
     },
     bedJog: {
       title: 'Muovi il piano di stampa',

@@ -310,6 +310,10 @@ export default {
       calibrationSaved: 'キャリブレーションを保存しました！',
       calibrationFailed: 'キャリブレーションに失敗しました',
       rfidRereadInitiated: 'RFID再読み取りを開始しました',
+      loadInitiated: 'Loading filament…',
+      unloadInitiated: 'Unloading filament…',
+      failedToLoad: 'Failed to load filament',
+      failedToUnload: 'Failed to unload filament',
     },
     // Connection status
     connection: {
@@ -332,6 +336,11 @@ export default {
     // RFID
     rfid: {
       reread: 'RFID再読み取り',
+    },
+    // AMS load/unload (#891)
+    ams: {
+      load: 'Load',
+      unload: 'Unload',
     },
     bedJog: {
       title: 'ビルドプレートを移動',

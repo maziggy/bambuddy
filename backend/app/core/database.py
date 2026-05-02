@@ -2701,6 +2701,10 @@ async def run_migrations(conn):
     )
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_macro_vars_key ON macro_vars(key)")
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_macro_vars_macro_id ON macro_vars(macro_id)")
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_macro_vars_key_macro_id ON macro_vars(key, macro_id)",
+    )
 
     # Migration: Add can_run_macros column to api_keys for the macro system
     await _safe_execute(conn, "ALTER TABLE api_keys ADD COLUMN can_run_macros BOOLEAN DEFAULT 0")

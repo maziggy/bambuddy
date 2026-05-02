@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -22,6 +22,7 @@ class MacroVar(Base):
     """
 
     __tablename__ = "macro_vars"
+    __table_args__ = (UniqueConstraint("key", "macro_id", name="uq_macro_vars_key_macro_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(200), index=True)

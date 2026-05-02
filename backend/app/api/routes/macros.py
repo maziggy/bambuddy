@@ -2,9 +2,10 @@
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func as sa_func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -89,11 +90,15 @@ async def cancel_run(
         raise HTTPException(409, "Run is not active")
     cancelled = macro_runner.cancel_run(run_id)
     if not cancelled:
-        run.status = "error"
-        run.log = (run.log or "") + "[CANCELLED] Cancelled via API (task already done)\n"
-        from datetime import datetime, timezone
-
-        run.finished_at = datetime.now(timezone.utc)
+        await db.execute(
+            sa_update(MacroRun)
+            .where(MacroRun.id == run_id)
+            .values(
+                status="error",
+                log=sa_func.coalesce(MacroRun.log, "") + "[CANCELLED] Cancelled via API (task already done)\n",
+                finished_at=datetime.now(timezone.utc),
+            )
+        )
         await db.commit()
     return {"ok": True, "cancelled": cancelled}
 
@@ -182,6 +187,9 @@ async def create_cfg_file(
     except IntegrityError:
         macro_files.delete(relative_path)
         raise HTTPException(409, f"A cfg file named '{data.name}' already exists")
+    except Exception:
+        macro_files.delete(relative_path)
+        raise
     return cfg_file
 
 

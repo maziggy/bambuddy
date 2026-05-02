@@ -124,9 +124,8 @@ async def sync_file(relative_path: str, stem: str | None = None) -> MacroCfgFile
                         relative_path,
                         collision.cfg_file_id,
                     )
-                    cfg_file.parse_error = (file_level_error or "") + (
-                        f"; Name conflict: '{pm.name}' already defined in another file"
-                    )
+                    conflict_msg = f"Name conflict: '{pm.name}' already defined in another file"
+                    cfg_file.parse_error = f"{file_level_error}; {conflict_msg}" if file_level_error else conflict_msg
                     continue
 
                 db.add(

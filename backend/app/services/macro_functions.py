@@ -150,11 +150,8 @@ def discover() -> None:
 
     for _info in pkgutil.iter_modules(_pkg.__path__):
         module_name = f"backend.app.services.macro_integrations.{_info.name}"
-        try:
-            importlib.import_module(module_name)
-            logger.debug("macro_functions: loaded integration %s", module_name)
-        except Exception:  # noqa: BLE001
-            logger.exception("macro_functions: failed to load integration %s", module_name)
+        importlib.import_module(module_name)
+        logger.debug("macro_functions: loaded integration %s", module_name)
 
 
 # ── Registry accessors ────────────────────────────────────────────────────────

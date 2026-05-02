@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 from jinja2 import StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
-from sqlalchemy import select
+from sqlalchemy import func as sa_func, select
 
 from backend.app.core.database import async_session
 from backend.app.models.macro import Macro, MacroCfgFile, MacroRun
@@ -81,11 +81,15 @@ class _LogBuffer:
         blob = "".join(self._lines)
         self._lines.clear()
         self._count = 0
+        from sqlalchemy import update as sa_update
+
         async with async_session() as db:
-            run = await db.get(MacroRun, self._run_id)
-            if run:
-                run.log = (run.log or "") + blob
-                await db.commit()
+            await db.execute(
+                sa_update(MacroRun)
+                .where(MacroRun.id == self._run_id)
+                .values(log=sa_func.coalesce(MacroRun.log, "") + blob)
+            )
+            await db.commit()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -160,8 +164,6 @@ async def _load_macro_body(macro: Macro) -> str | None:
 async def _get_queue_count() -> int:
     """Return number of pending/queued print queue items."""
     try:
-        from sqlalchemy import func as sa_func
-
         from backend.app.models.print_queue import PrintQueueItem
 
         async with async_session() as db:
@@ -169,7 +171,8 @@ async def _get_queue_count() -> int:
                 select(sa_func.count()).select_from(PrintQueueItem).where(PrintQueueItem.status == "pending")
             )
             return result.scalar_one() or 0
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_get_queue_count failed: %s", exc)
         return 0
 
 
@@ -316,7 +319,6 @@ class MacroRunner:
                         if not allow_printer_commands:
                             await log_fn(run_id, f"[SKIP] G-code blocked in gcode_embed mode: {line}\n")
                         else:
-                            await log_fn(run_id, f"[GCODE] {line}\n")
                             gcode_batch.append(line)
                 except asyncio.CancelledError:
                     raise
@@ -344,11 +346,14 @@ class MacroRunner:
     # ── Scheduling ─────────────────────────────────────────────────────────────
 
     def start_scheduler(self) -> None:
+        if self._scheduler_task and not self._scheduler_task.done():
+            return
         self._scheduler_task = asyncio.create_task(self._scheduler_loop())
 
     def stop_scheduler(self) -> None:
         if self._scheduler_task:
             self._scheduler_task.cancel()
+            self._scheduler_task = None
 
     async def _scheduler_loop(self) -> None:
         from croniter import croniter

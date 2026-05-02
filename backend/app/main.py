@@ -1,11 +1,13 @@
 import asyncio
 import logging
 import mimetypes as _mimetypes
+import os
 import posixpath
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -4538,12 +4540,87 @@ PUBLIC_API_PATTERNS = [
 ]
 
 
+_security_headers_logger = logging.getLogger("backend.app.main.security_headers")
+
+
+def _parse_trusted_frame_origins() -> tuple[str, ...]:
+    """Parse TRUSTED_FRAME_ORIGINS env var into a validated allowlist (#1191).
+
+    Format: comma-separated list of ``scheme://host[:port]`` origins.
+
+    Used by ``security_headers_middleware`` to relax ``frame-ancestors`` for
+    trusted same-LAN deployments (e.g. Home Assistant Webpage panel embedding
+    Bambuddy from a different port). Defaults to empty — strict ``'none'``.
+
+    Invalid entries are dropped with a warning rather than failing startup, so
+    a typo in one origin doesn't take the whole deployment down.
+    """
+    raw = os.environ.get("TRUSTED_FRAME_ORIGINS", "").strip()
+    if not raw:
+        return ()
+    valid: list[str] = []
+    for item in raw.split(","):
+        candidate = item.strip()
+        if not candidate:
+            continue
+        try:
+            parsed = urlparse(candidate)
+        except ValueError as e:
+            _security_headers_logger.warning("TRUSTED_FRAME_ORIGINS: dropping %r — %s", candidate, e)
+            continue
+        if parsed.scheme not in ("http", "https"):
+            _security_headers_logger.warning("TRUSTED_FRAME_ORIGINS: dropping %r — must be http(s)", candidate)
+            continue
+        if not parsed.netloc:
+            _security_headers_logger.warning("TRUSTED_FRAME_ORIGINS: dropping %r — missing host", candidate)
+            continue
+        if parsed.path and parsed.path != "/":
+            _security_headers_logger.warning("TRUSTED_FRAME_ORIGINS: dropping %r — paths not allowed", candidate)
+            continue
+        if parsed.query or parsed.fragment:
+            _security_headers_logger.warning(
+                "TRUSTED_FRAME_ORIGINS: dropping %r — query/fragment not allowed", candidate
+            )
+            continue
+        if "*" in parsed.netloc:
+            _security_headers_logger.warning("TRUSTED_FRAME_ORIGINS: dropping %r — wildcards not allowed", candidate)
+            continue
+        valid.append(f"{parsed.scheme}://{parsed.netloc}")
+    if valid:
+        _security_headers_logger.info("TRUSTED_FRAME_ORIGINS: %s", ", ".join(valid))
+    return tuple(valid)
+
+
+_TRUSTED_FRAME_ORIGINS: tuple[str, ...] = _parse_trusted_frame_origins()
+
+
+def _frame_ancestors(default_value: str) -> str:
+    """Compose the ``frame-ancestors`` CSP directive (#1191).
+
+    ``default_value`` is the strict directive used when the operator has not
+    configured ``TRUSTED_FRAME_ORIGINS`` — typically ``'none'`` (catch-all and
+    docs) or ``'self'`` (gcode-viewer, served same-origin). When trusted origins
+    are configured, ``'self'`` is always included so same-origin embedding never
+    breaks even if an operator forgets to add their own origin to the list.
+    """
+    if _TRUSTED_FRAME_ORIGINS:
+        return "frame-ancestors 'self' " + " ".join(_TRUSTED_FRAME_ORIGINS) + ";"
+    return f"frame-ancestors {default_value};"
+
+
 @app.middleware("http")
 async def security_headers_middleware(request, call_next):
     """Add standard HTTP security headers to every response."""
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    # X-Frame-Options is the legacy cross-origin embedding control. Modern
+    # browsers honour CSP frame-ancestors instead, and the legacy
+    # `ALLOW-FROM <url>` syntax is deprecated and inconsistent across vendors.
+    # When operators have explicitly allowlisted trusted frame origins (#1191
+    # — typically Home Assistant on a different port), drop X-Frame-Options
+    # and let the CSP-side frame-ancestors directive govern embedding.
+    if not _TRUSTED_FRAME_ORIGINS:
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     # Content-Security-Policy for the React SPA.
     # Notes:
@@ -4566,8 +4643,7 @@ async def security_headers_middleware(request, call_next):
             "font-src 'self' data: https://fonts.gstatic.com; "
             "object-src 'none'; "
             "base-uri 'self'; "
-            "frame-src 'self' http: https:; "
-            "frame-ancestors 'self';"
+            "frame-src 'self' http: https:; " + _frame_ancestors("'self'")
         )
     elif request.url.path in ("/docs", "/redoc", "/docs/oauth2-redirect"):
         # FastAPI's built-in Swagger UI / ReDoc pages load assets from
@@ -4582,8 +4658,7 @@ async def security_headers_middleware(request, call_next):
             "font-src 'self' data: https://fonts.gstatic.com; "
             "worker-src 'self' blob:; "
             "object-src 'none'; "
-            "base-uri 'self'; "
-            "frame-ancestors 'none';"
+            "base-uri 'self'; " + _frame_ancestors("'none'")
         )
     else:
         response.headers["Content-Security-Policy"] = (
@@ -4596,8 +4671,7 @@ async def security_headers_middleware(request, call_next):
             "font-src 'self' data: https://fonts.gstatic.com; "
             "object-src 'none'; "
             "base-uri 'self'; "
-            "frame-src 'self' http: https:; "
-            "frame-ancestors 'none';"
+            "frame-src 'self' http: https:; " + _frame_ancestors("'none'")
         )
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

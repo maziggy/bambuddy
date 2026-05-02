@@ -250,15 +250,16 @@ export function SpoolBuddyDashboard() {
         setDisplayedWeight(Math.round(Math.max(0, currentWeight)));
       }
     } else {
-      // Tag removed - clear hidden state so same tag can show when re-placed
-      if (hiddenTagId) {
+      // Tag removed — always clear so the card disappears and the same tag
+      // can trigger a fresh card if placed again.
+      if (displayedTagId !== null || displayedTrayUuid !== null) {
         setDisplayedTagId(null);
         setDisplayedTrayUuid(null);
         setHiddenTagId(null);
         setDisplayedWeight(null);
       }
     }
-  }, [currentTagId, currentTrayUuid, currentWeight, weightStable, displayedTagId, hiddenTagId]);
+  }, [currentTagId, currentTrayUuid, currentWeight, weightStable, displayedTagId, displayedTrayUuid, hiddenTagId]);
 
   // Auto-sync weight once when known spool first detected
 

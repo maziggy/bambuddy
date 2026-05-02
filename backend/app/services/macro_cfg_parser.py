@@ -131,8 +131,22 @@ def parse(text: str) -> ParseResult:
         description = config.get("description") or None
         trigger_raw = (config.get("trigger") or "manual").strip().lower()
         trigger_type = trigger_raw if trigger_raw in ("manual", "webhook", "schedule") else "manual"
-        cron_expression = config.get("cron") or None
+        cron_raw = config.get("cron") or None
         printer_name = config.get("printer") or None
+
+        # Validate cron expression immediately so parse_error surfaces on save
+        cron_expression: str | None = None
+        block_error: str | None = None
+        if cron_raw:
+            try:
+                from croniter import croniter as _croniter
+
+                if not _croniter.is_valid(cron_raw):
+                    raise ValueError("not a valid cron expression")
+                cron_expression = cron_raw
+            except Exception:
+                block_error = f"Invalid cron expression '{cron_raw}' in macro '{name}'"
+                result.errors.append(block_error)
 
         # Strip trailing blank lines from body, keep internal ones
         body = "\n".join(remaining_lines).rstrip()
@@ -146,6 +160,7 @@ def parse(text: str) -> ParseResult:
                 printer_name=printer_name,
                 body=body,
                 line_no=header_line + 1,
+                error=block_error,
             )
         )
 

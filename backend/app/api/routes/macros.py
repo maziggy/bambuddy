@@ -300,7 +300,7 @@ async def run_macro(
 
     asyncio.create_task(macro_runner.run_macro(macro_id, printer_id, "manual", run_id=run_id))
 
-    run = await db.get(MacroRun, run_id)
+    await db.refresh(run)
     return run
 
 

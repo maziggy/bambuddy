@@ -132,6 +132,12 @@ def _preflight(client, line: str) -> str | None:
 
 
 def _parse_flags(tokens: list[str]) -> dict[str, str]:
+    """Parse --key=value and --key value pairs from a tokenized command line.
+
+    shlex.split() is called upstream so quoted values arrive already unquoted.
+    A bare --flag with no value (i.e. followed by another --flag or at end) is
+    stored as an empty string so callers can distinguish presence from absence.
+    """
     flags: dict[str, str] = {}
     i = 0
     while i < len(tokens):
@@ -141,8 +147,13 @@ def _parse_flags(tokens: list[str]) -> dict[str, str]:
                 k, v = tok[2:].split("=", 1)
                 flags[k] = v
             elif i + 1 < len(tokens) and not tokens[i + 1].startswith("--"):
+                # next token is the value (may itself contain -- inside quotes,
+                # already unwrapped by shlex, so we just take it as-is)
                 flags[tok[2:]] = tokens[i + 1]
                 i += 1
+            else:
+                # bare flag — store empty string so presence is detectable
+                flags[tok[2:]] = ""
         i += 1
     return flags
 

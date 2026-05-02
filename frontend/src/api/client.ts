@@ -5776,6 +5776,7 @@ export interface VirtualPrinterConfig {
   serial: string;
   target_printer_id: number | null;
   auto_dispatch: boolean;
+  queue_force_color_match: boolean;
   tailscale_disabled: boolean;
   bind_ip: string | null;
   remote_interface_ip: string | null;
@@ -5801,6 +5802,7 @@ export const multiVirtualPrinterApi = {
     access_code?: string;
     target_printer_id?: number;
     auto_dispatch?: boolean;
+    queue_force_color_match?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
   }) =>
@@ -5817,6 +5819,7 @@ export const multiVirtualPrinterApi = {
     access_code?: string;
     target_printer_id?: number;
     auto_dispatch?: boolean;
+    queue_force_color_match?: boolean;
     tailscale_disabled?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;

@@ -4063,6 +4063,10 @@ export default {
       title: 'Auto-dispatch',
       description: 'Automatically start prints when added to queue. When off, prints wait for manual dispatch.',
     },
+    queueForceColorMatch: {
+      title: 'Force color match',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+    },
     tailscaleDisabled: {
       title: 'Tailscale integration',
       description: 'When enabled, uses Tailscale for trusted TLS certs. Disable to use self-signed cert only.',

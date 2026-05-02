@@ -4054,6 +4054,10 @@ export default {
       title: 'Automatisch starten',
       description: 'Drucke automatisch starten, wenn sie zur Warteschlange hinzugefügt werden. Wenn deaktiviert, warten Drucke auf manuellen Start.',
     },
+    queueForceColorMatch: {
+      title: 'Farbabgleich erzwingen',
+      description: 'Druckaufträge nur an Drucker senden, bei denen der genaue Filament-Typ und die genaue Farbe geladen sind. Standardmäßig deaktiviert — ohne diese Option verwendet die Warteschlange nur den Drucker-Modell-Abgleich und wählt möglicherweise einen Drucker mit der falschen Farbe.',
+    },
     tailscaleDisabled: {
       title: 'Tailscale-Integration',
       description: 'Wenn aktiviert, werden Tailscale-zertifizierte TLS-Zertifikate verwendet. Deaktivieren für selbstsignierte Zertifikate.',

@@ -728,13 +728,26 @@ class BambuMQTTClient:
         if not isinstance(print_data, dict):
             return
         command = print_data.get("command", "")
-        if command == "project_file" and "ams_mapping" in print_data:
-            self._captured_ams_mapping = print_data["ams_mapping"]
-            logger.info(
-                "[%s] Captured ams_mapping from print command: %s",
-                self.serial_number,
-                self._captured_ams_mapping,
-            )
+        if command == "project_file":
+            if "ams_mapping" in print_data:
+                self._captured_ams_mapping = print_data["ams_mapping"]
+                logger.info(
+                    "[%s] Captured ams_mapping from print command: %s",
+                    self.serial_number,
+                    self._captured_ams_mapping,
+                )
+            # Diagnostic for #1162 follow-up (X2D + FTS routing): when a
+            # slicer-launched project_file passes through the request topic,
+            # log the full payload so we can diff Studio's field set against
+            # ours. We pin our own sequence_id to "20000" (line ~3195), so
+            # any other value means the command came from Studio/Orca, not
+            # from us.
+            if print_data.get("sequence_id") != "20000":
+                logger.info(
+                    "[%s] External project_file payload: %s",
+                    self.serial_number,
+                    json.dumps(print_data),
+                )
 
     def _process_message(self, payload: dict):
         """Process incoming MQTT message from printer."""

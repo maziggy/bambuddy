@@ -4,11 +4,9 @@ import asyncio
 import json
 import logging
 import time
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-import defusedxml.ElementTree as ET
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +29,6 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager, supports_drying
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.utils.printer_models import normalize_printer_model
-from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
 logger = logging.getLogger(__name__)
 
@@ -825,17 +822,15 @@ class PrintScheduler:
         return self._match_filaments_to_slots(filament_reqs, loaded_filaments, prefer_lowest)
 
     async def _get_filament_requirements(self, db: AsyncSession, item: PrintQueueItem) -> list[dict] | None:
-        """Extract filament requirements from the source 3MF file.
-
-        Args:
-            db: Database session
-            item: Queue item with archive_id or library_file_id
-
-        Returns:
-            List of filament requirement dicts with slot_id, type, color, used_grams
+        """Resolve the queue item's source 3MF and parse the per-slot
+        filament requirements out of it. Thin DB-resolver wrapper around
+        ``filament_requirements.extract_filament_requirements`` so the VP
+        queue-mode write path (#1188) can reuse the same parser at upload
+        time.
         """
-        file_path: Path | None = None
+        from backend.app.services.filament_requirements import extract_filament_requirements
 
+        file_path: Path | None = None
         if item.archive_id:
             result = await db.execute(select(PrintArchive).where(PrintArchive.id == item.archive_id))
             archive = result.scalar_one_or_none()
@@ -851,82 +846,7 @@ class PrintScheduler:
         if not file_path or not file_path.exists():
             return None
 
-        filaments = []
-        try:
-            with zipfile.ZipFile(file_path, "r") as zf:
-                if "Metadata/slice_info.config" not in zf.namelist():
-                    return None
-
-                content = zf.read("Metadata/slice_info.config").decode()
-                root = ET.fromstring(content)
-
-                # Check if plate_id is specified - use that plate's filaments
-                plate_id = item.plate_id
-                if plate_id:
-                    for plate_elem in root.findall("./plate"):
-                        plate_index = None
-                        for meta in plate_elem.findall("metadata"):
-                            if meta.get("key") == "index":
-                                plate_index = int(meta.get("value", "0"))
-                                break
-                        if plate_index == plate_id:
-                            for filament_elem in plate_elem.findall("./filament"):
-                                filament_id = filament_elem.get("id")
-                                filament_type = filament_elem.get("type", "")
-                                filament_color = filament_elem.get("color", "")
-                                # tray_info_idx identifies the specific spool selected when slicing
-                                tray_info_idx = filament_elem.get("tray_info_idx", "")
-                                used_g = filament_elem.get("used_g", "0")
-                                try:
-                                    used_grams = float(used_g)
-                                    if used_grams > 0 and filament_id:
-                                        filaments.append(
-                                            {
-                                                "slot_id": int(filament_id),
-                                                "type": filament_type,
-                                                "color": filament_color,
-                                                "tray_info_idx": tray_info_idx,
-                                                "used_grams": round(used_grams, 1),
-                                            }
-                                        )
-                                except (ValueError, TypeError):
-                                    pass  # Skip filament entry with unparseable usage data
-                            break
-                else:
-                    # No plate_id - extract all filaments with used_g > 0
-                    for filament_elem in root.findall("./filament"):
-                        filament_id = filament_elem.get("id")
-                        filament_type = filament_elem.get("type", "")
-                        filament_color = filament_elem.get("color", "")
-                        # tray_info_idx identifies the specific spool selected when slicing
-                        tray_info_idx = filament_elem.get("tray_info_idx", "")
-                        used_g = filament_elem.get("used_g", "0")
-                        try:
-                            used_grams = float(used_g)
-                            if used_grams > 0 and filament_id:
-                                filaments.append(
-                                    {
-                                        "slot_id": int(filament_id),
-                                        "type": filament_type,
-                                        "color": filament_color,
-                                        "tray_info_idx": tray_info_idx,
-                                        "used_grams": round(used_grams, 1),
-                                    }
-                                )
-                        except (ValueError, TypeError):
-                            pass  # Skip filament entry with unparseable usage data
-
-                filaments.sort(key=lambda x: x["slot_id"])
-
-                # Enrich with nozzle mapping for dual-nozzle printers
-                nozzle_mapping = extract_nozzle_mapping_from_3mf(zf)
-                if nozzle_mapping:
-                    for filament in filaments:
-                        filament["nozzle_id"] = nozzle_mapping.get(filament["slot_id"])
-        except Exception as e:
-            logger.warning("Failed to parse filament requirements: %s", e)
-            return None
-
+        filaments = extract_filament_requirements(file_path, plate_id=item.plate_id)
         return filaments if filaments else None
 
     def _build_loaded_filaments(self, status) -> list[dict]:

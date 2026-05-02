@@ -560,6 +560,73 @@ class TestProjectArchivesAPI:
         data = response.json()
         assert "name" in data
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_archives_in_project_returns_archives_with_creator(
+        self, async_client: AsyncClient, project_factory, db_session
+    ):
+        """``GET /projects/{id}/archives`` must eagerly load both the project AND
+        the creator User. Without selectinload(created_by) the response
+        converter triggers a lazy attribute load on a closed async session
+        and the request 500s with MissingGreenlet — exactly what was reported
+        the moment a user with auth enabled (so archives carry created_by_id)
+        opened a project view.
+        """
+        from backend.app.models.archive import PrintArchive
+        from backend.app.models.user import User
+
+        # Seed: a user (the eventual creator) and a project owning two archives,
+        # one with created_by_id set, one without.
+        creator = User(
+            username="archive-creator",
+            password_hash="x",
+            role="user",
+            is_active=True,
+        )
+        db_session.add(creator)
+        await db_session.commit()
+        await db_session.refresh(creator)
+
+        project = await project_factory(name="Project Archives Smoke")
+
+        attributed = PrintArchive(
+            filename="attributed.3mf",
+            file_path="x/attributed.3mf",
+            file_size=2048,
+            print_name="Attributed Print",
+            status="completed",
+            quantity=1,
+            project_id=project.id,
+            created_by_id=creator.id,
+        )
+        anonymous = PrintArchive(
+            filename="anon.3mf",
+            file_path="x/anon.3mf",
+            file_size=2048,
+            print_name="Anonymous Print",
+            status="completed",
+            quantity=1,
+            project_id=project.id,
+            created_by_id=None,
+        )
+        db_session.add_all([attributed, anonymous])
+        await db_session.commit()
+
+        response = await async_client.get(f"/api/v1/projects/{project.id}/archives?limit=100&offset=0")
+        assert response.status_code == 200, f"Expected 200, got {response.status_code} body={response.text}"
+
+        rows = response.json()
+        assert len(rows) == 2
+
+        # Both archive shapes serialise — the attributed one surfaces the
+        # creator username (proving the eager-load worked) and the anonymous
+        # one stays None without exploding.
+        by_filename = {r["filename"]: r for r in rows}
+        assert by_filename["attributed.3mf"]["created_by_username"] == "archive-creator"
+        assert by_filename["attributed.3mf"]["created_by_id"] == creator.id
+        assert by_filename["anon.3mf"]["created_by_username"] is None
+        assert by_filename["anon.3mf"]["created_by_id"] is None
+
 
 class TestProjectExportImport:
     """Tests for project export/import functionality."""

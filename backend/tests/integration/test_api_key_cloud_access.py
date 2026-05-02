@@ -293,3 +293,124 @@ class TestOwnerDeletionCleanup:
         db_session.expire_all()
         result = await db_session.execute(select(APIKey).where(APIKey.id == key_id))
         assert result.scalar_one_or_none() is None, "API key should have been removed when its owner was deleted"
+
+
+class TestSliceRouteCloudOwnerResolution:
+    """The /library/files/{id}/slice route's cloud-token resolver
+    (#1182 follow-up — turulix). The cloud /cloud/* surface gets the API
+    key owner via ``cloud_caller`` (router-level gate), but the slice path
+    is on /library/* and goes through ``resolve_api_key_cloud_owner``.
+    Without this dep the slice path called ``get_stored_token(db, user=None)``
+    and produced "no Bambu Cloud session is stored" because the global
+    Settings cloud_token is empty in auth-enabled deployments — even when
+    the API key's owner had a perfectly valid token on their User row.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dep_returns_owner_for_key_with_cloud_scope(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Bare contract: dep resolves to the owner User when the API key
+        has ``can_access_cloud=True`` and a valid owner."""
+        from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
+
+        await _setup_auth_with_admin(async_client)
+        admin = await _store_admin_cloud_token(db_session, "cloudadmin", token="fake-bambu-token")
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        owned = APIKey(
+            name="slice-cloud",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            user_id=admin.id,
+            can_access_cloud=True,
+        )
+        db_session.add(owned)
+        await db_session.commit()
+
+        # Drive the dep directly with the same wiring FastAPI does. We can't
+        # easily fake an HTTPAuthorizationCredentials object without fastapi
+        # internals, so pass the raw token via the X-API-Key header param.
+        owner = await resolve_api_key_cloud_owner(
+            credentials=None,
+            x_api_key=full_key,
+            db=db_session,
+        )
+        assert owner is not None, "Dep must resolve owner for a valid cloud-scope key"
+        assert owner.id == admin.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dep_returns_none_for_key_without_cloud_scope(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """If the key lacks ``can_access_cloud``, the dep refuses to resolve
+        an owner — the slice path then falls through to user_id=None and
+        any cloud-preset references in the slice request will produce the
+        usual "no Bambu Cloud session is stored" error. Local presets
+        still work."""
+        from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
+
+        await _setup_auth_with_admin(async_client)
+        result = await db_session.execute(select(User).where(User.username == "cloudadmin"))
+        admin = result.scalar_one()
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        owned = APIKey(
+            name="slice-no-cloud",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            user_id=admin.id,
+            can_access_cloud=False,
+        )
+        db_session.add(owned)
+        await db_session.commit()
+
+        owner = await resolve_api_key_cloud_owner(
+            credentials=None,
+            x_api_key=full_key,
+            db=db_session,
+        )
+        assert owner is None, "Dep must NOT leak owner for a key without cloud scope"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dep_returns_none_for_legacy_ownerless_key(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Legacy keys (user_id NULL) created before #1182 must be ignored
+        by this dep — same fence as the /cloud/* gate."""
+        from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
+
+        await _setup_auth_with_admin(async_client)
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        legacy = APIKey(
+            name="slice-legacy",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            user_id=None,
+            can_access_cloud=False,
+        )
+        db_session.add(legacy)
+        await db_session.commit()
+
+        owner = await resolve_api_key_cloud_owner(
+            credentials=None,
+            x_api_key=full_key,
+            db=db_session,
+        )
+        assert owner is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dep_no_op_for_jwt_or_anonymous(self, db_session: AsyncSession):
+        """JWT-authed and anonymous callers don't hit the API key path —
+        dep returns None unconditionally."""
+        from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
+
+        owner = await resolve_api_key_cloud_owner(
+            credentials=None,
+            x_api_key=None,
+            db=db_session,
+        )
+        assert owner is None

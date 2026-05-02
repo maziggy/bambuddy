@@ -76,6 +76,13 @@ class FunctionContext:
     run_id: int | None  # MacroRun id (None in exec_line / sub-macro)
     log: Any  # async callable: log(run_id, text)
     allow_printer_commands: bool = True
+    # Opaque runner reference + call_stack — set only when inside run_macro
+    _runner: Any = None
+    _call_stack: frozenset[str] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self._call_stack is None:
+            self._call_stack = frozenset()
 
 
 @dataclass

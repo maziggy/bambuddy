@@ -366,6 +366,8 @@ async def webhook_run_macro(
     macro = await db.get(Macro, macro_id)
     if not macro:
         raise HTTPException(404, "Macro not found")
+    if macro.trigger_type != "webhook":
+        raise HTTPException(400, "Macro is not configured for webhook triggering")
 
     printer_id = body.printer_id if body.printer_id is not None else macro.printer_id
     run = MacroRun(
@@ -379,6 +381,6 @@ async def webhook_run_macro(
     run_id = run.id
     await db.commit()
 
-    asyncio.create_task(macro_runner.run_macro(macro_id, printer_id, "webhook"))
+    asyncio.create_task(macro_runner.run_macro(macro_id, printer_id, "webhook", run_id=run_id))
 
     return {"run_id": run_id, "status": "accepted"}

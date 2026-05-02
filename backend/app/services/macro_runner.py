@@ -13,6 +13,7 @@ import shlex
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from jinja2 import StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
 
@@ -25,7 +26,7 @@ from backend.app.services.macro_files import read as read_cfg_file
 
 logger = logging.getLogger(__name__)
 
-_jinja_env = SandboxedEnvironment(keep_trailing_newline=True)
+_jinja_env = SandboxedEnvironment(keep_trailing_newline=True, undefined=StrictUndefined)
 
 # How long to wait after a G-code command before sampling HMS for new errors
 _HMS_POLL_DELAY = 0.5
@@ -250,8 +251,9 @@ class MacroRunner:
             await self._finish_run(run_id, "error")
             return run_id
 
+        call_stack = frozenset({macro_name})
         try:
-            context = await self._build_context(printer_id, call_stack={macro_name}, run_id=run_id, log_fn=log_fn)
+            context = await self._build_context(printer_id, call_stack=call_stack, run_id=run_id, log_fn=log_fn)
             rendered = _jinja_env.from_string(script).render(**context)
         except Exception as exc:  # noqa: BLE001
             await buf.write(f"[ERROR] Template render failed: {exc}\n")
@@ -289,7 +291,14 @@ class MacroRunner:
                     if token in mf.command_names():
                         if not await _flush_batch():
                             break
-                        result = await self._dispatch_system(line, printer_id, run_id, allow_printer_commands, log_fn)
+                        result = await self._dispatch_system(
+                            line,
+                            printer_id,
+                            run_id,
+                            allow_printer_commands,
+                            log_fn,
+                            call_stack=call_stack,
+                        )
                         if result is not None and result.failed:
                             error_occurred = True
                             break
@@ -403,7 +412,7 @@ class MacroRunner:
     async def _build_context(
         self,
         printer_id: int | None,
-        call_stack: set[str],
+        call_stack: frozenset[str],
         run_id: int | None = None,
         log_fn=None,
     ) -> dict:
@@ -434,29 +443,12 @@ class MacroRunner:
 
         queue_count = await _get_queue_count()
 
-        async def _run_macro_inline(name: str) -> str:
-            if name in call_stack:
-                raise RecursionError(f"Macro cycle detected: {name} -> {' -> '.join(call_stack)}")
-            await self._run_sub_macro(name, printer_id, call_stack | {name}, run_id=run_id, log_fn=log_fn)
-            return ""
-
-        def _run_macro_fn(name: str) -> str:
-            if name in call_stack:
-                raise RecursionError(f"Macro cycle detected: {name} -> {' -> '.join(call_stack)}")
-            # Schedule inline; Jinja2 render is synchronous so we fire-and-collect
-            # via a task but it runs before the next await in the dispatch loop
-            asyncio.ensure_future(
-                self._run_sub_macro(name, printer_id, call_stack | {name}, run_id=run_id, log_fn=log_fn)
-            )
-            return ""
-
         extra = await mf.build_context_values(printer_id, log_fn, run_id=run_id)
 
         return {
             "printer": printer_ctx,
             "ams": ams_ctx,
             "queue": queue_count,
-            "run_macro": _run_macro_fn,
             **extra,
         }
 
@@ -464,9 +456,10 @@ class MacroRunner:
         self,
         name: str,
         printer_id: int | None,
-        call_stack: set[str],
+        call_stack: frozenset[str],
         run_id: int | None = None,
         log_fn=None,
+        allow_printer_commands: bool = True,
     ) -> None:
         if log_fn is None:
             log_fn = _default_log
@@ -496,15 +489,26 @@ class MacroRunner:
                 token = line.split()[0].upper()
                 if token in mf.command_names():
                     if gcode_batch:
-                        await self._send_gcode("\n".join(gcode_batch), printer_id, run_id, log_fn)
+                        if allow_printer_commands:
+                            await self._send_gcode("\n".join(gcode_batch), printer_id, run_id, log_fn)
                         gcode_batch.clear()
-                    await self._dispatch_system(line, printer_id, run_id, log_fn=log_fn)
+                    await self._dispatch_system(
+                        line,
+                        printer_id,
+                        run_id,
+                        allow_printer_commands=allow_printer_commands,
+                        log_fn=log_fn,
+                        call_stack=call_stack,
+                    )
                 else:
-                    gcode_batch.append(line)
+                    if not allow_printer_commands:
+                        await log_fn(run_id, f"[SKIP] G-code blocked in gcode_embed mode: {line}\n")
+                    else:
+                        gcode_batch.append(line)
             except Exception as exc:  # noqa: BLE001
                 await log_fn(run_id, f"[ERROR] Sub-macro '{name}' dispatch error: {exc}\n")
                 break
-        if gcode_batch:
+        if gcode_batch and allow_printer_commands:
             await self._send_gcode("\n".join(gcode_batch), printer_id, run_id, log_fn)
 
     # ── Dispatch ───────────────────────────────────────────────────────────────
@@ -516,6 +520,7 @@ class MacroRunner:
         run_id: int | None,
         allow_printer_commands: bool = True,
         log_fn=None,
+        call_stack: frozenset[str] | None = None,
     ) -> CommandResult:
         if log_fn is None:
             log_fn = _default_log
@@ -539,6 +544,8 @@ class MacroRunner:
             run_id=run_id,
             log=log_fn,
             allow_printer_commands=allow_printer_commands,
+            _runner=self,
+            _call_stack=call_stack if call_stack is not None else frozenset(),
         )
         fn_result = await mf.execute(token, ctx)
         return CommandResult(ok=fn_result.ok, log=fn_result.message)

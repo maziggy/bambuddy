@@ -2035,9 +2035,22 @@ async def run_migrations(conn):
         )
         await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS purchased_at TIMESTAMP")
 
-    # Migration: Add inventory stock alert columns to notification_providers
-    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT 0")
-    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT 0")
+    # Migration: Add inventory stock alert columns to notification_providers.
+    # Postgres rejects `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT 0"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT 0"
+        )
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT false"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT false"
+        )
 
 
 async def seed_notification_templates():

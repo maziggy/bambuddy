@@ -1037,7 +1037,7 @@ function ToolbarDropdown<T extends string>({
       <button
         type="button"
         onClick={() => setIsOpen(open => !open)}
-        className="h-9 min-w-32 px-3 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white text-sm font-medium transition-colors hover:bg-bambu-dark-tertiary focus:outline-none focus:border-bambu-green flex items-center justify-between gap-2"
+        className="h-8 min-w-28 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white text-sm font-medium transition-colors hover:bg-bambu-dark-tertiary focus:outline-none focus:border-bambu-green flex items-center justify-between gap-2"
       >
         <span className="truncate">{selectedOption?.label}</span>
         <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -6693,7 +6693,7 @@ export function PrintersPage() {
           </h1>
           <StatusSummaryBar printers={printers} />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Only show search bar when printers exist */}
           {printers && printers.length > 0 && (
             <div className="relative flex-1 min-w-0">
@@ -6708,7 +6708,7 @@ export function PrintersPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('printers.search')}
                 aria-label={t('printers.search')}
-                className="w-full h-9 pl-10 pr-8 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+                className="w-full h-8 pl-9 pr-8 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
               />
               {search && (
                 <button
@@ -6722,12 +6722,12 @@ export function PrintersPage() {
               )}
             </div>
           )}
-          <div className="flex items-center justify-end gap-2 sm:gap-3 flex-nowrap ml-auto [&>*]:shrink-0">
+          <div className="flex items-center justify-end gap-2 flex-nowrap ml-auto [&>*]:shrink-0">
             {printers && printers.length > 0 && (
               <div className="w-px h-6 bg-bambu-dark-tertiary" />
             )}
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2">
               {/* Status filter */}
               {printers && printers.length > 0 && (
                 <ToolbarDropdown
@@ -6761,7 +6761,7 @@ export function PrintersPage() {
                 type="button"
                 onClick={toggleHideDisconnected}
                 aria-pressed={hideDisconnected}
-                className={`h-9 px-3 rounded-lg border text-sm font-medium transition-colors ${
+                className={`h-8 px-2 rounded-lg border text-sm font-medium transition-colors ${
                   hideDisconnected
                     ? 'bg-bambu-green border-bambu-green text-white'
                     : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
@@ -6773,7 +6773,7 @@ export function PrintersPage() {
 
             <div className="w-px h-6 bg-bambu-dark-tertiary" />
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2">
               {/* Sort dropdown */}
               <div className="flex items-center gap-1">
                 <ToolbarDropdown<SortOption>
@@ -6788,7 +6788,7 @@ export function PrintersPage() {
                 />
                 <button
                   onClick={toggleSortDirection}
-                  className="h-9 px-3 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white transition-colors flex items-center justify-center"
+                  className="h-8 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white transition-colors flex items-center justify-center"
                   title={sortAsc ? t('printers.sort.descending') : t('printers.sort.ascending')}
                 >
                   {sortAsc ? (
@@ -6800,7 +6800,7 @@ export function PrintersPage() {
               </div>
 
               {/* Card size selector */}
-              <div className="flex h-9 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
+              <div className="flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
                 {cardSizeLabels.map((label, index) => {
                   const size = index + 1;
                   const isSelected = cardSize === size;
@@ -6811,7 +6811,7 @@ export function PrintersPage() {
                         setCardSize(size);
                         localStorage.setItem('printerCardSize', String(size));
                       }}
-                      className={`h-full px-3 text-sm font-medium transition-colors ${
+                      className={`h-full px-2 text-xs font-medium transition-colors ${
                         index === 0 ? 'rounded-l-lg' : ''
                       } ${
                         index === cardSizeLabels.length - 1 ? 'rounded-r-lg' : ''
@@ -6837,7 +6837,7 @@ export function PrintersPage() {
                 if (selectionMode) clearSelection();
                 else setIsSelectionMode(true);
               }}
-              className={`h-9 px-3 rounded-lg border transition-colors ${
+              className={`h-8 px-2 rounded-lg border transition-colors ${
                 selectionMode
                   ? 'bg-bambu-green border-bambu-green text-white'
                   : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
@@ -6853,7 +6853,7 @@ export function PrintersPage() {
               <div className="relative">
                 <button
                   onClick={() => setShowPowerDropdown(!showPowerDropdown)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white dark:bg-bambu-dark-secondary border border-gray-200 dark:border-bambu-dark-tertiary rounded-lg text-gray-600 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white hover:border-bambu-green transition-colors"
+                  className="h-8 flex items-center gap-1.5 px-2 text-sm bg-white dark:bg-bambu-dark-secondary border border-gray-200 dark:border-bambu-dark-tertiary rounded-lg text-gray-600 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white hover:border-bambu-green transition-colors"
                 >
                   <Power className="w-4 h-4" />
                   {t('printers.powerOn')}
@@ -6896,8 +6896,8 @@ export function PrintersPage() {
               onClick={() => setShowAddModal(true)}
               disabled={!hasPermission('printers:create')}
               title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
+              className="h-8 min-h-0 px-2 py-0"
             >
-              <Plus className="w-4 h-4" />
               {t('printers.addPrinter')}
             </Button>
           </div>

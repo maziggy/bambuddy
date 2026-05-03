@@ -3,7 +3,7 @@ export default {
   nav: {
     printers: 'Imprimantes',
     archives: 'Archives',
-    queue: 'File d\'attente',
+    queue: 'File d\'attente d\'impression',
     stats: 'Statistiques',
     profiles: 'Profils',
     maintenance: 'Maintenance',
@@ -3667,7 +3667,7 @@ export default {
     branch: 'Branche',
     provider: 'Git Provider',
     providerGitHub: 'GitHub',
-	providerGitLab: 'GitLab',	
+	providerGitLab: 'GitLab',
 	providerGitea: 'Gitea',
     providerForgejo: 'Forgejo',
     manualOnly: 'Manuel uniquement',

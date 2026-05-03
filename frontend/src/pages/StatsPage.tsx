@@ -20,6 +20,7 @@ import {
   Calendar,
   ChevronDown,
   Users,
+  BarChart3,
 } from 'lucide-react';
 import {
   BarChart,
@@ -1148,7 +1149,10 @@ export function StatsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-white">{t('stats.title')}</h1>
+            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+              <BarChart3 className="w-7 h-7 text-bambu-green" />
+              {t('stats.title')}
+            </h1>
             {isRefetching && <Loader2 className="w-5 h-5 text-bambu-green animate-spin" />}
           </div>
           <p className="text-bambu-gray">{t('stats.subtitle')}</p>

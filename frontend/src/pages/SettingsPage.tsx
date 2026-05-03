@@ -1231,7 +1231,10 @@ export function SettingsPage() {
     <div className="p-4 md:p-6">
       <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-bold text-white">{t('settings.title')}</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <SettingsIcon className="w-7 h-7 text-bambu-green" />
+            {t('settings.title')}
+          </h1>
           <p className="text-sm text-bambu-gray hidden md:block">{t('settings.configureBambuddy')}</p>
         </div>
         {/* Cross-tab search */}

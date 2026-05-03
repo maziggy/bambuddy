@@ -3,7 +3,7 @@ export default {
   nav: {
     printers: 'Printers',
     archives: 'Archives',
-    queue: 'Queue',
+    queue: 'Print Queue',
     stats: 'Statistics',
     profiles: 'Profiles',
     maintenance: 'Maintenance',

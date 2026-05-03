@@ -2871,7 +2871,10 @@ export function ProfilesPage() {
     <div className="p-6 lg:p-8">
       {/* Page Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">{t('profiles.title')}</h1>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <Cloud className="w-7 h-7 text-bambu-green" />
+          {t('profiles.title')}
+        </h1>
         <p className="text-bambu-gray">{t('profiles.subtitle')}</p>
       </div>
 

@@ -3,7 +3,7 @@ export default {
   nav: {
     printers: '印表機',
     archives: '歸檔',
-    queue: '佇列',
+    queue: '列印佇列',
     stats: '統計',
     profiles: '設定檔案',
     maintenance: '維護',
@@ -3667,7 +3667,7 @@ export default {
     branch: '分支',
     provider: 'Git Provider',
     providerGitHub: 'GitHub',
-	providerGitLab: 'GitLab',	
+	providerGitLab: 'GitLab',
 	providerGitea: 'Gitea',
     providerForgejo: 'Forgejo',
     manualOnly: '僅手動',

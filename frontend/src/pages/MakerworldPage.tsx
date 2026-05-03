@@ -408,13 +408,13 @@ export function MakerworldPage() {
   const downloadCount = pickNumber(design, 'downloadCount');
 
   return (
-    <div className="p-6 max-w-screen-2xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <Globe className="w-7 h-7 text-brand-500" />
-        <h1 className="text-2xl font-bold">{t('makerworld.title')}</h1>
-      </div>
+    <div className="p-4 md:p-8 max-w-screen-2xl space-y-6">
+      <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+        <Globe className="w-7 h-7 text-bambu-green" />
+        {t('makerworld.title')}
+      </h1>
 
-      <p className="text-sm text-gray-600 dark:text-gray-400">
+      <p className="text-sm text-bambu-gray">
         {t('makerworld.description')}
       </p>
 

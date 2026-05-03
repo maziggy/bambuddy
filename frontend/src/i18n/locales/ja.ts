@@ -3,7 +3,7 @@ export default {
   nav: {
     printers: 'プリンター',
     archives: 'アーカイブ',
-    queue: 'キュー',
+    queue: '印刷キュー',
     stats: '統計',
     profiles: 'プロファイル',
     maintenance: 'メンテナンス',
@@ -3679,7 +3679,7 @@ export default {
     branch: 'ブランチ',
     provider: 'Git Provider',
     providerGitHub: 'GitHub',
-	providerGitLab: 'GitLab',	
+	providerGitLab: 'GitLab',
 	providerGitea: 'Gitea',
     providerForgejo: 'Forgejo',
     manualOnly: '手動のみ',

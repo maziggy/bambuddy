@@ -1227,7 +1227,10 @@ export function MaintenancePage() {
     <div className="p-4 md:p-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">{t('maintenance.title')}</h1>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <Wrench className="w-7 h-7 text-bambu-green" />
+          {t('maintenance.title')}
+        </h1>
         <p className="text-bambu-gray text-sm mt-1">
           {activeTab === 'status' ? (
             <>

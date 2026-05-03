@@ -872,15 +872,14 @@ function InventoryPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="p-4 md:p-8 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-3">
-            <Package className="w-6 h-6 text-bambu-green" />
-            <h1 className="text-2xl font-bold text-white">{t('inventory.title')}</h1>
-          </div>
-          <p className="text-sm text-bambu-gray mt-1 ml-9">{t('inventory.noSpools').split('.')[0] ? '' : ''}</p>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Package className="w-7 h-7 text-bambu-green" />
+            {t('inventory.title')}
+          </h1>
         </div>
         <Button onClick={() => setFormModal({ spool: null })}>
           <Plus className="w-4 h-4" />

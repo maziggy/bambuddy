@@ -1346,7 +1346,11 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
             logger.info("[SNAPSHOT] Capturing from external camera for printer %s", printer_id)
             from backend.app.services.external_camera import capture_frame
 
-            frame_data = await capture_frame(printer.external_camera_url, printer.external_camera_type or "mjpeg")
+            frame_data = await capture_frame(
+                printer.external_camera_url,
+                printer.external_camera_type or "mjpeg",
+                snapshot_url=printer.external_camera_snapshot_url,
+            )
             if frame_data and len(frame_data) <= 2_500_000:
                 logger.info("[SNAPSHOT] External camera frame: %s bytes", len(frame_data))
                 return _apply_camera_rotation(frame_data, printer, logger)
@@ -1616,6 +1620,7 @@ async def on_print_start(printer_id: int, data: dict):
                     external_camera_type=printer.external_camera_type,
                     use_external=printer.external_camera_enabled,
                     roi=roi,
+                    external_camera_snapshot_url=printer.external_camera_snapshot_url,
                 )
 
                 # Restore chamber light to original state
@@ -2201,6 +2206,7 @@ async def on_print_start(printer_id: int, data: dict):
                         fallback_archive.id,
                         printer.external_camera_url,
                         printer.external_camera_type or "mjpeg",
+                        snapshot_url=printer.external_camera_snapshot_url,
                     )
                     logger.info("Started layer timelapse for printer %s, archive %s", printer_id, fallback_archive.id)
 
@@ -2290,6 +2296,7 @@ async def on_print_start(printer_id: int, data: dict):
                         archive.id,
                         printer.external_camera_url,
                         printer.external_camera_type or "mjpeg",
+                        snapshot_url=printer.external_camera_snapshot_url,
                     )
                     logger.info("Started layer timelapse for printer %s, archive %s", printer_id, archive.id)
 
@@ -3332,7 +3339,9 @@ async def on_print_complete(printer_id: int, data: dict):
                                 from backend.app.services.external_camera import capture_frame
 
                                 frame_data = await capture_frame(
-                                    printer.external_camera_url, printer.external_camera_type or "mjpeg"
+                                    printer.external_camera_url,
+                                    printer.external_camera_type or "mjpeg",
+                                    snapshot_url=printer.external_camera_snapshot_url,
                                 )
                                 if frame_data:
                                     photos_dir = archive_dir / "photos"

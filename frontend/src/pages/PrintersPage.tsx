@@ -6773,15 +6773,18 @@ export function PrintersPage() {
 
           <div className="w-px h-6 bg-bambu-dark-tertiary" />
 
-          <label className="flex items-center gap-2 text-sm text-bambu-gray cursor-pointer">
-            <input
-              type="checkbox"
-              checked={hideDisconnected}
-              onChange={toggleHideDisconnected}
-              className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-            />
+          <button
+            type="button"
+            onClick={toggleHideDisconnected}
+            aria-pressed={hideDisconnected}
+            className={`h-9 px-3 rounded-lg border text-sm font-medium transition-colors ${
+              hideDisconnected
+                ? 'bg-bambu-green border-bambu-green text-white'
+                : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
+            }`}
+          >
             {t('printers.hideOffline')}
-          </label>
+          </button>
           {/* Power dropdown for offline printers with smart plugs */}
           {hideDisconnected && Object.keys(smartPlugByPrinter).length > 0 && (
             <div className="relative">

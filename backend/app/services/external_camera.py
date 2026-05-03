@@ -173,17 +173,30 @@ def get_ffmpeg_path() -> str | None:
     return None
 
 
-async def capture_frame(url: str, camera_type: str, timeout: int = 15) -> bytes | None:
+async def capture_frame(
+    url: str,
+    camera_type: str,
+    timeout: int = 15,
+    snapshot_url: str | None = None,
+) -> bytes | None:
     """Capture single frame from external camera.
 
     Args:
-        url: Camera URL (MJPEG stream, RTSP URL, HTTP snapshot URL, or USB device path)
-        camera_type: "mjpeg", "rtsp", "snapshot", or "usb"
-        timeout: Connection timeout in seconds
+        url: Live-stream URL (MJPEG stream, RTSP URL, HTTP snapshot URL, or USB device path).
+        camera_type: "mjpeg", "rtsp", "snapshot", or "usb".
+        timeout: Connection timeout in seconds.
+        snapshot_url: Optional override for single-frame capture. When set, fetched
+            via plain HTTP GET regardless of `camera_type`. Bypasses MJPEG warm-up
+            handling on sources that expose a dedicated frame endpoint (e.g. go2rtc's
+            `/api/frame.jpeg` reliably returns a clean image while the MJPEG stream's
+            first frame is often the encoder's stale keyframe). #1177.
 
     Returns:
         JPEG bytes or None on failure
     """
+    if snapshot_url:
+        logger.debug("capture_frame using snapshot override url=%s...", snapshot_url[:50])
+        return await _capture_snapshot(snapshot_url, timeout)
     logger.debug("capture_frame called: type=%s, url=%s...", camera_type, url[:50] if url else "None")
     if camera_type == "mjpeg":
         return await _capture_mjpeg_frame(url, timeout)

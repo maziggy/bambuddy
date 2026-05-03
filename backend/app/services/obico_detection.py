@@ -197,6 +197,7 @@ class ObicoDetectionService:
                 printer.external_camera_url,
                 printer.external_camera_type,
                 timeout=SNAPSHOT_CAPTURE_TIMEOUT,
+                snapshot_url=printer.external_camera_snapshot_url,
             )
         return await capture_camera_frame_bytes(
             ip_address=printer.ip_address,

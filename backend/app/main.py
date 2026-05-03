@@ -1346,7 +1346,11 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
             logger.info("[SNAPSHOT] Capturing from external camera for printer %s", printer_id)
             from backend.app.services.external_camera import capture_frame
 
-            frame_data = await capture_frame(printer.external_camera_url, printer.external_camera_type or "mjpeg")
+            frame_data = await capture_frame(
+                printer.external_camera_url,
+                printer.external_camera_type or "mjpeg",
+                snapshot_url=printer.external_camera_snapshot_url,
+            )
             if frame_data and len(frame_data) <= 2_500_000:
                 logger.info("[SNAPSHOT] External camera frame: %s bytes", len(frame_data))
                 return _apply_camera_rotation(frame_data, printer, logger)
@@ -1616,6 +1620,7 @@ async def on_print_start(printer_id: int, data: dict):
                     external_camera_type=printer.external_camera_type,
                     use_external=printer.external_camera_enabled,
                     roi=roi,
+                    external_camera_snapshot_url=printer.external_camera_snapshot_url,
                 )
 
                 # Restore chamber light to original state
@@ -2201,6 +2206,7 @@ async def on_print_start(printer_id: int, data: dict):
                         fallback_archive.id,
                         printer.external_camera_url,
                         printer.external_camera_type or "mjpeg",
+                        snapshot_url=printer.external_camera_snapshot_url,
                     )
                     logger.info("Started layer timelapse for printer %s, archive %s", printer_id, fallback_archive.id)
 
@@ -2290,6 +2296,7 @@ async def on_print_start(printer_id: int, data: dict):
                         archive.id,
                         printer.external_camera_url,
                         printer.external_camera_type or "mjpeg",
+                        snapshot_url=printer.external_camera_snapshot_url,
                     )
                     logger.info("Started layer timelapse for printer %s, archive %s", printer_id, archive.id)
 
@@ -3162,7 +3169,9 @@ async def on_print_complete(printer_id: int, data: dict):
             await service.update_archive_status(
                 archive_id,
                 status=status,
-                completed_at=datetime.now(timezone.utc) if status in ("completed", "failed", "aborted") else None,
+                completed_at=(
+                    datetime.now(timezone.utc) if status in ("completed", "failed", "aborted", "cancelled") else None
+                ),
                 failure_reason=failure_reason,
             )
             logger.info(
@@ -3332,7 +3341,9 @@ async def on_print_complete(printer_id: int, data: dict):
                                 from backend.app.services.external_camera import capture_frame
 
                                 frame_data = await capture_frame(
-                                    printer.external_camera_url, printer.external_camera_type or "mjpeg"
+                                    printer.external_camera_url,
+                                    printer.external_camera_type or "mjpeg",
+                                    snapshot_url=printer.external_camera_snapshot_url,
                                 )
                                 if frame_data:
                                     photos_dir = archive_dir / "photos"
@@ -3422,8 +3433,19 @@ async def on_print_complete(printer_id: int, data: dict):
                     archive_result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
                     archive = archive_result.scalar_one_or_none()
                     if archive:
+                        # Actual elapsed time from started_at/completed_at when both are
+                        # populated (every terminal status sets completed_at after #1198).
+                        # Falls back to None so the notification path can decide whether to
+                        # render the slicer estimate as a last resort.
+                        actual_time_seconds = None
+                        if archive.started_at and archive.completed_at:
+                            elapsed = (archive.completed_at - archive.started_at).total_seconds()
+                            if elapsed > 0:
+                                actual_time_seconds = int(elapsed)
+
                         archive_data = {
                             "print_time_seconds": archive.print_time_seconds,
+                            "actual_time_seconds": actual_time_seconds,
                             "actual_filament_grams": archive.filament_used_grams,
                             "failure_reason": archive.failure_reason,
                             "created_by_id": archive.created_by_id,

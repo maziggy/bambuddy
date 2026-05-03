@@ -3072,6 +3072,13 @@ class BambuMQTTClient:
             protocol=mqtt.MQTTv311,
         )
 
+        # Bambu's broker has racy PUBACK matching with paho's QoS=1 inflight
+        # tracking (#1164). The default ceiling of 20 wedges sessions after
+        # ~16-20 cumulative commands; lifting it well above any realistic
+        # session count keeps QoS=1 working without changing wire-protocol
+        # behaviour across printer models.
+        self._client.max_inflight_messages_set(1000)
+
         self._client.username_pw_set("bblp", self.access_code)
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect

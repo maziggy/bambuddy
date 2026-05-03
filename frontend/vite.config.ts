@@ -74,6 +74,10 @@ function serveGcodeViewer() {
 }
 
 export default defineConfig({
+  // Empty base emits relative asset URLs (./assets/... instead of /assets/...)
+  // so the built SPA loads correctly when served at any subpath — HA Ingress,
+  // nginx/Traefik path prefix, Cloudflare Tunnel path routing, etc. (#1195).
+  base: '',
   plugins: [react(), serveGcodeViewer()],
   build: {
     outDir: '../static',

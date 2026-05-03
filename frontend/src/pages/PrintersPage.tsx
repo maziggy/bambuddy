@@ -6654,7 +6654,7 @@ export function PrintersPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('printers.search')}
                 aria-label={t('printers.search')}
-                className="w-full pl-10 pr-8 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+                className="w-full h-9 pl-10 pr-8 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
               />
               {search && (
                 <button
@@ -6726,7 +6726,7 @@ export function PrintersPage() {
           )}
 
           {/* Card size selector */}
-          <div className="flex items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
+          <div className="flex h-9 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
             {cardSizeLabels.map((label, index) => {
               const size = index + 1;
               const isSelected = cardSize === size;
@@ -6737,7 +6737,7 @@ export function PrintersPage() {
                     setCardSize(size);
                     localStorage.setItem('printerCardSize', String(size));
                   }}
-                  className={`px-2 py-1.5 text-xs font-medium transition-colors ${
+                  className={`h-full px-3 text-sm font-medium transition-colors ${
                     index === 0 ? 'rounded-l-lg' : ''
                   } ${
                     index === cardSizeLabels.length - 1 ? 'rounded-r-lg' : ''

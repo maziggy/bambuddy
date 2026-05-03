@@ -926,8 +926,13 @@ class TestVirtualPrinterManager:
             mock_remove.assert_called_once_with(1)
 
     @pytest.mark.asyncio
-    async def test_sync_from_db_restarts_on_tailscale_disabled_change(self, manager, tmp_path):
-        """VP restarts when tailscale_disabled flips from False to True."""
+    async def test_sync_from_db_does_not_restart_on_tailscale_toggle(self, manager, tmp_path):
+        """Flipping tailscale_disabled is purely informational — must NOT trigger a restart.
+
+        Cert provisioning was removed; the toggle only governs whether the VP card surfaces
+        the host's Tailscale IP/FQDN to the user. No service needs to reload, so changing
+        it through sync_from_db should leave any running instance untouched.
+        """
         from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
         inst = VirtualPrinterInstance(
@@ -947,14 +952,9 @@ class TestVirtualPrinterManager:
         self._setup_sync_mocks(manager, [db_vp], tmp_path)
 
         with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
-            with patch("backend.app.services.virtual_printer.manager.VirtualPrinterInstance") as MockInst:
-                mock_new = MagicMock()
-                mock_new.start_server = AsyncMock()
-                MockInst.return_value = mock_new
+            await manager.sync_from_db()
 
-                await manager.sync_from_db()
-
-            mock_remove.assert_called_once_with(1)
+        mock_remove.assert_not_called()
 
 
 class TestFTPSession:

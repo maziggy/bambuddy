@@ -19,6 +19,14 @@ vi.mock('../../api/client', () => ({
   multiVirtualPrinterApi: {
     update: vi.fn().mockResolvedValue({}),
     remove: vi.fn().mockResolvedValue({}),
+    getTailscaleStatus: vi.fn().mockResolvedValue({
+      available: false,
+      fqdn: '',
+      hostname: '',
+      tailnet_name: '',
+      tailscale_ips: [],
+      error: null,
+    }),
   },
   api: {
     getSettings: vi.fn().mockResolvedValue({}),
@@ -295,45 +303,26 @@ describe('VirtualPrinterCard - tailscale toggle', () => {
     });
   });
 
-  it('reverts toggle and shows a specific toast when backend rejects enable (tailscale_not_available)', async () => {
-    const user = userEvent.setup();
-    const printer = createMockPrinter({ tailscale_disabled: true });
-    vi.mocked(multiVirtualPrinterApi.update).mockRejectedValueOnce(
-      new Error('tailscale_not_available')
-    );
-
-    render(<VirtualPrinterCard printer={printer} models={models} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Tailscale integration')).toBeInTheDocument();
-    });
-
-    const title = screen.getByText('Tailscale integration');
-    const section = title.closest('.flex.items-center.justify-between');
-    const toggleButton = section!.querySelector('button') as HTMLButtonElement;
-    // Disabled state → dark-grey background on the track.
-    expect(toggleButton.className).toContain('bg-bambu-dark-tertiary');
-
-    await user.click(toggleButton);
-
-    await waitFor(() => {
-      expect(multiVirtualPrinterApi.update).toHaveBeenCalledWith(1, { tailscale_disabled: false });
-    });
-
-    // After the 409 revert, the toggle goes back to the dark-grey (disabled) state.
-    await waitFor(() => {
-      expect(toggleButton.className).toContain('bg-bambu-dark-tertiary');
-    });
-  });
 });
 
 describe('VirtualPrinterCard - Tailscale FQDN copy', () => {
+  const fqdn = 'test-host.tail1234.ts.net';
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(createMockPrinter());
+    // FQDN now comes from the host-level Tailscale status endpoint, not VP status.
+    // Tests in this block need the toggle to be ON (tailscale_disabled=false) so the
+    // useQuery actually fires and the FQDN row renders.
+    vi.mocked(multiVirtualPrinterApi.getTailscaleStatus).mockResolvedValue({
+      available: true,
+      fqdn,
+      hostname: 'test-host',
+      tailnet_name: 'tail1234.ts.net',
+      tailscale_ips: ['100.64.0.1'],
+      error: null,
+    });
   });
-
-  const fqdn = 'test-host.tail1234.ts.net';
 
   function getCopyButton() {
     // The copy button is a <button> with a title attribute. Use title to locate it.
@@ -351,13 +340,14 @@ describe('VirtualPrinterCard - Tailscale FQDN copy', () => {
       configurable: true,
     });
 
-    const printer = createMockPrinter({
-      status: { running: true, pending_files: 0, tailscale_fqdn: fqdn },
-    });
+    const printer = createMockPrinter({ tailscale_disabled: false });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
-    const copyBtn = getCopyButton();
-    expect(copyBtn).toBeTruthy();
+    const copyBtn = await waitFor(() => {
+      const btn = getCopyButton();
+      if (!btn) throw new Error('copy button not yet rendered');
+      return btn;
+    });
     await user.click(copyBtn);
 
     await waitFor(() => {
@@ -374,12 +364,14 @@ describe('VirtualPrinterCard - Tailscale FQDN copy', () => {
     const execCommandMock = vi.fn().mockReturnValue(true);
     document.execCommand = execCommandMock;
 
-    const printer = createMockPrinter({
-      status: { running: true, pending_files: 0, tailscale_fqdn: fqdn },
-    });
+    const printer = createMockPrinter({ tailscale_disabled: false });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
-    const copyBtn = getCopyButton();
+    const copyBtn = await waitFor(() => {
+      const btn = getCopyButton();
+      if (!btn) throw new Error('copy button not yet rendered');
+      return btn;
+    });
     await user.click(copyBtn);
 
     await waitFor(() => {
@@ -399,12 +391,14 @@ describe('VirtualPrinterCard - Tailscale FQDN copy', () => {
       throw new Error('synthetic execCommand failure');
     });
 
-    const printer = createMockPrinter({
-      status: { running: true, pending_files: 0, tailscale_fqdn: fqdn },
-    });
+    const printer = createMockPrinter({ tailscale_disabled: false });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
-    const copyBtn = getCopyButton();
+    const copyBtn = await waitFor(() => {
+      const btn = getCopyButton();
+      if (!btn) throw new Error('copy button not yet rendered');
+      return btn;
+    });
     await user.click(copyBtn);
 
     // The `finally` block must remove the textarea regardless of the exception.

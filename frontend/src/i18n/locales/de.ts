@@ -4086,7 +4086,7 @@ export default {
     },
     tailscaleDisabled: {
       title: 'Tailscale-Integration',
-      description: 'Wenn aktiviert, werden Tailscale-zertifizierte TLS-Zertifikate verwendet. Deaktivieren für selbstsignierte Zertifikate.',
+      description: 'Aktivieren, um diesen VP als per Tailscale erreichbar zu markieren. Zeigt die Tailscale-Adresse des Hosts an, damit du weißt, welche IP du im Slicer eintragen musst. Der CA-Import bleibt unverändert — diese Option hat keinen Einfluss auf Zertifikate.',
     },
     setupRequired: {
       title: 'Einrichtung erforderlich',
@@ -4121,7 +4121,6 @@ export default {
     toast: {
       updated: 'Virtuelle Druckereinstellungen aktualisiert',
       failedToUpdate: 'Einstellungen konnten nicht aktualisiert werden',
-      tailscaleNotAvailable: 'Tailscale ist auf diesem Host nicht installiert. Installiere Tailscale zuerst und versuche es dann erneut.',
       copyFailed: 'Kopieren fehlgeschlagen — bitte Text manuell markieren',
       accessCodeRequired: 'Bitte zuerst einen Zugangscode setzen',
       targetPrinterRequired: 'Bitte zuerst einen Zieldrucker auswählen',

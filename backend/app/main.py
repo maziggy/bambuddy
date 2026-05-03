@@ -4433,6 +4433,7 @@ async def lifespan(app: FastAPI):
     from backend.app.services.virtual_printer import virtual_printer_manager
 
     virtual_printer_manager.set_session_factory(async_session)
+    virtual_printer_manager.set_printer_manager(printer_manager)
     try:
         await virtual_printer_manager.sync_from_db()
         logging.info("Virtual printer manager synced from database")

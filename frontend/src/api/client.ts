@@ -5645,7 +5645,6 @@ export interface VirtualPrinterStatus {
   pending_files: number;
   target_printer_ip?: string;  // For proxy mode
   proxy?: VirtualPrinterProxyStatus;  // For proxy mode
-  tailscale_fqdn?: string;  // Set when Tailscale cert is active
 }
 
 export interface VirtualPrinterSettings {
@@ -5740,7 +5739,7 @@ export interface VirtualPrinterConfig {
   bind_ip: string | null;
   remote_interface_ip: string | null;
   position: number;
-  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus; tailscale_fqdn?: string };
+  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus };
 }
 
 export interface VirtualPrinterListResponse {

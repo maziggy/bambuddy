@@ -1090,7 +1090,7 @@ function ToolbarMenu({
       <button
         type="button"
         onClick={() => setIsOpen(open => !open)}
-        className="h-8 w-8 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white transition-colors flex items-center justify-center"
+        className="h-8 w-8 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center justify-center"
         aria-label={label}
         title={label}
       >
@@ -6810,7 +6810,7 @@ export function PrintersPage() {
         className={`h-8 px-2 rounded-lg border text-sm font-medium transition-colors ${inMenu ? 'w-full' : ''} ${
           hideDisconnected
             ? 'bg-bambu-green border-bambu-green text-white'
-            : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
+            : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
         }`}
       >
         {t('printers.hideOffline')}
@@ -6835,13 +6835,13 @@ export function PrintersPage() {
         />
         <button
           onClick={toggleSortDirection}
-          className="h-8 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white transition-colors flex items-center justify-center"
+          className="h-8 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center justify-center"
           title={sortAsc ? t('printers.sort.descending') : t('printers.sort.ascending')}
         >
           {sortAsc ? (
-            <ArrowUp className="w-4 h-4 text-bambu-gray" />
+            <ArrowUp className="w-4 h-4 text-white" />
           ) : (
-            <ArrowDown className="w-4 h-4 text-bambu-gray" />
+            <ArrowDown className="w-4 h-4 text-white" />
           )}
         </button>
       </div>
@@ -6865,7 +6865,7 @@ export function PrintersPage() {
               } ${
                 isSelected
                   ? 'bg-bambu-green text-white'
-                  : 'text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
+                  : 'text-white hover:bg-bambu-dark-tertiary'
               }`}
               title={label === 'S' ? t('printers.cardSize.small') : label === 'M' ? t('printers.cardSize.medium') : label === 'L' ? t('printers.cardSize.large') : t('printers.cardSize.extraLarge')}
             >
@@ -6888,7 +6888,7 @@ export function PrintersPage() {
         className={`h-8 px-2 rounded-lg border transition-colors ${inMenu ? 'w-full justify-center gap-1.5 text-sm font-medium flex items-center' : ''} ${
           selectionMode
             ? 'bg-bambu-green border-bambu-green text-white'
-            : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
+            : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
         }`}
         title={t('printers.bulk.select')}
         disabled={!hasPermission('printers:control')}
@@ -6905,7 +6905,7 @@ export function PrintersPage() {
             className={`h-8 flex items-center gap-1.5 px-2 text-sm rounded-lg border transition-colors ${
               inMenu
                 ? 'w-full justify-between bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary hover:text-white'
-                : 'bg-white dark:bg-bambu-dark-secondary border-gray-200 dark:border-bambu-dark-tertiary text-gray-600 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white hover:border-bambu-green'
+                : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
             }`}
           >
             <span className="flex items-center gap-1.5">

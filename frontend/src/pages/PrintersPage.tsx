@@ -6760,10 +6760,10 @@ export function PrintersPage() {
               if (selectionMode) clearSelection();
               else setIsSelectionMode(true);
             }}
-            className={`p-1.5 rounded-lg transition-colors ${
+            className={`h-9 px-3 rounded-lg border transition-colors ${
               selectionMode
-                ? 'bg-bambu-green text-white'
-                : 'hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white'
+                ? 'bg-bambu-green border-bambu-green text-white'
+                : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
             }`}
             title={t('printers.bulk.select')}
             disabled={!hasPermission('printers:control')}

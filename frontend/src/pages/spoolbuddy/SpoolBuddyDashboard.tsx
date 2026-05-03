@@ -309,6 +309,7 @@ export function SpoolBuddyDashboard() {
         last_used: null,
         encode_time: null,
         tag_uid: displayedTagId,
+        tag_uid_2: null,
         tray_uuid: displayedTrayUuid,
         data_origin: 'spoolbuddy',
         tag_type: displayedTrayUuid ? 'bambulab' : 'generic',

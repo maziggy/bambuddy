@@ -481,7 +481,8 @@ export function SpoolBuddyDashboard() {
                     const s = displayedSpool ?? sbState.matchedSpool!;
                     return {
                       id: s.id,
-                      tag_uid: displayedTagId,
+                      tag_uid: displayedTagId ?? s.tag_uid ?? '',
+                      tag_uid_2: s.tag_uid_2 ?? null,
                       material: s.material,
                       subtype: s.subtype,
                       color_name: s.color_name,

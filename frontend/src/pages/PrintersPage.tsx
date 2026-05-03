@@ -978,7 +978,7 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-4 gap-y-2 text-sm">
+    <div className="mt-1 flex flex-wrap items-center gap-4 gap-y-2 text-bambu-gray">
       {badges.map(({ count, dot, label }) => count > 0 && (
         <div key={label} className="flex items-center gap-1.5">
           <div className={`w-2 h-2 rounded-full ${dot}`} />

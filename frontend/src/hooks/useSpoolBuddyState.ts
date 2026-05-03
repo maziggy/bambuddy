@@ -3,6 +3,7 @@ import { useEffect, useReducer, useCallback } from 'react';
 export interface MatchedSpool {
   id: number;
   tag_uid: string;
+  tag_uid_2: string | null;
   material: string;
   subtype: string | null;
   color_name: string | null;
@@ -124,6 +125,7 @@ export function useSpoolBuddyState() {
         spool: {
           id: spool.id,
           tag_uid: detail.tag_uid ?? detail.data?.tag_uid ?? '',
+          tag_uid_2: spool.tag_uid_2 ?? null,
           material: spool.material ?? '',
           subtype: spool.subtype ?? null,
           color_name: spool.color_name ?? null,

@@ -323,6 +323,7 @@ async def nfc_tag_scanned(
                 "tray_uuid": req.tray_uuid,
                 "spool": {
                     "id": spool.id,
+                    "tag_uid_2": spool.tag_uid_2,
                     "material": spool.material,
                     "subtype": spool.subtype,
                     "color_name": spool.color_name,

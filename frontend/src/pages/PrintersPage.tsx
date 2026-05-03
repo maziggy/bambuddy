@@ -6737,7 +6737,7 @@ export function PrintersPage() {
               />
               <button
                 onClick={toggleSortDirection}
-                className="p-1.5 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+                className="h-9 px-3 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white transition-colors flex items-center justify-center"
                 title={sortAsc ? t('printers.sort.descending') : t('printers.sort.ascending')}
               >
                 {sortAsc ? (

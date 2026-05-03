@@ -189,6 +189,7 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
         rgba={spool.rgba}
         extraColors={spool.extra_colors}
         effectType={spool.effect_type}
+        effectSize="table"
         subtype={spool.subtype}
       />
     </div>
@@ -1300,6 +1301,7 @@ function InventoryPage() {
                     extraColors: rep.extra_colors,
                     effectType: rep.effect_type,
                     subtype: rep.subtype,
+                    effectSize: 'groupheader',
                   });
                   const isExpanded = expandedGroups.has(key);
                   return (
@@ -1682,6 +1684,7 @@ function SpoolCard({
     extraColors: spool.extra_colors,
     effectType: spool.effect_type,
     subtype: spool.subtype,
+    effectSize: 'card',
   });
   return (
     <div

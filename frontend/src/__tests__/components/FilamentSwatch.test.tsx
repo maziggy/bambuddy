@@ -192,12 +192,11 @@ describe('dual-color / tri-color hard-split bars (#1154 follow-up)', () => {
 });
 
 describe('Sparkle prominence + checkerboard density (#1154 follow-up cosmetic)', () => {
-  it('renders Sparkle with at least 10 distinct dots so it reads on card-sized swatches', () => {
+  it('renders dense sparkle on card preset (at least 10 dots)', () => {
     // The original Sparkle pattern was 4 dots — too subtle on a 200×60px
-    // banner. The fix bumps it to 13 mixed-size flecks. Pin the contract
-    // at "at least 10" so future tweaks have headroom without the test
-    // breaking on every adjustment.
-    render(<FilamentSwatch rgba="ff0000ff" effectType="sparkle" />);
+    // banner. Now we use situation-aware dot counts: more dots for larger presets. 
+    // Verify the card preset produces a dense pattern with at least 10 dots.
+    render(<FilamentSwatch rgba="ff0000ff" effectType="sparkle" effectSize="card" />);
     const el = screen.getByTestId('filament-swatch');
     const radialCount = (el.style.backgroundImage.match(/radial-gradient/g) ?? []).length;
     expect(radialCount).toBeGreaterThanOrEqual(10);
@@ -213,6 +212,61 @@ describe('Sparkle prominence + checkerboard density (#1154 follow-up cosmetic)',
     // Last layer is the checker; should be a fixed pixel tile, not 'cover'.
     expect(sizes[sizes.length - 1]).toMatch(/^\d+px(\s+\d+px)?$/);
     expect(sizes[sizes.length - 1]).not.toContain('cover');
+  });
+
+  it('limits sparkle dot count per size preset (table/card/bar)', () => {
+    const tableBg = buildFilamentBackground({
+      rgba: 'ff0000ff',
+      effectType: 'sparkle',
+      effectSize: 'table',
+    });
+    const cardBg = buildFilamentBackground({
+      rgba: 'ff0000ff',
+      effectType: 'sparkle',
+      effectSize: 'card',
+    });
+    const barBg = buildFilamentBackground({
+      rgba: 'ff0000ff',
+      effectType: 'sparkle',
+      effectSize: 'bar',
+    });
+
+    const countRadial = (css: string) => (css.match(/radial-gradient/g) ?? []).length;
+    expect(countRadial(tableBg.backgroundImage)).toBe(4);
+    expect(countRadial(cardBg.backgroundImage)).toBe(39);
+    expect(countRadial(barBg.backgroundImage)).toBe(19);
+  });
+
+  it('scales sparkle dot radii by size preset while keeping seeded output deterministic', () => {
+    const tableBg = buildFilamentBackground({
+      rgba: 'ff0000ff',
+      effectType: 'sparkle',
+      effectSize: 'table',
+    });
+    const barBg = buildFilamentBackground({
+      rgba: 'ff0000ff',
+      effectType: 'sparkle',
+      effectSize: 'bar',
+    });
+
+    const tableBgRepeat = buildFilamentBackground({
+      rgba: 'ff0000ff',
+      effectType: 'sparkle',
+      effectSize: 'table',
+    });
+
+    // Same seed + same preset must produce byte-identical overlay output.
+    expect(tableBg.backgroundImage).toBe(tableBgRepeat.backgroundImage);
+
+    // Radius grows for bar preset, preventing sparse-looking large banners.
+    // Extract the first radius from each CSS string by looking for "0 Xpx, transparent Ypx"
+    const tableR = tableBg.backgroundImage.match(/0[ ]+(\d+\.?\d*)px[,][ ]*transparent[ ]+(\d+\.?\d*)px/);
+    const barR = barBg.backgroundImage.match(/0[ ]+(\d+\.?\d*)px[,][ ]*transparent[ ]+(\d+\.?\d*)px/);
+    if (!tableR || !barR) {
+      throw new Error(`Failed to extract radii: tableR=${tableR}, barR=${barR}`);
+    }
+    expect(Number(tableR[1])).toBeLessThan(Number(barR[1]));
+    expect(Number(tableR[2])).toBeLessThan(Number(barR[2]));
   });
 });
 

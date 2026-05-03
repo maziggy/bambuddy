@@ -2,10 +2,11 @@ import React, { useMemo } from 'react';
 import {
   CHECKERBOARD_BG,
   CHECKERBOARD_TILE_SIZE,
-  EFFECT_OVERLAYS,
   buildColorLayer,
   parseStops,
+  resolveEffectOverlay,
   type FilamentEffect,
+  type SwatchType,
 } from './filamentSwatchHelpers';
 
 /** Shared filament-colour swatch. See `filamentSwatchHelpers.ts` for the
@@ -28,6 +29,8 @@ export interface FilamentSwatchProps {
   style?: React.CSSProperties;
   /** Native title attribute for hover tooltip. */
   title?: string;
+  /** Tune effect appearance based on target div size. */
+  effectSize?: SwatchType;
 }
 
 export function FilamentSwatch({
@@ -39,18 +42,17 @@ export function FilamentSwatch({
   shape = 'circle',
   style,
   title,
+  effectSize: effectSize,
 }: FilamentSwatchProps) {
   const stops = useMemo(() => parseStops(extraColors), [extraColors]);
   const colorLayer = useMemo(
     () => buildColorLayer(rgba, stops, subtype, effectType),
     [rgba, stops, subtype, effectType],
   );
-
-  const effectKey =
-    typeof effectType === 'string' && effectType in EFFECT_OVERLAYS
-      ? (effectType as FilamentEffect)
+  const effectLayer =
+    typeof effectType === 'string'
+      ? resolveEffectOverlay(effectType, `${rgba ?? ''}|${extraColors ?? ''}|${subtype ?? ''}|${effectType ?? ''}`, effectSize)
       : null;
-  const effectLayer = effectKey ? EFFECT_OVERLAYS[effectKey] ?? null : null;
 
   // Layer order (top → bottom): effect overlay → colour layer → checkerboard.
   // Per-layer background-size: 'cover' on the painted layers, fixed tile on
@@ -58,7 +60,12 @@ export function FilamentSwatch({
   // (a card-sized swatch with `cover` checker would render only 4 huge
   // cells; #1154 follow-up).
   const layers: { image: string; size: string }[] = [];
-  if (effectLayer) layers.push({ image: effectLayer, size: 'cover' });
+  if (effectLayer) {
+    const effectImages = Array.isArray(effectLayer) ? effectLayer : [effectLayer];
+    effectImages.forEach((image) => {
+      layers.push({ image, size: 'cover' });
+    });
+  }
   layers.push({ image: colorLayer, size: 'cover' });
   layers.push({ image: CHECKERBOARD_BG, size: CHECKERBOARD_TILE_SIZE });
   const backgroundImage = layers.map((l) => l.image).join(', ');

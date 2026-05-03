@@ -1,3 +1,5 @@
+import randomSeed from 'random-seed';
+
 /* Enhanced filament-colour rendering helpers (#1154).
  *
  * Pure (non-component) exports that drive `<FilamentSwatch>` and any caller
@@ -36,6 +38,22 @@ export type FilamentEffect =
   | 'dual-color'
   | 'tri-color'
   | 'multicolor';
+
+/** Intended target swatch type for effect rendering. */
+export type SwatchType = 'table' | 'preview' | 'card' | 'bar' | 'groupheader';
+export type EffectLayer = string | string[];
+
+/** Presets for the different swatch types */
+export const SWATCH_TYPE_PRESETS: Readonly<Record<SwatchType, {
+  dotCount: number;
+  dotScale: number;
+}>> = {
+  table: { dotCount: 5, dotScale: 1 },
+  preview: { dotCount: 8, dotScale: 1.5 },
+  card: { dotCount: 40, dotScale: 2 },
+  bar: { dotCount: 20, dotScale: 2 },
+  groupheader: { dotCount: 80, dotScale: 2 },
+};
 
 /** Public list of all known effect/variant values, in display order. Shared
  *  by the spool form's ColorSection dropdown and the colour-catalog editor
@@ -84,48 +102,46 @@ export const CHECKERBOARD_TILE_SIZE = '12px 12px';
  *  an overlay, just sit in the data. `multicolor` is special: its visual
  *  effect is to switch the colour layer to a conic-gradient (see
  *  `buildColorLayer`), not to add an overlay layer. */
-export const EFFECT_OVERLAYS: Partial<Record<FilamentEffect, string>> = {
-  // Sparkle: bright flecks scattered across the swatch. The original 4-dot
-  // pattern was too subtle on card-sized swatches (#1154 follow-up); 13
-  // dots in mixed sizes (1px / 1.5px / 2px) and opacities give depth and
-  // make the variant clearly distinguishable from solid + multicolor.
-  sparkle:
-    'radial-gradient(circle at 12% 18%, rgba(255,255,255,0.95) 0 1.5px, transparent 2px), ' +
-    'radial-gradient(circle at 28% 42%, rgba(255,255,255,0.85) 0 1px, transparent 1.5px), ' +
-    'radial-gradient(circle at 38% 78%, rgba(255,255,255,0.95) 0 1.5px, transparent 2px), ' +
-    'radial-gradient(circle at 52% 12%, rgba(255,255,255,0.80) 0 1px, transparent 1.5px), ' +
-    'radial-gradient(circle at 58% 55%, rgba(255,255,255,1) 0 2px, transparent 2.5px), ' +
-    'radial-gradient(circle at 68% 28%, rgba(255,255,255,0.75) 0 1px, transparent 1.5px), ' +
-    'radial-gradient(circle at 75% 88%, rgba(255,255,255,0.85) 0 1px, transparent 1.5px), ' +
-    'radial-gradient(circle at 82% 48%, rgba(255,255,255,0.95) 0 1.5px, transparent 2px), ' +
-    'radial-gradient(circle at 88% 18%, rgba(255,255,255,0.80) 0 1px, transparent 1.5px), ' +
-    'radial-gradient(circle at 92% 70%, rgba(255,255,255,0.85) 0 1px, transparent 1.5px), ' +
-    'radial-gradient(circle at 18% 62%, rgba(255,255,255,0.75) 0 1px, transparent 1.5px), ' +
-    'radial-gradient(circle at 45% 32%, rgba(255,255,255,0.65) 0 0.8px, transparent 1.2px), ' +
-    'radial-gradient(circle at 65% 72%, rgba(255,255,255,0.65) 0 0.8px, transparent 1.2px)',
+export const EFFECT_OVERLAYS: Partial<
+  Record<FilamentEffect, (effectSeed?: string, effectSize?: SwatchType) => EffectLayer>
+> = {
+  // Sparkle: bright flecks — positions seeded from spoolId so each spool
+  // has its own unique, but always stable, sparkle pattern.
+  sparkle: (spoolSeed = '', effectSize = 'table') => {
+    const rand = randomSeed.create(spoolSeed+effectSize);
+    const preset = SWATCH_TYPE_PRESETS[effectSize] ?? SWATCH_TYPE_PRESETS.table;
+    const sparks: string[] = [];
+    for (let i = 1; i < preset.dotCount; i++) {
+      const x = rand.intBetween(1, 99);
+      const y = rand.intBetween(1, 99);
+      const s = rand.floatBetween(1.0, preset.dotScale);
+      sparks.push(`radial-gradient(circle at ${x}% ${y}%, rgba(255,248,220,0.9) 0 ${s/2}px, transparent ${s}px)`);
+    }
+    return sparks;
+  },
   // Wood: subtle horizontal banding to mimic grain.
-  wood:
+  wood: () =>
     'repeating-linear-gradient(90deg, ' +
     'rgba(0,0,0,0.18) 0 1px, transparent 1px 6px, ' +
     'rgba(0,0,0,0.08) 6px 7px, transparent 7px 12px)',
   // Marble: soft diagonal swirls.
-  marble:
+  marble: () =>
     'repeating-linear-gradient(135deg, rgba(255,255,255,0.18) 0 2px, transparent 2px 8px), ' +
     'repeating-linear-gradient(45deg, rgba(0,0,0,0.10) 0 1px, transparent 1px 7px)',
   // Glow: bright center fade — visual hint for glow-in-the-dark filaments.
-  glow:
+  glow: () =>
     'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 70%)',
   // Matte: very subtle inset shadow to flatten the highlight.
-  matte:
+  matte: () =>
     'linear-gradient(180deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.10) 100%)',
   // Silk / Galaxy: diagonal sheen to suggest the lustrous finish those
   // filaments have. Galaxy uses a slightly stronger highlight.
-  silk:
+  silk: () =>
     'linear-gradient(110deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.30) 50%, rgba(255,255,255,0) 70%)',
-  galaxy:
+  galaxy: () =>
     'linear-gradient(110deg, rgba(255,255,255,0) 25%, rgba(255,255,255,0.40) 50%, rgba(255,255,255,0) 75%)',
   // Metal: brushed-metal look via tight horizontal striations + soft sheen.
-  metal:
+  metal: () =>
     'repeating-linear-gradient(90deg, rgba(255,255,255,0.10) 0 1px, transparent 1px 3px), ' +
     'linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(0,0,0,0.18) 100%)',
 };
@@ -194,6 +210,16 @@ export function buildColorLayer(
   return `linear-gradient(135deg, ${allStops.join(', ')})`;
 }
 
+/** Resolve the CSS overlay string for an effect key. */
+export function resolveEffectOverlay(
+  effectKey: string,
+  effectSeed?: string,
+  effectSize?: SwatchType,
+): EffectLayer | null {
+  const fn = EFFECT_OVERLAYS[effectKey as FilamentEffect];
+  return fn ? fn(effectSeed, effectSize) : null;
+}
+
 /** Public helper: produce a CSS background-image value (list of layered
  *  <image>s) for a filament, for callers that want to paint a banner or
  *  large area instead of using the swatch element. Returns a
@@ -207,21 +233,26 @@ export function buildFilamentBackground(opts: {
   extraColors?: string | null;
   effectType?: FilamentEffect | string | null;
   subtype?: string | null;
+  effectSize?: SwatchType;
 }): { backgroundImage: string; backgroundSize: string } {
   const stops = parseStops(opts.extraColors);
   const colorLayer = buildColorLayer(opts.rgba, stops, opts.subtype, opts.effectType);
-  const effectKey =
-    typeof opts.effectType === 'string' && opts.effectType in EFFECT_OVERLAYS
-      ? (opts.effectType as FilamentEffect)
+  const effectSeed = `${opts.rgba ?? ''}|${opts.extraColors ?? ''}|${opts.subtype ?? ''}|${opts.effectType ?? ''}`;
+  const effectLayer =
+    typeof opts.effectType === 'string'
+      ? resolveEffectOverlay(opts.effectType, effectSeed, opts.effectSize)
       : null;
-  const effectLayer = effectKey ? EFFECT_OVERLAYS[effectKey] ?? null : null;
-
   // Layer order (top → bottom): effect overlay → colour layer → checkerboard.
   // Per-layer background-size: 'cover' on the painted layers (so they fill
   // the element) and the fixed tile size on the checkerboard so the cell
   // count scales with the element rather than the element scaling the cells.
   const layers: { image: string; size: string }[] = [];
-  if (effectLayer) layers.push({ image: effectLayer, size: 'cover' });
+  if (effectLayer) {
+    const effectImages = Array.isArray(effectLayer) ? effectLayer : [effectLayer];
+    effectImages.forEach((image) => {
+      layers.push({ image, size: 'cover' });
+    });
+  }
   layers.push({ image: colorLayer, size: 'cover' });
   layers.push({ image: CHECKERBOARD_BG, size: CHECKERBOARD_TILE_SIZE });
 

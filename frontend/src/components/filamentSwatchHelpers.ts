@@ -94,7 +94,7 @@ export const FILAMENT_EFFECT_OPTIONS: ReadonlyArray<{
 // follow-up reporter feedback). Per-layer sizing is supported by every
 // modern browser via comma-separated ``background-size``.
 export const CHECKERBOARD_BG =
-  'repeating-conic-gradient(#cbcbcb 0% 25%, #f5f5f5 0% 50%)';
+  'repeating-conic-gradient( #979797 0% 25%, #f5f5f5 0% 50%)';
 export const CHECKERBOARD_TILE_SIZE = '12px 12px';
 
 /** Optional CSS overlay layer for variants that have a visual treatment.
@@ -190,7 +190,15 @@ export function buildColorLayer(
   const subtypeLower = (subtype ?? '').toLowerCase();
   const effectLower = (effectType ?? '').toLowerCase();
   if (subtypeLower === 'multicolor' || effectLower === 'multicolor') {
-    return `conic-gradient(from 0deg, ${allStops.join(', ')}, ${allStops[0]})`;
+    const n = allStops.length;
+    const segments = allStops
+      .map((c, i) => {
+        const start = ((i / n) * 360).toFixed(3);
+        const end = (((i + 1) / n) * 360).toFixed(3);
+        return `${c} ${start}deg ${end}deg`;
+      })
+      .join(', ');
+    return `conic-gradient(from 0deg, ${segments})`;
   }
   if (effectLower === 'dual-color' || effectLower === 'tri-color') {
     // Equal-width hard-split bars: each stop occupies its own contiguous

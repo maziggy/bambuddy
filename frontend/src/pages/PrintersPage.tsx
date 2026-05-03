@@ -6693,10 +6693,10 @@ export function PrintersPage() {
           </h1>
           <StatusSummaryBar printers={printers} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Only show search bar when printers exist */}
           {printers && printers.length > 0 && (
-            <div className="relative flex-1 min-w-0">
+            <div className="relative flex-[1_1_280px] min-w-[220px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50" />
               <input
                 type="search"
@@ -6722,12 +6722,12 @@ export function PrintersPage() {
               )}
             </div>
           )}
-          <div className="flex items-center justify-end gap-2 flex-nowrap ml-auto [&>*]:shrink-0">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:justify-end [&>*]:shrink-0">
             {printers && printers.length > 0 && (
-              <div className="w-px h-6 bg-bambu-dark-tertiary" />
+              <div className="h-6 w-px bg-bambu-dark-tertiary" />
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {/* Status filter */}
               {printers && printers.length > 0 && (
                 <ToolbarDropdown
@@ -6771,9 +6771,9 @@ export function PrintersPage() {
               </button>
             </div>
 
-            <div className="w-px h-6 bg-bambu-dark-tertiary" />
+            <div className="h-6 w-px bg-bambu-dark-tertiary" />
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {/* Sort dropdown */}
               <div className="flex items-center gap-1">
                 <ToolbarDropdown<SortOption>
@@ -6829,77 +6829,79 @@ export function PrintersPage() {
               </div>
             </div>
 
-            <div className="w-px h-6 bg-bambu-dark-tertiary" />
+            <div className="h-6 w-px bg-bambu-dark-tertiary" />
 
-            {/* Bulk select toggle */}
-            <button
-              onClick={() => {
-                if (selectionMode) clearSelection();
-                else setIsSelectionMode(true);
-              }}
-              className={`h-8 px-2 rounded-lg border transition-colors ${
-                selectionMode
-                  ? 'bg-bambu-green border-bambu-green text-white'
-                  : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
-              }`}
-              title={t('printers.bulk.select')}
-              disabled={!hasPermission('printers:control')}
-            >
-              <CheckSquare className="w-4 h-4" />
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Bulk select toggle */}
+              <button
+                onClick={() => {
+                  if (selectionMode) clearSelection();
+                  else setIsSelectionMode(true);
+                }}
+                className={`h-8 px-2 rounded-lg border transition-colors ${
+                  selectionMode
+                    ? 'bg-bambu-green border-bambu-green text-white'
+                    : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
+                }`}
+                title={t('printers.bulk.select')}
+                disabled={!hasPermission('printers:control')}
+              >
+                <CheckSquare className="w-4 h-4" />
+              </button>
 
-            {/* Power dropdown for offline printers with smart plugs */}
-            {hideDisconnected && Object.keys(smartPlugByPrinter).length > 0 && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowPowerDropdown(!showPowerDropdown)}
-                  className="h-8 flex items-center gap-1.5 px-2 text-sm bg-white dark:bg-bambu-dark-secondary border border-gray-200 dark:border-bambu-dark-tertiary rounded-lg text-gray-600 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white hover:border-bambu-green transition-colors"
-                >
-                  <Power className="w-4 h-4" />
-                  {t('printers.powerOn')}
-                  <ChevronDown className={`w-3 h-3 transition-transform ${showPowerDropdown ? 'rotate-180' : ''}`} />
-                </button>
-                {showPowerDropdown && (
-                  <>
-                    {/* Backdrop to close dropdown */}
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setShowPowerDropdown(false)}
-                    />
-                    <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-bambu-dark-secondary border border-gray-200 dark:border-bambu-dark-tertiary rounded-lg shadow-lg z-20 py-1">
-                      <div className="px-3 py-2 text-xs text-gray-500 dark:text-bambu-gray border-b border-gray-200 dark:border-bambu-dark-tertiary">
-                        {t('printers.offlinePrintersWithPlugs')}
-                      </div>
-                      {printers?.filter(p => smartPlugByPrinter[p.id]).map(printer => (
-                        <PowerDropdownItem
-                          key={printer.id}
-                          printer={printer}
-                          plug={smartPlugByPrinter[printer.id]}
-                          onPowerOn={(plugId) => {
-                            setPoweringOn(plugId);
-                            powerOnMutation.mutate(plugId);
-                          }}
-                          isPowering={poweringOn === smartPlugByPrinter[printer.id]?.id}
-                        />
-                      ))}
-                      {printers?.filter(p => smartPlugByPrinter[p.id]).length === 0 && (
-                        <div className="px-3 py-2 text-sm text-bambu-gray">
-                          No printers with smart plugs
+              {/* Power dropdown for offline printers with smart plugs */}
+              {hideDisconnected && Object.keys(smartPlugByPrinter).length > 0 && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowPowerDropdown(!showPowerDropdown)}
+                    className="h-8 flex items-center gap-1.5 px-2 text-sm bg-white dark:bg-bambu-dark-secondary border border-gray-200 dark:border-bambu-dark-tertiary rounded-lg text-gray-600 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white hover:border-bambu-green transition-colors"
+                  >
+                    <Power className="w-4 h-4" />
+                    {t('printers.powerOn')}
+                    <ChevronDown className={`w-3 h-3 transition-transform ${showPowerDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+                  {showPowerDropdown && (
+                    <>
+                      {/* Backdrop to close dropdown */}
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowPowerDropdown(false)}
+                      />
+                      <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-bambu-dark-secondary border border-gray-200 dark:border-bambu-dark-tertiary rounded-lg shadow-lg z-20 py-1">
+                        <div className="px-3 py-2 text-xs text-gray-500 dark:text-bambu-gray border-b border-gray-200 dark:border-bambu-dark-tertiary">
+                          {t('printers.offlinePrintersWithPlugs')}
                         </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            <Button
-              onClick={() => setShowAddModal(true)}
-              disabled={!hasPermission('printers:create')}
-              title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
-              className="h-8 min-h-0 px-2 py-0"
-            >
-              {t('printers.addPrinter')}
-            </Button>
+                        {printers?.filter(p => smartPlugByPrinter[p.id]).map(printer => (
+                          <PowerDropdownItem
+                            key={printer.id}
+                            printer={printer}
+                            plug={smartPlugByPrinter[printer.id]}
+                            onPowerOn={(plugId) => {
+                              setPoweringOn(plugId);
+                              powerOnMutation.mutate(plugId);
+                            }}
+                            isPowering={poweringOn === smartPlugByPrinter[printer.id]?.id}
+                          />
+                        ))}
+                        {printers?.filter(p => smartPlugByPrinter[p.id]).length === 0 && (
+                          <div className="px-3 py-2 text-sm text-bambu-gray">
+                            No printers with smart plugs
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              <Button
+                onClick={() => setShowAddModal(true)}
+                disabled={!hasPermission('printers:create')}
+                title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
+                className="!h-8 !min-h-8 px-2 py-0"
+              >
+                {t('printers.addPrinter')}
+              </Button>
+            </div>
           </div>
         </div>
       </div>

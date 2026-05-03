@@ -6999,6 +6999,8 @@ export function PrintersPage() {
           )}
           <div
             ref={expandedToolbarControlsRef}
+            aria-hidden={compactToolbar}
+            inert={compactToolbar}
             className={`${compactToolbar ? 'absolute -left-[9999px] top-0 flex w-max pointer-events-none opacity-0' : 'flex'} ml-auto items-center justify-end gap-2 flex-nowrap [&>*]:shrink-0`}
           >
             <div className="h-6 w-px bg-bambu-dark-tertiary" />

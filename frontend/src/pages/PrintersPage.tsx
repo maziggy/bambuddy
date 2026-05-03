@@ -1015,6 +1015,60 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
 type SortOption = 'name' | 'status' | 'model' | 'location';
 type ViewMode = 'expanded' | 'compact';
 
+type ToolbarDropdownOption<T extends string> = {
+  value: T;
+  label: string;
+};
+
+function ToolbarDropdown<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: ToolbarDropdownOption<T>[];
+  onChange: (value: T) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(option => option.value === value) ?? options[0];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(open => !open)}
+        className="h-9 min-w-32 px-3 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white text-sm font-medium transition-colors hover:bg-bambu-dark-tertiary focus:outline-none focus:border-bambu-green flex items-center justify-between gap-2"
+      >
+        <span className="truncate">{selectedOption?.label}</span>
+        <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="absolute left-0 top-full z-20 mt-1 min-w-full rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary py-1 shadow-xl">
+            {options.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setIsOpen(false);
+                }}
+                className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-bambu-dark-tertiary ${
+                  option.value === value ? 'text-bambu-green' : 'text-white'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const STATUS_GROUP_ORDER: string[] = ['error', 'printing', 'paused', 'finished', 'idle', 'offline'];
 
 const STATUS_GROUP_META: Record<string, { labelKey: string; dot: string }> = {
@@ -6668,19 +6722,19 @@ export function PrintersPage() {
               )}
             </div>
           )}
-          <div className="flex items-center justify-end gap-2 sm:gap-3 flex-nowrap overflow-x-auto pb-1 ml-auto [&>*]:shrink-0">
+          <div className="flex items-center justify-end gap-2 sm:gap-3 flex-nowrap ml-auto [&>*]:shrink-0">
             {/* Sort dropdown */}
             <div className="flex items-center gap-1">
-              <select
+              <ToolbarDropdown<SortOption>
                 value={sortBy}
-                onChange={(e) => handleSortChange(e.target.value as SortOption)}
-                className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1.5 text-white focus:border-bambu-green focus:outline-none"
-              >
-                <option value="name">{t('printers.sort.name')}</option>
-                <option value="status">{t('printers.sort.status')}</option>
-                <option value="model">{t('printers.sort.model')}</option>
-                <option value="location">{t('printers.sort.location')}</option>
-              </select>
+                onChange={handleSortChange}
+                options={[
+                  { value: 'name', label: t('printers.sort.name') },
+                  { value: 'status', label: t('printers.sort.status') },
+                  { value: 'model', label: t('printers.sort.model') },
+                  { value: 'location', label: t('printers.sort.location') },
+                ]}
+              />
               <button
                 onClick={toggleSortDirection}
                 className="p-1.5 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
@@ -6694,36 +6748,34 @@ export function PrintersPage() {
               </button>
             </div>
 
-          {/* Status filter */}
-          {printers && printers.length > 0 && (
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1.5 text-white focus:border-bambu-green focus:outline-none"
-            >
-              <option value="all">{t('printers.filter.allStatuses')}</option>
-              <option value="printing">{t('printers.status.printing')}</option>
-              <option value="paused">{t('printers.status.paused')}</option>
-              <option value="idle">{t('printers.status.idle')}</option>
-              <option value="finished">{t('printers.status.finished')}</option>
-              <option value="error">{t('printers.status.error')}</option>
-              <option value="offline">{t('printers.status.offline')}</option>
-            </select>
-          )}
+            {/* Status filter */}
+            {printers && printers.length > 0 && (
+              <ToolbarDropdown
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={[
+                  { value: 'all', label: t('printers.filter.allStatuses') },
+                  { value: 'printing', label: t('printers.status.printing') },
+                  { value: 'paused', label: t('printers.status.paused') },
+                  { value: 'idle', label: t('printers.status.idle') },
+                  { value: 'finished', label: t('printers.status.finished') },
+                  { value: 'error', label: t('printers.status.error') },
+                  { value: 'offline', label: t('printers.status.offline') },
+                ]}
+              />
+            )}
 
-          {/* Location filter — only shown when at least one printer has a location */}
-          {printers && printers.length > 0 && availableLocations.length > 0 && (
-            <select
-              value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
-              className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1.5 text-white focus:border-bambu-green focus:outline-none"
-            >
-              <option value="all">{t('printers.filter.allLocations')}</option>
-              {availableLocations.map(loc => (
-                <option key={loc} value={loc}>{loc}</option>
-              ))}
-            </select>
-          )}
+            {/* Location filter — only shown when at least one printer has a location */}
+            {printers && printers.length > 0 && availableLocations.length > 0 && (
+              <ToolbarDropdown
+                value={locationFilter}
+                onChange={setLocationFilter}
+                options={[
+                  { value: 'all', label: t('printers.filter.allLocations') },
+                  ...availableLocations.map(loc => ({ value: loc, label: loc })),
+                ]}
+              />
+            )}
 
           {/* Card size selector */}
           <div className="flex h-9 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">

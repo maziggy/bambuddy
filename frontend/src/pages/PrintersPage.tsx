@@ -6631,16 +6631,18 @@ export function PrintersPage() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="space-y-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <PrinterIcon className="w-7 h-7 text-bambu-green" />
             {t('printers.title')}
           </h1>
           <StatusSummaryBar printers={printers} />
+        </div>
+        <div className="flex items-center gap-3">
           {/* Only show search bar when printers exist */}
           {printers && printers.length > 0 && (
-            <div className="relative w-full sm:max-w-sm mt-3">
+            <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50" />
               <input
                 type="search"
@@ -6666,32 +6668,31 @@ export function PrintersPage() {
               )}
             </div>
           )}
-        </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* Sort dropdown */}
-          <div className="flex items-center gap-1">
-            <select
-              value={sortBy}
-              onChange={(e) => handleSortChange(e.target.value as SortOption)}
-              className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1.5 text-white focus:border-bambu-green focus:outline-none"
-            >
-              <option value="name">{t('printers.sort.name')}</option>
-              <option value="status">{t('printers.sort.status')}</option>
-              <option value="model">{t('printers.sort.model')}</option>
-              <option value="location">{t('printers.sort.location')}</option>
-            </select>
-            <button
-              onClick={toggleSortDirection}
-              className="p-1.5 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
-              title={sortAsc ? t('printers.sort.descending') : t('printers.sort.ascending')}
-            >
-              {sortAsc ? (
-                <ArrowUp className="w-4 h-4 text-bambu-gray" />
-              ) : (
-                <ArrowDown className="w-4 h-4 text-bambu-gray" />
-              )}
-            </button>
-          </div>
+          <div className="flex items-center justify-end gap-2 sm:gap-3 flex-nowrap overflow-x-auto pb-1 ml-auto [&>*]:shrink-0">
+            {/* Sort dropdown */}
+            <div className="flex items-center gap-1">
+              <select
+                value={sortBy}
+                onChange={(e) => handleSortChange(e.target.value as SortOption)}
+                className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1.5 text-white focus:border-bambu-green focus:outline-none"
+              >
+                <option value="name">{t('printers.sort.name')}</option>
+                <option value="status">{t('printers.sort.status')}</option>
+                <option value="model">{t('printers.sort.model')}</option>
+                <option value="location">{t('printers.sort.location')}</option>
+              </select>
+              <button
+                onClick={toggleSortDirection}
+                className="p-1.5 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+                title={sortAsc ? t('printers.sort.descending') : t('printers.sort.ascending')}
+              >
+                {sortAsc ? (
+                  <ArrowUp className="w-4 h-4 text-bambu-gray" />
+                ) : (
+                  <ArrowDown className="w-4 h-4 text-bambu-gray" />
+                )}
+              </button>
+            </div>
 
           {/* Status filter */}
           {printers && printers.length > 0 && (
@@ -6833,6 +6834,7 @@ export function PrintersPage() {
             <Plus className="w-4 h-4" />
             {t('printers.addPrinter')}
           </Button>
+          </div>
         </div>
       </div>
 

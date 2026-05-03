@@ -588,6 +588,7 @@ async def capture_camera_image(
     external_camera_url: str | None = None,
     external_camera_type: str | None = None,
     use_external: bool = False,
+    external_camera_snapshot_url: str | None = None,
 ) -> tuple[bytes | None, str]:
     """Capture an image from the printer camera.
 
@@ -605,7 +606,11 @@ async def capture_camera_image(
         try:
             from backend.app.services.external_camera import capture_frame
 
-            image_data = await capture_frame(external_camera_url, external_camera_type)
+            image_data = await capture_frame(
+                external_camera_url,
+                external_camera_type,
+                snapshot_url=external_camera_snapshot_url,
+            )
             if image_data:
                 camera_source = "external"
                 logger.debug("Captured frame from external camera for printer %s", printer_id)
@@ -665,6 +670,7 @@ async def check_plate_empty(
     external_camera_type: str | None = None,
     use_external: bool = False,
     roi: tuple[float, float, float, float] | None = None,
+    external_camera_snapshot_url: str | None = None,
 ) -> PlateDetectionResult:
     """Check if the build plate is empty for a printer.
 
@@ -692,7 +698,14 @@ async def check_plate_empty(
         )
 
     image_data, camera_source = await capture_camera_image(
-        printer_id, ip_address, access_code, model, external_camera_url, external_camera_type, use_external
+        printer_id,
+        ip_address,
+        access_code,
+        model,
+        external_camera_url,
+        external_camera_type,
+        use_external,
+        external_camera_snapshot_url=external_camera_snapshot_url,
     )
 
     if image_data is None:
@@ -722,6 +735,7 @@ async def calibrate_plate(
     external_camera_url: str | None = None,
     external_camera_type: str | None = None,
     use_external: bool = False,
+    external_camera_snapshot_url: str | None = None,
 ) -> tuple[bool, str, int]:
     """Calibrate plate detection by capturing a reference image of the empty plate.
 
@@ -742,7 +756,14 @@ async def calibrate_plate(
         return False, "OpenCV not available - plate detection disabled", -1
 
     image_data, camera_source = await capture_camera_image(
-        printer_id, ip_address, access_code, model, external_camera_url, external_camera_type, use_external
+        printer_id,
+        ip_address,
+        access_code,
+        model,
+        external_camera_url,
+        external_camera_type,
+        use_external,
+        external_camera_snapshot_url=external_camera_snapshot_url,
     )
 
     if image_data is None:

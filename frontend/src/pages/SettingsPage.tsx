@@ -893,7 +893,7 @@ export function SettingsPage() {
   });
 
   const updatePrinterMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<{ external_camera_url: string | null; external_camera_type: string | null; external_camera_enabled: boolean; camera_rotation: number }> }) =>
+    mutationFn: ({ id, data }: { id: number; data: Partial<{ external_camera_url: string | null; external_camera_type: string | null; external_camera_enabled: boolean; external_camera_snapshot_url: string | null; camera_rotation: number }> }) =>
       api.updatePrinter(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['printers'] });
@@ -1116,19 +1116,30 @@ export function SettingsPage() {
   const [localCameraUrls, setLocalCameraUrls] = useState<Record<number, string>>({});
   const cameraUrlSaveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const initializedPrinterUrlsRef = useRef<Set<number>>(new Set());
+  const [localSnapshotUrls, setLocalSnapshotUrls] = useState<Record<number, string>>({});
+  const snapshotUrlSaveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const initializedPrinterSnapshotUrlsRef = useRef<Set<number>>(new Set());
 
   // Initialize local camera URLs from printer data
   useEffect(() => {
     if (printers) {
       const urls: Record<number, string> = {};
+      const snapUrls: Record<number, string> = {};
       printers.forEach(p => {
         if (p.external_camera_url && !initializedPrinterUrlsRef.current.has(p.id)) {
           urls[p.id] = p.external_camera_url;
           initializedPrinterUrlsRef.current.add(p.id);
         }
+        if (p.external_camera_snapshot_url && !initializedPrinterSnapshotUrlsRef.current.has(p.id)) {
+          snapUrls[p.id] = p.external_camera_snapshot_url;
+          initializedPrinterSnapshotUrlsRef.current.add(p.id);
+        }
       });
       if (Object.keys(urls).length > 0) {
         setLocalCameraUrls(prev => ({ ...prev, ...urls }));
+      }
+      if (Object.keys(snapUrls).length > 0) {
+        setLocalSnapshotUrls(prev => ({ ...prev, ...snapUrls }));
       }
     }
   }, [printers]);
@@ -1147,6 +1158,21 @@ export function SettingsPage() {
       updatePrinterMutation.mutate({
         id: printerId,
         data: { external_camera_url: url || null }
+      });
+    }, 800);
+  };
+
+  const handleSnapshotUrlChange = (printerId: number, url: string) => {
+    setLocalSnapshotUrls(prev => ({ ...prev, [printerId]: url }));
+
+    if (snapshotUrlSaveTimeoutRef.current[printerId]) {
+      clearTimeout(snapshotUrlSaveTimeoutRef.current[printerId]);
+    }
+
+    snapshotUrlSaveTimeoutRef.current[printerId] = setTimeout(() => {
+      updatePrinterMutation.mutate({
+        id: printerId,
+        data: { external_camera_snapshot_url: url || null }
       });
     }, 800);
   };
@@ -1910,6 +1936,35 @@ export function SettingsPage() {
                                     {extCameraTestResults[printer.id]?.error || t('settings.toast.connectionFailed')}
                                   </>
                                 )}
+                              </div>
+                            )}
+                            {(printer.external_camera_type === 'mjpeg' || printer.external_camera_type === 'rtsp' || printer.external_camera_type === 'usb') && (
+                              <div className="space-y-1">
+                                <label className="text-xs text-bambu-gray">{t('settings.cameraSnapshotUrl', 'Snapshot URL (optional)')}</label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    placeholder={t('settings.cameraSnapshotUrlPlaceholder', 'http://192.168.1.61:1984/api/frame.jpeg?src=printer')}
+                                    value={localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? ''}
+                                    onChange={(e) => handleSnapshotUrlChange(printer.id, e.target.value)}
+                                    className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => handleTestExternalCamera(printer.id, localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? '', 'snapshot')}
+                                    disabled={extCameraTestLoading[printer.id] || !(localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url)}
+                                  >
+                                    {extCameraTestLoading[printer.id] ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      t('settings.test')
+                                    )}
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-bambu-gray opacity-75">
+                                  {t('settings.cameraSnapshotUrlHelp', 'Single-frame URL used for notification thumbnails, finish photos, timelapse and plate detection. Leave blank to capture from the live stream above. Useful for go2rtc (/api/frame.jpeg) and IP cameras with a dedicated snapshot endpoint.')}
+                                </p>
                               </div>
                             )}
                             <div className="flex items-center gap-2">

@@ -218,7 +218,7 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
 }
 
 interface UnknownTagCardProps {
-  tagUid: string;
+  tagUid: string | null;
   scaleWeight: number | null;
   coreWeight?: number;
   onLinkSpool?: () => void;

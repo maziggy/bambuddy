@@ -7011,15 +7011,12 @@ export function PrintersPage() {
 
           {compactToolbar && (
             <div className="ml-auto flex items-center justify-end gap-1">
-              <div className="h-6 w-px bg-bambu-dark-tertiary" />
               <ToolbarMenu label={t('printers.toolbar.filters', 'Filters')} icon={<Filter className="w-4 h-4" />}>
                 <div className="flex w-48 flex-col gap-2">{renderFilterControls(true)}</div>
               </ToolbarMenu>
-              <div className="h-6 w-px bg-bambu-dark-tertiary" />
               <ToolbarMenu label={t('printers.toolbar.view', 'View')} icon={<SlidersHorizontal className="w-4 h-4" />}>
                 <div className="flex w-48 flex-col gap-2">{renderViewControls(true)}</div>
               </ToolbarMenu>
-              <div className="h-6 w-px bg-bambu-dark-tertiary" />
               <ToolbarMenu label={t('printers.toolbar.actions', 'Actions')} icon={<MoreHorizontal className="w-4 h-4" />}>
                 <div className="flex w-48 flex-col gap-2">{renderActionControls(true)}</div>
               </ToolbarMenu>

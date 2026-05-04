@@ -94,7 +94,7 @@ export const FILAMENT_EFFECT_OPTIONS: ReadonlyArray<{
 // follow-up reporter feedback). Per-layer sizing is supported by every
 // modern browser via comma-separated ``background-size``.
 export const CHECKERBOARD_BG =
-  'repeating-conic-gradient( #979797 0% 25%, #f5f5f5 0% 50%)';
+  'repeating-conic-gradient(#979797 0% 25%, #f5f5f5 0% 50%)';
 export const CHECKERBOARD_TILE_SIZE = '12px 12px';
 
 /** Optional CSS overlay layer for variants that have a visual treatment.
@@ -115,7 +115,8 @@ export const EFFECT_OVERLAYS: Partial<
       const x = rand.intBetween(1, 99);
       const y = rand.intBetween(1, 99);
       const s = rand.floatBetween(1.0, preset.dotScale);
-      sparks.push(`radial-gradient(circle at ${x}% ${y}%, rgba(255,248,220,0.9) 0 ${s/2}px, transparent ${s}px)`);
+      const a = rand.floatBetween(0.65, 1.0);
+      sparks.push(`radial-gradient(circle at ${x}% ${y}%, rgba(255,248,220,${a}) 0 ${s/2}px, transparent ${s}px)`);
     }
     return sparks;
   },

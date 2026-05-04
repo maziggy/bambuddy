@@ -232,9 +232,9 @@ describe('Sparkle prominence + checkerboard density (#1154 follow-up cosmetic)',
     });
 
     const countRadial = (css: string) => (css.match(/radial-gradient/g) ?? []).length;
-    expect(countRadial(tableBg.backgroundImage)).toBe(4);
-    expect(countRadial(cardBg.backgroundImage)).toBe(39);
-    expect(countRadial(barBg.backgroundImage)).toBe(19);
+    expect(countRadial(tableBg.backgroundImage)).toBe(5);
+    expect(countRadial(cardBg.backgroundImage)).toBe(40);
+    expect(countRadial(barBg.backgroundImage)).toBe(20);
   });
 
   it('scales sparkle dot radii by size preset while keeping seeded output deterministic', () => {

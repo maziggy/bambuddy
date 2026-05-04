@@ -105,13 +105,13 @@ export const CHECKERBOARD_TILE_SIZE = '12px 12px';
 export const EFFECT_OVERLAYS: Partial<
   Record<FilamentEffect, (effectSeed?: string, effectSize?: SwatchType) => EffectLayer>
 > = {
-  // Sparkle: bright flecks — positions seeded from spoolId so each spool
-  // has its own unique, but always stable, sparkle pattern.
+  // Sparkle: bright flecks — positions seeded from spool color+extracolors+subtype+effectType.
+  // to give identical spools the same sparkle pattern while different spools get different patterns. 
   sparkle: (spoolSeed = '', effectSize = 'table') => {
     const rand = randomSeed.create(spoolSeed+effectSize);
     const preset = SWATCH_TYPE_PRESETS[effectSize] ?? SWATCH_TYPE_PRESETS.table;
     const sparks: string[] = [];
-    for (let i = 1; i < preset.dotCount; i++) {
+    for (let i = 0; i < preset.dotCount; i++) {
       const x = rand.intBetween(1, 99);
       const y = rand.intBetween(1, 99);
       const s = rand.floatBetween(1.0, preset.dotScale);

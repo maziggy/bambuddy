@@ -261,8 +261,17 @@ describe('Sparkle prominence + checkerboard density (#1154 follow-up cosmetic)',
       effectSize: 'table',
     });
 
-    // Same seed + same preset must produce byte-identical overlay output.
+    const tableBgOther = buildFilamentBackground({
+      rgba: '00ff00ff',
+      effectType: 'sparkle',
+      effectSize: 'table',
+    });
+
+    // Same seed must produce byte-identical overlay output.
     expect(tableBg.backgroundImage).toBe(tableBgRepeat.backgroundImage);
+
+    // Different seeds must produce different overlay output.
+    expect(tableBg.backgroundImage).not.toBe(tableBgOther.backgroundImage);
 
     // Radius grows for bar preset, preventing sparse-looking large banners.
     // Extract the first radius from each CSS string by looking for "0 Xpx, transparent Ypx"

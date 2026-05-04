@@ -4095,7 +4095,7 @@ export default {
     },
     tailscaleDisabled: {
       title: 'Tailscale integration',
-      description: 'When enabled, uses Tailscale for trusted TLS certs. Disable to use self-signed cert only.',
+      description: 'Enable to mark this VP as exposed over Tailscale. Shows the host\'s Tailscale address so you know which IP to paste into the slicer. The CA-import step is unchanged — this toggle has no effect on certificates.',
     },
     setupRequired: {
       title: 'Setup Required',
@@ -4130,7 +4130,6 @@ export default {
     toast: {
       updated: 'Virtual printer settings updated',
       failedToUpdate: 'Failed to update settings',
-      tailscaleNotAvailable: 'Tailscale is not installed on this host. Install Tailscale first, then try again.',
       copyFailed: 'Failed to copy — try selecting the text manually',
       accessCodeRequired: 'Please set an access code first',
       targetPrinterRequired: 'Please select a target printer first',

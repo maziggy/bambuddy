@@ -358,6 +358,10 @@ class BambuMQTTClient:
         self._message_log: deque[MQTTLogEntry] = deque(maxlen=100)
         self._logging_enabled: bool = False
         self._last_message_time: float = 0.0  # Track when we last received a message
+        # Raw-message fan-out for VP MQTT bridge (non-proxy modes republish the
+        # printer's pushes verbatim to slicers connected to a virtual printer).
+        # Handlers receive (topic, payload_bytes) before JSON parsing.
+        self._raw_message_handlers: list[Callable[[str, bytes], None]] = []
         self._disconnection_event: threading.Event | None = None
         self._previous_ams_hash: str | None = None  # Track AMS changes
 
@@ -685,6 +689,15 @@ class BambuMQTTClient:
             self.on_state_change(self.state)
 
     def _on_message(self, client, userdata, msg):
+        for handler in self._raw_message_handlers:
+            try:
+                handler(msg.topic, msg.payload)
+            except Exception:
+                logger.exception(
+                    "[%s] raw-message handler crashed for topic=%s",
+                    self.serial_number,
+                    msg.topic,
+                )
         try:
             try:
                 raw = msg.payload.decode()
@@ -3535,6 +3548,39 @@ class BambuMQTTClient:
     def logging_enabled(self) -> bool:
         """Check if logging is enabled."""
         return self._logging_enabled
+
+    def register_raw_message_handler(self, handler: Callable[[str, bytes], None]) -> None:
+        """Register a handler invoked for every incoming MQTT message.
+
+        Used by the VP MQTT bridge to republish the printer's report pushes to
+        slicers connected to a virtual printer in non-proxy mode. Handlers run
+        on paho's network thread and must not block; exceptions are caught.
+        """
+        if handler not in self._raw_message_handlers:
+            self._raw_message_handlers.append(handler)
+
+    def unregister_raw_message_handler(self, handler: Callable[[str, bytes], None]) -> None:
+        """Unregister a previously-registered raw-message handler."""
+        try:
+            self._raw_message_handlers.remove(handler)
+        except ValueError:
+            pass
+
+    def publish_raw(self, topic: str, payload: bytes | str, qos: int = 1) -> bool:
+        """Publish a pre-formed payload directly to the printer's MQTT broker.
+
+        Used by the VP MQTT bridge to forward slicer-originated commands without
+        going through send_command's sequence-id mangling. Returns False if the
+        underlying paho client isn't ready.
+        """
+        if self._client is None:
+            return False
+        try:
+            info = self._client.publish(topic, payload, qos=qos)
+            return info.rc == mqtt.MQTT_ERR_SUCCESS
+        except Exception:
+            logger.exception("[%s] publish_raw failed for topic=%s", self.serial_number, topic)
+            return False
 
     def send_drying_command(
         self, ams_id: int, temp: int, duration: int, mode: int = 1, filament: str = "", rotate_tray: bool = False

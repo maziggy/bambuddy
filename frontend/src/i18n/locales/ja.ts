@@ -3679,7 +3679,7 @@ export default {
     branch: 'ブランチ',
     provider: 'Git Provider',
     providerGitHub: 'GitHub',
-	providerGitLab: 'GitLab',	
+	providerGitLab: 'GitLab',
 	providerGitea: 'Gitea',
     providerForgejo: 'Forgejo',
     manualOnly: '手動のみ',
@@ -4086,7 +4086,7 @@ export default {
     },
     tailscaleDisabled: {
       title: 'Tailscale統合',
-      description: '有効にすると、Tailscaleを使用して信頼できるTLS証明書を使用します。自己署名証明書のみを使用する場合は無効にします。',
+      description: 'Enable to mark this VP as exposed over Tailscale. Shows the host\'s Tailscale address so you know which IP to paste into the slicer. The CA-import step is unchanged — this toggle has no effect on certificates.',
     },
     setupRequired: {
       title: 'セットアップが必要です',
@@ -4115,7 +4115,6 @@ export default {
     toast: {
       updated: '仮想プリンター設定を更新しました',
       failedToUpdate: '設定の更新に失敗しました',
-      tailscaleNotAvailable: 'このホストにTailscaleがインストールされていません。先にTailscaleをインストールしてから再試行してください。',
       copyFailed: 'コピーに失敗しました — テキストを手動で選択してください',
       accessCodeRequired: '先にアクセスコードを設定してください',
       targetPrinterRequired: '先にターゲットプリンターを選択してください',

@@ -3667,7 +3667,7 @@ export default {
     branch: '分支',
     provider: 'Git Provider',
     providerGitHub: 'GitHub',
-	providerGitLab: 'GitLab',	
+	providerGitLab: 'GitLab',
 	providerGitea: 'Gitea',
     providerForgejo: 'Forgejo',
     manualOnly: '僅手動',
@@ -4074,7 +4074,7 @@ export default {
     },
     tailscaleDisabled: {
       title: 'Tailscale 整合',
-      description: '啟用後，使用 Tailscale 取得受信任的 TLS 憑證。停用則僅使用自簽憑證。',
+      description: 'Enable to mark this VP as exposed over Tailscale. Shows the host\'s Tailscale address so you know which IP to paste into the slicer. The CA-import step is unchanged — this toggle has no effect on certificates.',
     },
     setupRequired: {
       title: '需要設定',
@@ -4109,7 +4109,6 @@ export default {
     toast: {
       updated: '虛擬印表機設定已更新',
       failedToUpdate: '更新設定失敗',
-      tailscaleNotAvailable: '此主機上未安裝 Tailscale。請先安裝 Tailscale，然後重試。',
       copyFailed: '複製失敗 — 請手動選取文字',
       accessCodeRequired: '請先設定存取碼',
       targetPrinterRequired: '請先選擇目標印表機',

@@ -4,6 +4,7 @@ import base64
 import binascii
 import contextlib
 import hashlib
+import json
 import logging
 import os
 import re
@@ -2632,6 +2633,84 @@ def _strip_3mf_embedded_settings(zip_bytes: bytes) -> bytes:
     return dst.getvalue()
 
 
+# Keys in ``Metadata/project_settings.config`` that BambuStudio writes ``"-1"``
+# to when the user wants the value inherited from the parent process preset.
+# The CLI's ``StaticPrintConfig`` validator runs against the embedded settings
+# *before* ``--load-settings`` overrides apply, so a sentinel ``"-1"`` trips
+# the field's lower-bound range check and the CLI exits non-zero before our
+# profile triplet is ever consulted (#1201 — MakerWorld P2S models).
+#
+# Allowlisted (rather than "strip every '-1' value") because some fields
+# legitimately accept negative numbers (z_offset, translation values, etc.)
+# and a blanket strip would silently corrupt those.
+#
+# Add new entries here as more reports surface — the slicer's error message
+# names the offending field directly (`<field>: -1 not in range [...]`).
+_PROJECT_SETTINGS_SENTINEL_KEYS = frozenset(
+    {
+        # Reported in #1201 (MakerWorld P2S 3MFs).
+        "raft_first_layer_expansion",
+        "tree_support_wall_count",
+        # Cited in the strip-experiment comment block above as a known sentinel
+        # case from earlier reports.
+        "prime_tower_brim_width",
+    }
+)
+
+
+def _sanitize_project_settings_sentinels(zip_bytes: bytes) -> bytes:
+    """Strip ``"-1"`` inherit-from-parent sentinels from the 3MF's
+    ``Metadata/project_settings.config`` so the slicer CLI's range validator
+    accepts the file (#1201).
+
+    Removes only allowlisted keys (see ``_PROJECT_SETTINGS_SENTINEL_KEYS``)
+    when their value is exactly ``"-1"``. The rest of the config — and every
+    other entry in the zip — is preserved byte-for-byte. Unlike the earlier
+    full-strip experiment (see ``_strip_3mf_embedded_settings`` and the
+    cautionary comment in ``_run_slicer_with_fallback``) this leaves
+    ``StaticPrintConfig`` initialisation intact: the file is still present,
+    still parses, and the slicer falls back to the supplied
+    ``--load-settings`` value for the removed key.
+
+    Returns the original bytes unchanged when no sanitisation is needed
+    (input isn't a valid zip, no ``project_settings.config``, no allowlisted
+    sentinels present, or any other parse failure) so the caller can pass
+    the result on without further checks.
+    """
+    from io import BytesIO
+
+    try:
+        with zipfile.ZipFile(BytesIO(zip_bytes), "r") as zin:
+            if "Metadata/project_settings.config" not in zin.namelist():
+                return zip_bytes
+            try:
+                config = json.loads(zin.read("Metadata/project_settings.config").decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return zip_bytes
+            if not isinstance(config, dict):
+                return zip_bytes
+            removed = [key for key in _PROJECT_SETTINGS_SENTINEL_KEYS if config.get(key) == "-1"]
+            if not removed:
+                return zip_bytes
+            for key in removed:
+                config.pop(key, None)
+            patched = json.dumps(config)
+            logger.info(
+                "3MF sanitiser: removed sentinel '-1' for keys %s — slicer will use --load-settings defaults",
+                sorted(removed),
+            )
+            dst = BytesIO()
+            with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    if item.filename == "Metadata/project_settings.config":
+                        zout.writestr(item, patched)
+                    else:
+                        zout.writestr(item, zin.read(item.filename))
+            return dst.getvalue()
+    except (zipfile.BadZipFile, OSError):
+        return zip_bytes
+
+
 async def _run_slicer_with_fallback(
     db: AsyncSession,
     *,
@@ -2725,6 +2804,14 @@ async def _run_slicer_with_fallback(
     # the embedded plate / model definitions remain intact.
     is_3mf = model_filename.lower().endswith(".3mf")
     primary_bytes = model_bytes
+    if is_3mf:
+        # Strip "-1" inherit-from-parent sentinels from
+        # Metadata/project_settings.config so the CLI's StaticPrintConfig
+        # range validator accepts the file (#1201). Surgical — keeps the
+        # config present, just removes the offending keys; the supplied
+        # --load-settings (and the fallback's embedded values for keys we
+        # didn't touch) still drive the slice.
+        primary_bytes = _sanitize_project_settings_sentinels(primary_bytes)
 
     used_embedded_settings = False
     service = SlicerApiService(api_url)
@@ -2768,9 +2855,13 @@ async def _run_slicer_with_fallback(
             )
             # Forward the same request_id + callback so the toast's live
             # progress keeps updating across the fallback retry instead
-            # of going blank for the rest of the slice.
+            # of going blank for the rest of the slice. Use the sanitised
+            # bytes — the embedded-settings path also reads the same
+            # project_settings.config and the same range validator runs
+            # there too, so without sanitisation the fallback would die
+            # on the same sentinel error (#1201).
             result = await service.slice_without_profiles(
-                model_bytes=model_bytes,
+                model_bytes=primary_bytes,
                 model_filename=model_filename,
                 plate=request.plate,
                 export_3mf=request.export_3mf,

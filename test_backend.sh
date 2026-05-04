@@ -1,5 +1,7 @@
 #!/bin/sh
 
+export LC_ALL=C.UTF-8
+
 cd backend
 ruff check && ruff format --check
 

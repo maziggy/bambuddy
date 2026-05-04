@@ -5032,6 +5032,7 @@ export default {
       assign: '割り当て',
       assigning: '割り当て中...',
       assignSuccess: '割り当て完了！',
+      assignPendingInsert: '割り当てました。スプールを挿入したときにスロットが設定されます。',
       assignError: 'スプールの割り当てに失敗しました。再試行してください。',
       noPrinterSelected: 'プリンターを選択...',
       noAmsDetected: 'このプリンターにAMSが検出されません',

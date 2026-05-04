@@ -5019,6 +5019,7 @@ export default {
       assign: 'Assegna',
       assigning: 'Assegnazione...',
       assignSuccess: 'Assegnato!',
+      assignPendingInsert: 'Assegnato. Lo slot verrà configurato all\'inserimento della bobina.',
       assignError: 'Impossibile assegnare la bobina. Riprovare.',
       noPrinterSelected: 'Seleziona una stampante...',
       noAmsDetected: 'Nessun AMS rilevato su questa stampante',

@@ -5041,6 +5041,7 @@ export default {
       assign: 'Assign',
       assigning: 'Assigning...',
       assignSuccess: 'Assigned!',
+      assignPendingInsert: 'Assigned. Slot will configure when you insert the spool.',
       assignError: 'Failed to assign spool. Please try again.',
       noPrinterSelected: 'Select a printer...',
       noAmsDetected: 'No AMS detected on this printer',

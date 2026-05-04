@@ -5019,6 +5019,7 @@ export default {
       assign: 'Atribuir',
       assigning: 'Atribuindo...',
       assignSuccess: 'Atribuído!',
+      assignPendingInsert: 'Atribuído. O slot será configurado quando você inserir o carretel.',
       assignError: 'Falha ao atribuir carretel. Tente novamente.',
       noPrinterSelected: 'Selecionar uma impressora...',
       noAmsDetected: 'Nenhum AMS detectado nesta impressora',

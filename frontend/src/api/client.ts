@@ -2346,6 +2346,7 @@ export interface SpoolAssignment {
   fingerprint_type: string | null;
   spool?: InventorySpool | null;
   configured: boolean;
+  pending_config?: boolean;  // Slot was empty at assign time; will configure on insert
   created_at: string;
   ams_label?: string | null;  // User-defined friendly name for the AMS unit
 }

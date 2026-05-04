@@ -5019,6 +5019,7 @@ export default {
       assign: '分配',
       assigning: '分配中...',
       assignSuccess: '已分配！',
+      assignPendingInsert: '已分配。插入耗材后将配置槽位。',
       assignError: '分配耗材失败。请重试。',
       noPrinterSelected: '选择打印机...',
       noAmsDetected: '此打印机未检测到 AMS',

@@ -5032,6 +5032,7 @@ export default {
       assign: 'Zuweisen',
       assigning: 'Zuweisen...',
       assignSuccess: 'Zugewiesen!',
+      assignPendingInsert: 'Zugewiesen. Slot wird beim Einsetzen der Spule konfiguriert.',
       assignError: 'Fehler beim Zuweisen. Bitte erneut versuchen.',
       noPrinterSelected: 'Drucker auswählen...',
       noAmsDetected: 'Kein AMS an diesem Drucker erkannt',

@@ -1,4 +1,4 @@
-import randomSeed from 'random-seed';
+import { hash_fnv1a32, random_mulberry32 } from '../utils/random';
 
 /* Enhanced filament-colour rendering helpers (#1154).
  *
@@ -103,12 +103,12 @@ export const CHECKERBOARD_TILE_SIZE = '12px 12px';
  *  effect is to switch the colour layer to a conic-gradient (see
  *  `buildColorLayer`), not to add an overlay layer. */
 export const EFFECT_OVERLAYS: Partial<
-  Record<FilamentEffect, (effectSeed?: string, effectSize?: SwatchType) => EffectLayer>
+  Record<FilamentEffect, (effectSeed?: number, effectSize?: SwatchType) => EffectLayer>
 > = {
   // Sparkle: bright flecks — positions seeded from spool color+extracolors+subtype+effectType.
   // to give identical spools the same sparkle pattern while different spools get different patterns. 
-  sparkle: (spoolSeed = '', effectSize = 'table') => {
-    const rand = randomSeed.create(spoolSeed+effectSize);
+  sparkle: (spoolSeed = 0, effectSize = 'table') => {
+    const rand = random_mulberry32(spoolSeed);
     const preset = SWATCH_TYPE_PRESETS[effectSize] ?? SWATCH_TYPE_PRESETS.table;
     const sparks: string[] = [];
     for (let i = 0; i < preset.dotCount; i++) {
@@ -222,8 +222,8 @@ export function buildColorLayer(
 /** Resolve the CSS overlay string for an effect key. */
 export function resolveEffectOverlay(
   effectKey: string,
-  effectSeed?: string,
-  effectSize?: SwatchType,
+  effectSize: SwatchType,
+  effectSeed?: number,
 ): EffectLayer | null {
   const fn = EFFECT_OVERLAYS[effectKey as FilamentEffect];
   return fn ? fn(effectSeed, effectSize) : null;
@@ -238,18 +238,18 @@ export function resolveEffectOverlay(
  *  card-sized banner only shows 4 huge checker cells.
  */
 export function buildFilamentBackground(opts: {
+  effectSize: SwatchType;
   rgba?: string | null;
   extraColors?: string | null;
   effectType?: FilamentEffect | string | null;
   subtype?: string | null;
-  effectSize?: SwatchType;
 }): { backgroundImage: string; backgroundSize: string } {
   const stops = parseStops(opts.extraColors);
   const colorLayer = buildColorLayer(opts.rgba, stops, opts.subtype, opts.effectType);
-  const effectSeed = `${opts.rgba ?? ''}|${opts.extraColors ?? ''}|${opts.subtype ?? ''}|${opts.effectType ?? ''}`;
+  const effectSeed = hash_fnv1a32(opts.rgba, opts.extraColors, opts.subtype, opts.effectType);
   const effectLayer =
     typeof opts.effectType === 'string'
-      ? resolveEffectOverlay(opts.effectType, effectSeed, opts.effectSize)
+      ? resolveEffectOverlay(opts.effectType, opts.effectSize, effectSeed)
       : null;
   // Layer order (top → bottom): effect overlay → colour layer → checkerboard.
   // Per-layer background-size: 'cover' on the painted layers (so they fill

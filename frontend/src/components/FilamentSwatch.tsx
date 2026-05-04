@@ -8,6 +8,7 @@ import {
   type FilamentEffect,
   type SwatchType,
 } from './filamentSwatchHelpers';
+import { hash_fnv1a32 } from '../utils/random';
 
 /** Shared filament-colour swatch. See `filamentSwatchHelpers.ts` for the
  *  pure helpers + constants this component composes. */
@@ -30,7 +31,7 @@ export interface FilamentSwatchProps {
   /** Native title attribute for hover tooltip. */
   title?: string;
   /** Tune effect appearance based on target div size. */
-  effectSize?: SwatchType;
+  effectSize: SwatchType;
 }
 
 export function FilamentSwatch({
@@ -42,7 +43,7 @@ export function FilamentSwatch({
   shape = 'circle',
   style,
   title,
-  effectSize: effectSize,
+  effectSize,
 }: FilamentSwatchProps) {
   const stops = useMemo(() => parseStops(extraColors), [extraColors]);
   const colorLayer = useMemo(
@@ -51,7 +52,7 @@ export function FilamentSwatch({
   );
   const effectLayer =
     typeof effectType === 'string'
-      ? resolveEffectOverlay(effectType, `${rgba ?? ''}|${extraColors ?? ''}|${subtype ?? ''}|${effectType ?? ''}`, effectSize)
+      ? resolveEffectOverlay(effectType, effectSize, hash_fnv1a32(rgba, extraColors, subtype, effectType))
       : null;
 
   // Layer order (top → bottom): effect overlay → colour layer → checkerboard.

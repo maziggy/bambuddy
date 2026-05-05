@@ -18,11 +18,12 @@ import { render } from '../utils';
 import { server } from '../mocks/server';
 import { ForecastPanel } from '../../components/ForecastPanel';
 import InventoryPageRouter from '../../pages/InventoryPage';
+import { setAuthToken } from '../../api/client';
 import type { InventorySpool } from '../../api/client';
 
 afterEach(() => {
   server.resetHandlers();
-  sessionStorage.removeItem('auth_token');
+  setAuthToken(null);
 });
 
 // ── shared mock data ──────────────────────────────────────────────────────────
@@ -75,8 +76,7 @@ function mockForecastApis() {
 }
 
 function setFakeToken() {
-  // AuthContext only calls /auth/me when it finds a token in storage
-  sessionStorage.setItem('auth_token', 'test-token');
+  setAuthToken('test-token', 'session');
 }
 
 function mockNoReadAccess() {

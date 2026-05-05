@@ -2003,21 +2003,20 @@ async def run_migrations(conn):
             "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS alerts_snoozed BOOLEAN NOT NULL DEFAULT FALSE",
         )
         # Only backfill from safety_margin_days if that column still exists (PostgreSQL).
-        try:
-            col_check = await conn.execute(
-                text(
-                    "SELECT 1 FROM information_schema.columns "
-                    "WHERE table_name = 'filament_sku_settings' AND column_name = 'safety_margin_days'"
-                )
+        col_check = await conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'filament_sku_settings' AND column_name = 'safety_margin_days'"
             )
-            if col_check.fetchone():
+        )
+        if col_check.fetchone():
+            async with conn.begin_nested():
                 await conn.execute(
                     text(
-                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days WHERE safety_margin_value = 14 AND safety_margin_days != 14"
+                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days "
+                        "WHERE safety_margin_value = 14 AND safety_margin_days != 14"
                     )
                 )
-        except Exception:
-            pass
         await _safe_execute(
             conn,
             """CREATE TABLE IF NOT EXISTS filament_shopping_list (

@@ -228,6 +228,7 @@ class SpoolAssignmentResponse(BaseModel):
     created_at: datetime
     spool: SpoolResponse | None = None
     configured: bool = False
+    pending_config: bool = False  # True when slot was empty at assign time; will configure on insert
     ams_label: str | None = None  # User-defined friendly name for the AMS unit
 
     class Config:

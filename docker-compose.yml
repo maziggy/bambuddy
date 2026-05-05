@@ -10,8 +10,10 @@ services:
     # Override with: PUID=$(id -u) PGID=$(id -g) docker compose up -d
     user: "${PUID:-1000}:${PGID:-1000}"
     #
-    # Proxy mode: allow binding to privileged ports (322, 990) as non-root user.
-    # Without this, the FTP and RTSP proxies silently fail.
+    # Allow binding to privileged ports (322, 990) as non-root user — required
+    # for FTPS in every VP mode and for the RTSPS camera proxy in proxy mode +
+    # non-proxy modes that have a target printer configured. Without this, the
+    # FTP and RTSP listeners silently fail.
     cap_add:
       - NET_BIND_SERVICE
     #
@@ -28,7 +30,7 @@ services:
     #  - "8883:8883"                  # Virtual printer MQTT
     #  - "990:990"                    # Virtual printer FTP control
     #  - "6000:6000"                  # Virtual printer file transfer tunnel
-    #  - "322:322"                    # Virtual printer RTSP camera (X1/H2/P2)
+    #  - "322:322"                    # Virtual printer RTSP camera (X1/H2/P2; proxy mode + non-proxy modes with a target printer)
     #  - "2024-2026:2024-2026"        # Virtual printer proprietary ports (A1/P1S)
     #  - "50000-50100:50000-50100"    # Virtual printer FTP passive data
     volumes:

@@ -50,9 +50,21 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [fqdnCopied, setFqdnCopied] = useState(false);
 
+  // Host-level Tailscale identity (same for every VP) — shown inline on the card when
+  // the user has marked this VP as "exposed over Tailscale". Cert handling does NOT
+  // depend on this toggle; the slicer trusts the bambuddy CA the user imports once.
+  const { data: tailscaleStatus } = useQuery({
+    queryKey: ['tailscale-status'],
+    queryFn: multiVirtualPrinterApi.getTailscaleStatus,
+    enabled: !localTailscaleDisabled,
+    staleTime: 60_000,
+  });
+  const tailscaleFqdn = tailscaleStatus?.available ? tailscaleStatus.fqdn : '';
+  const tailscaleIp = tailscaleStatus?.available ? tailscaleStatus.tailscale_ips?.[0] ?? '' : '';
+
   const handleCopyFqdn = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const fqdn = printer.status?.tailscale_fqdn;
+    const fqdn = tailscaleFqdn;
     if (!fqdn) return;
     let ok = false;
     // Modern API — only works in secure contexts (HTTPS / localhost).
@@ -126,13 +138,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setPendingAction(null);
     },
     onError: (error: Error) => {
-      // Specific: the backend rejected "enable Tailscale" because the binary isn't installed.
-      // Surface a clear reason instead of the raw error code.
-      if (error.message === 'tailscale_not_available') {
-        showToast(t('virtualPrinter.toast.tailscaleNotAvailable'), 'error');
-      } else {
-        showToast(error.message || t('virtualPrinter.toast.failedToUpdate'), 'error');
-      }
+      showToast(error.message || t('virtualPrinter.toast.failedToUpdate'), 'error');
       setLocalEnabled(printer.enabled);
       setLocalMode((printer.mode === 'queue' ? 'review' : printer.mode) as LocalMode);
       setLocalTargetPrinterId(printer.target_printer_id);
@@ -301,12 +307,15 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
               </button>
             </div>
 
-            {/* Tailscale FQDN (when active) + serial — compact info row */}
+            {/* Tailscale identity (host-level) + serial — compact info row.
+                Shown only when this VP is marked Tailscale-exposed AND the daemon is up. */}
             <div className="flex items-center gap-2 -mt-2">
-              {printer.status?.tailscale_fqdn && (
+              {tailscaleFqdn && (
                 <span className="flex items-center gap-1 text-green-400/70 min-w-0">
                   <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span className="font-mono text-xs truncate">{printer.status.tailscale_fqdn}</span>
+                  <span className="font-mono text-xs truncate">
+                    {tailscaleIp ? `${tailscaleIp} (${tailscaleFqdn})` : tailscaleFqdn}
+                  </span>
                   <button
                     onClick={handleCopyFqdn}
                     className="p-0.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors flex-shrink-0"

@@ -183,7 +183,7 @@ async def create_cfg_file(
 
     relative_path = macro_files.create(data.name, data.content)
     try:
-        cfg_file = await sync_file(relative_path)
+        cfg_file = await sync_file(relative_path, stem=data.name)
     except IntegrityError:
         macro_files.delete(relative_path)
         raise HTTPException(409, f"A cfg file named '{data.name}' already exists")

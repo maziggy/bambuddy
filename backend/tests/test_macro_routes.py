@@ -161,7 +161,7 @@ async def test_run_macro_returns_pending_run(async_client):
     macros = (await async_client.get("/api/v1/macros")).json()
     macro = next(m for m in macros if m["name"] == "runnable")
 
-    with patch("backend.app.api.routes.macros.asyncio.create_task"):
+    with patch("backend.app.api.routes.macros.macro_runner.run_macro", new=AsyncMock(return_value=1)):
         resp = await async_client.post(f"/api/v1/macros/{macro['id']}/run", json={})
 
     assert resp.status_code == 200
@@ -178,7 +178,7 @@ async def test_get_run(async_client):
     macros = (await async_client.get("/api/v1/macros")).json()
     macro = next(m for m in macros if m["name"] == "run_get")
 
-    with patch("backend.app.api.routes.macros.asyncio.create_task"):
+    with patch("backend.app.api.routes.macros.macro_runner.run_macro", new=AsyncMock(return_value=1)):
         run_resp = await async_client.post(f"/api/v1/macros/{macro['id']}/run", json={})
     run_id = run_resp.json()["id"]
 
@@ -193,7 +193,7 @@ async def test_list_runs(async_client):
     macros = (await async_client.get("/api/v1/macros")).json()
     macro = next(m for m in macros if m["name"] == "multi_run")
 
-    with patch("backend.app.api.routes.macros.asyncio.create_task"):
+    with patch("backend.app.api.routes.macros.macro_runner.run_macro", new=AsyncMock(return_value=1)):
         await async_client.post(f"/api/v1/macros/{macro['id']}/run", json={})
         await async_client.post(f"/api/v1/macros/{macro['id']}/run", json={})
 
@@ -208,7 +208,7 @@ async def test_cancel_active_run(async_client):
     macros = (await async_client.get("/api/v1/macros")).json()
     macro = next(m for m in macros if m["name"] == "cancellable")
 
-    with patch("backend.app.api.routes.macros.asyncio.create_task"):
+    with patch("backend.app.api.routes.macros.macro_runner.run_macro", new=AsyncMock(return_value=1)):
         run_resp = await async_client.post(f"/api/v1/macros/{macro['id']}/run", json={})
     run_id = run_resp.json()["id"]
 
@@ -229,7 +229,7 @@ async def test_cancel_finished_run_returns_409(async_client):
     macros = (await async_client.get("/api/v1/macros")).json()
     macro = next(m for m in macros if m["name"] == "done_run")
 
-    with patch("backend.app.api.routes.macros.asyncio.create_task"):
+    with patch("backend.app.api.routes.macros.macro_runner.run_macro", new=AsyncMock(return_value=1)):
         run_resp = await async_client.post(f"/api/v1/macros/{macro['id']}/run", json={})
     run_id = run_resp.json()["id"]
 
@@ -293,7 +293,7 @@ async def test_exec_gcode_line(async_client):
     mock_client.state.temperatures = {}
     mock_client.send_gcode = MagicMock(return_value=True)
 
-    with patch("backend.app.services.macro_runner.printer_manager") as mock_pm:
+    with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
         mock_pm.get_client.return_value = mock_client
         resp = await async_client.post(
             "/api/v1/macros/exec",
@@ -308,7 +308,7 @@ async def test_exec_gcode_line(async_client):
 async def test_exec_run_macro_syntax(async_client):
     await _create_file(async_client, "terminal_macro", "[macro terminal_macro]\nG28\n")
 
-    with patch("backend.app.api.routes.macros.asyncio.create_task"):
+    with patch("backend.app.api.routes.macros.macro_runner.run_macro", new=AsyncMock(return_value=1)):
         resp = await async_client.post(
             "/api/v1/macros/exec",
             json={"line": "run: terminal_macro"},
@@ -336,6 +336,7 @@ async def test_exec_run_macro_not_found(async_client):
 
 @pytest.mark.asyncio
 async def test_invalid_cron_surfaces_in_parse_error(async_client):
+    pytest.importorskip("croniter", reason="cron validation requires croniter")
     content = "[macro bad_cron]\ntrigger: schedule\ncron: not a cron\nG28\n"
     data = await _create_file(async_client, "bad_cron", content)
     assert data["parse_error"] is not None

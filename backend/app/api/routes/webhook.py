@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -359,8 +360,6 @@ async def webhook_run_macro(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a macro via webhook. Authenticated by API key."""
-    import asyncio
-
     check_permission(api_key, "macros")
 
     macro = await db.get(Macro, macro_id)

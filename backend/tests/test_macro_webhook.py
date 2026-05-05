@@ -63,7 +63,7 @@ async def test_webhook_run_accepted(async_client):
     app.dependency_overrides[get_api_key] = lambda: good_key
 
     try:
-        with patch("backend.app.api.routes.webhook.asyncio.create_task"):
+        with patch("backend.app.api.routes.webhook.macro_runner.run_macro", new=AsyncMock(return_value=1)):
             resp = await async_client.post(
                 f"/api/v1/webhook/macro/{macro_id}/run",
                 json={},
@@ -153,15 +153,10 @@ async def test_webhook_run_id_passed_to_runner(async_client):
     good_key = _make_api_key(can_run_macros=True)
     app.dependency_overrides[get_api_key] = lambda: good_key
 
-    mock_run = AsyncMock()
+    mock_run = AsyncMock(return_value=1)
 
     try:
-        with (
-            patch("backend.app.api.routes.webhook.macro_runner.run_macro", mock_run),
-            patch("backend.app.api.routes.webhook.asyncio.create_task") as mock_task,
-        ):
-            # Capture the coroutine argument and close it to avoid RuntimeWarning
-            mock_task.side_effect = lambda coro: coro.close()
+        with patch("backend.app.api.routes.webhook.macro_runner.run_macro", mock_run):
             resp = await async_client.post(
                 f"/api/v1/webhook/macro/{macro_id}/run",
                 json={},
@@ -172,10 +167,7 @@ async def test_webhook_run_id_passed_to_runner(async_client):
     assert resp.status_code == 200
     returned_run_id = resp.json()["run_id"]
 
-    # create_task was called once; inspect the coroutine it received
-    mock_task.assert_called_once()
-    # The coroutine was built by calling macro_runner.run_macro(...)
-    # Verify that mock_run was called with run_id matching the returned run_id
+    # run_macro was called once with the committed run_id as a kwarg
     mock_run.assert_called_once()
     _, kwargs = mock_run.call_args
     assert kwargs.get("run_id") == returned_run_id

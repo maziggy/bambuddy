@@ -144,6 +144,9 @@ def parse(text: str) -> ParseResult:
                 if not _croniter.is_valid(cron_raw):
                     raise ValueError("not a valid cron expression")
                 cron_expression = cron_raw
+            except ImportError:
+                # croniter not installed; accept the expression without validation
+                cron_expression = cron_raw
             except Exception:
                 block_error = f"Invalid cron expression '{cron_raw}' in macro '{name}'"
                 result.errors.append(block_error)

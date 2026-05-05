@@ -210,7 +210,7 @@ async def test_log_buffer_batches_until_threshold():
 
 @pytest.mark.asyncio
 async def test_exec_line_gcode_dispatches_to_mqtt(runner, mock_client):
-    with patch("backend.app.services.macro_runner.printer_manager") as mock_pm:
+    with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
         mock_pm.get_client.return_value = mock_client
         result = await runner.exec_line("G28", printer_id=1)
 
@@ -222,7 +222,7 @@ async def test_exec_line_gcode_dispatches_to_mqtt(runner, mock_client):
 
 @pytest.mark.asyncio
 async def test_exec_line_unknown_gcode_blocked(runner, mock_client):
-    with patch("backend.app.services.macro_runner.printer_manager") as mock_pm:
+    with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
         mock_pm.get_client.return_value = mock_client
         result = await runner.exec_line("M600", printer_id=1)
 
@@ -238,7 +238,15 @@ async def test_exec_line_system_command_notify(runner):
 
     discover()
 
-    with patch("backend.app.services.macro_integrations.notify._send_notification", new=AsyncMock()):
+    # Mock the DB session so no providers are returned (NOTIFY returns ok with a skip msg)
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    with patch("backend.app.core.database.async_session", return_value=mock_session):
         result = await runner.exec_line("NOTIFY --message=hello", printer_id=None)
 
     assert result.ok
@@ -270,7 +278,7 @@ async def test_run_macro_success_sets_status(db_session, tmp_path):
 
     with (
         patch("backend.app.services.macro_runner.async_session", session_factory),
-        patch("backend.app.services.macro_runner.printer_manager") as mock_pm,
+        patch("backend.app.services.printer_manager.printer_manager") as mock_pm,
     ):
         client = MagicMock()
         client.state.connected = True
@@ -326,7 +334,7 @@ async def test_run_macro_embed_mode_skips_gcode(db_session, tmp_path):
 
     with (
         patch("backend.app.services.macro_runner.async_session", session_factory),
-        patch("backend.app.services.macro_runner.printer_manager") as mock_pm,
+        patch("backend.app.services.printer_manager.printer_manager") as mock_pm,
     ):
         mock_pm.get_client.return_value = mock_client
         run_id = await runner.run_macro(macro.id, printer_id=1, trigger="gcode_embed", allow_printer_commands=False)
@@ -354,7 +362,7 @@ async def test_run_macro_embed_mode_skips_printer_system_commands(db_session, tm
 
     with (
         patch("backend.app.services.macro_runner.async_session", session_factory),
-        patch("backend.app.services.macro_runner.printer_manager") as mock_pm,
+        patch("backend.app.services.printer_manager.printer_manager") as mock_pm,
     ):
         mock_client = MagicMock()
         mock_pm.get_client.return_value = mock_client
@@ -434,7 +442,7 @@ async def test_sub_macro_executes_inline(db_session, tmp_path):
 
     with (
         patch("backend.app.services.macro_runner.async_session", session_factory),
-        patch("backend.app.services.macro_runner.printer_manager") as mock_pm,
+        patch("backend.app.services.printer_manager.printer_manager") as mock_pm,
     ):
         mock_pm.get_client.return_value = mock_client
         run_id = await runner.run_macro(macro_a.id, printer_id=1, trigger="manual")
@@ -515,6 +523,10 @@ def test_start_scheduler_idempotent(runner):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    __import__("importlib.util", fromlist=["find_spec"]).find_spec("croniter") is None,
+    reason="croniter not installed",
+)
 async def test_scheduler_fires_matching_cron(db_session, tmp_path):
     """Scheduler must call run_macro for a macro whose cron matches now."""
     from datetime import datetime, timezone

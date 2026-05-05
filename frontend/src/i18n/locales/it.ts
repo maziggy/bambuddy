@@ -183,6 +183,11 @@ export default {
       allStatuses: 'Tutti gli stati',
       allLocations: 'Tutti i luoghi',
     },
+    toolbar: {
+      filters: 'Filtri',
+      view: 'Vista',
+      actions: 'Azioni',
+    },
     // Printer card
     readyToPrint: 'Pronta a stampare',
     external: 'Esterna',
@@ -1130,7 +1135,7 @@ export default {
 
   // Statistics page
   stats: {
-    title: 'Dashboard',
+    title: 'Statistiche',
     subtitle: 'Trascina i widget per riordinare. Clicca l\'icona occhio per nascondere.',
     overview: 'Panoramica',
     totalPrints: 'Stampe totali',

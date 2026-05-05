@@ -1135,7 +1135,7 @@ export default {
 
   // Statistics page
   stats: {
-    title: 'Dashboard',
+    title: 'Statistics',
     subtitle: 'Drag widgets to rearrange. Click the eye icon to hide.',
     overview: 'Overview',
     totalPrints: 'Total Prints',

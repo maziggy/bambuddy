@@ -183,6 +183,11 @@ export default {
       allStatuses: '所有狀態',
       allLocations: '所有位置',
     },
+    toolbar: {
+      filters: '篩選',
+      view: '檢視',
+      actions: '操作',
+    },
     // Printer card
     readyToPrint: '準備列印',
     external: '外部',
@@ -1130,7 +1135,7 @@ export default {
 
   // Statistics page
   stats: {
-    title: '儀表板',
+    title: '統計',
     subtitle: '拖曳小工具以重新排列。點選眼睛圖示隱藏。',
     overview: '概覽',
     totalPrints: '總列印次數',

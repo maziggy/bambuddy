@@ -183,6 +183,11 @@ export default {
       allStatuses: '所有状态',
       allLocations: '所有位置',
     },
+    toolbar: {
+      filters: '筛选',
+      view: '视图',
+      actions: '操作',
+    },
     // Printer card
     readyToPrint: '准备打印',
     external: '外部',
@@ -1130,7 +1135,7 @@ export default {
 
   // Statistics page
   stats: {
-    title: '仪表板',
+    title: '统计',
     subtitle: '拖动小部件以重新排列。点击眼睛图标隐藏。',
     overview: '概览',
     totalPrints: '总打印次数',

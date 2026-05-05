@@ -182,6 +182,11 @@ export default {
       allStatuses: 'すべてのステータス',
       allLocations: 'すべての場所',
     },
+    toolbar: {
+      filters: 'フィルター',
+      view: '表示',
+      actions: '操作',
+    },
     // Printer card
     readyToPrint: '印刷可能',
     external: '外部',

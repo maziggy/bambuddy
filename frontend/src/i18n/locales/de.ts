@@ -1135,7 +1135,7 @@ export default {
 
   // Statistics page
   stats: {
-    title: 'Dashboard',
+    title: 'Statistiken',
     subtitle: 'Widgets zum Neuanordnen ziehen. Auf das Augensymbol klicken zum Ausblenden.',
     overview: 'Übersicht',
     totalPrints: 'Gesamtdrucke',

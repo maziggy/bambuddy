@@ -164,7 +164,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Dashboard')).toBeInTheDocument();
+        expect(screen.getByText('Statistics')).toBeInTheDocument();
       });
     });
 

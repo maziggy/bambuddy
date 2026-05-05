@@ -3338,6 +3338,7 @@ export default {
   // Inventory
   inventory: {
     title: '耗材庫存',
+    subtitle: '管理您的料盤',
     spoolmanMixedContentTitle: 'Spoolman 無法透過 HTTPS 載入 — 瀏覽器已封鎖混合內容',
     spoolmanMixedContentBody: 'Bambuddy 透過您的反向代理以 HTTPS 提供服務，但您的 Spoolman 位址仍為 HTTP。基於安全考量，瀏覽器會封鎖混合內容，因此內嵌的 Spoolman 介面無法載入。Spoolman 也必須可透過 HTTPS 存取。',
     spoolmanMixedContentFixReverseProxy: '請將 Spoolman 置於與 Bambuddy 相同的反向代理（Traefik / Nginx / Caddy）之後並啟用 HTTPS，然後在設定中將 Spoolman URL 更新為新的 HTTPS 位址。',

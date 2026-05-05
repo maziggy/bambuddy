@@ -409,14 +409,15 @@ export function MakerworldPage() {
 
   return (
     <div className="p-4 md:p-8 max-w-screen-2xl space-y-6">
-      <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-        <Globe className="w-7 h-7 text-bambu-green" />
-        {t('makerworld.title')}
-      </h1>
-
-      <p className="text-sm text-bambu-gray">
-        {t('makerworld.description')}
-      </p>
+      <div>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <Globe className="w-7 h-7 text-bambu-green" />
+          {t('makerworld.title')}
+        </h1>
+        <p className="text-bambu-gray mt-1">
+          {t('makerworld.description')}
+        </p>
+      </div>
 
       {/* Two-column layout: main flow on the left, sticky "Recent imports"
           sidebar on the right at lg+. Collapses to single column on narrow

@@ -1231,13 +1231,13 @@ export function MaintenancePage() {
           <Wrench className="w-7 h-7 text-bambu-green" />
           {t('maintenance.title')}
         </h1>
-        <p className="text-bambu-gray text-sm mt-1">
+        <p className="text-bambu-gray mt-1">
           {activeTab === 'status' ? (
             <>
-              {totalDue > 0 && <span className="text-red-400">{t('maintenance.dueCount', { count: totalDue })}</span>}
+              {totalDue > 0 && <span>{t('maintenance.dueCount', { count: totalDue })}</span>}
               {totalDue > 0 && totalWarning > 0 && ' · '}
-              {totalWarning > 0 && <span className="text-amber-400">{t('maintenance.warningCount', { count: totalWarning })}</span>}
-              {totalDue === 0 && totalWarning === 0 && <span className="text-bambu-green">{t('maintenance.allOk')}</span>}
+              {totalWarning > 0 && <span>{t('maintenance.warningCount', { count: totalWarning })}</span>}
+              {totalDue === 0 && totalWarning === 0 && <span>{t('maintenance.allOk')}</span>}
             </>
           ) : (
             t('maintenance.configureSettings')

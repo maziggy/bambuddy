@@ -1031,7 +1031,7 @@ export function ProjectsPage() {
             <FolderKanban className="w-7 h-7 text-bambu-green" />
             {t('projects.title')}
           </h1>
-          <p className="text-sm text-bambu-gray mt-2 ml-10">
+          <p className="text-bambu-gray mt-1">
             {t('projects.subtitle')}
           </p>
         </div>

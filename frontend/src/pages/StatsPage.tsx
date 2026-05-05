@@ -1155,7 +1155,7 @@ export function StatsPage() {
             </h1>
             {isRefetching && <Loader2 className="w-5 h-5 text-bambu-green animate-spin" />}
           </div>
-          <p className="text-bambu-gray">{t('stats.subtitle')}</p>
+          <p className="text-bambu-gray mt-1">{t('stats.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Hidden widgets button - toggles panel in Dashboard */}

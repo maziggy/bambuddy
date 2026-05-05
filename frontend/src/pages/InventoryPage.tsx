@@ -880,6 +880,7 @@ function InventoryPage() {
             <Package className="w-7 h-7 text-bambu-green" />
             {t('inventory.title')}
           </h1>
+          <p className="text-bambu-gray mt-1">{t('inventory.subtitle')}</p>
         </div>
         <Button onClick={() => setFormModal({ spool: null })}>
           <Plus className="w-4 h-4" />

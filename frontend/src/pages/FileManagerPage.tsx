@@ -1413,7 +1413,7 @@ export function FileManagerPage() {
             <FolderOpen className="w-7 h-7 text-bambu-green" />
             {t('fileManager.title')}
           </h1>
-          <p className="text-sm text-bambu-gray mt-2 ml-10">
+          <p className="text-bambu-gray mt-1">
             {t('fileManager.subtitle')}
           </p>
         </div>

@@ -3337,6 +3337,7 @@ export default {
   // Inventory
   inventory: {
     title: 'Inventario Bobine',
+    subtitle: 'Gestisci le tue bobine',
     spoolmanMixedContentTitle: 'Spoolman non può essere caricato tramite HTTPS — contenuto misto bloccato dal browser',
     spoolmanMixedContentBody: 'Bambuddy viene servito tramite HTTPS (dietro il tuo reverse proxy), ma l\'URL di Spoolman è ancora HTTP. I browser bloccano il contenuto misto per motivi di sicurezza, quindi l\'interfaccia Spoolman incorporata non può essere visualizzata. Anche Spoolman deve essere raggiungibile via HTTPS.',
     spoolmanMixedContentFixReverseProxy: 'Metti Spoolman dietro lo stesso reverse proxy di Bambuddy (Traefik / Nginx / Caddy) in HTTPS, poi aggiorna l\'URL di Spoolman nelle Impostazioni con il nuovo indirizzo HTTPS.',

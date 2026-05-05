@@ -2868,14 +2868,14 @@ export function ProfilesPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-4 md:p-8">
       {/* Page Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <Cloud className="w-7 h-7 text-bambu-green" />
           {t('profiles.title')}
         </h1>
-        <p className="text-bambu-gray">{t('profiles.subtitle')}</p>
+        <p className="text-bambu-gray mt-1">{t('profiles.subtitle')}</p>
       </div>
 
       {/* Tab Navigation */}

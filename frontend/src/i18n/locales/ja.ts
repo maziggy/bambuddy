@@ -3350,6 +3350,7 @@ export default {
   // Inventory
   inventory: {
     title: 'スプール在庫管理',
+    subtitle: 'スプールを管理',
     spoolmanMixedContentTitle: 'Spoolman を HTTPS で読み込めません — ブラウザが混在コンテンツをブロックしています',
     spoolmanMixedContentBody: 'Bambuddy はリバースプロキシ経由で HTTPS 配信されていますが、Spoolman の URL は HTTP のままです。ブラウザはセキュリティ上の理由で混在コンテンツをブロックするため、埋め込みの Spoolman UI を表示できません。Spoolman も HTTPS でアクセスできる必要があります。',
     spoolmanMixedContentFixReverseProxy: 'Spoolman を Bambuddy と同じリバースプロキシ（Traefik / Nginx / Caddy）の後ろに HTTPS で配置し、設定で Spoolman URL を新しい HTTPS アドレスに更新してください。',

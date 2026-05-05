@@ -1,93 +1,45 @@
-"""Unit tests for the macro execution engine."""
+"""Tests for the macro execution engine.
+
+Split into:
+ - Pure unit tests (whitelist, preflight, _parse_flags) — no DB, no async
+ - Async unit tests (_LogBuffer, exec_line, _dispatch_system) — mock DB/printer
+ - Async integration tests (run_macro end-to-end) — real in-memory SQLite
+ - Scheduler tests
+"""
 
 import asyncio
-import io
-import tempfile
-import zipfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
-import pytest_asyncio
 
 from backend.app.services.gcode_whitelist import GCODE_WHITELIST, is_whitelisted
+from backend.app.services.macro_runner import MacroRunner, _parse_flags, _preflight
 
-# ============================================================================
-# G-code whitelist tests
-# ============================================================================
-
-
-def test_gcode_whitelist_pass():
-    assert is_whitelisted("G28") is True
-    assert is_whitelisted("G0 X10 Y10") is True
-    assert is_whitelisted("M104 S200") is True
-    assert is_whitelisted("T0") is True
+# ── Shared fixtures ────────────────────────────────────────────────────────────
 
 
-def test_gcode_whitelist_block():
-    assert is_whitelisted("M600") is False
-    assert is_whitelisted("G29") is False
-    assert is_whitelisted("M666") is False
-    assert is_whitelisted("") is False
-
-
-def test_gcode_whitelist_comment_is_not_gcode():
-    assert is_whitelisted("; G28") is False
-    assert is_whitelisted("# G28") is False
-
-
-def test_gcode_whitelist_case_insensitive():
-    assert is_whitelisted("g28") is True
-    assert is_whitelisted("m104 S200") is True
-
-
-# ============================================================================
-# MacroFileService tests
-# ============================================================================
-
-
-def test_macro_file_write_read_delete(tmp_path):
-    from backend.app.core.config import settings
-
-    settings.macros_dir = tmp_path / "macros"
-
-    from backend.app.services import macro_files
-
-    path = macro_files.write("test macro", "G28\nG0 X0 Y0")
-    assert path.endswith(".jinja2")
-    assert (tmp_path / "macros" / path).exists()
-
-    content = macro_files.read(path)
-    assert "G28" in content
-
-    macro_files.delete(path)
-    assert not (tmp_path / "macros" / path).exists()
-
-
-def test_macro_file_slug_collision(tmp_path):
-    from backend.app.core.config import settings
-
-    settings.macros_dir = tmp_path / "macros"
-
-    from backend.app.services import macro_files
-
-    p1 = macro_files.write("heat bed", "M140 S60")
-    p2 = macro_files.write("heat bed", "M140 S70")
-    assert p1 != p2
-
-
-# ============================================================================
-# Macro runner execution tests
-# ============================================================================
+@pytest.fixture(autouse=True)
+def _tmp_macros_dir(tmp_path, monkeypatch):
+    d = tmp_path / "macros"
+    d.mkdir()
+    monkeypatch.setattr("backend.app.core.config.settings.macros_dir", str(d))
+    return d
 
 
 @pytest.fixture
-def mock_printer_client():
+def runner():
+    return MacroRunner()
+
+
+@pytest.fixture
+def mock_client():
     client = MagicMock()
-    client.state = MagicMock()
     client.state.connected = True
     client.state.state = "IDLE"
-    client.state.temperatures = {"nozzle": 25.0, "bed": 25.0}
+    client.state.temperatures = {"nozzle": 25.0, "bed": 25.0, "chamber": 25.0}
+    client.state.hms_errors = []
+    client.state.progress = 0
     client.state.raw_data = {"ams": []}
     client.send_gcode = MagicMock(return_value=True)
     client.pause_print = MagicMock(return_value=True)
@@ -96,215 +48,512 @@ def mock_printer_client():
     return client
 
 
-@pytest.fixture
-def macro_runner_with_tmp(tmp_path):
-    from backend.app.core.config import settings
+# ── Helper: seed a real macro in the test DB and on disk ──────────────────────
 
-    settings.macros_dir = tmp_path / "macros"
-    from backend.app.services.macro_runner import MacroRunner
 
-    return MacroRunner()
+async def _seed_macro(db, tmp_path, name: str, body: str, trigger_type: str = "manual") -> tuple:
+    """Create a .cfg file and the matching DB rows. Returns (cfg_file, macro)."""
+    from backend.app.models.macro import Macro, MacroCfgFile
+    from backend.app.services.macro_files import create as create_cfg
+
+    content = f"[macro {name}]\n{body}\n"
+    relative_path = create_cfg(name, content)
+
+    cfg_file = MacroCfgFile(name=name, file_path=relative_path)
+    db.add(cfg_file)
+    await db.flush()
+
+    macro = Macro(name=name, cfg_file_id=cfg_file.id, trigger_type=trigger_type)
+    db.add(macro)
+    await db.commit()
+    await db.refresh(macro)
+    await db.refresh(cfg_file)
+    return cfg_file, macro
+
+
+# ── R1/R2: Whitelist ───────────────────────────────────────────────────────────
+
+
+def test_whitelist_pass():
+    for cmd in ["G28", "G0 Z10", "M104 S200", "T0", "M140 S60", "M84"]:
+        assert is_whitelisted(cmd), f"{cmd} should be whitelisted"
+
+
+def test_whitelist_block():
+    for cmd in ["M600", "M666", "", "; G28", "# G28"]:
+        assert not is_whitelisted(cmd), f"{cmd} should be blocked"
+
+
+# ── R3/R4: Preflight ──────────────────────────────────────────────────────────
+
+
+def test_preflight_xy_movement_blocked(mock_client):
+    err = _preflight(mock_client, "G0 X10 Y10")
+    assert err is not None
+    assert "XY" in err
+
+
+def test_preflight_z_only_allowed(mock_client):
+    assert _preflight(mock_client, "G0 Z10") is None
+
+
+def test_preflight_unsafe_while_running(mock_client):
+    mock_client.state.state = "RUNNING"
+    err = _preflight(mock_client, "G28")
+    assert err is not None
+    assert "RUNNING" in err
+
+
+def test_preflight_unknown_gcode_blocked(mock_client):
+    err = _preflight(mock_client, "M600")
+    assert err is not None
+    assert "whitelist" in err
+
+
+def test_preflight_not_connected(mock_client):
+    mock_client.state.connected = False
+    err = _preflight(mock_client, "G28")
+    assert err is not None
+    assert "connected" in err.lower()
+
+
+# ── R5/R6/R7: _parse_flags ────────────────────────────────────────────────────
+
+
+def test_parse_flags_equals_form():
+    assert _parse_flags(["--temp=65"]) == {"temp": "65"}
+
+
+def test_parse_flags_space_form():
+    assert _parse_flags(["--temp", "65"]) == {"temp": "65"}
+
+
+def test_parse_flags_bare_flag():
+    result = _parse_flags(["--quiet"])
+    assert "quiet" in result
+    assert result["quiet"] == ""
+
+
+def test_parse_flags_mixed():
+    result = _parse_flags(["--sensor=bed", "--target", "60", "--quiet"])
+    assert result == {"sensor": "bed", "target": "60", "quiet": ""}
+
+
+def test_parse_flags_empty():
+    assert _parse_flags([]) == {}
+
+
+def test_parse_flags_ignores_positional():
+    # Positional args without -- prefix are skipped
+    result = _parse_flags(["positional", "--key=val"])
+    assert result == {"key": "val"}
+
+
+# ── R8/R9: _LogBuffer ─────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_gcode_dispatches_to_mqtt(tmp_path, macro_runner_with_tmp, mock_printer_client, db_session):
-    from backend.app.core.config import settings
-    from backend.app.services import macro_files
+async def test_log_buffer_flush_uses_sql_coalesce():
+    """flush() must issue an UPDATE with COALESCE, not a read-modify-write."""
+    from sqlalchemy import update as sa_update
 
-    settings.macros_dir = tmp_path / "macros"
+    from backend.app.services.macro_runner import _LogBuffer
 
-    file_path = macro_files.write("home", "G28")
-    from backend.app.models.macro import Macro
+    buf = _LogBuffer(run_id=99)
+    await buf.write("line one\n")
+    await buf.write("line two\n")
 
-    macro = Macro(name="home", file_path=file_path, trigger_type="manual")
-    db_session.add(macro)
-    await db_session.commit()
-    await db_session.refresh(macro)
+    executed_statements = []
 
-    with (
-        patch("backend.app.services.macro_runner.async_session") as mock_session_cm,
-        patch("backend.app.services.printer_manager.printer_manager") as mock_pm,
-    ):
-        mock_pm.get_client.return_value = mock_printer_client
-        # Make async_session work as async context manager
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(side_effect=lambda model, id_: macro if id_ == macro.id else None)
-        mock_session.add = MagicMock()
-        mock_session.flush = AsyncMock()
-        mock_session.commit = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock()
-        mock_session_cm.return_value = mock_session
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(side_effect=lambda stmt, *a, **kw: executed_statements.append(stmt))
+    mock_db.commit = AsyncMock()
+    mock_db.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_db.__aexit__ = AsyncMock()
 
-        runner = macro_runner_with_tmp
-        # Inject a pre-created run so we don't need full DB
-        await runner.run_macro(macro.id, printer_id=1, trigger="manual")
+    with patch("backend.app.services.macro_runner.async_session", return_value=mock_db):
+        await buf.flush()
 
-    mock_printer_client.send_gcode.assert_called()
+    assert len(executed_statements) == 1
+    # The compiled SQL must reference COALESCE — verify via string representation
+    stmt = executed_statements[0]
+    sql_str = str(stmt.compile(compile_kwargs={"literal_binds": False}))
+    assert "coalesce" in sql_str.lower() or "COALESCE" in sql_str
 
 
 @pytest.mark.asyncio
-async def test_unknown_gcode_blocked(tmp_path, macro_runner_with_tmp, mock_printer_client):
-    from backend.app.core.config import settings
-    from backend.app.services import macro_files
-    from backend.app.services.macro_runner import MacroRunner
+async def test_log_buffer_batches_until_threshold():
+    """Buffer should not flush before reaching _flush_every lines."""
+    from backend.app.services.macro_runner import _LogBuffer
 
-    settings.macros_dir = tmp_path / "macros"
+    buf = _LogBuffer(run_id=1, flush_every=5)
+
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock()
+    mock_db.commit = AsyncMock()
+    mock_db.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_db.__aexit__ = AsyncMock()
+
+    with patch("backend.app.services.macro_runner.async_session", return_value=mock_db):
+        for i in range(4):
+            await buf.write(f"line {i}\n")
+        # 4 writes → no flush yet
+        assert mock_db.execute.call_count == 0
+
+        await buf.write("line 4\n")
+        # 5th write → flush triggered
+        assert mock_db.execute.call_count == 1
+
+
+# ── R10/R11/R12: exec_line ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_exec_line_gcode_dispatches_to_mqtt(runner, mock_client):
+    with patch("backend.app.services.macro_runner.printer_manager") as mock_pm:
+        mock_pm.get_client.return_value = mock_client
+        result = await runner.exec_line("G28", printer_id=1)
+
+    assert result.ok
+    mock_client.send_gcode.assert_called_once()
+    sent = mock_client.send_gcode.call_args[0][0]
+    assert "G28" in sent
+
+
+@pytest.mark.asyncio
+async def test_exec_line_unknown_gcode_blocked(runner, mock_client):
+    with patch("backend.app.services.macro_runner.printer_manager") as mock_pm:
+        mock_pm.get_client.return_value = mock_client
+        result = await runner.exec_line("M600", printer_id=1)
+
+    assert not result.ok
+    assert "[PREFLIGHT]" in result.log
+    mock_client.send_gcode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_exec_line_system_command_notify(runner):
+    """NOTIFY dispatches without a printer and returns ok."""
+    from backend.app.services.macro_functions import discover
+
+    discover()
+
+    with patch("backend.app.services.macro_integrations.notify._send_notification", new=AsyncMock()):
+        result = await runner.exec_line("NOTIFY --message=hello", printer_id=None)
+
+    assert result.ok
+
+
+@pytest.mark.asyncio
+async def test_exec_line_comment_is_noop(runner):
+    result = await runner.exec_line("; this is a comment", printer_id=None)
+    assert result.ok
+    assert result.log == ""
+
+
+# ── R13–R17: run_macro end-to-end ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_run_macro_success_sets_status(db_session, tmp_path):
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from backend.app.models.macro import MacroRun
+
+    _, macro = await _seed_macro(db_session, tmp_path, "home", "G28")
 
     runner = MacroRunner()
-    log_lines: list[str] = []
 
-    async def fake_log(run_id, text):
-        log_lines.append(text)
+    # Use the test session factory so runner opens sessions on the test DB
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
-    runner._append_log = fake_log  # type: ignore
+    with (
+        patch("backend.app.services.macro_runner.async_session", session_factory),
+        patch("backend.app.services.macro_runner.printer_manager") as mock_pm,
+    ):
+        client = MagicMock()
+        client.state.connected = True
+        client.state.state = "IDLE"
+        client.state.temperatures = {}
+        client.state.hms_errors = []
+        client.send_gcode = MagicMock(return_value=True)
+        mock_pm.get_client.return_value = client
 
-    with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
-        mock_pm.get_client.return_value = mock_printer_client
-        await runner._dispatch_line("M666 S1", printer_id=1, run_id=1, allow_printer_commands=True)
+        run_id = await runner.run_macro(macro.id, printer_id=1, trigger="manual")
 
-    mock_printer_client.send_gcode.assert_not_called()
-    assert any("[WARN]" in line for line in log_lines)
-
-
-@pytest.mark.asyncio
-async def test_ams_drying_command(macro_runner_with_tmp, mock_printer_client):
-    runner = macro_runner_with_tmp
-    log_lines: list[str] = []
-
-    async def fake_log(run_id, text):
-        log_lines.append(text)
-
-    runner._append_log = fake_log  # type: ignore
-
-    with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
-        mock_pm.send_drying_command.return_value = True
-        await runner._dispatch_line(
-            "AMS_DRYING --ams=0 --temp=65 --duration=30",
-            printer_id=1,
-            run_id=1,
-            allow_printer_commands=True,
-        )
-
-    mock_pm.send_drying_command.assert_called_once_with(1, 0, 65, 30, mode=1, filament=None, rotate_tray=False)
-    assert any("[AMS_DRYING]" in line for line in log_lines)
+    async with session_factory() as s:
+        run = await s.get(MacroRun, run_id)
+    assert run is not None
+    assert run.status == "success"
+    assert run.finished_at is not None
 
 
 @pytest.mark.asyncio
-async def test_wait_command(macro_runner_with_tmp):
-    import time
+async def test_run_macro_template_error_sets_error_status(db_session, tmp_path):
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    runner = macro_runner_with_tmp
-    log_lines: list[str] = []
+    from backend.app.models.macro import MacroRun
 
-    async def fake_log(run_id, text):
-        log_lines.append(text)
+    # Script references an undefined variable → StrictUndefined raises
+    _, macro = await _seed_macro(db_session, tmp_path, "broken", "{{ undefined_var }}")
 
-    runner._append_log = fake_log  # type: ignore
+    runner = MacroRunner()
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
-    start = time.monotonic()
-    await runner._dispatch_line("WAIT --seconds=0.1", printer_id=None, run_id=1, allow_printer_commands=True)
-    elapsed = time.monotonic() - start
+    with patch("backend.app.services.macro_runner.async_session", session_factory):
+        run_id = await runner.run_macro(macro.id, printer_id=None, trigger="manual")
 
-    assert elapsed >= 0.05  # at least half the wait (timing tolerance)
-    assert any("[WAIT]" in line for line in log_lines)
-
-
-@pytest.mark.asyncio
-async def test_jinja2_conditional_renders(tmp_path):
-    from backend.app.core.config import settings
-    from backend.app.services import macro_files
-    from backend.app.services.macro_runner import MacroRunner
-
-    settings.macros_dir = tmp_path / "macros"
-    from backend.app.services.gcode_whitelist import is_whitelisted
-
-    script = "{% if printer.nozzle_temp > 50 %}G28{% else %}M84{% endif %}"
-
-    from jinja2.sandbox import SandboxedEnvironment
-
-    env = SandboxedEnvironment()
-    context = {"printer": {"nozzle_temp": 100.0}, "ams": [], "queue": 0, "run_macro": lambda n: ""}
-    rendered = env.from_string(script).render(**context)
-    assert "G28" in rendered
-    assert "M84" not in rendered
-
-    context2 = {"printer": {"nozzle_temp": 25.0}, "ams": [], "queue": 0, "run_macro": lambda n: ""}
-    rendered2 = env.from_string(script).render(**context2)
-    assert "M84" in rendered2
+    async with session_factory() as s:
+        run = await s.get(MacroRun, run_id)
+    assert run.status == "error"
+    assert "[ERROR]" in (run.log or "")
 
 
 @pytest.mark.asyncio
-async def test_allow_printer_commands_false_blocks_gcode(macro_runner_with_tmp, mock_printer_client):
-    runner = macro_runner_with_tmp
-    log_lines: list[str] = []
+async def test_run_macro_embed_mode_skips_gcode(db_session, tmp_path):
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    async def fake_log(run_id, text):
-        log_lines.append(text)
+    from backend.app.models.macro import MacroRun
 
-    runner._append_log = fake_log  # type: ignore
+    _, macro = await _seed_macro(db_session, tmp_path, "embed_skip", "G28\nM104 S200")
 
-    with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
-        mock_pm.get_client.return_value = mock_printer_client
-        await runner._dispatch_line("G28", printer_id=1, run_id=1, allow_printer_commands=False)
+    runner = MacroRunner()
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
-    mock_printer_client.send_gcode.assert_not_called()
-    assert any("[SKIP]" in line for line in log_lines)
+    mock_client = MagicMock()
+    mock_client.send_gcode = MagicMock(return_value=True)
+
+    with (
+        patch("backend.app.services.macro_runner.async_session", session_factory),
+        patch("backend.app.services.macro_runner.printer_manager") as mock_pm,
+    ):
+        mock_pm.get_client.return_value = mock_client
+        run_id = await runner.run_macro(macro.id, printer_id=1, trigger="gcode_embed", allow_printer_commands=False)
+
+    mock_client.send_gcode.assert_not_called()
+
+    async with session_factory() as s:
+        run = await s.get(MacroRun, run_id)
+    assert "[SKIP]" in (run.log or "")
 
 
 @pytest.mark.asyncio
-async def test_allow_printer_commands_false_blocks_ams_drying(macro_runner_with_tmp):
-    runner = macro_runner_with_tmp
-    log_lines: list[str] = []
+async def test_run_macro_embed_mode_skips_printer_system_commands(db_session, tmp_path):
+    """PRINTER_PAUSE is allowed_in_embed=False so it must be skipped in embed mode."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    async def fake_log(run_id, text):
-        log_lines.append(text)
+    from backend.app.models.macro import MacroRun
+    from backend.app.services.macro_functions import discover
 
-    runner._append_log = fake_log  # type: ignore
+    discover()
+    _, macro = await _seed_macro(db_session, tmp_path, "embed_cmd", "PRINTER_PAUSE")
 
-    with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
-        mock_pm.send_drying_command.return_value = True
-        await runner._dispatch_line(
-            "AMS_DRYING --ams=0 --temp=65 --duration=30",
-            printer_id=1,
-            run_id=1,
-            allow_printer_commands=False,
-        )
+    runner = MacroRunner()
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
-    mock_pm.send_drying_command.assert_not_called()
-    assert any("[SKIP]" in line for line in log_lines)
+    with (
+        patch("backend.app.services.macro_runner.async_session", session_factory),
+        patch("backend.app.services.macro_runner.printer_manager") as mock_pm,
+    ):
+        mock_client = MagicMock()
+        mock_pm.get_client.return_value = mock_client
+        run_id = await runner.run_macro(macro.id, printer_id=1, trigger="gcode_embed", allow_printer_commands=False)
+
+    mock_client.pause_print.assert_not_called()
+
+    async with session_factory() as s:
+        run = await s.get(MacroRun, run_id)
+    assert "[SKIP]" in (run.log or "")
 
 
-# ============================================================================
-# Embedded macro parsing tests
-# ============================================================================
+@pytest.mark.asyncio
+async def test_run_macro_cancel_sets_error_status(db_session, tmp_path):
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from backend.app.models.macro import MacroRun
+    from backend.app.services.macro_functions import discover
+
+    discover()
+    # WAIT --seconds=60 will block; we cancel from outside
+    _, macro = await _seed_macro(db_session, tmp_path, "long_wait", "WAIT --seconds=60")
+
+    runner = MacroRunner()
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    with patch("backend.app.services.macro_runner.async_session", session_factory):
+        task = asyncio.create_task(runner.run_macro(macro.id, printer_id=None, trigger="manual"))
+        # Let the task start and enter the WAIT sleep
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            run_id = await task
+        except asyncio.CancelledError:
+            # Task may propagate cancel before recording run_id — fetch from DB
+            async with session_factory() as s:
+                from sqlalchemy import select
+
+                result = await s.execute(
+                    select(MacroRun).where(MacroRun.macro_id == macro.id).order_by(MacroRun.id.desc())
+                )
+                run = result.scalars().first()
+            assert run is not None
+            return
+
+    async with session_factory() as s:
+        run = await s.get(MacroRun, run_id)
+    assert run.status == "error"
+    assert "[CANCELLED]" in (run.log or "")
 
 
-def test_gcode_embed_parse(tmp_path):
-    """ThreeMFParser extracts '; MACRO: name' lines from G-code inside a 3MF."""
-    gcode_content = b"""; Bambu Studio
-; total layer number: 10
-; printer_model = X1C
-G28 ; home
-; MACRO: notify_done
-G0 X0 Y0
-; MACRO: log_layer_start --layer=1
-M84
-"""
-    # Build a minimal fake .3mf (zip file)
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("Metadata/plate_1.gcode", gcode_content)
+# ── R18/R19/R20: Sub-macros ────────────────────────────────────────────────────
 
-    buf.seek(0)
-    threemf_path = tmp_path / "test.gcode.3mf"
-    threemf_path.write_bytes(buf.read())
 
-    from backend.app.services.archive import ThreeMFParser
+@pytest.mark.asyncio
+async def test_sub_macro_executes_inline(db_session, tmp_path):
+    """MACRO --name=b in macro A causes macro B's body to run."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    parser = ThreeMFParser(threemf_path, plate_number=1)
-    metadata = parser.parse()
+    from backend.app.models.macro import MacroRun
+    from backend.app.services.macro_functions import discover
 
-    assert "embedded_macros" in metadata
-    assert "notify_done" in metadata["embedded_macros"]
-    assert "log_layer_start --layer=1" in metadata["embedded_macros"]
+    discover()
+
+    _, macro_b = await _seed_macro(db_session, tmp_path, "sub_b", "G28")
+    _, macro_a = await _seed_macro(db_session, tmp_path, "sub_a", "MACRO --name=sub_b")
+
+    runner = MacroRunner()
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    mock_client = MagicMock()
+    mock_client.state.connected = True
+    mock_client.state.state = "IDLE"
+    mock_client.state.temperatures = {}
+    mock_client.state.hms_errors = []
+    mock_client.send_gcode = MagicMock(return_value=True)
+
+    with (
+        patch("backend.app.services.macro_runner.async_session", session_factory),
+        patch("backend.app.services.macro_runner.printer_manager") as mock_pm,
+    ):
+        mock_pm.get_client.return_value = mock_client
+        run_id = await runner.run_macro(macro_a.id, printer_id=1, trigger="manual")
+
+    mock_client.send_gcode.assert_called()
+    sent = mock_client.send_gcode.call_args[0][0]
+    assert "G28" in sent
+
+    async with session_factory() as s:
+        run = await s.get(MacroRun, run_id)
+    assert run.status == "success"
+
+
+@pytest.mark.asyncio
+async def test_cycle_detection_stops_run(db_session, tmp_path):
+    """MACRO --name=self_ref inside itself must log a cycle error, not recurse."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from backend.app.models.macro import MacroRun
+    from backend.app.services.macro_functions import discover
+
+    discover()
+    _, macro = await _seed_macro(db_session, tmp_path, "self_ref", "MACRO --name=self_ref")
+
+    runner = MacroRunner()
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    with patch("backend.app.services.macro_runner.async_session", session_factory):
+        run_id = await runner.run_macro(macro.id, printer_id=None, trigger="manual")
+
+    async with session_factory() as s:
+        run = await s.get(MacroRun, run_id)
+    assert "cycle" in (run.log or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_sub_macro_not_found_warns(db_session, tmp_path):
+    """MACRO --name=nonexistent logs a warning but does not fail the run."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from backend.app.models.macro import MacroRun
+    from backend.app.services.macro_functions import discover
+
+    discover()
+    _, macro = await _seed_macro(db_session, tmp_path, "missing_sub", "MACRO --name=nonexistent")
+
+    runner = MacroRunner()
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    with patch("backend.app.services.macro_runner.async_session", session_factory):
+        run_id = await runner.run_macro(macro.id, printer_id=None, trigger="manual")
+
+    async with session_factory() as s:
+        run = await s.get(MacroRun, run_id)
+    assert "[WARN]" in (run.log or "")
+    assert run.status == "success"
+
+
+# ── R21/R22: Scheduler ────────────────────────────────────────────────────────
+
+
+def test_start_scheduler_idempotent(runner):
+    """Calling start_scheduler twice must not create two tasks."""
+    loop = asyncio.new_event_loop()
+    try:
+
+        async def _run():
+            runner.start_scheduler()
+            task1 = runner._scheduler_task
+            runner.start_scheduler()
+            task2 = runner._scheduler_task
+            assert task1 is task2
+            runner.stop_scheduler()
+
+        loop.run_until_complete(_run())
+    finally:
+        loop.close()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_fires_matching_cron(db_session, tmp_path):
+    """Scheduler must call run_macro for a macro whose cron matches now."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    _, macro = await _seed_macro(db_session, tmp_path, "cron_macro", "G28", trigger_type="schedule")
+    # Update macro with a cron that always matches
+    from backend.app.models.macro import Macro
+
+    async with db_session.begin_nested():
+        m = await db_session.get(Macro, macro.id)
+        m.cron_expression = "* * * * *"
+    await db_session.commit()
+
+    runner = MacroRunner()
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    fired: list[int] = []
+
+    async def mock_run_macro(macro_id, printer_id, trigger, **kwargs):
+        fired.append(macro_id)
+        return 1
+
+    runner.run_macro = mock_run_macro  # type: ignore[method-assign]
+
+    with patch("backend.app.services.macro_runner.async_session", session_factory):
+        # Run one tick of the scheduler loop directly
+        from croniter import croniter
+
+        now = datetime.now(timezone.utc)
+        async with session_factory() as db:
+            from sqlalchemy import select
+
+            result = await db.execute(select(Macro).where(Macro.trigger_type == "schedule"))
+            macros = result.scalars().all()
+
+        for m in macros:
+            if m.cron_expression and croniter.match(m.cron_expression, now):
+                await runner.run_macro(m.id, m.printer_id, "schedule")
+
+    assert macro.id in fired

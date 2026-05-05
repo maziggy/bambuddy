@@ -4,8 +4,13 @@
 # Powers the HDMI output off via wlopm after the configured inactivity
 # timeout, driven by swayidle inside the labwc Wayland session. The timeout
 # value is fetched once from the Bambuddy backend on startup so it matches
-# whatever the user picked in SpoolBuddy Settings → Display. Changes made
-# in the UI take effect on the next reboot / kiosk restart.
+# whatever the user picked in SpoolBuddy Settings → Display.
+#
+# Changes made in the UI are applied live: the daemon writes a
+# "reload-timeout N" line to /tmp/spoolbuddy-wake whenever it sees a new
+# value over the heartbeat, and the FIFO loop below kills the current
+# swayidle and starts a fresh one with the new timeout. No kiosk restart
+# is required.
 #
 # Runs in labwc's autostart file as the kiosk user — needs access to
 # WAYLAND_DISPLAY, which it inherits from the parent labwc process.
@@ -85,45 +90,94 @@ if [ -n "$BACKEND_URL" ] && [ -n "$API_KEY" ] && [ -n "$DEVICE_ID" ]; then
     fi
 fi
 
-# FIFO for the SpoolBuddy daemon to request display wake from outside the
-# Wayland session (NFC tag scan, scale weight change).  The daemon writes
-# "wake\n" to this pipe; the monitor loop below calls wlopm --on.
+# FIFO for the SpoolBuddy daemon to talk to this watchdog from outside the
+# Wayland session.  Two messages are understood:
+#   wake               — turn the display on (NFC tag scan, scale weight change)
+#   reload-timeout N   — kill swayidle and restart it with timeout=N
 WAKE_FIFO="/tmp/spoolbuddy-wake"
 rm -f "$WAKE_FIFO"
 mkfifo -m 622 "$WAKE_FIFO"
 echo "wake FIFO created at $WAKE_FIFO"
 
-if [ "$TIMEOUT" -le 0 ]; then
-    # Blanking explicitly disabled — just monitor the wake FIFO so NFC/scale
-    # wake still works even without swayidle.
-    echo "timeout<=0, monitoring wake FIFO only (no swayidle)"
-    while read -r _ < "$WAKE_FIFO"; do
-        wlopm --on "$OUTPUT" 2>/dev/null || true
-    done
-    exit 0
-fi
-
-echo "starting swayidle with timeout=$TIMEOUT output=$OUTPUT"
-swayidle -w \
-    timeout "$TIMEOUT" "wlopm --off $OUTPUT" \
-    resume "wlopm --on $OUTPUT" &
-SWAYIDLE_PID=$!
-
-# Monitor wake FIFO — when the daemon writes to it, turn the display on
-# and schedule a re-blank after TIMEOUT seconds (swayidle doesn't know about
-# FIFO wakes so it won't re-blank on its own).
+SWAYIDLE_PID=""
 REBLANK_PID=""
-while read -r _ < "$WAKE_FIFO"; do
-    wlopm --on "$OUTPUT" 2>/dev/null || true
-    # Cancel any pending re-blank timer, then start a new one
-    [ -n "$REBLANK_PID" ] && kill "$REBLANK_PID" 2>/dev/null || true
-    (sleep "$TIMEOUT" && wlopm --off "$OUTPUT" 2>/dev/null) &
-    REBLANK_PID=$!
-done &
-FIFO_PID=$!
 
-# If either process exits, clean up and exit.
-wait -n "$SWAYIDLE_PID" "$FIFO_PID" 2>/dev/null
-echo "child exited, cleaning up"
-kill "$SWAYIDLE_PID" "$FIFO_PID" 2>/dev/null || true
-rm -f "$WAKE_FIFO"
+start_swayidle() {
+    [ "$TIMEOUT" -gt 0 ] || return 0
+    swayidle -w \
+        timeout "$TIMEOUT" "wlopm --off $OUTPUT" \
+        resume "wlopm --on $OUTPUT" &
+    SWAYIDLE_PID=$!
+    echo "swayidle started (pid=$SWAYIDLE_PID, timeout=$TIMEOUT, output=$OUTPUT)"
+}
+
+stop_swayidle() {
+    if [ -n "$SWAYIDLE_PID" ]; then
+        kill "$SWAYIDLE_PID" 2>/dev/null || true
+        wait "$SWAYIDLE_PID" 2>/dev/null || true
+        SWAYIDLE_PID=""
+    fi
+    if [ -n "$REBLANK_PID" ]; then
+        kill "$REBLANK_PID" 2>/dev/null || true
+        REBLANK_PID=""
+    fi
+}
+
+cleanup() {
+    stop_swayidle
+    rm -f "$WAKE_FIFO"
+    exit 0
+}
+trap cleanup TERM INT HUP
+
+start_swayidle
+
+# Open the FIFO read+write so EOF never arrives even when the daemon
+# (the writer) momentarily disconnects between messages — without this,
+# `read` would return immediately the first time the daemon closes its
+# write end and the loop would spin.
+exec 3<>"$WAKE_FIFO"
+
+while IFS= read -r line <&3; do
+    case "$line" in
+        wake)
+            wlopm --on "$OUTPUT" 2>/dev/null || true
+            # Cancel any pending re-blank timer, then start a new one
+            # at the *current* timeout (swayidle doesn't know about
+            # FIFO wakes so it won't re-blank on its own).
+            [ -n "$REBLANK_PID" ] && kill "$REBLANK_PID" 2>/dev/null || true
+            REBLANK_PID=""
+            if [ "$TIMEOUT" -gt 0 ]; then
+                (sleep "$TIMEOUT" && wlopm --off "$OUTPUT" 2>/dev/null) &
+                REBLANK_PID=$!
+            fi
+            ;;
+        reload-timeout\ *)
+            new_timeout="${line#reload-timeout }"
+            # Validate: must be a non-negative integer.
+            if [ "$new_timeout" -eq "$new_timeout" ] 2>/dev/null && [ "$new_timeout" -ge 0 ]; then
+                if [ "$new_timeout" != "$TIMEOUT" ]; then
+                    echo "reload-timeout: $TIMEOUT -> $new_timeout"
+                    stop_swayidle
+                    TIMEOUT="$new_timeout"
+                    start_swayidle
+                    # Bring the display back on so the user sees the
+                    # change took effect (a setting saved while the
+                    # screen was already blanked would otherwise look
+                    # ignored until the next touch).
+                    wlopm --on "$OUTPUT" 2>/dev/null || true
+                fi
+            else
+                echo "ignoring invalid reload-timeout payload: $new_timeout"
+            fi
+            ;;
+        '')
+            : # ignore empty lines (e.g. opening the FIFO with no payload)
+            ;;
+        *)
+            echo "unknown FIFO message: $line"
+            ;;
+    esac
+done
+
+cleanup

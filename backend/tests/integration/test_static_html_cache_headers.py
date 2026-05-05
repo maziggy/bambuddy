@@ -42,9 +42,38 @@ HTML_ROUTES = [
 ]
 
 
+@pytest.fixture
+def fake_static_index(monkeypatch, tmp_path):
+    """Provide a minimal ``static/index.html`` so the route handlers don't
+    fall through to their "frontend not built" JSON branch.
+
+    The ``backend-test`` Dockerfile.test target intentionally doesn't bake
+    in the built frontend (saves ~30 s of build time per test run), and
+    contributors running ``pytest backend/tests/`` from a checkout without
+    a prior ``npm run build`` would also miss it.  The test asserts the
+    cache-header contract on the index.html serve path, not the bundle
+    contents — so a one-line stub is enough to exercise the real route
+    handlers in ``main.py:serve_frontend`` / ``main.py:serve_spa`` against
+    a real ``index.html`` on disk.
+    """
+    from backend.app import main as main_mod
+    from backend.app.core import config as config_mod
+
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("<!doctype html><title>stub</title>")
+
+    monkeypatch.setattr(config_mod.settings, "static_dir", static_dir)
+    # main.py imports `settings as app_settings`, so the route handlers
+    # resolve `app_settings.static_dir` per request. Patch the import-site
+    # binding too in case future refactors stop sharing the singleton.
+    monkeypatch.setattr(main_mod.app_settings, "static_dir", static_dir)
+    return static_dir
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("path",), HTML_ROUTES)
-async def test_index_html_emits_no_cache_directive(async_client: AsyncClient, path: str):
+async def test_index_html_emits_no_cache_directive(async_client: AsyncClient, fake_static_index, path: str):
     """Every index.html serve must emit ``Cache-Control: no-cache,
     must-revalidate`` — kiosks rely on this to pick up new builds without
     operator intervention."""

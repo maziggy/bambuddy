@@ -219,6 +219,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - **Bulk spool addition** — Add multiple identical spools at once (quantity 1–100) with a single form submission. Quick Add mode for stock spools that only need material, color, and weight.
 - Spool catalog, color catalog, PA profile matching, and low-stock alerts
 - **Multi-colour gradients, transparency, and visual effects** — Paste a comma-separated hex list (e.g. from 3dfilamentprofiles.com) to render a spool as a gradient or conic colour wheel; transparency shows through a checkerboard so the alpha you set is the alpha you see; pick a visual effect (sparkle, wood, marble, glow, matte) for the swatch overlay. Same fields are editable on the colour catalog so combos can be reused across spools.
+- **Printable spool labels** — Generate PDF labels for any selection of spools in four pre-built sizes: AMS holder (30×15 mm), box label (62×29 mm), Avery L7160 sheet (A4, 21 per page), and Avery 5160 sheet (US Letter, 30 per page). Each label shows the colour swatch, brand, material, name, the **spool ID** (for at-a-glance identification across many similar spools), and a QR code that deep-links straight back to the spool's row in Bambuddy when scanned with a phone. Pick from the inventory page — search, filter by material, multi-select spools, then print or save to PDF.
 
 ### 🔧 Integrations
 - [Spoolman](https://github.com/Donkie/Spoolman) filament sync with per-filament usage tracking and fill level display

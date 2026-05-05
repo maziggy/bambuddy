@@ -2270,6 +2270,9 @@ export interface LinkedSpoolsMap {
 }
 
 // Inventory types
+// Label printing (#809). Mirror of backend.app.services.label_renderer.TemplateName.
+export type SpoolLabelTemplate = 'ams_30x15' | 'box_62x29' | 'avery_5160' | 'avery_l7160';
+
 export interface InventorySpool {
   id: number;
   material: string;
@@ -2357,6 +2360,7 @@ export interface SpoolAssignment {
   fingerprint_type: string | null;
   spool?: InventorySpool | null;
   configured: boolean;
+  pending_config?: boolean;  // Slot was empty at assign time; will configure on insert
   created_at: string;
   ams_label?: string | null;  // User-defined friendly name for the AMS unit
 }
@@ -4424,6 +4428,37 @@ export const api = {
     }),
   unassignSpool: (printerId: number, amsId: number, trayId: number) =>
     request<{ status: string }>(`/inventory/assignments/${printerId}/${amsId}/${trayId}`, { method: 'DELETE' }),
+  // ── Spool label printing (#809) ──────────────────────────────────────────
+  // Both endpoints return application/pdf. Frontend opens the resulting Blob
+  // in a new tab so the user can print or save from the browser's PDF viewer.
+  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/inventory/labels`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
+  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/spoolman/labels`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
   getSpoolCatalog: () =>
     request<SpoolCatalogEntry[]>('/inventory/catalog'),
   addCatalogEntry: (data: { name: string; weight: number }) =>

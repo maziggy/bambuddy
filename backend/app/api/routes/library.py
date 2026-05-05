@@ -2977,7 +2977,9 @@ async def slice_and_persist(
     )
     db.add(new_file)
     await db.commit()
-    await db.refresh(new_file)
+    # No refresh: expire_on_commit=False keeps id/filename accessible, and
+    # refreshing here flakes under pytest-xdist when teardown of a sibling
+    # test races the SELECT.
 
     return SliceResponse(
         library_file_id=new_file.id,

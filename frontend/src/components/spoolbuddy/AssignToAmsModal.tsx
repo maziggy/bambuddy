@@ -167,27 +167,37 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignTo
   }, [isDualNozzle, amsExtruderMap]);
 
   // Assign spool to AMS slot — single API call, backend handles both
-  // DB record AND MQTT auto-configuration (same as SpoolStation).
+  // DB record AND MQTT auto-configuration (same as SpoolStation). When the
+  // target slot is currently empty, the backend persists the assignment and
+  // skips the MQTT publish (firmware drops it anyway); on_ams_change re-fires
+  // the full configuration when filament is later inserted. The response's
+  // `pending_config` flag distinguishes that from the immediate-apply path
+  // so we can adjust the success toast.
   const configureMutation = useMutation({
     mutationFn: async ({ amsId, trayId }: { amsId: number; trayId: number }) => {
       if (!printerId) throw new Error('No printer selected');
 
-      await api.assignSpool({
+      return await api.assignSpool({
         spool_id: spool.id,
         printer_id: printerId,
         ams_id: amsId,
         tray_id: trayId,
       });
-
-      // Slot preset mapping is now saved by the backend in assign_spool()
-      // after successful MQTT configuration, using the authoritative
-      // slicer_filament_name from the spool record.
     },
-    onSuccess: () => {
+    onSuccess: (assignment) => {
       setStatusType('success');
-      setStatusMessage(t('spoolbuddy.modal.assignSuccess', 'Assigned!'));
+      if (assignment?.pending_config) {
+        setStatusMessage(
+          t(
+            'spoolbuddy.modal.assignPendingInsert',
+            'Assigned. Slot will configure when you insert the spool.',
+          ),
+        );
+      } else {
+        setStatusMessage(t('spoolbuddy.modal.assignSuccess', 'Assigned!'));
+      }
       queryClient.invalidateQueries({ queryKey: ['slotPresets'] });
-      setTimeout(() => onClose(), 1500);
+      setTimeout(() => onClose(), assignment?.pending_config ? 2500 : 1500);
     },
     onError: (err) => {
       setStatusType('error');

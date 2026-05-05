@@ -15,6 +15,7 @@ import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
 import { SpoolFormModal } from '../components/SpoolFormModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
+import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
 import { useToast } from '../contexts/ToastContext';
 import { resolveSpoolColorName } from '../utils/colors';
 import { getCurrencySymbol } from '../utils/currency';
@@ -189,6 +190,7 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
         rgba={spool.rgba}
         extraColors={spool.extra_colors}
         effectType={spool.effect_type}
+        effectSize="table"
         subtype={spool.subtype}
       />
     </div>
@@ -482,6 +484,8 @@ function InventoryPage() {
   const { showToast } = useToast();
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
+  // Label printing (#809). null = closed; otherwise the IDs to print labels for.
+  const [labelPickerSpoolIds, setLabelPickerSpoolIds] = useState<number[] | null>(null);
 
   // Filter state
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('active');
@@ -882,10 +886,28 @@ function InventoryPage() {
           </h1>
           <p className="text-bambu-gray mt-1">{t('inventory.subtitle')}</p>
         </div>
-        <Button onClick={() => setFormModal({ spool: null })}>
-          <Plus className="w-4 h-4" />
-          {t('inventory.addSpool')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            disabled={filteredSpools.length === 0}
+            // Pre-select every visible spool so the user lands in "all
+            // checked", then refines downward in the modal. Per-card icon
+            // pre-selects only that spool — both flows share the same picker.
+            onClick={() => setLabelPickerSpoolIds(filteredSpools.map((s) => s.id))}
+            title={
+              filteredSpools.length === 0
+                ? t('inventory.labels.noSpoolsTitle', 'No spools to label')
+                : t('inventory.labels.bulkTitle', 'Pick spools to print labels for from the {{count}} currently shown', { count: filteredSpools.length })
+            }
+          >
+            <Printer className="w-4 h-4" />
+            {t('inventory.labels.printLabels', 'Print labels…')}
+          </Button>
+          <Button onClick={() => setFormModal({ spool: null })}>
+            <Plus className="w-4 h-4" />
+            {t('inventory.addSpool')}
+          </Button>
+        </div>
       </div>
 
       {/* Stats Bar */}
@@ -1300,6 +1322,7 @@ function InventoryPage() {
                     extraColors: rep.extra_colors,
                     effectType: rep.effect_type,
                     subtype: rep.subtype,
+                    effectSize: 'groupheader',
                   });
                   const isExpanded = expandedGroups.has(key);
                   return (
@@ -1343,6 +1366,7 @@ function InventoryPage() {
                                 remaining={remaining}
                                 pct={pct}
                                 onClick={() => setFormModal({ spool })}
+                                onPrintLabel={() => setLabelPickerSpoolIds([spool.id])}
                                 t={t}
                               />
                             );
@@ -1362,6 +1386,7 @@ function InventoryPage() {
                     remaining={remaining}
                     pct={pct}
                     onClick={() => setFormModal({ spool })}
+                    onPrintLabel={() => setLabelPickerSpoolIds([spool.id])}
                     t={t}
                   />
                 );
@@ -1439,6 +1464,7 @@ function InventoryPage() {
                           onEdit={(s) => setFormModal({ spool: s })}
                           onArchive={(id) => setConfirmAction({ type: 'archive', spoolId: id })}
                           onDelete={(id) => setConfirmAction({ type: 'delete', spoolId: id })}
+                          onPrintLabel={(id) => setLabelPickerSpoolIds([id])}
                           visibleColumns={visibleColumns}
                           assignmentMap={assignmentMap}
                           catalogMap={catalogMap}
@@ -1462,6 +1488,7 @@ function InventoryPage() {
                         onRestore={() => restoreMutation.mutate(spool.id)}
                         onArchive={() => setConfirmAction({ type: 'archive', spoolId: spool.id })}
                         onDelete={() => setConfirmAction({ type: 'delete', spoolId: spool.id })}
+                        onPrintLabel={() => setLabelPickerSpoolIds([spool.id])}
                         visibleColumns={visibleColumns}
                         assignmentMap={assignmentMap}
                         catalogMap={catalogMap}
@@ -1586,6 +1613,18 @@ function InventoryPage() {
         defaultColumns={DEFAULT_COLUMNS}
         onSave={handleColumnConfigSave}
       />
+
+      {/* Label printing (#809) — local-mode only on dev. The Spoolman path
+          on this branch hands users an iframe straight to Spoolman, so the
+          per-spool button never shows in that context. The Spoolman label
+          endpoint is wired and tested for when the inventory UI lands. */}
+      <LabelTemplatePickerModal
+        isOpen={labelPickerSpoolIds !== null}
+        onClose={() => setLabelPickerSpoolIds(null)}
+        availableSpools={filteredSpools}
+        initialSelectedIds={labelPickerSpoolIds ?? []}
+        spoolmanMode={false}
+      />
     </div>
   );
 }
@@ -1669,12 +1708,13 @@ function PaginationBar({
 
 /* Spool card for cards view */
 function SpoolCard({
-  spool, remaining, pct, onClick, t,
+  spool, remaining, pct, onClick, onPrintLabel, t,
 }: {
   spool: InventorySpool;
   remaining: number;
   pct: number;
   onClick: () => void;
+  onPrintLabel?: () => void;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
   const bannerStyle = buildFilamentBackground({
@@ -1682,6 +1722,7 @@ function SpoolCard({
     extraColors: spool.extra_colors,
     effectType: spool.effect_type,
     subtype: spool.subtype,
+    effectSize: 'card',
   });
   return (
     <div
@@ -1701,9 +1742,21 @@ function SpoolCard({
             </h3>
             <p className="text-sm text-bambu-gray">{spool.brand || '-'}</p>
           </div>
-          <span className="text-xs font-mono text-bambu-gray bg-bambu-dark-tertiary px-2 py-1 rounded">
-            #{spool.id}
-          </span>
+          <div className="flex items-center gap-1">
+            {onPrintLabel && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onPrintLabel(); }}
+                className="p-1 text-bambu-gray hover:text-white rounded transition-colors"
+                title={t('inventory.labels.printOne')}
+                aria-label={t('inventory.labels.printOne')}
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+            )}
+            <span className="text-xs font-mono text-bambu-gray bg-bambu-dark-tertiary px-2 py-1 rounded">
+              #{spool.id}
+            </span>
+          </div>
         </div>
         <div>
           <div className="flex justify-between text-xs text-bambu-gray mb-1">
@@ -1749,7 +1802,7 @@ function SpoolCard({
 
 /* Single spool row for table view */
 function SpoolTableRow({
-  spool, remaining, pct, onEdit, onRestore, onArchive, onDelete,
+  spool, remaining, pct, onEdit, onRestore, onArchive, onDelete, onPrintLabel,
   visibleColumns, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight,
 }: {
   spool: InventorySpool;
@@ -1759,6 +1812,7 @@ function SpoolTableRow({
   onRestore: () => void;
   onArchive: () => void;
   onDelete: () => void;
+  onPrintLabel?: () => void;
   visibleColumns: string[];
   assignmentMap: Record<number, SpoolAssignment>;
   catalogMap: Record<number, SpoolCatalogEntry>;
@@ -1784,6 +1838,11 @@ function SpoolTableRow({
           <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('common.edit')}>
             <Edit2 className="w-4 h-4" />
           </button>
+          {onPrintLabel && (
+            <button onClick={onPrintLabel} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('inventory.labels.printOne')}>
+              <Printer className="w-4 h-4" />
+            </button>
+          )}
           {spool.archived_at ? (
             <button onClick={onRestore} className="p-1.5 text-bambu-gray hover:text-bambu-green rounded transition-colors" title={t('inventory.restore')}>
               <RotateCcw className="w-4 h-4" />
@@ -1805,7 +1864,7 @@ function SpoolTableRow({
 /* Grouped spool rows for table view */
 function SpoolTableGroup({
   spools, representative, remaining, pct, isExpanded, onToggle,
-  onEdit, onArchive, onDelete,
+  onEdit, onArchive, onDelete, onPrintLabel,
   visibleColumns, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight,
 }: {
   spools: InventorySpool[];
@@ -1817,6 +1876,7 @@ function SpoolTableGroup({
   onEdit: (spool: InventorySpool) => void;
   onArchive: (id: number) => void;
   onDelete: (id: number) => void;
+  onPrintLabel?: (spoolId: number) => void;
   visibleColumns: string[];
   assignmentMap: Record<number, SpoolAssignment>;
   catalogMap: Record<number, SpoolCatalogEntry>;
@@ -1868,6 +1928,7 @@ function SpoolTableGroup({
             onRestore={() => {}}
             onArchive={() => onArchive(spool.id)}
             onDelete={() => onDelete(spool.id)}
+            onPrintLabel={onPrintLabel ? () => onPrintLabel(spool.id) : undefined}
             visibleColumns={visibleColumns}
             assignmentMap={assignmentMap}
             catalogMap={catalogMap}

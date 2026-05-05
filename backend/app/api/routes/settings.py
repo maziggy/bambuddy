@@ -928,21 +928,6 @@ async def update_virtual_printer_settings(
     new_remote_iface = remote_interface_ip if remote_interface_ip is not None else current_remote_iface
     new_ts_disabled = tailscale_disabled if tailscale_disabled is not None else current_ts_disabled
 
-    # Guard: enabling Tailscale (disabled=False) requires the binary to be present. Otherwise
-    # the toggle looks like it worked but the service will silently fall back to self-signed.
-    if tailscale_disabled is False and current_ts_disabled is True:
-        from backend.app.services.virtual_printer.tailscale import tailscale_service
-
-        ts_status = await tailscale_service.get_status()
-        if not ts_status.available:
-            return JSONResponse(
-                status_code=409,
-                content={
-                    "detail": "tailscale_not_available",
-                    "reason": ts_status.error or "tailscale binary not found",
-                },
-            )
-
     # Validate mode
     # "review" is the new name for "queue" (pending review before archiving)
     # "print_queue" archives and adds to print queue (unassigned)

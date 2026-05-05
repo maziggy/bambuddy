@@ -3356,6 +3356,42 @@ export default {
     spoolmanMixedContentFixReverseProxy: 'Spoolman を Bambuddy と同じリバースプロキシ（Traefik / Nginx / Caddy）の後ろに HTTPS で配置し、設定で Spoolman URL を新しい HTTPS アドレスに更新してください。',
     spoolmanMixedContentFixOpenNewTab: '回避策として Spoolman を新しいタブで HTTP として開くことができます — 混在コンテンツのルールは埋め込みフレームのみに適用され、独立したタブは問題なく動作します。',
     spoolmanOpenInNewTab: 'Spoolman を新しいタブで開く',
+    labels: {
+      title: 'Print spool labels',
+      selectedCount: '{{count}} selected',
+      pickSpools: 'Pick which spools to print labels for:',
+      searchPlaceholder: 'Search name, brand, or #ID',
+      filterByMaterial: 'Material:',
+      allMaterials: 'All',
+      selectVisible: 'Select all visible ({{count}})',
+      deselectVisible: 'Deselect visible',
+      clearAll: 'Clear all',
+      noSpoolsToShow: 'No spools to show. Adjust your filter and try again.',
+      noMatches: 'No spools match the current search or filter.',
+      printOne: 'Print label for this spool',
+      printLabels: 'Print labels…',
+      bulkTitle: 'Pick spools to print labels for from the {{count}} currently shown',
+      noSpoolsTitle: 'No spools to label',
+      error: 'Could not generate labels: {{msg}}',
+      templates: {
+        ams: {
+          label: 'AMS holder (30 × 15 mm)',
+          hint: 'Single label per page; fits the popular AMS filament label holder.',
+        },
+        box: {
+          label: 'Box label (62 × 29 mm)',
+          hint: 'Single label per page; sized for Brother PT/QL and Dymo small labels.',
+        },
+        averyL7160: {
+          label: 'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+          hint: 'EU sheet stock; 21 labels per A4 page.',
+        },
+        avery5160: {
+          label: 'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
+          hint: 'US sheet stock; 30 labels per Letter page.',
+        },
+      },
+    },
     addSpool: 'スプールを追加',
     editSpool: 'スプールを編集',
     material: '素材',
@@ -4087,7 +4123,7 @@ export default {
     },
     tailscaleDisabled: {
       title: 'Tailscale統合',
-      description: '有効にすると、Tailscaleを使用して信頼できるTLS証明書を使用します。自己署名証明書のみを使用する場合は無効にします。',
+      description: 'Enable to mark this VP as exposed over Tailscale. Shows the host\'s Tailscale address so you know which IP to paste into the slicer. The CA-import step is unchanged — this toggle has no effect on certificates.',
     },
     setupRequired: {
       title: 'セットアップが必要です',
@@ -4116,7 +4152,6 @@ export default {
     toast: {
       updated: '仮想プリンター設定を更新しました',
       failedToUpdate: '設定の更新に失敗しました',
-      tailscaleNotAvailable: 'このホストにTailscaleがインストールされていません。先にTailscaleをインストールしてから再試行してください。',
       copyFailed: 'コピーに失敗しました — テキストを手動で選択してください',
       accessCodeRequired: '先にアクセスコードを設定してください',
       targetPrinterRequired: '先にターゲットプリンターを選択してください',
@@ -5034,6 +5069,7 @@ export default {
       assign: '割り当て',
       assigning: '割り当て中...',
       assignSuccess: '割り当て完了！',
+      assignPendingInsert: '割り当てました。スプールを挿入したときにスロットが設定されます。',
       assignError: 'スプールの割り当てに失敗しました。再試行してください。',
       noPrinterSelected: 'プリンターを選択...',
       noAmsDetected: 'このプリンターにAMSが検出されません',

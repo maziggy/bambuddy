@@ -342,20 +342,6 @@ async def update_virtual_printer(
     if body.remote_interface_ip is not None:
         vp.remote_interface_ip = body.remote_interface_ip
     if body.tailscale_disabled is not None:
-        # Guard: user trying to enable Tailscale (disabled=False) must have the binary available.
-        # Otherwise the toggle looks like it works but silently falls back to self-signed.
-        if body.tailscale_disabled is False and vp.tailscale_disabled is True:
-            from backend.app.services.virtual_printer.tailscale import tailscale_service
-
-            ts_status = await tailscale_service.get_status()
-            if not ts_status.available:
-                return JSONResponse(
-                    status_code=409,
-                    content={
-                        "detail": "tailscale_not_available",
-                        "reason": ts_status.error or "tailscale binary not found",
-                    },
-                )
         vp.tailscale_disabled = body.tailscale_disabled
 
     # Auto-inherit model when switching to proxy mode with existing target printer

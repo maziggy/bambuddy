@@ -3344,6 +3344,42 @@ export default {
     spoolmanMixedContentFixReverseProxy: '请将 Spoolman 置于与 Bambuddy 相同的反向代理（Traefik / Nginx / Caddy）之后并启用 HTTPS，然后在设置中将 Spoolman URL 更新为新的 HTTPS 地址。',
     spoolmanMixedContentFixOpenNewTab: '作为变通方案，可在新标签页中通过 HTTP 打开 Spoolman — 混合内容规则仅适用于嵌入式框架，独立标签页仍可正常使用。',
     spoolmanOpenInNewTab: '在新标签页中打开 Spoolman',
+    labels: {
+      title: 'Print spool labels',
+      selectedCount: '{{count}} selected',
+      pickSpools: 'Pick which spools to print labels for:',
+      searchPlaceholder: 'Search name, brand, or #ID',
+      filterByMaterial: 'Material:',
+      allMaterials: 'All',
+      selectVisible: 'Select all visible ({{count}})',
+      deselectVisible: 'Deselect visible',
+      clearAll: 'Clear all',
+      noSpoolsToShow: 'No spools to show. Adjust your filter and try again.',
+      noMatches: 'No spools match the current search or filter.',
+      printOne: 'Print label for this spool',
+      printLabels: 'Print labels…',
+      bulkTitle: 'Pick spools to print labels for from the {{count}} currently shown',
+      noSpoolsTitle: 'No spools to label',
+      error: 'Could not generate labels: {{msg}}',
+      templates: {
+        ams: {
+          label: 'AMS holder (30 × 15 mm)',
+          hint: 'Single label per page; fits the popular AMS filament label holder.',
+        },
+        box: {
+          label: 'Box label (62 × 29 mm)',
+          hint: 'Single label per page; sized for Brother PT/QL and Dymo small labels.',
+        },
+        averyL7160: {
+          label: 'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+          hint: 'EU sheet stock; 21 labels per A4 page.',
+        },
+        avery5160: {
+          label: 'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
+          hint: 'US sheet stock; 30 labels per Letter page.',
+        },
+      },
+    },
     addSpool: '添加耗材',
     editSpool: '编辑耗材',
     material: '材料',
@@ -4075,7 +4111,7 @@ export default {
     },
     tailscaleDisabled: {
       title: 'Tailscale 集成',
-      description: '启用后，使用 Tailscale 获取受信任的 TLS 证书。禁用则仅使用自签名证书。',
+      description: 'Enable to mark this VP as exposed over Tailscale. Shows the host\'s Tailscale address so you know which IP to paste into the slicer. The CA-import step is unchanged — this toggle has no effect on certificates.',
     },
     setupRequired: {
       title: '需要设置',
@@ -4110,7 +4146,6 @@ export default {
     toast: {
       updated: '虚拟打印机设置已更新',
       failedToUpdate: '更新设置失败',
-      tailscaleNotAvailable: '此主机上未安装 Tailscale。请先安装 Tailscale，然后重试。',
       copyFailed: '复制失败 — 请手动选中文本',
       accessCodeRequired: '请先设置访问码',
       targetPrinterRequired: '请先选择目标打印机',
@@ -5021,6 +5056,7 @@ export default {
       assign: '分配',
       assigning: '分配中...',
       assignSuccess: '已分配！',
+      assignPendingInsert: '已分配。插入耗材后将配置槽位。',
       assignError: '分配耗材失败。请重试。',
       noPrinterSelected: '选择打印机...',
       noAmsDetected: '此打印机未检测到 AMS',

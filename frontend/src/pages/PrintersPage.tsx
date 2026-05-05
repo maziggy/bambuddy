@@ -1038,7 +1038,7 @@ function ToolbarDropdown<T extends string>({
   const selectedOption = options.find(option => option.value === value) ?? options[0];
 
   return (
-    <div className={`relative ${fullWidth ? 'w-full' : ''}`}>
+    <div className={`relative ${fullWidth ? 'w-full min-w-0' : ''}`}>
       <button
         type="button"
         onClick={() => setIsOpen(open => !open)}
@@ -6835,7 +6835,7 @@ export function PrintersPage() {
         />
         <button
           onClick={toggleSortDirection}
-          className="h-8 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center justify-center"
+          className="h-8 shrink-0 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center justify-center"
           title={sortAsc ? t('printers.sort.descending') : t('printers.sort.ascending')}
         >
           {sortAsc ? (
@@ -6953,6 +6953,7 @@ export function PrintersPage() {
         title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
         className={`!h-8 !min-h-8 px-2 py-0 ${inMenu ? 'w-full' : ''}`}
       >
+        <Plus className="w-4 h-4" />
         {t('printers.addPrinter')}
       </Button>
     </>

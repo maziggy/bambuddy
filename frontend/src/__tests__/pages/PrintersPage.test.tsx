@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { PrintersPage } from '../../pages/PrintersPage';
 import { http, HttpResponse } from 'msw';
@@ -58,6 +59,13 @@ const mockPrinterStatus = {
   filename: null,
   wifi_signal: -50,
   vt_tray: [],
+};
+
+const selectToolbarDropdownOption = async (triggerName: RegExp, optionName: RegExp) => {
+  const user = userEvent.setup();
+
+  await user.click(screen.getByRole('button', { name: triggerName }));
+  await user.click(await screen.findByRole('button', { name: optionName }));
 };
 
 describe('PrintersPage', () => {
@@ -811,9 +819,7 @@ describe('PrintersPage', () => {
       render(<PrintersPage />);
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
-      // Select "Offline" from the status filter dropdown
-      const statusSelect = screen.getByDisplayValue('All statuses');
-      fireEvent.change(statusSelect, { target: { value: 'offline' } });
+      await selectToolbarDropdownOption(/all statuses/i, /^offline$/i);
 
       await waitFor(() => {
         expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
@@ -826,8 +832,7 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
       // Both printers are IDLE; filtering by "printing" should yield no results
-      const statusSelect = screen.getByDisplayValue('All statuses');
-      fireEvent.change(statusSelect, { target: { value: 'printing' } });
+      await selectToolbarDropdownOption(/all statuses/i, /^printing$/i);
 
       await waitFor(() => {
         expect(screen.getByText('No printers match your search or filters')).toBeInTheDocument();
@@ -849,7 +854,7 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
       // Filter to only "printing" printers
-      fireEvent.change(screen.getByDisplayValue('All statuses'), { target: { value: 'printing' } });
+      await selectToolbarDropdownOption(/all statuses/i, /^printing$/i);
 
       // Then also search for a term that only matches printer 1
       fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: 'X1' } });
@@ -878,16 +883,14 @@ describe('PrintersPage', () => {
         expect(screen.getByText('P1S Backup')).toBeInTheDocument();
       });
 
-      // Select "Workshop" from the location filter dropdown
-      fireEvent.change(screen.getByDisplayValue('All locations'), { target: { value: 'Workshop' } });
+      await selectToolbarDropdownOption(/all locations/i, /^workshop$/i);
 
       await waitFor(() => {
         expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
         expect(screen.queryByText('P1S Backup')).not.toBeInTheDocument();
       });
 
-      // Switch to "Office" — the other printer should now be the only one visible
-      fireEvent.change(screen.getByDisplayValue('Workshop'), { target: { value: 'Office' } });
+      await selectToolbarDropdownOption(/^workshop$/i, /^office$/i);
 
       await waitFor(() => {
         expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
@@ -910,8 +913,8 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
       // Status filter is still there, but the location filter should be absent.
-      expect(screen.getByDisplayValue('All statuses')).toBeInTheDocument();
-      expect(screen.queryByDisplayValue('All locations')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /all statuses/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /all locations/i })).not.toBeInTheDocument();
     });
   });
 });

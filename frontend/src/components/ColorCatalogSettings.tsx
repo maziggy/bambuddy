@@ -640,6 +640,7 @@ export function ColorCatalogSettings() {
                               className="w-8 h-8"
                               shape="square"
                               title={entry.hex_color}
+                              effectSize="table"
                             />
                           </td>
                           <td className="px-3 py-2 text-white">{entry.manufacturer}</td>

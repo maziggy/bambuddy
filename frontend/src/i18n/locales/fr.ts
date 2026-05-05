@@ -3344,6 +3344,42 @@ export default {
     spoolmanMixedContentFixReverseProxy: 'Placez Spoolman derrière le même reverse proxy que Bambuddy (Traefik / Nginx / Caddy) en HTTPS, puis mettez à jour l\'URL Spoolman dans les Paramètres avec la nouvelle adresse HTTPS.',
     spoolmanMixedContentFixOpenNewTab: 'Alternative : ouvrez Spoolman dans un nouvel onglet en HTTP — les règles de contenu mixte ne s\'appliquent qu\'aux cadres intégrés, un onglet autonome fonctionne.',
     spoolmanOpenInNewTab: 'Ouvrir Spoolman dans un nouvel onglet',
+    labels: {
+      title: 'Print spool labels',
+      selectedCount: '{{count}} selected',
+      pickSpools: 'Pick which spools to print labels for:',
+      searchPlaceholder: 'Search name, brand, or #ID',
+      filterByMaterial: 'Material:',
+      allMaterials: 'All',
+      selectVisible: 'Select all visible ({{count}})',
+      deselectVisible: 'Deselect visible',
+      clearAll: 'Clear all',
+      noSpoolsToShow: 'No spools to show. Adjust your filter and try again.',
+      noMatches: 'No spools match the current search or filter.',
+      printOne: 'Print label for this spool',
+      printLabels: 'Print labels…',
+      bulkTitle: 'Pick spools to print labels for from the {{count}} currently shown',
+      noSpoolsTitle: 'No spools to label',
+      error: 'Could not generate labels: {{msg}}',
+      templates: {
+        ams: {
+          label: 'AMS holder (30 × 15 mm)',
+          hint: 'Single label per page; fits the popular AMS filament label holder.',
+        },
+        box: {
+          label: 'Box label (62 × 29 mm)',
+          hint: 'Single label per page; sized for Brother PT/QL and Dymo small labels.',
+        },
+        averyL7160: {
+          label: 'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+          hint: 'EU sheet stock; 21 labels per A4 page.',
+        },
+        avery5160: {
+          label: 'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
+          hint: 'US sheet stock; 30 labels per Letter page.',
+        },
+      },
+    },
     addSpool: 'Ajouter Bobine',
     editSpool: 'Modifier Bobine',
     material: 'Matériau',
@@ -4075,7 +4111,7 @@ export default {
     },
     tailscaleDisabled: {
       title: 'Intégration Tailscale',
-      description: 'Lorsqu\'activé, utilise Tailscale pour des certificats TLS de confiance. Désactiver pour n\'utiliser que des certificats auto-signés.',
+      description: 'Enable to mark this VP as exposed over Tailscale. Shows the host\'s Tailscale address so you know which IP to paste into the slicer. The CA-import step is unchanged — this toggle has no effect on certificates.',
     },
     setupRequired: {
       title: 'Configuration requise',
@@ -4104,7 +4140,6 @@ export default {
     toast: {
       updated: 'Réglages virtuels mis à jour',
       failedToUpdate: 'Échec mise à jour',
-      tailscaleNotAvailable: 'Tailscale n\'est pas installé sur cet hôte. Installez Tailscale puis réessayez.',
       copyFailed: 'Échec de la copie — veuillez sélectionner le texte manuellement',
       accessCodeRequired: 'Code d\'accès requis',
       targetPrinterRequired: 'Imprimante cible requise',
@@ -5022,6 +5057,7 @@ export default {
       assign: 'Assigner',
       assigning: 'Attribution...',
       assignSuccess: 'Assigné !',
+      assignPendingInsert: 'Assigné. Le slot sera configuré lors de l\'insertion de la bobine.',
       assignError: 'Échec de l\'attribution de la bobine. Veuillez réessayer.',
       noPrinterSelected: 'Sélectionner une imprimante...',
       noAmsDetected: 'Aucun AMS détecté sur cette imprimante',

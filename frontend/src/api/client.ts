@@ -93,7 +93,9 @@ async function request<T>(
     const detail = error.detail;
     const message = typeof detail === 'string'
       ? detail
-      : (detail ? JSON.stringify(detail) : `HTTP ${response.status}`);
+      : Array.isArray(detail)
+        ? detail.map((e: { msg?: string }) => (e.msg ?? '').replace(/^Value error,\s*/i, '')).filter(Boolean).join('; ')
+        : `HTTP ${response.status}`;
 
     // Handle 401 Unauthorized - only clear token if it's actually invalid
     // Don't clear on "Authentication required" which might be a timing issue
@@ -152,6 +154,7 @@ export interface Printer {
   external_camera_url: string | null;
   external_camera_type: string | null;  // "mjpeg", "rtsp", "snapshot"
   external_camera_enabled: boolean;
+  external_camera_snapshot_url: string | null;  // optional single-frame override (#1177)
   camera_rotation: number;  // 0, 90, 180, 270 degrees
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
@@ -351,6 +354,7 @@ export interface PrinterCreate {
   external_camera_url?: string | null;
   external_camera_type?: string | null;
   external_camera_enabled?: boolean;
+  external_camera_snapshot_url?: string | null;
   camera_rotation?: number;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
@@ -1983,12 +1987,15 @@ export interface NotificationProviderUpdate {
 
 // GitHub Backup types
 export type ScheduleType = 'hourly' | 'daily' | 'weekly';
+export type GitProviderType = 'github' | 'gitea' | 'forgejo' | 'gitlab';
 
 export interface GitHubBackupConfig {
   id: number;
   repository_url: string;
   has_token: boolean;
   branch: string;
+  provider: GitProviderType;
+  allow_insecure_http: boolean;
   schedule_enabled: boolean;
   schedule_type: ScheduleType;
   backup_kprofiles: boolean;
@@ -2010,6 +2017,8 @@ export interface GitHubBackupConfigCreate {
   repository_url: string;
   access_token: string;
   branch?: string;
+  provider?: GitProviderType;
+  allow_insecure_http?: boolean;
   schedule_enabled?: boolean;
   schedule_type?: ScheduleType;
   backup_kprofiles?: boolean;
@@ -2261,6 +2270,9 @@ export interface LinkedSpoolsMap {
 }
 
 // Inventory types
+// Label printing (#809). Mirror of backend.app.services.label_renderer.TemplateName.
+export type SpoolLabelTemplate = 'ams_30x15' | 'box_62x29' | 'avery_5160' | 'avery_l7160';
+
 export interface InventorySpool {
   id: number;
   material: string;
@@ -2348,6 +2360,7 @@ export interface SpoolAssignment {
   fingerprint_type: string | null;
   spool?: InventorySpool | null;
   configured: boolean;
+  pending_config?: boolean;  // Slot was empty at assign time; will configure on insert
   created_at: string;
   ams_label?: string | null;  // User-defined friendly name for the AMS unit
 }
@@ -4415,6 +4428,37 @@ export const api = {
     }),
   unassignSpool: (printerId: number, amsId: number, trayId: number) =>
     request<{ status: string }>(`/inventory/assignments/${printerId}/${amsId}/${trayId}`, { method: 'DELETE' }),
+  // ── Spool label printing (#809) ──────────────────────────────────────────
+  // Both endpoints return application/pdf. Frontend opens the resulting Blob
+  // in a new tab so the user can print or save from the browser's PDF viewer.
+  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/inventory/labels`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
+  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/spoolman/labels`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
   getSpoolCatalog: () =>
     request<SpoolCatalogEntry[]>('/inventory/catalog'),
   addCatalogEntry: (data: { name: string; weight: number }) =>
@@ -5148,9 +5192,9 @@ export const api = {
   deleteGitHubBackupConfig: () =>
     request<{ message: string }>('/github-backup/config', { method: 'DELETE' }),
 
-  testGitHubConnection: (repoUrl: string, token: string) =>
+  testGitHubConnection: (repoUrl: string, token: string, provider: GitProviderType = 'github') =>
     request<GitHubTestConnectionResponse>(
-      `/github-backup/test?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}`,
+      `/github-backup/test?repo_url=${encodeURIComponent(repoUrl)}&token=${encodeURIComponent(token)}&provider=${encodeURIComponent(provider)}`,
       { method: 'POST' }
     ),
 
@@ -5702,7 +5746,6 @@ export interface VirtualPrinterStatus {
   pending_files: number;
   target_printer_ip?: string;  // For proxy mode
   proxy?: VirtualPrinterProxyStatus;  // For proxy mode
-  tailscale_fqdn?: string;  // Set when Tailscale cert is active
 }
 
 export interface VirtualPrinterSettings {
@@ -5797,7 +5840,7 @@ export interface VirtualPrinterConfig {
   bind_ip: string | null;
   remote_interface_ip: string | null;
   position: number;
-  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus; tailscale_fqdn?: string };
+  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus };
 }
 
 export interface VirtualPrinterListResponse {

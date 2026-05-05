@@ -1,11 +1,9 @@
 import React, { useMemo } from 'react';
 import {
-  CHECKERBOARD_BG,
-  CHECKERBOARD_TILE_SIZE,
-  EFFECT_OVERLAYS,
-  buildColorLayer,
   parseStops,
+  buildFilamentBackground,
   type FilamentEffect,
+  type SwatchType,
 } from './filamentSwatchHelpers';
 
 /** Shared filament-colour swatch. See `filamentSwatchHelpers.ts` for the
@@ -28,6 +26,8 @@ export interface FilamentSwatchProps {
   style?: React.CSSProperties;
   /** Native title attribute for hover tooltip. */
   title?: string;
+  /** Tune effect appearance based on target div size. */
+  effectSize: SwatchType;
 }
 
 export function FilamentSwatch({
@@ -39,30 +39,16 @@ export function FilamentSwatch({
   shape = 'circle',
   style,
   title,
+  effectSize,
 }: FilamentSwatchProps) {
   const stops = useMemo(() => parseStops(extraColors), [extraColors]);
-  const colorLayer = useMemo(
-    () => buildColorLayer(rgba, stops, subtype, effectType),
-    [rgba, stops, subtype, effectType],
+
+  const filamentBackground = useMemo(
+    () => buildFilamentBackground({ effectSize, rgba, extraColors, effectType, subtype }),
+    [effectSize, rgba, extraColors, effectType, subtype]
   );
-
-  const effectKey =
-    typeof effectType === 'string' && effectType in EFFECT_OVERLAYS
-      ? (effectType as FilamentEffect)
-      : null;
-  const effectLayer = effectKey ? EFFECT_OVERLAYS[effectKey] ?? null : null;
-
-  // Layer order (top → bottom): effect overlay → colour layer → checkerboard.
-  // Per-layer background-size: 'cover' on the painted layers, fixed tile on
-  // the checkerboard so its cell density doesn't scale with element size
-  // (a card-sized swatch with `cover` checker would render only 4 huge
-  // cells; #1154 follow-up).
-  const layers: { image: string; size: string }[] = [];
-  if (effectLayer) layers.push({ image: effectLayer, size: 'cover' });
-  layers.push({ image: colorLayer, size: 'cover' });
-  layers.push({ image: CHECKERBOARD_BG, size: CHECKERBOARD_TILE_SIZE });
-  const backgroundImage = layers.map((l) => l.image).join(', ');
-  const backgroundSize = layers.map((l) => l.size).join(', ');
+  const backgroundImage = filamentBackground.backgroundImage;
+  const backgroundSize = filamentBackground.backgroundSize;
 
   const shapeClass =
     shape === 'circle' ? 'rounded-full' : shape === 'pill' ? 'rounded-full' : 'rounded';

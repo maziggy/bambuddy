@@ -372,6 +372,147 @@ class TestCameraTypeValidation:
             assert result is None
 
 
+class TestSnapshotUrlOverride:
+    """#1177 follow-up. When ``external_camera_snapshot_url`` is set on the
+    printer, every single-frame capture (notification thumbnail, finish photo,
+    timelapse, plate-detect) must route through the plain HTTP-GET path on the
+    snapshot URL instead of opening the live stream and skipping a warm-up
+    frame. Sources that expose a dedicated frame endpoint (e.g. go2rtc's
+    ``/api/frame.jpeg``) reliably return a clean image — the warm-up dance is
+    only required for sources that don't, and bypassing it removes the
+    inconsistency the reporter still saw after the warm-up fix landed."""
+
+    @pytest.mark.asyncio
+    async def test_snapshot_override_routes_to_snapshot_path(self):
+        from unittest.mock import AsyncMock
+
+        with (
+            patch(
+                "backend.app.services.external_camera._capture_snapshot",
+                new=AsyncMock(return_value=b"\xff\xd8snapshot\xff\xd9"),
+            ) as mocked_snapshot,
+            patch(
+                "backend.app.services.external_camera._capture_mjpeg_frame",
+                new=AsyncMock(return_value=b"should-not-be-called"),
+            ) as mocked_mjpeg,
+        ):
+            from backend.app.services.external_camera import capture_frame
+
+            result = await capture_frame(
+                "http://192.168.1.61:1984/api/stream.mjpeg",
+                "mjpeg",
+                snapshot_url="http://192.168.1.61:1984/api/frame.jpeg",
+            )
+
+        assert result == b"\xff\xd8snapshot\xff\xd9"
+        mocked_snapshot.assert_awaited_once()
+        # First positional arg is the snapshot URL; the live-stream URL is ignored.
+        assert mocked_snapshot.await_args.args[0] == "http://192.168.1.61:1984/api/frame.jpeg"
+        mocked_mjpeg.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_snapshot_override_routes_to_camera_type_handler(self):
+        from unittest.mock import AsyncMock
+
+        with (
+            patch(
+                "backend.app.services.external_camera._capture_snapshot",
+                new=AsyncMock(return_value=b"should-not-be-called"),
+            ) as mocked_snapshot,
+            patch(
+                "backend.app.services.external_camera._capture_mjpeg_frame",
+                new=AsyncMock(return_value=b"\xff\xd8live\xff\xd9"),
+            ) as mocked_mjpeg,
+        ):
+            from backend.app.services.external_camera import capture_frame
+
+            result = await capture_frame("http://192.168.1.61:1984/api/stream.mjpeg", "mjpeg")
+
+        assert result == b"\xff\xd8live\xff\xd9"
+        mocked_mjpeg.assert_awaited_once()
+        mocked_snapshot.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_empty_string_snapshot_url_treated_as_unset(self):
+        """Falsy snapshot_url (empty string from a cleared input) must NOT
+        hijack the live-stream path — the form-cleared input becomes ``None``
+        in the DB, but a defence-in-depth empty-string guard means a stale
+        config row still uses the live stream rather than firing GET ''."""
+        from unittest.mock import AsyncMock
+
+        with (
+            patch(
+                "backend.app.services.external_camera._capture_snapshot",
+                new=AsyncMock(return_value=b"should-not-be-called"),
+            ) as mocked_snapshot,
+            patch(
+                "backend.app.services.external_camera._capture_mjpeg_frame",
+                new=AsyncMock(return_value=b"\xff\xd8live\xff\xd9"),
+            ) as mocked_mjpeg,
+        ):
+            from backend.app.services.external_camera import capture_frame
+
+            result = await capture_frame(
+                "http://192.168.1.61:1984/api/stream.mjpeg",
+                "mjpeg",
+                snapshot_url="",
+            )
+
+        assert result == b"\xff\xd8live\xff\xd9"
+        mocked_mjpeg.assert_awaited_once()
+        mocked_snapshot.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_snapshot_override_honours_ssrf_guard(self):
+        """The override goes through ``_capture_snapshot`` which already
+        sanitises the URL — link-local / metadata / blocked-host targets
+        return None instead of being fetched."""
+        from backend.app.services.external_camera import capture_frame
+
+        result = await capture_frame(
+            "http://192.168.1.61:1984/api/stream.mjpeg",
+            "mjpeg",
+            snapshot_url="http://169.254.169.254/latest/meta-data/",
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_snapshot_override_works_for_rtsp_and_usb_camera_types(self):
+        """The override is camera-type agnostic: a user with an RTSP or USB
+        stream paired with a separate HTTP snapshot endpoint (e.g. go2rtc
+        feeding a USB cam, exposing both /api/stream.mjpeg and
+        /api/frame.jpeg) gets clean snapshots without spinning up ffmpeg."""
+        from unittest.mock import AsyncMock
+
+        for camera_type in ("rtsp", "usb"):
+            with (
+                patch(
+                    "backend.app.services.external_camera._capture_snapshot",
+                    new=AsyncMock(return_value=b"\xff\xd8snap\xff\xd9"),
+                ) as mocked_snapshot,
+                patch(
+                    "backend.app.services.external_camera._capture_rtsp_frame",
+                    new=AsyncMock(return_value=b"should-not-be-called"),
+                ) as mocked_rtsp,
+                patch(
+                    "backend.app.services.external_camera._capture_usb_frame",
+                    new=AsyncMock(return_value=b"should-not-be-called"),
+                ) as mocked_usb,
+            ):
+                from backend.app.services.external_camera import capture_frame
+
+                result = await capture_frame(
+                    "rtsp://printer/stream" if camera_type == "rtsp" else "/dev/video0",
+                    camera_type,
+                    snapshot_url="http://192.168.1.61:1984/api/frame.jpeg",
+                )
+
+            assert result == b"\xff\xd8snap\xff\xd9", f"camera_type={camera_type}"
+            mocked_snapshot.assert_awaited_once()
+            mocked_rtsp.assert_not_awaited()
+            mocked_usb.assert_not_awaited()
+
+
 class TestRtspUrlHandling:
     """Tests for RTSP/RTSPS URL handling."""
 

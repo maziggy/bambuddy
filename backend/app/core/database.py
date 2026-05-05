@@ -907,6 +907,7 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN external_camera_url VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN external_camera_type VARCHAR(20)")
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN external_camera_enabled BOOLEAN DEFAULT 0")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN external_camera_snapshot_url VARCHAR(500)")
 
     # Migration: Add external_url column to print_archives for user-defined links (Printables, etc.)
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN external_url VARCHAR(500)")
@@ -1856,6 +1857,12 @@ async def run_migrations(conn):
                 "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)"
             )
         )
+
+    # Migration: Add provider column to github_backup_config for multi-provider support
+    await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN provider VARCHAR(30) DEFAULT 'github'")
+
+    # Migration: Add allow_insecure_http column to github_backup_config for self-hosted HTTP instances
+    await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN allow_insecure_http BOOLEAN DEFAULT FALSE")
 
     # Seed default settings keys that must exist on fresh install
     default_settings = [

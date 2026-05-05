@@ -9,15 +9,19 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from backend.app.core.config import settings as app_settings
 from backend.app.services.virtual_printer.bind_server import BindServer
 from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer
+from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
-from backend.app.services.virtual_printer.tailscale import tailscale_service
-from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
+from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager, TCPProxy
+
+if TYPE_CHECKING:
+    from backend.app.services.printer_manager import PrinterManager
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +121,7 @@ class VirtualPrinterInstance:
         tailscale_disabled: bool = True,
         base_dir: Path,
         session_factory: Callable | None = None,
+        printer_manager: "PrinterManager | None" = None,
     ):
         self.id = vp_id
         self.name = name
@@ -133,6 +138,7 @@ class VirtualPrinterInstance:
         self.remote_interface_ip = remote_interface_ip
         self.tailscale_disabled = tailscale_disabled
         self._session_factory = session_factory
+        self._printer_manager = printer_manager
 
         # Directories
         self.upload_dir = base_dir / "uploads" / str(vp_id)
@@ -151,9 +157,6 @@ class VirtualPrinterInstance:
             shared_ca_dir=shared_ca_dir,
         )
 
-        # Tailscale FQDN used for this instance (set at start_server/start_proxy time)
-        self.tailscale_fqdn: str | None = None
-
         # Pending files for MQTT correlation
         self._pending_files: dict[str, Path] = {}
 
@@ -161,12 +164,12 @@ class VirtualPrinterInstance:
         self._proxy: SlicerProxyManager | None = None
         self._ftp: VirtualPrinterFTPServer | None = None
         self._mqtt: SimpleMQTTServer | None = None
+        self._mqtt_bridge: MQTTBridge | None = None
+        self._rtsp_proxy: TCPProxy | None = None
         self._bind: BindServer | None = None
         self._ssdp: VirtualPrinterSSDPServer | None = None
         self._ssdp_proxy: SSDPProxy | None = None
         self._tasks: list[asyncio.Task] = []
-        self._cert_renewal_task: asyncio.Task | None = None
-        self._cert_restart_task: asyncio.Task | None = None
 
     @property
     def serial(self) -> str:
@@ -438,135 +441,14 @@ class VirtualPrinterInstance:
 
     # -- Service lifecycle --
 
-    async def _cancel_renewal_task(self) -> None:
-        """Cancel the cert renewal task and await its completion."""
-        if self._cert_renewal_task:
-            self._cert_renewal_task.cancel()
-            try:
-                await self._cert_renewal_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                logger.warning("[VP %s] Unexpected error in cert renewal task: %s", self.name, e)
-            self._cert_renewal_task = None
-
-    async def _cancel_restart_task(self) -> None:
-        """Cancel the cert restart task and await its completion.
-
-        Skip when the caller IS the restart task itself — stop_server() /
-        stop_proxy() are called from inside _restart_for_cert_renewal,
-        which runs AS _cert_restart_task. Cancelling + awaiting self
-        flags a CancelledError on the next `await` in stop_server,
-        which tears down the old listeners but never lets start_server
-        run — the VP would sit on an expired cert until process restart.
-        """
-        task = self._cert_restart_task
-        if task is asyncio.current_task():
-            # Renewal path cleaning up its own restart task: clear the
-            # reference so future callers don't see a stale task handle,
-            # but do NOT cancel-and-await ourselves.
-            self._cert_restart_task = None
-            return
-        if task and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                logger.warning("[VP %s] Unexpected error in cert restart task: %s", self.name, e)
-            self._cert_restart_task = None
-
-    async def _restart_for_cert_renewal(self) -> None:
-        """Restart VP services to load the newly renewed Tailscale cert into TLS listeners."""
-        logger.info("[VP %s] Restarting services to apply renewed Tailscale cert", self.name)
-        try:
-            if self.is_proxy:
-                await self.stop_proxy()
-                await self.start_proxy()
-            else:
-                await self.stop_server()
-                await self.start_server()
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error("[VP %s] Failed to restart after cert renewal: %s", self.name, e)
-
-    async def _cert_renewal_loop(self) -> None:
-        """Daily background check for Tailscale cert renewal while VP is running.
-
-        Checks first, then sleeps, so a cert that was just barely renewed at startup
-        is not re-checked for another 24 h. When a renewal actually happens the loop
-        schedules a VP restart so the new cert is loaded into the running TLS listeners.
-
-        _cert_renewal_task is tracked separately from _tasks because it has a different
-        lifecycle: it runs for the entire lifetime of the VP, not just during service start.
-        """
-        while True:
-            try:
-                if self.tailscale_fqdn:
-                    needs_renewal = tailscale_service.cert_needs_renewal(
-                        self._cert_service.ts_cert_path, fqdn=self.tailscale_fqdn
-                    )
-                    if needs_renewal:
-                        renewed = await self._cert_service.use_tailscale_cert(self.tailscale_fqdn, tailscale_service)
-                        if renewed:
-                            logger.info(
-                                "[VP %s] Tailscale cert renewed for %s, scheduling restart",
-                                self.name,
-                                self.tailscale_fqdn,
-                            )
-                            # Schedule restart in a separate task; this loop ends here
-                            # so the restart can cleanly cancel _cert_renewal_task and
-                            # create a fresh one via start_server/start_proxy.
-                            self._cert_restart_task = asyncio.create_task(
-                                self._restart_for_cert_renewal(),
-                                name=f"vp_{self.id}_cert_restart",
-                            )
-                            break
-                await asyncio.sleep(86400)  # check once per day
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error("[VP %s] Cert renewal loop error: %s", self.name, e)
-                await asyncio.sleep(3600)  # back off 1 h on unexpected error
-
-    async def _resolve_cert_and_advertise(self) -> tuple[Path, Path, str]:
+    def _resolve_cert_and_advertise(self) -> tuple[Path, Path, str]:
         """Return (cert_path, key_path, advertise_address) for TLS services.
 
-        When Tailscale is available, provisions a LE cert and returns the
-        Tailscale FQDN as the advertise address so SSDP broadcasts the hostname
-        that matches the trusted cert.
-
-        Falls back to the self-signed cert and IP-based advertising when
-        Tailscale is absent or provisioning fails.
+        Always uses the self-signed cert chain (signed by `bbl_ca`). The user
+        imports `bbl_ca.crt` once into the slicer; per-VP certs validate from
+        there. Tailscale exposure is handled by the user picking the Tailscale
+        IP in the bind_ip dropdown.
         """
-        if self.tailscale_disabled:
-            logger.info("[VP %s] Tailscale integration disabled by user, using self-signed cert", self.name)
-        else:
-            try:
-                ts_status = await tailscale_service.get_status()
-                if ts_status.available:
-                    ts_result = await self._cert_service.use_tailscale_cert(ts_status.fqdn, tailscale_service)
-                    if ts_result:
-                        self.tailscale_fqdn = ts_status.fqdn
-                        logger.info("[VP %s] Using Tailscale cert for %s", self.name, ts_status.fqdn)
-                        return ts_result[0], ts_result[1], ts_status.fqdn
-                    logger.warning(
-                        "[VP %s] Tailscale available (%s) but cert provisioning failed, falling back to self-signed cert",
-                        self.name,
-                        ts_status.fqdn,
-                    )
-                else:
-                    logger.info(
-                        "[VP %s] Tailscale not available (%s), using self-signed cert",
-                        self.name,
-                        ts_status.error or "not connected",
-                    )
-            except Exception as e:
-                logger.warning("[VP %s] Tailscale cert check failed, falling back to self-signed: %s", self.name, e)
-
-        self.tailscale_fqdn = None
         cert_path, key_path = self.generate_certificates()
         advertise = self.remote_interface_ip or self.bind_ip or ""
         return cert_path, key_path, advertise
@@ -575,7 +457,7 @@ class VirtualPrinterInstance:
         """Start server-mode services (FTP, MQTT, SSDP, Bind) on this VP's bind_ip."""
         logger.info("[VP %s] Starting server-mode services on %s", self.name, self.bind_ip)
 
-        cert_path, key_path, advertise_addr = await self._resolve_cert_and_advertise()
+        cert_path, key_path, advertise_addr = self._resolve_cert_and_advertise()
         bind_addr = self.bind_ip or "0.0.0.0"  # nosec B104
 
         async def run_with_logging(coro, svc_name):
@@ -621,6 +503,44 @@ class VirtualPrinterInstance:
             )
         )
 
+        # MQTT bridge — fans out the target printer's pushes to slicers connected
+        # to this VP and forwards their commands back to the printer. Only meaningful
+        # when a target printer is configured AND printer_manager was injected (it
+        # always is at runtime; tests may omit it).
+        if self.target_printer_id is not None and self._printer_manager is not None:
+            self._mqtt_bridge = MQTTBridge(
+                vp_id=self.id,
+                vp_name=self.name,
+                vp_serial=self.serial,
+                target_printer_id=self.target_printer_id,
+                mqtt_server=self._mqtt,
+                printer_manager=self._printer_manager,
+            )
+            self._mqtt.set_bridge(self._mqtt_bridge)
+            await self._mqtt_bridge.start()
+
+            # RTSPS camera passthrough on port 322. BambuStudio's camera button
+            # connects to the device IP it bound on (the VP), not the IP in
+            # `ipcam.rtsp_url`. Without a listener on <bind_ip>:322 the slicer
+            # gets connection refused → "LAN connection failed". Same raw TCP
+            # pass-through used by SlicerProxyManager in proxy mode.
+            target_client = self._printer_manager.get_client(self.target_printer_id)
+            target_ip = getattr(target_client, "ip_address", None) if target_client else None
+            if target_ip:
+                self._rtsp_proxy = TCPProxy(
+                    name="RTSP",
+                    listen_port=322,
+                    target_host=target_ip,
+                    target_port=322,
+                    bind_address=bind_addr,
+                )
+                self._tasks.append(
+                    asyncio.create_task(
+                        run_with_logging(self._rtsp_proxy.start(), "RTSP"),
+                        name=f"vp_{self.id}_rtsp",
+                    )
+                )
+
         # Bind server
         self._bind = BindServer(
             serial=self.serial,
@@ -653,16 +573,24 @@ class VirtualPrinterInstance:
             )
         )
 
-        # Guard against double-start: cancel any orphaned task before creating a new one
-        await self._cancel_renewal_task()
-        self._cert_renewal_task = asyncio.create_task(self._cert_renewal_loop(), name=f"vp_{self.id}_cert_renewal")
-
         logger.info("[VP %s] Server-mode services started on %s", self.name, bind_addr)
 
     async def stop_server(self) -> None:
         """Stop server-mode services."""
-        await self._cancel_renewal_task()
-        await self._cancel_restart_task()
+        if self._mqtt_bridge:
+            try:
+                await self._mqtt_bridge.stop()
+            except Exception:
+                logger.exception("[VP %s] MQTT bridge stop failed", self.name)
+            if self._mqtt:
+                self._mqtt.set_bridge(None)
+            self._mqtt_bridge = None
+        if self._rtsp_proxy:
+            try:
+                await self._rtsp_proxy.stop()
+            except Exception:
+                logger.exception("[VP %s] RTSP proxy stop failed", self.name)
+            self._rtsp_proxy = None
         if self._ftp:
             await self._ftp.stop()
             self._ftp = None
@@ -681,7 +609,7 @@ class VirtualPrinterInstance:
         """Start proxy mode services for this instance."""
         logger.info("[VP %s] Starting proxy mode to %s", self.name, self.target_printer_ip)
 
-        cert_path, key_path, _ = await self._resolve_cert_and_advertise()
+        cert_path, key_path, _ = self._resolve_cert_and_advertise()
 
         self._proxy = SlicerProxyManager(
             target_host=self.target_printer_ip,
@@ -736,10 +664,6 @@ class VirtualPrinterInstance:
             )
         )
 
-        # Guard against double-start: cancel any orphaned task before creating a new one
-        await self._cancel_renewal_task()
-        self._cert_renewal_task = asyncio.create_task(self._cert_renewal_loop(), name=f"vp_{self.id}_cert_renewal")
-
     def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
         """Start single-interface SSDP server as fallback for proxy mode."""
         self._ssdp = VirtualPrinterSSDPServer(
@@ -758,8 +682,6 @@ class VirtualPrinterInstance:
 
     async def stop_proxy(self) -> None:
         """Stop proxy mode services for this instance."""
-        await self._cancel_renewal_task()
-        await self._cancel_restart_task()
         if self._proxy:
             await self._proxy.stop()
             self._proxy = None
@@ -788,8 +710,6 @@ class VirtualPrinterInstance:
             "running": self.is_running,
             "pending_files": len(self._pending_files),
         }
-        if self.tailscale_fqdn:
-            status["tailscale_fqdn"] = self.tailscale_fqdn
         if self.is_proxy and self._proxy:
             status["proxy"] = self._proxy.get_status()
         return status
@@ -803,6 +723,7 @@ class VirtualPrinterManager:
 
     def __init__(self):
         self._session_factory: Callable | None = None
+        self._printer_manager: PrinterManager | None = None
         self._instances: dict[int, VirtualPrinterInstance] = {}
 
         # Directories
@@ -826,6 +747,10 @@ class VirtualPrinterManager:
     def set_session_factory(self, session_factory: Callable) -> None:
         """Set the database session factory."""
         self._session_factory = session_factory
+
+    def set_printer_manager(self, printer_manager: "PrinterManager") -> None:
+        """Inject the global printer_manager so non-proxy VPs can mirror their target's MQTT stream."""
+        self._printer_manager = printer_manager
 
     @property
     def is_enabled(self) -> bool:
@@ -881,7 +806,6 @@ class VirtualPrinterManager:
                 or instance.remote_interface_ip != (vp.remote_interface_ip or "")
                 or instance.target_printer_id != vp.target_printer_id
                 or instance.auto_dispatch != vp.auto_dispatch
-                or instance.tailscale_disabled != vp.tailscale_disabled
             )
 
             if changed:
@@ -939,6 +863,7 @@ class VirtualPrinterManager:
                     tailscale_disabled=vp.tailscale_disabled,
                     base_dir=self._base_dir,
                     session_factory=self._session_factory,
+                    printer_manager=self._printer_manager,
                 )
                 self._instances[vp.id] = instance
                 await instance.start_server()

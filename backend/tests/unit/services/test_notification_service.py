@@ -1025,6 +1025,120 @@ class TestNotificationVariableFallbacks:
                 assert captured_variables["duration"] != "Unknown"
 
     @pytest.mark.asyncio
+    async def test_duration_prefers_actual_time_seconds_over_slicer_estimate(self, service):
+        """#1198: completion notification duration must reflect *actual* elapsed
+        time from started_at/completed_at, not the slicer's pre-print estimate.
+
+        Pre-fix the duration variable read from `print_time_seconds` (slicer
+        estimate parsed from the 3MF at archive creation), so a print cancelled
+        2 minutes into a 3-hour estimate would notify "duration: 3h"."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables: dict = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_complete(
+                printer_id=1,
+                printer_name="Test",
+                status="cancelled",
+                data={"subtask_name": "test_print"},
+                db=mock_db,
+                archive_data={
+                    "print_time_seconds": 10800,  # 3h slicer estimate
+                    "actual_time_seconds": 120,  # 2m actual elapsed
+                },
+            )
+
+        # 2 minutes — not 3 hours — even though the slicer estimate is in the dict.
+        assert "2m" in captured_variables["duration"]
+        assert "3h" not in captured_variables["duration"]
+
+    @pytest.mark.asyncio
+    async def test_duration_falls_back_to_slicer_estimate_when_actual_time_missing(self, service):
+        """#1198: when actual_time_seconds is absent (e.g. timestamps weren't
+        recorded for some reason), the duration variable falls back to
+        print_time_seconds rather than rendering 'Unknown'. Preserves
+        backwards-compat for any code path that didn't compute actual elapsed."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables: dict = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_complete(
+                printer_id=1,
+                printer_name="Test",
+                status="completed",
+                data={"subtask_name": "test_print"},
+                db=mock_db,
+                archive_data={
+                    "print_time_seconds": 3600,  # 1h slicer estimate, no actual
+                    "actual_time_seconds": None,
+                },
+            )
+
+        assert captured_variables["duration"] != "Unknown"
+        assert "1h" in captured_variables["duration"]
+
+    @pytest.mark.asyncio
+    async def test_duration_unknown_when_both_time_fields_missing(self, service):
+        """#1198: with neither actual nor estimated time available the duration
+        variable surfaces the existing 'Unknown' fallback."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables: dict = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_complete(
+                printer_id=1,
+                printer_name="Test",
+                status="completed",
+                data={"subtask_name": "test_print"},
+                db=mock_db,
+                archive_data={
+                    "print_time_seconds": None,
+                    "actual_time_seconds": None,
+                },
+            )
+
+        assert captured_variables["duration"] == "Unknown"
+
+    @pytest.mark.asyncio
     async def test_print_complete_with_finish_photo_url(self, service):
         """Verify finish_photo_url is passed through from archive_data."""
         mock_db = AsyncMock()

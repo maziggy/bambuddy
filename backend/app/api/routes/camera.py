@@ -792,7 +792,12 @@ async def camera_snapshot(
     if printer.external_camera_enabled and printer.external_camera_url:
         from backend.app.services.external_camera import capture_frame
 
-        frame_data = await capture_frame(printer.external_camera_url, printer.external_camera_type, timeout=15)
+        frame_data = await capture_frame(
+            printer.external_camera_url,
+            printer.external_camera_type,
+            timeout=15,
+            snapshot_url=printer.external_camera_snapshot_url,
+        )
         if not frame_data:
             raise HTTPException(
                 status_code=503,
@@ -1040,6 +1045,7 @@ async def check_plate_empty(
         external_camera_type=printer.external_camera_type if printer.external_camera_enabled else None,
         use_external=use_external,
         roi=roi,
+        external_camera_snapshot_url=printer.external_camera_snapshot_url if printer.external_camera_enabled else None,
     )
 
     # Get reference count for the response
@@ -1124,6 +1130,7 @@ async def calibrate_plate_detection(
         external_camera_url=printer.external_camera_url if printer.external_camera_enabled else None,
         external_camera_type=printer.external_camera_type if printer.external_camera_enabled else None,
         use_external=use_external,
+        external_camera_snapshot_url=printer.external_camera_snapshot_url if printer.external_camera_enabled else None,
     )
 
     if light_warning and success:

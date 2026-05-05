@@ -204,9 +204,19 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
                     weight_changed = last_reported_grams is None or abs(grams - last_reported_grams) >= REPORT_THRESHOLD
 
                     if weight_changed:
-                        # Wake display only on large weight changes (spool placed/removed)
-                        # to avoid sensor bounce keeping the screen on forever.
-                        wake_changed = last_wake_grams is None or abs(grams - last_wake_grams) >= WAKE_THRESHOLD
+                        # Wake display only on STABLE large weight changes (spool
+                        # placed/removed). Without the stability gate, a noisy load
+                        # cell that bounces ≥50g around a midpoint repeatedly trips
+                        # the threshold AND advances last_wake_grams to the noisy
+                        # value, so the next bounce back also exceeds the threshold
+                        # — wake fires every few seconds forever and the kiosk
+                        # screen never stays blanked. The `stable` flag is True
+                        # only when readings agree within 2g over a 1s window, so
+                        # gating on it ensures last_wake_grams only advances to
+                        # settled values.
+                        wake_changed = stable and (
+                            last_wake_grams is None or abs(grams - last_wake_grams) >= WAKE_THRESHOLD
+                        )
                         if wake_changed:
                             display.wake()
                             last_wake_grams = grams

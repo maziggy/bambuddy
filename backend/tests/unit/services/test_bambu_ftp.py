@@ -1198,26 +1198,78 @@ class TestThreeMFCache:
         cache_3mf_download(1, "A.3mf", f)
         assert get_cached_3mf(1, "A.3mf") == f
 
-    def test_clear_by_printer_scoped(self, tmp_path):
+    def test_clear_by_printer_scoped(self, tmp_path, monkeypatch):
         """Clearing one printer leaves the other untouched."""
-        f1 = tmp_path / "one.3mf"
+        from backend.app.core import config as _config
+
+        monkeypatch.setattr(_config.settings, "archive_dir", tmp_path)
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        f1 = temp_dir / "one.3mf"
         f1.write_bytes(b"1")
-        f2 = tmp_path / "two.3mf"
+        f2 = temp_dir / "two.3mf"
         f2.write_bytes(b"2")
         cache_3mf_download(1, "one.3mf", f1)
         cache_3mf_download(2, "two.3mf", f2)
         clear_3mf_cache(1)
         assert get_cached_3mf(1, "one.3mf") is None
         assert get_cached_3mf(2, "two.3mf") == f2
-        # clear_3mf_cache defaulted to delete_files=True, so the file is gone
+        # clear_3mf_cache defaulted to delete_files=True, so the temp file is gone
         assert not f1.exists()
         assert f2.exists()
 
-    def test_clear_without_deleting_files(self, tmp_path):
+    def test_clear_without_deleting_files(self, tmp_path, monkeypatch):
         """delete_files=False leaves files on disk — used by tests."""
-        f = tmp_path / "keep.3mf"
+        from backend.app.core import config as _config
+
+        monkeypatch.setattr(_config.settings, "archive_dir", tmp_path)
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        f = temp_dir / "keep.3mf"
         f.write_bytes(b"x")
         cache_3mf_download(1, "keep.3mf", f)
         clear_3mf_cache(1, delete_files=False)
         assert get_cached_3mf(1, "keep.3mf") is None
         assert f.exists()
+
+    def test_clear_does_not_delete_persistent_files(self, tmp_path, monkeypatch):
+        """Regression for #1212 / "file disappeared overnight" reports.
+
+        Dispatch sites added in #1166 cache the live archive copy and library
+        file bytes — paths outside ``archive_dir/temp`` — so /cover can skip
+        FTP. Those files are user data; the cache cleanup must never unlink
+        them. Pre-fix, ``clear_3mf_cache(printer_id, delete_files=True)`` ran
+        on every ``on_print_complete`` and silently destroyed them, leaving a
+        DB row whose ``file_path`` pointed at nothing — breaking Reprint and
+        View G-code with a 404.
+        """
+        from backend.app.core import config as _config
+
+        monkeypatch.setattr(_config.settings, "archive_dir", tmp_path / "archive")
+        (tmp_path / "archive" / "temp").mkdir(parents=True)
+
+        archive_file = tmp_path / "archive" / "1" / "20260504_wallhooks" / "wallhooks.gcode.3mf"
+        archive_file.parent.mkdir(parents=True)
+        archive_file.write_bytes(b"archive bytes")
+
+        library_file = tmp_path / "library_files" / "abcd.3mf"
+        library_file.parent.mkdir(parents=True)
+        library_file.write_bytes(b"library bytes")
+
+        temp_file = tmp_path / "archive" / "temp" / "cover_1_x.3mf"
+        temp_file.write_bytes(b"temp bytes")
+
+        cache_3mf_download(1, "wallhooks.gcode.3mf", archive_file)
+        cache_3mf_download(1, "library.3mf", library_file)
+        cache_3mf_download(1, "cover_1_x.3mf", temp_file)
+
+        clear_3mf_cache(1)
+
+        # All three cache entries are dropped from the dict.
+        assert get_cached_3mf(1, "wallhooks.gcode.3mf") is None
+        assert get_cached_3mf(1, "library.3mf") is None
+        assert get_cached_3mf(1, "cover_1_x.3mf") is None
+        # But only the temp file is unlinked — user data survives.
+        assert archive_file.exists(), "archive 3mf must not be deleted by cache cleanup"
+        assert library_file.exists(), "library 3mf must not be deleted by cache cleanup"
+        assert not temp_file.exists(), "temp file should still be cleaned up"

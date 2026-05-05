@@ -164,6 +164,41 @@ class TestGitHubBackupConfigAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_update_config_rejects_disabling_insecure_http_for_stored_http_url(
+        self, async_client: AsyncClient
+    ):
+        """Verify PATCH rejects leaving a stored HTTP URL without explicit insecure-HTTP allowance."""
+        create_data = {
+            "repository_url": "http://git.example.com/test/httprepo",
+            "access_token": "gitea_token",
+            "branch": "main",
+            "provider": "gitea",
+            "allow_insecure_http": True,
+            "schedule_enabled": False,
+            "schedule_type": "daily",
+            "backup_kprofiles": True,
+            "backup_cloud_profiles": True,
+            "backup_settings": False,
+            "backup_spools": False,
+            "backup_archives": False,
+            "enabled": True,
+        }
+        create_response = await async_client.post("/api/v1/github-backup/config", json=create_data)
+        assert create_response.status_code == 200
+
+        response = await async_client.patch("/api/v1/github-backup/config", json={"allow_insecure_http": False})
+
+        assert response.status_code == 422
+        assert "Allow insecure HTTP" in response.json()["detail"]
+
+        stored_response = await async_client.get("/api/v1/github-backup/config")
+        assert stored_response.status_code == 200
+        stored = stored_response.json()
+        assert stored["repository_url"] == "http://git.example.com/test/httprepo"
+        assert stored["allow_insecure_http"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_config(self, async_client: AsyncClient):
         """Verify GitHub backup config can be deleted."""
         # Create config first

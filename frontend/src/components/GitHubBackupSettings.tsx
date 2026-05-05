@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -27,6 +27,7 @@ import type {
   GitHubBackupLog,
   GitHubBackupStatus,
   GitHubBackupTriggerResponse,
+  GitProviderType,
   LocalBackupFile,
   LocalBackupStatus,
   ScheduleType,
@@ -76,6 +77,56 @@ function StatusBadge({ status }: StatusBadgeProps) {
   );
 }
 
+const PROVIDER_REPO_URL_I18N_KEY: Record<GitProviderType, string> = {
+  github: 'backup.repoUrlPlaceholderGitHub',
+  gitea: 'backup.repoUrlPlaceholderGitea',
+  forgejo: 'backup.repoUrlPlaceholderForgejo',
+  gitlab: 'backup.repoUrlPlaceholderGitLab',
+};
+
+const PROVIDER_TOKEN_PLACEHOLDER: Record<GitProviderType, string> = {
+  github: 'ghp_xxxxxxxxxxxx',
+  gitea: 'your_access_token',
+  forgejo: 'your_access_token',
+  gitlab: 'glpat-xxxxxxxxxxxx',
+};
+
+interface GitHubBackupAutosaveState {
+  repository_url: string;
+  branch: string;
+  provider: GitProviderType;
+  allow_insecure_http: boolean;
+  schedule_enabled: boolean;
+  schedule_type: ScheduleType;
+  backup_kprofiles: boolean;
+  backup_cloud_profiles: boolean;
+  backup_settings: boolean;
+  backup_spools: boolean;
+  backup_archives: boolean;
+  enabled: boolean;
+}
+
+function serializeAutosaveState(state: GitHubBackupAutosaveState): string {
+  return JSON.stringify(state);
+}
+
+function getChangedAutosaveFields(
+  current: GitHubBackupAutosaveState,
+  previous: GitHubBackupAutosaveState | null
+): Partial<GitHubBackupAutosaveState> {
+  if (!previous) {
+    return current;
+  }
+
+  const changes: Partial<GitHubBackupAutosaveState> = {};
+  for (const key of Object.keys(current) as Array<keyof GitHubBackupAutosaveState>) {
+    if (current[key] !== previous[key]) {
+      changes[key] = current[key] as never;
+    }
+  }
+  return changes;
+}
+
 export function GitHubBackupSettings() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -85,6 +136,7 @@ export function GitHubBackupSettings() {
   const [repoUrl, setRepoUrl] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [branch, setBranch] = useState('main');
+  const [provider, setProvider] = useState<GitProviderType>('github');
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleType, setScheduleType] = useState<ScheduleType>('daily');
   const [backupKProfiles, setBackupKProfiles] = useState(true);
@@ -92,6 +144,7 @@ export function GitHubBackupSettings() {
   const [backupSettings, setBackupSettings] = useState(false);
   const [backupSpools, setBackupSpools] = useState(false);
   const [backupArchives, setBackupArchives] = useState(false);
+  const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
   const [enabled, setEnabled] = useState(true);
 
   // Local backup state
@@ -198,8 +251,32 @@ export function GitHubBackupSettings() {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Auto-save debounce
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isInitializedRef = useRef(false);
+  const settingsAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tokenAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initializationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedAutosaveStateRef = useRef<GitHubBackupAutosaveState | null>(null);
+  const lastTokenScheduledForSaveRef = useRef('');
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  const autoSaveState = useMemo<GitHubBackupAutosaveState>(() => ({
+    repository_url: repoUrl,
+    branch,
+    provider,
+    allow_insecure_http: allowInsecureHttp,
+    schedule_enabled: scheduleEnabled,
+    schedule_type: scheduleType,
+    backup_kprofiles: backupKProfiles,
+    backup_cloud_profiles: backupCloudProfiles,
+    backup_settings: backupSettings,
+    backup_spools: backupSpools,
+    backup_archives: backupArchives,
+    enabled,
+  }), [repoUrl, branch, provider, allowInsecureHttp, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, backupSpools, backupArchives, enabled]);
+
+  const autoSaveStateFingerprint = useMemo(
+    () => serializeAutosaveState(autoSaveState),
+    [autoSaveState]
+  );
 
   // Queries
   const { data: config, isLoading: configLoading } = useQuery<GitHubBackupConfig | null>({
@@ -251,9 +328,29 @@ export function GitHubBackupSettings() {
 
   // Initialize form from config
   useEffect(() => {
+    if (initializationTimerRef.current) {
+      clearTimeout(initializationTimerRef.current);
+    }
+
     if (config) {
+      setIsInitialized(false);
+      lastSavedAutosaveStateRef.current = {
+        repository_url: config.repository_url,
+        branch: config.branch,
+        provider: config.provider ?? 'github',
+        allow_insecure_http: config.allow_insecure_http ?? false,
+        schedule_enabled: config.schedule_enabled,
+        schedule_type: config.schedule_type,
+        backup_kprofiles: config.backup_kprofiles,
+        backup_cloud_profiles: config.backup_cloud_profiles,
+        backup_settings: config.backup_settings,
+        backup_spools: config.backup_spools,
+        backup_archives: config.backup_archives,
+        enabled: config.enabled,
+      };
       setRepoUrl(config.repository_url);
       setBranch(config.branch);
+      setProvider(config.provider ?? 'github');
       setScheduleEnabled(config.schedule_enabled);
       setScheduleType(config.schedule_type);
       setBackupKProfiles(config.backup_kprofiles);
@@ -261,95 +358,103 @@ export function GitHubBackupSettings() {
       setBackupSettings(config.backup_settings);
       setBackupSpools(config.backup_spools);
       setBackupArchives(config.backup_archives);
+      setAllowInsecureHttp(config.allow_insecure_http ?? false);
       setEnabled(config.enabled);
       setAccessToken(''); // Don't show stored token
       // Mark as initialized after a tick to avoid auto-save on initial load
-      setTimeout(() => { isInitializedRef.current = true; }, 100);
+      initializationTimerRef.current = setTimeout(() => { setIsInitialized(true); }, 100);
+    } else {
+      setIsInitialized(false);
+      lastSavedAutosaveStateRef.current = null;
+      setAccessToken('');
     }
+
+    return () => {
+      if (initializationTimerRef.current) {
+        clearTimeout(initializationTimerRef.current);
+      }
+    };
   }, [config]);
 
   // Auto-save function for existing configs
   const autoSave = useCallback(async (includeToken: boolean = false) => {
-    if (!config?.has_token) return; // Only auto-save if config already exists
+    if (!config) return; // Only auto-save if config already exists
 
     try {
       if (includeToken && accessToken) {
         // Full save with new token
         await api.saveGitHubBackupConfig({
-          repository_url: repoUrl,
+          ...autoSaveState,
           access_token: accessToken,
-          branch,
-          schedule_enabled: scheduleEnabled,
-          schedule_type: scheduleType,
-          backup_kprofiles: backupKProfiles,
-          backup_cloud_profiles: backupCloudProfiles,
-          backup_settings: backupSettings,
-          backup_spools: backupSpools,
-          backup_archives: backupArchives,
-          enabled,
         });
         setAccessToken(''); // Clear after save
         showToast(t('backup.tokenUpdated'));
+        lastTokenScheduledForSaveRef.current = '';
       } else {
         // Update without token
-        await api.updateGitHubBackupConfig({
-          repository_url: repoUrl,
-          branch,
-          schedule_enabled: scheduleEnabled,
-          schedule_type: scheduleType,
-          backup_kprofiles: backupKProfiles,
-          backup_cloud_profiles: backupCloudProfiles,
-          backup_settings: backupSettings,
-          backup_spools: backupSpools,
-          backup_archives: backupArchives,
-          enabled,
-        });
+        await api.updateGitHubBackupConfig(getChangedAutosaveFields(
+          autoSaveState,
+          lastSavedAutosaveStateRef.current
+        ));
         showToast(t('backup.settingsSaved'));
       }
+      lastSavedAutosaveStateRef.current = autoSaveState;
       queryClient.invalidateQueries({ queryKey: ['github-backup-config'] });
       queryClient.invalidateQueries({ queryKey: ['github-backup-status'] });
     } catch (error) {
       showToast(t('backup.failedToSave', { message: (error as Error).message }), 'error');
     }
-  }, [config?.has_token, repoUrl, accessToken, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, backupSpools, backupArchives, enabled, queryClient, showToast, t]);
+  }, [config, accessToken, autoSaveState, queryClient, showToast, t]);
+
+  const autoSaveRef = useRef(autoSave);
+
+  useEffect(() => {
+    autoSaveRef.current = autoSave;
+  }, [autoSave]);
 
   // Auto-save effect for existing configs (debounced)
   useEffect(() => {
-    if (!isInitializedRef.current || !config?.has_token) return;
+    if (!isInitialized || !config) return;
+    if (
+      lastSavedAutosaveStateRef.current
+      && autoSaveStateFingerprint === serializeAutosaveState(lastSavedAutosaveStateRef.current)
+    ) return;
 
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
+    if (settingsAutoSaveTimerRef.current) {
+      clearTimeout(settingsAutoSaveTimerRef.current);
     }
 
-    autoSaveTimerRef.current = setTimeout(() => {
+    settingsAutoSaveTimerRef.current = setTimeout(() => {
       autoSave(false);
     }, 500);
 
     return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
+      if (settingsAutoSaveTimerRef.current) {
+        clearTimeout(settingsAutoSaveTimerRef.current);
       }
     };
-  }, [repoUrl, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, backupSpools, backupArchives, enabled, autoSave, config?.has_token]);
+  }, [isInitialized, config, autoSaveStateFingerprint, autoSave]);
 
   // Auto-save token when it changes (with longer debounce)
   useEffect(() => {
-    if (!isInitializedRef.current || !config?.has_token || !accessToken) return;
+    if (!isInitialized || !config || !accessToken) return;
+    if (accessToken === lastTokenScheduledForSaveRef.current) return;
+    lastTokenScheduledForSaveRef.current = accessToken;
 
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
+    if (tokenAutoSaveTimerRef.current) {
+      clearTimeout(tokenAutoSaveTimerRef.current);
     }
 
-    autoSaveTimerRef.current = setTimeout(() => {
-      autoSave(true);
+    tokenAutoSaveTimerRef.current = setTimeout(() => {
+      autoSaveRef.current(true);
     }, 1000);
 
     return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
+      if (tokenAutoSaveTimerRef.current) {
+        clearTimeout(tokenAutoSaveTimerRef.current);
       }
     };
-  }, [accessToken, autoSave, config?.has_token]);
+  }, [isInitialized, accessToken, config]);
 
   // Mutations
   const saveConfigMutation = useMutation({
@@ -359,7 +464,7 @@ export function GitHubBackupSettings() {
       queryClient.invalidateQueries({ queryKey: ['github-backup-status'] });
       showToast(t('backup.githubBackupEnabled'));
       setAccessToken('');
-      isInitializedRef.current = true;
+      setIsInitialized(true);
     },
     onError: (error: Error) => {
       showToast(t('backup.failedToSave', { message: error.message }), 'error');
@@ -409,7 +514,7 @@ export function GitHubBackupSettings() {
           setTestLoading(false);
           return;
         }
-        result = await api.testGitHubConnection(repoUrl, accessToken);
+        result = await api.testGitHubConnection(repoUrl, accessToken, provider);
       } else if (config?.has_token) {
         // Use stored credentials
         result = await api.testGitHubStoredConnection();
@@ -441,6 +546,8 @@ export function GitHubBackupSettings() {
       repository_url: repoUrl,
       access_token: accessToken,
       branch,
+      provider,
+      allow_insecure_http: allowInsecureHttp,
       schedule_enabled: scheduleEnabled,
       schedule_type: scheduleType,
       backup_kprofiles: backupKProfiles,
@@ -462,7 +569,7 @@ export function GitHubBackupSettings() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Left Column - GitHub Backup */}
+      {/* Left Column - Git Backup */}
       <div className="space-y-6">
         <Card id="card-backup-github">
           <CardHeader>
@@ -487,6 +594,22 @@ export function GitHubBackupSettings() {
                   {t('backup.githubDescription')}
                 </p>
 
+            {/* Provider Selection */}
+            <div>
+              <label htmlFor="git-provider-select" className="block text-sm text-bambu-gray mb-1">{t('backup.provider')}</label>
+              <select
+                id="git-provider-select"
+                value={provider}
+                onChange={(e) => { setProvider(e.target.value as GitProviderType); setTestResult(null); }}
+                className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              >
+                <option value="github">{t('backup.providerGitHub')}</option>
+                <option value="gitlab">{t('backup.providerGitLab')}</option>
+                <option value="gitea">{t('backup.providerGitea')}</option>
+                <option value="forgejo">{t('backup.providerForgejo')}</option>
+              </select>
+            </div>
+
                 {/* Repository URL */}
                 <div>
                   <label className="block text-sm text-bambu-gray mb-1">
@@ -496,9 +619,21 @@ export function GitHubBackupSettings() {
                     type="text"
                     value={repoUrl}
                     onChange={(e) => { setRepoUrl(e.target.value); setTestResult(null); }}
-                    placeholder="https://github.com/username/bambuddy-backup"
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    placeholder={t(PROVIDER_REPO_URL_I18N_KEY[provider])}
+                    className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
+                  <label className="flex items-start gap-2 mt-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allowInsecureHttp}
+                      onChange={(e) => { setAllowInsecureHttp(e.target.checked); setTestResult(null); }}
+                      className="w-4 h-4 mt-0.5 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+                    />
+                    <div>
+                      <span className="text-sm text-white">{t('backup.allowInsecureHttp')}</span>
+                      <p className="text-xs text-bambu-gray">{t('backup.allowInsecureHttpHint')}</p>
+                    </div>
+                  </label>
                 </div>
 
                 {/* Access Token */}
@@ -510,8 +645,8 @@ export function GitHubBackupSettings() {
                     type="password"
                     value={accessToken}
                     onChange={(e) => { setAccessToken(e.target.value); setTestResult(null); }}
-                    placeholder={config?.has_token ? t('backup.enterNewToken') : 'ghp_xxxxxxxxxxxx'}
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    placeholder={config?.has_token ? t('backup.enterNewToken') : PROVIDER_TOKEN_PLACEHOLDER[provider]}
+                    className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
                   <p className="text-xs text-bambu-gray mt-1">
                     {t('backup.tokenHint')}
@@ -527,7 +662,7 @@ export function GitHubBackupSettings() {
                   value={branch}
                   onChange={(e) => setBranch(e.target.value)}
                   placeholder="main"
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 />
               </div>
               <div>
@@ -542,7 +677,7 @@ export function GitHubBackupSettings() {
                       setScheduleType(e.target.value as ScheduleType);
                     }
                   }}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 >
                   <option value="disabled">{t('backup.manualOnly')}</option>
                   <option value="hourly">{t('backup.hourly')}</option>
@@ -958,7 +1093,7 @@ export function GitHubBackupSettings() {
                     <label className="block text-sm text-bambu-gray mb-1">{t('backup.frequency')}</label>
                     <select
                       value={localBackupStatus?.schedule ?? 'daily'}
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                       onChange={async (e) => {
                         try {
                           await api.updateSettings({ local_backup_schedule: e.target.value });
@@ -980,7 +1115,7 @@ export function GitHubBackupSettings() {
                       <input
                         type="time"
                         value={localBackupStatus?.time ?? '03:00'}
-                        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none [color-scheme:dark]"
+                        className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none [color-scheme:dark]"
                         onChange={async (e) => {
                           try {
                             await api.updateSettings({ local_backup_time: e.target.value });
@@ -1001,7 +1136,7 @@ export function GitHubBackupSettings() {
                       min={1}
                       max={100}
                       value={localBackupStatus?.retention ?? 5}
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                       onChange={async (e) => {
                         const val = Math.max(1, Math.min(100, parseInt(e.target.value) || 5));
                         try {
@@ -1024,7 +1159,7 @@ export function GitHubBackupSettings() {
                     type="text"
                     value={localBackupPath}
                     onChange={(e) => setLocalBackupPath(e.target.value)}
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     onBlur={async () => {
                       try {
                         await api.updateSettings({ local_backup_path: localBackupPath });

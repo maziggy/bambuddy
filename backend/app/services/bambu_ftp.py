@@ -670,14 +670,32 @@ def clear_3mf_cache(printer_id: int | None = None, delete_files: bool = True) ->
     When ``delete_files`` is True (default) the on-disk 3MF is removed as well
     — called from on_print_complete so temp files don't accumulate across
     prints. Tests that want to inspect the cache contents disable this.
+
+    Only paths inside ``archive_dir/temp`` are unlinked. The dispatch sites
+    added in #1166 also cache the live archive copy and library file bytes
+    so /cover can skip FTP — those are *user data*, never the cache's to
+    delete. Pre-fix this branch silently removed archive 3mfs on every print
+    completion (#1212 + private reports of "file disappeared overnight").
     """
+    from backend.app.core.config import settings as _config_settings
+
+    temp_root = _config_settings.archive_dir / "temp"
+
+    def _is_temp_path(path: Path) -> bool:
+        try:
+            return path.is_relative_to(temp_root)
+        except (OSError, ValueError):
+            return False
 
     def _maybe_unlink(path: Path) -> None:
-        if delete_files and path.exists():
-            try:
-                path.unlink()
-            except OSError as exc:
-                logger.debug("3MF cache cleanup skipped %s: %s", path, exc)
+        if not delete_files or not path.exists():
+            return
+        if not _is_temp_path(path):
+            return
+        try:
+            path.unlink()
+        except OSError as exc:
+            logger.debug("3MF cache cleanup skipped %s: %s", path, exc)
 
     if printer_id is None:
         for path in list(_threemf_path_cache.values()):

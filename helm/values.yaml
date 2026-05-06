@@ -4,7 +4,7 @@ image:
   tag: "latest"
 
 env:
-  tz: "America/Toronto"
+  tz: "Europe/Berlin"
   port: "8000"
 
 # Host networking is required for printer discovery

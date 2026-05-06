@@ -169,7 +169,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Plate selection for multi-plate 3MF files
 - Duplicate detection via file hash
 - Mobile-friendly with always-visible action buttons
-- **Server-side Slice button** (optional) — slice STL/3MF without a desktop slicer when the [`slicer-api/` Compose stack](slicer-api/README.md) is running; the result lands as a new `.gcode.3mf` in the same folder, with progress shown via a toast tracker that follows the job to completion
+- **Server-side Slice button** (optional) — slice STL/3MF without a desktop slicer when the [`slicer-api/` Compose stack](slicer-api/README.md) is running; the result lands as a new `.gcode.3mf` in the same folder, with progress shown via a toast tracker that follows the job to completion. Supports importing **Bambu Studio Printer Preset Bundles** (`.bbscfg`) so a curated printer + process + filament triplet can be picked in the Slice dialog without re-uploading JSON profiles ([details](https://wiki.bambuddy.cool/features/slicer-api/#slicer-bundles-bbscfg))
 
 ### 🌍 MakerWorld Integration
 - Paste any `makerworld.com/models/…` URL → preview, plate picker, and import without leaving Bambuddy

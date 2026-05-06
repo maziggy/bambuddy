@@ -88,6 +88,10 @@ class NotificationProvider(Base):
     on_bed_cooled = Column(Boolean, default=False)  # Bed cooled below threshold after print
     on_first_layer_complete = Column(Boolean, default=False)  # First layer finished printing
 
+    # Event triggers - Inventory stock alerts
+    on_stock_reorder_alert = Column(Boolean, default=False)  # SKU hits reorder point
+    on_stock_break_alert = Column(Boolean, default=False)  # Stock will run out before replenishment
+
     # Event triggers - Print queue
     on_queue_job_added = Column(Boolean, default=False)  # Job added to queue
     on_queue_job_assigned = Column(Boolean, default=False)  # Model-based job assigned to printer

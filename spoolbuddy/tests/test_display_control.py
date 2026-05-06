@@ -1,5 +1,6 @@
 """Tests for daemon.display_control — DisplayControl brightness and blanking."""
 
+import os
 import time
 
 import pytest
@@ -174,3 +175,95 @@ class TestDisplayControlBlanking:
         time.sleep(0.01)
         display.wake()
         assert display._last_activity > old_time
+
+
+class TestDisplayControlFifoMessages:
+    """The wake FIFO carries two messages: `wake` and `reload-timeout N`.
+
+    These tests pin both — they're the only way the daemon can talk to
+    the idle watchdog (spoolbuddy-idle.sh) running in the Wayland session.
+    Regression target: a one-shot swayidle started with a stale timeout
+    value would never pick up UI changes without these signals.
+    """
+
+    @pytest.fixture
+    def display_with_fifo(self, monkeypatch, tmp_path):
+        import daemon.display_control as dc_mod
+
+        empty_dir = tmp_path / "backlight"
+        empty_dir.mkdir()
+        monkeypatch.setattr(dc_mod, "BACKLIGHT_BASE", empty_dir)
+
+        fifo_path = tmp_path / "spoolbuddy-wake"
+        os.mkfifo(str(fifo_path), 0o622)
+        monkeypatch.setattr(dc_mod, "WAKE_FIFO", fifo_path)
+
+        # Hold a non-blocking reader open so the daemon's writes don't hit ENXIO.
+        reader_fd = os.open(str(fifo_path), os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            yield dc_mod.DisplayControl(), reader_fd
+        finally:
+            os.close(reader_fd)
+
+    @staticmethod
+    def _drain(fd: int) -> bytes:
+        """Read whatever is queued on the FIFO without blocking."""
+        try:
+            return os.read(fd, 4096)
+        except BlockingIOError:
+            return b""
+
+    def test_wake_writes_wake_line(self, display_with_fifo):
+        dc, reader_fd = display_with_fifo
+        dc.wake()
+        assert self._drain(reader_fd) == b"wake\n"
+
+    def test_first_set_blank_timeout_does_not_signal(self, display_with_fifo):
+        """The watchdog already fetched this value at its own startup —
+        signalling here would just thrash swayidle for nothing."""
+        dc, reader_fd = display_with_fifo
+        dc.set_blank_timeout(300)
+        assert self._drain(reader_fd) == b""
+        assert dc._blank_timeout == 300
+
+    def test_subsequent_change_signals_reload(self, display_with_fifo):
+        dc, reader_fd = display_with_fifo
+        dc.set_blank_timeout(300)  # init — no signal
+        dc.set_blank_timeout(60)
+        assert self._drain(reader_fd) == b"reload-timeout 60\n"
+
+    def test_same_value_does_not_signal(self, display_with_fifo):
+        dc, reader_fd = display_with_fifo
+        dc.set_blank_timeout(300)
+        dc.set_blank_timeout(300)
+        assert self._drain(reader_fd) == b""
+
+    def test_disable_after_enable_signals_zero(self, display_with_fifo):
+        """Going from "blanking on" to "blanking off" must reach the watchdog
+        so it can stop swayidle — otherwise the screen keeps blanking even
+        after the user picks 'Off'."""
+        dc, reader_fd = display_with_fifo
+        dc.set_blank_timeout(300)  # init
+        dc.set_blank_timeout(0)
+        assert self._drain(reader_fd) == b"reload-timeout 0\n"
+
+    def test_negative_clamped_to_zero_in_signal(self, display_with_fifo):
+        dc, reader_fd = display_with_fifo
+        dc.set_blank_timeout(300)  # init
+        dc.set_blank_timeout(-5)
+        assert self._drain(reader_fd) == b"reload-timeout 0\n"
+
+    def test_signal_no_op_when_fifo_missing(self, monkeypatch, tmp_path):
+        """No watchdog running = no FIFO. Writes must not raise."""
+        import daemon.display_control as dc_mod
+
+        empty_dir = tmp_path / "backlight"
+        empty_dir.mkdir()
+        monkeypatch.setattr(dc_mod, "BACKLIGHT_BASE", empty_dir)
+        monkeypatch.setattr(dc_mod, "WAKE_FIFO", tmp_path / "no-such-fifo")
+
+        dc = dc_mod.DisplayControl()
+        dc.set_blank_timeout(300)
+        dc.set_blank_timeout(60)  # would signal if FIFO existed
+        dc.wake()
+        # No assertion needed — surviving without raising is the contract.

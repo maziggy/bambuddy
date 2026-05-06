@@ -5,8 +5,9 @@ import {
   Plus, Loader2, Trash2, Archive, RotateCcw, Edit2, Package,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
-  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw,
+  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, TrendingUp, Lock,
 } from 'lucide-react';
+import { ForecastPanel } from '../components/ForecastPanel';
 import { api, spoolbuddyApi } from '../api/client';
 import type { InventorySpool, SpoolAssignment, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
@@ -17,6 +18,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { resolveSpoolColorName } from '../utils/colors';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
@@ -24,7 +26,7 @@ import { formatSlotLabel } from '../utils/amsHelpers';
 
 type ArchiveFilter = 'active' | 'archived';
 type UsageFilter = 'all' | 'used' | 'new' | 'lowstock';
-type ViewMode = 'table' | 'cards';
+type ViewMode = 'table' | 'cards' | 'forecast';
 type SortDirection = 'asc' | 'desc';
 type SortState = { column: string; direction: SortDirection } | null;
 
@@ -482,6 +484,8 @@ function InventoryPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { hasPermission, loading: authLoading } = useAuth();
+  const canViewForecast = !authLoading && hasPermission('inventory:forecast_read');
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
   // Label printing (#809). null = closed; otherwise the IDs to print labels for.
@@ -1027,7 +1031,7 @@ function InventoryPage() {
 
       {/* Toolbar: Search + View toggle */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <div className="relative flex-1 max-w-md">
+        <div className={`relative flex-1 max-w-md ${viewMode === 'forecast' ? 'invisible pointer-events-none' : ''}`}>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50" />
           <input
             type="text"
@@ -1058,19 +1062,21 @@ function InventoryPage() {
               <span className="hidden sm:inline">{t('inventory.columns')}</span>
             </button>
           )}
-          {/* Group similar toggle */}
-          <button
-            onClick={toggleGroupSimilar}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border rounded-lg transition-colors ${
-              groupSimilar
-                ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
-                : 'text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
-            }`}
-            title={t('inventory.groupSimilar')}
-          >
-            <Group className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('inventory.groupSimilar')}</span>
-          </button>
+          {/* Group similar toggle — hidden in forecast mode */}
+          {viewMode !== 'forecast' && (
+            <button
+              onClick={toggleGroupSimilar}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border rounded-lg transition-colors ${
+                groupSimilar
+                  ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+                  : 'text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+              }`}
+              title={t('inventory.groupSimilar')}
+            >
+              <Group className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('inventory.groupSimilar')}</span>
+            </button>
+          )}
           {/* Table / Cards toggle */}
           <div className="flex bg-bambu-dark-primary border border-bambu-dark-tertiary rounded-lg overflow-hidden">
             <button
@@ -1095,12 +1101,25 @@ function InventoryPage() {
               <LayoutGrid className="w-4 h-4" />
               <span className="hidden sm:inline">{t('inventory.cards')}</span>
             </button>
+            <button
+              onClick={() => canViewForecast && setViewMode('forecast')}
+              disabled={!canViewForecast}
+              title={canViewForecast ? undefined : t('forecast.noReadAccess')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                viewMode === 'forecast'
+                  ? 'bg-bambu-green text-white'
+                  : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
+              }`}
+            >
+              {canViewForecast ? <TrendingUp className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+              <span className="hidden sm:inline">{t('forecast.title')}</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Filter chips row */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Filter chips row — hidden in forecast mode */}
+      <div className={`flex flex-wrap items-center gap-2 ${viewMode === 'forecast' ? 'hidden' : ''}`}>
         {/* Active / Archived chips */}
         <div className="flex items-center rounded-lg border border-bambu-dark-tertiary overflow-hidden">
           <button
@@ -1297,11 +1316,13 @@ function InventoryPage() {
           </>
         )}
 
-        {/* Results count */}
-        <span className="ml-auto text-xs text-bambu-gray">
-          {sortedSpools.length} {sortedSpools.length !== 1 ? t('inventory.spools') : t('inventory.spool')}
-          {groupSimilar && totalDisplayItems < sortedSpools.length && ` (${totalDisplayItems} ${t('inventory.groupedRows')})`}
-        </span>
+        {/* Results count — hidden in forecast mode */}
+        {viewMode !== 'forecast' && (
+          <span className="ml-auto text-xs text-bambu-gray">
+            {sortedSpools.length} {sortedSpools.length !== 1 ? t('inventory.spools') : t('inventory.spool')}
+            {groupSimilar && totalDisplayItems < sortedSpools.length && ` (${totalDisplayItems} ${t('inventory.groupedRows')})`}
+          </span>
+        )}
       </div>
 
       {/* Content */}
@@ -1309,6 +1330,9 @@ function InventoryPage() {
         <div className="flex justify-center py-16">
           <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
         </div>
+      ) : viewMode === 'forecast' ? (
+        /* Forecast view */
+        <ForecastPanel spools={spools || []} />
       ) : viewMode === 'cards' ? (
         /* Cards view */
         pagedItems.length > 0 ? (

@@ -43,6 +43,33 @@ class TestGCodeViewerRouteOrdering:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_gcode_viewer_index_served_when_assets_present(self, async_client: AsyncClient):
+        """GET /gcode-viewer/ must return the PrettyGCode index when the
+        vendored assets are on disk.
+
+        Regression guard for #1218: the production Dockerfile has to copy
+        ``gcode_viewer/`` into the image alongside ``static/``. The previous
+        ``test_gcode_viewer_index_does_not_fall_through_to_spa`` accepted
+        404 unconditionally so a missing COPY never failed CI. This test
+        only runs when the directory is actually present (so it stays a
+        no-op in unit-test environments where the assets are intentionally
+        absent), but when it does run it asserts 200 + a non-empty HTML
+        body so a future packaging regression fails loudly.
+        """
+        from backend.app.main import _gcode_viewer_dir
+
+        index = _gcode_viewer_dir / "index.html"
+        if not index.is_file():
+            pytest.skip(f"gcode_viewer/index.html not present at {index} — skipping packaging assertion")
+        response = await async_client.get("/gcode-viewer/")
+        assert response.status_code == 200, (
+            f"gcode_viewer/index.html exists at {index} but /gcode-viewer/ returned "
+            f"{response.status_code} — route or response wiring is broken."
+        )
+        assert b"PrettyGCode" in response.content or b"<!doctype html>" in response.content.lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_gcode_viewer_no_trailing_slash_falls_through_to_spa(self, async_client: AsyncClient):
         """GET /gcode-viewer (no trailing slash) must fall through to the SPA.
 

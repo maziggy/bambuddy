@@ -1662,6 +1662,60 @@ class NotificationService:
         title, message = await self._build_message_from_template(db, "queue_completed", variables)
         await self._send_to_providers(providers, title, message, db, "queue_completed", variables=variables)
 
+    # ==================== Inventory Stock Alerts ====================
+
+    async def on_stock_reorder_alert(
+        self,
+        material: str,
+        brand: str | None,
+        stock_g: float,
+        rate_g_day: float,
+        days_left: int,
+        db: AsyncSession,
+    ):
+        """Fire when an inventory SKU reaches its reorder point."""
+        providers = await self._get_providers_for_event(db, "on_stock_reorder_alert", None)
+        if not providers:
+            return
+
+        variables = {
+            "material": material,
+            "brand": brand or "",
+            "stock_g": f"{stock_g:.0f}",
+            "rate_g_day": f"{rate_g_day:.1f}",
+            "days_left": str(days_left),
+        }
+
+        title, message = await self._build_message_from_template(db, "stock_reorder_alert", variables)
+        await self._send_to_providers(providers, title, message, db, "stock_reorder_alert", variables=variables)
+
+    async def on_stock_break_alert(
+        self,
+        material: str,
+        brand: str | None,
+        stock_g: float,
+        rate_g_day: float,
+        days_left: int,
+        lead_time_days: int,
+        db: AsyncSession,
+    ):
+        """Fire when a stock break is detected (stock runs out before lead time)."""
+        providers = await self._get_providers_for_event(db, "on_stock_break_alert", None)
+        if not providers:
+            return
+
+        variables = {
+            "material": material,
+            "brand": brand or "",
+            "stock_g": f"{stock_g:.0f}",
+            "rate_g_day": f"{rate_g_day:.1f}",
+            "days_left": str(days_left),
+            "lead_time_days": str(lead_time_days),
+        }
+
+        title, message = await self._build_message_from_template(db, "stock_break_alert", variables)
+        await self._send_to_providers(providers, title, message, db, "stock_break_alert", variables=variables)
+
     async def _queue_for_digest(
         self,
         provider: NotificationProvider,

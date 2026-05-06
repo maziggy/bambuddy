@@ -6,7 +6,7 @@ normalisation that lets the route handler ignore the difference.
 import pytest
 from pydantic import ValidationError
 
-from backend.app.schemas.slicer import PresetRef, SliceRequest
+from backend.app.schemas.slicer import PresetRef, SliceBundleSpec, SliceRequest
 
 
 class TestLegacyBareIntegerShape:
@@ -142,3 +142,81 @@ class TestFilamentPresetsList:
             filament_presets=refs,
         )
         assert [r.id for r in req.filament_presets] == ["slot1", "slot2", "slot3"]
+
+
+class TestBundleDispatchShape:
+    """When SliceRequest.bundle is set, the dispatcher picks the JSON
+    triplet from a sidecar-side bundle by name and PresetRef resolution
+    is skipped entirely. Validator must accept "bundle alone" without
+    flagging missing presets."""
+
+    def test_bundle_alone_validates(self):
+        req = SliceRequest(
+            bundle=SliceBundleSpec(
+                bundle_id="abc123def456abcd",
+                printer_name="# Bambu Lab H2D 0.4 nozzle",
+                process_name="# 0.20mm Standard @BBL H2D",
+                filament_names=["# Bambu PLA Basic @BBL H2D"],
+            ),
+        )
+        # PresetRef fields are absent; that's fine in bundle mode.
+        assert req.bundle is not None
+        assert req.printer_preset is None
+        assert req.process_preset is None
+        assert req.filament_presets == []
+
+    def test_bundle_with_filament_list_preserves_order(self):
+        req = SliceRequest(
+            bundle=SliceBundleSpec(
+                bundle_id="abc",
+                printer_name="P",
+                process_name="Q",
+                filament_names=["red", "blue", "green"],
+            ),
+        )
+        assert req.bundle.filament_names == ["red", "blue", "green"]
+
+    def test_bundle_rejects_empty_filament_list(self):
+        with pytest.raises(ValidationError):
+            SliceBundleSpec(
+                bundle_id="abc",
+                printer_name="P",
+                process_name="Q",
+                filament_names=[],
+            )
+
+    def test_bundle_rejects_empty_id(self):
+        with pytest.raises(ValidationError):
+            SliceBundleSpec(
+                bundle_id="",
+                printer_name="P",
+                process_name="Q",
+                filament_names=["F"],
+            )
+
+    def test_no_bundle_no_presets_still_rejected(self):
+        # Dropping the bundle escape-hatch must not bypass the existing
+        # presets-required check.
+        with pytest.raises(ValidationError):
+            SliceRequest()
+
+    def test_bundle_with_presets_keeps_both_fields(self):
+        # Sending both is allowed (validator accepts the bundle and skips
+        # preset normalisation) — the dispatch picks bundle on the route
+        # side. Confirms the validator doesn't reject overlapping intent
+        # so a future client that wants to record the legacy presets
+        # alongside doesn't fail validation.
+        req = SliceRequest(
+            printer_preset=PresetRef(source="standard", id="X1C"),
+            process_preset=PresetRef(source="standard", id="0.20"),
+            filament_presets=[PresetRef(source="standard", id="PLA")],
+            bundle=SliceBundleSpec(
+                bundle_id="abc",
+                printer_name="P",
+                process_name="Q",
+                filament_names=["F"],
+            ),
+        )
+        assert req.bundle is not None
+        # Presets stay populated; dispatch ignores them when bundle is set.
+        assert req.printer_preset is not None

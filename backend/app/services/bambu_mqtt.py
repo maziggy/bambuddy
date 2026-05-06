@@ -1569,8 +1569,14 @@ class BambuMQTTClient:
                 # Valid physical trays: 0-15 (regular AMS), 128-135 (AMS-HT), 254 (external spool)
                 tn = self.state.tray_now
                 if (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
-                    # Log tray change for mid-print usage splitting
-                    if tn != self.state.last_loaded_tray and self.state.state in ("RUNNING", "PAUSE"):
+                    # Log tray change for mid-print usage splitting. Gate on the
+                    # print-lifecycle flags (`_was_running` set on first RUNNING /
+                    # new print, `_completion_triggered` set when on_print_complete
+                    # fires) instead of `state in ("RUNNING", "PAUSE")` — P2S
+                    # firmware briefly transitions out of RUNNING during AMS
+                    # auto-fallback (#957), so a literal-string gate misses the
+                    # switch and the usage tracker double-credits at completion.
+                    if tn != self.state.last_loaded_tray and self._was_running and not self._completion_triggered:
                         self.state.tray_change_log.append((tn, self.state.layer_num))
                         logger.info(
                             "[%s] Tray change during print: tray=%d at layer=%d",

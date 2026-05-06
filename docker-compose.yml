@@ -6,9 +6,11 @@ services:
     #   docker compose up -d          → pulls pre-built image from ghcr.io
     #   docker compose up -d --build  → builds locally from source
     container_name: bambuddy
-    # Run as current user to avoid permission issues with mounted volumes
-    # Override with: PUID=$(id -u) PGID=$(id -g) docker compose up -d
-    user: "${PUID:-1000}:${PGID:-1000}"
+    # File ownership inside the data and logs volumes is normalised by the
+    # entrypoint at startup (chowns to PUID:PGID and drops privileges via
+    # gosu before running the app). Override PUID / PGID below to match
+    # your host user if needed — defaults to 1000:1000 to match the
+    # historical compose `user:` directive.
     #
     # Allow binding to privileged ports (322, 990) as non-root user — required
     # for FTPS in every VP mode and for the RTSPS camera proxy in proxy mode +
@@ -37,9 +39,14 @@ services:
       - bambuddy_data:/app/data
       - bambuddy_logs:/app/logs
       #
-      # Share virtual printer certs with native installation
-      # This ensures the slicer only needs to trust one CA certificate.
-      - ./virtual_printer:/app/data/virtual_printer
+      # OPTIONAL — only needed if you ALSO run a native install of Bambuddy
+      # on the same host and want both installs to share the same Virtual
+      # Printer CA certificate (so the slicer only has to trust one CA).
+      # Most Docker-only users should leave this commented out — the
+      # entrypoint will keep the VP data inside the named volume above.
+      # If uncommented, the entrypoint chowns the host directory to
+      # PUID:PGID on first start so the container user can write to it.
+      #- ./virtual_printer:/app/data/virtual_printer
       #
       # Mount scheduled backup output to NAS or external storage
       # Backups default to DATA_DIR/backups/ inside the data volume.
@@ -57,6 +64,12 @@ services:
       #- /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
     environment:
       - TZ=${TZ:-Europe/Berlin}
+      # User/group the container drops to after the entrypoint normalises
+      # ownership on /app/data and /app/logs. Match your host user (run
+      # `id -u` / `id -g`) if you want files written by the container to
+      # show up as your user on the host. Defaults to 1000:1000.
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # Port BamBuddy runs on (default: 8000)
       # Usage: PORT=8080 docker compose up -d
       - PORT=${PORT:-8000}

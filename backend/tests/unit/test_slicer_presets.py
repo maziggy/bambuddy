@@ -431,3 +431,208 @@ class TestResolveSlicerApiUrl:
         ):
             url = await sp._resolve_slicer_api_url(MagicMock())
         assert url is None
+
+
+class TestBundleRoutes:
+    """Route-level coverage for the bundle proxy endpoints. Each route
+    resolves the sidecar URL via _resolve_slicer_api_url, then proxies the
+    operation through SlicerApiService. We mock both pieces so we can pin
+    the HTTP-status mapping (sidecar input error → 400, BundleNotFoundError
+    → 404, unreachable → 503) without spinning up a sidecar.
+    """
+
+    SAMPLE_SUMMARY = sp.BundleSummary(
+        id="abc123def456abcd",
+        printer_preset_name="# Bambu Lab H2D 0.4 nozzle",
+        printer=["# Bambu Lab H2D 0.4 nozzle"],
+        process=["# 0.20mm Standard @BBL H2D"],
+        filament=["# Bambu PLA Basic @BBL H2D"],
+        version="02.06.00.50",
+    )
+
+    def _patched_service(self, **methods) -> MagicMock:
+        """Build a SlicerApiService mock that supports `async with` and
+        exposes the bundle methods via AsyncMock per the override dict."""
+        svc = MagicMock()
+        svc.__aenter__ = AsyncMock(return_value=svc)
+        svc.__aexit__ = AsyncMock(return_value=False)
+        for name, mock in methods.items():
+            setattr(svc, name, mock)
+        return svc
+
+    @pytest.mark.asyncio
+    async def test_import_bundle_happy_path(self):
+        from io import BytesIO
+
+        from fastapi import UploadFile
+
+        svc = self._patched_service(
+            import_bundle=AsyncMock(return_value=self.SAMPLE_SUMMARY),
+        )
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc),
+        ):
+            file = UploadFile(filename="H2D.bbscfg", file=BytesIO(b"PK\x03\x04"))
+            result = await sp.import_slicer_bundle(file=file, db=MagicMock(), _=None)
+        assert result["id"] == "abc123def456abcd"
+        assert result["printer"] == ["# Bambu Lab H2D 0.4 nozzle"]
+        svc.import_bundle.assert_awaited_once()
+        kwargs = svc.import_bundle.await_args.kwargs
+        assert kwargs["filename"] == "H2D.bbscfg"
+
+    @pytest.mark.asyncio
+    async def test_import_bundle_no_sidecar_returns_503(self):
+        from io import BytesIO
+
+        from fastapi import HTTPException, UploadFile
+
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value=None)),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await sp.import_slicer_bundle(
+                file=UploadFile(filename="x.bbscfg", file=BytesIO(b"x")),
+                db=MagicMock(),
+                _=None,
+            )
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_import_bundle_empty_file_returns_400(self):
+        from io import BytesIO
+
+        from fastapi import HTTPException, UploadFile
+
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await sp.import_slicer_bundle(
+                file=UploadFile(filename="x.bbscfg", file=BytesIO(b"")),
+                db=MagicMock(),
+                _=None,
+            )
+        assert exc.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_import_bundle_sidecar_400_passes_through(self):
+        from io import BytesIO
+
+        from fastapi import HTTPException, UploadFile
+
+        svc = self._patched_service(
+            import_bundle=AsyncMock(side_effect=sp.SlicerInputError("bad zip")),
+        )
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await sp.import_slicer_bundle(
+                file=UploadFile(filename="x.bbscfg", file=BytesIO(b"x")),
+                db=MagicMock(),
+                _=None,
+            )
+        assert exc.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_import_bundle_sidecar_unreachable_returns_503(self):
+        from io import BytesIO
+
+        from fastapi import HTTPException, UploadFile
+
+        svc = self._patched_service(
+            import_bundle=AsyncMock(side_effect=sp.SlicerApiUnavailableError("offline")),
+        )
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await sp.import_slicer_bundle(
+                file=UploadFile(filename="x.bbscfg", file=BytesIO(b"x")),
+                db=MagicMock(),
+                _=None,
+            )
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_list_bundles_happy_path(self):
+        svc = self._patched_service(
+            list_bundles=AsyncMock(return_value=[self.SAMPLE_SUMMARY]),
+        )
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc),
+        ):
+            result = await sp.list_slicer_bundles(db=MagicMock(), _=None)
+        assert len(result) == 1
+        assert result[0]["id"] == "abc123def456abcd"
+
+    @pytest.mark.asyncio
+    async def test_list_bundles_no_sidecar_returns_empty(self):
+        # Differs from import: list returns [] instead of 503 so the
+        # SliceModal still renders cleanly when no sidecar is configured
+        # (matches bundled-tier behaviour above).
+        with patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value=None)):
+            result = await sp.list_slicer_bundles(db=MagicMock(), _=None)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_list_bundles_sidecar_unreachable_returns_503(self):
+        from fastapi import HTTPException
+
+        svc = self._patched_service(
+            list_bundles=AsyncMock(side_effect=sp.SlicerApiUnavailableError("offline")),
+        )
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await sp.list_slicer_bundles(db=MagicMock(), _=None)
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_get_bundle_404(self):
+        from fastapi import HTTPException
+
+        svc = self._patched_service(
+            get_bundle=AsyncMock(side_effect=sp.BundleNotFoundError("not found")),
+        )
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await sp.get_slicer_bundle("missing", db=MagicMock(), _=None)
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_bundle_204(self):
+        # delete returns None on success; FastAPI sends 204 because the route
+        # declares status_code=204.
+        svc = self._patched_service(delete_bundle=AsyncMock(return_value=None))
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc),
+        ):
+            result = await sp.delete_slicer_bundle("abc", db=MagicMock(), _=None)
+        assert result is None
+        svc.delete_bundle.assert_awaited_once_with("abc")
+
+    @pytest.mark.asyncio
+    async def test_delete_bundle_404(self):
+        from fastapi import HTTPException
+
+        svc = self._patched_service(
+            delete_bundle=AsyncMock(side_effect=sp.BundleNotFoundError("not found")),
+        )
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await sp.delete_slicer_bundle("missing", db=MagicMock(), _=None)
+        assert exc.value.status_code == 404

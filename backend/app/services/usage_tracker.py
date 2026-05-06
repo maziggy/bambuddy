@@ -846,26 +846,29 @@ async def _track_from_3mf(
     # 5. For single-filament non-queue prints, use tray_now from printer state
     #    Priority: tray_change_log (multi-tray split) > tray_now_at_start > current tray_now
     #              > last_loaded_tray > vt_tray check
+    #
+    # tray_change_log evidence wins over slot_to_tray when present: if the
+    # printer fed from multiple trays mid-print (AMS auto-fallback when one
+    # spool runs out, #957), the slicer's mapping captured at print start
+    # is stale and needs to be replaced with per-layer split attribution.
     nonzero_slots = [u for u in filament_usage if u.get("used_g", 0) > 0]
     tray_now_override: int | None = None
     tray_changes: list[tuple[int, int]] = []  # [(global_tray_id, layer_num), ...]
-    if not slot_to_tray and len(nonzero_slots) == 1:
-        state = printer_manager.get_status(printer_id)
-        tray_changes = getattr(state, "tray_change_log", []) if state else []
+    state = printer_manager.get_status(printer_id) if len(nonzero_slots) == 1 else None
+    if state is not None:
+        tray_changes = getattr(state, "tray_change_log", []) or []
 
-        if len(tray_changes) > 1:
-            # Multi-tray usage detected — will split in per-slot loop using per-layer gcode
-            logger.info("[UsageTracker] 3MF: tray change log: %s (will split weight)", tray_changes)
-        elif 0 <= tray_now_at_start <= 254:
-            # Try tray_now_at_start first (captured at print start)
+    if len(tray_changes) > 1:
+        # Multi-tray usage detected — splitting takes over regardless of slot_to_tray.
+        logger.info("[UsageTracker] 3MF: tray change log: %s (will split weight)", tray_changes)
+    elif not slot_to_tray and len(nonzero_slots) == 1:
+        if 0 <= tray_now_at_start <= 254:
             tray_now_override = tray_now_at_start
             logger.info("[UsageTracker] 3MF: using tray_now_at_start=%d (single-filament fallback)", tray_now_at_start)
         elif state and 0 <= state.tray_now <= 254:
-            # Current state is valid (printer didn't retract yet)
             tray_now_override = state.tray_now
             logger.info("[UsageTracker] 3MF: using current tray_now=%d", state.tray_now)
         elif state and 0 <= state.last_loaded_tray <= 253:
-            # Last valid tray before retract (H2D retracts before completion callback)
             tray_now_override = state.last_loaded_tray
             logger.info("[UsageTracker] 3MF: using last_loaded_tray=%d (post-retract fallback)", state.last_loaded_tray)
         elif state and state.tray_now == 255:
@@ -874,7 +877,7 @@ async def _track_from_3mf(
             if any(int(vt.get("id", 0)) == 255 for vt in vt_tray if isinstance(vt, dict)):
                 tray_now_override = state.tray_now
                 logger.info("[UsageTracker] 3MF: using tray_now=255 (H2-series external spool)")
-        if tray_now_override is None and len(tray_changes) <= 1:
+        if tray_now_override is None:
             logger.info(
                 "[UsageTracker] 3MF: no valid tray_now (at_start=%d, current=%s, last_loaded=%s)",
                 tray_now_at_start,

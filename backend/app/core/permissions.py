@@ -74,6 +74,8 @@ class Permission(StrEnum):
     INVENTORY_UPDATE = "inventory:update"
     INVENTORY_DELETE = "inventory:delete"
     INVENTORY_VIEW_ASSIGNMENTS = "inventory:view_assignments"  # View spool-to-AMS assignments on printer cards
+    INVENTORY_FORECAST_READ = "inventory:forecast_read"  # View forecast/reorder intelligence panel
+    INVENTORY_FORECAST_WRITE = "inventory:forecast_write"  # Modify SKU settings, lead times, shopping list
 
     # Smart Plugs
     SMART_PLUGS_READ = "smart_plugs:read"
@@ -228,6 +230,8 @@ PERMISSION_CATEGORIES = {
         Permission.INVENTORY_UPDATE,
         Permission.INVENTORY_DELETE,
         Permission.INVENTORY_VIEW_ASSIGNMENTS,
+        Permission.INVENTORY_FORECAST_READ,
+        Permission.INVENTORY_FORECAST_WRITE,
     ],
     "Smart Plugs": [
         Permission.SMART_PLUGS_READ,
@@ -379,6 +383,8 @@ DEFAULT_GROUPS = {
             Permission.INVENTORY_UPDATE.value,
             Permission.INVENTORY_DELETE.value,
             Permission.INVENTORY_VIEW_ASSIGNMENTS.value,
+            Permission.INVENTORY_FORECAST_READ.value,
+            Permission.INVENTORY_FORECAST_WRITE.value,
             # Smart Plugs - full access
             Permission.SMART_PLUGS_READ.value,
             Permission.SMART_PLUGS_CREATE.value,
@@ -437,6 +443,7 @@ DEFAULT_GROUPS = {
             Permission.FILAMENTS_READ.value,
             Permission.INVENTORY_READ.value,
             Permission.INVENTORY_VIEW_ASSIGNMENTS.value,
+            Permission.INVENTORY_FORECAST_READ.value,
             Permission.SMART_PLUGS_READ.value,
             Permission.CAMERA_VIEW.value,
             Permission.MAINTENANCE_READ.value,

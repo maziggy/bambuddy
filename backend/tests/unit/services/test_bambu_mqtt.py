@@ -2731,83 +2731,129 @@ class TestTrayChangeLog:
 
         assert mqtt_client.state.tray_change_log == [(1, 0)]
 
+    # Helper that mirrors the production gate at bambu_mqtt.py:1571 — tests
+    # below replicate the gate so they validate the *contract* without needing
+    # to feed a synthetic AMS push through the full _process_message path.
+    @staticmethod
+    def _record_if_change(client, tn: int) -> None:
+        if (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
+            if tn != client.state.last_loaded_tray and client._was_running and not client._completion_triggered:
+                client.state.tray_change_log.append((tn, client.state.layer_num))
+            client.state.last_loaded_tray = tn
+
     def test_tray_change_recorded_during_running(self, mqtt_client):
         """Tray change while RUNNING is appended to the log."""
         mqtt_client.state.state = "RUNNING"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
         mqtt_client.state.layer_num = 50
         mqtt_client.state.last_loaded_tray = 0
         mqtt_client.state.tray_change_log = [(0, 0)]
 
-        # Simulate tray_now update via AMS data
         mqtt_client.state.tray_now = 1
-        # Trigger the tracking code path
-        tn = mqtt_client.state.tray_now
-        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-        mqtt_client.state.last_loaded_tray = tn
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
 
         assert mqtt_client.state.tray_change_log == [(0, 0), (1, 50)]
 
     def test_tray_change_not_recorded_when_idle(self, mqtt_client):
-        """Tray changes while IDLE are NOT logged."""
+        """Tray changes outside an active print are NOT logged."""
+        # IDLE between prints — both lifecycle flags in the cleared state.
         mqtt_client.state.state = "IDLE"
+        mqtt_client._was_running = False
+        mqtt_client._completion_triggered = False
         mqtt_client.state.layer_num = 0
         mqtt_client.state.last_loaded_tray = 0
         mqtt_client.state.tray_change_log = []
 
         mqtt_client.state.tray_now = 3
-        tn = mqtt_client.state.tray_now
-        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-        mqtt_client.state.last_loaded_tray = tn
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
 
         assert mqtt_client.state.tray_change_log == []
 
     def test_tray_change_recorded_during_pause(self, mqtt_client):
         """Tray change while PAUSE is also logged (AMS can swap during pause)."""
         mqtt_client.state.state = "PAUSE"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
         mqtt_client.state.layer_num = 75
         mqtt_client.state.last_loaded_tray = 2
         mqtt_client.state.tray_change_log = [(2, 0)]
 
         mqtt_client.state.tray_now = 5
-        tn = mqtt_client.state.tray_now
-        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-        mqtt_client.state.last_loaded_tray = tn
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
 
         assert mqtt_client.state.tray_change_log == [(2, 0), (5, 75)]
+
+    def test_tray_change_recorded_during_intermediate_state(self, mqtt_client):
+        """Tray change during a transient non-RUNNING state mid-print is logged.
+
+        Regression for #957: P2S firmware briefly transitions out of RUNNING
+        (e.g. into LOADING) when the AMS auto-falls-back from an empty spool to
+        a same-material sibling. The previous gate ``state in ("RUNNING",
+        "PAUSE")`` missed this transition entirely, so the usage tracker had no
+        evidence of the switch and double-credited the original tray with the
+        full 3MF estimate while the remain%-delta path added the fallback
+        weight on top. The new gate keys on the print-lifecycle flags
+        (``_was_running and not _completion_triggered``) so any tray change
+        between print start and completion is captured regardless of the
+        momentary gcode_state string.
+        """
+        mqtt_client.state.state = "LOADING"  # not RUNNING/PAUSE — old gate would skip
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
+        mqtt_client.state.layer_num = 42
+        mqtt_client.state.last_loaded_tray = 0
+        mqtt_client.state.tray_change_log = [(0, 0)]
+
+        # AMS auto-fallback: T0 ran out, swapped to T1 of same material
+        mqtt_client.state.tray_now = 1
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
+
+        assert mqtt_client.state.tray_change_log == [(0, 0), (1, 42)]
+
+    def test_tray_change_not_recorded_after_completion(self, mqtt_client):
+        """Once on_print_complete has fired, further tray changes don't pollute the log."""
+        mqtt_client.state.state = "FINISH"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = True  # completion already triggered
+        mqtt_client.state.layer_num = 0
+        mqtt_client.state.last_loaded_tray = 1
+        mqtt_client.state.tray_change_log = [(0, 0), (1, 50)]
+
+        mqtt_client.state.tray_now = 2
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
+
+        # Log unchanged — completion already triggered so post-print tray
+        # movement (e.g. printer self-cleaning) doesn't bleed into the next
+        # print's attribution.
+        assert mqtt_client.state.tray_change_log == [(0, 0), (1, 50)]
 
     def test_same_tray_not_logged_twice(self, mqtt_client):
         """Same tray value doesn't create duplicate log entries."""
         mqtt_client.state.state = "RUNNING"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
         mqtt_client.state.layer_num = 30
         mqtt_client.state.last_loaded_tray = 2
         mqtt_client.state.tray_change_log = [(2, 0)]
 
-        # Same tray again
         mqtt_client.state.tray_now = 2
-        tn = mqtt_client.state.tray_now
-        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-        mqtt_client.state.last_loaded_tray = tn
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
 
         assert mqtt_client.state.tray_change_log == [(2, 0)]
 
     def test_multiple_tray_changes(self, mqtt_client):
         """Multiple tray changes create a full history."""
         mqtt_client.state.state = "RUNNING"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
         mqtt_client.state.last_loaded_tray = 0
         mqtt_client.state.tray_change_log = [(0, 0)]
 
-        changes = [(1, 50), (3, 120), (0, 200)]
-        for tray, layer in changes:
+        for tray, layer in [(1, 50), (3, 120), (0, 200)]:
             mqtt_client.state.tray_now = tray
             mqtt_client.state.layer_num = layer
-            tn = mqtt_client.state.tray_now
-            if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-                mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-            mqtt_client.state.last_loaded_tray = tn
+            self._record_if_change(mqtt_client, tray)
 
         assert mqtt_client.state.tray_change_log == [(0, 0), (1, 50), (3, 120), (0, 200)]
 

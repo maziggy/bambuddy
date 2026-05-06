@@ -1,4 +1,4 @@
-import { Cloud, CloudOff, Cog, Loader2, X } from 'lucide-react';
+import { Cloud, CloudOff, Cog, Loader2, Package, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -6,7 +6,10 @@ import {
   api,
   type PresetRef,
   type PresetSource,
+  type SliceBundleSpec,
   type SliceJobProgress,
+  type SliceRequest,
+  type SlicerBundle,
   type SlicerCloudStatus,
   type UnifiedPreset,
   type UnifiedPresetsBySlot,
@@ -245,6 +248,14 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // entry per AMS slot the plate uses. Pre-pick (effect below) initialises
   // each slot from the source plate's required (type, colour).
   const [filamentPresets, setFilamentPresets] = useState<(PresetRef | null)[]>([]);
+  // Bundle dispatch (alternative to the preset triplet). When non-null, the
+  // SliceModal hides the cloud/local/standard preset dropdowns and shows
+  // bundle-scoped pickers (process + per-slot filament from the chosen
+  // bundle's contents). Submit routes through the backend's bundle dispatch
+  // (`SliceRequest.bundle`) which skips PresetRef resolution.
+  const [selectedBundleId, setSelectedBundleId] = useState<string | null>(null);
+  const [bundleProcessName, setBundleProcessName] = useState<string | null>(null);
+  const [bundleFilamentNames, setBundleFilamentNames] = useState<(string | null)[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // null = plate not yet picked (or single-plate / non-3MF — picker is skipped
   // and we'll backfill 1 at submit time). Set to a 1-indexed plate number once
@@ -321,6 +332,24 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     enabled: !platesQuery.isLoading && !needsPlatePicker,
   });
 
+  // Imported Printer Preset Bundles (.bbscfg). Empty list when no sidecar
+  // configured / no bundles imported yet; the bundle picker hides itself
+  // in that case so users without bundles see the original modal layout.
+  const bundlesQuery = useQuery({
+    queryKey: ['slicerBundles'],
+    queryFn: api.listSlicerBundles,
+    staleTime: 60_000,
+    enabled: !platesQuery.isLoading && !needsPlatePicker,
+    // Bundle listing is a hard 503 when the sidecar is offline; don't
+    // retry tight loops in that case.
+    retry: false,
+  });
+  const selectedBundle: SlicerBundle | null = useMemo(() => {
+    if (!selectedBundleId || !bundlesQuery.data) return null;
+    return bundlesQuery.data.find((b) => b.id === selectedBundleId) ?? null;
+  }, [selectedBundleId, bundlesQuery.data]);
+  const isBundleMode = selectedBundle != null;
+
   // Printer / process pre-pick: see SLICE_MODAL_TIER_ORDER. Runs once when
   // presets first arrive; subsequent re-renders preserve any manual choice.
   useEffect(() => {
@@ -348,29 +377,82 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     });
   }, [presetsQuery.data, filamentSlots]);
 
+  // Bundle-mode auto-pick: when the user picks a bundle (or the slot count
+  // changes after the picker is open), default the process to the bundle's
+  // first listed process and every filament slot to the bundle's first
+  // listed filament. Plain string match — bundles store delta files keyed
+  // by user preset name, no scoring needed since the user picks per-slot
+  // afterwards if the default is wrong.
+  useEffect(() => {
+    if (!selectedBundle) {
+      // Reset bundle picks when bundle is cleared so re-selection
+      // re-defaults rather than carrying stale values.
+      setBundleProcessName(null);
+      setBundleFilamentNames([]);
+      return;
+    }
+    setBundleProcessName((current) => {
+      // Preserve a manual pick if it still exists in the bundle; otherwise
+      // re-default. Same shape as the preset auto-pick effect above.
+      if (current && selectedBundle.process.includes(current)) return current;
+      return selectedBundle.process[0] ?? null;
+    });
+    setBundleFilamentNames((current) => {
+      if (current.length === filamentSlots.length && current.every((n) => n != null)) {
+        return current;
+      }
+      const fallback = selectedBundle.filament[0] ?? null;
+      return filamentSlots.map((_, i) => current[i] ?? fallback);
+    });
+  }, [selectedBundle, filamentSlots]);
+
   const enqueueMutation = useMutation({
     mutationFn: async () => {
-      if (
-        !printerPreset ||
-        !processPreset ||
-        filamentPresets.length === 0 ||
-        filamentPresets.some((r) => r == null)
-      ) {
-        throw new Error(t('slice.allPresetsRequired', 'All presets must be selected'));
+      let body: SliceRequest;
+      if (isBundleMode) {
+        // Bundle dispatch path. The selected bundle's first printer is the
+        // implicit printer choice (every .bbscfg carries exactly one).
+        if (
+          !selectedBundle ||
+          !bundleProcessName ||
+          bundleFilamentNames.length === 0 ||
+          bundleFilamentNames.some((n) => n == null)
+        ) {
+          throw new Error(t('slice.bundleAllRequired', 'Bundle process and every filament slot must be picked'));
+        }
+        const bundleSpec: SliceBundleSpec = {
+          bundle_id: selectedBundle.id,
+          printer_name: selectedBundle.printer[0] ?? selectedBundle.printer_preset_name,
+          process_name: bundleProcessName,
+          filament_names: bundleFilamentNames as string[],
+        };
+        body = {
+          bundle: bundleSpec,
+          ...(selectedPlate != null ? { plate: selectedPlate } : {}),
+        };
+      } else {
+        if (
+          !printerPreset ||
+          !processPreset ||
+          filamentPresets.length === 0 ||
+          filamentPresets.some((r) => r == null)
+        ) {
+          throw new Error(t('slice.allPresetsRequired', 'All presets must be selected'));
+        }
+        body = {
+          printer_preset: printerPreset,
+          process_preset: processPreset,
+          // The first slot also goes into the legacy singular field so the
+          // backend's older callers / clients keep behaving the same — the
+          // backend validator prefers `filament_presets` when both are set.
+          filament_preset: filamentPresets[0] as PresetRef,
+          filament_presets: filamentPresets as PresetRef[],
+          // Always send a concrete plate number when the source is multi-plate;
+          // omit otherwise so the backend default applies for STL / single-plate
+          // 3MF sources where the concept doesn't apply.
+          ...(selectedPlate != null ? { plate: selectedPlate } : {}),
+        };
       }
-      const body = {
-        printer_preset: printerPreset,
-        process_preset: processPreset,
-        // The first slot also goes into the legacy singular field so the
-        // backend's older callers / clients keep behaving the same — the
-        // backend validator prefers `filament_presets` when both are set.
-        filament_preset: filamentPresets[0] as PresetRef,
-        filament_presets: filamentPresets as PresetRef[],
-        // Always send a concrete plate number when the source is multi-plate;
-        // omit otherwise so the backend default applies for STL / single-plate
-        // 3MF sources where the concept doesn't apply.
-        ...(selectedPlate != null ? { plate: selectedPlate } : {}),
-      };
       if (source.kind === 'libraryFile') {
         return api.sliceLibraryFile(source.id, body);
       }
@@ -392,10 +474,15 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // is desktop-Studio only. If we can match the source's printer model to a
   // SliceModal-known model and the user's chosen printer profile names a
   // different model, surface a warning before they click Slice.
+  //
+  // For bundle mode, the bundle's printer_preset_name plays the same role
+  // as the picked PresetRef's resolved name in preset mode.
   const sourcePrinterModel = platesQuery.data?.source_printer_model ?? null;
-  const printerProfileName = printerPreset
-    ? presetsQuery.data?.[printerPreset.source].printer.find((p) => p.id === printerPreset.id)?.name
-    : null;
+  const printerProfileName = isBundleMode
+    ? selectedBundle?.printer_preset_name.replace(/^# /, '') ?? null
+    : printerPreset
+      ? presetsQuery.data?.[printerPreset.source].printer.find((p) => p.id === printerPreset.id)?.name
+      : null;
   // Profile names follow `<model> <nozzle> nozzle` (e.g. "Bambu Lab H2D 0.4
   // nozzle"). The CLI compat check uses the model prefix; substring match
   // catches both standard and locally-imported user-named profiles that
@@ -407,17 +494,29 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     !!printerProfileName &&
     !printerProfileName.toLowerCase().includes(sourcePrinterModel.toLowerCase());
 
-  // Slice button stays disabled while the printer mismatch warning is
-  // visible: clicking it would silently fall back to embedded settings and
-  // produce a wrong-printer file, the exact UX bug the warning is here to
-  // prevent. Only re-enable when the user picks a matching profile (or
-  // cloud preset whose name we can't parse).
-  const isReady =
-    printerPreset != null &&
-    processPreset != null &&
-    filamentPresets.length > 0 &&
-    filamentPresets.every((r) => r != null) &&
-    !printerMismatch;
+  // Slice button stays disabled until *all* of these hold:
+  //   - the preview slice / embedded-metadata read has succeeded so we know
+  //     the per-plate filament slot list is final
+  //     (filamentReqsQuery.isSuccess). Without this gate the synthetic
+  //     single-slot fallback would auto-enable the button on opaque
+  //     defaults, before the slicer has even returned the real slot map.
+  //   - printer + process picked, every filament slot has a profile (the
+  //     auto-pick fills these once filamentSlots arrives)
+  //   - no printer-mismatch warning is up (clicking would silently fall
+  //     back to embedded settings and produce a wrong-printer file)
+  const isReady = isBundleMode
+    ? selectedBundle != null &&
+      bundleProcessName != null &&
+      filamentReqsQuery.isSuccess &&
+      bundleFilamentNames.length > 0 &&
+      bundleFilamentNames.every((n) => n != null) &&
+      !printerMismatch
+    : printerPreset != null &&
+      processPreset != null &&
+      filamentReqsQuery.isSuccess &&
+      filamentPresets.length > 0 &&
+      filamentPresets.every((r) => r != null) &&
+      !printerMismatch;
   const isEnqueuing = enqueueMutation.isPending;
 
   // Step 1: plate picker for multi-plate 3MF sources. Cancelling closes the
@@ -495,22 +594,63 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           {presetsQuery.data && (
             <>
               <CloudStatusBanner status={presetsQuery.data.cloud_status} />
-              <PresetDropdown
-                label={t('slice.printer', 'Printer profile')}
-                slot="printer"
-                data={presetsQuery.data}
-                value={printerPreset}
-                onChange={setPrinterPreset}
-                disabled={isEnqueuing}
-              />
-              <PresetDropdown
-                label={t('slice.process', 'Process profile')}
-                slot="process"
-                data={presetsQuery.data}
-                value={processPreset}
-                onChange={setProcessPreset}
-                disabled={isEnqueuing}
-              />
+              {/* Bundle picker — only renders when at least one .bbscfg has
+                  been imported via Settings → Slicer Bundles. Lets the user
+                  trade the cloud/local/standard tier for a single curated
+                  triplet from a previously-uploaded BambuStudio bundle. */}
+              {bundlesQuery.data && bundlesQuery.data.length > 0 && (
+                <BundlePicker
+                  bundles={bundlesQuery.data}
+                  selectedId={selectedBundleId}
+                  onChange={setSelectedBundleId}
+                  disabled={isEnqueuing}
+                />
+              )}
+              {/* Preset triplet — hidden when a bundle is selected so the
+                  user only sees one tier at a time. The bundle's process +
+                  filament dropdowns render below in their stead. */}
+              {!isBundleMode && (
+                <>
+                  <PresetDropdown
+                    label={t('slice.printer', 'Printer profile')}
+                    slot="printer"
+                    data={presetsQuery.data}
+                    value={printerPreset}
+                    onChange={setPrinterPreset}
+                    disabled={isEnqueuing}
+                  />
+                  <PresetDropdown
+                    label={t('slice.process', 'Process profile')}
+                    slot="process"
+                    data={presetsQuery.data}
+                    value={processPreset}
+                    onChange={setProcessPreset}
+                    disabled={isEnqueuing}
+                  />
+                </>
+              )}
+              {isBundleMode && selectedBundle && (
+                <>
+                  {/* Bundle's printer is implicit (each .bbscfg has exactly
+                      one). Show it as a read-only label so the user can
+                      verify the printer they're slicing for. */}
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">
+                      {t('slice.printer', 'Printer profile')}
+                    </label>
+                    <div className="px-3 py-2 rounded-md bg-bambu-dark/40 border border-bambu-dark-tertiary text-white text-sm">
+                      {selectedBundle.printer_preset_name}
+                    </div>
+                  </div>
+                  <BundleStringDropdown
+                    label={t('slice.process', 'Process profile')}
+                    options={selectedBundle.process}
+                    value={bundleProcessName}
+                    onChange={setBundleProcessName}
+                    disabled={isEnqueuing}
+                  />
+                </>
+              )}
               {/* Filament reqs may need a server-side preview-slice for
                   unsliced project files (single-pass, then cached). Show a
                   scoped spinner so the user sees the printer/process
@@ -520,6 +660,40 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                   requestId={previewRequestId}
                   sourceName={source.filename}
                 />
+              ) : isBundleMode && selectedBundle ? (
+                filamentSlots.map((slot, idx) => {
+                  const isUsed = slot.used_in_plate !== false;
+                  const baseLabel =
+                    filamentSlots.length > 1
+                      ? t('slice.filamentSlot', {
+                          index: idx + 1,
+                          type: slot.type,
+                          defaultValue: `Filament ${idx + 1} (${slot.type || ''})`,
+                        })
+                      : t('slice.filament', 'Filament profile');
+                  const label = isUsed
+                    ? baseLabel
+                    : `${baseLabel} ${t('slice.notUsedByPlate', '— not used by this plate')}`;
+                  return (
+                    <BundleStringDropdown
+                      key={`bundle-filament-${idx}`}
+                      label={label}
+                      options={selectedBundle.filament}
+                      value={bundleFilamentNames[idx] ?? null}
+                      onChange={(name) =>
+                        setBundleFilamentNames((current) => {
+                          const next = current.length === filamentSlots.length
+                            ? [...current]
+                            : filamentSlots.map((_, i) => current[i] ?? null);
+                          next[idx] = name;
+                          return next;
+                        })
+                      }
+                      disabled={isEnqueuing || !isUsed}
+                      swatchColor={filamentSlots.length > 1 ? slot.color : undefined}
+                    />
+                  );
+                })
               ) : (
                 filamentSlots.map((slot, idx) => {
                   // Slots flagged by the backend as not used by the
@@ -723,6 +897,99 @@ function PresetDropdown({ label, slot, data, value, onChange, disabled, swatchCo
               </option>
             ))}
           </optgroup>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// Top-of-modal bundle picker. The "None" option leaves the user on the
+// cloud/local/standard tier path; selecting a bundle id flips the modal
+// into bundle dispatch mode (see SliceModal state above).
+interface BundlePickerProps {
+  bundles: SlicerBundle[];
+  selectedId: string | null;
+  onChange: (id: string | null) => void;
+  disabled?: boolean;
+}
+
+function BundlePicker({ bundles, selectedId, onChange, disabled }: BundlePickerProps) {
+  const { t } = useTranslation();
+  return (
+    <label className="block">
+      <span className="block text-sm text-bambu-gray mb-1 inline-flex items-center gap-1.5">
+        <Package className="w-3.5 h-3.5" />
+        {t('slice.bundle', 'Slicer bundle')}
+      </span>
+      <select
+        value={selectedId ?? ''}
+        onChange={(e) => onChange(e.target.value || null)}
+        disabled={disabled}
+        className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
+      >
+        <option value="">
+          {t('slice.bundleNone', '— None (pick presets individually) —')}
+        </option>
+        {bundles.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.printer_preset_name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// Plain-string dropdown used for bundle-mode process / filament selectors.
+// Bundles store presets as a flat list of names within their printer-tied
+// directory, so a `<select>` of strings is enough — no source tier, no
+// optgroups. Same swatch / disabled affordances as the cloud/local/standard
+// PresetDropdown above so the visual rhythm of the form stays consistent.
+interface BundleStringDropdownProps {
+  label: string;
+  options: string[];
+  value: string | null;
+  onChange: (next: string | null) => void;
+  disabled?: boolean;
+  swatchColor?: string;
+}
+
+function BundleStringDropdown({
+  label,
+  options,
+  value,
+  onChange,
+  disabled,
+  swatchColor,
+}: BundleStringDropdownProps) {
+  const { t } = useTranslation();
+  return (
+    <label className="block">
+      <span className="block text-sm text-bambu-gray mb-1 inline-flex items-center gap-1.5">
+        {swatchColor && (
+          <span
+            className="inline-block w-3 h-3 rounded-sm border border-black/20"
+            style={{ backgroundColor: swatchColor || 'transparent' }}
+            aria-hidden
+          />
+        )}
+        <span>{label}</span>
+      </span>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value || null)}
+        disabled={disabled || options.length === 0}
+        className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
+      >
+        <option value="">
+          {options.length === 0
+            ? t('slice.noPresetsForSlot', 'No presets available')
+            : t('slice.selectPreset', '— Select a preset —')}
+        </option>
+        {options.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
         ))}
       </select>
     </label>

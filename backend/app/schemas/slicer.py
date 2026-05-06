@@ -17,6 +17,37 @@ class PresetRef(BaseModel):
     id: str = Field(..., description=("Cloud setting_id, local DB row id (stringified), or standard preset name."))
 
 
+class SliceBundleSpec(BaseModel):
+    """Per-request reference to a Printer Preset Bundle stored on the slicer
+    sidecar. When SliceRequest.bundle is set, the dispatch skips PresetRef
+    resolution entirely and asks the sidecar to pick its inner JSON triplet
+    by name from the bundle's extracted directory — much faster than
+    re-uploading three profile JSONs every slice and matches the preset
+    triplet the user actually slices with in BambuStudio.
+    """
+
+    bundle_id: str = Field(
+        ...,
+        min_length=1,
+        description="Sidecar-side bundle id from POST /api/v1/slicer/bundles.",
+    )
+    printer_name: str = Field(
+        ...,
+        min_length=1,
+        description="Preset name within the bundle's printer/ directory (with or without the BambuStudio '# ' prefix).",
+    )
+    process_name: str = Field(
+        ...,
+        min_length=1,
+        description="Preset name within the bundle's process/ directory.",
+    )
+    filament_names: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Per-slot filament preset names within the bundle's filament/ directory. Index 0 = slot 1.",
+    )
+
+
 class SliceRequest(BaseModel):
     """Body for `POST /library/files/{file_id}/slice`.
 
@@ -60,6 +91,15 @@ class SliceRequest(BaseModel):
     # is empty so older clients keep working.
     filament_presets: list[PresetRef] = Field(default_factory=list)
 
+    # Bundle dispatch alternative — when set, presets above are ignored and
+    # the slicer dispatch picks per-category JSONs from a previously-imported
+    # .bbscfg on the sidecar. Validator below short-circuits the
+    # presets-required check when this is non-None.
+    bundle: SliceBundleSpec | None = Field(
+        default=None,
+        description="When set, slice via a sidecar-side bundle instead of resolved preset refs.",
+    )
+
     plate: int | None = Field(
         default=None,
         ge=1,
@@ -77,7 +117,14 @@ class SliceRequest(BaseModel):
         deals with the canonical shape. For filament: a non-empty
         ``filament_presets`` list satisfies the requirement on its own; an
         empty list falls back to the singular fields, which then promote
-        into a one-element list."""
+        into a one-element list.
+
+        When ``bundle`` is set, the dispatch picks the JSON triplet from
+        the sidecar bundle directly so PresetRef resolution is skipped —
+        return early before the presets-required checks below.
+        """
+        if self.bundle is not None:
+            return self
         for slot, ref_attr, legacy_attr in (
             ("printer", "printer_preset", "printer_preset_id"),
             ("process", "process_preset", "process_preset_id"),

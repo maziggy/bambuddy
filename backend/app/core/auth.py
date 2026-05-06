@@ -967,6 +967,95 @@ def RequirePermissionIfAuthEnabled(*permissions: str | Permission):
     return Depends(require_permission_if_auth_enabled(*permissions))
 
 
+def require_any_permission_if_auth_enabled(*permissions: str | Permission):
+    """Dependency factory that requires AT LEAST ONE of the given permissions when auth is enabled."""
+    perm_strings = [p.value if isinstance(p, Permission) else p for p in permissions]
+
+    async def checker(
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    ) -> User | None:
+        async with async_session() as db:
+            auth_enabled = await is_auth_enabled(db)
+            if not auth_enabled:
+                return None
+
+            if x_api_key:
+                api_key = await _validate_api_key(db, x_api_key)
+                if api_key:
+                    return None
+
+            if credentials is not None:
+                token = credentials.credentials
+                if token.startswith("bb_"):
+                    api_key = await _validate_api_key(db, token)
+                    if api_key:
+                        return None
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid API key",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+                try:
+                    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                    username: str = payload.get("sub")
+                    if username is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Could not validate credentials",
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
+                    jti: str | None = payload.get("jti")
+                    if not jti or await is_jti_revoked(jti):
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Could not validate credentials",
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
+                    iat: int | float | None = payload.get("iat")
+                except JWTError:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+                user = await get_user_by_username(db, username)
+                if user is None or not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                if not _is_token_fresh(iat, user):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+                if not user.has_any_permission(*perm_strings):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Missing required permissions: {', '.join(perm_strings)}",
+                    )
+                return user
+
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    return checker
+
+
+def RequireAnyPermissionIfAuthEnabled(*permissions: str | Permission):
+    """Convenience dependency that requires AT LEAST ONE of the given permissions when auth is enabled."""
+    return Depends(require_any_permission_if_auth_enabled(*permissions))
+
+
 def require_camera_stream_token_if_auth_enabled():
     """Dependency that validates a camera stream token query param when auth is enabled.
 

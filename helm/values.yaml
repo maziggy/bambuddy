@@ -1,0 +1,35 @@
+image:
+  repository: ghcr.io/maziggy/bambuddy
+  pullPolicy: Always
+  tag: "latest"
+
+env:
+  tz: "America/Toronto"
+  port: "8000"
+
+# Host networking is required for printer discovery
+hostNetwork: true
+
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Capabilties required to bind to privileged ports (like 990) as non-root
+securityContext:
+  capabilities:
+    add:
+      - NET_BIND_SERVICE
+
+persistence:
+  data:
+    size: 5Gi
+    # storageClass: "your-storage-class" # uncomment if you need a specific class
+  logs:
+    size: 1Gi
+  certs:
+    size: 100Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

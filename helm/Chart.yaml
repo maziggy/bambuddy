@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bambuddy
+description: A Helm chart for deploying BamBuddy on Kubernetes
+type: application
+version: 0.1.0
+appVersion: "latest"

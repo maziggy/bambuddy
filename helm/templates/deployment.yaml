@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: {{ .Release.Name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      hostNetwork: {{ .Values.hostNetwork }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: bambuddy
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: TZ
+              value: {{ .Values.env.tz | quote }}
+            - name: PORT
+              value: {{ .Values.env.port | quote }}
+          volumeMounts:
+            - name: bambuddy-data
+              mountPath: /app/data
+            - name: bambuddy-logs
+              mountPath: /app/logs
+            - name: bambuddy-certs
+              mountPath: /app/data/virtual_printer
+      volumes:
+        - name: bambuddy-data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-data-pvc
+        - name: bambuddy-logs
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-logs-pvc
+        - name: bambuddy-certs
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-certs-pvc
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

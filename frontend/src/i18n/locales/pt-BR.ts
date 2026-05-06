@@ -183,6 +183,11 @@ export default {
       allStatuses: 'Todos os status',
       allLocations: 'Todos os locais',
     },
+    toolbar: {
+      filters: 'Filters',
+      view: 'View',
+      actions: 'Actions',
+    },
     // Printer card
     readyToPrint: 'Pronto para imprimir',
     external: 'Externo',

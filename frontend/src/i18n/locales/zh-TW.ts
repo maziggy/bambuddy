@@ -183,6 +183,11 @@ export default {
       allStatuses: '所有狀態',
       allLocations: '所有位置',
     },
+    toolbar: {
+      filters: 'Filters',
+      view: 'View',
+      actions: 'Actions',
+    },
     // Printer card
     readyToPrint: '準備列印',
     external: '外部',

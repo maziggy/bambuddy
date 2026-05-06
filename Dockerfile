@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     gnupg \
+    gosu \
     iproute2 \
     libcap2-bin \
     openssh-client \
@@ -66,9 +67,29 @@ COPY .git/HEAD ./.git/HEAD
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/static ./static
 
-# Create data directory for persistent storage
-# chmod 777 allows running as non-root user (e.g., with docker compose user: directive)
-RUN mkdir -p /app/data /app/logs && chmod 777 /app/data /app/logs
+# Create data directories. Ownership is normalised at startup by the
+# entrypoint (chowns to PUID:PGID and drops privileges via gosu before
+# exec'ing the app), so we don't need a chmod 777 hack here — that was
+# the workaround for the previous compose `user: "1000:1000"` model and
+# only worked when the volume's perms happened to survive (named volume
+# first-create case; bind-mount-source case bit users in #1211 / #668).
+#
+# The sentinel file is needed so a freshly-created Docker named volume
+# isn't "empty" from Docker's POV. On empty volumes Docker resyncs the
+# directory metadata (incl. ownership) from the image on every mount,
+# which would mean our entrypoint chown gets reverted on every restart
+# and re-fired on every start (slow on multi-GB archive dirs). With a
+# sentinel inside the volume on first mount, Docker considers the
+# volume populated and stops resyncing, so the chown is genuinely
+# one-shot.
+RUN mkdir -p /app/data /app/logs && \
+    : >/app/data/.bambuddy && \
+    : >/app/logs/.bambuddy
+
+# Entrypoint script: handles PUID/PGID + ownership normalisation +
+# privilege drop. See deploy/docker-entrypoint.sh for the full rationale.
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1
@@ -103,4 +124,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 # Run the application
 # Use standard asyncio loop (uvloop has permission issues in some Docker environments)
 # Port is configurable via PORT environment variable (default: 8000)
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --loop asyncio"]

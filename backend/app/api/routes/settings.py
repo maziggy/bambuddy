@@ -130,6 +130,7 @@ async def get_settings(
                 "mqtt_port",
                 "stagger_group_size",
                 "stagger_interval_minutes",
+                "forecast_global_lead_time_days",
             ]:
                 settings_dict[setting.key] = int(setting.value)
             elif setting.key == "default_printer_id":
@@ -751,7 +752,38 @@ async def restore_backup(
             logger.info("Restoring database from backup...")
             if is_sqlite():
                 db_path = Path(app_settings.database_url.replace("sqlite+aiosqlite:///", ""))
-                shutil.copy2(backup_db, db_path)
+                # Use SQLite's online backup API instead of shutil.copy2.
+                # The pragma at database.py:19 runs the live DB in WAL mode,
+                # which means a naive file copy is unsafe: anything written
+                # to the live DB before this call that hasn't been
+                # checkpointed yet (seed_default_groups + init_db on first
+                # start, plus whatever background heartbeats wrote during
+                # the request window) sits in bambuddy.db-wal with valid
+                # checksums. The route handler's own `db: Depends(get_db)`
+                # session also keeps a connection checked out across
+                # engine.dispose(), holding fds to the WAL inode. With
+                # `shutil.copy2` SQLite finds the stale WAL on the next
+                # open and silently re-applies those page-level writes on
+                # top of the restored DB, partially clobbering it with
+                # fresh-install state — the user sees a "successful"
+                # restore where most rows and settings have reverted to
+                # defaults (#1211 / #668). The page-by-page backup API
+                # opens both DBs as real SQLite connections, takes the
+                # right locks, and routes new pages through the live DB's
+                # own WAL — so concurrent open sessions see their own
+                # snapshot until they close (transaction isolation) but
+                # can't corrupt the restored state.
+                import sqlite3
+
+                src_conn = sqlite3.connect(str(backup_db))
+                try:
+                    dst_conn = sqlite3.connect(str(db_path))
+                    try:
+                        src_conn.backup(dst_conn)
+                    finally:
+                        dst_conn.close()
+                finally:
+                    src_conn.close()
             else:
                 # Import SQLite backup into PostgreSQL
                 logger.info("Importing SQLite backup into PostgreSQL...")

@@ -175,6 +175,7 @@ async def init_db():
         color_catalog,
         external_link,
         filament,
+        filament_sku_settings,
         github_backup,
         group,
         kprofile_note,
@@ -194,6 +195,7 @@ async def init_db():
         project,
         project_bom,
         settings,
+        shopping_list,
         slot_preset,
         smart_plug,
         smart_plug_energy_snapshot,
@@ -1882,6 +1884,183 @@ async def run_migrations(conn):
         except (OperationalError, ProgrammingError):
             pass
 
+    # Migration: Create filament_sku_settings table for reorder forecasting
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_sku_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                lead_time_days INTEGER NOT NULL DEFAULT 0,
+                safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (material, subtype, brand)
+            )""",
+        )
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7"))
+        await _safe_execute(
+            conn, "ALTER TABLE filament_sku_settings ADD COLUMN safety_margin_value INTEGER NOT NULL DEFAULT 14"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE filament_sku_settings ADD COLUMN safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days'"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE filament_sku_settings ADD COLUMN alerts_snoozed BOOLEAN NOT NULL DEFAULT 0"
+        )
+        # Backfill and drop legacy safety_margin_days column — SQLite requires a table rebuild.
+        # Only run if the stale column still exists.
+        cols_result = await conn.execute(text("PRAGMA table_info(filament_sku_settings)"))
+        col_names = [row[1] for row in cols_result.fetchall()]
+        if "safety_margin_days" in col_names:
+            async with conn.begin_nested():
+                # Defensive: a previous startup may have crashed mid-rebuild leaving
+                # filament_sku_settings_new behind, which would break the CREATE below.
+                await conn.execute(text("DROP TABLE IF EXISTS filament_sku_settings_new"))
+                await conn.execute(
+                    text(
+                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days "
+                        "WHERE safety_margin_value = 14 AND safety_margin_days != 14"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """CREATE TABLE filament_sku_settings_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        material VARCHAR(50) NOT NULL,
+                        subtype VARCHAR(50),
+                        brand VARCHAR(100),
+                        lead_time_days INTEGER NOT NULL DEFAULT 0,
+                        safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                        safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                        alerts_snoozed BOOLEAN NOT NULL DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (material, subtype, brand)
+                    )"""
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """INSERT INTO filament_sku_settings_new
+                        (id, material, subtype, brand, lead_time_days, safety_margin_value,
+                         safety_margin_unit, alerts_snoozed, created_at, updated_at)
+                       SELECT id, material, subtype, brand, lead_time_days, safety_margin_value,
+                              safety_margin_unit, COALESCE(alerts_snoozed, 0), created_at, updated_at
+                       FROM filament_sku_settings"""
+                    )
+                )
+                await conn.execute(text("DROP TABLE filament_sku_settings"))
+                await conn.execute(text("ALTER TABLE filament_sku_settings_new RENAME TO filament_sku_settings"))
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_shopping_list (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                quantity_spools INTEGER NOT NULL DEFAULT 1,
+                note VARCHAR(500),
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                purchased_at DATETIME,
+                added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+        )
+        # SQLite has no implicit updated_at trigger — add one so the column stays current.
+        await _safe_execute(
+            conn,
+            """CREATE TRIGGER IF NOT EXISTS trg_filament_sku_settings_updated_at
+               AFTER UPDATE ON filament_sku_settings FOR EACH ROW
+               BEGIN
+                 UPDATE filament_sku_settings SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+               END""",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_sku_settings (
+                id SERIAL PRIMARY KEY,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                lead_time_days INTEGER NOT NULL DEFAULT 0,
+                safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (material, subtype, brand)
+            )""",
+        )
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7"))
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS safety_margin_value INTEGER NOT NULL DEFAULT 14",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days'",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS alerts_snoozed BOOLEAN NOT NULL DEFAULT FALSE",
+        )
+        # Only backfill from safety_margin_days if that column still exists (PostgreSQL).
+        col_check = await conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'filament_sku_settings' AND column_name = 'safety_margin_days'"
+            )
+        )
+        if col_check.fetchone():
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days "
+                        "WHERE safety_margin_value = 14 AND safety_margin_days != 14"
+                    )
+                )
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_shopping_list (
+                id SERIAL PRIMARY KEY,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                quantity_spools INTEGER NOT NULL DEFAULT 1,
+                note VARCHAR(500),
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                purchased_at TIMESTAMP,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending'",
+        )
+        await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS purchased_at TIMESTAMP")
+
+    # Migration: Add inventory stock alert columns to notification_providers.
+    # Postgres rejects `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT 0"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT 0"
+        )
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT false"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT false"
+        )
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""
@@ -2079,6 +2258,28 @@ async def seed_default_groups():
                     logger.info("Added %s to Administrators group (backfill)", new_perm)
             if added:
                 admin_group.permissions = perms
+        await session.commit()
+
+        # Backfill inventory forecast permissions for existing groups.
+        # inventory:forecast_read was added after initial seeding, so groups
+        # that already have inventory:read (or inventory:update) need it added.
+        # inventory:forecast_write goes to any group with inventory:update.
+        result = await session.execute(select(Group))
+        for group in result.scalars().all():
+            if not group.permissions:
+                continue
+            perms = list(group.permissions)
+            changed = False
+            if "inventory:read" in perms and "inventory:forecast_read" not in perms:
+                perms.append("inventory:forecast_read")
+                changed = True
+                logger.info("Added inventory:forecast_read to group '%s' (backfill)", group.name)
+            if "inventory:update" in perms and "inventory:forecast_write" not in perms:
+                perms.append("inventory:forecast_write")
+                changed = True
+                logger.info("Added inventory:forecast_write to group '%s' (backfill)", group.name)
+            if changed:
+                group.permissions = perms
         await session.commit()
 
         # Migrate existing users to groups if they're not already in any group

@@ -73,6 +73,8 @@ const createMockProvider = (
   on_queue_job_skipped: true,
   on_queue_job_failed: true,
   on_queue_completed: false,
+  on_stock_reorder_alert: false,
+  on_stock_break_alert: false,
   quiet_hours_enabled: false,
   quiet_hours_start: null,
   quiet_hours_end: null,

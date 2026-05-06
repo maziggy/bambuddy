@@ -3129,12 +3129,21 @@ async def _try_preview_slice_filaments(
     plate_id: int,
     file_path: Path,
     request_id: str | None = None,
+    bundle_id: str | None = None,
+    printer_name: str | None = None,
+    process_name: str | None = None,
+    filament_names: list[str] | None = None,
 ) -> list[dict] | None:
     """Run a preview slice via the user's configured sidecar so the filament
     list endpoint can return real per-plate filaments for unsliced project
     files. Returns ``None`` on any failure — the caller falls back to the
     painted-face heuristic. ``request_id`` flows through to the sidecar
-    for live progress on the SliceModal's inline spinner + toast."""
+    for live progress on the SliceModal's inline spinner + toast.
+
+    Bundle context (id + preset names) is forwarded to the preview helper
+    so the preview can mirror the real-print profile triplet when supplied
+    — see ``slice_preview.get_preview_filaments`` for the full contract.
+    """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
 
@@ -3162,6 +3171,10 @@ async def _try_preview_slice_filaments(
         file_name=file_path.name,
         api_url=api_url,
         request_id=request_id,
+        bundle_id=bundle_id,
+        printer_name=printer_name,
+        process_name=process_name,
+        filament_names=filament_names,
     )
 
 
@@ -3170,6 +3183,10 @@ async def get_filament_requirements(
     archive_id: int,
     plate_id: int | None = None,
     request_id: str | None = None,
+    bundle_id: str | None = None,
+    printer_name: str | None = None,
+    process_name: str | None = None,
+    filament_names: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
@@ -3181,6 +3198,12 @@ async def get_filament_requirements(
     Args:
         archive_id: The archive ID
         plate_id: Optional plate index to filter filaments for (for multi-plate files)
+        bundle_id / printer_name / process_name / filament_names: Optional
+            bundle context. When all four are supplied, the preview slice
+            (run for unsliced project files) uses ``slice_with_bundle``
+            against the named preset triplet instead of the embedded-
+            settings fallback. ``filament_names`` is comma- or semicolon-
+            separated.
     """
     import defusedxml.ElementTree as ET
 
@@ -3284,6 +3307,11 @@ async def get_filament_requirements(
                 project_filaments = extract_project_filaments_from_3mf(zf)
                 used_slot_ids: set[int] = set()
                 if project_filaments and plate_id is not None:
+                    parsed_filament_names: list[str] | None = None
+                    if filament_names:
+                        parsed_filament_names = [
+                            n.strip() for n in filament_names.replace(";", ",").split(",") if n.strip()
+                        ] or None
                     preview = await _try_preview_slice_filaments(
                         db,
                         kind="archive",
@@ -3291,6 +3319,10 @@ async def get_filament_requirements(
                         plate_id=plate_id,
                         file_path=file_path,
                         request_id=request_id,
+                        bundle_id=bundle_id,
+                        printer_name=printer_name,
+                        process_name=process_name,
+                        filament_names=parsed_filament_names,
                     )
                     if preview is not None:
                         used_slot_ids = {f["slot_id"] for f in preview}

@@ -8,6 +8,7 @@ import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
+import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
 import { Collapsible } from '../components/Collapsible';
 import { Button } from '../components/Button';
@@ -4261,6 +4262,12 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Slicer Preset Bundles — only meaningful when the sidecar is in use,
+              since uploads / lists round-trip through it. Hide it entirely when
+              use_slicer_api is off so the Settings page doesn't show a panel that
+              can't do anything. */}
+          {(localSettings.use_slicer_api ?? false) && <SlicerBundlesPanel />}
 
           {/* Auto-Drying */}
           <Card>

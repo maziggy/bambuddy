@@ -1000,6 +1000,8 @@ export interface AppSettings {
   obico_action: 'notify' | 'pause' | 'pause_and_off';
   obico_poll_interval: number;
   obico_enabled_printers: string;
+  // Inventory forecasting global lead time
+  forecast_global_lead_time_days: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -1153,6 +1155,13 @@ export interface PresetRef {
   source: PresetSource;
   id: string;
 }
+export interface SliceBundleSpec {
+  bundle_id: string;
+  printer_name: string;
+  process_name: string;
+  // Per-slot filament names in plate order. Index 0 = slot 1, etc.
+  filament_names: string[];
+}
 export interface SliceRequest {
   printer_preset_id?: number;
   process_preset_id?: number;
@@ -1165,8 +1174,27 @@ export interface SliceRequest {
   // backend validator promotes a singular into a one-element list when this
   // is omitted, so legacy single-color clients keep working unchanged.
   filament_presets?: PresetRef[];
+  // Bundle dispatch: when set, the backend skips PresetRef resolution and
+  // picks the JSON triplet from a sidecar-stored .bbscfg by name. Mutually
+  // exclusive with the preset fields above (validator accepts both, but
+  // dispatch ignores the preset side when bundle is set).
+  bundle?: SliceBundleSpec;
   plate?: number;
   export_3mf?: boolean;
+}
+
+// GET /api/v1/slicer/bundles — Printer Preset Bundles imported from
+// BambuStudio's "File → Export → Export Preset Bundle" dialog. Each bundle
+// is a .bbscfg zip the user uploads once per printer, after which the
+// SliceModal can pick its inner presets by name (no re-upload per slice).
+// Backend: backend/app/api/routes/slicer_presets.py — bundle endpoints.
+export interface SlicerBundle {
+  id: string;
+  printer_preset_name: string;
+  printer: string[];
+  process: string[];
+  filament: string[];
+  version: string | null;
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
@@ -1852,6 +1880,9 @@ export interface NotificationProvider {
   on_bed_cooled: boolean;
   // First layer complete
   on_first_layer_complete: boolean;
+  // Inventory stock alerts
+  on_stock_reorder_alert: boolean;
+  on_stock_break_alert: boolean;
   // Print queue events
   on_queue_job_added: boolean;
   on_queue_job_assigned: boolean;
@@ -1907,6 +1938,9 @@ export interface NotificationProviderCreate {
   on_bed_cooled?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
+  // Inventory stock alerts
+  on_stock_reorder_alert?: boolean;
+  on_stock_break_alert?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -1955,6 +1989,9 @@ export interface NotificationProviderUpdate {
   on_bed_cooled?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
+  // Inventory stock alerts
+  on_stock_reorder_alert?: boolean;
+  on_stock_break_alert?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -2354,6 +2391,37 @@ export interface SpoolAssignment {
   ams_label?: string | null;  // User-defined friendly name for the AMS unit
 }
 
+export interface FilamentSkuSettings {
+  id: number;
+  material: string;
+  subtype: string | null;
+  brand: string | null;
+  lead_time_days: number;
+  safety_margin_value: number;
+  safety_margin_unit: 'days' | 'g';
+  alerts_snoozed: boolean;
+}
+
+export interface ShoppingListItem {
+  id: number;
+  material: string;
+  subtype: string | null;
+  brand: string | null;
+  quantity_spools: number;
+  note: string | null;
+  status: 'pending' | 'purchased' | 'received';
+  purchased_at: string | null;
+  added_at: string;
+}
+
+export interface ShoppingListItemCreate {
+  material: string;
+  subtype: string | null;
+  brand: string | null;
+  quantity_spools: number;
+  note?: string | null;
+}
+
 // Update types
 export interface VersionInfo {
   version: string;
@@ -2497,6 +2565,7 @@ export type Permission =
   | 'projects:read' | 'projects:create' | 'projects:update' | 'projects:delete'
   | 'filaments:read' | 'filaments:create' | 'filaments:update' | 'filaments:delete'
   | 'inventory:read' | 'inventory:create' | 'inventory:update' | 'inventory:delete' | 'inventory:view_assignments'
+  | 'inventory:forecast_read' | 'inventory:forecast_write'
   | 'smart_plugs:read' | 'smart_plugs:create' | 'smart_plugs:update' | 'smart_plugs:delete' | 'smart_plugs:control'
   | 'camera:view'
   | 'maintenance:read' | 'maintenance:create' | 'maintenance:update' | 'maintenance:delete'
@@ -3733,10 +3802,31 @@ export const api = {
   },
   getArchivePlates: (archiveId: number) =>
     request<ArchivePlatesResponse>(`/archives/${archiveId}/plates`),
-  getArchiveFilamentRequirements: (archiveId: number, plateId?: number, requestId?: string) => {
+  getArchiveFilamentRequirements: (
+    archiveId: number,
+    plateId?: number,
+    requestId?: string,
+    // Optional bundle context: when supplied, the backend's preview slice
+    // (run for unsliced project files) uses slice_with_bundle so gram
+    // numbers reflect the same triplet the real print will use. All four
+    // fields must be set for the bundle path to engage; partial context
+    // falls back to the embedded-settings preview without erroring.
+    bundle?: {
+      bundle_id: string;
+      printer_name: string;
+      process_name: string;
+      filament_names: string[];
+    },
+  ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (bundle) {
+      qs.set('bundle_id', bundle.bundle_id);
+      qs.set('printer_name', bundle.printer_name);
+      qs.set('process_name', bundle.process_name);
+      qs.set('filament_names', bundle.filament_names.join(';'));
+    }
     return request<{
       archive_id: number;
       filename: string;
@@ -4475,6 +4565,29 @@ export const api = {
     request<{ status: string }>(`/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
   syncWeightsFromAms: () =>
     request<{ synced: number; skipped: number }>('/inventory/sync-ams-weights', { method: 'POST' }),
+  getSkuSettings: () =>
+    request<FilamentSkuSettings[]>('/inventory/sku-settings'),
+  upsertSkuSettings: (data: Omit<FilamentSkuSettings, 'id'>) =>
+    request<FilamentSkuSettings>('/inventory/sku-settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getShoppingList: () =>
+    request<ShoppingListItem[]>('/inventory/shopping-list'),
+  addToShoppingList: (data: ShoppingListItemCreate) =>
+    request<ShoppingListItem>('/inventory/shopping-list', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  removeFromShoppingList: (id: number) =>
+    request<{ status: string }>(`/inventory/shopping-list/${id}`, { method: 'DELETE' }),
+  clearShoppingList: () =>
+    request<{ deleted: number }>('/inventory/shopping-list', { method: 'DELETE' }),
+  updateShoppingListStatus: (id: number, status: 'pending' | 'purchased' | 'received') =>
+    request<ShoppingListItem>(`/inventory/shopping-list/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
   getFilamentPresets: () =>
     request<SlicerSetting[]>('/cloud/filaments'),
 
@@ -5075,10 +5188,28 @@ export const api = {
     }),
   getLibraryFilePlates: (fileId: number) =>
     request<LibraryFilePlatesResponse>(`/library/files/${fileId}/plates`),
-  getLibraryFileFilamentRequirements: (fileId: number, plateId?: number, requestId?: string) => {
+  getLibraryFileFilamentRequirements: (
+    fileId: number,
+    plateId?: number,
+    requestId?: string,
+    // Optional bundle context — see getArchiveFilamentRequirements above
+    // for the contract. Same shape so callers can share a builder helper.
+    bundle?: {
+      bundle_id: string;
+      printer_name: string;
+      process_name: string;
+      filament_names: string[];
+    },
+  ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (bundle) {
+      qs.set('bundle_id', bundle.bundle_id);
+      qs.set('printer_name', bundle.printer_name);
+      qs.set('process_name', bundle.process_name);
+      qs.set('filament_names', bundle.filament_names.join(';'));
+    }
     return request<{
       file_id: number;
       filename: string;
@@ -5202,6 +5333,35 @@ export const api = {
   // backend/app/api/routes/slicer_presets.py for the priority rules.
   getSlicerPresets: () =>
     request<UnifiedPresetsResponse>('/slicer/presets'),
+
+  // Slicer Bundles (.bbscfg) — Printer Preset Bundles imported from BambuStudio.
+  // Settings → Slicer Bundles uploads/lists/deletes; the SliceModal picks
+  // presets by name from a chosen bundle (separate follow-up).
+  listSlicerBundles: () =>
+    request<SlicerBundle[]>('/slicer/bundles'),
+  importSlicerBundle: (file: File) => {
+    // The /slicer/bundles upload accepts multipart with field name "file"
+    // (matches the FastAPI route's UploadFile parameter). Bypass `request`
+    // because it always JSON-stringifies the body — multipart needs the
+    // browser to set the boundary in the Content-Type header.
+    const fd = new FormData();
+    fd.append('file', file);
+    return fetch(`${API_BASE}/slicer/bundles`, {
+      method: 'POST',
+      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+      body: fd,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return res.json() as Promise<SlicerBundle>;
+    });
+  },
+  deleteSlicerBundle: (bundleId: string) =>
+    request<void>(`/slicer/bundles/${encodeURIComponent(bundleId)}`, {
+      method: 'DELETE',
+    }),
 
   // Local Presets (OrcaSlicer imports)
   getLocalPresets: () =>

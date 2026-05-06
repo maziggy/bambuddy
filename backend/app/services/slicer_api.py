@@ -47,6 +47,42 @@ class SliceResult(NamedTuple):
     filament_used_mm: float
 
 
+class BundleSummary(NamedTuple):
+    """Sidecar's view of a stored Printer Preset Bundle (.bbscfg).
+
+    Mirrors the JSON shape returned by `/profiles/bundle(s)` on the
+    sidecar — `printer`, `process`, `filament` are each a list of preset
+    names available within the bundle (without the `.json` extension and
+    without the BambuStudio "# " user-clone prefix; the sidecar accepts
+    both forms when looking them up at slice time).
+    """
+
+    id: str
+    printer_preset_name: str
+    printer: list[str]
+    process: list[str]
+    filament: list[str]
+    version: str | None
+
+
+class BundleNotFoundError(SlicerApiError):
+    """Sidecar returned 404 for the bundle id (deleted, never imported)."""
+
+
+def _parse_bundle_summary(payload: dict) -> BundleSummary:
+    """Build a BundleSummary from the sidecar's JSON. Tolerant of missing
+    optional fields so a sidecar that adds keys later doesn't break parsing.
+    """
+    return BundleSummary(
+        id=str(payload.get("id") or ""),
+        printer_preset_name=str(payload.get("printer_preset_name") or ""),
+        printer=list(payload.get("printer") or []),
+        process=list(payload.get("process") or []),
+        filament=list(payload.get("filament") or []),
+        version=payload.get("version"),
+    )
+
+
 _shared_http_client: httpx.AsyncClient | None = None
 
 
@@ -154,6 +190,102 @@ class SlicerApiService:
         if response.status_code >= 400:
             raise SlicerApiUnavailableError(f"Slicer sidecar /profiles/bundled returned {response.status_code}")
         return response.json()
+
+    async def import_bundle(
+        self,
+        zip_bytes: bytes,
+        *,
+        filename: str = "bundle.bbscfg",
+    ) -> BundleSummary:
+        """POST /profiles/bundle — upload a BambuStudio Printer Preset Bundle.
+
+        Idempotent on the sidecar side: re-uploading the same file yields the
+        same id (deterministic SHA-256 prefix of the zip content) and the
+        sidecar reuses its existing extracted directory, so re-importing is
+        always safe.
+
+        Raises:
+            SlicerInputError: 4xx — bundle isn't a valid .bbscfg, or fails the
+                sidecar's path-traversal / manifest validation.
+            SlicerApiUnavailableError: connection error or 5xx.
+        """
+        files = {"file": (filename, zip_bytes, "application/zip")}
+        try:
+            response = await self._client.post(
+                f"{self.base_url}/profiles/bundle",
+                files=files,
+                timeout=60.0,
+            )
+        except httpx.RequestError as exc:
+            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
+        if response.status_code >= 500:
+            raise SlicerApiServerError(
+                f"Slicer sidecar /profiles/bundle failed ({response.status_code}): {_format_sidecar_error(response)}",
+            )
+        if response.status_code >= 400:
+            raise SlicerInputError(
+                f"Slicer sidecar rejected bundle ({response.status_code}): {_format_sidecar_error(response)}",
+            )
+        return _parse_bundle_summary(response.json())
+
+    async def list_bundles(self) -> list[BundleSummary]:
+        """GET /profiles/bundles — list every imported bundle and its presets.
+
+        Returns an empty list when the sidecar's bundle store is empty (the
+        sidecar returns ``[]`` rather than 404 in that case). Network errors
+        and 5xx surface as ``SlicerApiUnavailableError`` so callers can
+        decide whether to render an empty UI or a "sidecar offline" banner.
+        """
+        try:
+            response = await self._client.get(f"{self.base_url}/profiles/bundles", timeout=10.0)
+        except httpx.RequestError as exc:
+            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
+        if response.status_code >= 400:
+            raise SlicerApiUnavailableError(
+                f"Slicer sidecar /profiles/bundles returned {response.status_code}",
+            )
+        payload = response.json()
+        if not isinstance(payload, list):
+            raise SlicerApiServerError("Slicer sidecar returned non-array bundle list")
+        return [_parse_bundle_summary(b) for b in payload if isinstance(b, dict)]
+
+    async def get_bundle(self, bundle_id: str) -> BundleSummary:
+        """GET /profiles/bundles/<id> — single bundle summary.
+
+        Raises:
+            BundleNotFoundError: 404 — id does not exist on the sidecar.
+            SlicerApiUnavailableError: connection error or 5xx.
+        """
+        try:
+            response = await self._client.get(
+                f"{self.base_url}/profiles/bundles/{bundle_id}",
+                timeout=10.0,
+            )
+        except httpx.RequestError as exc:
+            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
+        if response.status_code == 404:
+            raise BundleNotFoundError(f"Bundle {bundle_id!r} not found on sidecar")
+        if response.status_code >= 400:
+            raise SlicerApiUnavailableError(
+                f"Slicer sidecar /profiles/bundles/{bundle_id} returned {response.status_code}",
+            )
+        return _parse_bundle_summary(response.json())
+
+    async def delete_bundle(self, bundle_id: str) -> None:
+        """DELETE /profiles/bundles/<id> — remove a stored bundle."""
+        try:
+            response = await self._client.delete(
+                f"{self.base_url}/profiles/bundles/{bundle_id}",
+                timeout=10.0,
+            )
+        except httpx.RequestError as exc:
+            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
+        if response.status_code == 404:
+            raise BundleNotFoundError(f"Bundle {bundle_id!r} not found on sidecar")
+        if response.status_code >= 400:
+            raise SlicerApiUnavailableError(
+                f"Slicer sidecar DELETE /profiles/bundles/{bundle_id} returned {response.status_code}",
+            )
 
     async def _poll_progress(
         self,
@@ -279,6 +411,97 @@ class SlicerApiService:
                     await progress_task
                 except (asyncio.CancelledError, Exception):
                     pass  # Polling errors must not fail the slice.
+
+        if response.status_code >= 500:
+            raise SlicerApiServerError(f"Slicer CLI failed ({response.status_code}): {_format_sidecar_error(response)}")
+        if response.status_code >= 400:
+            raise SlicerInputError(f"Slicer rejected input ({response.status_code}): {_format_sidecar_error(response)}")
+
+        return SliceResult(
+            content=response.content,
+            print_time_seconds=_safe_int(response.headers.get("x-print-time-seconds")),
+            filament_used_g=_safe_float(response.headers.get("x-filament-used-g")),
+            filament_used_mm=_safe_float(response.headers.get("x-filament-used-mm")),
+        )
+
+    async def slice_with_bundle(
+        self,
+        *,
+        model_bytes: bytes,
+        model_filename: str,
+        bundle_id: str,
+        printer_name: str,
+        process_name: str,
+        filament_names: list[str],
+        plate: int | None = None,
+        export_3mf: bool = False,
+        request_id: str | None = None,
+        on_progress: Callable[[dict], None] | None = None,
+    ) -> SliceResult:
+        """POST /slice with bundle id + per-category preset names.
+
+        Asks the sidecar to materialize the printer / process / filament
+        JSONs from a previously-imported `.bbscfg`, instead of accepting
+        them as multipart attachments. Equivalent to
+        ``slice_with_profiles`` from the user's perspective — same return
+        shape, same 4xx/5xx semantics, same progress-poll wiring — but
+        the sidecar saves the round-trip of re-uploading the JSONs every
+        time a user kicks off a slice with the same bundle.
+
+        ``filament_names`` is plate-slot-ordered: index 0 is slot 1, etc.
+        Single-color callers pass a one-element list. The sidecar joins
+        them as semicolon-separated `--load-filaments` for the CLI.
+
+        Raises:
+            SlicerInputError: 4xx — bundle / preset name not found, etc.
+            SlicerApiServerError: sidecar 5xx (CLI failure on resolved
+                triplet — same conditions that fail slice_with_profiles).
+            SlicerApiUnavailableError: connection error.
+        """
+        files = {
+            "file": (model_filename, model_bytes, _guess_model_content_type(model_filename)),
+        }
+        data: dict[str, str | list[str]] = {
+            "bundle": bundle_id,
+            "printerName": printer_name,
+            "processName": process_name,
+        }
+        # The sidecar's SlicingSettings supports both `filamentName` (single
+        # legacy field, kept for clients that pre-date multi-color) and
+        # `filamentNames` (semicolon/comma-separated, matches multi-color
+        # uploads). Always send the array form so a single-slot case still
+        # ends up in the same code path on the sidecar.
+        data["filamentNames"] = ";".join(filament_names)
+        if plate is not None:
+            data["plate"] = str(plate)
+        if export_3mf:
+            data["exportType"] = "3mf"
+        if request_id is not None:
+            data["requestId"] = request_id
+
+        progress_task: asyncio.Task | None = None
+        if request_id is not None and on_progress is not None:
+            progress_task = asyncio.create_task(
+                self._poll_progress(request_id, on_progress),
+                name=f"slicer-progress-{request_id}",
+            )
+
+        try:
+            response = await self._client.post(
+                f"{self.base_url}/slice",
+                files=files,
+                data=data,
+                timeout=self.timeout_seconds,
+            )
+        except httpx.RequestError as exc:
+            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
+        finally:
+            if progress_task is not None:
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
         if response.status_code >= 500:
             raise SlicerApiServerError(f"Slicer CLI failed ({response.status_code}): {_format_sidecar_error(response)}")

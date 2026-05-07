@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        # Don't reject unknown env vars — MFA_ENCRYPTION_KEY (#1219) and other
+        # operational env vars are read directly by their owning modules and
+        # never declared as Settings fields.
+        extra = "ignore"
 
 
 settings = Settings()

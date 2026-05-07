@@ -65,6 +65,9 @@ data/
 # JWT secret file (should be in data dir, but protect project root too)
 .jwt_secret
 
+# MFA encryption key file (#1219) — same protection as .jwt_secret
+.mfa_encryption_key
+
 # SpoolBuddy SSH keys (generated at runtime for remote updates)
 spoolbuddy/ssh/
 

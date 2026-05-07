@@ -435,14 +435,25 @@ async def setup_totp(
     if existing and existing.is_enabled:
         await check_rate_limit(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
         supplied_code = (body.code if body else None) or ""
-        if not pyotp.TOTP(existing.secret).verify(supplied_code, valid_window=1):
-            await record_failed_attempt(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
+        try:
+            if not pyotp.TOTP(existing.secret).verify(supplied_code, valid_window=1):
+                await record_failed_attempt(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Current TOTP code required to replace an active authenticator",
+                )
+            await clear_failed_attempts(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
+            _assert_totp_not_replayed(pyotp.TOTP(existing.secret), existing, supplied_code)
+        except RuntimeError:
+            # The stored secret is encrypted but no key is loaded — the
+            # property access on .secret raises. HTTPException is not a
+            # RuntimeError subclass so the 400 above propagates correctly
+            # through this handler.
+            logger.exception("TOTP decryption failed for user_id=%s", current_user.id)
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Current TOTP code required to replace an active authenticator",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="TOTP secret unavailable",
             )
-        await clear_failed_attempts(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
-        _assert_totp_not_replayed(pyotp.TOTP(existing.secret), existing, supplied_code)
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
 
     secret = pyotp.random_base32()
@@ -484,7 +495,12 @@ async def enable_totp(
             status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP setup not initiated. Call /auth/2fa/totp/setup first."
         )
 
-    if not pyotp.TOTP(totp_record.secret).verify(body.code, valid_window=1):
+    try:
+        totp_verify = pyotp.TOTP(totp_record.secret).verify(body.code, valid_window=1)
+    except RuntimeError:
+        logger.exception("TOTP decryption failed for user_id=%s", totp_record.user_id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="TOTP secret unavailable")
+    if not totp_verify:
         await record_failed_attempt(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
 
@@ -518,10 +534,21 @@ async def disable_totp(
     if not totp_record or not totp_record.is_enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP is not enabled")
 
-    # Accept either a valid TOTP code or a valid backup code
-    totp_obj = pyotp.TOTP(totp_record.secret)
-    code_valid = totp_obj.verify(body.code, valid_window=1)
-    if code_valid:
+    # Accept either a valid TOTP code or a valid backup code. When the secret
+    # cannot be decrypted (encryption key lost), fall through to the backup-
+    # code path so the user can still disable 2FA with their printed codes.
+    totp_obj: pyotp.TOTP | None = None
+    code_valid = False
+    try:
+        totp_obj = pyotp.TOTP(totp_record.secret)
+        code_valid = totp_obj.verify(body.code, valid_window=1)
+    except RuntimeError:
+        logger.exception(
+            "TOTP decryption failed for user_id=%s — falling through to backup-code check",
+            totp_record.user_id,
+        )
+
+    if code_valid and totp_obj is not None:
         _assert_totp_not_replayed(totp_obj, totp_record, body.code)
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
     else:
@@ -560,9 +587,21 @@ async def regenerate_backup_codes(
     if not totp_record or not totp_record.is_enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP is not enabled")
 
-    totp_obj = pyotp.TOTP(totp_record.secret)
-    code_valid = totp_obj.verify(body.code, valid_window=1)
-    if code_valid:
+    # Same recovery contract as disable_totp: when the TOTP secret cannot be
+    # decrypted, fall through to the backup-code branch so the user can
+    # rotate their codes with a printed backup code.
+    totp_obj: pyotp.TOTP | None = None
+    code_valid = False
+    try:
+        totp_obj = pyotp.TOTP(totp_record.secret)
+        code_valid = totp_obj.verify(body.code, valid_window=1)
+    except RuntimeError:
+        logger.exception(
+            "TOTP decryption failed for user_id=%s — falling through to backup-code check",
+            totp_record.user_id,
+        )
+
+    if code_valid and totp_obj is not None:
         _assert_totp_not_replayed(totp_obj, totp_record, body.code)
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
     else:
@@ -868,7 +907,11 @@ async def verify_2fa(
         if not totp_record or not totp_record.is_enabled:
             await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP is not enabled for this user")
-        totp_obj = pyotp.TOTP(totp_record.secret)
+        try:
+            totp_obj = pyotp.TOTP(totp_record.secret)
+        except RuntimeError:
+            logger.exception("TOTP decryption failed for user_id=%s", totp_record.user_id)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="TOTP secret unavailable")
         if not totp_obj.verify(body.code, valid_window=1):
             await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")

@@ -454,6 +454,24 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                 except PermissionError as e:
                     logger.warning("Permission denied copying %s: %s", name, e)
 
+        # Include the MFA encryption key as a ZIP top-level entry alongside
+        # bambuddy.db. Without it, encrypted client_secret / TOTP secret rows
+        # would be unrecoverable after restore on a host without MFA_ENCRYPTION_KEY set.
+        from backend.app.core.paths import resolve_data_dir
+
+        mfa_key_src = resolve_data_dir() / ".mfa_encryption_key"
+        if mfa_key_src.exists() and mfa_key_src.is_file():
+            try:
+                shutil.copy2(mfa_key_src, temp_path / ".mfa_encryption_key")
+            except OSError as exc:
+                logger.error(
+                    "Could not include MFA encryption key in backup (%s). "
+                    "The backup ZIP will not contain the key — restore on a "
+                    "keyless host will fail for encrypted secrets.",
+                    exc,
+                )
+                raise
+
         # Create ZIP
         if output_path is not None:
             zip_file = output_path / filename
@@ -541,7 +559,26 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
                     table.constraints.discard(fk)
 
         async with pg_engine.begin() as conn:
-            await conn.run_sync(metadata.drop_all)
+            # Drop every existing table in the public schema with CASCADE
+            # rather than `metadata.drop_all`. Two reasons:
+            #   1. The user's live DB may carry orphan tables from removed
+            #      features (e.g. the legacy `spoolman_slot_assignments`,
+            #      `spoolman_k_profile`) that hold FK constraints back to
+            #      ORM tables. `drop_all` doesn't know they exist and emits
+            #      `DROP TABLE printers` without CASCADE — Postgres refuses
+            #      and the whole restore aborts.
+            #   2. Even within the metadata, `drop_all` is FK-ordered and
+            #      breaks if a future schema rename leaves old constraints
+            #      around. CASCADE is the right tool for a destructive
+            #      restore: the user is intentionally wiping state.
+            await conn.execute(
+                text(
+                    "DO $$ DECLARE r RECORD; BEGIN "
+                    "FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP "
+                    "EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE'; "
+                    "END LOOP; END $$;"
+                )
+            )
             await conn.run_sync(metadata.create_all)
 
         # Restore FK definitions in metadata (needed for re-adding later)
@@ -703,6 +740,18 @@ async def restore_backup(
 
         try:
             with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+                for name in zf.namelist():
+                    # Reject path-traversal payloads: any entry whose resolved
+                    # path escapes temp_path would allow writing arbitrary files
+                    # on the host (ZipSlip / CVE-2006-5456).
+                    dest = (temp_path / name).resolve()
+                    # is_relative_to (Python 3.9+) covers both relative
+                    # path-traversal (../etc/passwd) and absolute-path overrides
+                    # (/etc/passwd) — str.startswith was vulnerable to
+                    # prefix-collision attacks (e.g. /tmp/abc_evil/file passing
+                    # a /tmp/abc prefix check).
+                    if not dest.is_relative_to(temp_path.resolve()):
+                        raise HTTPException(400, f"Invalid backup: unsafe path in ZIP: {name!r}")
                 zf.extractall(temp_path)
         except zipfile.BadZipFile:
             raise HTTPException(400, "Invalid backup file: not a valid ZIP")
@@ -777,6 +826,32 @@ async def restore_backup(
                         logger.warning("Could not restore %s directory: %s", name, e)
                         skipped_dirs.append(name)
 
+            # Restore the MFA encryption key and JWT secret files before
+            # reinitialising the database so the re-encryption migration can
+            # see the correct key. ZipSlip entries have already been rejected
+            # above, so src_key is guaranteed to be inside temp_path.
+            from backend.app.core.paths import resolve_data_dir
+
+            mfa_key_src = temp_path / ".mfa_encryption_key"
+            if mfa_key_src.exists() and mfa_key_src.is_file():
+                dst_key = resolve_data_dir() / ".mfa_encryption_key"
+                try:
+                    dst_key.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(mfa_key_src, dst_key)
+                    dst_key.chmod(0o600)
+                    logger.info("Restored .mfa_encryption_key from backup")
+                except OSError as e:
+                    logger.error(
+                        "Could not write restored MFA key file to %s: %s",
+                        dst_key,
+                        e,
+                        exc_info=True,
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Restore failed. Check server logs.",
+                    ) from e
+
             # 7. Reinitialize the database engine and apply schema migrations so that
             # tables added after the backup was created (e.g. ams_labels) exist
             # immediately, without requiring a manual restart.
@@ -792,6 +867,12 @@ async def restore_backup(
                 "message": message,
             }
 
+        except HTTPException:
+            # Preserve specific HTTP error responses raised inside the restore
+            # body (e.g. the key-write OSError → 500). The blanket
+            # except Exception below would otherwise swallow them and replace
+            # the operator-facing detail with a generic message.
+            raise
         except Exception as e:
             logger.error("Restore failed: %s", e, exc_info=True)
             return JSONResponse(

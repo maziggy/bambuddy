@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useToast } from '../../contexts/ToastContext';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import {
   api,
@@ -35,7 +34,6 @@ const SIMPLE_COMMON_MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC',
 
 export function SpoolBuddyWriteTagPage() {
   const { t } = useTranslation();
-  const { showToast } = useToast();
   const { sbState } = useOutletContext<SpoolBuddyOutletContext>();
 
   const [activeTab, setActiveTab] = useState<Tab>('existing');
@@ -165,12 +163,7 @@ export function SpoolBuddyWriteTagPage() {
     setWriteStatus('writing');
     setWriteMessage(t('spoolbuddy.writeTag.waiting', 'Waiting for SpoolBuddy...'));
     try {
-      const resp = await spoolbuddyApi.writeTag(device.device_id, selectedSpool.id);
-      if (resp?.warnings?.length) {
-        for (const w of resp.warnings) {
-          showToast(w, 'warning');
-        }
-      }
+      await spoolbuddyApi.writeTag(device.device_id, selectedSpool.id);
     } catch {
       setWriteStatus('error');
       setWriteMessage(t('spoolbuddy.writeTag.queueFailed', 'Failed to queue write command'));

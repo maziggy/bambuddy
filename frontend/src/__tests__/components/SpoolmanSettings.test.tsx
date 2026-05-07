@@ -26,7 +26,6 @@ vi.mock('../../api/client', () => ({
     disconnectSpoolman: vi.fn(),
     syncAllPrintersAms: vi.fn(),
     syncPrinterAms: vi.fn(),
-    syncSpoolmanAmsWeights: vi.fn(),
     getPrinters: vi.fn(),
     getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
   },
@@ -317,53 +316,6 @@ describe('SpoolmanSettings', () => {
       // Spoolman settings should now be visible
       await waitFor(() => {
         expect(screen.getByPlaceholderText('http://192.168.1.100:7912')).toBeInTheDocument();
-      });
-    });
-  });
-
-  describe('Spoolman AMS weight sync button', () => {
-    beforeEach(() => {
-      vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
-        spoolman_enabled: 'true',
-        spoolman_url: 'http://localhost:7912',
-        spoolman_sync_mode: 'auto',
-        spoolman_disable_weight_sync: 'false',
-        spoolman_report_partial_usage: 'true',
-      });
-      vi.mocked(api.getSpoolmanStatus).mockResolvedValue({
-        enabled: true,
-        connected: true,
-        url: 'http://localhost:7912',
-      });
-      vi.mocked(api.syncSpoolmanAmsWeights).mockResolvedValue({ synced: 2, skipped: 1 });
-    });
-
-    it('shows Spoolman AMS sync button when connected', async () => {
-      render(<SpoolmanSettings />);
-
-      // Text appears in both the label <p> and the button — use getAllByText
-      await waitFor(() => {
-        const elements = screen.getAllByText('Sync Spoolman Weights from AMS');
-        expect(elements.length).toBeGreaterThanOrEqual(1);
-      });
-    });
-
-    it('opens confirm modal when Spoolman AMS sync button clicked', async () => {
-      const user = userEvent.setup();
-      render(<SpoolmanSettings />);
-
-      // Wait for the button section to appear
-      await waitFor(() => {
-        const elements = screen.getAllByText('Sync Spoolman Weights from AMS');
-        expect(elements.length).toBeGreaterThanOrEqual(1);
-      });
-
-      // Find the button by role (not the label <p>) and click it
-      const syncButtons = screen.getAllByRole('button', { name: /Sync Spoolman Weights from AMS/i });
-      await user.click(syncButtons[0]);
-
-      await waitFor(() => {
-        expect(screen.getByText('Sync Spoolman Spool Weights from AMS')).toBeInTheDocument();
       });
     });
   });

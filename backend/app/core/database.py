@@ -201,6 +201,13 @@ async def init_db():
         # Run migrations for new columns (SQLite doesn't auto-add columns)
         await run_migrations(conn)
 
+    # Re-encrypt any legacy plaintext OIDC client_secret / TOTP secret rows
+    # that exist from before the encryption key was configured.
+    # Runs on a fresh AsyncSession (NOT the run_migrations() connection) so it
+    # doesn't share a transaction with the schema-DDL block above — required to
+    # avoid SQLite "database is locked" contention on the WAL writer.
+    await _migrate_encrypt_legacy_secrets()
+
     # Seed default notification templates
     await seed_notification_templates()
 
@@ -210,6 +217,72 @@ async def init_db():
     # Seed default catalog entries
     await seed_spool_catalog()
     await seed_color_catalog()
+
+
+async def _migrate_encrypt_legacy_secrets() -> None:
+    """Re-encrypt OIDC ``client_secret`` and TOTP ``secret`` rows that are still
+    stored as plaintext (no ``fernet:`` prefix).
+
+    Called from :func:`init_db` after :func:`run_migrations` finishes, so it
+    runs on its own ``AsyncSession`` instead of sharing the schema-DDL
+    connection.  No-ops when no encryption key is configured (so plaintext
+    storage stays the legacy behaviour for installs without a key).
+
+    Idempotent: rows that already start with ``fernet:`` are skipped, so the
+    migration is safe to run on every startup.
+    """
+    from sqlalchemy import select
+
+    from backend.app.core.encryption import is_encryption_active
+    from backend.app.models.oidc_provider import OIDCProvider
+    from backend.app.models.user_totp import UserTOTP
+
+    if not is_encryption_active():
+        return
+
+    try:
+        async with async_session() as session:
+            oidc_count = 0
+            totp_count = 0
+            error_count = 0
+
+            for provider in (await session.scalars(select(OIDCProvider))).all():
+                stored = provider._client_secret_enc
+                if not stored.startswith("fernet:"):
+                    try:
+                        provider.client_secret = stored
+                        oidc_count += 1
+                    except Exception:
+                        logger.error("Failed to re-encrypt OIDCProvider id=%s", provider.id, exc_info=True)
+                        error_count += 1
+
+            for totp in (await session.scalars(select(UserTOTP))).all():
+                stored = totp._secret_enc
+                if not stored.startswith("fernet:"):
+                    try:
+                        totp.secret = stored
+                        totp_count += 1
+                    except Exception:
+                        logger.error("Failed to re-encrypt UserTOTP id=%s", totp.id, exc_info=True)
+                        error_count += 1
+
+            if error_count > 0:
+                await session.rollback()
+                logger.error(
+                    "_migrate_encrypt_legacy_secrets: %d row(s) failed — rolled back. Will retry on next startup.",
+                    error_count,
+                )
+            elif oidc_count or totp_count:
+                await session.commit()
+                logger.info(
+                    "Re-encrypted legacy plaintext secrets: %d OIDC client_secret(s), %d TOTP secret(s)",
+                    oidc_count,
+                    totp_count,
+                )
+            else:
+                logger.debug("_migrate_encrypt_legacy_secrets: no rows needed re-encryption")
+    except Exception:
+        logger.error("_migrate_encrypt_legacy_secrets failed unexpectedly", exc_info=True)
 
 
 async def _safe_execute(conn, sql):

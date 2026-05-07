@@ -1,7 +1,7 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 
 def _validate_password_complexity(v: str) -> str:
@@ -435,3 +435,20 @@ class OIDCLinkResponse(BaseModel):
     provider_name: str
     provider_email: str | None = None
     created_at: str
+
+
+class EncryptionRowCounts(BaseModel):
+    oidc_providers: int
+    user_totp: int
+
+
+class EncryptionStatusResponse(BaseModel):
+    key_configured: bool
+    key_source: Literal["env", "file", "generated", "none"]
+    legacy_plaintext_rows: EncryptionRowCounts
+    encrypted_rows: EncryptionRowCounts
+
+    @computed_field
+    @property
+    def decryption_broken(self) -> bool:
+        return (not self.key_configured) and (self.encrypted_rows.oidc_providers + self.encrypted_rows.user_totp) > 0

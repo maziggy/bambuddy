@@ -38,27 +38,19 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
-from backend.app.utils.filament_ids import filament_id_to_setting_id, normalize_slicer_filament
+from backend.app.utils.filament_ids import (
+    GENERIC_FILAMENT_IDS,
+    MATERIAL_TEMPS,
+    filament_id_to_setting_id,
+    normalize_slicer_filament,
+)
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/inventory", tags=["inventory"])
+_GENERIC_ID_VALUES = set(GENERIC_FILAMENT_IDS.values())
 
-# Material temperature defaults (nozzle min/max)
-MATERIAL_TEMPS: dict[str, tuple[int, int]] = {
-    "PLA": (190, 230),
-    "PETG": (220, 260),
-    "ABS": (240, 270),
-    "ASA": (240, 270),
-    "TPU": (200, 240),
-    "PA": (260, 290),
-    "PC": (250, 280),
-    "PVA": (190, 210),
-    "PLA-CF": (210, 240),
-    "PETG-CF": (240, 270),
-    "PA-CF": (270, 300),
-}
+router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 # FilamentColors.xyz API
 FILAMENT_COLORS_API = "https://filamentcolors.xyz/api"
@@ -308,6 +300,49 @@ async def apply_spool_to_slot_via_mqtt(
             filament_id=cali_filament_id,
             nozzle_diameter=nozzle_diameter,
         )
+    else:
+        # No stored K-profile for this slot — preserve the slot's current live
+        # cali_idx if the printer has one. cali_idx is read from state.raw_data
+        # using the same idiom as the route's `current_tray_info_idx` lookup.
+        # Negative values (e.g. -1) mean "no calibration recorded" and must not
+        # be sent.
+        live_cali_idx: int | None = None
+        if state and getattr(state, "raw_data", None):
+            if ams_id == 255:
+                for vt in state.raw_data.get("vt_tray") or []:
+                    if isinstance(vt, dict) and int(vt.get("id", 254)) == (tray_id + 254):
+                        raw = vt.get("cali_idx")
+                        if isinstance(raw, int):
+                            live_cali_idx = raw
+                        break
+            else:
+                ams_section = state.raw_data.get("ams", {})
+                ams_list = (
+                    ams_section.get("ams", [])
+                    if isinstance(ams_section, dict)
+                    else ams_section
+                    if isinstance(ams_section, list)
+                    else []
+                )
+                tray_dict = _find_tray_in_ams_data(ams_list, ams_id, tray_id)
+                if tray_dict:
+                    raw = tray_dict.get("cali_idx")
+                    if isinstance(raw, int):
+                        live_cali_idx = raw
+        if live_cali_idx is not None and live_cali_idx >= 0:
+            cali_filament_id = spool.slicer_filament or effective_tray_info_idx
+            client.extrusion_cali_sel(
+                ams_id=ams_id,
+                tray_id=tray_id,
+                cali_idx=live_cali_idx,
+                filament_id=cali_filament_id,
+                nozzle_diameter=nozzle_diameter,
+            )
+            logger.info(
+                "No stored K-profile for spool %d — preserved live cali_idx=%d",
+                spool.id,
+                live_cali_idx,
+            )
 
     # Persist slot preset mapping for UI display (preset_name on hover card).
     try:

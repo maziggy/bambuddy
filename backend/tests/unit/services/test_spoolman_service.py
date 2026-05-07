@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from backend.app.services.spoolman import AMSTray, SpoolmanClient
+from backend.app.services.spoolman import AMSTray, SpoolmanClient, init_spoolman_client
 
 
 class TestIsBambuLabSpool:
@@ -133,7 +133,7 @@ class TestSpoolmanClient:
             call_kwargs = mock_update.call_args.kwargs
             assert "remaining_weight" in call_kwargs
             assert call_kwargs["remaining_weight"] == 500.0  # 50% of 1000g
-            assert "location" in call_kwargs
+            assert "location" not in call_kwargs
 
     @pytest.mark.asyncio
     async def test_sync_ams_tray_skips_weight_when_disabled(self, client, sample_tray, existing_spool):
@@ -148,9 +148,8 @@ class TestSpoolmanClient:
             call_kwargs = mock_update.call_args.kwargs
             # remaining_weight should be None (not updated)
             assert call_kwargs.get("remaining_weight") is None
-            # location should still be updated
-            assert "location" in call_kwargs
-            assert "TestPrinter" in call_kwargs["location"]
+            # location must never be written by Bambuddy — user-managed in Spoolman
+            assert "location" not in call_kwargs
 
     @pytest.mark.asyncio
     async def test_sync_ams_tray_new_spool_always_includes_weight(self, client, sample_tray, mock_filament):
@@ -169,8 +168,8 @@ class TestSpoolmanClient:
             assert call_kwargs["remaining_weight"] == 500.0  # 50% of 1000g
 
     @pytest.mark.asyncio
-    async def test_sync_ams_tray_location_format(self, client, sample_tray, existing_spool):
-        """Verify location format is correct when updating spool."""
+    async def test_sync_ams_tray_does_not_write_location(self, client, sample_tray, existing_spool):
+        """Verify sync_ams_tray never writes location= to Spoolman (user-managed field)."""
         with (
             patch.object(client, "find_spool_by_tag", AsyncMock(return_value=existing_spool)),
             patch.object(client, "update_spool", AsyncMock(return_value={"id": 42})) as mock_update,
@@ -178,15 +177,125 @@ class TestSpoolmanClient:
             await client.sync_ams_tray(sample_tray, "My Printer", disable_weight_sync=True)
 
             call_kwargs = mock_update.call_args.kwargs
-            # Location should follow pattern: "PrinterName - AMS A1"
-            assert "location" in call_kwargs
-            assert "My Printer" in call_kwargs["location"]
-            assert "AMS" in call_kwargs["location"]
+            # Bambuddy must never auto-set spool.location — it is user-managed in Spoolman
+            assert "location" not in call_kwargs
+
+    # ========================================================================
+    # T6: non-BL spool with custom RFID (H5 guard)
+    # ========================================================================
 
     @pytest.mark.asyncio
-    async def test_sync_ams_tray_skips_non_bambu_spool(self, client):
-        """Verify non-Bambu Lab spools are skipped."""
-        # Third-party spool without proper identifiers
+    async def test_sync_ams_tray_non_bl_rfid_find_or_create_error_returns_none(self, client):
+        """Non-BL spool with custom RFID: find_or_create_filament failure returns None, not raises.
+
+        A third-party spool whose tag_uid is not exactly 16 hex chars is not
+        identified as BL. sync_ams_tray must catch find_or_create_filament
+        errors and return None instead of propagating the exception.
+        """
+        from backend.app.services.spoolman import SpoolmanUnavailableError
+
+        # 8-char tag → spool_tag is set, but is_bambu_lab_spool returns False
+        tray = AMSTray(
+            ams_id=0,
+            tray_id=2,
+            tray_type="PLA",
+            tray_sub_brands="eSun PLA+",
+            tray_color="00FF00FF",
+            remain=50,
+            tag_uid="AABB1234",
+            tray_uuid="",
+            tray_info_idx="",
+            tray_weight=1000,
+        )
+
+        with (
+            patch.object(client, "find_spool_by_tag", AsyncMock(return_value=None)),
+            patch.object(
+                client,
+                "find_or_create_filament",
+                AsyncMock(side_effect=SpoolmanUnavailableError("timeout")),
+            ),
+        ):
+            result = await client.sync_ams_tray(tray, "TestPrinter")
+
+        assert result is None
+
+    # ========================================================================
+    # T7: hint path uncached — get_spool(hint) called when not in cached_spools
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_sync_ams_tray_hint_uncached_calls_get_spool(self, client):
+        """No-RFID path: when hint spool is absent from cached_spools, get_spool is called."""
+        tray = AMSTray(
+            ams_id=0,
+            tray_id=3,
+            tray_type="PETG",
+            tray_sub_brands="Generic PETG",
+            tray_color="0000FFFF",
+            remain=75,
+            tag_uid="",
+            tray_uuid="",
+            tray_info_idx="",
+            tray_weight=1000,
+        )
+        # cached_spools exists but does NOT contain spool 99
+        cached_spools = [{"id": 1, "extra": {}}]
+        fetched_spool = {"id": 99, "extra": {}}
+
+        with (
+            patch.object(client, "get_spool", AsyncMock(return_value=fetched_spool)) as mock_get,
+            patch.object(client, "update_spool", AsyncMock(return_value=fetched_spool)),
+        ):
+            result = await client.sync_ams_tray(
+                tray,
+                "TestPrinter",
+                cached_spools=cached_spools,
+                spoolman_spool_id_hint=99,
+            )
+
+        assert result is not None
+        mock_get.assert_awaited_once_with(99)
+
+    # ========================================================================
+    # T8: hint ignored when RFID tag is present
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_sync_ams_tray_rfid_takes_precedence_over_hint(self, client, existing_spool):
+        """When tray_uuid is set, the RFID path is used and the hint is never consulted."""
+        tray = AMSTray(
+            ams_id=0,
+            tray_id=4,
+            tray_type="PLA",
+            tray_sub_brands="PLA Basic",
+            tray_color="FF0000FF",
+            remain=50,
+            tag_uid="",
+            tray_uuid="A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+            tray_info_idx="GFA00",
+            tray_weight=1000,
+        )
+
+        with (
+            patch.object(client, "find_spool_by_tag", AsyncMock(return_value=existing_spool)),
+            patch.object(client, "update_spool", AsyncMock(return_value={"id": 42})),
+            patch.object(client, "get_spool", AsyncMock()) as mock_get_spool,
+        ):
+            result = await client.sync_ams_tray(
+                tray,
+                "TestPrinter",
+                spoolman_spool_id_hint=99,
+            )
+
+        assert result is not None
+        # hint path (get_spool) must NOT be called when RFID is present
+        mock_get_spool.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sync_ams_tray_non_bambu_no_rfid_returns_none(self, client):
+        """Third-party spool without any RFID and no hint returns None."""
+        # Non-BL spool: no tray_uuid, no tag_uid, no spoolman_spool_id_hint → nothing to match
         tray = AMSTray(
             ams_id=0,
             tray_id=0,
@@ -196,12 +305,41 @@ class TestSpoolmanClient:
             remain=50,
             tag_uid="",
             tray_uuid="",
-            tray_info_idx="",  # No Bambu Lab preset ID
+            tray_info_idx="",
             tray_weight=1000,
         )
 
         result = await client.sync_ams_tray(tray, "TestPrinter")
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_sync_ams_tray_hint_updates_spool_without_rfid(self, client):
+        """No-RFID fallback: spool_id_hint from local slot-assignment table updates the spool."""
+        tray = AMSTray(
+            ams_id=0,
+            tray_id=0,
+            tray_type="PLA",
+            tray_sub_brands="Generic PLA",
+            tray_color="00FF00FF",
+            remain=80,
+            tag_uid="",
+            tray_uuid="",
+            tray_info_idx="",
+            tray_weight=1000,
+        )
+        cached_spools = [{"id": 99, "extra": {}}]
+
+        with patch.object(client, "update_spool", new_callable=AsyncMock) as mock_update:
+            mock_update.return_value = {"id": 99}
+            result = await client.sync_ams_tray(
+                tray, "TestPrinter", cached_spools=cached_spools, spoolman_spool_id_hint=99
+            )
+
+        assert result is not None
+        assert result["id"] == 99
+        mock_update.assert_called_once()
+        call_kwargs = mock_update.call_args.kwargs
+        assert "location" not in call_kwargs
 
     @pytest.mark.asyncio
     async def test_sync_ams_tray_weight_calculation(self, client, existing_spool):
@@ -385,8 +523,10 @@ class TestSpoolmanClient:
 
     @pytest.mark.asyncio
     async def test_get_spools_raises_after_3_failed_attempts(self, client):
-        """Verify get_spools raises exception after 3 failed attempts."""
+        """Verify get_spools raises SpoolmanUnavailableError after 3 failed connection attempts."""
         import httpx
+
+        from backend.app.services.spoolman import SpoolmanUnavailableError
 
         with (
             patch.object(client, "_get_client", AsyncMock()) as mock_get_client,
@@ -399,7 +539,7 @@ class TestSpoolmanClient:
             # All 3 attempts fail
             mock_http_client.get.side_effect = httpx.ReadError("Connection closed")
 
-            with pytest.raises(httpx.ReadError):
+            with pytest.raises(SpoolmanUnavailableError):
                 await client.get_spools()
 
             assert mock_get_client.call_count == 3
@@ -444,3 +584,90 @@ class TestSpoolmanClient:
             mock_close.assert_not_called()
             # Should sleep once (after first failed attempt)
             assert mock_sleep.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# init_spoolman_client — SSRF guard (B4 / T3)
+# ---------------------------------------------------------------------------
+
+
+class TestInitSpoolmanClientSSRFGuard:
+    """init_spoolman_client must reject genuinely unsafe URLs before creating a client.
+
+    Scope: cloud metadata endpoints, multicast, unspecified, non-http(s) schemes,
+    and numeric-encoded IP bypasses. Loopback and RFC-1918 private ranges are
+    explicitly allowed — Bambuddy's primary deployment is LAN-local Spoolman.
+    """
+
+    @pytest.mark.asyncio
+    async def test_cloud_metadata_raises_value_error(self):
+        with pytest.raises(ValueError, match="cloud metadata"):
+            await init_spoolman_client("http://169.254.169.254/latest/meta-data/")
+
+    @pytest.mark.asyncio
+    async def test_multicast_raises_value_error(self):
+        with pytest.raises(ValueError, match="multicast|unspecified"):
+            await init_spoolman_client("http://224.0.0.1/")
+
+    @pytest.mark.asyncio
+    async def test_unspecified_raises_value_error(self):
+        with pytest.raises(ValueError, match="multicast|unspecified"):
+            await init_spoolman_client("http://0.0.0.0/")
+
+    @pytest.mark.asyncio
+    async def test_numeric_encoded_ip_raises_value_error(self):
+        # decimal-encoded 127.0.0.1 — libc resolves these but ipaddress doesn't
+        with pytest.raises(ValueError, match="numeric-encoded"):
+            await init_spoolman_client("http://2130706433/")
+
+    @pytest.mark.asyncio
+    async def test_non_http_scheme_raises_value_error(self):
+        with pytest.raises(ValueError, match="http or https"):
+            await init_spoolman_client("file:///etc/passwd")
+
+    @pytest.mark.asyncio
+    async def test_private_ip_is_allowed(self):
+        """Regression: RFC-1918 private addresses are the normal LAN topology."""
+        mock_instance = AsyncMock()
+        with (
+            patch("backend.app.services.spoolman._spoolman_client", None),
+            patch("backend.app.services.spoolman.SpoolmanClient", return_value=mock_instance) as mock_cls,
+        ):
+            client = await init_spoolman_client("http://192.168.1.50:7912/")
+        mock_cls.assert_called_once_with("http://192.168.1.50:7912/")
+        assert client is mock_instance
+
+    @pytest.mark.asyncio
+    async def test_loopback_ip_is_allowed(self):
+        """Regression: same-host Spoolman via loopback is a supported topology."""
+        mock_instance = AsyncMock()
+        with (
+            patch("backend.app.services.spoolman._spoolman_client", None),
+            patch("backend.app.services.spoolman.SpoolmanClient", return_value=mock_instance) as mock_cls,
+        ):
+            client = await init_spoolman_client("http://127.0.0.1:7912/")
+        mock_cls.assert_called_once_with("http://127.0.0.1:7912/")
+        assert client is mock_instance
+
+    @pytest.mark.asyncio
+    async def test_localhost_hostname_is_allowed(self):
+        # localhost (hostname, not bare IP) is a supported topology for same-host Spoolman
+        mock_instance = AsyncMock()
+        with (
+            patch("backend.app.services.spoolman._spoolman_client", None),
+            patch("backend.app.services.spoolman.SpoolmanClient", return_value=mock_instance) as mock_cls,
+        ):
+            client = await init_spoolman_client("http://localhost:7912/")
+        mock_cls.assert_called_once_with("http://localhost:7912/")
+        assert client is mock_instance
+
+    @pytest.mark.asyncio
+    async def test_public_url_is_allowed(self):
+        mock_instance = AsyncMock()
+        with (
+            patch("backend.app.services.spoolman._spoolman_client", None),
+            patch("backend.app.services.spoolman.SpoolmanClient", return_value=mock_instance) as mock_cls,
+        ):
+            client = await init_spoolman_client("http://spoolman.example.com:7912/")
+        mock_cls.assert_called_once_with("http://spoolman.example.com:7912/")
+        assert client is mock_instance

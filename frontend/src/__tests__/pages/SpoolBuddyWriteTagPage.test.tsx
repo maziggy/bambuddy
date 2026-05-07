@@ -13,7 +13,9 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, Outlet } from 'react-router-dom';
+import { ToastProvider } from '../../contexts/ToastContext';
 import { SpoolBuddyWriteTagPage } from '../../pages/spoolbuddy/SpoolBuddyWriteTagPage';
+import { api as mockedApi, spoolbuddyApi as mockedSpoolbuddyApi } from '../../api/client';
 
 // Mock the API modules
 vi.mock('../../api/client', () => ({
@@ -68,13 +70,15 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/spoolbuddy/write-tag']}>
-        <Routes>
-          <Route element={<OutletWrapper />}>
-            <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/spoolbuddy/write-tag']}>
+          <Routes>
+            <Route element={<OutletWrapper />}>
+              <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }
@@ -132,6 +136,51 @@ describe('SpoolBuddyWriteTagPage', () => {
     mockOutletContext.sbState.deviceOnline = true;
     renderPage();
     expect(screen.getByText('Select a spool, then place a blank NTAG on the reader')).toBeDefined();
+    mockOutletContext.sbState.deviceOnline = false; // reset
+  });
+
+  it('shows one toast per warning when writeTag returns multiple warnings (B5 / T2)', async () => {
+    const spool = {
+      id: 99,
+      material: 'PLA',
+      label_weight: 1000,
+      weight_used: 0,
+      tag_uid: null,
+      tray_uuid: null,
+      archived_at: null,
+      rgba: 'FF0000FF',
+    };
+    vi.mocked(mockedApi.getSpools).mockResolvedValue([spool as never]);
+    vi.mocked(mockedSpoolbuddyApi.getDevices).mockResolvedValue([
+      { device_id: 'sb-test', hostname: 'sb-test.local' } as never,
+    ]);
+    vi.mocked(mockedSpoolbuddyApi.writeTag).mockResolvedValueOnce({
+      status: 'queued',
+      warnings: ['color_name not set', 'nozzle_temp_min not set'],
+    } as never);
+
+    mockOutletContext.sbState.deviceOnline = true;
+    renderPage();
+
+    // Wait for the spool to appear and click it to select it
+    await waitFor(() => {
+      expect(screen.getByText('PLA')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('PLA'));
+
+    // Click the Write Tag button
+    await waitFor(() => {
+      const writeBtn = screen.getByText('Write Tag');
+      expect((writeBtn as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByText('Write Tag'));
+
+    // Both warning messages must appear as separate toasts
+    await waitFor(() => {
+      expect(screen.getByText('color_name not set')).toBeDefined();
+      expect(screen.getByText('nozzle_temp_min not set')).toBeDefined();
+    });
+
     mockOutletContext.sbState.deviceOnline = false; // reset
   });
 });

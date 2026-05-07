@@ -1,8 +1,6 @@
-import json
 from datetime import datetime
-from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 # --- Device schemas ---
 
@@ -11,14 +9,14 @@ class DeviceRegisterRequest(BaseModel):
     device_id: str = Field(..., min_length=1, max_length=50)
     hostname: str = Field(..., min_length=1, max_length=100)
     ip_address: str = Field(..., min_length=1, max_length=45)
-    firmware_version: str | None = Field(None, max_length=20)
+    firmware_version: str | None = None
     has_nfc: bool = True
     has_scale: bool = True
     tare_offset: int = 0
     calibration_factor: float = 1.0
-    nfc_reader_type: str | None = Field(None, max_length=20)
-    nfc_connection: str | None = Field(None, max_length=20)
-    backend_url: str | None = Field(None, max_length=255)
+    nfc_reader_type: str | None = None
+    nfc_connection: str | None = None
+    backend_url: str | None = None
     has_backlight: bool = False
 
 
@@ -60,19 +58,12 @@ class HeartbeatRequest(BaseModel):
     nfc_ok: bool = False
     scale_ok: bool = False
     uptime_s: int = 0
-    firmware_version: str | None = Field(None, max_length=20)
-    ip_address: str | None = Field(None, max_length=45)
-    nfc_reader_type: str | None = Field(None, max_length=20)
-    nfc_connection: str | None = Field(None, max_length=20)
-    backend_url: str | None = Field(None, max_length=255)
+    firmware_version: str | None = None
+    ip_address: str | None = None
+    nfc_reader_type: str | None = None
+    nfc_connection: str | None = None
+    backend_url: str | None = None
     system_stats: dict | None = None
-
-    @field_validator("system_stats")
-    @classmethod
-    def _limit_system_stats_size(cls, v: dict | None) -> dict | None:
-        if v is not None and len(json.dumps(v)) > 4096:
-            raise ValueError("system_stats must not exceed 4096 bytes when JSON-encoded")
-        return v
 
 
 class HeartbeatResponse(BaseModel):
@@ -90,32 +81,32 @@ class HeartbeatResponse(BaseModel):
 
 
 class TagScannedRequest(BaseModel):
-    device_id: str = Field(..., max_length=50)
-    tag_uid: str = Field(..., max_length=32)
-    tray_uuid: str | None = Field(None, max_length=32, pattern=r"^[0-9A-Fa-f]*$")
+    device_id: str
+    tag_uid: str
+    tray_uuid: str | None = None
     sak: int | None = None
-    tag_type: str | None = Field(None, max_length=50)
+    tag_type: str | None = None
     raw_blocks: dict | None = None
 
 
 class TagRemovedRequest(BaseModel):
-    device_id: str = Field(..., max_length=50)
-    tag_uid: str = Field(..., max_length=32)
+    device_id: str
+    tag_uid: str
 
 
 # --- Scale schemas ---
 
 
 class ScaleReadingRequest(BaseModel):
-    device_id: str = Field(..., max_length=50)
-    weight_grams: float = Field(..., allow_inf_nan=False)
+    device_id: str
+    weight_grams: float
     stable: bool = False
     raw_adc: int | None = None
 
 
 class UpdateSpoolWeightRequest(BaseModel):
-    spool_id: int = Field(..., gt=0)
-    weight_grams: float = Field(..., allow_inf_nan=False, ge=0.0, le=100_000.0)
+    spool_id: int
+    weight_grams: float
 
 
 # --- Calibration schemas ---
@@ -140,16 +131,16 @@ class CalibrationResponse(BaseModel):
 
 
 class WriteTagRequest(BaseModel):
-    device_id: str = Field(..., max_length=50)
-    spool_id: int = Field(..., gt=0)
+    device_id: str
+    spool_id: int
 
 
 class WriteTagResultRequest(BaseModel):
-    device_id: str = Field(..., max_length=50)
-    spool_id: int = Field(..., gt=0)
-    tag_uid: str = Field(..., min_length=8, max_length=30, pattern=r"^[0-9A-Fa-f]+$")
+    device_id: str
+    spool_id: int
+    tag_uid: str
     success: bool
-    message: str | None = Field(None, max_length=500)
+    message: str | None = None
 
 
 class DisplaySettingsRequest(BaseModel):
@@ -163,27 +154,20 @@ class SystemConfigRequest(BaseModel):
 
 
 class SystemCommandRequest(BaseModel):
-    command: str = Field(
-        ..., max_length=50, description="System command: reboot, shutdown, restart_daemon, restart_browser"
-    )
+    command: str = Field(..., description="System command: reboot, shutdown, restart_daemon, restart_browser")
 
 
 class SystemCommandResultRequest(BaseModel):
-    command: str = Field(..., max_length=50)
+    command: str
     success: bool
-    message: str | None = Field(None, max_length=500)
-
-
-class UpdateStatusRequest(BaseModel):
-    status: Literal["updating", "complete", "error"]
-    message: str | None = Field(None, max_length=255)
+    message: str | None = None
 
 
 # --- Diagnostics schemas ---
 
 
 class DiagnosticResultRequest(BaseModel):
-    diagnostic: str = Field(..., max_length=50, description="Diagnostic type: 'nfc', 'scale', or 'read_tag'")
+    diagnostic: str  # 'nfc', 'scale', or 'read_tag'
     success: bool
-    output: str = Field(..., max_length=10_000)
-    exit_code: int = Field(..., ge=-255, le=255)
+    output: str
+    exit_code: int

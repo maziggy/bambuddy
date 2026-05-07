@@ -55,7 +55,6 @@ from backend.app.api.routes import (
     smart_plugs,
     spoolbuddy,
     spoolman,
-    spoolman_inventory,
     support,
     system,
     updates,
@@ -1175,93 +1174,6 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                         )
                                         existing_assignment.spool.weight_used = new_used
                                         await db.commit()
-
-                            # Re-apply stored K-profile when the live tray's
-                            # cali_idx drifted from the spool's stored profile.
-                            # This catches "reset slot → re-read" and any other
-                            # path where the firmware loses the user's K-profile
-                            # selection while the SpoolAssignment row persists.
-                            # Per the maintainer's rule: any time a spool tag is
-                            # identified and matches inventory, the slot must be
-                            # configured with the spool's stored settings. Without
-                            # this block the existing-assignment branch only ran
-                            # weight-sync and let the firmware-default cali_idx win.
-                            try:
-                                spool = existing_assignment.spool
-                                if (
-                                    spool is not None
-                                    and is_bambu_tag(tag_uid, tray_uuid, tray_info_idx)
-                                    and spool.k_profiles
-                                ):
-                                    state = printer_manager.get_status(printer_id)
-                                    nozzle_diameter = "0.4"
-                                    if state and state.nozzles:
-                                        nd = state.nozzles[0].nozzle_diameter
-                                        if nd:
-                                            nozzle_diameter = nd
-                                    slot_extruder: int | None = None
-                                    if state and state.ams_extruder_map:
-                                        if ams_id == 255:
-                                            slot_extruder = 1 - tray_id
-                                        else:
-                                            slot_extruder = state.ams_extruder_map.get(str(ams_id))
-                                    # Prefer exact extruder match, fall back to
-                                    # extruder-agnostic kp for the same printer +
-                                    # nozzle. Avoids hard-skipping when the AMS is
-                                    # mapped differently than at calibration time.
-                                    matching_kp = None
-                                    fallback_kp = None
-                                    for kp in spool.k_profiles:
-                                        if (
-                                            kp.printer_id != printer_id
-                                            or kp.nozzle_diameter != nozzle_diameter
-                                            or kp.cali_idx is None
-                                        ):
-                                            continue
-                                        if (
-                                            slot_extruder is not None
-                                            and kp.extruder is not None
-                                            and kp.extruder == slot_extruder
-                                        ):
-                                            matching_kp = kp
-                                            break
-                                        if fallback_kp is None:
-                                            fallback_kp = kp
-                                    chosen_kp = matching_kp or fallback_kp
-                                    if chosen_kp is not None:
-                                        live_cali_idx = tray.get("cali_idx")
-                                        # Only fire MQTT when the printer's live
-                                        # cali_idx differs from the stored value.
-                                        # Avoids spamming the broker on every
-                                        # MQTT push during steady-state operation.
-                                        if live_cali_idx != chosen_kp.cali_idx:
-                                            client = printer_manager.get_client(printer_id)
-                                            if client:
-                                                cali_filament_id = spool.slicer_filament or tray_info_idx or ""
-                                                client.extrusion_cali_sel(
-                                                    ams_id=ams_id,
-                                                    tray_id=tray_id,
-                                                    cali_idx=chosen_kp.cali_idx,
-                                                    filament_id=cali_filament_id,
-                                                    nozzle_diameter=nozzle_diameter,
-                                                )
-                                                logger.info(
-                                                    "Re-applied K-profile cali_idx=%d for spool %d "
-                                                    "on printer %d AMS%d-T%d (live=%s drift detected)",
-                                                    chosen_kp.cali_idx,
-                                                    spool.id,
-                                                    printer_id,
-                                                    ams_id,
-                                                    tray_id,
-                                                    live_cali_idx,
-                                                )
-                            except Exception:
-                                logger.exception(
-                                    "K-profile re-apply failed for printer %d AMS%d-T%d",
-                                    printer_id,
-                                    ams_id,
-                                    tray_id,
-                                )
                             continue
 
                         if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
@@ -1354,11 +1266,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
             # Get or create Spoolman client
             client = await get_spoolman_client()
             if not client:
-                try:
-                    client = await init_spoolman_client(spoolman_url)
-                except ValueError as exc:
-                    logger.warning("Spoolman URL %r rejected by SSRF guard: %s", spoolman_url, exc)
-                    return
+                client = await init_spoolman_client(spoolman_url)
 
             # Check if Spoolman is reachable
             if not await client.health_check():
@@ -1388,7 +1296,6 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from sqlalchemy.orm import selectinload
 
             from backend.app.models.spool_assignment import SpoolAssignment
-            from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 
             inventory_weights: dict[tuple[int, int], float] = {}
             try:
@@ -1403,47 +1310,29 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         remaining = max(0.0, spool.label_weight - (spool.weight_used or 0))
                         inventory_weights[(assignment.ams_id, assignment.tray_id)] = remaining
             except Exception as e:
-                logger.warning("Could not load inventory weights for printer %s: %s", printer_id, e)
+                logger.debug("Could not load inventory weights for printer %s: %s", printer_id, e)
 
-            # Load existing Spoolman slot assignments for the no-RFID fallback path
-            spoolman_slot_map: dict[tuple[int, int], int] = {}
-            try:
-                slot_result = await db.execute(
-                    select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id)
-                )
-                for slot in slot_result.scalars().all():
-                    spoolman_slot_map[(slot.ams_id, slot.tray_id)] = slot.spoolman_spool_id
-            except Exception as e:
-                logger.warning("Could not load Spoolman slot assignments for printer %s: %s", printer_id, e)
-
-            # Sync each AMS tray and collect slot changes for DB persistence
+            # Sync each AMS tray, tracking UUIDs and spool IDs for cleanup
             synced = 0
-            slot_changes: list[tuple[int, int, int]] = []  # (ams_id, tray_id, spoolman_spool_id) to upsert
-            empty_slots: list[tuple[int, int]] = []  # (ams_id, tray_id) whose tray is now empty
+            current_tray_uuids: set[str] = set()
+            synced_spool_ids: set[int] = set()
             for ams_unit in ams_data:
-                if not isinstance(ams_unit, dict):
-                    continue
                 ams_id = int(ams_unit.get("id", 0))
                 trays = ams_unit.get("tray", [])
 
                 for tray_data in trays:
-                    if not isinstance(tray_data, dict):
-                        continue
-                    tray_id_raw = int(tray_data.get("id", 0))
                     tray = client.parse_ams_tray(ams_id, tray_data)
                     if not tray:
-                        # Empty tray slot — record for local assignment cleanup
-                        empty_slots.append((ams_id, tray_id_raw))
-                        continue
+                        continue  # Empty tray
 
+                    # Track this spool's UUID as currently present in the AMS
                     spool_tag = (
                         tray.tray_uuid
                         if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000"
                         else tray.tag_uid
                     )
-
-                    # Provide the hint only when no RFID is available
-                    hint = spoolman_slot_map.get((ams_id, tray.tray_id)) if not spool_tag else None
+                    if spool_tag:
+                        current_tray_uuids.add(spool_tag.upper())
 
                     try:
                         inv_remaining = inventory_weights.get((ams_id, tray.tray_id))
@@ -1453,14 +1342,14 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             disable_weight_sync=disable_weight_sync,
                             cached_spools=cached_spools,
                             inventory_remaining=inv_remaining,
-                            spoolman_spool_id_hint=hint,
                         )
                         if result:
                             synced += 1
                             if result.get("id"):
-                                slot_changes.append((ams_id, tray.tray_id, result["id"]))
+                                synced_spool_ids.add(result["id"])
                                 # If a new spool was created, add it to the cache
                                 # so subsequent trays can find it if they reference the same tag
+                                # Check if this spool already exists in cache
                                 spool_exists = any(s.get("id") == result["id"] for s in cached_spools)
                                 if not spool_exists:
                                     cached_spools.append(result)
@@ -1475,40 +1364,18 @@ async def on_ams_change(printer_id: int, ams_data: list):
             if synced > 0:
                 logger.info("Auto-synced %s AMS trays to Spoolman for printer %s", synced, printer_id)
 
-            # Persist slot assignment changes to the local table
-            if slot_changes or empty_slots:
-                try:
-                    for ams_id, tray_id, spool_id in slot_changes:
-                        await db.execute(
-                            text(
-                                "INSERT INTO spoolman_slot_assignments"
-                                " (printer_id, ams_id, tray_id, spoolman_spool_id)"
-                                " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
-                                " ON CONFLICT(printer_id, ams_id, tray_id)"
-                                " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
-                            ),
-                            {
-                                "printer_id": printer_id,
-                                "ams_id": ams_id,
-                                "tray_id": tray_id,
-                                "spool_id": spool_id,
-                            },
-                        )
-                    for ams_id, tray_id in empty_slots:
-                        await db.execute(
-                            delete(SpoolmanSlotAssignment).where(
-                                SpoolmanSlotAssignment.printer_id == printer_id,
-                                SpoolmanSlotAssignment.ams_id == ams_id,
-                                SpoolmanSlotAssignment.tray_id == tray_id,
-                            )
-                        )
-                    await db.commit()
-                except Exception as e:
-                    await db.rollback()
-                    logger.error("Error persisting Spoolman slot assignments for printer %s: %s", printer_id, e)
+            # Clear location for spools no longer in this printer's AMS
+            try:
+                cleared = await client.clear_location_for_removed_spools(
+                    printer_name, current_tray_uuids, cached_spools=cached_spools, synced_spool_ids=synced_spool_ids
+                )
+                if cleared > 0:
+                    logger.info("Auto-cleared location for %s spools removed from printer %s", cleared, printer_id)
+            except Exception as e:
+                logger.error("Error clearing locations for removed spools on printer %s: %s", printer_id, e)
 
     except Exception as e:
-        logging.getLogger(__name__).error("Spoolman AMS sync failed for printer %s: %s", printer_id, e)
+        logging.getLogger(__name__).warning(f"Spoolman AMS sync failed: {e}")
 
 
 async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -> bytes | None:
@@ -4672,20 +4539,7 @@ async def lifespan(app: FastAPI):
                 if await client.health_check():
                     logging.info("Auto-connected to Spoolman at %s", spoolman_url)
                     # Ensure the 'tag' extra field exists for RFID/UUID storage
-                    field_ok = await client.ensure_tag_extra_field()
-                    if not field_ok:
-                        logging.error("Spoolman tag extra field registration failed — NFC tag links may not persist")
-                    # Register the BambuStudio slicer-preset fields used by the
-                    # spool-edit / assign flow. Spoolman rejects PATCHes with
-                    # unknown extra keys, so these must exist before any update
-                    # that touches them.
-                    for field_name in ("bambu_slicer_filament", "bambu_slicer_filament_name"):
-                        if not await client.ensure_extra_field(field_name):
-                            logging.warning(
-                                "Spoolman extra field %r registration failed — "
-                                "spool slicer-preset edits will return 502",
-                                field_name,
-                            )
+                    await client.ensure_tag_extra_field()
                 else:
                     logging.warning("Spoolman at %s is not reachable", spoolman_url)
             except Exception as e:
@@ -5205,7 +5059,6 @@ app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)
 app.include_router(user_notifications.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman.router, prefix=app_settings.api_prefix)
-app.include_router(spoolman_inventory.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
 app.include_router(camera.router, prefix=app_settings.api_prefix)

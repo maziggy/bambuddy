@@ -92,55 +92,6 @@ describe('SpoolInfoCard', () => {
     fireEvent.click(screen.getByText('Close'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
-
-  it('disables "Assign to AMS" button when isAssigned=true', () => {
-    render(
-      <SpoolInfoCard spool={mockSpool} scaleWeight={800} onAssignToAms={vi.fn()} isAssigned />
-    );
-    expect(screen.getByText('Assign to AMS')).toBeDisabled();
-  });
-
-  it('enables "Assign to AMS" button when isAssigned=false', () => {
-    render(
-      <SpoolInfoCard spool={mockSpool} scaleWeight={800} onAssignToAms={vi.fn()} isAssigned={false} />
-    );
-    expect(screen.getByText('Assign to AMS')).not.toBeDisabled();
-  });
-
-  it('shows Unassign button when isAssigned=true and onUnassignFromAms is provided', () => {
-    render(
-      <SpoolInfoCard
-        spool={mockSpool}
-        scaleWeight={800}
-        onAssignToAms={vi.fn()}
-        isAssigned
-        onUnassignFromAms={vi.fn()}
-      />
-    );
-    expect(screen.getByText(/unassign/i)).toBeInTheDocument();
-  });
-
-  it('does not show Unassign button when onUnassignFromAms is not provided', () => {
-    render(
-      <SpoolInfoCard spool={mockSpool} scaleWeight={800} onAssignToAms={vi.fn()} isAssigned />
-    );
-    expect(screen.queryByText(/unassign/i)).not.toBeInTheDocument();
-  });
-
-  it('calls onUnassignFromAms when Unassign button is clicked', () => {
-    const onUnassign = vi.fn();
-    render(
-      <SpoolInfoCard
-        spool={mockSpool}
-        scaleWeight={800}
-        onAssignToAms={vi.fn()}
-        isAssigned
-        onUnassignFromAms={onUnassign}
-      />
-    );
-    fireEvent.click(screen.getByText(/unassign/i));
-    expect(onUnassign).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('UnknownTagCard', () => {

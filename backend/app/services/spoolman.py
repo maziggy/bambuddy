@@ -2,10 +2,8 @@
 
 import asyncio
 import logging
-import weakref
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal
 
 import httpx
 
@@ -58,43 +56,31 @@ class AMSTray:
     tray_weight: int  # Spool weight in grams (usually 1000)
 
 
-class SpoolmanNotFoundError(Exception):
-    """Raised when a spool ID does not exist in Spoolman (HTTP 404)."""
-
-
-class SpoolmanUnavailableError(Exception):
-    """Raised when Spoolman is unreachable or returns a server/network error."""
-
-
-class SpoolmanClientError(Exception):
-    """Raised when Spoolman returns a 4xx client error (not 404)."""
-
-    def __init__(self, message: str, status_code: int, response_text: str = "") -> None:
-        super().__init__(message)
-        self.status_code = status_code
-        self.response_text = response_text
-
-
 class SpoolmanClient:
     """Client for interacting with Spoolman API."""
 
     def __init__(self, base_url: str):
-        """Initialize the Spoolman client."""
+        """Initialize the Spoolman client.
+
+        Args:
+            base_url: The base URL of the Spoolman server (e.g., http://localhost:7912)
+        """
         self.base_url = base_url.rstrip("/")
         self.api_url = f"{self.base_url}/api/v1"
         self._client: httpx.AsyncClient | None = None
         self._connected = False
-        # Per-spool locks for atomic read-modify-write in merge_spool_extra.
-        # WeakValueDictionary: locks are GC'd once no coroutine holds a reference.
-        self._extra_locks: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create the HTTP client with connection pooling limits."""
+        """Get or create the HTTP client with connection pooling limits.
+
+        Configures the client to prevent idle connection issues:
+        - max_keepalive_connections=5: Limit number of persistent connections
+        - keepalive_expiry=30: Close idle connections after 30 seconds
+        - max_connections=10: Limit total connections to prevent resource exhaustion
+        """
         if self._client is None:
             self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
-                follow_redirects=False,
-                verify=True,
+                timeout=10.0,
                 limits=httpx.Limits(
                     max_keepalive_connections=5,
                     max_connections=10,
@@ -110,19 +96,18 @@ class SpoolmanClient:
             self._client = None
 
     async def health_check(self) -> bool:
-        """Check if Spoolman server is reachable; returns True if healthy."""
+        """Check if Spoolman server is reachable.
+
+        Returns:
+            True if server is healthy, False otherwise.
+        """
         try:
             client = await self._get_client()
             response = await client.get(f"{self.api_url}/health")
             self._connected = response.status_code == 200
             return self._connected
         except Exception as e:
-            logger.warning(
-                "Spoolman health check failed (url=%s, type=%s): %s",
-                self.api_url,
-                type(e).__name__,
-                e,
-            )
+            logger.warning("Spoolman health check failed: %s", e)
             self._connected = False
             return False
 
@@ -132,7 +117,17 @@ class SpoolmanClient:
         return self._connected
 
     async def get_spools(self) -> list[dict]:
-        """Fetch all spools from Spoolman with up to 3 retries on connection errors."""
+        """Get all spools from Spoolman with retry logic.
+
+        Attempts to fetch spools up to 3 times with 500ms delay between attempts.
+        This handles transient network errors like closed connections.
+
+        Returns:
+            List of spool dictionaries.
+
+        Raises:
+            Exception: If all 3 retry attempts fail.
+        """
         max_attempts = 3
         retry_delay = 0.5  # 500ms
 
@@ -160,7 +155,7 @@ class SpoolmanClient:
                     await asyncio.sleep(retry_delay)
                 else:
                     logger.error("Failed to get spools from Spoolman after %d attempts: %s", max_attempts, e)
-                    raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
+                    raise
             except Exception as e:
                 # Other errors (HTTP errors, JSON decode errors, etc.)
                 if attempt < max_attempts:
@@ -174,52 +169,14 @@ class SpoolmanClient:
                     await asyncio.sleep(retry_delay)
                 else:
                     logger.error("Failed to get spools from Spoolman after %d attempts: %s", max_attempts, e)
-                    raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
-
-    async def _get_with_retry(self, path: str, params: dict | None = None) -> list[dict]:
-        """GET a Spoolman JSON list endpoint with up to 3 retries on connection errors."""
-        max_attempts = 3
-        retry_delay = 0.5
-        url = f"{self.api_url}/{path.lstrip('/')}"
-
-        for attempt in range(1, max_attempts + 1):
-            try:
-                client = await self._get_client()
-                response = await client.get(url, params=params or None)
-                response.raise_for_status()
-                return response.json()
-            except (httpx.ReadError, httpx.RemoteProtocolError, httpx.ConnectError) as e:
-                if attempt < max_attempts:
-                    logger.warning(
-                        "Connection error fetching %s (attempt %d/%d): %s. Recreating client and retrying in %dms...",
-                        path,
-                        attempt,
-                        max_attempts,
-                        e,
-                        int(retry_delay * 1000),
-                    )
-                    await self.close()
-                    await asyncio.sleep(retry_delay)
-                else:
-                    logger.error("Failed to fetch %s from Spoolman after %d attempts: %s", path, max_attempts, e)
-                    raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
-            except Exception as e:
-                if attempt < max_attempts:
-                    logger.warning(
-                        "Failed to fetch %s from Spoolman (attempt %d/%d): %s. Retrying in %dms...",
-                        path,
-                        attempt,
-                        max_attempts,
-                        e,
-                        int(retry_delay * 1000),
-                    )
-                    await asyncio.sleep(retry_delay)
-                else:
-                    logger.error("Failed to fetch %s from Spoolman after %d attempts: %s", path, max_attempts, e)
-                    raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
+                    raise
 
     async def get_filaments(self) -> list[dict]:
-        """Fetch all internal filaments from Spoolman."""
+        """Get all internal filaments from Spoolman.
+
+        Returns:
+            List of filament dictionaries.
+        """
         try:
             client = await self._get_client()
             response = await client.get(f"{self.api_url}/filament")
@@ -227,17 +184,14 @@ class SpoolmanClient:
             return response.json()
         except Exception as e:
             logger.error("Failed to get filaments from Spoolman: %s", e)
-            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
-
-    async def get_filament(self, filament_id: int) -> dict:
-        """Fetch a single filament by ID from Spoolman."""
-        if filament_id <= 0:
-            raise ValueError(f"Invalid filament_id: {filament_id}")
-        response = await self._request_filament("GET", filament_id, operation="get_filament")
-        return response.json()
+            return []
 
     async def get_external_filaments(self) -> list[dict]:
-        """Fetch external/library filaments from Spoolman."""
+        """Get external/library filaments from Spoolman.
+
+        Returns:
+            List of external filament dictionaries.
+        """
         try:
             client = await self._get_client()
             response = await client.get(f"{self.api_url}/external/filament")
@@ -245,10 +199,14 @@ class SpoolmanClient:
             return response.json()
         except Exception as e:
             logger.error("Failed to get external filaments from Spoolman: %s", e)
-            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
+            return []
 
     async def get_vendors(self) -> list[dict]:
-        """Fetch all vendors from Spoolman."""
+        """Get all vendors from Spoolman.
+
+        Returns:
+            List of vendor dictionaries.
+        """
         try:
             client = await self._get_client()
             response = await client.get(f"{self.api_url}/vendor")
@@ -256,28 +214,35 @@ class SpoolmanClient:
             return response.json()
         except Exception as e:
             logger.error("Failed to get vendors from Spoolman: %s", e)
-            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
+            return []
 
-    async def create_vendor(self, name: str) -> dict:
-        """Create a new vendor in Spoolman."""
+    async def create_vendor(self, name: str) -> dict | None:
+        """Create a new vendor in Spoolman.
+
+        Args:
+            name: Vendor name (e.g., "Bambu Lab")
+
+        Returns:
+            Created vendor dictionary or None on failure.
+        """
         try:
             client = await self._get_client()
             response = await client.post(f"{self.api_url}/vendor", json={"name": name})
-            if 400 <= response.status_code < 500:
-                raise SpoolmanClientError(
-                    f"Spoolman rejected vendor creation (HTTP {response.status_code})",
-                    response.status_code,
-                )
             response.raise_for_status()
             return response.json()
-        except SpoolmanClientError:
-            raise
         except Exception as e:
             logger.error("Failed to create vendor in Spoolman: %s", e)
-            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
+            return None
 
     def _get_material_density(self, material: str | None) -> float:
-        """Return typical density (g/cm³) for the given filament material; defaults to PLA (1.24)."""
+        """Get typical density for a filament material type.
+
+        Args:
+            material: Material type (PLA, PETG, ABS, etc.)
+
+        Returns:
+            Density in g/cm³
+        """
         # Typical densities for common filament materials
         densities = {
             "PLA": 1.24,
@@ -309,59 +274,61 @@ class SpoolmanClient:
         vendor_id: int | None = None,
         material: str | None = None,
         color_hex: str | None = None,
-        color_name: str | None = None,
         weight: float | None = None,
         diameter: float = 1.75,
         density: float | None = None,
-    ) -> dict:
-        """Create a new filament in Spoolman."""
+    ) -> dict | None:
+        """Create a new filament in Spoolman.
+
+        Args:
+            name: Filament name
+            vendor_id: Vendor ID
+            material: Material type (PLA, PETG, etc.)
+            color_hex: Color in hex format (without #)
+            weight: Net weight in grams
+            diameter: Filament diameter in mm (default 1.75)
+            density: Filament density in g/cm³ (auto-calculated if not provided)
+
+        Returns:
+            Created filament dictionary or None on failure.
+        """
+        # Validate required fields
         if not name or not name.strip():
-            raise ValueError("Filament name is required")
+            logger.error("Cannot create filament: name is required")
+            return None
 
-        if density is None:
-            density = self._get_material_density(material)
-
-        data: dict = {
-            "name": name.strip(),
-            "diameter": diameter,
-            "density": density,
-        }
-        if vendor_id:
-            data["vendor_id"] = vendor_id
-        if material:
-            data["material"] = material
-        if color_hex:
-            # Strip alpha channel if present (RRGGBBAA -> RRGGBB)
-            color_hex = color_hex[:6] if len(color_hex) >= 6 else color_hex
-            data["color_hex"] = color_hex
-        if color_name:
-            data["color_name"] = color_name
-        if weight:
-            data["weight"] = weight
-
-        logger.debug("Creating filament in Spoolman: %s", data)
         try:
+            # Calculate density from material if not provided
+            if density is None:
+                density = self._get_material_density(material)
+
+            data = {
+                "name": name.strip(),
+                "diameter": diameter,
+                "density": density,
+            }
+            if vendor_id:
+                data["vendor_id"] = vendor_id
+            if material:
+                data["material"] = material
+            if color_hex:
+                # Strip alpha channel if present (RRGGBBAA -> RRGGBB)
+                color_hex = color_hex[:6] if len(color_hex) >= 6 else color_hex
+                data["color_hex"] = color_hex
+            if weight:
+                data["weight"] = weight
+
+            logger.debug("Creating filament in Spoolman: %s", data)
             client = await self._get_client()
             response = await client.post(f"{self.api_url}/filament", json=data)
-            if 400 <= response.status_code < 500:
-                raise SpoolmanClientError(
-                    f"Spoolman rejected filament creation (HTTP {response.status_code})",
-                    response.status_code,
-                )
             response.raise_for_status()
             return response.json()
-        except SpoolmanClientError:
-            raise
+        except httpx.HTTPStatusError as e:
+            logger.error("Failed to create filament in Spoolman: %s, response: %s", e, e.response.text)
+            return None
         except Exception as e:
             logger.error("Failed to create filament in Spoolman: %s", e)
-            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
-
-    async def patch_filament(self, filament_id: int, data: dict) -> dict:
-        """PATCH a filament entry in Spoolman (e.g. update name or spool_weight)."""
-        if filament_id <= 0:
-            raise ValueError(f"Invalid filament_id: {filament_id}")
-        response = await self._request_filament("PATCH", filament_id, json_body=data, operation="patch_filament")
-        return response.json()
+            return None
 
     async def create_spool(
         self,
@@ -371,40 +338,46 @@ class SpoolmanClient:
         lot_nr: str | None = None,
         comment: str | None = None,
         extra: dict | None = None,
-    ) -> dict:
-        """Create a new spool in Spoolman."""
-        data: dict = {"filament_id": filament_id}
-        if remaining_weight is not None:
-            data["remaining_weight"] = remaining_weight
-        if location:
-            data["location"] = location
-        if lot_nr:
-            data["lot_nr"] = lot_nr
-        if comment:
-            data["comment"] = comment
-        if extra:
-            data["extra"] = extra
+    ) -> dict | None:
+        """Create a new spool in Spoolman.
 
-        logger.debug("Creating spool in Spoolman: %s", data)
+        Args:
+            filament_id: ID of the filament type
+            remaining_weight: Remaining weight in grams
+            location: Physical location description
+            lot_nr: Lot/batch number
+            comment: Optional comment
+            extra: Extra fields (e.g., {"tag": "RFID_TAG_UID"})
+
+        Returns:
+            Created spool dictionary or None on failure.
+        """
         try:
+            data = {"filament_id": filament_id}
+            if remaining_weight is not None:
+                data["remaining_weight"] = remaining_weight
+            if location:
+                data["location"] = location
+            if lot_nr:
+                data["lot_nr"] = lot_nr
+            if comment:
+                data["comment"] = comment
+            if extra:
+                data["extra"] = extra
+
+            logger.debug("Creating spool in Spoolman: %s", data)
             client = await self._get_client()
             response = await client.post(f"{self.api_url}/spool", json=data)
-            if response.status_code == 404:
-                raise SpoolmanNotFoundError(f"Filament {filament_id} not found in Spoolman")
-            if 400 <= response.status_code < 500:
-                raise SpoolmanClientError(
-                    f"Spoolman rejected spool creation (HTTP {response.status_code})",
-                    response.status_code,
-                )
             response.raise_for_status()
             result = response.json()
             logger.info("Created spool %s in Spoolman", result.get("id"))
             return result
-        except (SpoolmanNotFoundError, SpoolmanClientError):
-            raise
+        except httpx.HTTPStatusError as e:
+            logger.error("Failed to create spool in Spoolman: %s, response: %s", e, e.response.text)
+            return None
         except Exception as e:
             logger.error("Failed to create spool in Spoolman: %s", e)
-            raise SpoolmanUnavailableError("Cannot reach Spoolman") from e
+            return None
 
     async def update_spool(
         self,
@@ -413,270 +386,73 @@ class SpoolmanClient:
         location: str | None = None,
         clear_location: bool = False,
         extra: dict | None = None,
-    ) -> dict:
-        """Update an existing spool in Spoolman, always setting last_used."""
-        data: dict = {}
-        if remaining_weight is not None:
-            data["remaining_weight"] = remaining_weight
-        if clear_location:
-            data["location"] = None
-        elif location:
-            data["location"] = location
-        if extra:
-            data["extra"] = extra
-        data["last_used"] = datetime.now(timezone.utc).isoformat()
+    ) -> dict | None:
+        """Update an existing spool in Spoolman.
 
-        response = await self._request_spool("PATCH", spool_id, json_body=data, operation="update")
-        return response.json()
+        Args:
+            spool_id: ID of the spool to update
+            remaining_weight: New remaining weight in grams
+            location: New location (ignored if clear_location is True)
+            clear_location: If True, clears the location field
+            extra: Extra fields to update
 
-    async def _request_spool(
-        self,
-        method: Literal["GET", "PATCH", "DELETE"],
-        spool_id: int,
-        *,
-        json_body: dict | None = None,
-        operation: str,
-    ) -> httpx.Response:
-        """Perform a spool-scoped HTTP request, translating 404 and errors to named exceptions."""
+        Returns:
+            Updated spool dictionary or None on failure.
+        """
         try:
+            data = {}
+            if remaining_weight is not None:
+                data["remaining_weight"] = remaining_weight
+            if clear_location:
+                data["location"] = None
+            elif location:
+                data["location"] = location
+            if extra:
+                data["extra"] = extra
+
+            # Always update last_used
+            data["last_used"] = datetime.now(timezone.utc).isoformat()
+
             client = await self._get_client()
-            response = await client.request(
-                method,
-                f"{self.api_url}/spool/{spool_id}",
-                json=json_body,
-            )
-            if response.status_code == 404:
-                raise SpoolmanNotFoundError(f"Spool {spool_id} not found in Spoolman")
+            response = await client.patch(f"{self.api_url}/spool/{spool_id}", json=data)
             response.raise_for_status()
-            return response
-        except SpoolmanNotFoundError:
-            raise
-        except httpx.HTTPStatusError as e:
-            if 400 <= e.response.status_code < 500:
-                logger.warning(
-                    "Spoolman returned %d for %s spool %s",
-                    e.response.status_code,
-                    operation,
-                    spool_id,
-                )
-                raise SpoolmanClientError(
-                    f"Spoolman rejected {operation} for spool {spool_id} (HTTP {e.response.status_code})",
-                    e.response.status_code,
-                    e.response.text[:500],
-                ) from e
-            else:
-                logger.error("Failed to %s spool %s in Spoolman: %s", operation, spool_id, e)
-                raise SpoolmanUnavailableError(f"Failed to {operation} spool {spool_id}") from e
+            return response.json()
         except Exception as e:
-            logger.error("Failed to %s spool %s in Spoolman: %s", operation, spool_id, e)
-            raise SpoolmanUnavailableError(f"Failed to {operation} spool {spool_id}") from e
+            logger.error("Failed to update spool in Spoolman: %s", e)
+            return None
 
-    async def _request_filament(
-        self,
-        method: Literal["GET", "PATCH"],
-        filament_id: int,
-        *,
-        json_body: dict | None = None,
-        operation: str,
-    ) -> httpx.Response:
-        """Perform a filament-scoped HTTP request, translating 404 and errors to named exceptions."""
-        try:
-            client = await self._get_client()
-            response = await client.request(
-                method,
-                f"{self.api_url}/filament/{filament_id}",
-                json=json_body,
-            )
-            if response.status_code == 404:
-                raise SpoolmanNotFoundError(f"Filament {filament_id} not found in Spoolman")
-            response.raise_for_status()
-            return response
-        except SpoolmanNotFoundError:
-            raise
-        except httpx.HTTPStatusError as e:
-            if 400 <= e.response.status_code < 500:
-                logger.warning(
-                    "Spoolman returned %d for %s filament %s",
-                    e.response.status_code,
-                    operation,
-                    filament_id,
-                )
-                raise SpoolmanClientError(
-                    f"Spoolman rejected {operation} for filament {filament_id} (HTTP {e.response.status_code})",
-                    e.response.status_code,
-                    e.response.text[:500],
-                ) from e
-            else:
-                logger.error("Failed to %s filament %s in Spoolman: %s", operation, filament_id, e)
-                raise SpoolmanUnavailableError(f"Failed to {operation} filament {filament_id}") from e
-        except Exception as e:
-            logger.error("Failed to %s filament %s in Spoolman: %s", operation, filament_id, e)
-            raise SpoolmanUnavailableError(f"Failed to {operation} filament {filament_id}") from e
+    async def use_spool(self, spool_id: int, used_weight: float) -> dict | None:
+        """Record filament usage for a spool.
 
-    async def get_spool(self, spool_id: int) -> dict:
-        """Fetch a single spool by ID from Spoolman."""
-        response = await self._request_spool("GET", spool_id, operation="get")
-        return response.json()
+        Args:
+            spool_id: ID of the spool
+            used_weight: Amount of filament used in grams
 
-    async def get_all_spools(self, allow_archived: bool = False) -> list[dict]:
-        """Fetch all spools from Spoolman with retry, optionally including archived ones."""
-        params: dict = {}
-        if allow_archived:
-            params["allow_archived"] = "true"
-        return await self._get_with_retry("/spool", params=params or None)
-
-    async def delete_spool(self, spool_id: int) -> None:
-        """Delete a spool from Spoolman."""
-        await self._request_spool("DELETE", spool_id, operation="delete")
-
-    async def set_spool_archived(self, spool_id: int, archived: bool) -> dict:
-        """Archive or restore a spool in Spoolman."""
-        response = await self._request_spool(
-            "PATCH",
-            spool_id,
-            json_body={"archived": archived},
-            operation="archive/restore",
-        )
-        return response.json()
-
-    async def update_spool_full(
-        self,
-        spool_id: int,
-        *,
-        filament_id: int | None = None,
-        remaining_weight: float | None = None,
-        comment: str | None = None,
-        price: float | None = None,
-        location: str | None = None,
-        clear_location: bool = False,
-        extra: dict | None = None,
-        spool_weight: float | None = None,
-        clear_spool_weight: bool = False,
-    ) -> dict:
-        """Update a spool with full field support; unlike update_spool, does not auto-set last_used."""
-        data: dict = {}
-        if filament_id is not None:
-            data["filament_id"] = filament_id
-        if remaining_weight is not None:
-            data["remaining_weight"] = remaining_weight
-        if comment is not None:
-            data["comment"] = comment if comment else None
-        if price is not None:
-            data["price"] = price
-        if clear_location:
-            data["location"] = None
-        elif location is not None:
-            data["location"] = location
-        if extra is not None:
-            data["extra"] = extra
-        if clear_spool_weight:
-            data["spool_weight"] = None
-        elif spool_weight is not None:
-            data["spool_weight"] = spool_weight
-
-        response = await self._request_spool("PATCH", spool_id, json_body=data, operation="update")
-        return response.json()
-
-    def extra_lock(self, spool_id: int) -> asyncio.Lock:
-        """Return (creating if needed) the per-spool asyncio.Lock used by merge_spool_extra."""
-        lock = self._extra_locks.get(spool_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._extra_locks[spool_id] = lock
-        return lock
-
-    async def merge_spool_extra(self, spool_id: int, new_fields: dict) -> dict:
-        """Fetch the spool's extra dict, merge new_fields into it, then PATCH back — serialised per spool."""
-        async with self.extra_lock(spool_id):
-            current = await self.get_spool(spool_id)  # raises on error
-            current_extra: dict = current.get("extra") or {}
-            merged = {**current_extra, **new_fields}
-            return await self.update_spool_full(spool_id=spool_id, extra=merged)
-
-    async def find_or_create_vendor(self, name: str) -> int:
-        """Return the Spoolman vendor ID for the given name, creating the vendor if absent."""
-        vendors = await self.get_vendors()
-        name_lower = name.strip().lower()
-        for vendor in vendors:
-            if vendor.get("name", "").strip().lower() == name_lower:
-                return vendor["id"]
-        created = await self.create_vendor(name.strip())
-        vendor_id = created.get("id")
-        if not vendor_id:
-            raise SpoolmanUnavailableError(f"Spoolman returned vendor without id field: {list(created.keys())}")
-        return vendor_id
-
-    async def find_or_create_filament(
-        self,
-        material: str,
-        subtype: str,
-        brand: str | None,
-        color_hex: str,
-        label_weight: int,
-        color_name: str | None = None,
-    ) -> int:
-        """Return the filament ID matching material/name/brand/color, creating it if absent."""
-        name = f"{material} {subtype}".strip() if subtype else material
-        color = color_hex[:6].upper() if len(color_hex) >= 6 else color_hex.upper()
-
-        vendor_id: int | None = None
-        if brand:
-            vendor_id = await self.find_or_create_vendor(brand)
-
-        filaments = await self.get_filaments()
-        for f in filaments:
-            f_material = (f.get("material") or "").upper()
-            f_name = (f.get("name") or "").strip()
-            f_color = (f.get("color_hex") or "").upper()[:6]
-            f_vendor = f.get("vendor") or {}
-            f_vendor_name = (f_vendor.get("name") or "").strip().lower()
-
-            material_match = f_material == material.upper()
-            name_match = f_name.lower() == name.lower()
-            color_match = f_color == color
-            vendor_match = (not brand) or f_vendor_name == (brand or "").strip().lower()
-
-            if material_match and name_match and color_match and vendor_match:
-                return f["id"]
-
-        filament = await self.create_filament(
-            name=name,
-            vendor_id=vendor_id,
-            material=material,
-            color_hex=color,
-            color_name=color_name,
-            weight=float(label_weight),
-        )
-        filament_id = filament.get("id")
-        if not filament_id:
-            raise SpoolmanUnavailableError(f"Spoolman returned filament without id field: {list(filament.keys())}")
-        return filament_id
-
-    async def use_spool(self, spool_id: int, used_weight: float) -> dict:
-        """Record filament usage for a spool via the Spoolman /use endpoint."""
+        Returns:
+            Updated spool dictionary or None on failure.
+        """
         try:
             client = await self._get_client()
             response = await client.put(
                 f"{self.api_url}/spool/{spool_id}/use",
                 json={"use_weight": used_weight},
             )
-            if response.status_code == 404:
-                raise SpoolmanNotFoundError(f"Spool {spool_id} not found in Spoolman")
-            if 400 <= response.status_code < 500:
-                raise SpoolmanClientError(
-                    f"Spoolman rejected use_spool for spool {spool_id} (HTTP {response.status_code})",
-                    response.status_code,
-                )
             response.raise_for_status()
             return response.json()
-        except (SpoolmanNotFoundError, SpoolmanClientError):
-            raise
         except Exception as e:
             logger.error("Failed to record spool usage in Spoolman: %s", e)
-            raise SpoolmanUnavailableError(f"Failed to record usage for spool {spool_id}") from e
+            return None
 
     async def find_spool_by_tag(self, tag_uid: str, cached_spools: list[dict] | None = None) -> dict | None:
-        """Return the spool matching the given RFID tag UID, or None if not found."""
+        """Find a spool by its RFID tag UID.
+
+        Args:
+            tag_uid: The RFID tag UID to search for
+            cached_spools: Optional pre-fetched list of spools to search (avoids API call)
+
+        Returns:
+            Spool dictionary or None if not found.
+        """
         # Use cached spools if provided, otherwise fetch from API
         spools = cached_spools if cached_spools is not None else await self.get_spools()
         # Normalize tag_uid for comparison (uppercase, strip quotes)
@@ -695,7 +471,18 @@ class SpoolmanClient:
         return None
 
     def _find_spool_by_location(self, location: str, cached_spools: list[dict] | None) -> dict | None:
-        """Return the spool at the exact location string, or None; fallback when RFID is unavailable."""
+        """Find a spool by exact location match.
+
+        Used as fallback when RFID tag data is unavailable (e.g., newer firmware
+        that doesn't expose tray_uuid/tag_uid via MQTT).
+
+        Args:
+            location: Exact location string (e.g., "H2D-1 - AMS A1")
+            cached_spools: Pre-fetched list of spools to search
+
+        Returns:
+            Spool dictionary or None if not found.
+        """
         if not cached_spools:
             return None
         for spool in cached_spools:
@@ -706,7 +493,15 @@ class SpoolmanClient:
     async def find_spools_by_location_prefix(
         self, location_prefix: str, cached_spools: list[dict] | None = None
     ) -> list[dict]:
-        """Return all spools whose location starts with location_prefix."""
+        """Find all spools with locations starting with a given prefix.
+
+        Args:
+            location_prefix: The location prefix to search for (e.g., "PrinterName - ")
+            cached_spools: Optional pre-fetched list of spools to search (avoids API call)
+
+        Returns:
+            List of spool dictionaries with matching locations.
+        """
         # Use cached spools if provided, otherwise fetch from API
         spools = cached_spools if cached_spools is not None else await self.get_spools()
         matching = []
@@ -723,7 +518,23 @@ class SpoolmanClient:
         cached_spools: list[dict] | None = None,
         synced_spool_ids: set[int] | None = None,
     ) -> int:
-        """Clear location for Bambu Lab spools at this printer whose tray_uuid is no longer in the AMS."""
+        """Clear location for spools that are no longer in the AMS.
+
+        When a spool is removed from the AMS, its location should be cleared
+        in Spoolman. This method finds all spools with locations for this printer
+        and clears the location for any that are not in the current_tray_uuids set
+        and were not synced in this cycle (synced_spool_ids).
+
+        Args:
+            printer_name: The printer name used as location prefix
+            current_tray_uuids: Set of tray_uuids currently in the AMS
+            cached_spools: Optional pre-fetched list of spools to search (avoids API call)
+            synced_spool_ids: Set of spool IDs that were synced in this cycle
+                (protects location-matched spools when RFID data is unavailable)
+
+        Returns:
+            Number of spools whose location was cleared.
+        """
         location_prefix = f"{printer_name} - "
         spools_at_printer = await self.find_spools_by_location_prefix(location_prefix, cached_spools=cached_spools)
         cleared_count = 0
@@ -761,7 +572,11 @@ class SpoolmanClient:
         return cleared_count
 
     async def ensure_bambu_vendor(self) -> int | None:
-        """Return the Bambu Lab vendor ID in Spoolman, creating the vendor if absent."""
+        """Ensure Bambu Lab vendor exists and return its ID.
+
+        Returns:
+            Vendor ID or None on failure.
+        """
         vendors = await self.get_vendors()
         for vendor in vendors:
             if vendor.get("name", "").lower() == "bambu lab":
@@ -772,51 +587,51 @@ class SpoolmanClient:
         return vendor["id"] if vendor else None
 
     async def ensure_tag_extra_field(self) -> bool:
-        """Register the 'tag' extra field in Spoolman if not present; returns True on success."""
-        return await self.ensure_extra_field("tag")
+        """Ensure the 'tag' extra field exists for spools.
 
-    async def ensure_extra_field(self, name: str, field_type: str = "text") -> bool:
-        """Register a custom extra field in Spoolman if not present.
+        Spoolman requires extra fields to be registered before use.
+        This creates the 'tag' field used to store RFID/UUID identifiers.
 
-        Spoolman rejects PATCH requests that include unknown extra-dict keys
-        with HTTP 400 ('Unknown extra field <name>.'), so any custom field
-        Bambuddy persists alongside spools needs to be pre-registered.
-        Idempotent — returns True if the field already exists.
+        Returns:
+            True if field exists or was created, False on failure.
         """
         try:
             client = await self._get_client()
 
             # Check if field already exists
-            response = await client.get(f"{self.api_url}/field/spool/{name}")
+            response = await client.get(f"{self.api_url}/field/spool/tag")
             if response.status_code == 200:
-                logger.debug("Spoolman extra field %r already exists", name)
+                logger.debug("Spoolman 'tag' extra field already exists")
                 return True
 
             # Field doesn't exist - create it
             field_data = {
-                "name": name,
-                "field_type": field_type,
+                "name": "tag",
+                "field_type": "text",
                 "default_value": None,
             }
-            response = await client.post(f"{self.api_url}/field/spool/{name}", json=field_data)
+            response = await client.post(f"{self.api_url}/field/spool/tag", json=field_data)
             if response.status_code in (200, 201):
-                logger.info("Created Spoolman extra field %r", name)
+                logger.info("Created 'tag' extra field in Spoolman")
                 return True
 
-            logger.warning(
-                "Failed to create Spoolman extra field %r: %s - %s",
-                name,
-                response.status_code,
-                response.text,
-            )
+            logger.warning("Failed to create 'tag' extra field: %s - %s", response.status_code, response.text)
             return False
 
         except Exception as e:
-            logger.warning("Failed to ensure Spoolman extra field %r exists: %s", name, e)
+            logger.warning("Failed to ensure 'tag' extra field exists: %s", e)
             return False
 
     def parse_ams_tray(self, ams_id: int, tray_data: dict) -> AMSTray | None:
-        """Parse raw MQTT tray data into an AMSTray; returns None for empty or invalid trays."""
+        """Parse AMS tray data into AMSTray object.
+
+        Args:
+            ams_id: The AMS unit ID (0-3 for regular, 128-135 for AMS-HT, 254+ for external)
+            tray_data: Raw tray data from MQTT
+
+        Returns:
+            AMSTray object or None if tray is empty or invalid.
+        """
         # Skip empty trays - check for valid tray_type
         tray_type = tray_data.get("tray_type", "")
         if not tray_type or tray_type.strip() == "":
@@ -866,7 +681,15 @@ class SpoolmanClient:
         )
 
     def convert_ams_slot_to_location(self, ams_id: int, tray_id: int) -> str:
-        """Return a human-readable location string (e.g. "AMS A1") for the given AMS slot."""
+        """Convert AMS ID and tray ID to human-readable location.
+
+        Args:
+            ams_id: AMS unit ID (0-3 for regular AMS, 128-135 for AMS-HT, 254+ for external spool)
+            tray_id: Tray ID within the AMS (0-3)
+
+        Returns:
+            Location string like "AMS A1", "AMS-HT A1", "External Spool", etc.
+        """
         if ams_id >= 254:
             return "External Spool"
 
@@ -879,7 +702,24 @@ class SpoolmanClient:
         return f"AMS {ams_letter}{tray_id + 1}"
 
     def is_bambu_lab_spool(self, tray_uuid: str, tag_uid: str = "", tray_info_idx: str = "") -> bool:
-        """Return True if tray_uuid or tag_uid identifies a Bambu Lab spool; tray_info_idx is ignored."""
+        """Check if a tray has a valid Bambu Lab spool.
+
+        Bambu Lab spools are identified by hardware RFID identifiers only:
+        1. tray_uuid: 32-character hex string (preferred, consistent across printers)
+        2. tag_uid: 16-character hex string (RFID tag, varies between readers)
+
+        Note: tray_info_idx (e.g. "GFA00") is NOT a reliable indicator — third-party
+        spools using Bambu generic presets also have GF-prefixed tray_info_idx values.
+        The tray_info_idx parameter is kept for API compatibility but ignored.
+
+        Args:
+            tray_uuid: The tray UUID to check (32 hex chars)
+            tag_uid: The RFID tag UID to check as fallback (16 hex chars)
+            tray_info_idx: Ignored (kept for API compatibility)
+
+        Returns:
+            True if the spool has valid Bambu Lab RFID identifiers, False otherwise.
+        """
         # Check tray_uuid (preferred - consistent across printer models)
         if tray_uuid:
             uuid = tray_uuid.strip()
@@ -905,7 +745,15 @@ class SpoolmanClient:
         return False
 
     def calculate_remaining_weight(self, remain_percent: int, spool_weight: int) -> float:
-        """Return remaining filament weight in grams given a percentage and total spool weight."""
+        """Calculate remaining weight from percentage.
+
+        Args:
+            remain_percent: Remaining percentage (0-100)
+            spool_weight: Total spool weight in grams
+
+        Returns:
+            Remaining weight in grams.
+        """
         return (remain_percent / 100.0) * spool_weight
 
     async def sync_ams_tray(
@@ -915,15 +763,46 @@ class SpoolmanClient:
         disable_weight_sync: bool = False,
         cached_spools: list[dict] | None = None,
         inventory_remaining: float | None = None,
-        spoolman_spool_id_hint: int | None = None,
     ) -> dict | None:
-        """Sync one AMS tray to Spoolman; creates the spool on first sight, updates weight otherwise."""
+        """Sync a single AMS tray to Spoolman.
+
+        Only syncs trays with valid Bambu Lab tray_uuid (32 hex characters).
+        Non-Bambu Lab spools (SpoolEase/third-party) are skipped.
+
+        Uses tray_uuid for matching, as it's consistent across all printer models
+        (unlike tag_uid which varies between X1C/H2D readers).
+
+        Args:
+            tray: The AMSTray to sync
+            printer_name: Name of the printer for location
+            disable_weight_sync: If True, skip updating remaining_weight for existing spools.
+                This allows Spoolman's granular usage tracking to maintain accurate weights.
+            cached_spools: Optional pre-fetched list of spools to search (avoids API calls).
+                When provided, this cache is passed to find_spool_by_tag to avoid redundant
+                API calls during batch sync operations.
+            inventory_remaining: Optional fallback remaining weight (grams) from the built-in
+                inventory when AMS MQTT data has invalid remain/tray_weight values.
+
+        Returns:
+            Synced spool dictionary or None if skipped or failed.
+        """
         logger.debug(
             f"Processing {printer_name} AMS {tray.ams_id} tray {tray.tray_id}: "
             f"type={tray.tray_type}, idx={tray.tray_info_idx or 'none'}, "
             f"uuid={tray.tray_uuid[:16] if tray.tray_uuid else 'none'}, "
             f"tag={tray.tag_uid[:8] if tray.tag_uid else 'none'}..."
         )
+
+        # Only sync trays with valid Bambu Lab identifiers
+        if not self.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
+            if tray.tray_uuid or tray.tag_uid or tray.tray_info_idx:
+                logger.info(
+                    f"Skipping non-Bambu Lab spool: {printer_name} AMS {tray.ams_id} tray {tray.tray_id} "
+                    f"(tray_info_idx={tray.tray_info_idx}, tray_uuid={tray.tray_uuid}, tag_uid={tray.tag_uid})"
+                )
+            else:
+                logger.debug("Skipping tray without RFID tag: AMS %s tray %s", tray.ams_id, tray.tray_id)
+            return None
 
         # Determine which identifier to use for Spoolman (prefer tray_uuid, fallback to tag_uid)
         # Zero-filled values mean the AMS hasn't read the RFID tag — treat as no tag
@@ -951,6 +830,7 @@ class SpoolmanClient:
             )
         else:
             remaining = None
+        location = f"{printer_name} - {self.convert_ams_slot_to_location(tray.ams_id, tray.tray_id)}"
 
         if spool_tag:
             # Primary path: match by RFID tag
@@ -960,70 +840,61 @@ class SpoolmanClient:
                 return await self.update_spool(
                     spool_id=existing["id"],
                     remaining_weight=None if disable_weight_sync else remaining,
+                    location=location,
                 )
 
             # Spool not found by tag - auto-create it
             logger.info("Creating new spool in Spoolman for %s (tag: %s...)", tray.tray_sub_brands, spool_tag[:16])
-            if self.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
-                filament = await self._find_or_create_filament(tray)
-                filament_id = filament["id"] if filament else None
-            else:
-                # Non-BL spool with custom RFID: use generic vendor lookup
-                brand = tray.tray_sub_brands if tray.tray_sub_brands != tray.tray_type else None
-                try:
-                    filament_id = await self.find_or_create_filament(
-                        material=tray.tray_type,
-                        subtype="",
-                        brand=brand,
-                        color_hex=tray.tray_color[:6],
-                        label_weight=tray.tray_weight,
-                    )
-                except (SpoolmanNotFoundError, SpoolmanUnavailableError, SpoolmanClientError):
-                    logger.warning("Could not find or create filament for non-BL spool %s", tray.tray_sub_brands)
-                    return None
-
-            if not filament_id:
+            filament = await self._find_or_create_filament(tray)
+            if not filament:
                 logger.error("Failed to find or create filament for %s", tray.tray_sub_brands)
                 return None
 
             import json
 
             return await self.create_spool(
-                filament_id=filament_id,
+                filament_id=filament["id"],
                 remaining_weight=remaining,
+                location=location,
                 comment="Created by Bambuddy",
                 extra={"tag": json.dumps(spool_tag)},
             )
 
-        # No-RFID fallback: use the spool ID resolved from the local slot-assignment table.
-        # Never create new spools without a tag to avoid duplicates.
-        if spoolman_spool_id_hint is not None:
-            existing = next((s for s in (cached_spools or []) if s.get("id") == spoolman_spool_id_hint), None)
-            if existing is None:
-                try:
-                    existing = await self.get_spool(spoolman_spool_id_hint)
-                except (SpoolmanNotFoundError, SpoolmanUnavailableError):
-                    existing = None
-            if existing:
-                logger.info(
-                    "Updating spool %s by slot-assignment hint (no RFID tag available)",
-                    existing["id"],
-                )
-                return await self.update_spool(
-                    spool_id=existing["id"],
-                    remaining_weight=None if disable_weight_sync else remaining,
-                )
+        # Fallback path: no RFID tag available (newer firmware may not expose UUIDs)
+        # Only update existing spools matched by location — never create new ones without a tag
+        # to avoid duplicates when old spools exist from previous RFID-based syncs
+        existing = self._find_spool_by_location(location, cached_spools)
+        if existing:
+            logger.info(
+                "Updating spool %s by location match '%s' (no RFID tag available)",
+                existing["id"],
+                location,
+            )
+            return await self.update_spool(
+                spool_id=existing["id"],
+                remaining_weight=None if disable_weight_sync else remaining,
+                location=location,
+            )
 
         logger.info(
-            "%s AMS %s tray %s — skipping (no RFID tag and no slot-assignment hint)",
-            printer_name,
-            tray.ams_id,
-            tray.tray_id,
+            "No existing spool found at '%s' — skipping (no RFID tag to create with)",
+            location,
         )
         return None
 
     async def _find_or_create_filament(self, tray: AMSTray) -> dict | None:
-        """Return a Bambu Lab filament matching the tray's material/color, creating it if absent."""
+        """Find existing filament or create new one.
+
+        Only matches Bambu Lab vendor filaments since this is called for
+        Bambu Lab spools. Third-party filaments (like 3DJAKE) are ignored
+        to prevent incorrect matching by color alone.
+
+        Args:
+            tray: The AMSTray containing filament info
+
+        Returns:
+            Filament dictionary or None on failure.
+        """
         # Get Bambu Lab vendor ID for filtering
         bambu_vendor_id = await self.ensure_bambu_vendor()
         color_hex = tray.tray_color[:6]  # Strip alpha channel
@@ -1061,7 +932,15 @@ class SpoolmanClient:
         )
 
     async def _create_filament_from_external(self, external: dict, tray: AMSTray) -> dict | None:
-        """Create an internal Spoolman filament from an external library entry."""
+        """Create internal filament from external library entry.
+
+        Args:
+            external: External filament dictionary
+            tray: The AMSTray for additional info
+
+        Returns:
+            Created filament dictionary or None on failure.
+        """
         vendor_id = await self.ensure_bambu_vendor()
         return await self.create_filament(
             name=external.get("name", tray.tray_sub_brands),
@@ -1077,16 +956,23 @@ _spoolman_client: SpoolmanClient | None = None
 
 
 async def get_spoolman_client() -> SpoolmanClient | None:
-    """Return the global SpoolmanClient, or None if not configured."""
+    """Get the global Spoolman client instance.
+
+    Returns:
+        SpoolmanClient instance or None if not configured.
+    """
     return _spoolman_client
 
 
 async def init_spoolman_client(url: str) -> SpoolmanClient:
-    """Initialise (or reinitialise) the global SpoolmanClient; raises ValueError if url fails SSRF guard."""
-    from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
+    """Initialize the global Spoolman client.
 
-    assert_safe_spoolman_url(url)
+    Args:
+        url: Spoolman server URL
 
+    Returns:
+        Initialized SpoolmanClient instance.
+    """
     global _spoolman_client
     if _spoolman_client:
         await _spoolman_client.close()

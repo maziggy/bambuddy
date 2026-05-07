@@ -274,4 +274,37 @@ describe('LabelTemplatePickerModal', () => {
     fireEvent.change(screen.getByPlaceholderText(/Search/i), { target: { value: 'zzz-no-match' } });
     expect(screen.getByText(/No spools match/i)).toBeInTheDocument();
   });
+
+  it('lets the spool list shrink (min-h-0) so all 4 templates and Cancel stay visible on short viewports (#1230)', () => {
+    // Regression for #1230: on viewports where 90vh is tight (Windows 11
+    // browser-chrome or DPI scaling), an explicit min-h on the spool list
+    // pinned it taller than the modal could give back to templates + footer,
+    // and `overflow-hidden` on the outer modal clipped the 4th template
+    // (Avery 5160) and the Cancel button. The fix is `min-h-0` so the
+    // flex-1 spool list can yield space when needed.
+    const { container } = render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[]}
+        spoolmanMode={false}
+      />,
+    );
+
+    // All 4 templates must be in the DOM, including the last one.
+    expect(screen.getByText(/AMS holder/i)).toBeInTheDocument();
+    expect(screen.getByText(/Box label/i)).toBeInTheDocument();
+    expect(screen.getByText(/Avery L7160/i)).toBeInTheDocument();
+    expect(screen.getByText(/Avery 5160/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
+
+    // Structural guard against the regression: the scrollable spool list
+    // must have `min-h-0` so flex shrinking actually works, and must NOT
+    // pin a fixed minimum height that prevents it.
+    const spoolListScroller = container.querySelector('div.flex-1.overflow-y-auto');
+    expect(spoolListScroller).not.toBeNull();
+    expect(spoolListScroller!.className).toContain('min-h-0');
+    expect(spoolListScroller!.className).not.toMatch(/min-h-\[\d/);
+  });
 });

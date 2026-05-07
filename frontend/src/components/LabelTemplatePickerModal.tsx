@@ -308,7 +308,7 @@ export function LabelTemplatePickerModal({
         </div>
 
         {/* Spool list */}
-        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-[160px]">
+        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-0">
           {visibleSpools.length === 0 ? (
             <div className="text-center text-sm text-bambu-gray py-6">
               {sortedSpools.length === 0

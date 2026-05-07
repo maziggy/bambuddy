@@ -91,17 +91,28 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     # across material families (A17-R1 is PLA Translucent Cherry Pink; A01-R1 is
     # PLA Matte Scarlet Red), so a suffix-based fallback would pick the wrong name.
     # See #857.
+    #
+    # Hex isn't unique either: #FFFFFF maps to "Jade White" (PLA Basic), "Ivory
+    # White" (PLA Matte), and "White" (PLA Silk) in the Bambu catalog. Filter by
+    # the printer-reported material variant (`tray_sub_brands`, e.g. "PLA Matte")
+    # so a new Ivory White roll doesn't get auto-named Jade White just because
+    # PLA Basic happens to come first in catalog insertion order. See #1227.
     rgba = tray_color if tray_color else None
     color_name = None
 
     if rgba and len(rgba) >= 6:
         hex_prefix = f"#{rgba[:6].upper()}"
-        cat_result = await db.execute(
+        cat_query = (
             select(ColorCatalogEntry)
             .where(func.upper(ColorCatalogEntry.hex_color) == hex_prefix)
             .where(func.upper(ColorCatalogEntry.manufacturer) == "BAMBU LAB")
-            .limit(1)
         )
+        if tray_sub_brands:
+            cat_query = cat_query.where(func.upper(ColorCatalogEntry.material) == tray_sub_brands.upper())
+        # Deterministic tiebreak when the material filter can't disambiguate
+        # (e.g. third-party spools with empty tray_sub_brands).
+        cat_query = cat_query.order_by(ColorCatalogEntry.id).limit(1)
+        cat_result = await db.execute(cat_query)
         entry = cat_result.scalar_one_or_none()
         if entry:
             color_name = entry.color_name

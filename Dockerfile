@@ -67,6 +67,15 @@ COPY .git/HEAD ./.git/HEAD
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/static ./static
 
+# Copy embedded GCode viewer static assets (PrettyGCode + Bambuddy adapter).
+# Served by the explicit @app.get("/gcode-viewer/{...}") routes in main.py,
+# which resolve files under (static_dir.parent / "gcode_viewer") = /app/gcode_viewer/.
+# Without this COPY the routes return a bare 404 at request time and the 3D
+# Preview iframe shows {"detail":"Not Found"} (see #1218). The directory is
+# vendored third-party JS — the Vite build does NOT stage it into static/,
+# the dev server serves it via a configureServer middleware that's dev-only.
+COPY gcode_viewer/ ./gcode_viewer/
+
 # Create data directories. Ownership is normalised at startup by the
 # entrypoint (chowns to PUID:PGID and drops privileges via gosu before
 # exec'ing the app), so we don't need a chmod 777 hack here — that was

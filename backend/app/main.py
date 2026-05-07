@@ -5180,6 +5180,19 @@ async def serve_sw_register():
 # to the /{full_path:path} catch-all in some Starlette versions).
 _gcode_viewer_dir = (app_settings.static_dir.parent / "gcode_viewer").resolve()
 
+# Surface packaging gaps at startup instead of as silent runtime 404s. If the
+# directory is missing the explicit @app.get("/gcode-viewer/...") routes below
+# return bare HTTPException(404) which renders as {"detail":"Not Found"} in
+# the 3D Preview iframe (#1218) — easy to miss in normal operation, easy to
+# spot if the operator scans the startup log or a support bundle.
+if not (_gcode_viewer_dir / "index.html").is_file():
+    logging.getLogger(__name__).error(
+        "Embedded GCode viewer assets missing at %s — /gcode-viewer/ will return 404 "
+        "and 3D Preview will fail. This indicates a packaging bug; the gcode_viewer/ "
+        "directory must be present alongside static/.",
+        _gcode_viewer_dir,
+    )
+
 
 def _gcode_viewer_response(rel: str) -> FileResponse:
     from fastapi import HTTPException as _HTTPException

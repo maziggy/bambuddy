@@ -1029,6 +1029,157 @@ async def test_color_name_is_none_when_catalog_miss_and_code_unreadable(db_sessi
 
 
 @pytest.mark.asyncio
+async def test_ivory_white_pla_matte_resolves_to_ivory_not_jade(db_session):
+    """Regression for #1227 — #FFFFFF is shared by Jade White (PLA Basic),
+    Ivory White (PLA Matte), and White (PLA Silk) in the Bambu catalog. The
+    matcher must filter by `tray_sub_brands` so a new Ivory White PLA Matte
+    roll doesn't auto-name as Jade White just because PLA Basic was inserted
+    first.
+    """
+    # Seed in the order from catalog_defaults.py — PLA Basic first.
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Jade White",
+            hex_color="#FFFFFF",
+            material="PLA Basic",
+            is_default=True,
+        )
+    )
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Ivory White",
+            hex_color="#FFFFFF",
+            material="PLA Matte",
+            is_default=True,
+        )
+    )
+    await db_session.flush()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Matte",
+        "tray_color": "FFFFFFFF",
+        "tray_id_name": "A01-W1",
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.color_name == "Ivory White", (
+        "PLA Matte White must resolve to 'Ivory White', not the PLA Basic 'Jade White' that shares the same hex"
+    )
+
+
+@pytest.mark.asyncio
+async def test_pla_silk_white_resolves_to_white_not_jade(db_session):
+    """Same shared-hex bug as #1227 but for the third collision: PLA Silk
+    White at #FFFFFF must not get the PLA Basic 'Jade White' name either.
+    """
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Jade White",
+            hex_color="#FFFFFF",
+            material="PLA Basic",
+            is_default=True,
+        )
+    )
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="White",
+            hex_color="#FFFFFF",
+            material="PLA Silk",
+            is_default=True,
+        )
+    )
+    await db_session.flush()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Silk",
+        "tray_color": "FFFFFFFF",
+        "tray_id_name": "A05-W0",
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.color_name == "White"
+
+
+@pytest.mark.asyncio
+async def test_jade_white_pla_basic_still_resolves_correctly(db_session):
+    """Happy-path regression guard for #1227: the PLA Basic Jade White case
+    that worked before the fix must still work after it. Catalog has all
+    three #FFFFFF entries; the PLA Basic spool must still get 'Jade White'.
+    """
+    for color_name, material in [
+        ("Jade White", "PLA Basic"),
+        ("Ivory White", "PLA Matte"),
+        ("White", "PLA Silk"),
+    ]:
+        db_session.add(
+            ColorCatalogEntry(
+                manufacturer="Bambu Lab",
+                color_name=color_name,
+                hex_color="#FFFFFF",
+                material=material,
+                is_default=True,
+            )
+        )
+    await db_session.flush()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tray_id_name": "A00-W0",
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.color_name == "Jade White"
+
+
+@pytest.mark.asyncio
+async def test_unknown_material_falls_back_to_hex_only_lookup(db_session):
+    """When `tray_sub_brands` is empty (third-party spool / OpenTag tag without
+    a Bambu material variant), the material filter is dropped and the lookup
+    falls back to hex-only. The deterministic ORDER BY keeps the result
+    reproducible across SQLite/PostgreSQL.
+    """
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Jade White",
+            hex_color="#FFFFFF",
+            material="PLA Basic",
+            is_default=True,
+        )
+    )
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Ivory White",
+            hex_color="#FFFFFF",
+            material="PLA Matte",
+            is_default=True,
+        )
+    )
+    await db_session.flush()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_type": "PLA",
+        "tray_sub_brands": "",  # third-party tag, no material variant
+        "tray_color": "FFFFFFFF",
+        "tray_id_name": "",
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    # Either is acceptable so long as the result is deterministic; the first-
+    # inserted row (Jade White) wins via ORDER BY id.
+    assert spool.color_name == "Jade White"
+
+
+@pytest.mark.asyncio
 async def test_color_name_falls_back_to_readable_tray_id_name(db_session):
     """If tray_id_name is a human-readable label (no code pattern), use it when the
     catalog has no entry for the hex. Preserves behavior for third-party spools whose

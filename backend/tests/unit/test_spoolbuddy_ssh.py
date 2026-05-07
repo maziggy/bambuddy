@@ -223,25 +223,30 @@ async def test_run_ssh_command_success(tmp_path):
     mock_result.stderr = ""
     mock_result.exit_status = 0
 
+    mock_server_key = MagicMock()
+    mock_server_key.export_public_key.return_value = b"ssh-ed25519 AAAA test"
+
     mock_conn = AsyncMock()
     mock_conn.run = AsyncMock(return_value=mock_result)
+    mock_conn.get_server_host_key = MagicMock(return_value=mock_server_key)
     mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_conn.__aexit__ = AsyncMock(return_value=False)
 
     with patch("backend.app.services.spoolbuddy_ssh.asyncssh.connect", return_value=mock_conn) as mock_connect:
-        rc, stdout, stderr = await _run_ssh_command("10.0.0.1", "echo hello", key_file)
+        rc, stdout, stderr, observed_key = await _run_ssh_command("10.0.0.1", "echo hello", key_file)
 
     assert rc == 0
     assert stdout == "hello\n"
     assert stderr == ""
+    # TOFU mode (no known_hosts): returns observed key
+    assert observed_key == "ssh-ed25519 AAAA test"
     kwargs = mock_connect.call_args.kwargs
     assert kwargs["host"] == "10.0.0.1"
     assert kwargs["username"] == "spoolbuddy"
     assert kwargs["client_keys"] == [str(key_file)]
-    # Host-key verification is disabled (equivalent to StrictHostKeyChecking=no)
+    # TOFU default: known_hosts=None on first connect
     assert kwargs["known_hosts"] is None
-    # ~/.ssh/config loading is disabled — HOME may not resolve under arbitrary
-    # Docker PUIDs.
+    # ~/.ssh/config loading is disabled — HOME may not resolve under arbitrary Docker PUIDs
     assert kwargs["config"] == []
     mock_conn.run.assert_awaited_once()
     run_args = mock_conn.run.call_args
@@ -251,12 +256,10 @@ async def test_run_ssh_command_success(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_run_ssh_command_no_subprocess(tmp_path):
-    """Regression guard: _run_ssh_command must not spawn any subprocess.
+async def test_run_ssh_command_with_known_hosts_skips_capture(tmp_path):
+    """When known_hosts is provided, observed_host_key must be None."""
+    import asyncssh
 
-    The whole point of switching to asyncssh is to avoid `ssh`/`ssh-keygen`
-    calling getpwuid() inside Docker containers with arbitrary PUIDs.
-    """
     key_file = tmp_path / "key"
     key_file.write_text("KEY")
 
@@ -267,6 +270,52 @@ async def test_run_ssh_command_no_subprocess(tmp_path):
 
     mock_conn = AsyncMock()
     mock_conn.run = AsyncMock(return_value=mock_result)
+    mock_conn.get_server_host_key = MagicMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+    fake_kh = MagicMock(spec=asyncssh.SSHKnownHosts)
+    with patch("backend.app.services.spoolbuddy_ssh.asyncssh.connect", return_value=mock_conn):
+        rc, _, _, observed_key = await _run_ssh_command("10.0.0.1", "echo hi", key_file, known_hosts=fake_kh)
+
+    assert rc == 0
+    assert observed_key is None
+    mock_conn.get_server_host_key.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_ssh_command_host_key_mismatch(tmp_path):
+    """HostKeyNotVerifiable must surface as rc=255 with a safe message (H1)."""
+    import asyncssh
+
+    key_file = tmp_path / "key"
+    key_file.write_text("KEY")
+
+    with patch(
+        "backend.app.services.spoolbuddy_ssh.asyncssh.connect",
+        side_effect=asyncssh.HostKeyNotVerifiable(asyncssh.DISC_HOST_KEY_NOT_VERIFIABLE, "key mismatch"),
+    ):
+        rc, _, stderr, observed_key = await _run_ssh_command("10.0.0.1", "echo hello", key_file)
+
+    assert rc == 255
+    assert "mismatch" in stderr.lower()
+    assert observed_key is None
+
+
+@pytest.mark.asyncio
+async def test_run_ssh_command_no_subprocess(tmp_path):
+    """Regression guard: _run_ssh_command must not spawn any subprocess."""
+    key_file = tmp_path / "key"
+    key_file.write_text("KEY")
+
+    mock_result = MagicMock()
+    mock_result.stdout = ""
+    mock_result.stderr = ""
+    mock_result.exit_status = 0
+
+    mock_conn = AsyncMock()
+    mock_conn.run = AsyncMock(return_value=mock_result)
+    mock_conn.get_server_host_key = MagicMock(return_value=None)
     mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_conn.__aexit__ = AsyncMock(return_value=False)
 
@@ -291,7 +340,7 @@ async def test_run_ssh_command_connection_failure(tmp_path):
         "backend.app.services.spoolbuddy_ssh.asyncssh.connect",
         side_effect=asyncssh.Error(code=0, reason="Connection refused"),
     ):
-        rc, stdout, stderr = await _run_ssh_command("10.0.0.1", "echo hello", key_file)
+        rc, stdout, stderr, _ = await _run_ssh_command("10.0.0.1", "echo hello", key_file)
 
     assert rc == 255
     assert stdout == ""
@@ -308,7 +357,7 @@ async def test_run_ssh_command_os_error(tmp_path):
         "backend.app.services.spoolbuddy_ssh.asyncssh.connect",
         side_effect=OSError("Network is unreachable"),
     ):
-        rc, _, stderr = await _run_ssh_command("10.0.0.1", "echo hello", key_file)
+        rc, _, stderr, _ = await _run_ssh_command("10.0.0.1", "echo hello", key_file)
 
     assert rc == 255
     assert "Network is unreachable" in stderr
@@ -320,9 +369,6 @@ async def test_run_ssh_command_timeout(tmp_path):
     key_file = tmp_path / "key"
     key_file.write_text("KEY")
 
-    # asyncssh.connect() returns a _ConnectionManager synchronously; the hang
-    # must happen inside __aenter__ so the surrounding asyncio.timeout can
-    # cancel it.
     mock_conn = AsyncMock()
 
     async def hang_enter():
@@ -332,7 +378,7 @@ async def test_run_ssh_command_timeout(tmp_path):
     mock_conn.__aexit__ = AsyncMock(return_value=False)
 
     with patch("backend.app.services.spoolbuddy_ssh.asyncssh.connect", return_value=mock_conn):
-        rc, _, stderr = await _run_ssh_command("10.0.0.1", "sleep 999", key_file, timeout=0.05)
+        rc, _, stderr, _ = await _run_ssh_command("10.0.0.1", "sleep 999", key_file, timeout=0.05)
 
     assert rc == -1
     assert "timed out" in stderr
@@ -347,6 +393,7 @@ def _make_update_mocks(tmp_path):
     mock_db_device.update_status = None
     mock_db_device.update_message = None
     mock_db_device.pending_command = None
+    mock_db_device.ssh_host_key = None  # TOFU: no stored key
 
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = mock_db_device
@@ -375,9 +422,9 @@ async def test_perform_ssh_update_success(tmp_path):
 
     ssh_calls = []
 
-    async def mock_ssh(ip, cmd, key, timeout=60):
+    async def mock_ssh(ip, cmd, key, *, known_hosts=None, timeout=60):
         ssh_calls.append(cmd)
-        return 0, "ok", ""
+        return 0, "ok", "", "ssh-ed25519 AAAA fakehostkey"
 
     _, mock_ctx, mock_ws = _make_update_mocks(tmp_path)
 
@@ -385,6 +432,7 @@ async def test_perform_ssh_update_success(tmp_path):
         patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings,
         patch("backend.app.services.spoolbuddy_ssh._run_ssh_command", side_effect=mock_ssh),
         patch("backend.app.services.spoolbuddy_ssh.detect_current_branch", return_value="dev"),
+        patch("backend.app.services.spoolbuddy_ssh.asyncssh.import_known_hosts", return_value=MagicMock()),
         patch("backend.app.core.database.async_session", return_value=mock_ctx),
         patch("backend.app.api.routes.spoolbuddy.ws_manager", mock_ws),
     ):
@@ -406,6 +454,82 @@ async def test_perform_ssh_update_success(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_perform_ssh_update_branch_is_shell_quoted(tmp_path):
+    """Branch name with shell-special chars must be quoted in all git commands (L1 fix)."""
+    import shlex
+
+    ssh_dir = tmp_path / "spoolbuddy" / "ssh"
+    ssh_dir.mkdir(parents=True)
+    (ssh_dir / "id_ed25519").write_text("PRIVATE")
+    (ssh_dir / "id_ed25519.pub").write_text("PUBLIC")
+
+    # A branch name containing a semicolon — shell-injection without quoting
+    dangerous_branch = "dev; echo pwned"
+    safe_branch = shlex.quote(dangerous_branch)  # expected: "'dev; echo pwned'"
+
+    ssh_calls = []
+
+    async def mock_ssh(ip, cmd, key, *, known_hosts=None, timeout=60):
+        ssh_calls.append(cmd)
+        return 0, "ok", "", None
+
+    _, mock_ctx, mock_ws = _make_update_mocks(tmp_path)
+
+    with (
+        patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings,
+        patch("backend.app.services.spoolbuddy_ssh._run_ssh_command", side_effect=mock_ssh),
+        patch("backend.app.services.spoolbuddy_ssh.detect_current_branch", return_value=dangerous_branch),
+        patch("backend.app.services.spoolbuddy_ssh.asyncssh.import_known_hosts", return_value=MagicMock()),
+        patch("backend.app.core.database.async_session", return_value=mock_ctx),
+        patch("backend.app.api.routes.spoolbuddy.ws_manager", mock_ws),
+    ):
+        mock_settings.base_dir = tmp_path
+        await perform_ssh_update("sb-test", "10.0.0.1")
+
+    # All git commands must use the shell-quoted form, never the raw dangerous string
+    git_cmds = [c for c in ssh_calls if "fetch" in c or "checkout" in c or "reset" in c]
+    for cmd in git_cmds:
+        assert safe_branch in cmd, f"Branch not shell-quoted in: {cmd}"
+        assert dangerous_branch not in cmd.replace(safe_branch, ""), f"Raw dangerous branch in: {cmd}"
+
+
+@pytest.mark.asyncio
+async def test_perform_ssh_update_tofu_stores_host_key(tmp_path):
+    """On first connect (no stored key), the observed host key must be persisted (H1)."""
+    ssh_dir = tmp_path / "spoolbuddy" / "ssh"
+    ssh_dir.mkdir(parents=True)
+    (ssh_dir / "id_ed25519").write_text("PRIVATE")
+    (ssh_dir / "id_ed25519.pub").write_text("PUBLIC")
+
+    FAKE_HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 fakehostkey"
+    call_count = 0
+
+    async def mock_ssh(ip, cmd, key, *, known_hosts=None, timeout=60):
+        nonlocal call_count
+        call_count += 1
+        # Only first call returns the observed host key (TOFU)
+        observed = FAKE_HOST_KEY if call_count == 1 else None
+        return 0, "ok", "", observed
+
+    mock_device, mock_ctx, mock_ws = _make_update_mocks(tmp_path)
+    mock_device.ssh_host_key = None  # no stored key
+
+    with (
+        patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings,
+        patch("backend.app.services.spoolbuddy_ssh._run_ssh_command", side_effect=mock_ssh),
+        patch("backend.app.services.spoolbuddy_ssh.detect_current_branch", return_value="main"),
+        patch("backend.app.services.spoolbuddy_ssh.asyncssh.import_known_hosts", return_value=MagicMock()),
+        patch("backend.app.core.database.async_session", return_value=mock_ctx),
+        patch("backend.app.api.routes.spoolbuddy.ws_manager", mock_ws),
+    ):
+        mock_settings.base_dir = tmp_path
+        await perform_ssh_update("sb-test", "10.0.0.1")
+
+    # Device's ssh_host_key should have been set to the observed key
+    assert mock_device.ssh_host_key == FAKE_HOST_KEY
+
+
+@pytest.mark.asyncio
 async def test_perform_ssh_update_ssh_failure(tmp_path):
     """SSH connectivity check fails — should set error status."""
     ssh_dir = tmp_path / "spoolbuddy" / "ssh"
@@ -413,10 +537,10 @@ async def test_perform_ssh_update_ssh_failure(tmp_path):
     (ssh_dir / "id_ed25519").write_text("PRIVATE")
     (ssh_dir / "id_ed25519.pub").write_text("PUBLIC")
 
-    async def mock_ssh(ip, cmd, key, timeout=60):
+    async def mock_ssh(ip, cmd, key, *, known_hosts=None, timeout=60):
         if "echo ok" in cmd:
-            return 255, "", "Connection refused"
-        return 0, "", ""
+            return 255, "", "Connection refused", None
+        return 0, "", "", None
 
     mock_device, mock_ctx, mock_ws = _make_update_mocks(tmp_path)
 
@@ -446,11 +570,11 @@ async def test_perform_ssh_update_git_fetch_failure(tmp_path):
 
     ssh_calls = []
 
-    async def mock_ssh(ip, cmd, key, timeout=60):
+    async def mock_ssh(ip, cmd, key, *, known_hosts=None, timeout=60):
         ssh_calls.append(cmd)
         if "fetch" in cmd:
-            return 1, "", "fatal: could not read from remote"
-        return 0, "ok", ""
+            return 1, "", "fatal: could not read from remote", None
+        return 0, "ok", "", None
 
     _, mock_ctx, mock_ws = _make_update_mocks(tmp_path)
 
@@ -458,6 +582,7 @@ async def test_perform_ssh_update_git_fetch_failure(tmp_path):
         patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings,
         patch("backend.app.services.spoolbuddy_ssh._run_ssh_command", side_effect=mock_ssh),
         patch("backend.app.services.spoolbuddy_ssh.detect_current_branch", return_value="main"),
+        patch("backend.app.services.spoolbuddy_ssh.asyncssh.import_known_hosts", return_value=MagicMock()),
         patch("backend.app.core.database.async_session", return_value=mock_ctx),
         patch("backend.app.api.routes.spoolbuddy.ws_manager", mock_ws),
     ):
@@ -467,3 +592,83 @@ async def test_perform_ssh_update_git_fetch_failure(tmp_path):
     # Should stop after git fetch — no checkout, pip, restart
     assert len(ssh_calls) == 2  # echo ok + git fetch
     assert not any("checkout" in c for c in ssh_calls)
+
+
+@pytest.mark.asyncio
+async def test_perform_ssh_update_uses_stored_host_key(tmp_path):
+    """When device already has ssh_host_key set, all SSH calls must receive non-None known_hosts (Gap 1)."""
+    ssh_dir = tmp_path / "spoolbuddy" / "ssh"
+    ssh_dir.mkdir(parents=True)
+    (ssh_dir / "id_ed25519").write_text("PRIVATE")
+    (ssh_dir / "id_ed25519.pub").write_text("PUBLIC")
+
+    STORED_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 storedkey"
+    SENTINEL_KNOWN_HOSTS = MagicMock(name="known_hosts_sentinel")
+    received_known_hosts = []
+
+    async def mock_ssh(ip, cmd, key, *, known_hosts=None, timeout=60):
+        received_known_hosts.append(known_hosts)
+        return 0, "ok", "", None  # no new observed key (already stored)
+
+    mock_device, mock_ctx, mock_ws = _make_update_mocks(tmp_path)
+    mock_device.ssh_host_key = STORED_KEY
+
+    with (
+        patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings,
+        patch("backend.app.services.spoolbuddy_ssh._run_ssh_command", side_effect=mock_ssh),
+        patch("backend.app.services.spoolbuddy_ssh.detect_current_branch", return_value="main"),
+        patch(
+            "backend.app.services.spoolbuddy_ssh.asyncssh.import_known_hosts",
+            return_value=SENTINEL_KNOWN_HOSTS,
+        ),
+        patch("backend.app.core.database.async_session", return_value=mock_ctx),
+        patch("backend.app.api.routes.spoolbuddy.ws_manager", mock_ws),
+    ):
+        mock_settings.base_dir = tmp_path
+        await perform_ssh_update("sb-test", "10.0.0.1")
+
+    # Every SSH call must have received the sentinel known_hosts object (not None)
+    assert len(received_known_hosts) >= 2, "Expected at least 2 SSH calls"
+    for kh in received_known_hosts:
+        assert kh is SENTINEL_KNOWN_HOSTS, f"Expected sentinel known_hosts but got: {kh}"
+
+
+@pytest.mark.asyncio
+async def test_perform_ssh_update_corrupt_stored_key_falls_back_to_tofu(tmp_path):
+    """When stored ssh_host_key can't be parsed, update continues with known_hosts=None (Gap 2)."""
+    ssh_dir = tmp_path / "spoolbuddy" / "ssh"
+    ssh_dir.mkdir(parents=True)
+    (ssh_dir / "id_ed25519").write_text("PRIVATE")
+    (ssh_dir / "id_ed25519.pub").write_text("PUBLIC")
+
+    ssh_calls = []
+
+    async def mock_ssh(ip, cmd, key, *, known_hosts=None, timeout=60):
+        ssh_calls.append(cmd)
+        return 0, "ok", "", None
+
+    mock_device, mock_ctx, mock_ws = _make_update_mocks(tmp_path)
+    mock_device.ssh_host_key = "THIS-IS-NOT-A-VALID-KEY"
+
+    with (
+        patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings,
+        patch("backend.app.services.spoolbuddy_ssh._run_ssh_command", side_effect=mock_ssh),
+        patch("backend.app.services.spoolbuddy_ssh.detect_current_branch", return_value="main"),
+        patch(
+            "backend.app.services.spoolbuddy_ssh.asyncssh.import_known_hosts",
+            side_effect=ValueError("Malformed key"),
+        ),
+        patch("backend.app.core.database.async_session", return_value=mock_ctx),
+        patch("backend.app.api.routes.spoolbuddy.ws_manager", mock_ws),
+    ):
+        mock_settings.base_dir = tmp_path
+        # Must not raise — corrupt key degrades gracefully
+        await perform_ssh_update("sb-test", "10.0.0.1")
+
+    # Update must have completed all steps despite the corrupt key
+    assert any("echo ok" in c for c in ssh_calls)
+    assert any("fetch" in c for c in ssh_calls)
+    assert any("checkout" in c for c in ssh_calls)
+    # Broadcast must show success, not error
+    error_broadcasts = [c for c in mock_ws.broadcast.call_args_list if c[0][0].get("update_status") == "error"]
+    assert not error_broadcasts, f"Got unexpected error broadcast: {error_broadcasts}"

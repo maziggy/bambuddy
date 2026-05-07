@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Check, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Check, AlertTriangle, RefreshCw, Unlink } from 'lucide-react';
 import type { InventorySpool } from '../../api/client';
 import { spoolbuddyApi, api } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
@@ -28,6 +28,8 @@ interface InventorySpoolInfoCardProps {
   onClose?: () => void;
   onSyncWeight?: () => void;
   onAssignToAms?: () => void;
+  isAssigned?: boolean;
+  onUnassignFromAms?: () => void;
   className?: string;
 }
 
@@ -38,6 +40,8 @@ export function InventorySpoolInfoCard({
   onClose,
   onSyncWeight,
   onAssignToAms,
+  isAssigned,
+  onUnassignFromAms,
   className,
 }: InventorySpoolInfoCardProps) {
   const { t } = useTranslation();
@@ -250,10 +254,20 @@ export function InventorySpoolInfoCard({
       <div className="flex gap-2 justify-center">
         {onAssignToAms && (
           <button
-            onClick={onAssignToAms}
-            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors min-h-[44px]"
+            onClick={isAssigned ? undefined : onAssignToAms}
+            disabled={!!isAssigned}
+            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {t('spoolbuddy.modal.assignToAms', 'Assign to AMS')}
+          </button>
+        )}
+        {onUnassignFromAms && (
+          <button
+            onClick={onUnassignFromAms}
+            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors min-h-[44px]"
+          >
+            <Unlink className="w-4 h-4 inline mr-1" />
+            {t('inventory.unassignSpool')}
           </button>
         )}
         <button

@@ -40,6 +40,8 @@ export default {
     confirm: '確認',
     loading: '読み込み中...',
     error: 'エラー',
+    errorLoading: 'データの読み込みエラー',
+    retry: '再試行',
     success: '成功',
     warning: '警告',
     enabled: '有効',
@@ -2279,6 +2281,7 @@ export default {
       backupHint: 'The auto-generated key is stored at DATA_DIR/.mfa_encryption_key and is included in local backup ZIPs. Keep your backups secure or set MFA_ENCRYPTION_KEY explicitly.',
       decryptionBrokenTitle: 'Encryption key missing',
       decryptionBrokenError: '{{count}} encrypted record(s) cannot be decrypted because the encryption key is no longer available. Restore the previous MFA_ENCRYPTION_KEY or DATA_DIR/.mfa_encryption_key to recover.',
+      migrationErrorWarning: '{{count}} 件のレガシー行を起動時に再暗号化できませんでした。サーバーログを確認し、Bambuddy を再起動して再試行してください。',
     },
 
   },

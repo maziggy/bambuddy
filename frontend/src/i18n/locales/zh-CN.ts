@@ -40,6 +40,8 @@ export default {
     confirm: '确认',
     loading: '加载中...',
     error: '错误',
+    errorLoading: '加载错误',
+    retry: '重试',
     success: '成功',
     warning: '警告',
     enabled: '已启用',
@@ -2267,6 +2269,7 @@ export default {
       backupHint: 'The auto-generated key is stored at DATA_DIR/.mfa_encryption_key and is included in local backup ZIPs. Keep your backups secure or set MFA_ENCRYPTION_KEY explicitly.',
       decryptionBrokenTitle: 'Encryption key missing',
       decryptionBrokenError: '{{count}} encrypted record(s) cannot be decrypted because the encryption key is no longer available. Restore the previous MFA_ENCRYPTION_KEY or DATA_DIR/.mfa_encryption_key to recover.',
+      migrationErrorWarning: '{{count}} 行旧数据在启动时未能重新加密。请检查服务器日志并重启 Bambuddy 以重试。',
     },
 
   },

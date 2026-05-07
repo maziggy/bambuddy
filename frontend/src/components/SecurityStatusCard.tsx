@@ -32,12 +32,23 @@ registerSettingsSearch({
 export function SecurityStatusCard() {
   const { t } = useTranslation();
 
-  const { data, isLoading, isError } = useQuery<EncryptionStatus>({
+  const { data, isLoading, isError, refetch } = useQuery<EncryptionStatus>({
     queryKey: ['encryptionStatus'],
     queryFn: () => api.getEncryptionStatus(),
-    // Stop polling on any fetch error to avoid hammering a failing or
-    // unauthorised endpoint until the user reloads or the query is reset.
-    refetchInterval: (query) => (query.state.error ? false : 30_000),
+    // S5: bounded auto-recovery via refetchInterval backoff + manual recovery
+    // via the "Retry" button rendered in the error branch below. Previously
+    // a single 5xx blip killed the live status indicator until a full page
+    // reload. The queryClient-level `retry` setting is left untouched so
+    // operators (production) get the default 3 internal retries while tests
+    // (which set retry:false) don't have to wait for them.
+    refetchInterval: (query) => {
+      if (!query.state.error) return 30_000;
+      // After the first error, back off: 5s, 10s, 15s, then stop until the
+      // user clicks Retry or the page reloads.
+      const failures = query.state.fetchFailureCount ?? 0;
+      if (failures <= 3) return Math.min(5_000 * Math.max(1, failures), 30_000);
+      return false;
+    },
   });
 
   if (isLoading) {
@@ -70,6 +81,17 @@ export function SecurityStatusCard() {
         </CardHeader>
         <CardContent>
           <div className="text-red-400" data-testid="encryption-error">{t('common.errorLoading')}</div>
+          {/* S5: manual recovery button — the bounded auto-retry above stops
+              after 3 consecutive failures so the operator needs an explicit
+              way to reset polling without reloading the whole page. */}
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="mt-2 text-sm text-blue-400 underline hover:text-blue-300"
+            data-testid="encryption-retry-button"
+          >
+            {t('common.retry')}
+          </button>
         </CardContent>
       </Card>
     );
@@ -139,6 +161,16 @@ export function SecurityStatusCard() {
             data-testid="encryption-legacy-warning"
           >
             <p className="text-sm">{t('settings.encryption.legacyRowsWarning', { count: totalLegacy })}</p>
+          </div>
+        )}
+        {data.migration_error_count > 0 && (
+          <div
+            className="mt-2 p-3 border rounded-lg bg-amber-500/10 border-amber-500/30 text-amber-400"
+            data-testid="encryption-migration-warning"
+          >
+            <p className="text-sm">
+              {t('settings.encryption.migrationErrorWarning', { count: data.migration_error_count })}
+            </p>
           </div>
         )}
         <div className="mt-4 grid grid-cols-2 gap-4 text-sm">

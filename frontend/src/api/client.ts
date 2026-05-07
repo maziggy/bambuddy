@@ -2820,6 +2820,9 @@ export interface EncryptionStatus {
   legacy_plaintext_rows: EncryptionRowCounts;
   encrypted_rows: EncryptionRowCounts;
   decryption_broken: boolean;
+  // B2: count of rows skipped during the last legacy re-encryption migration.
+  // Surfaced via a yellow secondary banner in SecurityStatusCard.
+  migration_error_count: number;
 }
 
 export interface LDAPTestResponse {

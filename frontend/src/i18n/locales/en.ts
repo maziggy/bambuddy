@@ -40,6 +40,8 @@ export default {
     confirm: 'Confirm',
     loading: 'Loading...',
     error: 'Error',
+    errorLoading: 'Error loading data',
+    retry: 'Retry',
     success: 'Success',
     warning: 'Warning',
     enabled: 'Enabled',
@@ -2282,6 +2284,7 @@ export default {
       backupHint: 'The auto-generated key is stored at DATA_DIR/.mfa_encryption_key and is included in local backup ZIPs. Keep your backups secure or set MFA_ENCRYPTION_KEY explicitly.',
       decryptionBrokenTitle: 'Encryption key missing',
       decryptionBrokenError: '{{count}} encrypted record(s) cannot be decrypted because the encryption key is no longer available. Restore the previous MFA_ENCRYPTION_KEY or DATA_DIR/.mfa_encryption_key to recover.',
+      migrationErrorWarning: '{{count}} legacy row(s) failed to re-encrypt at startup. Check server logs and restart Bambuddy to retry.',
     },
 
   },

@@ -40,6 +40,8 @@ export default {
     confirm: 'Bestätigen',
     loading: 'Lädt...',
     error: 'Fehler',
+    errorLoading: 'Fehler beim Laden',
+    retry: 'Erneut versuchen',
     success: 'Erfolg',
     warning: 'Warnung',
     enabled: 'Aktiviert',
@@ -2279,6 +2281,7 @@ export default {
       backupHint: 'Der automatisch erzeugte Schlüssel liegt unter DATA_DIR/.mfa_encryption_key und wird in lokalen Backup-ZIPs mitgesichert. Backups sicher aufbewahren oder MFA_ENCRYPTION_KEY explizit setzen.',
       decryptionBrokenTitle: 'Verschlüsselungsschlüssel fehlt',
       decryptionBrokenError: '{{count}} verschlüsselte Datensätze können nicht entschlüsselt werden, weil der Schlüssel nicht mehr verfügbar ist. Den vorherigen MFA_ENCRYPTION_KEY oder DATA_DIR/.mfa_encryption_key wiederherstellen.',
+      migrationErrorWarning: '{{count}} Legacy-Eintrag/Einträge konnten beim Start nicht verschlüsselt werden. Prüfen Sie die Server-Logs und starten Sie Bambuddy neu.',
     },
 
   },

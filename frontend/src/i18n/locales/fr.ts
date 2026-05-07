@@ -40,6 +40,8 @@ export default {
     confirm: 'Confirmer',
     loading: 'Chargement...',
     error: 'Erreur',
+    errorLoading: 'Erreur de chargement',
+    retry: 'Réessayer',
     success: 'Succès',
     warning: 'Avertissement',
     enabled: 'Activé',
@@ -2224,6 +2226,7 @@ export default {
       backupHint: 'The auto-generated key is stored at DATA_DIR/.mfa_encryption_key and is included in local backup ZIPs. Keep your backups secure or set MFA_ENCRYPTION_KEY explicitly.',
       decryptionBrokenTitle: 'Encryption key missing',
       decryptionBrokenError: '{{count}} encrypted record(s) cannot be decrypted because the encryption key is no longer available. Restore the previous MFA_ENCRYPTION_KEY or DATA_DIR/.mfa_encryption_key to recover.',
+      migrationErrorWarning: "{{count}} ligne(s) ancienne(s) n'ont pas pu être rechiffrée(s) au démarrage. Vérifiez les journaux du serveur et redémarrez Bambuddy pour réessayer.",
     },
 
 

@@ -40,6 +40,8 @@ export default {
     confirm: 'Conferma',
     loading: 'Caricamento...',
     error: 'Errore',
+    errorLoading: 'Errore di caricamento',
+    retry: 'Riprova',
     success: 'Successo',
     warning: 'Avviso',
     enabled: 'Abilitato',
@@ -2223,6 +2225,7 @@ export default {
       backupHint: 'The auto-generated key is stored at DATA_DIR/.mfa_encryption_key and is included in local backup ZIPs. Keep your backups secure or set MFA_ENCRYPTION_KEY explicitly.',
       decryptionBrokenTitle: 'Encryption key missing',
       decryptionBrokenError: '{{count}} encrypted record(s) cannot be decrypted because the encryption key is no longer available. Restore the previous MFA_ENCRYPTION_KEY or DATA_DIR/.mfa_encryption_key to recover.',
+      migrationErrorWarning: "{{count}} riga/righe legacy non sono state ricifrate all'avvio. Controlla i log del server e riavvia Bambuddy per riprovare.",
     },
 
 

@@ -26,8 +26,24 @@ vi.mock('../../api/client', () => ({
     getPrinters: vi.fn().mockResolvedValue([]),
     getSpoolUsageHistory: vi.fn().mockResolvedValue([]),
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
+    createSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 88 }),
     updateSpool: vi.fn().mockResolvedValue({ id: 1 }),
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
+    saveSpoolmanKProfiles: vi.fn().mockResolvedValue([]),
+    updateSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 42 }),
+    bulkCreateSpoolmanInventorySpools: vi.fn().mockResolvedValue({
+      created: [{ id: 1, material: 'PLA' }],
+      requested_count: 1,
+      failed_count: 0,
+    }),
+    getSpoolmanInventoryFilaments: vi.fn().mockResolvedValue([]),
+  },
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
   },
 }));
 
@@ -417,6 +433,108 @@ describe('SpoolFormModal weightTouched', () => {
     expect((payload as { rgba: string }).rgba).toBe('FF0000FF');
   });
 
+  it('shows warning toast on partial bulk-create in Spoolman mode (T1/partial)', async () => {
+    vi.mocked(api.bulkCreateSpoolmanInventorySpools).mockResolvedValueOnce({
+      created: [{ id: 1, material: 'PLA' } as InventorySpool],
+      requested_count: 3,
+      failed_count: 2,
+    });
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // Enable Quick Add mode so the quantity field appears
+    const quickAddRow = screen.getByText('Quick Add (Stock)').closest('div[class*="justify-between"]');
+    const toggleButton = quickAddRow?.querySelector('button[type="button"]');
+    expect(toggleButton).toBeTruthy();
+    fireEvent.click(toggleButton!);
+
+    // Set quantity to 3 (triggers bulkCreateMutation instead of createMutation)
+    const quantityContainer = screen.getByText('Quantity').closest('div');
+    const quantityInput = quantityContainer?.querySelector('input[type="number"]');
+    expect(quantityInput).toBeTruthy();
+    fireEvent.change(quantityInput!, { target: { value: '3' } });
+
+    // Click the submit button
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    expect(submitButton).toBeTruthy();
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.bulkCreateSpoolmanInventorySpools).toHaveBeenCalledTimes(1);
+    });
+
+    // Should show a warning toast for partial failure (1 created, 2 failed, 3 requested)
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining('1 of 3'),
+      'warning',
+    );
+  });
+
+  it('shows success toast on full bulk-create success in Spoolman mode (T1/success)', async () => {
+    vi.mocked(api.bulkCreateSpoolmanInventorySpools).mockResolvedValueOnce({
+      created: [
+        { id: 1, material: 'PLA' } as InventorySpool,
+        { id: 2, material: 'PLA' } as InventorySpool,
+        { id: 3, material: 'PLA' } as InventorySpool,
+      ],
+      requested_count: 3,
+      failed_count: 0,
+    });
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // Enable Quick Add mode so the quantity field appears
+    const quickAddRow = screen.getByText('Quick Add (Stock)').closest('div[class*="justify-between"]');
+    const toggleButton = quickAddRow?.querySelector('button[type="button"]');
+    expect(toggleButton).toBeTruthy();
+    fireEvent.click(toggleButton!);
+
+    // Set quantity to 3
+    const quantityContainer = screen.getByText('Quantity').closest('div');
+    const quantityInput = quantityContainer?.querySelector('input[type="number"]');
+    expect(quantityInput).toBeTruthy();
+    fireEvent.change(quantityInput!, { target: { value: '3' } });
+
+    // Click the submit button
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    expect(submitButton).toBeTruthy();
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.bulkCreateSpoolmanInventorySpools).toHaveBeenCalledTimes(1);
+    });
+
+    // Should show a success toast listing the count of created spools
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining('3'),
+      'success',
+    );
+  });
+
   it('displays correct catalog name when duplicates exist', async () => {
     const spoolWithCatalogId: InventorySpool = {
       ...existingSpool,
@@ -458,5 +576,347 @@ describe('SpoolFormModal weightTouched', () => {
       );
       expect(bambuFound).toBeTruthy();
     });
+  });
+});
+
+describe('SpoolFormModal Spoolman K-profile support', () => {
+  const spoolmanSpool: InventorySpool = {
+    ...{
+      id: 42,
+      material: 'PLA',
+      subtype: 'Basic',
+      brand: 'BrandX',
+      color_name: 'Black',
+      rgba: '000000FF',
+      label_weight: 1000,
+      core_weight: 250,
+      core_weight_catalog_id: null,
+      weight_used: 200,
+      slicer_filament: '',
+      slicer_filament_name: '',
+      nozzle_temp_min: null,
+      nozzle_temp_max: null,
+      note: null,
+      added_full: null,
+      last_used: null,
+      encode_time: null,
+      tag_uid: null,
+      tray_uuid: null,
+      data_origin: 'spoolman',
+      tag_type: 'spoolman',
+      archived_at: null,
+      created_at: '2025-01-01T00:00:00Z',
+      updated_at: '2025-01-01T00:00:00Z',
+      k_profiles: [],
+    },
+  } as InventorySpool;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows PA Profile tab for Spoolman spools in non-quickAdd mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolmanSpool}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    // PA Profile tab should be visible in Spoolman mode
+    expect(screen.getByText('PA Profile')).toBeInTheDocument();
+  });
+
+  it('calls saveSpoolmanKProfiles (not saveSpoolKProfiles) on update in Spoolman mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolmanSpool}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpoolmanInventorySpool).toHaveBeenCalledTimes(1);
+    });
+
+    // saveSpoolmanKProfiles is always called on update (even with empty list)
+    await waitFor(() => {
+      expect(api.saveSpoolmanKProfiles).toHaveBeenCalledWith(42, []);
+    });
+    expect(api.saveSpoolKProfiles).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2: SpoolmanFilamentPicker integration with SpoolFormModal
+// ---------------------------------------------------------------------------
+
+vi.mock('../../components/spool-form/SpoolmanFilamentPicker', () => ({
+  SpoolmanFilamentPicker: ({ onSelect, selectedId }: { onSelect: (f: unknown) => void; selectedId: number | null; isLoading: boolean; filaments: unknown[] }) => {
+    return (
+      <div>
+        <span data-testid="picker-selected-id">{selectedId ?? 'none'}</span>
+        <button data-testid="picker-select-btn" onClick={() => onSelect({
+          id: 7,
+          name: 'PLA Basic',
+          material: 'PLA',
+          color_hex: 'FF0000',
+          color_name: 'Red',
+          weight: 1000,
+          spool_weight: 196,
+          vendor: { id: 1, name: 'Bambu Lab' },
+        })}>
+          Select Filament
+        </button>
+      </div>
+    );
+  },
+}));
+
+describe('SpoolFormModal — SpoolmanFilamentPicker integration (T2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders SpoolmanFilamentPicker in Spoolman create mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-btn')).toBeInTheDocument();
+    });
+  });
+
+  it('does NOT render SpoolmanFilamentPicker in local inventory mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('picker-select-btn')).not.toBeInTheDocument();
+    });
+  });
+
+  it('prefills form fields when a filament is selected from the picker', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('picker-select-btn'));
+
+    // After selection, the picker should reflect the selected ID
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-selected-id').textContent).toBe('7');
+    });
+  });
+
+  it('includes spoolman_filament_id in the submit payload when a filament is pre-selected', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+        spoolsQueryKey={['spoolman-spools']}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-btn')).toBeInTheDocument();
+    });
+
+    // Select a filament
+    fireEvent.click(screen.getByTestId('picker-select-btn'));
+
+    // Submit the form
+    const saveButton = screen.getByRole('button', { name: /save|add spool/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.createSpoolmanInventorySpool).toHaveBeenCalledTimes(1);
+    });
+
+    const callArg = vi.mocked(api.createSpoolmanInventorySpool).mock.calls[0][0] as Record<string, unknown>;
+    expect(callArg.spoolman_filament_id).toBe(7);
+  });
+
+  it('clears spoolman_filament_id and shows unlink toast when user edits a linked field', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-btn')).toBeInTheDocument();
+    });
+
+    // Select a filament from the catalog picker
+    fireEvent.click(screen.getByTestId('picker-select-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-selected-id').textContent).toBe('7');
+    });
+
+    // Manually edit the color_name field (a linked field)
+    const colorNameInput = screen.getByPlaceholderText('Jade White, Fire Red...');
+    fireEvent.change(colorNameInput, { target: { value: 'Custom Blue' } });
+
+    // spoolman_filament_id must be cleared (picker shows 'none')
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-selected-id').textContent).toBe('none');
+    });
+
+    // Unlink toast must have been shown
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining('catalog link'),
+      'info',
+    );
+  });
+});
+
+describe('SpoolFormModal storageLocationTouched', () => {
+  /**
+   * Regression tests for the round-trip bug: saving the edit modal without
+   * touching the Storage Location field must NOT include storage_location in
+   * the PATCH payload, so Spoolman's location field is never overwritten with
+   * a stale cached value.
+   */
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const spoolWithStorageLocation: InventorySpool = {
+    ...existingSpool,
+    storage_location: 'IKEAREGAL',
+  };
+
+  it('excludes storage_location from PATCH when editing without changing it', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolWithStorageLocation}
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    // Save without touching the storage location field
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [spoolId, payload] = vi.mocked(api.updateSpool).mock.calls[0];
+    expect(spoolId).toBe(1);
+    // storage_location must NOT be in the payload — prevents Spoolman location overwrite
+    expect(payload).not.toHaveProperty('storage_location');
+    // Other fields should still be present
+    expect(payload).toHaveProperty('material', 'PLA');
+  });
+
+  it('includes storage_location in PATCH when editing and changing it', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolWithStorageLocation}
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    // Find the storage location input and change it
+    const locationInput = screen.getByPlaceholderText('e.g. Shelf A, Drawer 1');
+    fireEvent.change(locationInput, { target: { value: 'Shelf B' } });
+
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [spoolId, payload] = vi.mocked(api.updateSpool).mock.calls[0];
+    expect(spoolId).toBe(1);
+    // storage_location MUST be present since the user changed it
+    expect(payload).toHaveProperty('storage_location', 'Shelf B');
+  });
+
+  it('includes storage_location when creating a new spool', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // Submit without setting storage_location (validation is mocked to pass)
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    expect(submitButton).toBeTruthy();
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.createSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [payload] = vi.mocked(api.createSpool).mock.calls[0];
+    // storage_location MUST be included for new spools (default empty string → null)
+    expect(payload).toHaveProperty('storage_location', null);
   });
 });

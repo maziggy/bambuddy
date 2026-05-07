@@ -56,9 +56,10 @@ interface AssignToAmsModalProps {
   onClose: () => void;
   spool: InventorySpool;
   printerId: number | null;
+  spoolmanMode?: boolean;
 }
 
-export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignToAmsModalProps) {
+export function AssignToAmsModal({ isOpen, onClose, spool, printerId, spoolmanMode = false }: AssignToAmsModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -120,6 +121,17 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignTo
     staleTime: 30 * 1000,
   });
 
+  const { data: spoolmanAssignments = [] } = useQuery({
+    queryKey: ['spoolman-slot-assignments', printerId],
+    queryFn: () => api.getSpoolmanSlotAssignments(printerId ?? undefined),
+    enabled: isOpen && !!spoolmanMode && printerId !== null,
+    staleTime: 30 * 1000,
+  });
+
+  const currentAssignment = spoolmanMode
+    ? spoolmanAssignments.find(a => a.spoolman_spool_id === spool.id)
+    : undefined;
+
   // Build fill-level override map from inventory assignments
   const fillOverrides = useMemo(() => {
     const map: Record<string, number> = {};
@@ -166,17 +178,24 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignTo
     return extruderId === 1 ? 'L' : 'R';
   }, [isDualNozzle, amsExtruderMap]);
 
-  // Assign spool to AMS slot — single API call, backend handles both
-  // DB record AND MQTT auto-configuration (same as SpoolStation). When the
-  // target slot is currently empty, the backend persists the assignment and
-  // skips the MQTT publish (firmware drops it anyway); on_ams_change re-fires
-  // the full configuration when filament is later inserted. The response's
-  // `pending_config` flag distinguishes that from the immediate-apply path
-  // so we can adjust the success toast.
+  // Assign spool to AMS slot — single API call, backend handles both DB record
+  // AND MQTT auto-configuration. When the target slot is currently empty, the
+  // backend persists the assignment and skips the MQTT publish (firmware drops
+  // it anyway); on_ams_change re-fires the full configuration when filament is
+  // later inserted. The response's `pending_config` flag distinguishes that
+  // from the immediate-apply path so we can adjust the success toast.
   const configureMutation = useMutation({
     mutationFn: async ({ amsId, trayId }: { amsId: number; trayId: number }) => {
       if (!printerId) throw new Error('No printer selected');
 
+      if (spoolmanMode) {
+        return await api.assignSpoolmanSlot({
+          spoolman_spool_id: spool.id,
+          printer_id: printerId,
+          ams_id: amsId,
+          tray_id: trayId,
+        });
+      }
       return await api.assignSpool({
         spool_id: spool.id,
         printer_id: printerId,
@@ -186,7 +205,10 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignTo
     },
     onSuccess: (assignment) => {
       setStatusType('success');
-      if (assignment?.pending_config) {
+      // pending_config only exists on SpoolAssignment (the local-inventory path);
+      // the Spoolman path returns InventorySpool which always implies immediate apply.
+      const pendingConfig = assignment && 'pending_config' in assignment && assignment.pending_config;
+      if (pendingConfig) {
         setStatusMessage(
           t(
             'spoolbuddy.modal.assignPendingInsert',
@@ -197,7 +219,9 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignTo
         setStatusMessage(t('spoolbuddy.modal.assignSuccess', 'Assigned!'));
       }
       queryClient.invalidateQueries({ queryKey: ['slotPresets'] });
-      setTimeout(() => onClose(), assignment?.pending_config ? 2500 : 1500);
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments-all'] });
+      setTimeout(() => onClose(), pendingConfig ? 2500 : 1500);
     },
     onError: (err) => {
       setStatusType('error');
@@ -398,7 +422,7 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignTo
                   <AmsUnitCard
                     key={unit.id}
                     unit={unit}
-                    activeSlot={null}
+                    activeSlot={currentAssignment?.ams_id === unit.id ? (currentAssignment.tray_id ?? null) : null}
                     onConfigureSlot={(_amsId, trayId) => handleSlotClick(unit.id, trayId)}
                     isDualNozzle={isDualNozzle}
                     nozzleSide={getNozzleSide(unit.id)}
@@ -414,13 +438,16 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId }: AssignTo
               <div className="flex gap-2 shrink-0">
                 {singleSlots.map(({ key, label, amsId, trayId, tray, isEmpty, nozzleSide, effectiveFill }) => {
                   const color = trayColorToCSS(tray.tray_color);
+                  const isActive = !!currentAssignment &&
+                    currentAssignment.ams_id === amsId &&
+                    currentAssignment.tray_id === trayId;
                   return (
                     <div
                       key={key}
                       onClick={() => handleSlotClick(amsId, trayId)}
                       className={`bg-bambu-dark-secondary rounded-lg px-3 py-2 cursor-pointer hover:bg-bambu-dark-secondary/80 transition-all flex items-center gap-2 ${
-                        isWaiting ? 'opacity-50 pointer-events-none' : ''
-                      }`}
+                        isActive ? 'ring-2 ring-bambu-green' : ''
+                      } ${isWaiting ? 'opacity-50 pointer-events-none' : ''}`}
                     >
                       <div className="relative w-10 h-10 shrink-0">
                         {isEmpty ? (

@@ -9,6 +9,7 @@ vi.mock('../../api/client', () => ({
     getSpools: vi.fn(),
     getAssignments: vi.fn(),
     assignSpool: vi.fn(),
+    getSpoolmanInventorySpools: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({}),
     getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
   },
@@ -283,5 +284,75 @@ describe('AssignSpoolModal', () => {
     await waitFor(() => {
       expect(screen.getByText(/Devil Design/)).toBeInTheDocument();
     });
+  });
+});
+
+describe('AssignSpoolModal — Spoolman enabled (T-Gap 7)', () => {
+  const spoolmanSpool = {
+    id: 200,
+    material: 'PETG',
+    subtype: 'HF',
+    brand: 'Bambu Lab',
+    color_name: 'Blue',
+    rgba: '0000FFFF',
+    label_weight: 1000,
+    weight_used: 0,
+    tag_uid: null,
+    tray_uuid: null,
+    archived_at: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (api.getAssignments as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([spoolmanSpool]);
+  });
+
+  it('shows Spoolman spool section when spoolmanEnabled=true', async () => {
+    render(<AssignSpoolModal {...defaultProps} spoolmanEnabled />);
+
+    await waitFor(() => {
+      // Spoolman spool brand should appear in the modal
+      expect(screen.getByText(/Bambu Lab/)).toBeInTheDocument();
+    });
+    expect(api.getSpoolmanInventorySpools).toHaveBeenCalledWith(false);
+  });
+
+  it('does not fetch Spoolman spools when spoolmanEnabled=false', async () => {
+    render(<AssignSpoolModal {...defaultProps} spoolmanEnabled={false} />);
+
+    // Give the component time to settle
+    await waitFor(() => {
+      expect(api.getSpools).toHaveBeenCalled();
+    });
+    expect(api.getSpoolmanInventorySpools).not.toHaveBeenCalled();
+  });
+
+  it('hides local spool list when spoolmanEnabled=true (Bug #5)', async () => {
+    // Even when local spools exist, they must not appear in Spoolman mode.
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([manualSpool]);
+
+    render(<AssignSpoolModal {...defaultProps} spoolmanEnabled />);
+
+    await waitFor(() => {
+      // Spoolman spool is shown
+      expect(screen.getByText(/Bambu Lab/)).toBeInTheDocument();
+    });
+    // Local spool (Polymaker) must NOT appear in Spoolman mode
+    expect(screen.queryByText(/Polymaker/)).not.toBeInTheDocument();
+  });
+
+  it('hides archived Spoolman spools', async () => {
+    const archivedSpool = { ...spoolmanSpool, id: 201, brand: 'Prusa', archived_at: '2025-01-01T00:00:00Z' };
+    (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([spoolmanSpool, archivedSpool]);
+
+    render(<AssignSpoolModal {...defaultProps} spoolmanEnabled />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Bambu Lab/)).toBeInTheDocument();
+    });
+    // Archived spool brand must NOT appear
+    expect(screen.queryByText(/Prusa/)).not.toBeInTheDocument();
   });
 });

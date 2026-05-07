@@ -144,6 +144,87 @@ describe('useSpoolBuddyState', () => {
     expect(result.current.matchedSpool).toBeNull();
   });
 
+  it('UNKNOWN_TAG with tray_uuid sets unknownTrayUuid', () => {
+    const { result } = renderHook(() => useSpoolBuddyState());
+
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-unknown-tag', {
+        tag_uid: 'AABB1122334455FF',
+        tray_uuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+        device_id: 'dev-1',
+      });
+    });
+
+    expect(result.current.unknownTagUid).toBe('AABB1122334455FF');
+    expect(result.current.unknownTrayUuid).toBe('DEADBEEFDEADBEEFDEADBEEFDEADBEEF');
+  });
+
+  it('UNKNOWN_TAG without tray_uuid leaves unknownTrayUuid null', () => {
+    const { result } = renderHook(() => useSpoolBuddyState());
+
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-unknown-tag', {
+        tag_uid: 'AABB1122',
+        device_id: 'dev-1',
+      });
+    });
+
+    expect(result.current.unknownTagUid).toBe('AABB1122');
+    expect(result.current.unknownTrayUuid).toBeNull();
+  });
+
+  it('TAG_MATCHED clears unknownTrayUuid', () => {
+    const { result } = renderHook(() => useSpoolBuddyState());
+
+    // Set tray_uuid via unknown tag
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-unknown-tag', {
+        tag_uid: 'AABB1122334455FF',
+        tray_uuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+        device_id: 'dev-1',
+      });
+    });
+    expect(result.current.unknownTrayUuid).toBe('DEADBEEFDEADBEEFDEADBEEFDEADBEEF');
+
+    // Match resolves it
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-tag-matched', {
+        tag_uid: 'AABB1122334455FF',
+        device_id: 'dev-1',
+        spool: {
+          id: 5,
+          material: 'PLA',
+          label_weight: 1000,
+          core_weight: 250,
+          weight_used: 0,
+        },
+      });
+    });
+
+    expect(result.current.unknownTrayUuid).toBeNull();
+    expect(result.current.matchedSpool).not.toBeNull();
+  });
+
+  it('TAG_REMOVED clears unknownTrayUuid', () => {
+    const { result } = renderHook(() => useSpoolBuddyState());
+
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-unknown-tag', {
+        tag_uid: 'AABB1122334455FF',
+        tray_uuid: 'CAFEBABECAFEBABECAFEBABECAFEBABE',
+        device_id: 'dev-1',
+      });
+    });
+    expect(result.current.unknownTrayUuid).toBe('CAFEBABECAFEBABECAFEBABECAFEBABE');
+
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-tag-removed', { device_id: 'dev-1' });
+    });
+
+    expect(result.current.unknownTrayUuid).toBeNull();
+    expect(result.current.unknownTagUid).toBeNull();
+  });
+
   it('TAG_REMOVED clears both matchedSpool and unknownTagUid', () => {
     const { result } = renderHook(() => useSpoolBuddyState());
 

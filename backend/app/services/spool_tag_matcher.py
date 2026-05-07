@@ -538,6 +538,27 @@ async def auto_assign_spool(
                     ams_id,
                     tray_id,
                 )
+            elif tray is not None:
+                # No stored K-profile: fall back to the slot's current live cali_idx
+                # so the printer keeps its existing calibration selection.
+                live_cali_idx = tray.get("cali_idx")
+                if live_cali_idx is not None and live_cali_idx >= 0:
+                    cali_filament_id = spool.slicer_filament or tray_info_idx or ""
+                    client.extrusion_cali_sel(
+                        ams_id=ams_id,
+                        tray_id=tray_id,
+                        cali_idx=live_cali_idx,
+                        filament_id=cali_filament_id,
+                        nozzle_diameter=nozzle_diameter,
+                    )
+                    logger.info(
+                        "No stored K-profile for spool %d on printer %d AMS%d-T%d — preserved live cali_idx=%d",
+                        spool.id,
+                        printer_id,
+                        ams_id,
+                        tray_id,
+                        live_cali_idx,
+                    )
 
             logger.info(
                 "Auto-assigned spool %d to printer %d AMS%d-T%d (RFID match)",

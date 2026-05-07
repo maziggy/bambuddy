@@ -32,7 +32,21 @@ logger = logging.getLogger(__name__)
 _FERNET_PREFIX = "fernet:"
 _fernet_instance = None
 _warn_shown = False
-_key_source: Literal["env", "file", "generated", "none"] | None = None
+# Public source values exposed via get_key_source(). Internal failure causes
+# (none_write_failed, none_corrupted) are mapped to "none" before exposure
+# so the public API stays stable for the EncryptionStatusResponse schema.
+_PublicSource = Literal["env", "file", "generated", "none"]
+# Internal source carries the specific failure cause for accurate logging.
+# "none" remains valid for legacy test stubs (lambda: (None, "none")).
+_InternalSource = Literal[
+    "env",
+    "file",
+    "generated",
+    "none",
+    "none_write_failed",
+    "none_corrupted",
+]
+_key_source: _PublicSource | None = None
 
 _KEY_FILE_NAME = ".mfa_encryption_key"
 
@@ -45,7 +59,7 @@ def _validate_fernet_key(key: str) -> bool:
     return len(decoded) == 32
 
 
-def _load_or_generate_key() -> tuple[str | None, Literal["env", "file", "generated", "none"]]:
+def _load_or_generate_key() -> tuple[str | None, _InternalSource]:
     # Lazy import: keeps cryptography out of import-time even when the helper
     # is patched in tests that never invoke encryption.
     from cryptography.fernet import Fernet
@@ -81,7 +95,7 @@ def _load_or_generate_key() -> tuple[str | None, Literal["env", "file", "generat
                 key_file,
                 exc,
             )
-            return None, "none"
+            return None, "none_corrupted"
         if _validate_fernet_key(file_key):
             return file_key, "file"
         logger.error(
@@ -90,16 +104,42 @@ def _load_or_generate_key() -> tuple[str | None, Literal["env", "file", "generat
             "Falling back to plaintext storage.",
             key_file,
         )
-        return None, "none"
+        return None, "none_corrupted"
 
-    # 3. Generate a new key and persist it
+    # 3. Generate a new key and persist it.
+    # S1: Use os.open(O_WRONLY|O_CREAT|O_EXCL, 0o600) to avoid the TOCTOU
+    # window between write_text() (umask-respecting) and chmod() — the key
+    # is created with 0o600 from the start, never world-readable.
     new_key = Fernet.generate_key().decode()
     try:
         data_dir.mkdir(parents=True, exist_ok=True)
-        key_file.write_text(new_key)
-        key_file.chmod(0o600)
+        fd = os.open(str(key_file), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, new_key.encode())
+        finally:
+            os.close(fd)
+        # S9: Some filesystems (Windows, SMB, FUSE without uid mapping) silently
+        # ignore mode bits — verify and warn so operators know the key is not
+        # protected at the FS level.
+        actual_mode = key_file.stat().st_mode & 0o777
+        if actual_mode != 0o600:
+            logger.warning(
+                "MFA key file %s: filesystem did not enforce 0o600 (actual: 0o%o). "
+                "Key may be world-readable on Windows / SMB / FUSE mounts.",
+                key_file,
+                actual_mode,
+            )
         logger.info("Generated new MFA encryption key and saved to %s", key_file)
         return new_key, "generated"
+    except FileExistsError:
+        # Race between key_file.exists() check above and O_EXCL — another
+        # process created the file. Treat as corrupted (do NOT regenerate).
+        logger.error(
+            "Race detected creating %s (file appeared between check and create). "
+            "Refusing to overwrite — set MFA_ENCRYPTION_KEY explicitly to recover.",
+            key_file,
+        )
+        return None, "none_corrupted"
     except OSError as exc:
         logger.error(
             "Could not save MFA encryption key to %s (%s). "
@@ -108,10 +148,10 @@ def _load_or_generate_key() -> tuple[str | None, Literal["env", "file", "generat
             key_file,
             exc,
         )
-        return None, "none"
+        return None, "none_write_failed"
 
 
-def get_key_source() -> Literal["env", "file", "generated", "none"] | None:
+def get_key_source() -> _PublicSource | None:
     return _key_source
 
 
@@ -125,17 +165,23 @@ def _get_fernet():
     if _fernet_instance is not None:
         return _fernet_instance
 
-    key, source = _load_or_generate_key()
-    _key_source = source
+    key, internal_source = _load_or_generate_key()
+    # S8: collapse internal failure causes to public "none" while keeping
+    # the differentiated source for the warning path below.
+    _key_source = "none" if internal_source.startswith("none") else internal_source
 
     if key is None:
         if not _warn_shown:
-            logger.warning(
-                "MFA_ENCRYPTION_KEY is not set and DATA_DIR is not writable — "
-                "TOTP secrets and OIDC client_secrets are stored in plaintext. "
-                "Generate a key with: "
-                'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
-            )
+            # S8: only emit the "DATA_DIR not writable" warning when that's
+            # actually the cause. The corrupted-file path already error-logged
+            # in _load_or_generate_key with a more specific message.
+            if internal_source == "none_write_failed":
+                logger.warning(
+                    "MFA_ENCRYPTION_KEY is not set and DATA_DIR is not writable — "
+                    "TOTP secrets and OIDC client_secrets are stored in plaintext. "
+                    "Generate a key with: "
+                    'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+                )
             # Suppresses repetitive warnings across calls; reset together
             # with _fernet_instance when re-initializing (e.g. in tests).
             _warn_shown = True
@@ -163,11 +209,12 @@ def mfa_decrypt(value: str) -> str:
     Raises ``RuntimeError`` if the prefix is present but no key is configured.
     """
     if not value.startswith(_FERNET_PREFIX):
-        # Nit6: Warn when a key IS configured but the stored value is plaintext.
+        # S7: Warn when a key IS configured but the stored value is plaintext.
         # This surfaces rows that were written before encryption was enabled so
-        # operators know they need a migration / re-enroll cycle.
+        # operators know they need a migration / re-enroll cycle. WARNING level
+        # so it shows up in normal operator log review.
         if _get_fernet() is not None:
-            logger.debug(
+            logger.warning(
                 "mfa_decrypt: encryption key is active but the stored value has no "
                 "'fernet:' prefix — returning legacy plaintext. Consider re-enrolling "
                 "this secret to store it encrypted."

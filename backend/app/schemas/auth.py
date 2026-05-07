@@ -1,7 +1,7 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _validate_password_complexity(v: str) -> str:
@@ -505,8 +505,10 @@ class EncryptionStatusResponse(BaseModel):
     key_source: Literal["env", "file", "generated", "none"]
     legacy_plaintext_rows: EncryptionRowCounts
     encrypted_rows: EncryptionRowCounts
-
-    @computed_field
-    @property
-    def decryption_broken(self) -> bool:
-        return (not self.key_configured) and (self.encrypted_rows.oidc_providers + self.encrypted_rows.user_totp) > 0
+    # B4: filled by the endpoint after a sample-decrypt of one encrypted row,
+    # so a wrong-key state (where key_configured=True but rows decrypt to junk)
+    # is detected, not just the no-key case.
+    decryption_broken: bool = False
+    # B2: number of rows skipped during the last legacy re-encryption migration.
+    # Filled from backend.app.core.database.get_migration_error_count().
+    migration_error_count: int = 0

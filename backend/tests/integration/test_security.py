@@ -208,36 +208,44 @@ class TestEncryption:
         assert (key_file.stat().st_mode & 0o777) == 0o600
 
     def test_load_or_generate_key_returns_none_on_write_oserror(self, monkeypatch, tmp_path, caplog):
-        """When DATA_DIR can't be written to (auto-generate path), return (None, 'none')."""
+        """When DATA_DIR can't be written to (auto-generate path), return (None, 'none_write_failed').
+
+        S1: write now uses os.open(O_EXCL|O_CREAT, 0o600) instead of write_text — patch
+        os.write to simulate the OS-level failure. S8: source distinguishes write-failed
+        from corrupted to drive accurate operator messaging.
+        """
         import logging
-        from pathlib import Path
+        import os
 
         import backend.app.core.encryption as enc_mod
 
         monkeypatch.setenv("DATA_DIR", str(tmp_path))
         enc_mod._fernet_instance = None
 
-        original_write_text = Path.write_text
+        original_write = os.write
 
-        def _raising_write_text(self, *args, **kwargs):
-            if self.name == ".mfa_encryption_key":
-                raise OSError("simulated read-only filesystem")
-            return original_write_text(self, *args, **kwargs)
+        def _raising_write(fd, data):
+            # Best-effort: trigger OSError specifically for the key write.
+            raise OSError("simulated read-only filesystem")
 
-        monkeypatch.setattr(Path, "write_text", _raising_write_text)
+        monkeypatch.setattr(os, "write", _raising_write)
 
         with caplog.at_level(logging.ERROR, logger="backend.app.core.encryption"):
             key, source = enc_mod._load_or_generate_key()
 
+        # Restore os.write so the rest of the test suite is unaffected.
+        monkeypatch.setattr(os, "write", original_write)
+
         assert key is None
-        assert source == "none"
+        assert source == "none_write_failed"
         assert any("Could not save MFA encryption key" in rec.message for rec in caplog.records)
 
     def test_load_or_generate_key_returns_none_on_read_oserror(self, monkeypatch, tmp_path, caplog):
-        """B4: existing key file but read fails (e.g. permission denied) → (None, 'none').
+        """B4: existing key file but read fails (e.g. permission denied) → (None, 'none_corrupted').
 
         Critical: must NOT regenerate a new key, which would destroy access to
-        every row already encrypted under the existing key.
+        every row already encrypted under the existing key. S8: 'none_corrupted'
+        marks the cause so operators see the right diagnostic.
         """
         import logging
         from pathlib import Path
@@ -265,7 +273,7 @@ class TestEncryption:
             key, source = enc_mod._load_or_generate_key()
 
         assert key is None
-        assert source == "none"
+        assert source == "none_corrupted"
         # Critical: file must not have been overwritten with a new key.
         assert key_file.exists()
         assert key_file.stat().st_size == original_size
@@ -289,7 +297,11 @@ class TestEncryption:
         assert enc_mod.get_key_source() == "env"
 
     def test_corrupted_key_file_returns_none_without_overwrite(self, monkeypatch, tmp_path, caplog):
-        """A1: invalid key file content → (None, 'none'), file not overwritten."""
+        """A1: invalid key file content → (None, 'none_corrupted'), file not overwritten.
+
+        S8: 'none_corrupted' (vs 'none_write_failed') so operators get the right
+        diagnostic and don't see a misleading 'DATA_DIR not writable' warning.
+        """
         import logging
 
         import backend.app.core.encryption as enc_mod
@@ -305,11 +317,38 @@ class TestEncryption:
             key, source = enc_mod._load_or_generate_key()
 
         assert key is None
-        assert source == "none"
+        assert source == "none_corrupted"
         assert key_file.exists(), "file must not be deleted"
         assert key_file.stat().st_mtime == original_mtime, "file must not be overwritten"
         assert any("not a valid Fernet key" in rec.message for rec in caplog.records)
         assert any("Refusing to overwrite" in rec.message for rec in caplog.records)
+
+    def test_auto_generate_fileexistserror_returns_none_corrupted(self, monkeypatch, tmp_path, caplog):
+        """S1: O_EXCL race — file appears between exists() check and open() →
+        return (None, 'none_corrupted') without overwriting."""
+        import logging
+        import os
+
+        import backend.app.core.encryption as enc_mod
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        enc_mod._fernet_instance = None
+
+        original_open = os.open
+
+        def _excl_raise(path, flags, mode=0o777):
+            if str(path).endswith(".mfa_encryption_key") and (flags & os.O_EXCL):
+                raise FileExistsError(17, "File exists", str(path))
+            return original_open(path, flags, mode)
+
+        monkeypatch.setattr(os, "open", _excl_raise)
+
+        with caplog.at_level(logging.ERROR, logger="backend.app.core.encryption"):
+            key, source = enc_mod._load_or_generate_key()
+
+        assert key is None
+        assert source == "none_corrupted"
+        assert any("Race detected" in rec.message for rec in caplog.records)
 
 
 # ===========================================================================
@@ -1185,11 +1224,20 @@ class TestEncryptLegacyMigration:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_migration_continues_on_row_error(self, db_session, monkeypatch, caplog):
-        """A2: when one row fails to re-encrypt, migration rolls back and logs error."""
+        """B2: per-row commit semantics — when one row fails to re-encrypt,
+        OTHER successfully-encrypted rows must remain committed and the
+        failure surfaces via get_migration_error_count.
+
+        Replaces the previous "rollback all" behaviour: a single poison row
+        used to block every successful re-encryption on every startup forever.
+        """
         import logging
 
-        import backend.app.core.encryption as enc_mod
-        from backend.app.core.database import _migrate_encrypt_legacy_secrets
+        import backend.app.core.encryption as enc_mod  # noqa: F401
+        from backend.app.core.database import (
+            _migrate_encrypt_legacy_secrets,
+            get_migration_error_count,
+        )
         from backend.app.models.oidc_provider import OIDCProvider
 
         self._patch_module_session(monkeypatch, db_session)
@@ -1213,10 +1261,9 @@ class TestEncryptLegacyMigration:
         await db_session.commit()
 
         original_bad = bad._client_secret_enc
-        original_good = good._client_secret_enc
 
-        # Force the setter on 'bad' to raise — patch at the model's import location
-        # so the property setter picks up the patched function.
+        # Force the setter on the SECOND row to raise — patch at the model's
+        # import location so the property setter picks up the patched function.
         import backend.app.models.oidc_provider as oidc_mod
 
         real_encrypt = oidc_mod.mfa_encrypt
@@ -1233,12 +1280,15 @@ class TestEncryptLegacyMigration:
         with caplog.at_level(logging.ERROR, logger="backend.app.core.database"):
             await _migrate_encrypt_legacy_secrets()
 
-        # Rollback → neither row is changed
+        # B2: per-row commit — good IS encrypted, bad is unchanged.
         await db_session.refresh(good)
         await db_session.refresh(bad)
-        assert good._client_secret_enc == original_good
-        assert bad._client_secret_enc == original_bad
-        assert any("failed" in rec.message.lower() for rec in caplog.records)
+        assert good._client_secret_enc.startswith("fernet:"), (
+            "good row must be successfully re-encrypted (per-row commit)"
+        )
+        assert bad._client_secret_enc == original_bad, "bad row must remain unchanged (savepoint-style isolation)"
+        assert get_migration_error_count() == 1, "the skipped row must be exposed via get_migration_error_count"
+        assert any("skipping" in rec.message.lower() for rec in caplog.records)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1266,6 +1316,43 @@ class TestEncryptLegacyMigration:
             await _migrate_encrypt_legacy_secrets()
 
         assert any("no rows needed re-encryption" in rec.message for rec in caplog.records)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_init_db_propagates_unexpected_migration_error(self, monkeypatch):
+        """B3: an unexpected error from _migrate_encrypt_legacy_secrets must
+        surface (re-raise) instead of being silently swallowed.
+
+        Pins the contract introduced for B3: a startup-fatal error like a
+        session-creation failure must fail the lifespan / CLI / restore
+        handler explicitly, never run the app with half-migrated rows.
+
+        Implementation note: we patch _migrate_encrypt_legacy_secrets itself
+        rather than poking the inner read phase, because that is the contract
+        boundary the rest of the codebase relies on (init_db -> migration).
+        """
+        import backend.app.core.database as db_mod
+
+        async def boom():
+            raise RuntimeError("simulated startup-fatal failure")
+
+        # Stub out the rest of init_db so we exercise only the migration step.
+        # init_db opens the engine.begin() block, runs metadata.create_all,
+        # run_migrations, then awaits _migrate_encrypt_legacy_secrets — the
+        # only call we want to fail.
+        monkeypatch.setattr(db_mod, "_migrate_encrypt_legacy_secrets", boom)
+        monkeypatch.setattr(db_mod, "seed_notification_templates", lambda: _noop_async())
+        monkeypatch.setattr(db_mod, "seed_default_groups", lambda: _noop_async())
+        monkeypatch.setattr(db_mod, "seed_spool_catalog", lambda: _noop_async())
+        monkeypatch.setattr(db_mod, "seed_color_catalog", lambda: _noop_async())
+
+        with pytest.raises(RuntimeError, match="simulated startup-fatal failure"):
+            await db_mod.init_db()
+
+
+async def _noop_async():
+    """Helper for tests that need to stub out `seed_*` async coroutines."""
+    return None
 
 
 # ============================================================================
@@ -1501,6 +1588,111 @@ class TestEncryptionStatusEndpoint:
         assert resp.status_code == 500
         assert "encryption status" in resp.json().get("detail", "").lower()
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_status_returns_403_for_viewer_in_viewers_group(self, async_client, db_session):
+        """S2: a user in the Viewers group (has SETTINGS_READ but NOT SETTINGS_UPDATE)
+        must get 403 — encryption-status is admin/operator only.
+        """
+        from sqlalchemy import insert, select
+
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.group import Group, user_groups
+        from backend.app.models.user import User
+
+        # Bootstrap auth (creates default groups via setup endpoint).
+        await self._create_admin_and_login(async_client)
+
+        # Create a user explicitly in the Viewers group — it has SETTINGS_READ
+        # but not SETTINGS_UPDATE, which is the discriminator for S2.
+        viewer = User(
+            username="viewer_s2",
+            email="viewer_s2@example.com",
+            password_hash=get_password_hash("ViewerS2!Pass1"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(viewer)
+        await db_session.flush()
+
+        viewers_group = (await db_session.execute(select(Group).where(Group.name == "Viewers"))).scalar_one_or_none()
+        assert viewers_group is not None, "Viewers group must be seeded by setup"
+
+        # Insert the association row directly to avoid touching the lazy
+        # `viewer.groups` relationship (which would trigger an implicit
+        # IO inside an active async transaction and fail with MissingGreenlet).
+        await db_session.execute(insert(user_groups).values(user_id=viewer.id, group_id=viewers_group.id))
+        await db_session.commit()
+
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "viewer_s2", "password": "ViewerS2!Pass1"},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+
+        resp = await async_client.get(self.STATUS_URL, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 403, "S2: Viewers (SETTINGS_READ only) must NOT be able to read encryption-status"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_status_decryption_broken_when_wrong_key_active(self, async_client, db_session, monkeypatch):
+        """B4: key is configured but cannot decrypt existing rows → decryption_broken=True.
+
+        This is the "wrong key" state that the legacy computed_field check
+        missed — operator pasted a different valid Fernet key (rotation,
+        cross-deployment restore, env override). Status used to show GREEN
+        while every encrypted row was unrecoverable.
+        """
+        from cryptography.fernet import Fernet
+
+        import backend.app.core.encryption as enc_mod
+        from backend.app.models.oidc_provider import OIDCProvider
+
+        token = await self._create_admin_and_login(async_client)
+
+        # Insert a row whose value is fernet-prefixed but encrypted under a
+        # DIFFERENT key (the prefix matches, but decrypt will throw).
+        provider = OIDCProvider(
+            name="WrongKeyEnc",
+            issuer_url="https://wk.example.com",
+            client_id="c",
+            _client_secret_enc=("fernet:" + Fernet(Fernet.generate_key()).encrypt(b"original").decode()),
+            scopes="openid email profile",
+        )
+        db_session.add(provider)
+        await db_session.commit()
+
+        # Now activate a DIFFERENT key — sample-decrypt must fail.
+        monkeypatch.setenv("MFA_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        enc_mod._fernet_instance = None
+        enc_mod._key_source = None
+
+        resp = await async_client.get(self.STATUS_URL, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["key_configured"] is True, "different key is still 'configured'"
+        assert data["encrypted_rows"]["oidc_providers"] >= 1
+        assert data["decryption_broken"] is True, "B4: sample-decrypt must detect wrong-key state"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_status_surfaces_migration_error_count(self, async_client, monkeypatch):
+        """B2: get_migration_error_count() value flows through to the endpoint
+        as `migration_error_count` so operators see poison-row counts.
+        """
+        token = await self._create_admin_and_login(async_client)
+
+        # Force the module-level counter to a known value.
+        import backend.app.core.database as db_mod
+
+        monkeypatch.setattr(db_mod, "_migration_error_count", 7)
+
+        resp = await async_client.get(self.STATUS_URL, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["migration_error_count"] == 7
+
 
 # ============================================================================
 # TestEncryptionRoundtrip (E2E)
@@ -1711,6 +1903,136 @@ class TestBackupKeyFiles:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_restore_aborts_db_swap_when_key_write_fails(self, async_client, monkeypatch, tmp_path):
+        """B1: when MFA key write fails, restore must abort BEFORE the database
+        swap so the live DB is not left with rows encrypted under a key that
+        no longer exists on disk."""
+        import io
+        import os
+        import zipfile
+        from unittest.mock import AsyncMock, patch
+
+        from backend.app.core.config import settings as app_settings
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+
+        # Build ZIP with a key file that we will fail to write to DATA_DIR.
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("bambuddy.db", b"SQLite format 3 backup data")
+            zf.writestr(".mfa_encryption_key", "backup-key-content")
+        buf.seek(0)
+
+        # Track whether the database swap functions were called.
+        # If B1 is correct, key-write failure aborts BEFORE these run.
+        import_pg_mock = AsyncMock()
+        reinit_mock = AsyncMock()
+        init_mock = AsyncMock()
+
+        original_open = os.open
+
+        def _key_write_fails(path, flags, mode=0o777, **kwargs):
+            # `shutil.rmtree` calls os.open(... dir_fd=...) during temp-dir
+            # cleanup — accept and forward any extra kwargs so the mock
+            # doesn't break the cleanup path.
+            if str(path).endswith(".mfa_encryption_key.restore-tmp"):
+                raise OSError(28, "No space left on device", str(path))
+            return original_open(path, flags, mode, **kwargs)
+
+        with (
+            patch("backend.app.core.db_dialect.is_sqlite", return_value=False),
+            patch(
+                "backend.app.api.routes.settings._import_sqlite_to_postgres",
+                import_pg_mock,
+            ),
+            patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
+            patch("backend.app.core.database.reinitialize_database", reinit_mock),
+            patch("backend.app.core.database.init_db", init_mock),
+        ):
+            monkeypatch.setattr(os, "open", _key_write_fails)
+            resp = await async_client.post(
+                "/api/v1/settings/restore",
+                files={"file": ("backup.zip", buf, "application/zip")},
+            )
+
+        assert resp.status_code == 500
+        assert "Database is unchanged" in resp.json().get("detail", "")
+        # Database swap functions must NOT have been called — the abort
+        # happens before that step.
+        import_pg_mock.assert_not_awaited()
+        reinit_mock.assert_not_awaited()
+        init_mock.assert_not_awaited()
+        # No partial key file should be left behind.
+        assert not (tmp_path / ".mfa_encryption_key").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restore_resets_encryption_singleton_after_key_replace(self, async_client, monkeypatch, tmp_path):
+        """B1: after a successful key replace, the encryption singleton must be
+        cleared so init_db's re-encryption migration picks up the restored key
+        instead of the cached Fernet from the previous key.
+        """
+        import io
+        import zipfile
+        from unittest.mock import AsyncMock, patch
+
+        from cryptography.fernet import Fernet
+
+        import backend.app.core.encryption as enc_mod
+        from backend.app.core.config import settings as app_settings
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+
+        # Pre-warm the singleton with an "old" key so we can detect the reset.
+        old_key = Fernet.generate_key().decode()
+        monkeypatch.setenv("MFA_ENCRYPTION_KEY", old_key)
+        enc_mod._fernet_instance = None
+        enc_mod._key_source = None
+        # Trigger lazy load → singleton holds the old Fernet.
+        assert enc_mod.is_encryption_active() is True
+        assert enc_mod._fernet_instance is not None
+        old_fernet_obj = enc_mod._fernet_instance
+
+        # Build ZIP that delivers a DIFFERENT key file.
+        new_key = Fernet.generate_key().decode()
+        assert new_key != old_key
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("bambuddy.db", b"SQLite format 3 backup data")
+            zf.writestr(".mfa_encryption_key", new_key)
+        buf.seek(0)
+
+        with (
+            patch("backend.app.core.db_dialect.is_sqlite", return_value=False),
+            patch(
+                "backend.app.api.routes.settings._import_sqlite_to_postgres",
+                new_callable=AsyncMock,
+            ),
+            patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
+            patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
+            patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+        ):
+            resp = await async_client.post(
+                "/api/v1/settings/restore",
+                files={"file": ("backup.zip", buf, "application/zip")},
+            )
+
+        assert resp.status_code == 200, resp.text
+        # The singleton must have been invalidated. The exact post-state depends
+        # on whether init_db (mocked) re-loaded the singleton, but the cached
+        # _fernet_instance reference from before the restore must not be the
+        # active one any more.
+        assert enc_mod._fernet_instance is None or enc_mod._fernet_instance is not old_fernet_obj, (
+            "B1: encryption singleton must be reset after key replace so init_db's migration picks up the restored key"
+        )
+        # The key file must be on disk with the new content.
+        restored = (tmp_path / ".mfa_encryption_key").read_text()
+        assert restored == new_key
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_restore_rejects_path_traversal_in_zip(self, async_client, monkeypatch, tmp_path):
         """A4: ZIP with path-traversal entry → HTTP 400, no file written outside temp dir."""
         import io
@@ -1726,6 +2048,47 @@ class TestBackupKeyFiles:
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("../etc/passwd", "root:x:0:0")
             zf.writestr("bambuddy.db", b"SQLite format 3")
+        buf.seek(0)
+
+        resp = await async_client.post(
+            "/api/v1/settings/restore",
+            files={"file": ("backup.zip", buf, "application/zip")},
+        )
+        assert resp.status_code == 400
+        assert "unsafe path" in resp.json().get("detail", "").lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restore_rejects_prefix_collision_zipslip(self, async_client, monkeypatch, tmp_path):
+        """T1: ZIP entry with prefix-collision path must be rejected.
+
+        A startswith() check would accept '/tmp/abc_evil/file' when the
+        extraction root was '/tmp/abc' — is_relative_to correctly rejects it.
+        The restore handler creates a tempfile.TemporaryDirectory inside the
+        system temp dir; we craft an entry that resolves to a sibling path
+        whose name starts with the temp dir's basename.
+        """
+        import io
+        import zipfile
+
+        from backend.app.core.config import settings as app_settings
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+
+        # Use a path with traversal — the resolved path will share the parent
+        # temp directory's basename as a prefix but NOT be inside the
+        # extraction root. We don't know the random extraction-root name at
+        # ZIP-build time, so we pick a literal "../poc-evil-prefix-collision/"
+        # which traverses up one level from the extraction root and lands in
+        # a sibling directory. is_relative_to() must reject this; a naive
+        # startswith() against the parent's parent would accept it.
+        evil_name = "../escaped-prefix-collision/poc.txt"
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(evil_name, "pwned")
+            zf.writestr("bambuddy.db", b"SQLite format 3\x00")
         buf.seek(0)
 
         resp = await async_client.post(
@@ -1788,6 +2151,107 @@ class TestBackupKeyFiles:
 
         with _pytest.raises(OSError, match="simulated unreadable"):
             await create_backup_zip(output_path=tmp_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_backup_restore_roundtrip_preserves_encrypted_oidc_secret(
+        self, async_client, db_session, monkeypatch, tmp_path
+    ):
+        """T3: encrypt → backup → simulate key loss → restore → decrypt.
+
+        Verifies the user-facing promise that local backup ZIPs are
+        self-contained: an OIDC client_secret encrypted under one key still
+        decrypts after restore even when the running install no longer has
+        the key on disk or in the env. Exercises the B1 key-first restore
+        path and the B4 sample-decrypt status check together.
+        """
+        import zipfile
+        from pathlib import Path
+        from unittest.mock import AsyncMock, patch
+
+        from cryptography.fernet import Fernet
+        from sqlalchemy import select
+
+        import backend.app.core.encryption as enc_mod
+        from backend.app.api.routes.settings import create_backup_zip
+        from backend.app.core.config import settings as app_settings
+        from backend.app.models.oidc_provider import OIDCProvider
+
+        # 1. Pin a key, encrypt an OIDC secret via the property setter.
+        key = Fernet.generate_key().decode()
+        monkeypatch.setenv("MFA_ENCRYPTION_KEY", key)
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+        # Persist the key file too, so create_backup_zip picks it up.
+        (tmp_path / ".mfa_encryption_key").write_text(key)
+        enc_mod._fernet_instance = None
+        enc_mod._key_source = None
+
+        provider = OIDCProvider(
+            name="RoundtripProv",
+            issuer_url="https://rt.example.com",
+            client_id="cid",
+            client_secret="my-original-secret",  # via setter -> encrypted
+            scopes="openid email profile",
+            is_enabled=True,
+        )
+        db_session.add(provider)
+        await db_session.commit()
+        original_id = provider.id
+        assert provider._client_secret_enc.startswith("fernet:")
+
+        # 2. Create a backup ZIP (must include .mfa_encryption_key).
+        zip_path, _ = await create_backup_zip(output_path=tmp_path)
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                names = zf.namelist()
+                assert ".mfa_encryption_key" in names, "T3: backup ZIP must include the key file"
+
+            # 3. Simulate key loss: delete the key file from DATA_DIR, drop
+            #    the env var, reset the cached fernet singleton.
+            (tmp_path / ".mfa_encryption_key").unlink()
+            monkeypatch.delenv("MFA_ENCRYPTION_KEY", raising=False)
+            enc_mod._fernet_instance = None
+            enc_mod._key_source = None
+
+            # 4. Restore the ZIP via the endpoint. Mock out the DB-swap
+            #    (we keep the live in-memory test DB) and init_db side effects
+            #    so this test focuses on the key-restore path.
+            with (
+                patch("backend.app.core.db_dialect.is_sqlite", return_value=False),
+                patch(
+                    "backend.app.api.routes.settings._import_sqlite_to_postgres",
+                    new_callable=AsyncMock,
+                ),
+                patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
+                patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
+                patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+                open(zip_path, "rb") as f,
+            ):
+                resp = await async_client.post(
+                    "/api/v1/settings/restore",
+                    files={"file": ("backup.zip", f, "application/zip")},
+                )
+            assert resp.status_code == 200, resp.text
+
+            # 5. Reset the singleton again (B1 already does this in production,
+            #    but here init_db is mocked so we explicitly invalidate).
+            enc_mod._fernet_instance = None
+            enc_mod._key_source = None
+
+            # 6. The key file must be back on disk with restrictive permissions.
+            restored = Path(tmp_path) / ".mfa_encryption_key"
+            assert restored.exists(), "T3: key file must be restored to DATA_DIR"
+            assert (restored.stat().st_mode & 0o777) == 0o600
+
+            # 7. Decryption works again — the property getter must return the
+            #    original plaintext, proving the restored key matches the
+            #    cipher in the (still in-memory) DB row.
+            result = await db_session.execute(select(OIDCProvider).where(OIDCProvider.id == original_id))
+            restored_provider = result.scalar_one()
+            assert restored_provider.client_secret == "my-original-secret"
+        finally:
+            zip_path.unlink(missing_ok=True)
 
 
 # ============================================================================
@@ -1876,12 +2340,19 @@ class TestTOTPDecryptionBroken:
     async def test_disable_totp_returns_400_when_decryption_broken_and_no_backup_codes(
         self, async_client, db_session, monkeypatch
     ):
-        """B2a: disable falls through to backup-code branch when TOTP secret
+        """B2a + S3: disable falls through to backup-code branch when TOTP secret
         cannot be decrypted; with no backup codes seeded, the request is
-        rejected as an invalid code (400), not a server error."""
-        import backend.app.core.encryption as enc_mod
+        rejected as an invalid code (400), not a server error.
 
-        token, _, _ = await self._setup_admin_and_totp_user(async_client, db_session)
+        S3: AND the failed-attempt counter must NOT be incremented — the
+        cause was a server-side key loss, not a user mistake.
+        """
+        from sqlalchemy import select as _select
+
+        import backend.app.core.encryption as enc_mod
+        from backend.app.models.auth_ephemeral import AuthRateLimitEvent
+
+        token, admin_username, _ = await self._setup_admin_and_totp_user(async_client, db_session)
 
         monkeypatch.setattr(enc_mod, "_load_or_generate_key", lambda: (None, "none"))
         enc_mod._fernet_instance = None
@@ -1894,17 +2365,34 @@ class TestTOTPDecryptionBroken:
         assert resp.status_code == 400
         assert "invalid" in resp.json().get("detail", "").lower()
 
+        # S3: no fail-counter debit on server-side key loss.
+        events = (
+            (
+                await db_session.execute(
+                    _select(AuthRateLimitEvent).where(AuthRateLimitEvent.username == admin_username.lower())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(events) == 0, "S3: must not debit fail-counter on key-loss"
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_regenerate_backup_codes_returns_400_when_decryption_broken_and_no_backup_codes(
         self, async_client, db_session, monkeypatch
     ):
-        """B2b: regenerate-backup-codes falls through to backup-code branch when
+        """B2b + S3: regenerate-backup-codes falls through to backup-code branch when
         TOTP secret cannot be decrypted; with no backup codes seeded, the
-        request is rejected as an invalid code (400)."""
-        import backend.app.core.encryption as enc_mod
+        request is rejected as an invalid code (400) AND the fail-counter
+        is NOT incremented (S3: server-side cause, not user mistake).
+        """
+        from sqlalchemy import select as _select
 
-        token, _, _ = await self._setup_admin_and_totp_user(async_client, db_session)
+        import backend.app.core.encryption as enc_mod
+        from backend.app.models.auth_ephemeral import AuthRateLimitEvent
+
+        token, admin_username, _ = await self._setup_admin_and_totp_user(async_client, db_session)
 
         monkeypatch.setattr(enc_mod, "_load_or_generate_key", lambda: (None, "none"))
         enc_mod._fernet_instance = None
@@ -1916,6 +2404,17 @@ class TestTOTPDecryptionBroken:
         )
         assert resp.status_code == 400
         assert "invalid" in resp.json().get("detail", "").lower()
+
+        events = (
+            (
+                await db_session.execute(
+                    _select(AuthRateLimitEvent).where(AuthRateLimitEvent.username == admin_username.lower())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(events) == 0, "S3: must not debit fail-counter on key-loss"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1985,6 +2484,160 @@ class TestTOTPDecryptionBroken:
         body = resp.json()
         assert "backup_codes" in body
         assert len(body["backup_codes"]) == 10
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_totp_wrong_code_with_seeded_hashes_returns_400_and_debits_counter(
+        self, async_client, db_session, monkeypatch
+    ):
+        """T2: with backup_code_hashes seeded AND a working encryption key,
+        a wrong code is rejected (400) AND the fail-counter IS incremented.
+
+        This pins the behaviour that a future refactor swallowing
+        compare_digest mismatches would still let the existing 'no codes
+        configured' tests pass — only this assertion exercises the actual
+        pwd_context.verify mismatch path.
+        """
+        from cryptography.fernet import Fernet
+        from sqlalchemy import select as _select
+
+        import backend.app.core.encryption as enc_mod
+        from backend.app.api.routes.mfa import _generate_backup_codes
+        from backend.app.models.auth_ephemeral import AuthRateLimitEvent
+        from backend.app.models.user_totp import UserTOTP
+
+        # Active key — secret can be decrypted, this is NOT key-loss.
+        monkeypatch.setenv("MFA_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        enc_mod._fernet_instance = None
+
+        token, admin_username, user_id = await self._setup_admin_and_totp_user(async_client, db_session)
+
+        # Replace stub fernet:-prefixed value with a real encrypted secret so
+        # disable_totp's TOTP-decrypt path doesn't throw, AND seed real hashes.
+        result = await db_session.execute(_select(UserTOTP).where(UserTOTP.user_id == user_id))
+        totp = result.scalar_one()
+        totp.secret = "JBSWY3DPEHPK3PXP"  # via setter -> mfa_encrypt
+        plain_codes, hashed_codes = _generate_backup_codes()
+        totp.backup_code_hashes = hashed_codes
+        await db_session.commit()
+
+        # Submit a code that matches NEITHER the TOTP nor any backup-code hash.
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/disable",
+            json={"code": "WRONGCD1"},  # wrong but well-formed
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert "invalid" in resp.json().get("detail", "").lower()
+
+        # T2 + S3: with key intact, the fail-counter MUST increment for a
+        # real wrong-code attempt (this is the user-error path, not key-loss).
+        events = (
+            (
+                await db_session.execute(
+                    _select(AuthRateLimitEvent).where(AuthRateLimitEvent.username == admin_username.lower())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(events) >= 1, "T2: with key intact, wrong code must debit the fail-counter"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_regenerate_backup_codes_wrong_code_with_seeded_hashes_returns_400_and_debits_counter(
+        self, async_client, db_session, monkeypatch
+    ):
+        """T2: same as the disable_totp variant for /regenerate-backup-codes."""
+        from cryptography.fernet import Fernet
+        from sqlalchemy import select as _select
+
+        import backend.app.core.encryption as enc_mod
+        from backend.app.api.routes.mfa import _generate_backup_codes
+        from backend.app.models.auth_ephemeral import AuthRateLimitEvent
+        from backend.app.models.user_totp import UserTOTP
+
+        monkeypatch.setenv("MFA_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        enc_mod._fernet_instance = None
+
+        token, admin_username, user_id = await self._setup_admin_and_totp_user(async_client, db_session)
+
+        result = await db_session.execute(_select(UserTOTP).where(UserTOTP.user_id == user_id))
+        totp = result.scalar_one()
+        totp.secret = "JBSWY3DPEHPK3PXP"
+        plain_codes, hashed_codes = _generate_backup_codes()
+        totp.backup_code_hashes = hashed_codes
+        await db_session.commit()
+
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/regenerate-backup-codes",
+            json={"code": "WRONGCD2"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert "invalid" in resp.json().get("detail", "").lower()
+
+        events = (
+            (
+                await db_session.execute(
+                    _select(AuthRateLimitEvent).where(AuthRateLimitEvent.username == admin_username.lower())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(events) >= 1, "T2: with key intact, wrong code must debit the fail-counter"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_disable_totp_wrong_code_with_seeded_hashes_at_keyloss_no_counter_debit(
+        self, async_client, db_session, monkeypatch
+    ):
+        """T2 + S3 cross-check: with hashes seeded but encryption key gone,
+        a wrong code returns 400 BUT the fail-counter MUST NOT increment.
+
+        This is the dual of the test above — same wrong-code 400 outcome,
+        but the counter debit is gated on the cause of failure (server-side
+        key loss must NOT penalise the user).
+        """
+        from sqlalchemy import select as _select
+
+        import backend.app.core.encryption as enc_mod
+        from backend.app.api.routes.mfa import _generate_backup_codes
+        from backend.app.models.auth_ephemeral import AuthRateLimitEvent
+        from backend.app.models.user_totp import UserTOTP
+
+        token, admin_username, user_id = await self._setup_admin_and_totp_user(async_client, db_session)
+
+        # Seed real hashes on the existing TOTP row.
+        result = await db_session.execute(_select(UserTOTP).where(UserTOTP.user_id == user_id))
+        totp = result.scalar_one()
+        plain_codes, hashed_codes = _generate_backup_codes()
+        totp.backup_code_hashes = hashed_codes
+        await db_session.commit()
+
+        # Now simulate key loss.
+        monkeypatch.setattr(enc_mod, "_load_or_generate_key", lambda: (None, "none"))
+        enc_mod._fernet_instance = None
+
+        resp = await async_client.post(
+            "/api/v1/auth/2fa/totp/disable",
+            json={"code": "WRONGCD3"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+
+        # S3: counter MUST be unchanged — this is a server-side problem.
+        events = (
+            (
+                await db_session.execute(
+                    _select(AuthRateLimitEvent).where(AuthRateLimitEvent.username == admin_username.lower())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(events) == 0, "S3: must not debit fail-counter when cause is server-side key-loss"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

@@ -778,6 +778,54 @@ async def restore_backup(
             logger.info("Closing database connections...")
             await close_all_connections()
 
+            # B1: Restore the MFA encryption key file BEFORE the database swap.
+            # If the key write fails (OSError, RO disk, full disk, EACCES) we
+            # can still abort while the live DB is intact. Doing this AFTER the
+            # DB swap would leave the database with rows encrypted under the
+            # backup's key but the running install holding only the old key —
+            # every encrypted secret becomes unrecoverable.
+            from backend.app.core.paths import resolve_data_dir
+
+            mfa_key_src = temp_path / ".mfa_encryption_key"
+            if mfa_key_src.exists() and mfa_key_src.is_file():
+                dst_key = resolve_data_dir() / ".mfa_encryption_key"
+                tmp_key = dst_key.parent / ".mfa_encryption_key.restore-tmp"
+                try:
+                    dst_key.parent.mkdir(parents=True, exist_ok=True)
+                    # S1: atomic write with restrictive mode from creation.
+                    # O_TRUNC because a stale tmp may exist from a prior
+                    # failed restore attempt — we want to overwrite it.
+                    fd = os.open(str(tmp_key), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                    try:
+                        os.write(fd, mfa_key_src.read_bytes())
+                    finally:
+                        os.close(fd)
+                    # POSIX rename(2) — atomic when source/dest are on the
+                    # same filesystem (we're staying inside dst_key.parent).
+                    os.replace(str(tmp_key), str(dst_key))
+                    # S9: warn if the FS doesn't enforce 0o600
+                    actual_mode = dst_key.stat().st_mode & 0o777
+                    if actual_mode != 0o600:
+                        logger.warning(
+                            "Restored MFA key file %s: filesystem did not enforce 0o600 "
+                            "(actual: 0o%o). Key may be world-readable on Windows / SMB / FUSE.",
+                            dst_key,
+                            actual_mode,
+                        )
+                    logger.info("Restored .mfa_encryption_key from backup")
+                except OSError as e:
+                    logger.error(
+                        "Could not write restored MFA key file to %s: %s — "
+                        "aborting BEFORE database swap (DB unchanged).",
+                        dst_key,
+                        e,
+                        exc_info=True,
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail=("Restore aborted: MFA key write failed. Database is unchanged. Check server logs."),
+                    ) from e
+
             # 5. Replace database
             logger.info("Restoring database from backup...")
             if is_sqlite():
@@ -858,33 +906,17 @@ async def restore_backup(
                         logger.warning("Could not restore %s directory: %s", name, e)
                         skipped_dirs.append(name)
 
-            # Restore the MFA encryption key and JWT secret files before
-            # reinitialising the database so the re-encryption migration can
-            # see the correct key. ZipSlip entries have already been rejected
-            # above, so src_key is guaranteed to be inside temp_path.
-            from backend.app.core.paths import resolve_data_dir
+            # 7. Reset the encryption singleton so the migration that runs
+            # inside init_db() picks up the restored key file (if a new one
+            # was written above). Without this reset, _get_fernet would
+            # return the cached Fernet instance built from the previous key.
+            import backend.app.core.encryption as _enc_mod
 
-            mfa_key_src = temp_path / ".mfa_encryption_key"
-            if mfa_key_src.exists() and mfa_key_src.is_file():
-                dst_key = resolve_data_dir() / ".mfa_encryption_key"
-                try:
-                    dst_key.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(mfa_key_src, dst_key)
-                    dst_key.chmod(0o600)
-                    logger.info("Restored .mfa_encryption_key from backup")
-                except OSError as e:
-                    logger.error(
-                        "Could not write restored MFA key file to %s: %s",
-                        dst_key,
-                        e,
-                        exc_info=True,
-                    )
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Restore failed. Check server logs.",
-                    ) from e
+            _enc_mod._fernet_instance = None
+            _enc_mod._key_source = None
+            _enc_mod._warn_shown = False
 
-            # 7. Reinitialize the database engine and apply schema migrations so that
+            # 8. Reinitialize the database engine and apply schema migrations so that
             # tables added after the backup was created (e.g. ams_labels) exist
             # immediately, without requiring a manual restart.
             await reinitialize_database()

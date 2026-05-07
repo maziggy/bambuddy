@@ -52,10 +52,16 @@ def mfa_encryption_isolation(monkeypatch, tmp_path):
     - Sets ``DATA_DIR`` to an isolated tmp path so the auto-bootstrap can
       never write ``.mfa_encryption_key`` into the repo or share state
       across tests / xdist workers.
-    - Removes any inherited ``MFA_ENCRYPTION_KEY`` so the default test path
-      is the legacy plaintext fallback.
+    - Removes any inherited ``MFA_ENCRYPTION_KEY`` env var.
+    - With ``DATA_DIR`` pointing at a writable ``tmp_path``, the default
+      bootstrap path on first ``_get_fernet()`` call is **auto-generation**
+      (key_source='generated'), NOT plaintext fallback. Tests that need the
+      plaintext fallback path must monkeypatch ``_load_or_generate_key`` to
+      return ``(None, 'none')`` (or 'none_write_failed' / 'none_corrupted')
+      explicitly — see ``test_plaintext_passthrough_without_key`` for an
+      example.
     - Resets the ``encryption`` module-level singletons before AND after the
-      test so that reorder doesn't leak cached Fernet instances.
+      test so reorder doesn't leak cached Fernet instances.
 
     Tests that want to exercise an active key should call
     ``monkeypatch.setenv("MFA_ENCRYPTION_KEY", valid_key)`` and

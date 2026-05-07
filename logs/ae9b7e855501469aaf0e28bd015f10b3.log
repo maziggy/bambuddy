@@ -1,0 +1,200 @@
+2026-05-07 23:32:06,018 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client connected: [IP]:52609
+2026-05-07 23:32:06,023 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client authenticated successfully
+2026-05-07 23:32:06,027 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT subscribe: device/22E00A391800001/report QoS=0
+2026-05-07 23:32:08,799 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT TLS connection from ('[IP]', 52610) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-05-07 23:32:08,799 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client connected: [IP]:52610
+2026-05-07 23:32:08,801 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client authenticated successfully
+2026-05-07 23:32:08,807 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT subscribe: device/22E00A391800001/report QoS=0
+2026-05-07 23:32:10,838 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:32:15,959 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:32:16,580 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:32:16,581 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:32:21,284 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:32:26,603 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:32:31,621 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:32:36,842 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:32:41,863 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:32:46,588 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:32:46,589 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:32:47,083 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:32:52,304 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:32:57,423 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:33:01,252 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/22E00A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20017","version":1}}...
+2026-05-07 23:33:01,252 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-05-07 23:33:01,252 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-05-07 23:33:02,644 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:33:16,597 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:33:16,598 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:33:31,384 INFO [uvicorn.access] [-] [IP]:58976 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-07 23:33:46,605 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:33:46,606 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:33:57,696 INFO [backend.app.api.routes.print_queue] [08986be5] Updated queue item 15
+2026-05-07 23:33:57,699 INFO [uvicorn.access] [-] [IP]:42172 - "PATCH /api/v1/queue/15 HTTP/1.1" 200
+2026-05-07 23:34:03,962 INFO [backend.app.api.routes.print_queue] [c04cf112] Updated queue item 16
+2026-05-07 23:34:03,966 INFO [uvicorn.access] [-] [IP]:39520 - "PATCH /api/v1/queue/16 HTTP/1.1" 200
+2026-05-07 23:34:09,987 INFO [backend.app.api.routes.print_queue] [7e43605a] Updated queue item 17
+2026-05-07 23:34:09,991 INFO [uvicorn.access] [-] [IP]:35412 - "PATCH /api/v1/queue/17 HTTP/1.1" 200
+2026-05-07 23:34:15,227 INFO [backend.app.api.routes.print_queue] [c1357a4f] Updated queue item 18
+2026-05-07 23:34:15,231 INFO [uvicorn.access] [-] [IP]:35522 - "PATCH /api/v1/queue/18 HTTP/1.1" 200
+2026-05-07 23:34:16,612 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:34:16,613 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:34:46,619 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:34:46,620 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:35:16,627 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:35:16,629 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:35:41,945 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-07 23:35:46,636 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:35:46,637 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:36:16,643 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:36:16,645 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:36:46,653 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:36:46,655 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:37:16,662 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:37:16,663 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:37:46,671 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:37:46,673 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:38:16,680 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:38:16,681 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:38:43,010 INFO [backend.app.services.virtual_printer.bind_server] [-] Bind server: client connected from [IP]:52807
+2026-05-07 23:38:43,011 INFO [backend.app.services.virtual_printer.bind_server] [-] Bind server: received from [IP]:52807: {'login': {'command': 'detect', 'sequence_id': '20000'}}
+2026-05-07 23:38:43,011 INFO [backend.app.services.virtual_printer.bind_server] [-] Bind server: sent detect response to [IP]:52807 (serial=22E00A391800001)
+2026-05-07 23:38:44,629 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT TLS connection from ('[IP]', 52808) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-05-07 23:38:44,629 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client connected: [IP]:52808
+2026-05-07 23:38:44,632 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client authenticated successfully
+2026-05-07 23:38:44,638 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT subscribe: device/22E00A391800001/report QoS=0
+2026-05-07 23:38:44,818 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/22E00A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20000","version":1}}...
+2026-05-07 23:38:44,818 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-05-07 23:38:44,818 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-05-07 23:38:44,821 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/22E00A391800001/request: {"info":{"command":"get_version","sequence_id":"20001"}}...
+2026-05-07 23:38:44,822 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-05-07 23:38:44,822 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=P2S)
+2026-05-07 23:38:44,825 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/22E00A391800001/request: {"info":{"command":"get_version","sequence_id":"20002"}}...
+2026-05-07 23:38:44,825 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-05-07 23:38:44,825 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=P2S)
+2026-05-07 23:38:46,689 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:38:46,690 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:38:51,354 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:38:56,479 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:38:56,846 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/22E00A391800001/request: {"info":{"command":"get_version","sequence_id":"20003"}}...
+2026-05-07 23:38:56,846 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-05-07 23:38:56,846 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=P2S)
+2026-05-07 23:38:56,849 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/22E00A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20004","version":1}}...
+2026-05-07 23:38:56,849 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-05-07 23:38:56,849 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-05-07 23:39:01,899 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:39:07,023 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:39:12,247 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:39:16,698 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:39:16,700 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:39:17,368 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=22E00A391800001)
+2026-05-07 23:39:46,709 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:39:46,711 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:40:16,719 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:40:16,720 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:40:41,952 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-07 23:40:46,728 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:40:46,730 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:41:16,738 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:41:16,739 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:41:46,747 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:41:46,749 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:42:16,755 INFO [backend.app.services.print_scheduler] [-] Queue check: found 6 pending items: [(13, 1, 15, None), (14, 1, 16, None), (15, 1, 17, None), (16, 1, 18, None), (17, 1, 19, None), (18, 1, 20, None)]
+2026-05-07 23:42:16,757 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-05-07 23:42:22,718 INFO [backend.app.api.routes.support] [4d6c2cdc] Log level changed to DEBUG
+2026-05-07 23:42:22,719 INFO [backend.app.api.routes.bug_report] [4d6c2cdc] Bug report: enabled debug logging
+2026-05-07 23:42:22,719 DEBUG [backend.app.services.bambu_mqtt] [4d6c2cdc] [[SERIAL]] Requesting status update (pushall)
+2026-05-07 23:42:22,720 INFO [uvicorn.access] [-] [IP]:55378 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-07 23:42:23,748 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-05-07 23:42:23,749 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-05-07 23:42:23,749 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-05-07 23:42:23,749 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_17.gcode, subtask_name: All_bin_models_plate_17
+2026-05-07 23:42:23,749 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 3, 4], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 339}
+2026-05-07 23:42:23,749 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-05-07 23:42:23,750 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-05-07 23:42:23,750 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-05-07 23:42:23,750 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-05-07 23:42:23,751 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-05-07 23:42:23,751 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-07 23:42:23,751 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-05-07 23:42:23,751 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 41°C (heater OFF)
+2026-05-07 23:42:23,752 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-05-07 23:42:23,753 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=41.0, heating=False, respect_local=False
+2026-05-07 23:42:23,753 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 41.0, target: 0.0, heating: False
+2026-05-07 23:42:23,753 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887616, 'code': 131184, 'ts_boot': 35098, 'ts_unix': '20260507201516'}]
+2026-05-07 23:42:23,753 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 15226240, 'tl_external_total_kb': 61436800, 'tl_internal_free_kb': 498961, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-05-07 23:42:23,753 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-05-07 23:42:23,753 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-05-07 23:42:23,754 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-05-07 23:42:23,754 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [0]
+2026-05-07 23:42:23,754 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_17.gcode, subtask: All_bin_models_plate_17
+2026-05-07 23:42:24,595 DEBUG [backend.app.api.routes.printers] [95e627aa] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-05-07 23:42:24,595 DEBUG [backend.app.api.routes.printers] [95e627aa] Using tray_now directly as global ID: 0
+2026-05-07 23:42:24,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-05-07 23:42:24,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-05-07 23:42:24,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-05-07 23:42:24,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_17.gcode, subtask_name: All_bin_models_plate_17
+2026-05-07 23:42:24,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 3, 4], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 339}
+2026-05-07 23:42:24,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-05-07 23:42:24,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-05-07 23:42:24,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-05-07 23:42:24,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-05-07 23:42:24,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-05-07 23:42:24,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-07 23:42:24,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-05-07 23:42:24,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 41°C (heater OFF)
+2026-05-07 23:42:24,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-05-07 23:42:24,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=41.0, heating=False, respect_local=False
+2026-05-07 23:42:24,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 41.0, target: 0.0, heating: False
+2026-05-07 23:42:24,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887616, 'code': 131184, 'ts_boot': 35098, 'ts_unix': '20260507201516'}]
+2026-05-07 23:42:24,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 15226240, 'tl_external_total_kb': 61436800, 'tl_internal_free_kb': 498961, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-05-07 23:42:24,827 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-05-07 23:42:24,827 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-05-07 23:42:24,827 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-05-07 23:42:24,828 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [0]
+2026-05-07 23:42:24,828 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_17.gcode, subtask: All_bin_models_plate_17
+2026-05-07 23:42:26,107 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-05-07 23:42:26,108 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-05-07 23:42:26,108 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-05-07 23:42:26,108 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_17.gcode, subtask_name: All_bin_models_plate_17
+2026-05-07 23:42:26,108 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 3, 4], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 339}
+2026-05-07 23:42:26,108 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-05-07 23:42:26,109 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-05-07 23:42:26,109 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-05-07 23:42:26,109 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-05-07 23:42:26,109 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-05-07 23:42:26,109 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-07 23:42:26,109 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-05-07 23:42:26,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 41°C (heater OFF)
+2026-05-07 23:42:26,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-05-07 23:42:26,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=41.0, heating=False, respect_local=False
+2026-05-07 23:42:26,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 41.0, target: 0.0, heating: False
+2026-05-07 23:42:26,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887616, 'code': 131184, 'ts_boot': 35098, 'ts_unix': '20260507201516'}]
+2026-05-07 23:42:26,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 15225984, 'tl_external_total_kb': 61436800, 'tl_internal_free_kb': 498961, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-05-07 23:42:26,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-05-07 23:42:26,111 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-05-07 23:42:26,111 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-05-07 23:42:26,111 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [0]
+2026-05-07 23:42:26,111 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_17.gcode, subtask: All_bin_models_plate_17
+2026-05-07 23:42:27,206 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-05-07 23:42:27,206 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-05-07 23:42:27,206 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-05-07 23:42:27,206 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_17.gcode, subtask_name: All_bin_models_plate_17
+2026-05-07 23:42:27,206 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 3, 4], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 339}
+2026-05-07 23:42:27,206 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-05-07 23:42:27,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-05-07 23:42:27,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-05-07 23:42:27,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-05-07 23:42:27,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-05-07 23:42:27,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-07 23:42:27,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-05-07 23:42:27,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 41°C (heater OFF)
+2026-05-07 23:42:27,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-05-07 23:42:27,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=41.0, heating=False, respect_local=False
+2026-05-07 23:42:27,208 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 41.0, target: 0.0, heating: False
+2026-05-07 23:42:27,208 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887616, 'code': 131184, 'ts_boot': 35098, 'ts_unix': '20260507201516'}]
+2026-05-07 23:42:27,208 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 15225984, 'tl_external_total_kb': 61436800, 'tl_internal_free_kb': 498961, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-05-07 23:42:27,208 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-05-07 23:42:27,208 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-05-07 23:42:27,208 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-05-07 23:42:27,208 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [0]
+2026-05-07 23:42:27,209 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_17.gcode, subtask: All_bin_models_plate_17

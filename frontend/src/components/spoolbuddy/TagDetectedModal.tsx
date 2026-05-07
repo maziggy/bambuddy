@@ -347,7 +347,7 @@ function UnknownTagView({ tagUid, scaleWeight, onAddToInventory, onLinkSpool, on
             onClick={onLinkSpool}
             className="flex-1 px-5 py-3 rounded-xl text-sm font-medium bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors min-h-[44px]"
           >
-            {t('inventory.assignSpool', 'Assign Spool')}
+            {t('spoolbuddy.dashboard.linkSpool', 'Link to Spool')}
           </button>
         )}
         <button

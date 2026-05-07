@@ -1,18 +1,15 @@
 import { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useOutletContext } from 'react-router-dom';
 import { Search, X, Package } from 'lucide-react';
 import { api } from '../../api/client';
-import type { InventorySpool } from '../../api/client';
+import type { InventorySpool, SpoolAssignment } from '../../api/client';
 import { resolveSpoolColorName } from '../../utils/colors';
 import { formatSlotLabel } from '../../utils/amsHelpers';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
-import { useToast } from '../../contexts/ToastContext';
-
-type SlotInfo = { ams_id: number; tray_id: number; printer_name?: string | null };
 
 type FilterMode = 'all' | 'in_ams' | string; // string = material name
 
@@ -36,7 +33,7 @@ function spoolDisplayName(spool: InventorySpool): string {
   return parts.join(' ');
 }
 
-function assignmentLabel(a: SlotInfo): string {
+function assignmentLabel(a: SpoolAssignment): string {
   const isExternal = a.ams_id === 254 || a.ams_id === 255;
   const isHt = !isExternal && a.ams_id >= 128;
   return formatSlotLabel(a.ams_id, a.tray_id, isHt, isExternal);
@@ -55,18 +52,9 @@ function SpoolCircle({ color, size = 56 }: { color: string; size?: number }) {
   );
 }
 
-// Renders inventory directly via React instead of embedding Spoolman's own UI in an
-// iframe. The iframe approach was dropped because this component lives inside the
-// SpoolBuddy shell and already has direct access to the same auth/query context,
-// making the iframe an unnecessary dependency on the Spoolman server being reachable
-// from the browser. No feature flag guards this: the internal UI is strictly superior
-// (works offline, supports local spools) and the raw Spoolman URL remains accessible
-// directly from the Settings page for users who want it.
 export function SpoolBuddyInventoryPage() {
   const { sbState, selectedPrinterId } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
-  const { showToast } = useToast();
-  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
@@ -78,12 +66,9 @@ export function SpoolBuddyInventoryPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const spoolmanMode = spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
-
   const { data: spools = [], isLoading, refetch: refetchSpools } = useQuery({
-    queryKey: spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'],
-    queryFn: () => spoolmanMode ? api.getSpoolmanInventorySpools(false) : api.getSpools(false),
-    enabled: spoolmanSettings !== undefined,
+    queryKey: ['inventory-spools'],
+    queryFn: () => api.getSpools(false),
     refetchInterval: 30000,
   });
 
@@ -91,41 +76,19 @@ export function SpoolBuddyInventoryPage() {
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     refetchInterval: 30000,
-    enabled: !spoolmanMode,
   });
 
-  const { data: spoolmanAssignments = [] } = useQuery({
-    queryKey: ['spoolman-slot-assignments'],
-    queryFn: () => api.getSpoolmanSlotAssignments(),
-    refetchInterval: 30000,
-    enabled: spoolmanMode,
-  });
-
-  const unassignSpoolMutation = useMutation({
-    mutationFn: (spoolId: number) => api.unassignSpoolmanSlot(spoolId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
-      void queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
-    },
-    onError: () => showToast(t('inventory.unassignFailed', 'Failed to unassign spool'), 'error'),
-  });
-
-  // Build assignment lookup: spool_id → SlotInfo
-  const assignmentMap = useMemo((): Record<number, SlotInfo> => {
-    if (spoolmanMode) {
-      const map: Record<number, SlotInfo> = {};
-      spoolmanAssignments.forEach(a => { map[a.spoolman_spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id }; });
-      return map;
-    }
-    const map: Record<number, SlotInfo> = {};
-    assignments.forEach(a => { map[a.spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id, printer_name: a.printer_name }; });
+  // Build assignment lookup: spool_id → assignment
+  const assignmentMap = useMemo(() => {
+    const map: Record<number, SpoolAssignment> = {};
+    assignments.forEach(a => { map[a.spool_id] = a; });
     return map;
-  }, [spoolmanMode, assignments, spoolmanAssignments]);
+  }, [assignments]);
 
   const activeSpools = useMemo(() => spools.filter(s => !s.archived_at), [spools]);
 
   // Spools that have an AMS assignment
-  const assignedSpoolIds = useMemo(() => new Set(Object.keys(assignmentMap).map(Number)), [assignmentMap]);
+  const assignedSpoolIds = useMemo(() => new Set(assignments.map(a => a.spool_id)), [assignments]);
   const inAmsCount = useMemo(() => activeSpools.filter(s => assignedSpoolIds.has(s.id)).length, [activeSpools, assignedSpoolIds]);
 
   // Unique materials for filter pills
@@ -164,6 +127,21 @@ export function SpoolBuddyInventoryPage() {
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
   }, [activeSpools, filterMode, searchQuery, assignedSpoolIds]);
+
+  // Spoolman iframe mode
+  const spoolmanEnabled = spoolmanSettings?.spoolman_enabled === 'true' && spoolmanSettings?.spoolman_url;
+  if (spoolmanEnabled) {
+    return (
+      <div className="h-full flex flex-col">
+        <iframe
+          src={`${spoolmanSettings.spoolman_url.replace(/\/+$/, '')}/spool`}
+          className="flex-1 w-full border-0"
+          title="Spoolman"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -262,11 +240,6 @@ export function SpoolBuddyInventoryPage() {
                 void refetchSpools();
               }}
               onAssignToAms={() => setShowAssignAmsModal(true)}
-              onUnassignFromAms={
-                (spoolmanMode && assignmentMap[liveSpool.id])
-                  ? () => unassignSpoolMutation.mutate(liveSpool.id)
-                  : undefined
-              }
               onClose={handleCloseDetail}
             />
             <AssignToAmsModal
@@ -274,7 +247,6 @@ export function SpoolBuddyInventoryPage() {
               onClose={() => setShowAssignAmsModal(false)}
               spool={liveSpool}
               printerId={selectedPrinterId}
-              spoolmanMode={spoolmanMode}
             />
           </>
         );
@@ -309,7 +281,7 @@ function FilterPill({ active, onClick, label, green }: {
 /* Catalog-style spool card matching the mockup */
 function CatalogCard({ spool, assignment, onClick }: {
   spool: InventorySpool;
-  assignment?: SlotInfo;
+  assignment?: SpoolAssignment;
   onClick: () => void;
 }) {
   const color = spoolColor(spool);
@@ -365,13 +337,12 @@ function CatalogCard({ spool, assignment, onClick }: {
 }
 
 /* Detail bottom sheet */
-function SpoolDetailModal({ spool, assignment, sbState, onSyncWeight, onAssignToAms, onUnassignFromAms, onClose }: {
+function SpoolDetailModal({ spool, assignment, sbState, onSyncWeight, onAssignToAms, onClose }: {
   spool: InventorySpool;
-  assignment?: SlotInfo;
+  assignment?: SpoolAssignment;
   sbState: SpoolBuddyOutletContext['sbState'];
   onSyncWeight: () => void;
   onAssignToAms: () => void;
-  onUnassignFromAms?: () => void;
   onClose: () => void;
 }) {
   const useLiveScaleWeight = sbState.deviceOnline && sbState.weight !== null;
@@ -405,8 +376,6 @@ function SpoolDetailModal({ spool, assignment, sbState, onSyncWeight, onAssignTo
               persistedGrossWeight={persistedGrossWeight}
               onSyncWeight={onSyncWeight}
               onAssignToAms={onAssignToAms}
-              isAssigned={!!assignment}
-              onUnassignFromAms={onUnassignFromAms}
               onClose={onClose}
               className="max-w-md"
             />

@@ -252,21 +252,3 @@ export function filterFilamentsByNozzle<T extends { extruderId?: number }>(
     (f) => nozzleId == null || f.extruderId === nozzleId
   );
 }
-
-/**
- * Detect Bambu Lab RFID-tagged spool by tray_uuid (32 hex) or tag_uid (16 hex).
- *
- * Permissive zero-string check: any non-zero non-empty value returns true. The
- * function exists to suppress assign/unassign actions on RFID-managed slots
- * whose state is owned by the printer firmware — manual changes there would be
- * overwritten on the next RFID re-read (eye → pen icon in BambuStudio).
- */
-export function isBambuLabSpool(tray: {
-  tray_uuid?: string | null;
-  tag_uid?: string | null;
-} | null | undefined): boolean {
-  if (!tray) return false;
-  if (tray.tray_uuid && tray.tray_uuid !== '00000000000000000000000000000000') return true;
-  if (tray.tag_uid && tray.tag_uid !== '0000000000000000') return true;
-  return false;
-}

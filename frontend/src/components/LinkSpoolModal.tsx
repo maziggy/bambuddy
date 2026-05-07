@@ -56,7 +56,6 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
       queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
-      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
       showToast(t('spoolman.linkSuccess'), 'success');
       onClose();
     },

@@ -74,44 +74,63 @@ describe('FilamentHoverCard', () => {
     });
   });
 
-  describe('fill source badge transparency (#11)', () => {
-    it('never shows a Spoolman-source badge — UI stays mode-agnostic', async () => {
+  describe('Spoolman source indicator', () => {
+    it('shows Spoolman label when fillSource is spoolman', async () => {
       renderWithHover(
         <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 80, fillSource: 'spoolman' }}>
           <div>trigger</div>
         </FilamentHoverCard>
       );
+
       vi.advanceTimersByTime(100);
+
+      await waitFor(() => {
+        expect(screen.getByText('(Spoolman)')).toBeInTheDocument();
+      });
+    });
+
+    it('does not show Spoolman label when fillSource is ams', async () => {
+      renderWithHover(
+        <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 80, fillSource: 'ams' }}>
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+
+      vi.advanceTimersByTime(100);
+
       await waitFor(() => {
         expect(screen.getByText('80%')).toBeInTheDocument();
         expect(screen.queryByText('(Spoolman)')).not.toBeInTheDocument();
       });
     });
 
-    it('never shows an inventory-source badge — UI stays mode-agnostic', async () => {
-      renderWithHover(
-        <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 80, fillSource: 'inventory' }}>
-          <div>trigger</div>
-        </FilamentHoverCard>
-      );
-      vi.advanceTimersByTime(100);
-      await waitFor(() => {
-        expect(screen.getByText('80%')).toBeInTheDocument();
-        expect(screen.queryByText('(Inv)')).not.toBeInTheDocument();
-      });
-    });
-
-    it('does not render an empty source-label span when fillLevel is null', async () => {
+    it('does not show Spoolman label when fillLevel is null', async () => {
       renderWithHover(
         <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: null, fillSource: 'spoolman' }}>
           <div>trigger</div>
         </FilamentHoverCard>
       );
+
       vi.advanceTimersByTime(100);
+
       await waitFor(() => {
         expect(screen.getByText('—')).toBeInTheDocument();
         expect(screen.queryByText('(Spoolman)')).not.toBeInTheDocument();
-        expect(screen.queryByText('(Inv)')).not.toBeInTheDocument();
+      });
+    });
+
+    it('does not show Spoolman label when fillSource is undefined', async () => {
+      renderWithHover(
+        <FilamentHoverCard data={{ ...baseFilamentData, fillLevel: 50 }}>
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+
+      vi.advanceTimersByTime(100);
+
+      await waitFor(() => {
+        expect(screen.getByText('50%')).toBeInTheDocument();
+        expect(screen.queryByText('(Spoolman)')).not.toBeInTheDocument();
       });
     });
   });
@@ -212,104 +231,6 @@ describe('FilamentHoverCard', () => {
         expect(screen.getByText(/assign/i)).toBeInTheDocument();
       });
     });
-
-    it('shows the assign-spool button as disabled when isAssigned=true', async () => {
-      const onAssign = vi.fn();
-      renderWithHover(
-        <FilamentHoverCard
-          data={{ ...baseFilamentData, vendor: 'Bambu Lab' }}
-          inventory={{ assignedSpool: null, onAssignSpool: onAssign, isAssigned: true }}
-        >
-          <div>trigger</div>
-        </FilamentHoverCard>
-      );
-      vi.advanceTimersByTime(100);
-      await waitFor(() => {
-        expect(screen.getByText(/assign/i)).toBeInTheDocument();
-        expect(screen.getByText(/assign/i).closest('button')).toBeDisabled();
-      });
-    });
-
-    it('does not call onAssignSpool when the button is disabled via isAssigned', async () => {
-      const onAssign = vi.fn();
-      renderWithHover(
-        <FilamentHoverCard
-          data={{ ...baseFilamentData, vendor: 'Bambu Lab' }}
-          inventory={{ assignedSpool: null, onAssignSpool: onAssign, isAssigned: true }}
-        >
-          <div>trigger</div>
-        </FilamentHoverCard>
-      );
-      vi.advanceTimersByTime(100);
-      await waitFor(() => expect(screen.getByText(/assign/i)).toBeInTheDocument());
-      const btn = screen.getByText(/assign/i).closest('button')!;
-      btn.click();
-      expect(onAssign).not.toHaveBeenCalled();
-    });
-  });
-
-  // For RFID-synced BL spools, both spoolman.linkedSpoolId and
-  // inventory.assignedSpool.id point to the same Spoolman spool. Rendering
-  // both branches gave two identical "Open in Inventory" buttons. The
-  // inventory-side button is suppressed when it would duplicate the
-  // spoolman-side link.
-  describe('"Open in Inventory" deduplication', () => {
-    const inventorySpool = {
-      id: 42,
-      material: 'PLA',
-      brand: 'eSun',
-      color_name: 'Black',
-    };
-
-    it('shows only one Open in Inventory button when spoolman linkedSpoolId matches assignedSpool id', async () => {
-      renderWithHover(
-        <FilamentHoverCard
-          data={baseFilamentData}
-          spoolman={{ enabled: true, linkedSpoolId: 42 }}
-          inventory={{ assignedSpool: inventorySpool }}
-        >
-          <div>trigger</div>
-        </FilamentHoverCard>
-      );
-      vi.advanceTimersByTime(100);
-      await waitFor(() => {
-        expect(screen.getByText(/assigned/i)).toBeInTheDocument();
-      });
-      expect(screen.queryAllByTitle('Open in Inventory')).toHaveLength(1);
-    });
-
-    it('shows two Open in Inventory buttons when spoolman and inventory point to different spools', async () => {
-      renderWithHover(
-        <FilamentHoverCard
-          data={baseFilamentData}
-          spoolman={{ enabled: true, linkedSpoolId: 99 }}
-          inventory={{ assignedSpool: inventorySpool }}
-        >
-          <div>trigger</div>
-        </FilamentHoverCard>
-      );
-      vi.advanceTimersByTime(100);
-      await waitFor(() => {
-        expect(screen.getByText(/assigned/i)).toBeInTheDocument();
-      });
-      expect(screen.queryAllByTitle('Open in Inventory')).toHaveLength(2);
-    });
-
-    it('shows one Open in Inventory button when spoolman is absent but inventory spool is assigned', async () => {
-      renderWithHover(
-        <FilamentHoverCard
-          data={baseFilamentData}
-          inventory={{ assignedSpool: inventorySpool }}
-        >
-          <div>trigger</div>
-        </FilamentHoverCard>
-      );
-      vi.advanceTimersByTime(100);
-      await waitFor(() => {
-        expect(screen.getByText(/assigned/i)).toBeInTheDocument();
-      });
-      expect(screen.queryAllByTitle('Open in Inventory')).toHaveLength(1);
-    });
   });
 });
 
@@ -325,7 +246,7 @@ describe('EmptySlotHoverCard (#1133)', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
-  it('does not render an assign-spool button when onAssignSpool is not provided', async () => {
+  it('does not render an assign-spool affordance', async () => {
     const result = render(
       <EmptySlotHoverCard configureSlot={{ enabled: true, onConfigure: vi.fn() }}>
         <div>trigger</div>
@@ -338,7 +259,7 @@ describe('EmptySlotHoverCard (#1133)', () => {
       // a card that simply never opened.
       expect(screen.getByText(/empty/i)).toBeInTheDocument();
     });
-    expect(screen.queryByText(/assign spool/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/assign/i)).not.toBeInTheDocument();
   });
 
   it('still shows the configure button on an empty slot', async () => {
@@ -353,33 +274,5 @@ describe('EmptySlotHoverCard (#1133)', () => {
     await waitFor(() => {
       expect(screen.getByText(/configure/i)).toBeInTheDocument();
     });
-  });
-
-  it('shows Assign Spool button when onAssignSpool is provided', async () => {
-    const onAssign = vi.fn();
-    const result = render(
-      <EmptySlotHoverCard onAssignSpool={onAssign}>
-        <div>trigger</div>
-      </EmptySlotHoverCard>
-    );
-    fireEvent.mouseEnter(result.container.firstElementChild as HTMLElement);
-    vi.advanceTimersByTime(100);
-    await waitFor(() => {
-      expect(screen.getByText(/assign spool/i)).toBeInTheDocument();
-    });
-  });
-
-  it('calls onAssignSpool when Assign Spool button is clicked', async () => {
-    const onAssign = vi.fn();
-    const result = render(
-      <EmptySlotHoverCard onAssignSpool={onAssign}>
-        <div>trigger</div>
-      </EmptySlotHoverCard>
-    );
-    fireEvent.mouseEnter(result.container.firstElementChild as HTMLElement);
-    vi.advanceTimersByTime(100);
-    await waitFor(() => expect(screen.getByText(/assign spool/i)).toBeInTheDocument());
-    fireEvent.click(screen.getByText(/assign spool/i));
-    expect(onAssign).toHaveBeenCalledTimes(1);
   });
 });

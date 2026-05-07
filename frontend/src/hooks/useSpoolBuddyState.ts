@@ -19,7 +19,6 @@ export interface SpoolBuddyState {
   rawAdc: number | null;
   matchedSpool: MatchedSpool | null;
   unknownTagUid: string | null;
-  unknownTrayUuid: string | null;
   deviceOnline: boolean;
   deviceId: string | null;
 }
@@ -27,7 +26,7 @@ export interface SpoolBuddyState {
 type Action =
   | { type: 'WEIGHT_UPDATE'; weight: number; stable: boolean; rawAdc: number; deviceId: string }
   | { type: 'TAG_MATCHED'; spool: MatchedSpool; deviceId: string }
-  | { type: 'UNKNOWN_TAG'; tagUid: string; trayUuid: string | null; deviceId: string }
+  | { type: 'UNKNOWN_TAG'; tagUid: string; deviceId: string }
   | { type: 'TAG_REMOVED'; deviceId: string }
   | { type: 'DEVICE_ONLINE'; deviceId: string }
   | { type: 'DEVICE_OFFLINE'; deviceId: string };
@@ -38,7 +37,6 @@ const initialState: SpoolBuddyState = {
   rawAdc: null,
   matchedSpool: null,
   unknownTagUid: null,
-  unknownTrayUuid: null,
   deviceOnline: false,
   deviceId: null,
 };
@@ -59,7 +57,6 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         ...state,
         matchedSpool: action.spool,
         unknownTagUid: null,
-        unknownTrayUuid: null,
         deviceId: action.deviceId,
       };
     case 'UNKNOWN_TAG':
@@ -67,7 +64,6 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         ...state,
         matchedSpool: null,
         unknownTagUid: action.tagUid,
-        unknownTrayUuid: action.trayUuid ?? null,
         deviceId: action.deviceId,
       };
     case 'TAG_REMOVED':
@@ -75,7 +71,6 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         ...state,
         matchedSpool: null,
         unknownTagUid: null,
-        unknownTrayUuid: null,
       };
     case 'DEVICE_ONLINE':
       return {
@@ -138,7 +133,6 @@ export function useSpoolBuddyState() {
     dispatch({
       type: 'UNKNOWN_TAG',
       tagUid: detail.tag_uid ?? detail.data?.tag_uid ?? '',
-      trayUuid: detail.tray_uuid ?? detail.data?.tray_uuid ?? null,
       deviceId: detail.device_id ?? detail.data?.device_id ?? '',
     });
   }, []);

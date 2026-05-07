@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, caller_is_api_key
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -22,16 +22,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
+# Default settings
 DEFAULT_SETTINGS = AppSettings()
-
-# Sensitive credential fields blanked for API-key callers
-_SENSITIVE_FIELDS_FOR_API_KEY = (
-    "mqtt_password",
-    "ha_token",
-    "prometheus_token",
-    "virtual_printer_access_code",
-    "ldap_bind_password",
-)
 
 
 async def get_setting(db: AsyncSession, key: str) -> str | None:
@@ -69,98 +61,92 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
     await upsert_setting(db, Settings, key, value)
 
 
-async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -> AppSettings:
-    """Build the full settings response, scrubbing secrets for API-key callers."""
-    settings_dict = DEFAULT_SETTINGS.model_dump()
-
-    result = await db.execute(select(Settings))
-    for setting in result.scalars().all():
-        if setting.key not in settings_dict:
-            continue
-        if setting.key in [
-            "auto_archive",
-            "save_thumbnails",
-            "capture_finish_photo",
-            "spoolman_enabled",
-            "spoolman_disable_weight_sync",
-            "spoolman_report_partial_usage",
-            "disable_filament_warnings",
-            "prefer_lowest_filament",
-            "check_updates",
-            "check_printer_firmware",
-            "include_beta_updates",
-            "virtual_printer_enabled",
-            "ftp_retry_enabled",
-            "mqtt_enabled",
-            "mqtt_use_tls",
-            "ha_enabled",
-            "per_printer_mapping_expanded",
-            "prometheus_enabled",
-            "user_notifications_enabled",
-            "queue_drying_enabled",
-            "queue_drying_block",
-            "ambient_drying_enabled",
-            "require_plate_clear",
-            "queue_shortest_first",
-            "default_bed_levelling",
-            "default_flow_cali",
-            "default_vibration_cali",
-            "default_layer_inspect",
-            "default_timelapse",
-            "ldap_enabled",
-            "ldap_auto_provision",
-        ]:
-            settings_dict[setting.key] = setting.value.lower() == "true"
-        elif setting.key in [
-            "default_filament_cost",
-            "energy_cost_per_kwh",
-            "ams_temp_good",
-            "ams_temp_fair",
-            "library_disk_warning_gb",
-            "low_stock_threshold",
-        ]:
-            settings_dict[setting.key] = float(setting.value)
-        elif setting.key in [
-            "ams_humidity_good",
-            "ams_humidity_fair",
-            "ams_history_retention_days",
-            "ftp_retry_count",
-            "ftp_retry_delay",
-            "ftp_timeout",
-            "mqtt_port",
-            "stagger_group_size",
-            "stagger_interval_minutes",
-            "forecast_global_lead_time_days",
-        ]:
-            settings_dict[setting.key] = int(setting.value)
-        elif setting.key == "default_printer_id":
-            settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
-        else:
-            settings_dict[setting.key] = setting.value
-
-    ha_settings = await get_homeassistant_settings(db)
-    settings_dict.update(ha_settings)
-
-    # ldap_bind_password is never returned to any caller
-    settings_dict["ldap_bind_password"] = ""
-
-    if is_api_key:
-        for field in _SENSITIVE_FIELDS_FOR_API_KEY:
-            if field in settings_dict:
-                settings_dict[field] = ""
-
-    return AppSettings(**settings_dict)
-
-
 @router.get("", response_model=AppSettings)
 @router.get("/", response_model=AppSettings)
 async def get_settings(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    _is_api_key: bool = Depends(caller_is_api_key),
 ):
     """Get all application settings."""
-    return await _build_settings_response(db, is_api_key=_is_api_key)
+    settings_dict = DEFAULT_SETTINGS.model_dump()
+
+    # Load saved settings from database
+    result = await db.execute(select(Settings))
+    db_settings = result.scalars().all()
+
+    for setting in db_settings:
+        if setting.key in settings_dict:
+            # Parse the value based on the expected type
+            if setting.key in [
+                "auto_archive",
+                "save_thumbnails",
+                "capture_finish_photo",
+                "spoolman_enabled",
+                "spoolman_disable_weight_sync",
+                "spoolman_report_partial_usage",
+                "disable_filament_warnings",
+                "prefer_lowest_filament",
+                "check_updates",
+                "check_printer_firmware",
+                "include_beta_updates",
+                "virtual_printer_enabled",
+                "ftp_retry_enabled",
+                "mqtt_enabled",
+                "mqtt_use_tls",
+                "ha_enabled",
+                "per_printer_mapping_expanded",
+                "prometheus_enabled",
+                "user_notifications_enabled",
+                "queue_drying_enabled",
+                "queue_drying_block",
+                "ambient_drying_enabled",
+                "require_plate_clear",
+                "queue_shortest_first",
+                "default_bed_levelling",
+                "default_flow_cali",
+                "default_vibration_cali",
+                "default_layer_inspect",
+                "default_timelapse",
+                "ldap_enabled",
+                "ldap_auto_provision",
+            ]:
+                settings_dict[setting.key] = setting.value.lower() == "true"
+            elif setting.key in [
+                "default_filament_cost",
+                "energy_cost_per_kwh",
+                "ams_temp_good",
+                "ams_temp_fair",
+                "library_disk_warning_gb",
+                "low_stock_threshold",
+            ]:
+                settings_dict[setting.key] = float(setting.value)
+            elif setting.key in [
+                "ams_humidity_good",
+                "ams_humidity_fair",
+                "ams_history_retention_days",
+                "ftp_retry_count",
+                "ftp_retry_delay",
+                "ftp_timeout",
+                "mqtt_port",
+                "stagger_group_size",
+                "stagger_interval_minutes",
+                "forecast_global_lead_time_days",
+            ]:
+                settings_dict[setting.key] = int(setting.value)
+            elif setting.key == "default_printer_id":
+                # Handle nullable integer
+                settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
+            else:
+                settings_dict[setting.key] = setting.value
+
+    # Get Home Assistant settings (with environment variable overrides)
+    ha_settings = await get_homeassistant_settings(db)
+    settings_dict.update(ha_settings)
+
+    # Never return LDAP bind password in API responses
+    settings_dict["ldap_bind_password"] = ""
+
+    return AppSettings(**settings_dict)
 
 
 @router.put("/", response_model=AppSettings)
@@ -216,8 +202,8 @@ async def update_settings(
         except Exception:
             pass  # Don't fail the settings update if MQTT reconfiguration fails
 
-    # Return updated settings (never scrub secrets on PUT — caller has SETTINGS_UPDATE permission)
-    return await _build_settings_response(db, is_api_key=False)
+    # Return updated settings
+    return await get_settings(db)
 
 
 @router.patch("/", response_model=AppSettings)

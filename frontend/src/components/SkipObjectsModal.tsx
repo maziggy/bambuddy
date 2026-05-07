@@ -311,7 +311,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
         >
           {status?.cover_url ? (
             <img
-              src={`${status.cover_url}?view=top`}
+              src={withStreamToken(`${status.cover_url}?view=top`)}
               alt={t('printers.printPreview')}
               className="w-full h-full object-contain rounded-lg bg-gray-900"
             />

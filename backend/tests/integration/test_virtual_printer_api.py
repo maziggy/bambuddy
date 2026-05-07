@@ -338,3 +338,49 @@ class TestVirtualPrinterAutoDispatchAPI:
         get_resp = await async_client.get(f"/api/v1/virtual-printers/{vp_id}")
         assert get_resp.status_code == 200
         assert get_resp.json()["auto_dispatch"] is False
+
+
+class TestVirtualPrinterTailscaleToggleAPI:
+    """The Tailscale toggle is informational — toggling either way always succeeds.
+
+    There used to be a 409 guard rejecting "enable" when the daemon was unreachable,
+    back when the toggle controlled LE cert provisioning. That path was removed:
+    the slicer's printer-MQTT trust validates against its bundled BBL CA, not the
+    system trust store, so even an LE cert wouldn't be accepted. The toggle now
+    only surfaces the host's Tailscale IP/FQDN on the VP card; daemon presence is
+    irrelevant to whether the toggle can be flipped.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_toggle_does_not_consult_tailscale_daemon(self, async_client: AsyncClient):
+        """PUT tailscale_disabled never calls tailscale_service.get_status — always succeeds."""
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestTailscaleToggle",
+                "mode": "immediate",
+                "access_code": "12345678",
+            },
+        )
+        assert create_resp.status_code == 200
+        vp_id = create_resp.json()["id"]
+        assert create_resp.json()["tailscale_disabled"] is True
+
+        with patch(
+            "backend.app.services.virtual_printer.tailscale.tailscale_service.get_status",
+            new=AsyncMock(side_effect=AssertionError("get_status must not be called for toggle")),
+        ):
+            enable_resp = await async_client.put(
+                f"/api/v1/virtual-printers/{vp_id}",
+                json={"tailscale_disabled": False},
+            )
+            disable_resp = await async_client.put(
+                f"/api/v1/virtual-printers/{vp_id}",
+                json={"tailscale_disabled": True},
+            )
+
+        assert enable_resp.status_code == 200
+        assert enable_resp.json()["tailscale_disabled"] is False
+        assert disable_resp.status_code == 200
+        assert disable_resp.json()["tailscale_disabled"] is True

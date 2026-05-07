@@ -369,19 +369,18 @@ export function ConfigureAmsSlotModal({
         trayInfoIdx = builtinFilamentId!;
         settingId = '';
       } else {
-        // Get tray_info_idx: for user presets, fetch detail to get filament_id or derive from base_id
         trayInfoIdx = convertToTrayInfoIdx(selectedPresetId);
         settingId = selectedPresetId;
 
-        // For user presets (not starting with GF), fetch the detail to get the real filament_id
+        // User cloud presets may carry a distinct filament_id in the cloud detail
+        // (e.g. "P285e239"); prefer it when present. Never fall back to base_id —
+        // that collapses custom presets to the inherited generic's filament_id and
+        // makes the slicer resolve the slot to "Generic …" instead (#1053).
         if (!selectedPresetId.startsWith('GFS')) {
           try {
             const detail = await api.getCloudSettingDetail(selectedPresetId);
             if (detail.filament_id) {
               trayInfoIdx = detail.filament_id;
-            } else if (detail.base_id) {
-              trayInfoIdx = convertToTrayInfoIdx(detail.base_id);
-              console.log(`Derived tray_info_idx from base_id: ${detail.base_id} -> ${trayInfoIdx}`);
             }
           } catch (e) {
             console.warn('Failed to fetch preset detail for filament_id:', e);

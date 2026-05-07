@@ -4,10 +4,36 @@ Tests the virtual printer manager, FTP server, and SSDP server components.
 """
 
 import asyncio
+import json
+import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+def _write_3mf_with_filaments(file_path: Path, filaments: list[dict], plate_index: int = 1) -> None:
+    """Build a minimal 3MF zip with `Metadata/slice_info.config` carrying the
+    given per-slot filament entries. Each `filaments` dict needs `id`, `type`,
+    `color`, `used_g`. Used by the #1188 VP queue-mode tests below."""
+    filament_xml = "".join(
+        f'<filament id="{f["id"]}" type="{f["type"]}" color="{f["color"]}" '
+        f'used_g="{f["used_g"]}" tray_info_idx="{f.get("tray_info_idx", "")}"/>'
+        for f in filaments
+    )
+    config = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        "<config>"
+        f'<plate><metadata key="index" value="{plate_index}"/>'
+        f"{filament_xml}"
+        "</plate>"
+        "</config>"
+    )
+    with zipfile.ZipFile(file_path, "w") as zf:
+        zf.writestr("Metadata/slice_info.config", config)
+        # Plate gcode is referenced for plate-id detection in the VP path —
+        # presence is enough; contents don't matter.
+        zf.writestr(f"Metadata/plate_{plate_index}.gcode", "; gcode\n")
 
 
 class TestVirtualPrinterInstance:
@@ -215,10 +241,17 @@ class TestVirtualPrinterInstance:
         mock_archive.id = 1
         mock_archive.print_name = "test"
 
-        with patch(
-            "backend.app.services.archive.ArchiveService.archive_print",
-            new_callable=AsyncMock,
-            return_value=mock_archive,
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
         ):
             await inst._add_to_print_queue(file_path, "192.168.1.100")
 
@@ -266,16 +299,289 @@ class TestVirtualPrinterInstance:
         mock_archive.id = 1
         mock_archive.print_name = "test"
 
-        with patch(
-            "backend.app.services.archive.ArchiveService.archive_print",
-            new_callable=AsyncMock,
-            return_value=mock_archive,
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
         ):
             await inst._add_to_print_queue(file_path, "192.168.1.100")
 
         assert len(added_items) == 1
         queue_item = added_items[0]
         assert queue_item.manual_start is True
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_populates_required_filament_types(self, tmp_path):
+        """#1188: VP queue-mode used to create PrintQueueItems with no
+        filament fields, so the scheduler fell through to model-only matching
+        and dispatched onto whatever printer was free regardless of loaded
+        colour. ``required_filament_types`` is populated unconditionally
+        (cheap, helps the scheduler validate type even without
+        ``force_color_match``) — pin that contract here."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=21,
+            name="Reqs",
+            mode="print_queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800021",
+            auto_dispatch=True,
+            queue_force_color_match=False,  # off → only required_filament_types
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "multi.3mf"
+        _write_3mf_with_filaments(
+            file_path,
+            [
+                {"id": "1", "type": "PLA", "color": "#FFFFFF", "used_g": "12.3"},
+                {"id": "2", "type": "PETG", "color": "#000000", "used_g": "4.5"},
+                # used_g=0 → not actually consumed by this plate, must be ignored
+                {"id": "3", "type": "ABS", "color": "#FF0000", "used_g": "0"},
+            ],
+            plate_index=1,
+        )
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "multi"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        # Type-only fallback always populated. Sorted, deduped, no zero-use ABS.
+        assert queue_item.required_filament_types is not None
+        assert json.loads(queue_item.required_filament_types) == ["PETG", "PLA"]
+        # Setting off → no force_color_match overrides leaked.
+        assert queue_item.filament_overrides is None
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_force_color_match_writes_overrides(self, tmp_path):
+        """#1188 core fix: when the per-VP ``queue_force_color_match`` toggle
+        is on, every consumed slot lands as a ``filament_overrides`` entry
+        with ``force_color_match: true``. This is the field the scheduler
+        keys on (``print_scheduler.py:512``) — without it, slot-by-slot
+        type+color matching never runs."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=22,
+            name="ForceColor",
+            mode="print_queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800022",
+            auto_dispatch=True,
+            queue_force_color_match=True,  # on
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "forced.3mf"
+        _write_3mf_with_filaments(
+            file_path,
+            [
+                {"id": "1", "type": "PLA", "color": "#FFFFFF", "used_g": "10.0"},
+                {"id": "2", "type": "PLA", "color": "#FF00FF", "used_g": "5.0"},
+            ],
+            plate_index=1,
+        )
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "forced"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.filament_overrides is not None
+        overrides = json.loads(queue_item.filament_overrides)
+        assert overrides == [
+            {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "force_color_match": True},
+            {"slot_id": 2, "type": "PLA", "color": "#FF00FF", "force_color_match": True},
+        ]
+        # required_filament_types still populated alongside overrides.
+        assert json.loads(queue_item.required_filament_types) == ["PLA"]
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_force_color_match_skips_when_3mf_unparseable(self, tmp_path):
+        """A malformed or fake-bytes 3MF must not crash the upload path —
+        we just write the queue item with no filament fields and let the
+        scheduler fall back to model-only matching (the pre-#1188 default).
+        Regression guard for the existing fake-bytes happy-path tests."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=23,
+            name="Unparseable",
+            mode="print_queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800023",
+            auto_dispatch=True,
+            queue_force_color_match=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "bad.3mf"
+        file_path.write_bytes(b"not a real 3mf zip")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "bad"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        # No filament data extractable → both fields stay None (graceful
+        # fallback to model-only scheduling).
+        assert queue_item.required_filament_types is None
+        assert queue_item.filament_overrides is None
+
+    # ========================================================================
+    # Tests for archive_name_source setting (#1152)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("setting_value", "expected_prefer_filename"),
+        [
+            ("filename", True),
+            ("metadata", False),
+            (None, False),  # Default when setting unset
+            ("", False),  # Defensive: empty string is not "filename"
+        ],
+    )
+    async def test_archive_file_passes_prefer_filename_per_setting(
+        self, tmp_path, setting_value, expected_prefer_filename
+    ):
+        """_archive_file reads `virtual_printer_archive_name_source` and forwards
+        prefer_filename_for_name=True only when it equals 'filename' (#1152)."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=20,
+            name="NameSource",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800020",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "user-renamed-job.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "user-renamed-job"
+
+        archive_print_mock = AsyncMock(return_value=mock_archive)
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=setting_value,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                archive_print_mock,
+            ),
+        ):
+            await inst._archive_file(file_path, "192.168.1.100")
+
+        assert archive_print_mock.await_count == 1
+        kwargs = archive_print_mock.await_args.kwargs
+        assert kwargs.get("prefer_filename_for_name") is expected_prefer_filename
 
 
 class TestVirtualPrinterManager:
@@ -449,6 +755,7 @@ class TestVirtualPrinterManager:
             "remote_interface_ip": "",
             "target_printer_id": None,
             "auto_dispatch": True,
+            "tailscale_disabled": True,  # Opt-in default (#1070 UX fix)
             "position": 0,
         }
         defaults.update(overrides)
@@ -617,6 +924,37 @@ class TestVirtualPrinterManager:
                 await manager.sync_from_db()
 
             mock_remove.assert_called_once_with(1)
+
+    @pytest.mark.asyncio
+    async def test_sync_from_db_does_not_restart_on_tailscale_toggle(self, manager, tmp_path):
+        """Flipping tailscale_disabled is purely informational — must NOT trigger a restart.
+
+        Cert provisioning was removed; the toggle only governs whether the VP card surfaces
+        the host's Tailscale IP/FQDN to the user. No service needs to reload, so changing
+        it through sync_from_db should leave any running instance untouched.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            tailscale_disabled=False,
+            base_dir=tmp_path,
+        )
+        inst.stop_server = AsyncMock()
+        manager._instances[1] = inst
+
+        db_vp = self._make_db_vp(tailscale_disabled=True)
+        self._setup_sync_mocks(manager, [db_vp], tmp_path)
+
+        with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
+            await manager.sync_from_db()
+
+        mock_remove.assert_not_called()
 
 
 class TestFTPSession:

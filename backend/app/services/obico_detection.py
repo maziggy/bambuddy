@@ -197,6 +197,7 @@ class ObicoDetectionService:
                 printer.external_camera_url,
                 printer.external_camera_type,
                 timeout=SNAPSHOT_CAPTURE_TIMEOUT,
+                snapshot_url=printer.external_camera_snapshot_url,
             )
         return await capture_camera_frame_bytes(
             ip_address=printer.ip_address,
@@ -253,6 +254,10 @@ class ObicoDetectionService:
         score = state.update(current_p)
         verdict = classify(score, settings["sensitivity"])
         self._last_class[printer_id] = verdict
+        # A successful capture + ML call clears any transient error from previous
+        # polls (typical case: cold-start RTSP timeout on first frame after startup,
+        # followed by healthy polls that otherwise leave the banner stuck in the UI).
+        self._last_error = None
 
         # Log every non-safe sample — safe samples would flood history
         if verdict != "safe" or detections:

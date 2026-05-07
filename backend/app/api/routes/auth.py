@@ -56,6 +56,7 @@ from backend.app.schemas.auth import (
     TestSMTPRequest,
     TestSMTPResponse,
     UserResponse,
+    _validate_password_complexity,
 )
 from backend.app.services.email_service import (
     create_password_reset_link_email_from_template,
@@ -229,6 +230,17 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Admin username and password are required when enabling authentication (no admin users exist)",
+                    )
+
+                # Enforce password complexity only when actually creating a new admin.
+                # Schema-level validation was removed so that re-enabling auth with an
+                # existing admin (or LDAP) doesn't reject whatever placeholder the form sends.
+                try:
+                    _validate_password_complexity(request.admin_password)
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=str(exc),
                     )
 
                 # Check if username already exists (shouldn't happen if no admin users exist, but check anyway)
@@ -1466,6 +1478,7 @@ async def revoke_long_lived_token(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+
 @router.get("/encryption-status", response_model=EncryptionStatusResponse)
 async def get_encryption_status(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
@@ -1519,4 +1532,3 @@ async def get_encryption_status(
         legacy_plaintext_rows=legacy_plaintext_rows,
         encrypted_rows=encrypted_rows,
     )
-

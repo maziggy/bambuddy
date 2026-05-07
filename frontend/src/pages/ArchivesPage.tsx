@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -53,8 +53,10 @@ import {
   Play,
   ClipboardList,
   Zap,
+  Cog,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { SliceModal } from '../components/SliceModal';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
@@ -62,9 +64,9 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import type { Archive, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
-import { ModelViewerModal } from '../components/ModelViewerModal';
 import { PrintModal } from '../components/PrintModal';
 import { UploadModal } from '../components/UploadModal';
+import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { EditArchiveModal } from '../components/EditArchiveModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
@@ -78,6 +80,8 @@ import { TimelapseViewer } from '../components/TimelapseViewer';
 import { CompareArchivesModal } from '../components/CompareArchivesModal';
 import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 import { TagManagementModal } from '../components/TagManagementModal';
+import { PlatePickerModal } from '../components/PlatePickerModal';
+import type { PlateMetadata } from '../types/plates';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatFileSize } from '../utils/file';
@@ -99,15 +103,6 @@ function isSlicedFile(archive: { filename?: string | null; total_layers?: number
   // .3mf can be either sliced or source — check for gcode metadata
   if (archive.total_layers || archive.print_time_seconds) return true;
   return false;
-}
-
-function getArchiveFileType(filename: string | null | undefined): string | undefined {
-  if (!filename) return undefined;
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.3mf')) return '3mf';
-  if (lower.endsWith('.stl')) return 'stl';
-  if (lower.endsWith('.gcode') || lower.includes('.gcode.')) return 'gcode';
-  return lower.split('.').pop();
 }
 
 // formatDate imported from '../utils/date' - handles UTC conversion
@@ -152,6 +147,7 @@ function ArchiveCard({
   isHighlighted,
   timeFormat = 'system',
   preferredSlicer = 'bambu_studio',
+  useSlicerApi = false,
   currency,
   t,
   onNavigateToArchive,
@@ -165,6 +161,7 @@ function ArchiveCard({
   isHighlighted?: boolean;
   timeFormat?: TimeFormat;
   preferredSlicer?: SlicerType;
+  useSlicerApi?: boolean;
   currency: string;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
@@ -178,8 +175,9 @@ function ArchiveCard({
   const { showToast } = useToast();
   const { hasPermission, canModify } = useAuth();
   const isMobile = useIsMobile();
-  const [showViewer, setShowViewer] = useState(false);
+  const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
+  const [showSliceModal, setShowSliceModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
@@ -195,6 +193,7 @@ function ArchiveCard({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [currentPlateIndex, setCurrentPlateIndex] = useState<number | null>(null);
   const [showPlateNav, setShowPlateNav] = useState(false);
+  const [platePickerPlates, setPlatePickerPlates] = useState<PlateMetadata[] | null>(null);
   const source3mfInputRef = useRef<HTMLInputElement>(null);
   const f3dInputRef = useRef<HTMLInputElement>(null);
   const timelapseInputRef = useRef<HTMLInputElement>(null);
@@ -214,6 +213,29 @@ function ArchiveCard({
   const plates = platesData?.plates ?? [];
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const displayPlateIndex = currentPlateIndex ?? 0;
+
+  // 3D Preview click handler. Multi-plate archives show the plate picker
+  // first; single-plate archives navigate straight into the viewer. Source-
+  // only archives (no sliced gcode, e.g. pure project 3MFs from BambuStudio
+  // that carry only plate PNG/JSON metadata) get a toast — there's nothing
+  // the gcode viewer can render for them.
+  const openGcodeViewer = async () => {
+    try {
+      const resp = await api.getArchivePlates(archive.id);
+      if (resp.has_gcode === false) {
+        showToast(t('archives.platePicker.noGcode'), 'info');
+        return;
+      }
+      if (resp.is_multi_plate && resp.plates.length > 1) {
+        setPlatePickerPlates(resp.plates);
+        return;
+      }
+    } catch {
+      // Swallow — fall through to the no-plate navigate below so the viewer
+      // still opens on the first plate (the backend's default).
+    }
+    navigate(`/gcode-viewer?archive=${archive.id}`);
+  };
 
   const timelapseDeleteMutation = useMutation({
     mutationFn: () => api.deleteArchiveTimelapse(archive.id),
@@ -390,10 +412,14 @@ function ArchiveCard({
     ] : [
       {
         label: t('archives.menu.slice'),
-        icon: <ExternalLink className="w-4 h-4" />,
+        icon: useSlicerApi ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />,
         onClick: () => {
-          const filename = archive.print_name || archive.filename || 'model';
-          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+          if (useSlicerApi) {
+            setShowSliceModal(true);
+          } else {
+            const filename = archive.print_name || archive.filename || 'model';
+            openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+          }
         },
       },
     ]),
@@ -410,7 +436,7 @@ function ArchiveCard({
     {
       label: t('archives.menu.preview3d'),
       icon: <Box className="w-4 h-4" />,
-      onClick: () => setShowViewer(true),
+      onClick: () => { openGcodeViewer(); },
     },
     {
       label: t('archives.menu.viewTimelapse'),
@@ -563,6 +589,9 @@ function ArchiveCard({
       onClick: () => {},
       disabled: !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+      submenuSearchPlaceholder: (projects?.filter(p => p.status === 'active').length ?? 0) > 5
+        ? t('archives.menu.searchProjects')
+        : undefined,
       submenu: (() => {
         const items: ContextMenuItem[] = [];
 
@@ -585,7 +614,9 @@ function ArchiveCard({
             disabled: true,
           });
         } else {
-          const activeProjects = projects.filter(p => p.status === 'active');
+          const activeProjects = projects
+            .filter(p => p.status === 'active')
+            .sort((a, b) => a.name.localeCompare(b.name));
           if (activeProjects.length === 0) {
             items.push({
               label: t('archives.menu.noProjectsAvailable'),
@@ -822,7 +853,7 @@ function ArchiveCard({
           className="absolute bottom-2 right-2 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
           onClick={(e) => {
             e.stopPropagation();
-            setShowViewer(true);
+            openGcodeViewer();
           }}
           title={t('archives.card.preview3d')}
         >
@@ -1099,18 +1130,26 @@ function ArchiveCard({
               </Button>
             </>
           ) : (
-            // Source file only - must open in slicer first
+            // Source file only - "Slice" action
             <Button
               variant="primary"
               size="sm"
               className="flex-1 min-w-0 overflow-hidden"
               onClick={() => {
-                const filename = archive.print_name || archive.filename || 'model';
-                openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+                if (useSlicerApi) {
+                  setShowSliceModal(true);
+                } else {
+                  const filename = archive.print_name || archive.filename || 'model';
+                  openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+                }
               }}
-              title={t('archives.card.openInBambuStudioToSlice')}
+              title={useSlicerApi ? t('slice.title') : t('archives.card.openInBambuStudioToSlice')}
             >
-              <ExternalLink className="w-3 h-3 flex-shrink-0" />
+              {useSlicerApi ? (
+                <Cog className="w-3 h-3 flex-shrink-0" />
+              ) : (
+                <ExternalLink className="w-3 h-3 flex-shrink-0" />
+              )}
               <span className="hidden sm:inline truncate">{t('archives.card.slice')}</span>
             </Button>
           )}
@@ -1167,13 +1206,15 @@ function ArchiveCard({
         />
       )}
 
-      {/* 3D Viewer Modal */}
-      {showViewer && (
-        <ModelViewerModal
-          archiveId={archive.id}
-          title={archive.print_name || archive.filename}
-          fileType={getArchiveFileType(archive.filename)}
-          onClose={() => setShowViewer(false)}
+      {/* Plate picker — shown only for multi-plate archives on 3D Preview click */}
+      {platePickerPlates && (
+        <PlatePickerModal
+          plates={platePickerPlates}
+          onSelect={(plateIndex) => {
+            setPlatePickerPlates(null);
+            navigate(`/gcode-viewer?archive=${archive.id}&plate=${plateIndex}`);
+          }}
+          onClose={() => setPlatePickerPlates(null)}
         />
       )}
 
@@ -1184,6 +1225,14 @@ function ArchiveCard({
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
           onClose={() => setShowReprint(false)}
+        />
+      )}
+
+      {/* Slice Modal */}
+      {showSliceModal && (
+        <SliceModal
+          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
+          onClose={() => setShowSliceModal(false)}
         />
       )}
 
@@ -1429,6 +1478,7 @@ function ArchiveListRow({
   projects,
   isHighlighted,
   preferredSlicer = 'bambu_studio',
+  useSlicerApi = false,
   t,
   onNavigateToArchive,
 }: {
@@ -1440,6 +1490,7 @@ function ArchiveListRow({
   projects: ProjectListItem[] | undefined;
   isHighlighted?: boolean;
   preferredSlicer?: SlicerType;
+  useSlicerApi?: boolean;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
 }) {
@@ -1448,9 +1499,10 @@ function ArchiveListRow({
   const { hasPermission, canModify } = useAuth();
   const [showEdit, setShowEdit] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
+  const [showSliceModal, setShowSliceModal] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
-  const [showViewer, setShowViewer] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
   const [showTimelapseSelect, setShowTimelapseSelect] = useState(false);
   const [availableTimelapses, setAvailableTimelapses] = useState<Array<{ name: string; path: string; size: number; mtime: string | null }>>([]);
@@ -1464,10 +1516,26 @@ function ArchiveListRow({
   const source3mfInputRef = useRef<HTMLInputElement>(null);
   const f3dInputRef = useRef<HTMLInputElement>(null);
   const timelapseInputRef = useRef<HTMLInputElement>(null);
+  const [platePickerPlates, setPlatePickerPlates] = useState<PlateMetadata[] | null>(null);
 
   // Use pre-computed duplicate sequence and original archive ID from list response
   const duplicateSequence = archive.duplicate_sequence ?? 0;
   const originalArchiveId = archive.original_archive_id ?? null;
+
+  // 3D Preview click handler. Multi-plate archives show the plate picker
+  // first; single-plate archives navigate straight into the viewer.
+  const openGcodeViewer = async () => {
+    try {
+      const resp = await api.getArchivePlates(archive.id);
+      if (resp.is_multi_plate && resp.plates.length > 1) {
+        setPlatePickerPlates(resp.plates);
+        return;
+      }
+    } catch {
+      // Swallow — fall through to navigate on the first-plate default.
+    }
+    navigate(`/gcode-viewer?archive=${archive.id}`);
+  };
 
   const timelapseDeleteMutation = useMutation({
     mutationFn: () => api.deleteArchiveTimelapse(archive.id),
@@ -1641,10 +1709,14 @@ function ArchiveListRow({
     ] : [
       {
         label: t('archives.menu.slice'),
-        icon: <ExternalLink className="w-4 h-4" />,
+        icon: useSlicerApi ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />,
         onClick: () => {
-          const filename = archive.print_name || archive.filename || 'model';
-          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+          if (useSlicerApi) {
+            setShowSliceModal(true);
+          } else {
+            const filename = archive.print_name || archive.filename || 'model';
+            openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
+          }
         },
       },
     ]),
@@ -1661,7 +1733,7 @@ function ArchiveListRow({
     {
       label: t('archives.menu.preview3d'),
       icon: <Box className="w-4 h-4" />,
-      onClick: () => setShowViewer(true),
+      onClick: () => { openGcodeViewer(); },
     },
     {
       label: t('archives.menu.viewTimelapse'),
@@ -1812,6 +1884,9 @@ function ArchiveListRow({
       label: t('archives.menu.addToProject'),
       icon: <FolderKanban className="w-4 h-4" />,
       onClick: () => {},
+      submenuSearchPlaceholder: (projects?.filter(p => p.status === 'active').length ?? 0) > 5
+        ? t('archives.menu.searchProjects')
+        : undefined,
       submenu: (() => {
         const items: ContextMenuItem[] = [];
         if (archive.project_id) {
@@ -1829,7 +1904,9 @@ function ArchiveListRow({
             disabled: true,
           });
         } else {
-          const activeProjects = projects.filter(p => p.status === 'active');
+          const activeProjects = projects
+            .filter(p => p.status === 'active')
+            .sort((a, b) => a.name.localeCompare(b.name));
           if (activeProjects.length === 0) {
             items.push({
               label: t('archives.menu.noProjectsAvailable'),
@@ -2075,13 +2152,15 @@ function ArchiveListRow({
         />
       )}
 
-      {/* 3D Viewer Modal */}
-      {showViewer && (
-        <ModelViewerModal
-          archiveId={archive.id}
-          title={archive.print_name || archive.filename}
-          fileType={getArchiveFileType(archive.filename)}
-          onClose={() => setShowViewer(false)}
+      {/* Plate picker — shown only for multi-plate archives on 3D Preview click */}
+      {platePickerPlates && (
+        <PlatePickerModal
+          plates={platePickerPlates}
+          onSelect={(plateIndex) => {
+            setPlatePickerPlates(null);
+            navigate(`/gcode-viewer?archive=${archive.id}&plate=${plateIndex}`);
+          }}
+          onClose={() => setPlatePickerPlates(null)}
         />
       )}
 
@@ -2092,6 +2171,14 @@ function ArchiveListRow({
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
           onClose={() => setShowReprint(false)}
+        />
+      )}
+
+      {/* Slice Modal */}
+      {showSliceModal && (
+        <SliceModal
+          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
+          onClose={() => setShowSliceModal(false)}
         />
       )}
 
@@ -2318,7 +2405,11 @@ function ArchiveListRow({
 
 type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'size-desc' | 'size-asc';
 type ViewMode = 'grid' | 'list' | 'calendar' | 'log';
-type Collection = 'all' | 'recent' | 'this-week' | 'this-month' | 'favorites' | 'failed' | 'duplicates';
+type Collection = 'all' | 'recent' | 'this-week' | 'this-month' | 'favorites' | 'not-printed' | 'printed' | 'failed' | 'duplicates';
+
+// status values that indicate a print attempt has finished (regardless of outcome).
+// `archived` is the only status that means "uploaded but never sent to a printer."
+const PRINTED_STATUSES = ['completed', 'failed', 'aborted', 'cancelled', 'stopped'] as const;
 
 const collections: { id: Collection; label: string; icon: React.ReactNode }[] = [
   { id: 'all', label: 'All Archives', icon: <FolderOpen className="w-4 h-4" /> },
@@ -2326,6 +2417,8 @@ const collections: { id: Collection; label: string; icon: React.ReactNode }[] = 
   { id: 'this-week', label: 'This Week', icon: <Calendar className="w-4 h-4" /> },
   { id: 'this-month', label: 'This Month', icon: <Calendar className="w-4 h-4" /> },
   { id: 'favorites', label: 'Favorites', icon: <Star className="w-4 h-4" /> },
+  { id: 'not-printed', label: 'Not Printed', icon: <Upload className="w-4 h-4" /> },
+  { id: 'printed', label: 'Printed', icon: <Printer className="w-4 h-4" /> },
   { id: 'failed', label: 'Failed Prints', icon: <AlertCircle className="w-4 h-4" /> },
   { id: 'duplicates', label: 'Duplicates', icon: <Copy className="w-4 h-4" /> },
 ];
@@ -2396,6 +2489,7 @@ export function ArchivesPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showTagManagement, setShowTagManagement] = useState(false);
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
   const [pendingNavigationArchiveId, setPendingNavigationArchiveId] = useState<number | null>(null);
 
@@ -2495,6 +2589,7 @@ export function ArchivesPage() {
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
   const preferredSlicer: SlicerType = settings?.preferred_slicer || 'bambu_studio';
+  const useSlicerApi = settings?.use_slicer_api ?? false;
   const currency = getCurrencySymbol(settings?.currency || 'USD');
 
   const bulkDeleteMutation = useMutation({
@@ -2669,6 +2764,12 @@ export function ArchivesPage() {
           break;
         case 'favorites':
           matchesCollection = a.is_favorite === true;
+          break;
+        case 'not-printed':
+          matchesCollection = a.status === 'archived';
+          break;
+        case 'printed':
+          matchesCollection = (PRINTED_STATUSES as readonly string[]).includes(a.status);
           break;
         case 'failed':
           matchesCollection = a.status === 'failed' || a.status === 'aborted';
@@ -3082,6 +3183,16 @@ export function ArchivesPage() {
             <Upload className="w-4 h-4" />
             Upload 3MF
           </Button>
+          {hasPermission('archives:purge') && (
+            <Button
+              variant="secondary"
+              onClick={() => setShowPurgeModal(true)}
+              title={t('archivePurge.headerTooltip')}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              {t('archivePurge.headerButton')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -3360,6 +3471,7 @@ export function ArchivesPage() {
                 isHighlighted={archive.id === highlightedArchiveId}
                 timeFormat={timeFormat}
                 preferredSlicer={preferredSlicer}
+                useSlicerApi={useSlicerApi}
                 currency={currency}
                 t={t}
                 onNavigateToArchive={handleNavigateToArchive}
@@ -3401,6 +3513,7 @@ export function ArchivesPage() {
                   projects={projects}
                   isHighlighted={archive.id === highlightedArchiveId}
                   preferredSlicer={preferredSlicer}
+                  useSlicerApi={useSlicerApi}
                   t={t}
                   onNavigateToArchive={handleNavigateToArchive}
                 />
@@ -3633,6 +3746,11 @@ export function ArchivesPage() {
           }}
           initialFiles={uploadFiles}
         />
+      )}
+
+      {/* Archive bulk-purge modal (#1008 follow-up) */}
+      {showPurgeModal && (
+        <PurgeArchivesModal onClose={() => setShowPurgeModal(false)} />
       )}
 
       {/* Bulk Delete Confirmation */}

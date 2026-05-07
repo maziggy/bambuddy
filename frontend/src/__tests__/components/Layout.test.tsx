@@ -255,4 +255,128 @@ describe('Layout', () => {
       });
     });
   });
+
+  describe('update banner suppression for HA addon', () => {
+    // HA Supervisor surfaces its own update notification natively in the HA
+    // UI, so the in-app banner would be duplicate noise that links to a page
+    // that just says "update via HA". Suppress it for HA addon deployments.
+    it('hides the update-available banner when running as an HA addon', async () => {
+      server.use(
+        http.get('/api/v1/updates/check', () => {
+          return HttpResponse.json({
+            update_available: true,
+            current_version: '0.2.4',
+            latest_version: '0.2.5',
+            is_docker: true,
+            is_ha_addon: true,
+            update_method: 'ha_addon',
+          });
+        }),
+      );
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        const sidebar = document.querySelector('aside');
+        expect(sidebar).toBeInTheDocument();
+      });
+
+      expect(document.body.textContent).not.toContain('Update available');
+    });
+
+    it('still shows the update-available banner for plain Docker deployments', async () => {
+      server.use(
+        http.get('/api/v1/updates/check', () => {
+          return HttpResponse.json({
+            update_available: true,
+            current_version: '0.2.4',
+            latest_version: '0.2.5',
+            is_docker: true,
+            is_ha_addon: false,
+            update_method: 'docker',
+          });
+        }),
+      );
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.body.textContent).toContain('0.2.5');
+      });
+    });
+  });
+
+  describe('MakerWorld sidebar permission gate (#1175)', () => {
+    // The MakerWorld sidebar entry was visible to every authenticated user
+    // regardless of group permissions because Layout's `navPermissions` map
+    // had no entry for `makerworld`. Backend routes already gated on
+    // `makerworld:view`, so users without the permission saw the entry,
+    // clicked, and got 403'd by every API call inside the page. The fix
+    // adds `makerworld: 'makerworld:view'` to the map so the entry is
+    // hidden when the permission is absent — same shape as every other
+    // sidebar entry.
+    const enableAuthWithUser = (permissions: string[]) => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false }),
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'tester',
+            role: 'user',
+            is_active: true,
+            is_admin: false,
+            groups: [{ id: 2, name: 'Standard Users' }],
+            permissions,
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+      );
+      // AuthProvider needs a token in localStorage to fetch /auth/me; the
+      // value isn't validated by the mocked server.
+      window.localStorage.setItem('auth_token', 'test-token');
+    };
+
+    const findMakerWorldNavLink = () => {
+      // Sidebar nav links use react-router's `to` prop, which renders as a
+      // plain `<a href="/makerworld">`. Match on the href so the test isn't
+      // coupled to whatever locale string is rendered.
+      return document.querySelector('aside a[href="/makerworld"]');
+    };
+
+    it('hides the MakerWorld nav entry when the user lacks makerworld:view', async () => {
+      // Standard user without the MakerWorld permission. Every other
+      // permission they hold (library:read, etc.) is irrelevant here — the
+      // gate is per-entry and the MakerWorld entry must not render.
+      enableAuthWithUser(['library:read', 'archives:read', 'queue:read']);
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        // Wait for the auth resolution + sidebar render. Some other nav
+        // entry (Files / Archives) confirms the sidebar finished mounting.
+        const sidebar = document.querySelector('aside');
+        expect(sidebar).toBeInTheDocument();
+        expect(sidebar?.querySelector('a[href="/files"]')).toBeInTheDocument();
+      });
+
+      expect(findMakerWorldNavLink()).toBeNull();
+    });
+
+    it('shows the MakerWorld nav entry when the user has makerworld:view', async () => {
+      enableAuthWithUser([
+        'library:read',
+        'archives:read',
+        'queue:read',
+        'makerworld:view',
+      ]);
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(findMakerWorldNavLink()).toBeInTheDocument();
+      });
+    });
+  });
 });

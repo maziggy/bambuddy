@@ -10,6 +10,7 @@ import { useSpoolBuddyState } from '../../hooks/useSpoolBuddyState';
 import { useColorCatalogVersion } from '../../hooks/useColorCatalogVersion';
 import { api, spoolbuddyApi, type Printer, type PrinterStatus } from '../../api/client';
 import { VirtualKeyboard } from '../VirtualKeyboard';
+import { useToast } from '../../contexts/ToastContext';
 
 export function SpoolBuddyLayout() {
   // Cascade a re-render into all SpoolBuddy pages when the color catalog
@@ -23,6 +24,15 @@ export function SpoolBuddyLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const sbState = useSpoolBuddyState();
+
+  // Hide the global toast viewport (background-dispatch progress, etc.) on the
+  // kiosk display. Restore on unmount so navigating back to the main app sees
+  // its toasts again.
+  const { setViewportSuppressed } = useToast();
+  useEffect(() => {
+    setViewportSuppressed(true);
+    return () => setViewportSuppressed(false);
+  }, [setViewportSuppressed]);
 
   // Sync language from backend settings (kiosk has its own browser with empty localStorage)
   const { data: appSettings } = useQuery({

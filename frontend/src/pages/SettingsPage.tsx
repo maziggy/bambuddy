@@ -1,13 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
-import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
+import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
+import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
+import { CameraTokensSection } from './CameraTokensPage';
 import { Collapsible } from '../components/Collapsible';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
@@ -64,6 +66,7 @@ registerSettingsSearch({ labelKey: 'settings.defaultPrintOptions', labelFallback
 registerSettingsSearch({ labelKey: 'settings.staggeredStart', labelFallback: 'Staggered Start', tab: 'queue', keywords: 'staggered batch delay start queue group', anchor: 'card-staggered' });
 registerSettingsSearch({ labelKey: 'settings.plateClear', labelFallback: 'Plate-Clear Confirmation', tab: 'queue', keywords: 'plate clear confirm auto queue', anchor: 'card-plate' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
+registerSettingsSearch({ labelKey: 'settings.slicerCard', labelFallback: 'Slicer', tab: 'queue', keywords: 'slicer orcaslicer bambustudio orca bambu api sidecar url docker preferred', anchor: 'card-slicer' });
 registerSettingsSearch({ labelKey: 'settings.queueDrying', tab: 'queue', keywords: 'drying presets temperature time humidity ams', anchor: 'card-drying' });
 registerSettingsSearch({ labelKey: 'settings.filamentChecks', tab: 'filament', keywords: 'filament check warning runout remaining', anchor: 'card-filamentchecks' });
 registerSettingsSearch({ labelKey: 'settings.printModal', tab: 'filament', keywords: 'print modal custom mapping', anchor: 'card-printmodal' });
@@ -76,6 +79,7 @@ registerSettingsSearch({ labelKey: 'settings.prometheusMetrics', tab: 'network',
 registerSettingsSearch({ labelKey: 'settings.createNewApiKey', tab: 'apikeys', keywords: 'api key create permission scope', anchor: 'card-createapi' });
 registerSettingsSearch({ labelKey: 'settings.webhookEndpoints', tab: 'apikeys', keywords: 'webhook endpoint post http', anchor: 'card-webhooks' });
 registerSettingsSearch({ labelKey: 'settings.apiBrowser', tab: 'apikeys', keywords: 'api browser endpoint documentation test', anchor: 'card-apibrowser' });
+registerSettingsSearch({ labelKey: 'cameraTokens.title', tab: 'apikeys', keywords: 'camera token long-lived home assistant frigate kiosk stream', anchor: 'card-camera-tokens' });
 registerSettingsSearch({ labelKey: 'settings.tabs.virtualPrinter', tab: 'virtual-printer', keywords: 'virtual printer proxy archive slicer bambustudio orcaslicer ip bind', anchor: 'card-vp' });
 registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy', keywords: 'spoolbuddy device scale nfc rfid kiosk unregister', anchor: 'card-spoolbuddy' });
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
@@ -195,6 +199,7 @@ export function SettingsPage() {
     can_queue: true,
     can_control_printer: false,
     can_read_status: true,
+    can_access_cloud: false,
   });
   const [createdAPIKey, setCreatedAPIKey] = useState<string | null>(null);
   const [showDeleteAPIKeyConfirm, setShowDeleteAPIKeyConfirm] = useState<number | null>(null);
@@ -385,7 +390,7 @@ export function SettingsPage() {
   });
 
   const createAPIKeyMutation = useMutation({
-    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean }) =>
+    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean; can_access_cloud: boolean }) =>
       api.createAPIKey(data),
     onSuccess: (data) => {
       setCreatedAPIKey(data.key || null);
@@ -401,8 +406,10 @@ export function SettingsPage() {
 
   const deleteAPIKeyMutation = useMutation({
     mutationFn: (id: number) => api.deleteAPIKey(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['api-keys'] });
+    onSuccess: (_data, deletedId) => {
+      queryClient.setQueryData<APIKey[]>(['api-keys'], (old) =>
+        (old ?? []).filter((key) => key.id !== deletedId)
+      );
       showToast(t('settings.toast.apiKeyDeleted'));
     },
     onError: (error: Error) => {
@@ -454,6 +461,73 @@ export function SettingsPage() {
     queryKey: ['version'],
     queryFn: api.getVersion,
   });
+
+  // Library trash settings (#1008). Separate endpoint from the generic
+  // /settings — persists retention window + auto-purge config. Admin-only.
+  const canPurge = !authEnabled || hasPermission('library:purge');
+  const { data: trashSettings } = useQuery({
+    queryKey: ['library-trash-settings'],
+    queryFn: () => api.getLibraryTrashSettings(),
+    enabled: canPurge,
+  });
+
+  const updateTrashSettingsMutation = useMutation({
+    mutationFn: (body: {
+      retention_days: number;
+      auto_purge_enabled: boolean;
+      auto_purge_days: number;
+      auto_purge_include_never_printed: boolean;
+    }) => api.updateLibraryTrashSettings(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library-trash-settings'] });
+      showToast(t('settings.toast.settingsSaved'), 'success');
+    },
+    onError: (e: Error) => showToast(e.message || t('libraryAutoPurge.saveFailed'), 'error'),
+  });
+
+  const saveTrashSettings = (patch: Partial<{
+    retention_days: number;
+    auto_purge_enabled: boolean;
+    auto_purge_days: number;
+    auto_purge_include_never_printed: boolean;
+  }>) => {
+    if (!trashSettings) return;
+    updateTrashSettingsMutation.mutate({
+      retention_days: trashSettings.retention_days,
+      auto_purge_enabled: trashSettings.auto_purge_enabled,
+      auto_purge_days: trashSettings.auto_purge_days,
+      auto_purge_include_never_printed: trashSettings.auto_purge_include_never_printed,
+      ...patch,
+    });
+  };
+
+  // Archive auto-purge (#1008 follow-up). Gated on the dedicated archives:purge
+  // permission so admins can delegate bulk-delete to a role without granting
+  // per-archive delete on other users' rows.
+  const canPurgeArchives = !authEnabled || hasPermission('archives:purge');
+  const { data: archivePurgeSettings } = useQuery({
+    queryKey: ['archive-purge-settings'],
+    queryFn: () => api.getArchivePurgeSettings(),
+    enabled: canPurgeArchives,
+  });
+
+  const updateArchivePurgeSettingsMutation = useMutation({
+    mutationFn: (body: { enabled: boolean; days: number }) => api.updateArchivePurgeSettings(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archive-purge-settings'] });
+      showToast(t('settings.toast.settingsSaved'), 'success');
+    },
+    onError: (e: Error) => showToast(e.message || t('archiveAutoPurge.saveFailed'), 'error'),
+  });
+
+  const saveArchivePurgeSettings = (patch: Partial<{ enabled: boolean; days: number }>) => {
+    if (!archivePurgeSettings) return;
+    updateArchivePurgeSettingsMutation.mutate({
+      enabled: archivePurgeSettings.enabled,
+      days: archivePurgeSettings.days,
+      ...patch,
+    });
+  };
 
   const { data: updateCheck, refetch: refetchUpdateCheck, isRefetching: isCheckingUpdate } = useQuery({
     queryKey: ['updateCheck'],
@@ -698,7 +772,7 @@ export function SettingsPage() {
   const applyUpdateMutation = useMutation({
     mutationFn: api.applyUpdate,
     onSuccess: (data) => {
-      if (data.is_docker) {
+      if (data.is_ha_addon || data.is_docker) {
         showToast(data.message, 'error');
       } else {
         refetchUpdateStatus();
@@ -806,6 +880,13 @@ export function SettingsPage() {
     },
     onError: (error: Error) => {
       showToast(`Failed to save: ${error.message}`, 'error');
+      // No localSettings rollback here — the existing comment above (see
+      // onSuccess) already flags that overwriting localSettings would discard
+      // in-progress user input (e.g. typing a hostname). The no-permission
+      // loop is already prevented by the up-front guards in updateSetting and
+      // in the debounced-save effect, so this onError path now only fires for
+      // genuine server/network failures where preserving typed-in values is
+      // the right call.
     },
     onSettled: () => {
       // Reset saving flag when mutation completes (success or error)
@@ -814,7 +895,7 @@ export function SettingsPage() {
   });
 
   const updatePrinterMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<{ external_camera_url: string | null; external_camera_type: string | null; external_camera_enabled: boolean; camera_rotation: number }> }) =>
+    mutationFn: ({ id, data }: { id: number; data: Partial<{ external_camera_url: string | null; external_camera_type: string | null; external_camera_enabled: boolean; external_camera_snapshot_url: string | null; camera_rotation: number }> }) =>
       api.updatePrinter(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['printers'] });
@@ -829,6 +910,14 @@ export function SettingsPage() {
   useEffect(() => {
     // Skip if initial load or no settings
     if (isInitialLoadRef.current || !localSettings || !settings) {
+      return;
+    }
+
+    // Safety net: skip auto-save entirely when the user lacks settings:update.
+    // The actual user feedback (toast + revert) lives in updateSetting below,
+    // which runs once per click. Doing it here as well would fire on every
+    // React render since the debounced-save effect depends on non-stable refs.
+    if (authEnabled && !hasPermission('settings:update')) {
       return;
     }
 
@@ -880,6 +969,9 @@ export function SettingsPage() {
       Number(settings.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
       (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
       (settings.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
+      (settings.use_slicer_api ?? false) !== (localSettings.use_slicer_api ?? false) ||
+      (settings.orcaslicer_api_url ?? '') !== (localSettings.orcaslicer_api_url ?? '') ||
+      (settings.bambu_studio_api_url ?? '') !== (localSettings.bambu_studio_api_url ?? '') ||
       settings.prometheus_enabled !== localSettings.prometheus_enabled ||
       settings.prometheus_token !== localSettings.prometheus_token ||
       (settings.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
@@ -961,6 +1053,9 @@ export function SettingsPage() {
         library_disk_warning_gb: localSettings.library_disk_warning_gb,
         camera_view_mode: localSettings.camera_view_mode,
         preferred_slicer: localSettings.preferred_slicer,
+        use_slicer_api: localSettings.use_slicer_api,
+        orcaslicer_api_url: localSettings.orcaslicer_api_url,
+        bambu_studio_api_url: localSettings.bambu_studio_api_url,
         prometheus_enabled: localSettings.prometheus_enabled,
         prometheus_token: localSettings.prometheus_token,
         user_notifications_enabled: localSettings.user_notifications_enabled,
@@ -982,11 +1077,18 @@ export function SettingsPage() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [localSettings, settings, updateMutation]);
+  }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t]);
 
   const updateSetting = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    // Gate at the point of user interaction (not in the debounced-save effect —
+    // that runs on every render and would fire the toast repeatedly). One toast
+    // per attempt; no local state divergence for a read-only delegated user.
+    if (authEnabled && !hasPermission('settings:update')) {
+      showToast(t('settings.toast.noPermissionUpdate'), 'error');
+      return;
+    }
     setLocalSettings(prev => prev ? { ...prev, [key]: value } : null);
-  }, []);
+  }, [authEnabled, hasPermission, showToast, t]);
 
   const handleTestExternalCamera = async (printerId: number, url: string, cameraType: string) => {
     if (!url) {
@@ -1016,19 +1118,30 @@ export function SettingsPage() {
   const [localCameraUrls, setLocalCameraUrls] = useState<Record<number, string>>({});
   const cameraUrlSaveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const initializedPrinterUrlsRef = useRef<Set<number>>(new Set());
+  const [localSnapshotUrls, setLocalSnapshotUrls] = useState<Record<number, string>>({});
+  const snapshotUrlSaveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const initializedPrinterSnapshotUrlsRef = useRef<Set<number>>(new Set());
 
   // Initialize local camera URLs from printer data
   useEffect(() => {
     if (printers) {
       const urls: Record<number, string> = {};
+      const snapUrls: Record<number, string> = {};
       printers.forEach(p => {
         if (p.external_camera_url && !initializedPrinterUrlsRef.current.has(p.id)) {
           urls[p.id] = p.external_camera_url;
           initializedPrinterUrlsRef.current.add(p.id);
         }
+        if (p.external_camera_snapshot_url && !initializedPrinterSnapshotUrlsRef.current.has(p.id)) {
+          snapUrls[p.id] = p.external_camera_snapshot_url;
+          initializedPrinterSnapshotUrlsRef.current.add(p.id);
+        }
       });
       if (Object.keys(urls).length > 0) {
         setLocalCameraUrls(prev => ({ ...prev, ...urls }));
+      }
+      if (Object.keys(snapUrls).length > 0) {
+        setLocalSnapshotUrls(prev => ({ ...prev, ...snapUrls }));
       }
     }
   }, [printers]);
@@ -1047,6 +1160,21 @@ export function SettingsPage() {
       updatePrinterMutation.mutate({
         id: printerId,
         data: { external_camera_url: url || null }
+      });
+    }, 800);
+  };
+
+  const handleSnapshotUrlChange = (printerId: number, url: string) => {
+    setLocalSnapshotUrls(prev => ({ ...prev, [printerId]: url }));
+
+    if (snapshotUrlSaveTimeoutRef.current[printerId]) {
+      clearTimeout(snapshotUrlSaveTimeoutRef.current[printerId]);
+    }
+
+    snapshotUrlSaveTimeoutRef.current[printerId] = setTimeout(() => {
+      updatePrinterMutation.mutate({
+        id: printerId,
+        data: { external_camera_snapshot_url: url || null }
       });
     }, 800);
   };
@@ -1334,7 +1462,18 @@ export function SettingsPage() {
                 <div className="relative">
                   <select
                     value={i18n.language}
-                    onChange={(e) => { i18n.changeLanguage(e.target.value); api.updateSettings({ language: e.target.value }); showToast(t('settings.toast.settingsSaved'), 'success'); }}
+                    onChange={(e) => {
+                      const newLang = e.target.value;
+                      // Block server persist if the user lacks settings:update —
+                      // without this guard the fire-and-forget api.updateSettings
+                      // call below would 403 silently while a success toast flashed.
+                      if (authEnabled && !hasPermission('settings:update')) {
+                        showToast(t('settings.toast.noPermissionUpdate'), 'error');
+                        return;
+                      }
+                      i18n.changeLanguage(newLang);
+                      updateMutation.mutate({ language: newLang });
+                    }}
                     className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                   >
                     {availableLanguages.map((lang) => (
@@ -1429,25 +1568,6 @@ export function SettingsPage() {
                 </div>
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.defaultPrinterDescription')}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.preferredSlicer')}
-                </label>
-                <div className="relative">
-                  <select
-                    value={localSettings.preferred_slicer ?? 'bambu_studio'}
-                    onChange={(e) => updateSetting('preferred_slicer', e.target.value as 'bambu_studio' | 'orcaslicer')}
-                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
-                  >
-                    <option value="bambu_studio">{t('settings.slicerBambuStudio')}</option>
-                    <option value="orcaslicer">{t('settings.slicerOrcaSlicer')}</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
-                </div>
-                <p className="text-xs text-bambu-gray mt-1">
-                  {t('settings.preferredSlicerDescription')}
                 </p>
               </div>
               <div className="flex items-center justify-between">
@@ -1664,6 +1784,55 @@ export function SettingsPage() {
                   </div>
                 </div>
               )}
+
+              {/* Archive auto-purge (#1008 follow-up). Admin-only — gated on
+                  archives:delete_all. Hard-deletes archives older than the
+                  configured age threshold once per 24h. */}
+              {canPurgeArchives && archivePurgeSettings && (
+                <div className="border-t border-bambu-dark-tertiary pt-3 mt-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white">{t('archiveAutoPurge.enableLabel')}</p>
+                      <p className="text-sm text-bambu-gray">{t('archiveAutoPurge.enableDescription')}</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={archivePurgeSettings.enabled}
+                        onChange={(e) => saveArchivePurgeSettings({ enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">
+                      {t('archiveAutoPurge.ageLabel')}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={7}
+                        max={3650}
+                        disabled={!archivePurgeSettings.enabled}
+                        value={archivePurgeSettings.days}
+                        onChange={(e) =>
+                          saveArchivePurgeSettings({
+                            days: Math.max(7, Math.min(3650, parseInt(e.target.value || '0', 10) || 0)),
+                          })
+                        }
+                        className="w-24 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
+                      />
+                      <span className="text-bambu-gray">{t('archiveAutoPurge.days')}</span>
+                    </div>
+                    <p className="text-xs text-bambu-gray mt-1">
+                      {t('archiveAutoPurge.ageDescription')}
+                    </p>
+                  </div>
+
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1769,6 +1938,35 @@ export function SettingsPage() {
                                     {extCameraTestResults[printer.id]?.error || t('settings.toast.connectionFailed')}
                                   </>
                                 )}
+                              </div>
+                            )}
+                            {(printer.external_camera_type === 'mjpeg' || printer.external_camera_type === 'rtsp' || printer.external_camera_type === 'usb') && (
+                              <div className="space-y-1">
+                                <label className="text-xs text-bambu-gray">{t('settings.cameraSnapshotUrl', 'Snapshot URL (optional)')}</label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    placeholder={t('settings.cameraSnapshotUrlPlaceholder', 'http://192.168.1.61:1984/api/frame.jpeg?src=printer')}
+                                    value={localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? ''}
+                                    onChange={(e) => handleSnapshotUrlChange(printer.id, e.target.value)}
+                                    className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => handleTestExternalCamera(printer.id, localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? '', 'snapshot')}
+                                    disabled={extCameraTestLoading[printer.id] || !(localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url)}
+                                  >
+                                    {extCameraTestLoading[printer.id] ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      t('settings.test')
+                                    )}
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-bambu-gray opacity-75">
+                                  {t('settings.cameraSnapshotUrlHelp', 'Single-frame URL used for notification thumbnails, finish photos, timelapse and plate detection. Leave blank to capture from the live stream above. Useful for go2rtc (/api/frame.jpeg) and IP cameras with a dedicated snapshot endpoint.')}
+                                </p>
                               </div>
                             )}
                             <div className="flex items-center gap-2">
@@ -1926,6 +2124,65 @@ export function SettingsPage() {
                   {t('settings.lowDiskSpaceDescription')}
                 </p>
               </div>
+
+              {/* Auto-purge (#1008). Admin-only — users without library:purge
+                  don't see this section since they can't trigger a bulk purge
+                  even manually. */}
+              {canPurge && trashSettings && (
+                <div className="border-t border-bambu-dark-tertiary pt-3 mt-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white">{t('libraryAutoPurge.enableLabel')}</p>
+                      <p className="text-sm text-bambu-gray">{t('libraryAutoPurge.enableDescription')}</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={trashSettings.auto_purge_enabled}
+                        onChange={(e) => saveTrashSettings({ auto_purge_enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">
+                      {t('libraryAutoPurge.ageLabel')}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={7}
+                        max={3650}
+                        disabled={!trashSettings.auto_purge_enabled}
+                        value={trashSettings.auto_purge_days}
+                        onChange={(e) =>
+                          saveTrashSettings({
+                            auto_purge_days: Math.max(7, Math.min(3650, parseInt(e.target.value || '0', 10) || 0)),
+                          })
+                        }
+                        className="w-24 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
+                      />
+                      <span className="text-bambu-gray">{t('libraryAutoPurge.days')}</span>
+                    </div>
+                    <p className="text-xs text-bambu-gray mt-1">
+                      {t('libraryAutoPurge.ageDescription')}
+                    </p>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
+                    <input
+                      type="checkbox"
+                      disabled={!trashSettings.auto_purge_enabled}
+                      checked={trashSettings.auto_purge_include_never_printed}
+                      onChange={(e) => saveTrashSettings({ auto_purge_include_never_printed: e.target.checked })}
+                      className="rounded border-gray-300 disabled:opacity-50"
+                    />
+                    {t('libraryAutoPurge.includeNeverPrinted')}
+                  </label>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -2071,6 +2328,12 @@ export function SettingsPage() {
                     ) : updateStatus?.status === 'error' ? (
                       <div className="mt-3 p-2 bg-red-500/20 rounded text-sm text-red-400">
                         {updateStatus.error || updateStatus.message}
+                      </div>
+                    ) : updateCheck?.is_ha_addon ? (
+                      <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
+                        <p className="text-sm text-bambu-gray">
+                          {t('settings.updateViaHomeAssistant')}
+                        </p>
                       </div>
                     ) : updateCheck?.is_docker ? (
                       <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
@@ -3296,9 +3559,15 @@ export function SettingsPage() {
 
       {/* API Keys Tab */}
       {activeTab === 'apikeys' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {/* Left Column - API Keys Management */}
+        <div className={hasPermission('api_keys:read')
+          ? 'grid grid-cols-1 xl:grid-cols-2 gap-4'
+          : 'grid grid-cols-1 gap-4'}>
+          {/* Left Column - API Keys Management. Admin-gated content
+              (webhook keys, webhook docs) is hidden from users without
+              api_keys:read; the Camera Tokens panel is always shown so
+              users with camera:view can self-manage their own tokens. */}
           <div>
+            {hasPermission('api_keys:read') && <>
             <div className="flex items-start justify-between gap-4 mb-6">
               <div className="flex-1">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2" id="card-createapi">
@@ -3437,6 +3706,18 @@ export function SettingsPage() {
                           <p className="text-xs text-bambu-gray">{t('settings.controlPrinterDescription')}</p>
                         </div>
                       </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAPIKeyPermissions.can_access_cloud}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_access_cloud: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">{t('settings.cloudAccess', 'Allow cloud access')}</span>
+                          <p className="text-xs text-bambu-gray">{t('settings.cloudAccessDescription', 'Read Bambu Cloud presets and filaments on your behalf. Requires you to be signed into Bambu Cloud.')}</p>
+                        </div>
+                      </label>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 pt-2">
@@ -3484,7 +3765,7 @@ export function SettingsPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <div className="flex gap-1 text-xs">
+                          <div className="flex gap-1 text-xs flex-wrap justify-end">
                             {key.can_read_status && (
                               <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">{t('settings.read')}</span>
                             )}
@@ -3493,6 +3774,17 @@ export function SettingsPage() {
                             )}
                             {key.can_control_printer && (
                               <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded">{t('settings.control')}</span>
+                            )}
+                            {key.can_access_cloud && (
+                              <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">{t('settings.cloudBadge', 'Cloud')}</span>
+                            )}
+                            {key.user_id === null && (
+                              <span
+                                className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded"
+                                title={t('settings.legacyKeyTooltip', 'Created before per-user ownership; recreate to use cloud access')}
+                              >
+                                {t('settings.legacyKey', 'Legacy')}
+                              </span>
                             )}
                           </div>
                           <Button
@@ -3567,10 +3859,27 @@ export function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+            </>}
+
+            {/* Long-lived camera-stream tokens (#1108) */}
+            <Card className="mt-6">
+              <CardHeader>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-camera-tokens">
+                  <Video className="w-4 h-4 text-bambu-green" />
+                  {t('cameraTokens.title', 'Camera API Tokens')}
+                </h3>
+              </CardHeader>
+              <CardContent>
+                <CameraTokensSection />
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Right Column - API Browser */}
-          <div>
+          {/* Right Column - API Browser. Hidden from users without
+              api_keys:read since the API Browser is the testing surface
+              for those keys; non-admins land in this tab only for the
+              Camera Tokens panel and don't need the browser. */}
+          {hasPermission('api_keys:read') && <div>
             <div className="mb-6">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2" id="card-apibrowser">
                 <Globe className="w-5 h-5 text-bambu-green" />
@@ -3599,7 +3908,7 @@ export function SettingsPage() {
             </Card>
 
             <APIBrowser apiKey={testApiKey} />
-          </div>
+          </div>}
         </div>
       )}
 
@@ -3725,7 +4034,7 @@ export function SettingsPage() {
                     {t('settings.requirePlateClear', 'Require plate-clear confirmation')}
                   </p>
                   <p className="text-xs text-bambu-gray mt-1">
-                    {t('settings.requirePlateClearDescription', 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disable for farm workflows where plates are verified physically.')}
+                    {t('settings.requirePlateClearDescription', 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -3851,6 +4160,116 @@ export function SettingsPage() {
           </div>
           {/* Right Column */}
           <div className="lg:w-1/2 space-y-3">
+          {/* Slicer */}
+          <Card id="card-slicer">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Cog className="w-4 h-4 text-bambu-green" />
+                {t('settings.slicerCard', 'Slicer')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {t('settings.preferredSlicer')}
+                </label>
+                <div className="relative">
+                  <select
+                    value={localSettings.preferred_slicer ?? 'bambu_studio'}
+                    onChange={(e) => updateSetting('preferred_slicer', e.target.value as 'bambu_studio' | 'orcaslicer')}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="bambu_studio">{t('settings.slicerBambuStudio')}</option>
+                    <option value="orcaslicer">{t('settings.slicerOrcaSlicer')}</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.preferredSlicerDescription')}
+                </p>
+                {/* Upstream OrcaSlicer 2.3.2 / 2.4.0-dev have two known
+                    CLI bugs that block slicing many Bambu-authored 3MFs:
+                    a SIGSEGV on painted multi-extruder 3MFs (#12426) and
+                    a strict range-check on sentinel parameter values
+                    BambuStudio writes by default. Until the upstream
+                    fixes land, surface a clear warning when a user has
+                    OrcaSlicer selected so they know what to expect; we
+                    don't auto-switch them in case they're testing. */}
+                {(localSettings.preferred_slicer ?? 'bambu_studio') === 'orcaslicer' && (
+                  <div
+                    role="alert"
+                    className="text-xs text-amber-200 bg-amber-900/20 border border-amber-700/40 rounded p-2 mt-2"
+                  >
+                    {t(
+                      'settings.orcaslicerKnownIssuesWarning',
+                      'OrcaSlicer 2.3.2 / 2.4.0-dev have known CLI bugs that block slicing many Bambu-authored 3MFs — see upstream issues #12426 (segfault on painted multi-extruder files) and #13386 (parameter-range strict-validation reject). Bambu Studio is recommended until the upstream fixes land.',
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-white">{t('settings.useSlicerApi')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.useSlicerApiDescription')}
+                  </p>
+                </div>
+                <label className="flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.use_slicer_api ?? false}
+                    onChange={(e) => updateSetting('use_slicer_api', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="relative w-11 h-6 bg-bambu-dark-tertiary rounded-full peer peer-checked:bg-bambu-green peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-bambu-green/50 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-transform peer-checked:after:translate-x-5"></div>
+                </label>
+              </div>
+              {(localSettings.use_slicer_api ?? false) && (
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">
+                    {(localSettings.preferred_slicer ?? 'bambu_studio') === 'orcaslicer'
+                      ? t('settings.orcaslicerApiUrl', 'OrcaSlicer sidecar URL')
+                      : t('settings.bambuStudioApiUrl', 'Bambu Studio sidecar URL')}
+                  </label>
+                  <input
+                    type="text"
+                    value={
+                      ((localSettings.preferred_slicer ?? 'bambu_studio') === 'orcaslicer'
+                        ? localSettings.orcaslicer_api_url
+                        : localSettings.bambu_studio_api_url) ?? ''
+                    }
+                    onChange={(e) =>
+                      updateSetting(
+                        (localSettings.preferred_slicer ?? 'bambu_studio') === 'orcaslicer'
+                          ? 'orcaslicer_api_url'
+                          : 'bambu_studio_api_url',
+                        e.target.value,
+                      )
+                    }
+                    placeholder={
+                      (localSettings.preferred_slicer ?? 'bambu_studio') === 'orcaslicer'
+                        ? 'http://localhost:3003'
+                        : 'http://localhost:3001'
+                    }
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none placeholder:text-bambu-gray/40"
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t(
+                      'settings.slicerApiUrlDescription',
+                      'URL of the slicer-API sidecar container. Leave blank to use the SLICER_API_URL / BAMBU_STUDIO_API_URL env var defaults.',
+                    )}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Slicer Preset Bundles — only meaningful when the sidecar is in use,
+              since uploads / lists round-trip through it. Hide it entirely when
+              use_slicer_api is off so the Settings page doesn't show a panel that
+              can't do anything. */}
+          {(localSettings.use_slicer_api ?? false) && <SlicerBundlesPanel />}
+
           {/* Auto-Drying */}
           <Card>
             <CardHeader>

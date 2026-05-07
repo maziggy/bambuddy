@@ -94,12 +94,16 @@ export function BulkPrinterToolbar({
   printers.forEach(p => {
     const status = queryClient.getQueryData<PrinterStatus>(['printerStatus', p.id]);
     if (!status || !status.connected) { stateCounts.offline++; return; }
-    if (status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0) stateCounts.error++;
+    const hasKnownHms = status.hms_errors ? filterKnownHMSErrors(status.hms_errors).length > 0 : false;
+    if (hasKnownHms) stateCounts.error++;
     switch (status.state) {
       case 'RUNNING': stateCounts.printing++; break;
       case 'PAUSE': stateCounts.paused++; break;
       case 'FINISH': stateCounts.finished++; break;
-      case 'FAILED': stateCounts.error++; break;
+      // FAILED without an active HMS error is the post-cancel terminal state —
+      // group with FINISH. When HMS is active the error bucket is already
+      // incremented above; don't double-count.
+      case 'FAILED': if (!hasKnownHms) stateCounts.finished++; break;
       default: stateCounts.idle++; break;
     }
   });

@@ -70,6 +70,56 @@ class TestAuthSetupAPI:
         assert result["auth_enabled"] is True
         assert result["admin_created"] is True
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_setup_weak_password_rejected_when_creating_new_admin(self, async_client: AsyncClient):
+        """Complexity is enforced only when a new admin is being created."""
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "weakpw_admin",
+                "admin_password": "NoSpecial1",
+            },
+        )
+
+        assert response.status_code == 400
+        assert "special character" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_setup_reenable_with_existing_admin_ignores_password(self, async_client: AsyncClient, db_session):
+        """Re-enabling auth when an admin already exists must not reject the placeholder
+        password the frontend still sends. Regression for the LDAP re-enable flow that
+        previously 422'd because the Pydantic schema enforced complexity unconditionally.
+        """
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.user import User
+
+        existing = User(
+            username="existing_admin",
+            # pragma: allowlist secret — test fixture only, not a real credential
+            password_hash=get_password_hash("DoesNotMatter1!"),  # noqa: S106
+            role="admin",
+            is_active=True,
+        )
+        db_session.add(existing)
+        await db_session.commit()
+
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "irrelevant",
+                "admin_password": "NoSpecial1",
+            },
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["auth_enabled"] is True
+        assert result["admin_created"] is False
+
 
 class TestAuthLoginAPI:
     """Integration tests for /api/v1/auth/login endpoint."""

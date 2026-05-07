@@ -14,7 +14,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Production image
-FROM python:3.13-slim
+FROM python:3.13-slim-trixie
 
 WORKDIR /app
 
@@ -23,9 +23,23 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
+    gnupg \
+    gosu \
     iproute2 \
     libcap2-bin \
     openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the Tailscale CLI only (no tailscaled — the daemon runs on the host).
+# Bambuddy calls `tailscale status` / `tailscale cert` via the host's socket,
+# which the user mounts in via docker-compose when they want to enable the
+# Tailscale integration for virtual printers. Without the socket mount, the
+# binary is harmless — the code logs a hint and falls back to self-signed.
+RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
+        -o /usr/share/keyrings/tailscale-archive-keyring.gpg \
+    && curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.tailscale-keyring.list \
+        -o /etc/apt/sources.list.d/tailscale.list \
+    && apt-get update && apt-get install -y --no-install-recommends tailscale \
     && rm -rf /var/lib/apt/lists/*
 
 # Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.
@@ -53,9 +67,38 @@ COPY .git/HEAD ./.git/HEAD
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/static ./static
 
-# Create data directory for persistent storage
-# chmod 777 allows running as non-root user (e.g., with docker compose user: directive)
-RUN mkdir -p /app/data /app/logs && chmod 777 /app/data /app/logs
+# Copy embedded GCode viewer static assets (PrettyGCode + Bambuddy adapter).
+# Served by the explicit @app.get("/gcode-viewer/{...}") routes in main.py,
+# which resolve files under (static_dir.parent / "gcode_viewer") = /app/gcode_viewer/.
+# Without this COPY the routes return a bare 404 at request time and the 3D
+# Preview iframe shows {"detail":"Not Found"} (see #1218). The directory is
+# vendored third-party JS — the Vite build does NOT stage it into static/,
+# the dev server serves it via a configureServer middleware that's dev-only.
+COPY gcode_viewer/ ./gcode_viewer/
+
+# Create data directories. Ownership is normalised at startup by the
+# entrypoint (chowns to PUID:PGID and drops privileges via gosu before
+# exec'ing the app), so we don't need a chmod 777 hack here — that was
+# the workaround for the previous compose `user: "1000:1000"` model and
+# only worked when the volume's perms happened to survive (named volume
+# first-create case; bind-mount-source case bit users in #1211 / #668).
+#
+# The sentinel file is needed so a freshly-created Docker named volume
+# isn't "empty" from Docker's POV. On empty volumes Docker resyncs the
+# directory metadata (incl. ownership) from the image on every mount,
+# which would mean our entrypoint chown gets reverted on every restart
+# and re-fired on every start (slow on multi-GB archive dirs). With a
+# sentinel inside the volume on first mount, Docker considers the
+# volume populated and stops resyncing, so the chown is genuinely
+# one-shot.
+RUN mkdir -p /app/data /app/logs && \
+    : >/app/data/.bambuddy && \
+    : >/app/logs/.bambuddy
+
+# Entrypoint script: handles PUID/PGID + ownership normalisation +
+# privilege drop. See deploy/docker-entrypoint.sh for the full rationale.
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1
@@ -90,4 +133,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 # Run the application
 # Use standard asyncio loop (uvloop has permission issues in some Docker environments)
 # Port is configurable via PORT environment variable (default: 8000)
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --loop asyncio"]

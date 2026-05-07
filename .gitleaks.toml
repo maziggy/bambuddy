@@ -1,0 +1,51 @@
+title = "Bambuddy gitleaks config"
+
+# Extend the built-in ruleset instead of replacing it.
+[extend]
+useDefault = true
+
+# ── Custom rules ─────────────────────────────────────────────────────────
+
+# Flag credentials embedded in URL userinfo, e.g.
+#   http://USERNAME:PASSWORD@host/
+# gitleaks' default ruleset does not catch these because plain alphanumeric
+# passwords have no recognisable signature — only the URL structure does.
+[[rules]]
+id = "basic-auth-url"
+description = "Credentials in HTTP(S) URL userinfo"
+regex = '''https?://[^:/\s@]+:[^@/\s]{4,}@'''
+tags = ["credentials", "url"]
+
+[rules.allowlist]
+# Skip well-known dummy/example creds that legitimately appear in docs
+# and test fixtures, and template-literal interpolations in source code
+# (e.g. `http://${user}:${password}@...` — not an actual credential).
+regexes = [
+    '''https?://user:pass(word)?@''',
+    '''https?://admin:admin@''',
+    '''https?://test:test@''',
+    '''https?://example:example@''',
+    '''https?://foo:bar@''',
+    '''https?://[^:]+:password@''',
+    '''https?://[^:]+:secret@''',
+    # JS template literal  http://${user}:${password}@
+    '''https?://\$\{[^}]+\}:\$\{[^}]+\}@''',
+    # Python f-string      http://{username}:{password}@
+    '''https?://\{[^}]+\}:\{[^}]+\}@''',
+]
+
+# ── Global allowlist ─────────────────────────────────────────────────────
+
+[allowlist]
+description = "Global paths and patterns that never contain real secrets"
+paths = [
+    '''(.*?)(png|jpg|jpeg|gif|svg|ico|webp|pdf)$''',
+    '''frontend/dist/.*''',
+    '''frontend/node_modules/.*''',
+    '''backend/tests/fixtures/.*''',
+    '''static/assets/.*''',   # bundled frontend build output (minified JS/CSS)
+    # Historical log file (deleted in working tree, still in git history).
+    # Credentials inside have been rotated; allowlisted to keep future scans
+    # from re-surfacing them as noise.
+    '''bambutrack\.log\.1$''',
+]

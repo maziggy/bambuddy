@@ -39,8 +39,8 @@ def _make_server(serial: str = "01P00A391800001") -> SimpleMQTTServer:
     return SimpleMQTTServer(
         serial=serial,
         access_code="deadbeef",
-        cert_path=Path("/tmp/unused.crt"),
-        key_path=Path("/tmp/unused.key"),
+        cert_path=Path("/tmp/unused.crt"),  # nosec B108
+        key_path=Path("/tmp/unused.key"),  # nosec B108
         model="C12",
     )
 

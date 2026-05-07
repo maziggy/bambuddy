@@ -49,6 +49,7 @@ export function PrintModal({
   onClose,
   onSuccess,
   projectId,
+  cleanupLibraryAfterDispatch,
 }: PrintModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -737,6 +738,7 @@ export function PrintModal({
                   ams_mapping: printerMapping,
                   ...printOptions,
                   project_id: projectId,
+                  cleanup_library_after_dispatch: cleanupLibraryAfterDispatch,
                 });
               } else {
                 // project_id is intentionally omitted here: reprintArchive targets an existing

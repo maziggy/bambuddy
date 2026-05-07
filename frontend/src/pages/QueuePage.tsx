@@ -558,38 +558,49 @@ function SortableQueueItem({
           </div>
 
           {/* Progress bar for printing items - TODO: integrate with WebSocket */}
-          {isPrinting && status && (
-            <div className="mt-2 sm:mt-3">
-              <div className="flex items-center justify-between text-xs sm:text-sm">
-                <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-1.5 sm:h-2 mr-3">
-                  <div
-                    className="bg-bambu-green h-1.5 sm:h-2 rounded-full transition-all"
-                    style={{ width: `${status.progress || 0}%` }}
-                  />
+          {isPrinting && status && (() => {
+            // Gate progress/remaining/layer on printer actually running this print.
+            // Between dispatch and RUNNING transition (H2D/P1 MQTT lag), status.progress
+            // is stale from the previous print — showing 100% then snapping back to 0%
+            // once the new print starts. Only trust these fields when state is active.
+            const isActive = status.state === 'RUNNING' || status.state === 'PAUSE';
+            const progress = isActive ? (status.progress || 0) : 0;
+            const remaining = isActive ? status.remaining_time : null;
+            const layerNum = isActive ? status.layer_num : null;
+            const totalLayers = isActive ? status.total_layers : null;
+            return (
+              <div className="mt-2 sm:mt-3">
+                <div className="flex items-center justify-between text-xs sm:text-sm">
+                  <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-1.5 sm:h-2 mr-3">
+                    <div
+                      className="bg-bambu-green h-1.5 sm:h-2 rounded-full transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <span className="text-white">{Math.round(progress)}%</span>
                 </div>
-                <span className="text-white">{Math.round(status.progress || 0)}%</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5 sm:mt-2 text-[10px] sm:text-xs text-bambu-gray">
-                {status.remaining_time != null && status.remaining_time > 0 && (
-                  <>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5 sm:mt-2 text-[10px] sm:text-xs text-bambu-gray">
+                  {remaining != null && remaining > 0 && (
+                    <>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatDuration(remaining * 60)}
+                      </span>
+                      <span className="text-bambu-green font-medium" title={t('printers.estimatedCompletion')}>
+                        ETA {formatETA(remaining, timeFormat, t)}
+                      </span>
+                    </>
+                  )}
+                  {layerNum != null && totalLayers != null && totalLayers > 0 && (
                     <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatDuration(status.remaining_time * 60)}
+                      <Layers className="w-3 h-3" />
+                      {layerNum}/{totalLayers}
                     </span>
-                    <span className="text-bambu-green font-medium" title={t('printers.estimatedCompletion')}>
-                      ETA {formatETA(status.remaining_time, timeFormat, t)}
-                    </span>
-                  </>
-                )}
-                {status.layer_num != null && status.total_layers != null && status.total_layers > 0 && (
-                  <span className="flex items-center gap-1">
-                    <Layers className="w-3 h-3" />
-                    {status.layer_num}/{status.total_layers}
-                  </span>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Waiting reason for model-based assignments */}
           {item.waiting_reason && item.status === 'pending' && (

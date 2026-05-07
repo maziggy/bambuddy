@@ -113,9 +113,10 @@ async def set_kprofile(
     if not client or not client.state.connected:
         raise HTTPException(400, "Printer not connected")
 
-    # Detect dual-nozzle families by serial number prefix
-    # H2D series: "094"; X2D series: "20P9"
-    is_h2d = printer.serial_number.startswith(("094", "20P9"))
+    # Detect dual-nozzle families by serial number prefix.
+    # H2 series: legacy "094"; post-2026 H2C batches ship with "31B8B" (#1105).
+    # X2D series: "20P9".
+    is_h2d = printer.serial_number.startswith(("094", "20P9", "31B8B"))
 
     if is_edit and is_h2d:
         # H2D in-place edit: use cali_idx with slot_id=0 and empty setting_id

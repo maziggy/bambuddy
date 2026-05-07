@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { PrintersPage } from '../../pages/PrintersPage';
 import { http, HttpResponse } from 'msw';
@@ -45,6 +46,7 @@ const mockPrinters = [
 const mockPrinterStatus = {
   connected: true,
   state: 'IDLE',
+  awaiting_plate_clear: false,
   progress: 0,
   layer_num: 0,
   total_layers: 0,
@@ -59,14 +61,40 @@ const mockPrinterStatus = {
   vt_tray: [],
 };
 
+const selectToolbarDropdownOption = async (triggerName: RegExp, optionName: RegExp) => {
+  const user = userEvent.setup();
+
+  await user.click(screen.getByRole('button', { name: triggerName }));
+  await user.click(await screen.findByRole('button', { name: optionName }));
+};
+
 describe('PrintersPage', () => {
   beforeEach(() => {
+    localStorage.removeItem('printerCardSize');
+
     server.use(
       http.get('/api/v1/printers/', () => {
         return HttpResponse.json(mockPrinters);
       }),
       http.get('/api/v1/printers/:id/status', () => {
         return HttpResponse.json(mockPrinterStatus);
+      }),
+      http.post('/api/v1/printers/:id/clear-plate', () => {
+        return HttpResponse.json({ success: true, message: 'Plate cleared' });
+      }),
+      http.get('/api/v1/settings/', () => {
+        return HttpResponse.json({
+          auto_archive: true,
+          save_thumbnails: true,
+          capture_finish_photo: true,
+          default_filament_cost: 25.0,
+          currency: 'USD',
+          ams_humidity_good: 40,
+          ams_humidity_fair: 60,
+          ams_temp_good: 30,
+          ams_temp_fair: 35,
+          require_plate_clear: true,
+        });
       }),
       http.get('/api/v1/queue/', () => {
         return HttpResponse.json([]);
@@ -172,6 +200,181 @@ describe('PrintersPage', () => {
       // There should be some interactive elements for printer actions
       const buttons = screen.getAllByRole('button');
       expect(buttons.length).toBeGreaterThan(0);
+    });
+
+    it('shows plate clear status and action on finished printers when not cleared', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: true });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate not Clear').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.getAllByRole('button', { name: 'Mark plate as cleared' }).length).toBeGreaterThan(0);
+    });
+
+    it('shows plate clear status and action on failed printers when not cleared', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FAILED', awaiting_plate_clear: true });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate not Clear').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.getAllByRole('button', { name: 'Mark plate as cleared' }).length).toBeGreaterThan(0);
+    });
+
+    it('keeps the clear action available when an idle printer is still awaiting acknowledgment', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'IDLE', awaiting_plate_clear: true });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate not Clear').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.getAllByRole('button', { name: 'Mark plate as cleared' }).length).toBeGreaterThan(0);
+    });
+
+    it('updates the plate clear status after using the printer card action', async () => {
+      let awaitingPlateClear = true;
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([mockPrinters[0]]);
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: awaitingPlateClear });
+        }),
+        http.post('/api/v1/printers/:id/clear-plate', () => {
+          awaitingPlateClear = false;
+          return HttpResponse.json({ success: true, message: 'Plate cleared' });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate not Clear').length).toBeGreaterThan(0);
+      });
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Mark plate as cleared' })[0]);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Plate not Clear')).not.toBeInTheDocument();
+      });
+
+      expect(screen.getAllByText('Plate Clear').length).toBeGreaterThan(0);
+    });
+
+    it('shows an icon-only plate clear action in small card view', async () => {
+      let awaitingPlateClear = true;
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([mockPrinters[0]]);
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: awaitingPlateClear });
+        }),
+        http.post('/api/v1/printers/:id/clear-plate', () => {
+          awaitingPlateClear = false;
+          return HttpResponse.json({ success: true, message: 'Plate cleared' });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'S' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Mark plate as cleared')).not.toBeInTheDocument();
+      });
+
+      const clearButton = screen.getByRole('button', { name: 'Mark plate as cleared' });
+
+      fireEvent.click(clearButton);
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows plate clear status but no action while idle', async () => {
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate Clear').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
+    });
+
+    it('shows plate in use status while printing and hides the clear action', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'RUNNING', awaiting_plate_clear: false });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Plate in Use').length).toBeGreaterThan(0);
+      });
+
+      expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
+    });
+
+    it('hides plate status and action when plate-clear confirmation is disabled', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            auto_archive: true,
+            save_thumbnails: true,
+            capture_finish_photo: true,
+            default_filament_cost: 25.0,
+            currency: 'USD',
+            ams_humidity_good: 40,
+            ams_humidity_fair: 60,
+            ams_temp_good: 30,
+            ams_temp_fair: 35,
+            require_plate_clear: false,
+          });
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: true });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText('Plate not Clear')).not.toBeInTheDocument();
+      expect(screen.queryByText('Plate Clear')).not.toBeInTheDocument();
+      expect(screen.queryByText('Plate in Use')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
     });
   });
 
@@ -616,9 +819,7 @@ describe('PrintersPage', () => {
       render(<PrintersPage />);
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
-      // Select "Offline" from the status filter dropdown
-      const statusSelect = screen.getByDisplayValue('All statuses');
-      fireEvent.change(statusSelect, { target: { value: 'offline' } });
+      await selectToolbarDropdownOption(/all statuses/i, /^offline$/i);
 
       await waitFor(() => {
         expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
@@ -631,8 +832,7 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
       // Both printers are IDLE; filtering by "printing" should yield no results
-      const statusSelect = screen.getByDisplayValue('All statuses');
-      fireEvent.change(statusSelect, { target: { value: 'printing' } });
+      await selectToolbarDropdownOption(/all statuses/i, /^printing$/i);
 
       await waitFor(() => {
         expect(screen.getByText('No printers match your search or filters')).toBeInTheDocument();
@@ -654,7 +854,7 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
       // Filter to only "printing" printers
-      fireEvent.change(screen.getByDisplayValue('All statuses'), { target: { value: 'printing' } });
+      await selectToolbarDropdownOption(/all statuses/i, /^printing$/i);
 
       // Then also search for a term that only matches printer 1
       fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: 'X1' } });
@@ -683,16 +883,14 @@ describe('PrintersPage', () => {
         expect(screen.getByText('P1S Backup')).toBeInTheDocument();
       });
 
-      // Select "Workshop" from the location filter dropdown
-      fireEvent.change(screen.getByDisplayValue('All locations'), { target: { value: 'Workshop' } });
+      await selectToolbarDropdownOption(/all locations/i, /^workshop$/i);
 
       await waitFor(() => {
         expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
         expect(screen.queryByText('P1S Backup')).not.toBeInTheDocument();
       });
 
-      // Switch to "Office" — the other printer should now be the only one visible
-      fireEvent.change(screen.getByDisplayValue('Workshop'), { target: { value: 'Office' } });
+      await selectToolbarDropdownOption(/^workshop$/i, /^office$/i);
 
       await waitFor(() => {
         expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
@@ -715,8 +913,8 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
       // Status filter is still there, but the location filter should be absent.
-      expect(screen.getByDisplayValue('All statuses')).toBeInTheDocument();
-      expect(screen.queryByDisplayValue('All locations')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /all statuses/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /all locations/i })).not.toBeInTheDocument();
     });
   });
 });

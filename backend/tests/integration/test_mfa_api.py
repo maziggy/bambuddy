@@ -18,8 +18,11 @@ Tests the full request/response cycle for:
 from __future__ import annotations
 
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
+import jwt as pyjwt
 import pyotp
 import pytest
 from httpx import AsyncClient
@@ -858,6 +861,151 @@ class TestOIDCProviders:
             headers=_auth_header(token),
         )
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_provider_with_default_group_id(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Creating a provider with a valid default_group_id stores and returns the value."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        token = await _setup_and_login(async_client, "oidcdg_create", "OidcDgCreate1!")
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Operators"))
+        operators = grp_result.scalar_one()
+
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgCreateProvider",
+                "issuer_url": "https://dgcreate.example.com",
+                "client_id": "dgcreate-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+                "default_group_id": operators.id,
+            },
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["default_group_id"] == operators.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_provider_invalid_default_group_id_returns_422(self, async_client: AsyncClient):
+        """A default_group_id referencing a non-existent group returns 422."""
+        token = await _setup_and_login(async_client, "oidcdg_bad", "OidcDgBad1!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgBadProvider",
+                "issuer_url": "https://dgbad.example.com",
+                "client_id": "dgbad-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+                "default_group_id": 999999,
+            },
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_provider_omit_default_group_id_stores_null(self, async_client: AsyncClient):
+        """Omitting default_group_id results in null in the response."""
+        token = await _setup_and_login(async_client, "oidcdg_null", "OidcDgNull1!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgNullProvider",
+                "issuer_url": "https://dgnull.example.com",
+                "client_id": "dgnull-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["default_group_id"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_provider_default_group_id(self, async_client: AsyncClient, db_session: AsyncSession):
+        """Updating default_group_id via PUT stores the new value."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        token = await _setup_and_login(async_client, "oidcdg_update", "OidcDgUpdate1!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgUpdateProvider",
+                "issuer_url": "https://dgupdate.example.com",
+                "client_id": "dgupdate-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+            },
+            headers=_auth_header(token),
+        )
+        provider_id = create_resp.json()["id"]
+        assert create_resp.json()["default_group_id"] is None
+
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Operators"))
+        operators = grp_result.scalar_one()
+
+        put_resp = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"default_group_id": operators.id},
+            headers=_auth_header(token),
+        )
+        assert put_resp.status_code == 200, put_resp.text
+        assert put_resp.json()["default_group_id"] == operators.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_default_group_id_in_public_and_admin_list(self, async_client: AsyncClient, db_session: AsyncSession):
+        """default_group_id appears in both the public and admin list responses."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        token = await _setup_and_login(async_client, "oidcdg_list", "OidcDgList1!")
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Operators"))
+        operators = grp_result.scalar_one()
+
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "DgListProvider",
+                "issuer_url": "https://dglist.example.com",
+                "client_id": "dglist-client",
+                "client_secret": "secret",
+                "scopes": "openid",
+                "is_enabled": True,
+                "auto_create_users": False,
+                "default_group_id": operators.id,
+            },
+            headers=_auth_header(token),
+        )
+        provider_id = create_resp.json()["id"]
+
+        all_resp = await async_client.get("/api/v1/auth/oidc/providers/all", headers=_auth_header(token))
+        match = next((p for p in all_resp.json() if p["id"] == provider_id), None)
+        assert match is not None
+        assert match["default_group_id"] == operators.id
+
+        pub_resp = await async_client.get("/api/v1/auth/oidc/providers")
+        pub_match = next((p for p in pub_resp.json() if p["id"] == provider_id), None)
+        assert pub_match is not None
+        assert pub_match["default_group_id"] == operators.id
 
 
 # ===========================================================================
@@ -3263,3 +3411,1435 @@ class TestOIDCCallbackCodeLength:
             follow_redirects=False,
         )
         assert resp.status_code == 422, "2049-char state must be rejected by Pydantic"
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by TestOIDCEmailClaimResolution
+# ---------------------------------------------------------------------------
+
+
+async def _run_oidc_callback(
+    async_client: AsyncClient,
+    db_session: AsyncSession,
+    *,
+    provider_id: int,
+    claims: dict,
+    private_pem: bytes,
+    jwks_data: dict,
+    issuer: str,
+    client_id: str,
+) -> str:
+    """Run a full OIDC callback flow and return the redirect location."""
+    nonce = secrets.token_urlsafe(16)
+    now = int(time.time())
+    token_claims = {
+        "sub": claims.get("sub", f"sub-{secrets.token_hex(8)}"),
+        "iss": issuer,
+        "aud": client_id,
+        "nonce": nonce,
+        "iat": now,
+        "exp": now + 300,
+        **{k: v for k, v in claims.items() if k not in ("sub",)},
+    }
+    id_token = pyjwt.encode(token_claims, private_pem, algorithm="RS256", headers={"kid": "test-kid-1"})
+
+    state = secrets.token_urlsafe(32)
+    code_verifier = secrets.token_urlsafe(48)
+    db_session.add(
+        AuthEphemeralToken(
+            token=state,
+            token_type="oidc_state",
+            provider_id=provider_id,
+            nonce=nonce,
+            code_verifier=code_verifier,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+    )
+    await db_session.commit()
+
+    discovery_doc = {
+        "issuer": issuer,
+        "authorization_endpoint": f"{issuer}/auth",
+        "token_endpoint": f"{issuer}/token",
+        "jwks_uri": f"{issuer}/.well-known/jwks.json",
+    }
+    token_response = {"access_token": "mock-access", "token_type": "Bearer", "id_token": id_token}
+
+    class _R:
+        def __init__(self, data):
+            self._data = data
+            self.status_code = 200
+            self.is_success = True
+            self.text = str(data)
+
+        def json(self):
+            return self._data
+
+        def raise_for_status(self):
+            pass
+
+    class _C:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            pass
+
+        async def get(self, url, **kw):
+            return _R(jwks_data if "jwks" in url else discovery_doc)
+
+        async def post(self, url, **kw):
+            return _R(token_response)
+
+    with patch("backend.app.api.routes.mfa.httpx.AsyncClient", _C):
+        resp = await async_client.get(
+            f"/api/v1/auth/oidc/callback?code=test-code&state={state}",
+            follow_redirects=False,
+        )
+    return resp.headers.get("location", "")
+
+
+class TestOIDCEmailClaimResolution:
+    """Three-case email resolution logic: Fall A / Fall B / Fall C."""
+
+    # ── shared helpers ────────────────────────────────────────────────────────
+
+    async def _create_provider(
+        self,
+        async_client: AsyncClient,
+        admin_token: str,
+        issuer: str,
+        client_id: str,
+        *,
+        email_claim: str = "email",
+        require_email_verified: bool = True,
+        auto_link_existing_accounts: bool = False,
+        suffix: str = "",
+    ) -> int:
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": f"TestIdP-{suffix or secrets.token_hex(4)}",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+                "auto_link_existing_accounts": auto_link_existing_accounts,
+                "email_claim": email_claim,
+                "require_email_verified": require_email_verified,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    async def _get_oidc_link(self, db_session: AsyncSession, provider_id: int, sub: str):
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import UserOIDCLink
+
+        result = await db_session.execute(
+            select(UserOIDCLink)
+            .where(UserOIDCLink.provider_id == provider_id)
+            .where(UserOIDCLink.provider_user_id == sub)
+        )
+        return result.scalar_one_or_none()
+
+    # ── Parametrized matrix: Fall A / Fall B / Fall C ─────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "email_claim,require_ev,claims,expected",
+        [
+            # Fall A: standard claim + require_ev=True (default)
+            ("email", True, {"email": "fa@example.com", "email_verified": True}, "fa@example.com"),
+            ("email", True, {"email": "fa@example.com", "email_verified": False}, None),
+            ("email", True, {"email": "fa@example.com"}, None),  # Azure Entra with default config
+            # Fall A + SEC-2: malformed email claim rejected even when email_verified=True
+            ("email", True, {"email": "notanemail", "email_verified": True}, None),
+            # Fall B: standard claim + require_ev=False (Azure Entra permissive)
+            ("email", False, {"email": "fb@example.com", "email_verified": True}, "fb@example.com"),
+            ("email", False, {"email": "fb@example.com", "email_verified": False}, None),
+            ("email", False, {"email": "azure@company.com"}, "azure@company.com"),  # ev absent → kept
+            # Fall B + SEC-2: malformed email claim rejected in permissive mode (ev absent)
+            ("email", False, {"email": "user@nodot"}, None),
+            # Fall B + SEC-2: shape check fires before email_verified=False drop
+            ("email", False, {"email": "notanemail", "email_verified": False}, None),
+            # Fall C: custom claim (preferred_username) — no email_verified check
+            ("preferred_username", True, {"preferred_username": "User@Company.COM"}, "user@company.com"),
+            ("preferred_username", True, {"preferred_username": "  User@EXAMPLE.COM  "}, "user@example.com"),
+            ("preferred_username", True, {"preferred_username": "justausername"}, None),
+            ("preferred_username", True, {"preferred_username": "@"}, None),  # SEC-2: "@" only
+            ("preferred_username", True, {"preferred_username": "@domain.com"}, None),  # SEC-2: empty local
+            ("preferred_username", True, {"preferred_username": "user@"}, None),  # SEC-2: empty domain
+            ("preferred_username", True, {"preferred_username": "user@nodot"}, None),  # SEC-2: no dot in domain
+            ("preferred_username", True, {}, None),  # claim absent
+            # Fall C: email_verified=False present alongside custom claim — must NOT suppress the email
+            ("preferred_username", True, {"preferred_username": "user@co.com", "email_verified": False}, "user@co.com"),
+        ],
+        ids=[
+            "fall-a-ev-true",
+            "fall-a-ev-false",
+            "fall-a-ev-absent",
+            "fall-a-malformed-email",
+            "fall-b-ev-true",
+            "fall-b-ev-false",
+            "fall-b-ev-absent",
+            "fall-b-malformed-email",
+            "fall-b-malformed-email-ev-false",
+            "fall-c-valid-upn",
+            "fall-c-lowercase-strip",
+            "fall-c-no-at",
+            "fall-c-at-only",
+            "fall-c-empty-local",
+            "fall-c-empty-domain",
+            "fall-c-no-dot-in-domain",
+            "fall-c-claim-absent",
+            "fall-c-ev-false-ignored",
+        ],
+    )
+    async def test_email_resolution_matrix(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        email_claim: str,
+        require_ev: bool,
+        claims: dict,
+        expected: str | None,
+    ):
+        """C4: Verify link exists AND check provider_email — avoids false-passing on callback failure."""
+        issuer = "https://matrix.test"
+        client_id = "matrix-client"
+        admin_token = await _setup_and_login(async_client, "matrix_adm", "Matrix123!")
+        private_pem, jwks_data = _make_test_rsa_key()
+        provider_id = await self._create_provider(
+            async_client,
+            admin_token,
+            issuer,
+            client_id,
+            email_claim=email_claim,
+            require_email_verified=require_ev,
+            suffix="matrix",
+        )
+        sub = f"sub-matrix-{secrets.token_hex(6)}"
+        await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": sub, **claims},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        db_session.expire_all()
+        link = await self._get_oidc_link(db_session, provider_id, sub)
+        assert link is not None, "UserOIDCLink must be created even when email is dropped"
+        assert link.provider_email == expected
+
+    # ── Security: auto_link guards (CREATE endpoint) ──────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auto_link_blocked_with_require_ev_false(self, async_client: AsyncClient):
+        """SEC-1: auto_link + require_email_verified=False must be rejected at schema level (422)."""
+        admin_token = await _setup_and_login(async_client, "sec1_adm", "Sec1Adm123!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "SEC1-Test",
+                "issuer_url": "https://sec1.test",
+                "client_id": "sec1-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+                "auto_link_existing_accounts": True,
+                "require_email_verified": False,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auto_link_allowed_with_custom_claim_create(self, async_client: AsyncClient):
+        """Fall C: auto_link + email_claim!='email' must be accepted on CREATE (201).
+
+        Custom claims (e.g. Azure preferred_username/upn) never perform an email_verified
+        check, so auto_link is safe regardless of require_email_verified.
+        """
+        admin_token = await _setup_and_login(async_client, "sec6c_adm", "Sec6CAdm123!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "SEC6-Create-Test",
+                "issuer_url": "https://sec6c.test",
+                "client_id": "sec6c-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+                "auto_link_existing_accounts": True,
+                "email_claim": "upn",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["auto_link_existing_accounts"] is True
+        assert resp.json()["email_claim"] == "upn"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auto_link_allowed_with_custom_claim_update(self, async_client: AsyncClient):
+        """Fall C: auto_link=True + email_claim='upn' in same UPDATE request → 200.
+
+        Custom claims never perform an email_verified check, so auto_link is safe.
+        """
+        admin_token = await _setup_and_login(async_client, "sec6u_adm", "Sec6UAdm123!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "SEC6-Update-Test",
+                "issuer_url": "https://sec6u.test",
+                "client_id": "sec6u-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+        resp = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"auto_link_existing_accounts": True, "email_claim": "upn"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["auto_link_existing_accounts"] is True
+        assert resp.json()["email_claim"] == "upn"
+
+    # ── Combined-State-Guard (partial updates across two requests) ─────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_partial_update_guard_require_ev(self, async_client: AsyncClient):
+        """SEC-1 Combined-State-Guard: require_ev=False then auto_link=True → 422 (T1 require_ev path)."""
+        admin_token = await _setup_and_login(async_client, "pg_rev_adm", "PgRev123!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "PG-RequireEV-Test",
+                "issuer_url": "https://pg-rev.test",
+                "client_id": "pg-rev-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        upd1 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"require_email_verified": False},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd1.status_code == 200
+
+        upd2 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"auto_link_existing_accounts": True},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd2.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_partial_update_custom_claim_then_auto_link_allowed(self, async_client: AsyncClient):
+        """Fall C: email_claim='upn' first, then auto_link=True → both 200 (custom claim is safe)."""
+        admin_token = await _setup_and_login(async_client, "pg_ec_adm", "PgEc123!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "PG-EmailClaim-Test",
+                "issuer_url": "https://pg-ec.test",
+                "client_id": "pg-ec-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        upd1 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"email_claim": "upn"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd1.status_code == 200
+
+        upd2 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"auto_link_existing_accounts": True},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd2.status_code == 200
+        assert upd2.json()["auto_link_existing_accounts"] is True
+        assert upd2.json()["email_claim"] == "upn"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_partial_update_auto_link_then_custom_claim_allowed(self, async_client: AsyncClient):
+        """Fall C: auto_link=True first (email_claim='email', safe), then email_claim='upn' → both 200."""
+        admin_token = await _setup_and_login(async_client, "pg_al_ec_adm", "PgAlEc123!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "PG-AutoLink-Claim-Test",
+                "issuer_url": "https://pg-al-ec.test",
+                "client_id": "pg-al-ec-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        upd1 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"auto_link_existing_accounts": True},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd1.status_code == 200
+
+        upd2 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"email_claim": "preferred_username"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd2.status_code == 200
+        assert upd2.json()["auto_link_existing_accounts"] is True
+        assert upd2.json()["email_claim"] == "preferred_username"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_partial_update_guard_inverse_order(self, async_client: AsyncClient):
+        """T2: auto_link=True first (valid), then require_ev=False → Combined-State-Guard fires (422)."""
+        admin_token = await _setup_and_login(async_client, "pg_inv_adm", "PgInv123!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "PG-Inverse-Test",
+                "issuer_url": "https://pg-inv.test",
+                "client_id": "pg-inv-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        # auto_link=True is safe when require_ev=True (default)
+        upd1 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"auto_link_existing_accounts": True},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd1.status_code == 200
+
+        # Disabling require_ev with auto_link already on → unsafe combined state
+        upd2 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"require_email_verified": False},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd2.status_code == 422
+
+    # ── Low5: Response fields verified ───────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_response_includes_new_fields(self, async_client: AsyncClient):
+        """Low5: OIDCProviderResponse must include email_claim and require_email_verified."""
+        admin_token = await _setup_and_login(async_client, "resp_adm", "Resp123!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "ResponseFields-Test",
+                "issuer_url": "https://resp.test",
+                "client_id": "resp-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+                "email_claim": "preferred_username",
+                "require_email_verified": False,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["email_claim"] == "preferred_username"
+        assert data["require_email_verified"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_response_reflects_new_fields(self, async_client: AsyncClient):
+        """Low5: PUT response must reflect updated email_claim and require_email_verified."""
+        admin_token = await _setup_and_login(async_client, "upd_resp_adm", "UpdResp123!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "UpdateResponse-Test",
+                "issuer_url": "https://upd-resp.test",
+                "client_id": "upd-resp-client",
+                "client_secret": "sec",
+                "scopes": "openid email profile",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        upd = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"email_claim": "upn", "require_email_verified": True},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd.status_code == 200
+        data = upd.json()
+        assert data["email_claim"] == "upn"
+        assert data["require_email_verified"] is True
+
+
+# ===========================================================================
+# TestOIDCEmailClaimValidation — T2: email_claim field validator coverage
+# ===========================================================================
+
+
+class TestOIDCEmailClaimValidation:
+    """Schema-level validation for the email_claim field."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_invalid_claim_name_dot_rejected(self, async_client: AsyncClient):
+        """email_claim with a dot (log-injection risk) must be rejected."""
+        admin_token = await _setup_and_login(async_client, "ecv_adm1", "Ecv123!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "ECVTest1",
+                "issuer_url": "https://ecv1.test",
+                "client_id": "ecv1",
+                "client_secret": "sec",
+                "scopes": "openid email",
+                "email_claim": "email.address",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_invalid_claim_name_starts_with_digit_rejected(self, async_client: AsyncClient):
+        admin_token = await _setup_and_login(async_client, "ecv_adm2", "Ecv123!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "ECVTest2",
+                "issuer_url": "https://ecv2.test",
+                "client_id": "ecv2",
+                "client_secret": "sec",
+                "scopes": "openid email",
+                "email_claim": "1invalid",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_invalid_claim_name_newline_rejected(self, async_client: AsyncClient):
+        """T2 regex-bug guard: re.fullmatch must reject trailing newline."""
+        admin_token = await _setup_and_login(async_client, "ecv_adm3", "Ecv123!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "ECVTest3",
+                "issuer_url": "https://ecv3.test",
+                "client_id": "ecv3",
+                "client_secret": "sec",
+                "scopes": "openid email",
+                "email_claim": "email\n",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_claim_name_65_chars_rejected(self, async_client: AsyncClient):
+        """email_claim longer than 64 characters must be rejected."""
+        admin_token = await _setup_and_login(async_client, "ecv_adm4", "Ecv123!")
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "ECVTest4",
+                "issuer_url": "https://ecv4.test",
+                "client_id": "ecv4",
+                "client_secret": "sec",
+                "scopes": "openid email",
+                "email_claim": "a" * 65,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_valid_claim_name_accepted(self, async_client: AsyncClient):
+        """Valid claim names like preferred_username and upn must be accepted."""
+        admin_token = await _setup_and_login(async_client, "ecv_adm5", "Ecv123!")
+        for claim in ("preferred_username", "upn", "email", "emailAddress"):
+            resp = await async_client.post(
+                "/api/v1/auth/oidc/providers",
+                json={
+                    "name": f"ECVTest-{claim[:8]}",
+                    "issuer_url": f"https://ecv-{claim[:8]}.test",
+                    "client_id": f"ecv-{claim[:8]}",
+                    "client_secret": "sec",
+                    "scopes": "openid email",
+                    "email_claim": claim,
+                },
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            assert resp.status_code == 201, f"claim {claim!r} was rejected: {resp.text}"
+
+
+# ===========================================================================
+# TestOIDCEmailResolutionExtra — T1 / T3 / T4 additional coverage
+# ===========================================================================
+
+
+async def _create_provider_via_api(
+    async_client: AsyncClient,
+    admin_token: str,
+    issuer: str,
+    client_id: str,
+    *,
+    email_claim: str = "email",
+    require_email_verified: bool = True,
+    suffix: str = "",
+) -> int:
+    resp = await async_client.post(
+        "/api/v1/auth/oidc/providers",
+        json={
+            "name": f"TestIdP-extra-{suffix or secrets.token_hex(4)}",
+            "issuer_url": issuer,
+            "client_id": client_id,
+            "client_secret": "sec",
+            "scopes": "openid email profile",
+            "is_enabled": True,
+            "auto_create_users": True,
+            "email_claim": email_claim,
+            "require_email_verified": require_email_verified,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+class TestOIDCEmailResolutionExtra:
+    """T1: isinstance guard, T3: SEC-3 normalisation for Fall A/B, T4: inverse Combined-State-Guard."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_string_claim_value_drops_email(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+    ):
+        """T1: A non-string email_claim value (list) must be silently dropped — no crash."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://nonstring-test.example"
+        client_id = "nonstring-client"
+
+        admin_token = await _setup_and_login(async_client, "nonstr_adm", "Nonstr123!")
+        provider_id = await _create_provider_via_api(
+            async_client,
+            admin_token,
+            issuer,
+            client_id,
+            email_claim="preferred_username",
+            require_email_verified=False,
+            suffix="nonstr",
+        )
+
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import UserOIDCLink
+
+        # IdP sends preferred_username as a list (non-string) — must not crash
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "nonstr-sub-1", "preferred_username": ["user@example.com"]},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        assert "internal_error" not in location, f"Unexpected error redirect: {location}"
+        link_result = await db_session.execute(
+            select(UserOIDCLink)
+            .where(UserOIDCLink.provider_id == provider_id)
+            .where(UserOIDCLink.provider_user_id == "nonstr-sub-1")
+        )
+        link = link_result.scalar_one_or_none()
+        assert link is not None
+        assert link.provider_email is None  # list value dropped
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_fall_a_sec3_normalisation(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+    ):
+        """T3: Fall A — uppercase + whitespace in email claim must be normalised to lowercase."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://sec3a-test.example"
+        client_id = "sec3a-client"
+
+        admin_token = await _setup_and_login(async_client, "sec3a_adm", "Sec3a123!")
+        provider_id = await _create_provider_via_api(
+            async_client,
+            admin_token,
+            issuer,
+            client_id,
+            email_claim="email",
+            require_email_verified=True,
+            suffix="sec3a",
+        )
+
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import UserOIDCLink
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "sec3a-sub-1", "email": "  USER@EXAMPLE.COM  ", "email_verified": True},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        assert "internal_error" not in location
+        link_result = await db_session.execute(
+            select(UserOIDCLink)
+            .where(UserOIDCLink.provider_id == provider_id)
+            .where(UserOIDCLink.provider_user_id == "sec3a-sub-1")
+        )
+        link = link_result.scalar_one_or_none()
+        assert link is not None
+        assert link.provider_email == "user@example.com"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_fall_b_sec3_normalisation(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+    ):
+        """T3: Fall B — uppercase + whitespace in email claim must be normalised to lowercase."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://sec3b-test.example"
+        client_id = "sec3b-client"
+
+        admin_token = await _setup_and_login(async_client, "sec3b_adm", "Sec3b123!")
+        provider_id = await _create_provider_via_api(
+            async_client,
+            admin_token,
+            issuer,
+            client_id,
+            email_claim="email",
+            require_email_verified=False,
+            suffix="sec3b",
+        )
+
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import UserOIDCLink
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "sec3b-sub-1", "email": "  USER@EXAMPLE.COM  "},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        assert "internal_error" not in location
+        link_result = await db_session.execute(
+            select(UserOIDCLink)
+            .where(UserOIDCLink.provider_id == provider_id)
+            .where(UserOIDCLink.provider_user_id == "sec3b-sub-1")
+        )
+        link = link_result.scalar_one_or_none()
+        assert link is not None
+        assert link.provider_email == "user@example.com"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_combined_state_guard_email_claim_inverse_order(self, async_client: AsyncClient):
+        """Fall C: auto_link=True first, then switch email_claim to custom → both 200 (now allowed).
+
+        Custom claims never perform an email_verified check, so switching to a custom claim
+        while auto_link is on transitions from Fall A to Fall C — both are safe.
+        """
+        admin_token = await _setup_and_login(async_client, "inv_ec_adm", "InvEc123!")
+        create_resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": "InvEcTest",
+                "issuer_url": "https://inv-ec.test",
+                "client_id": "inv-ec",
+                "client_secret": "sec",
+                "scopes": "openid email",
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert create_resp.status_code == 201
+        provider_id = create_resp.json()["id"]
+
+        # First: enable auto_link (Fall A — email_claim='email', require_ev=True)
+        upd1 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"auto_link_existing_accounts": True},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd1.status_code == 200
+
+        # Second: switch to custom claim → Fall C, still safe
+        upd2 = await async_client.put(
+            f"/api/v1/auth/oidc/providers/{provider_id}",
+            json={"email_claim": "preferred_username"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert upd2.status_code == 200
+        assert upd2.json()["auto_link_existing_accounts"] is True
+        assert upd2.json()["email_claim"] == "preferred_username"
+
+
+# ===========================================================================
+# E2E: Fall C (custom email claim) auto-link actually links existing user
+# ===========================================================================
+
+
+class TestOIDCFallCAutoLinkE2E:
+    """OIDC callback with email_claim='preferred_username' (Fall C / Azure Entra ID)
+    must auto-link an existing local user when auto_link_existing_accounts=True.
+
+    This test exercises _resolve_provider_email Fall C and the auto-link path in
+    oidc_callback — a regression in either would silently drop the link without
+    being caught by the configuration-layer tests.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_fall_c_auto_link_links_existing_user_via_callback(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from sqlalchemy import select as sa_select
+
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
+
+        issuer = "https://entra.fallc.example.com"
+        nonce = secrets.token_urlsafe(32)
+        code_verifier = secrets.token_urlsafe(48)
+
+        # ── 1. Local user that should be linked ──────────────────────────────
+        alice = User(
+            username="fallc_alice",
+            email="alice.fallc@example.com",
+            password_hash=get_password_hash(secrets.token_urlsafe(16)),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(alice)
+        await db_session.flush()
+
+        # ── 2. Provider: Fall C config (preferred_username, no email_verified) ─
+        provider = OIDCProvider(
+            name="AzureEntraFallC",
+            issuer_url=issuer,
+            client_id="azure-client",
+            _client_secret_enc="azure-secret",
+            scopes="openid profile",
+            is_enabled=True,
+            auto_link_existing_accounts=True,
+            auto_create_users=False,
+            email_claim="preferred_username",
+            require_email_verified=False,
+        )
+        db_session.add(provider)
+        await db_session.flush()
+
+        # ── 3. OIDC state token ───────────────────────────────────────────────
+        state = secrets.token_urlsafe(32)
+        db_session.add(
+            AuthEphemeralToken(
+                token=state,
+                token_type="oidc_state",
+                provider_id=provider.id,
+                nonce=nonce,
+                code_verifier=code_verifier,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+        )
+        await db_session.commit()
+
+        # ── 4. Mock HTTP + JWT ────────────────────────────────────────────────
+        fake_discovery = {
+            "issuer": issuer,
+            "token_endpoint": f"{issuer}/token",
+            "jwks_uri": f"{issuer}/.well-known/jwks.json",
+        }
+        fake_token = {"access_token": "acc_tok", "id_token": "fake.id.token"}
+        # Fall C: preferred_username carries the email; no email_verified key at all
+        fake_claims = {
+            "sub": "azure-sub-alice",
+            "preferred_username": "alice.fallc@example.com",
+            "iss": issuer,
+            "aud": "azure-client",
+            "nonce": nonce,
+            "exp": 9_999_999_999,
+        }
+
+        disc_resp = AsyncMock()
+        disc_resp.raise_for_status = MagicMock()
+        disc_resp.json = MagicMock(return_value=fake_discovery)
+
+        token_resp = AsyncMock()
+        token_resp.json = MagicMock(return_value=fake_token)
+
+        jwks_resp = AsyncMock()
+        jwks_resp.raise_for_status = MagicMock()
+        jwks_resp.json = MagicMock(return_value={})
+
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(side_effect=[disc_resp, jwks_resp])
+        mock_http.post = AsyncMock(return_value=token_resp)
+
+        mock_signing_key = MagicMock()
+        mock_signing_key.key = "fake_key"
+
+        with (
+            patch("backend.app.api.routes.mfa.httpx.AsyncClient") as mock_httpx_cls,
+            patch("backend.app.api.routes.mfa.jwt.decode", return_value=fake_claims),
+            patch("backend.app.api.routes.mfa.PyJWKClient") as mock_jwks_cls,
+        ):
+            mock_httpx_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_httpx_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_jwks_cls.return_value.get_signing_key_from_jwt.return_value = mock_signing_key
+
+            callback_resp = await async_client.get(
+                f"/api/v1/auth/oidc/callback?code=fake_code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert callback_resp.status_code == 302, callback_resp.text
+        location = callback_resp.headers.get("location", "")
+        assert "oidc_token=" in location, f"Expected oidc_token in redirect, got: {location}"
+
+        # ── 5. Exchange token → full JWT ──────────────────────────────────────
+        oidc_exchange_token = location.split("oidc_token=")[1].split("&")[0].split("#")[-1]
+        exchange_resp = await async_client.post(
+            "/api/v1/auth/oidc/exchange",
+            json={"oidc_token": oidc_exchange_token},
+        )
+        assert exchange_resp.status_code == 200
+        assert exchange_resp.json()["user"]["username"] == "fallc_alice"
+
+        # ── 6. Verify UserOIDCLink was created in DB ──────────────────────────
+        async with db_session as s:
+            result = await s.execute(
+                sa_select(UserOIDCLink).where(
+                    UserOIDCLink.user_id == alice.id,
+                    UserOIDCLink.provider_id == provider.id,
+                )
+            )
+            link = result.scalar_one_or_none()
+        assert link is not None, "UserOIDCLink must have been created by auto-link"
+        assert link.provider_user_id == "azure-sub-alice"
+
+
+class TestOIDCAutoCreateUsername:
+    """Username derivation priority for auto-created OIDC users (#1173).
+
+    Priority order: email local-part > preferred_username > name > provider_sub.
+    Covers: plain claim, spaces-sanitized, name fallback, sub fallback,
+    non-string isinstance guard, sanitizes-to-empty fallback, collision counter.
+    """
+
+    # ── shared helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    async def _create_provider(async_client: AsyncClient, admin_token: str, issuer: str, client_id: str) -> int:
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json={
+                "name": f"AutoUser-{secrets.token_hex(4)}",
+                "issuer_url": issuer,
+                "client_id": client_id,
+                "client_secret": "secret",
+                "scopes": "openid profile",
+                "is_enabled": True,
+                "auto_create_users": True,
+                "email_claim": "email",
+                "require_email_verified": True,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    @staticmethod
+    async def _exchange_username(async_client: AsyncClient, location: str) -> str:
+        assert "oidc_token=" in location, f"No oidc_token in redirect: {location}"
+        token = location.split("oidc_token=")[1].split("&")[0].split("#")[-1]
+        resp = await async_client.post("/api/v1/auth/oidc/exchange", json={"oidc_token": token})
+        assert resp.status_code == 200, resp.text
+        return resp.json()["user"]["username"]
+
+    # ── tests ────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preferred_username_used_when_no_email(self, async_client: AsyncClient, db_session: AsyncSession):
+        """preferred_username='johndoe' → username 'johndoe' (no email claim present)."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-pref.example"
+        client_id = "au-pref-client"
+        admin_token = await _setup_and_login(async_client, "au_pref_adm", "AuPrefAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "pref-sub-1", "preferred_username": "johndoe"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "johndoe"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preferred_username_spaces_sanitized(self, async_client: AsyncClient, db_session: AsyncSession):
+        """preferred_username='John Doe' → sanitized to 'JohnDoe'."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-spaces.example"
+        client_id = "au-spaces-client"
+        admin_token = await _setup_and_login(async_client, "au_spaces_adm", "AuSpacesAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "spaces-sub-1", "preferred_username": "John Doe"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "JohnDoe"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_name_claim_used_when_no_preferred_username(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """name='Jane Smith', no preferred_username → username 'JaneSmith'."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-name.example"
+        client_id = "au-name-client"
+        admin_token = await _setup_and_login(async_client, "au_name_adm", "AuNameAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "name-sub-1", "name": "Jane Smith"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "JaneSmith"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_provider_sub_fallback_when_no_claims(self, async_client: AsyncClient, db_session: AsyncSession):
+        """No preferred_username, no name, no email → username derived from provider_sub."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-sub.example"
+        client_id = "au-sub-client"
+        admin_token = await _setup_and_login(async_client, "au_sub_adm", "AuSubAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "abc123xyz"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "abc123xyz"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_string_preferred_username_falls_through_to_name(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """preferred_username is a list (non-string) → isinstance guard skips it, uses name."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-nonstr.example"
+        client_id = "au-nonstr-client"
+        admin_token = await _setup_and_login(async_client, "au_nonstr_adm", "AuNonstrAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "nonstr-sub-2", "preferred_username": ["listval"], "name": "BobJones"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "BobJones"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preferred_username_sanitizes_to_empty_falls_through_to_name(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """preferred_username='!!!' sanitizes to '' → falls through to name claim."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-empty.example"
+        client_id = "au-empty-client"
+        admin_token = await _setup_and_login(async_client, "au_empty_adm", "AuEmptyAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "empty-sub-1", "preferred_username": "!!!", "name": "bob"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "bob"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_username_collision_appends_counter(self, async_client: AsyncClient, db_session: AsyncSession):
+        """When preferred_username 'collider' is already taken, counter suffix is appended."""
+        from backend.app.core.auth import get_password_hash
+
+        # Pre-create a user occupying the candidate username
+        existing = User(
+            username="collider",
+            email="collider@example.com",
+            password_hash=get_password_hash("irrelevant"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(existing)
+        await db_session.commit()
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://au-collision.example"
+        client_id = "au-collision-client"
+        admin_token = await _setup_and_login(async_client, "au_col_adm", "AuColAdm1!")
+        provider_id = await self._create_provider(async_client, admin_token, issuer, client_id)
+
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": "col-sub-1", "preferred_username": "collider"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        username = await self._exchange_username(async_client, location)
+        assert username == "collider1"
+
+
+# ===========================================================================
+# OIDC auto-create: configurable default group (#1173 Thread 2)
+# ===========================================================================
+
+
+class TestOIDCAutoCreateDefaultGroup:
+    """Auto-created OIDC users receive the provider's configured default group.
+
+    Resolution order:
+      1. provider.default_group_id (configured)
+      2. "Viewers" system group (fallback when default_group_id is None)
+      3. no group (last resort when both are unavailable)
+
+    All tests are DB-agnostic: they verify group membership via the OIDC
+    exchange response, which includes the user's group list.
+    """
+
+    @staticmethod
+    async def _create_provider(
+        async_client: AsyncClient,
+        admin_token: str,
+        *,
+        issuer: str,
+        client_id: str,
+        default_group_id: int | None = None,
+    ) -> int:
+        payload: dict = {
+            "name": f"DgAutoProvider-{secrets.token_hex(4)}",
+            "issuer_url": issuer,
+            "client_id": client_id,
+            "client_secret": "secret",
+            "scopes": "openid profile",
+            "is_enabled": True,
+            "auto_create_users": True,
+            "email_claim": "email",
+            "require_email_verified": True,
+        }
+        if default_group_id is not None:
+            payload["default_group_id"] = default_group_id
+        resp = await async_client.post(
+            "/api/v1/auth/oidc/providers",
+            json=payload,
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    @staticmethod
+    async def _run_autocreate_and_get_groups(
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        *,
+        provider_id: int,
+        sub: str,
+        issuer: str,
+        client_id: str,
+        private_pem: bytes,
+        jwks_data: dict,
+    ) -> list[str]:
+        """Complete OIDC callback + exchange and return the new user's group names."""
+        location = await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": sub},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        assert "oidc_token=" in location, f"No oidc_token in redirect: {location}"
+        token = location.split("oidc_token=")[1].split("&")[0].split("#")[-1]
+        resp = await async_client.post("/api/v1/auth/oidc/exchange", json={"oidc_token": token})
+        assert resp.status_code == 200, resp.text
+        return [g["name"] for g in resp.json()["user"]["groups"]]
+
+    # ── tests ────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configured_group_assigned_to_auto_created_user(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Auto-created user is placed in the provider's configured default_group_id."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://dg-configured.example"
+        client_id = "dg-configured-client"
+        admin_token = await _setup_and_login(async_client, "dg_cfg_adm", "DgCfgAdm1!")
+
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Operators"))
+        operators = grp_result.scalar_one()
+
+        provider_id = await self._create_provider(
+            async_client,
+            admin_token,
+            issuer=issuer,
+            client_id=client_id,
+            default_group_id=operators.id,
+        )
+
+        group_names = await self._run_autocreate_and_get_groups(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            sub="dg-cfg-sub-1",
+            issuer=issuer,
+            client_id=client_id,
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+        )
+        assert "Operators" in group_names, f"Expected Operators, got {group_names}"
+        assert "Viewers" not in group_names
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_null_default_group_id_falls_back_to_viewers(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """When default_group_id is None, auto-created user falls back to Viewers."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://dg-null.example"
+        client_id = "dg-null-client"
+        admin_token = await _setup_and_login(async_client, "dg_null_adm", "DgNullAdm1!")
+
+        provider_id = await self._create_provider(
+            async_client,
+            admin_token,
+            issuer=issuer,
+            client_id=client_id,
+        )
+
+        group_names = await self._run_autocreate_and_get_groups(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            sub="dg-null-sub-1",
+            issuer=issuer,
+            client_id=client_id,
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+        )
+        assert "Viewers" in group_names, f"Expected Viewers, got {group_names}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dangling_default_group_id_falls_back_to_viewers(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """When configured group is deleted, auto-created user falls back to Viewers.
+
+        SQLite does not enforce FK ON DELETE SET NULL (no PRAGMA foreign_keys=ON),
+        so provider.default_group_id may point to a deleted group. The runtime
+        resolution chain must handle this and fall back to Viewers.
+        """
+        from sqlalchemy import delete as sa_delete, select
+
+        from backend.app.models.group import Group
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://dg-dangling.example"
+        client_id = "dg-dangling-client"
+        admin_token = await _setup_and_login(async_client, "dg_dangle_adm", "DgDangleAdm1!")
+
+        # Create a temporary group and use it as default_group_id
+        temp_group = Group(name="TempGroup-DgDangle", permissions=[])
+        db_session.add(temp_group)
+        await db_session.commit()
+        await db_session.refresh(temp_group)
+        temp_group_id = temp_group.id
+
+        provider_id = await self._create_provider(
+            async_client,
+            admin_token,
+            issuer=issuer,
+            client_id=client_id,
+            default_group_id=temp_group_id,
+        )
+
+        # Delete the group — simulates dangling FK (especially on SQLite)
+        await db_session.execute(sa_delete(Group).where(Group.id == temp_group_id))
+        await db_session.commit()
+
+        group_names = await self._run_autocreate_and_get_groups(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            sub="dg-dangle-sub-1",
+            issuer=issuer,
+            client_id=client_id,
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+        )
+        assert "Viewers" in group_names, f"Expected Viewers fallback, got {group_names}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_administrators_group_can_be_set_as_default(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Operators can configure Administrators as the default group (e.g. single-tenant IdP)."""
+        from sqlalchemy import select
+
+        from backend.app.models.group import Group
+
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://dg-admin.example"
+        client_id = "dg-admin-client"
+        admin_token = await _setup_and_login(async_client, "dg_admgrp_adm", "DgAdmgrpAdm1!")
+
+        grp_result = await db_session.execute(select(Group).where(Group.name == "Administrators"))
+        administrators = grp_result.scalar_one()
+
+        provider_id = await self._create_provider(
+            async_client,
+            admin_token,
+            issuer=issuer,
+            client_id=client_id,
+            default_group_id=administrators.id,
+        )
+
+        group_names = await self._run_autocreate_and_get_groups(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            sub="dg-admin-sub-1",
+            issuer=issuer,
+            client_id=client_id,
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+        )
+        assert "Administrators" in group_names, f"Expected Administrators, got {group_names}"

@@ -25,8 +25,13 @@ from backend.app.models.filament import Filament
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ReprintRequest
+from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
-from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
+from backend.app.utils.threemf_tools import (
+    extract_nozzle_mapping_from_3mf,
+    extract_project_filaments_from_3mf,
+    extract_source_printer_model_from_3mf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2568,10 +2573,17 @@ async def get_archive_capabilities(
 @router.get("/{archive_id}/gcode")
 async def get_gcode(
     archive_id: int,
+    plate: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
-    """Extract and return G-code from the 3MF file."""
+    """Extract and return G-code from the 3MF file.
+
+    When *plate* is provided, returns the G-code for that specific plate
+    (e.g. ``?plate=2`` returns ``Metadata/plate_2.gcode``). If omitted, falls
+    back to the first plate found in the archive (preserving the original
+    behaviour for callers that predate the multi-plate viewer).
+    """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
     if not archive:
@@ -2580,6 +2592,9 @@ async def get_gcode(
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
         raise HTTPException(404, "File not found")
+
+    if plate is not None and plate < 1:
+        raise HTTPException(400, "Plate index must be >= 1")
 
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
@@ -2591,8 +2606,28 @@ async def get_gcode(
                     "No G-code found. This file hasn't been sliced yet - G-code is only available after slicing in Bambu Studio.",
                 )
 
-            # Get the first plate's G-code (usually plate_1.gcode)
-            gcode_content = zf.read(gcode_files[0]).decode("utf-8")
+            if plate is not None:
+                # Resolve plate → filename via the same parsing the plates
+                # endpoint uses (int() on the suffix), so zero-padded names
+                # like plate_01.gcode are found when the plates endpoint
+                # reported index 1.
+                selected = None
+                for gf in gcode_files:
+                    if not gf.startswith("Metadata/plate_"):
+                        continue
+                    suffix = gf[len("Metadata/plate_") : -len(".gcode")]
+                    try:
+                        if int(suffix) == plate:
+                            selected = gf
+                            break
+                    except ValueError:
+                        continue
+                if selected is None:
+                    raise HTTPException(404, f"Plate {plate} not found in this archive")
+            else:
+                selected = gcode_files[0]
+
+            gcode_content = zf.read(selected).decode("utf-8")
             return Response(content=gcode_content, media_type="text/plain")
     except zipfile.BadZipFile:
         raise HTTPException(400, "Invalid 3MF file")
@@ -2788,6 +2823,10 @@ async def get_archive_plates(
         raise HTTPException(404, "Archive file not found")
 
     plates = []
+    # Initialize so the `has_gcode = bool(gcode_files)` after the try/except
+    # never raises NameError when the archive isn't a valid zip (e.g. plain
+    # .gcode file from a sliced-archive flow that didn't request 3MF output).
+    gcode_files: list[str] = []
 
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
@@ -3028,11 +3067,25 @@ async def get_archive_plates(
     except Exception as e:
         logger.warning("Failed to parse plates from archive %s: %s", archive_id, e)
 
+    # Has gcode iff the plate list was built from .gcode filenames (as opposed
+    # to the JSON/PNG fallback for source-only 3MF projects). Callers that need
+    # to preview gcode — the viewer, skip-objects — can gate on this instead of
+    # 404-ing on every plate request.
+    has_gcode = bool(gcode_files)
+    # SliceModal pre-check signal — see library.py for rationale.
+    source_printer_model: str | None = None
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            source_printer_model = extract_source_printer_model_from_3mf(zf)
+    except (zipfile.BadZipFile, OSError):
+        pass
     return {
         "archive_id": archive_id,
         "filename": archive.filename,
         "plates": plates,
         "is_multi_plate": len(plates) > 1,
+        "has_gcode": has_gcode,
+        "source_printer_model": source_printer_model,
     }
 
 
@@ -3068,10 +3121,72 @@ async def get_plate_thumbnail(
     raise HTTPException(404, f"Thumbnail for plate {plate_index} not found")
 
 
+async def _try_preview_slice_filaments(
+    db: AsyncSession,
+    *,
+    kind: str,
+    source_id: int,
+    plate_id: int,
+    file_path: Path,
+    request_id: str | None = None,
+    bundle_id: str | None = None,
+    printer_name: str | None = None,
+    process_name: str | None = None,
+    filament_names: list[str] | None = None,
+) -> list[dict] | None:
+    """Run a preview slice via the user's configured sidecar so the filament
+    list endpoint can return real per-plate filaments for unsliced project
+    files. Returns ``None`` on any failure — the caller falls back to the
+    painted-face heuristic. ``request_id`` flows through to the sidecar
+    for live progress on the SliceModal's inline spinner + toast.
+
+    Bundle context (id + preset names) is forwarded to the preview helper
+    so the preview can mirror the real-print profile triplet when supplied
+    — see ``slice_preview.get_preview_filaments`` for the full contract.
+    """
+    from backend.app.api.routes.settings import get_setting
+    from backend.app.services.slice_preview import get_preview_filaments
+
+    preferred = (await get_setting(db, "preferred_slicer")) or "bambu_studio"
+    if preferred == "orcaslicer":
+        configured = await get_setting(db, "orcaslicer_api_url")
+        api_url = (configured or settings.slicer_api_url).strip()
+    elif preferred == "bambu_studio":
+        configured = await get_setting(db, "bambu_studio_api_url")
+        api_url = (configured or settings.bambu_studio_api_url).strip()
+    else:
+        return None
+    if not api_url:
+        return None
+
+    try:
+        file_bytes = file_path.read_bytes()
+    except OSError:
+        return None
+    return await get_preview_filaments(
+        kind=kind,
+        source_id=source_id,
+        plate_id=plate_id,
+        file_bytes=file_bytes,
+        file_name=file_path.name,
+        api_url=api_url,
+        request_id=request_id,
+        bundle_id=bundle_id,
+        printer_name=printer_name,
+        process_name=process_name,
+        filament_names=filament_names,
+    )
+
+
 @router.get("/{archive_id}/filament-requirements")
 async def get_filament_requirements(
     archive_id: int,
     plate_id: int | None = None,
+    request_id: str | None = None,
+    bundle_id: str | None = None,
+    printer_name: str | None = None,
+    process_name: str | None = None,
+    filament_names: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
@@ -3083,6 +3198,12 @@ async def get_filament_requirements(
     Args:
         archive_id: The archive ID
         plate_id: Optional plate index to filter filaments for (for multi-plate files)
+        bundle_id / printer_name / process_name / filament_names: Optional
+            bundle context. When all four are supplied, the preview slice
+            (run for unsliced project files) uses ``slice_with_bundle``
+            against the named preset triplet instead of the embedded-
+            settings fallback. ``filament_names`` is comma- or semicolon-
+            separated.
     """
     import defusedxml.ElementTree as ET
 
@@ -3142,6 +3263,7 @@ async def get_filament_requirements(
                                             "used_grams": round(used_grams, 1),
                                             "used_meters": float(used_m) if used_m else 0,
                                             "tray_info_idx": tray_info_idx,
+                                            "used_in_plate": True,
                                         }
                                     )
                             break
@@ -3172,8 +3294,42 @@ async def get_filament_requirements(
                                     "used_grams": round(used_grams, 1),
                                     "used_meters": float(used_m) if used_m else 0,
                                     "tray_info_idx": tray_info_idx,
+                                    "used_in_plate": True,
                                 }
                             )
+
+            # Unsliced project files: see library.py for full rationale.
+            # Return the FULL project_settings.config slot list with a
+            # used_in_plate flag derived from the preview slice; the
+            # CLI needs every slot pre-filled to avoid silent default
+            # substitution.
+            if not filaments:
+                project_filaments = extract_project_filaments_from_3mf(zf)
+                used_slot_ids: set[int] = set()
+                if project_filaments and plate_id is not None:
+                    parsed_filament_names: list[str] | None = None
+                    if filament_names:
+                        parsed_filament_names = [
+                            n.strip() for n in filament_names.replace(";", ",").split(",") if n.strip()
+                        ] or None
+                    preview = await _try_preview_slice_filaments(
+                        db,
+                        kind="archive",
+                        source_id=archive_id,
+                        plate_id=plate_id,
+                        file_path=file_path,
+                        request_id=request_id,
+                        bundle_id=bundle_id,
+                        printer_name=printer_name,
+                        process_name=process_name,
+                        filament_names=parsed_filament_names,
+                    )
+                    if preview is not None:
+                        used_slot_ids = {f["slot_id"] for f in preview}
+                fallback_all_used = not used_slot_ids
+                for f in project_filaments:
+                    f["used_in_plate"] = fallback_all_used or f["slot_id"] in used_slot_ids
+                filaments = project_filaments
 
             # Sort by slot ID
             filaments.sort(key=lambda x: x["slot_id"])
@@ -3192,6 +3348,102 @@ async def get_filament_requirements(
         "filename": archive.filename,
         "plate_id": plate_id,
         "filaments": filaments,
+    }
+
+
+@router.post("/{archive_id}/slice", status_code=202)
+async def slice_archive(
+    archive_id: int,
+    request: SliceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
+):
+    """Enqueue a slice job for an archive's source. Returns 202 + job_id;
+    the slice runs in the background, the caller polls `GET /slice-jobs/{id}`.
+
+    Source preference: ``source_3mf_path`` (the un-sliced project file the
+    user originally sent to slice) → ``file_path`` (the sliced 3MF/gcode that
+    actually printed).
+    """
+    from backend.app.api.routes.library import slice_and_persist_as_archive
+    from backend.app.core.database import async_session
+    from backend.app.services.slice_dispatch import (
+        http_exception_to_job_error,
+        slice_dispatch,
+    )
+
+    archive = await db.get(PrintArchive, archive_id)
+    if archive is None:
+        raise HTTPException(status_code=404, detail="Archive not found")
+
+    src_relative = archive.source_3mf_path or archive.file_path
+    if not src_relative:
+        raise HTTPException(
+            status_code=400,
+            detail="Archive has no source file to slice",
+        )
+
+    src_path = Path(settings.base_dir) / src_relative
+    if not src_path.exists():
+        raise HTTPException(status_code=404, detail="Archive source file missing on disk")
+
+    raw_filename = archive.filename or src_path.name
+    src_lower = raw_filename.lower()
+    if not (
+        src_lower.endswith(".stl")
+        or src_lower.endswith(".3mf")
+        or src_lower.endswith(".step")
+        or src_lower.endswith(".stp")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Archive's source file must be STL, 3MF, or STEP to slice",
+        )
+
+    # Match the library route: derive the sliced output's filename from
+    # `print_name` when set, so the new archive row's display name lines
+    # up with the source's display.
+    src_ext = Path(raw_filename).suffix.lower() or ".3mf"
+    src_filename = (
+        f"{archive.print_name.strip()}{src_ext}" if archive.print_name and archive.print_name.strip() else raw_filename
+    )
+
+    model_bytes = src_path.read_bytes()
+    archive_id_local = archive.id
+    user_id = current_user.id if current_user else None
+
+    async def _run(job_id: int):
+        async with async_session() as task_db:
+            # Re-fetch the source archive on the background-task session.
+            src_archive = await task_db.get(PrintArchive, archive_id_local)
+            if src_archive is None:
+                raise http_exception_to_job_error(
+                    HTTPException(status_code=404, detail="Archive disappeared during slice")
+                )
+            try:
+                response = await slice_and_persist_as_archive(
+                    task_db,
+                    model_bytes=model_bytes,
+                    model_filename=src_filename,
+                    request=request,
+                    source_archive=src_archive,
+                    current_user_id=user_id,
+                    job_id=job_id,
+                )
+            except HTTPException as exc:
+                raise http_exception_to_job_error(exc) from exc
+        return response.model_dump()
+
+    job = await slice_dispatch.enqueue(
+        kind="archive",
+        source_id=archive.id,
+        source_name=archive.print_name or archive.filename or f"archive {archive.id}",
+        run=_run,
+    )
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "status_url": f"/api/v1/slice-jobs/{job.id}",
     }
 
 

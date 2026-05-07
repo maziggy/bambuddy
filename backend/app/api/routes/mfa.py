@@ -58,6 +58,7 @@ from backend.app.models.user import User
 from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
 from backend.app.schemas.auth import (
+    AUTO_LINK_REQUIREMENTS_ERROR,
     AdminDisable2FARequest,
     BackupCodesResponse,
     EmailOTPDisableRequest,
@@ -371,6 +372,125 @@ def _assert_totp_not_replayed(totp_obj: pyotp.TOTP, totp_record: UserTOTP, code:
         accepted_counter = totp_obj.timecode(now)  # fallback (should not happen after verify())
 
     totp_record.accept_counter(accepted_counter)
+
+
+# ---------------------------------------------------------------------------
+# OIDC helpers
+# ---------------------------------------------------------------------------
+_EMAIL_SHAPE_RE = re.compile(r"[^\s@]+@[^\s@]+\.[^\s@]+")
+
+
+def _is_valid_email_shaped(value: str | None) -> bool:
+    # SEC-2: shape check for non-standard claims (upn, preferred_username).
+    # Requires local@domain.tld — rejects "@", "x@", "@domain", "x@nodot".
+    if not value or len(value) > 255:
+        return False
+    return _EMAIL_SHAPE_RE.fullmatch(value) is not None
+
+
+def _enforce_auto_link_safety(provider: OIDCProvider) -> None:
+    """Raise HTTP 422 if auto_link_existing_accounts is on with an unsafe combined state.
+
+    SEC-1: only Fall B (email_claim='email' + require_email_verified=False) is unsafe —
+    an attacker-controlled IdP could present an unverified email that matches a local account.
+    Fall C (custom claim) never performs an email_verified check, so auto_link is safe there.
+    Called after ORM construction (create) and after the setattr loop (update).
+    """
+    if provider.auto_link_existing_accounts and provider.email_claim == "email" and not provider.require_email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=AUTO_LINK_REQUIREMENTS_ERROR,
+        )
+
+
+def _resolve_provider_email(provider: OIDCProvider, claims: dict, provider_sub: str) -> str | None:
+    """Extract and normalise the email address from OIDC ID-token claims.
+
+    Implements three resolution paths (Fall A/B/C):
+      Fall C — custom email_claim (!= "email"): shape-check only, no email_verified gate.
+               Recommended for Azure Entra ID (preferred_username or upn).
+      Fall A — email_claim="email" + require_email_verified=True: strict, email_verified must be True.
+      Fall B — email_claim="email" + require_email_verified=False: permissive, explicit False drops email.
+
+    Returns a lowercase-stripped email string, or None when the claim is absent/invalid.
+    """
+    provider_id = provider.id
+    raw_claim_value = claims.get(provider.email_claim)
+    if raw_claim_value is not None and not isinstance(raw_claim_value, str):
+        # TYPE-GUARD: non-string claim (e.g. list, int) would raise AttributeError on .lower().
+        logger.warning(
+            "OIDC provider %d: email_claim %r has unexpected type %s for sub=%r, ignoring",
+            provider_id,
+            provider.email_claim,
+            type(raw_claim_value).__name__,
+            provider_sub,
+        )
+        raw_claim_value = None
+    raw_email: str | None = raw_claim_value.lower().strip() if raw_claim_value else None
+
+    if provider.email_claim != "email":
+        # Fall C: custom claim (preferred_username, upn, …) — no email_verified check.
+        # SEC-2: _is_valid_email_shaped instead of bare '"@" in value'.
+        # Recommended for Azure Entra ID: set email_claim="preferred_username" or "upn".
+        if raw_email and _is_valid_email_shaped(raw_email):
+            return raw_email
+        if raw_email:
+            logger.warning(
+                "OIDC provider %d: email_claim %r value failed shape check for sub=%r, ignoring",
+                provider_id,
+                provider.email_claim,
+                provider_sub,
+            )
+        return None
+
+    email_verified = claims.get("email_verified")
+    if provider.require_email_verified:
+        # Fall A: standard C1-Guard — fail closed unless email_verified is True.
+        # SEC-2: apply shape check to standard email claim — providers may set
+        # email_verified=True on non-email values (e.g. numeric user IDs).
+        # SEC-3 normalisation applies; existing mixed-case provider_email records
+        # were normalised to lowercase by run_migrations at startup.
+        if raw_email and not _is_valid_email_shaped(raw_email):
+            logger.warning(
+                "OIDC provider %d: email claim failed shape check for sub=%r, ignoring",
+                provider_id,
+                provider_sub,
+            )
+            return None
+        if email_verified is True:
+            return raw_email
+        if raw_email:
+            logger.info(
+                "OIDC provider %d: ignoring email for sub=%r because email_verified=%r",
+                provider_id,
+                provider_sub,
+                email_verified,
+            )
+        return None
+
+    # Fall B: permissive — explicit False drops email, absent/None keeps it.
+    # Required for Azure Entra ID which never sends email_verified.
+    # SEC-2: apply shape check before the email_verified=False drop so malformed
+    # values are rejected regardless of the email_verified claim.
+    if raw_email and not _is_valid_email_shaped(raw_email):
+        logger.warning(
+            "OIDC provider %d: email claim failed shape check for sub=%r, ignoring",
+            provider_id,
+            provider_sub,
+        )
+        return None
+    if email_verified is False:
+        return None
+    if email_verified is not True:
+        # SEC-5: log only when the permissive path actually fires (ev absent/None),
+        # not on every successful login.
+        logger.info(
+            "OIDC provider %r (%d): accepting email for sub=%r without email_verified claim (permissive mode)",
+            provider.name,
+            provider.id,
+            provider_sub,
+        )
+    return raw_email
 
 
 # ---------------------------------------------------------------------------
@@ -1091,6 +1211,13 @@ async def create_oidc_provider(
     db: AsyncSession = Depends(get_db),
 ) -> OIDCProviderResponse:
     """Create a new OIDC provider (admin only)."""
+    if body.default_group_id is not None:
+        grp_chk = await db.execute(select(Group).where(Group.id == body.default_group_id))
+        if not grp_chk.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="default_group_id references a non-existent group",
+            )
     provider = OIDCProvider(
         name=body.name,
         issuer_url=body.issuer_url.rstrip("/"),
@@ -1099,8 +1226,15 @@ async def create_oidc_provider(
         scopes=body.scopes,
         is_enabled=body.is_enabled,
         auto_create_users=body.auto_create_users,
+        auto_link_existing_accounts=body.auto_link_existing_accounts,
+        email_claim=body.email_claim,
+        require_email_verified=body.require_email_verified,
         icon_url=body.icon_url,
+        default_group_id=body.default_group_id,
     )
+    # SEC-1 + SEC-6: runtime guard mirrors the OIDCProviderCreate model_validator in schemas/auth.py.
+    # Catches any future path that bypasses Pydantic validation (direct ORM, scripts).
+    _enforce_auto_link_safety(provider)
     db.add(provider)
     await db.commit()
     await db.refresh(provider)
@@ -1120,10 +1254,23 @@ async def update_oidc_provider(
     if not provider:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
 
+    if body.default_group_id is not None:
+        grp_chk = await db.execute(select(Group).where(Group.id == body.default_group_id))
+        if not grp_chk.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="default_group_id references a non-existent group",
+            )
+
     for field, value in body.model_dump(exclude_none=True).items():
         if field == "issuer_url" and value:
             value = value.rstrip("/")
         setattr(provider, field, value)
+
+    # SEC-1 + SEC-6: Combined-State-Guard after setattr loop.
+    # Checks the final in-memory state (DB values + newly set values combined) to catch
+    # partial updates that each pass schema validation individually but are unsafe together.
+    _enforce_auto_link_safety(provider)
 
     await db.commit()
     await db.refresh(provider)
@@ -1413,23 +1560,8 @@ async def oidc_callback(
         if not provider_sub:
             return RedirectResponse(url=f"{frontend_error_url}missing_sub_claim", status_code=302)
 
-        # C1: Only trust the email claim when the provider explicitly marks it verified.
-        # Treating absent email_verified as verified enables account-takeover: an attacker
-        # could register an unverified email with an IdP and auto-link to an existing account.
-        # Fail closed: require email_verified == True; absent/False both drop the email.
-        raw_email: str | None = claims.get("email")
-        email_verified = claims.get("email_verified")
-        if email_verified is not True:
-            if raw_email:
-                logger.info(
-                    "OIDC provider %d: ignoring email for sub=%r because email_verified=%r",
-                    provider_id,
-                    provider_sub,
-                    email_verified,
-                )
-            provider_email: str | None = None
-        else:
-            provider_email = raw_email
+        # SEC-3: resolve email via Fall A/B/C logic (see _resolve_provider_email).
+        provider_email = _resolve_provider_email(provider, claims, provider_sub)
 
         # ── Step 4: Resolve / create user ────────────────────────────────────
         try:
@@ -1499,7 +1631,21 @@ async def oidc_callback(
                     if provider_email:
                         raw = provider_email.split("@")[0]
                     else:
-                        raw = provider_sub[:30]
+                        # Prefer a human-readable IdP claim over the opaque sub.
+                        # isinstance guards are required: claims may carry non-string
+                        # values (e.g. a list) that would break .strip().
+                        # Sanitization is applied per-candidate so that a value that
+                        # strips to empty (e.g. "!!!") correctly falls through to the
+                        # next candidate rather than silently becoming "oidcuser".
+                        _pref = claims.get("preferred_username")
+                        _name = claims.get("name")
+                        raw = ""
+                        if isinstance(_pref, str):
+                            raw = re.sub(r"[^a-zA-Z0-9._-]", "", _pref.strip())[:30]
+                        if not raw and isinstance(_name, str):
+                            raw = re.sub(r"[^a-zA-Z0-9._-]", "", _name.strip())[:30]
+                        if not raw:
+                            raw = provider_sub[:30]
                     candidate = re.sub(r"[^a-zA-Z0-9._-]", "", raw)[:30] or "oidcuser"
 
                     username = candidate
@@ -1511,13 +1657,21 @@ async def oidc_callback(
                         username = f"{candidate}{counter}"
                         counter += 1
 
-                    # I9: Assign new OIDC users to the default "Viewers" group so they
-                    # have read-only access rather than starting with no permissions.
-                    # Fetch the group BEFORE creating the user so we can set the
-                    # relationship before flush — accessing new_user.groups after a
-                    # flush triggers a lazy-load which fails in async context.
-                    viewers_result = await db.execute(select(Group).where(Group.name == "Viewers"))
-                    viewers_group = viewers_result.scalar_one_or_none()
+                    # I9: Assign new OIDC users to a group before flush — accessing
+                    # new_user.groups after a flush triggers a lazy-load which fails
+                    # in async context.  Resolution order:
+                    #   1. provider.default_group_id (operator-configured)
+                    #   2. "Viewers" (system fallback for read-only access)
+                    #   3. no group (last resort if Viewers was deleted)
+                    # SQLite does not enforce ON DELETE SET NULL, so a dangling
+                    # default_group_id returns None here and falls through to Viewers.
+                    default_group: Group | None = None
+                    if provider.default_group_id is not None:
+                        dg_result = await db.execute(select(Group).where(Group.id == provider.default_group_id))
+                        default_group = dg_result.scalar_one_or_none()
+                    if default_group is None:
+                        viewers_result = await db.execute(select(Group).where(Group.name == "Viewers"))
+                        default_group = viewers_result.scalar_one_or_none()
 
                     new_user = User(
                         username=username,
@@ -1528,7 +1682,7 @@ async def oidc_callback(
                         password_hash=None,  # OIDC users never use password auth
                         role="user",
                         is_active=True,
-                        groups=[viewers_group] if viewers_group else [],
+                        groups=[default_group] if default_group else [],
                     )
                     db.add(new_user)
                     await db.flush()
@@ -1592,7 +1746,8 @@ async def oidc_callback(
         logger.error("Unexpected error in OIDC callback (%s): %s", type(exc).__name__, exc, exc_info=True)
         try:
             return RedirectResponse(url=f"{frontend_error_url}internal_error", status_code=302)
-        except Exception:
+        except Exception as redirect_exc:
+            logger.error("Failed to construct error redirect in OIDC callback: %s", redirect_exc, exc_info=True)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OIDC callback failed")
 
 

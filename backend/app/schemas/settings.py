@@ -116,6 +116,10 @@ class AppSettings(BaseModel):
         default="immediate",
         description="Mode: 'immediate' (archive now), 'review' (pending review), or 'print_queue' (add to print queue)",
     )
+    virtual_printer_archive_name_source: str = Field(
+        default="metadata",
+        description="Source for the archive's display name on virtual-printer uploads: 'metadata' uses the 3MF's embedded print_name (default, matches Bambu's behavior), 'filename' uses the filename Bambu Studio sent over FTP (lets users rename via the slicer's 'send to printer' dialog).",
+    )
 
     # Dark mode theme settings
     dark_style: str = Field(default="classic", description="Dark mode style: classic, glow, vibrant")
@@ -181,6 +185,28 @@ class AppSettings(BaseModel):
     preferred_slicer: str = Field(
         default="bambu_studio",
         description="Preferred slicer: 'bambu_studio' or 'orcaslicer'",
+    )
+
+    # Slicer dispatch mode: when True, "Slice" actions open the in-app
+    # SliceModal and call the slicer-API sidecar. When False (default), they
+    # hand off to the user's local desktop slicer via URI scheme — preserving
+    # the original Bambuddy behavior for users who don't run a sidecar.
+    use_slicer_api: bool = Field(
+        default=False,
+        description="Use the slicer-API sidecar for slicing instead of the desktop slicer URI scheme",
+    )
+
+    # Slicer-API sidecar base URLs. Per-installation, configured via the
+    # Settings UI (the "Slicer" card). Empty string means "fall back to the
+    # SLICER_API_URL / BAMBU_STUDIO_API_URL env vars" — which themselves
+    # default to the docker-compose ports in core/config.py.
+    orcaslicer_api_url: str = Field(
+        default="",
+        description="OrcaSlicer sidecar URL (e.g. http://localhost:3003). Empty falls back to the SLICER_API_URL env var.",
+    )
+    bambu_studio_api_url: str = Field(
+        default="",
+        description="BambuStudio sidecar URL (e.g. http://localhost:3001). Empty falls back to the BAMBU_STUDIO_API_URL env var.",
     )
 
     # Prometheus metrics endpoint
@@ -281,6 +307,13 @@ class AppSettings(BaseModel):
         description="JSON array of printer IDs to monitor (empty = all connected printers)",
     )
 
+    # Inventory forecasting
+    forecast_global_lead_time_days: int = Field(
+        default=0,
+        ge=0,
+        description="Global lead time floor (days) used in reorder point calculation for all SKUs",
+    )
+
     # Default sidebar order (admin-set for all users)
     default_sidebar_order: str = Field(
         default="",
@@ -327,6 +360,7 @@ class AppSettingsUpdate(BaseModel):
     virtual_printer_enabled: bool | None = None
     virtual_printer_access_code: str | None = None
     virtual_printer_mode: str | None = None
+    virtual_printer_archive_name_source: str | None = None
     dark_style: str | None = None
     dark_background: str | None = None
     dark_accent: str | None = None
@@ -352,6 +386,9 @@ class AppSettingsUpdate(BaseModel):
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
     preferred_slicer: str | None = None
+    use_slicer_api: bool | None = None
+    orcaslicer_api_url: str | None = None
+    bambu_studio_api_url: str | None = None
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
@@ -388,6 +425,7 @@ class AppSettingsUpdate(BaseModel):
     obico_poll_interval: int | None = Field(default=None, ge=5, le=120)
     obico_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
+    forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
 
     @field_validator("gcode_snippets")
     @classmethod

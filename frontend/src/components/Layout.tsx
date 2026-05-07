@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -36,6 +36,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
   { id: 'inventory', to: '/inventory', icon: Disc3, labelKey: 'nav.inventory' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
+  { id: 'makerworld', to: '/makerworld', icon: Globe, labelKey: 'nav.makerworld' },
   // User-account features: kept adjacent to Settings intentionally
   { id: 'notifications', to: '/notifications', icon: Bell, labelKey: 'nav.notifications' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },
@@ -283,6 +284,7 @@ export function Layout() {
       projects: 'projects:read',
       inventory: 'inventory:read',
       files: 'library:read',
+      makerworld: 'makerworld:view',
       settings: 'settings:read',
       notifications: 'notifications:user_email',
     };
@@ -376,10 +378,14 @@ export function Layout() {
     setDragOverId(null);
   };
 
-  // Show update banner if update available and not dismissed for this version
+  // Show update banner if update available and not dismissed for this version.
+  // Suppressed when running as a Home Assistant addon — HA Supervisor surfaces
+  // its own update notification in the HA UI, so the in-app banner is duplicate
+  // noise that links to a page that just says "update via HA."
   const showUpdateBanner = updateCheck?.update_available &&
     updateCheck.latest_version &&
-    updateCheck.latest_version !== dismissedUpdateVersion;
+    updateCheck.latest_version !== dismissedUpdateVersion &&
+    !updateCheck.is_ha_addon;
 
   const dismissUpdateBanner = () => {
     if (updateCheck?.latest_version) {
@@ -1030,6 +1036,16 @@ export function Layout() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
+                <input
+                  type="text"
+                  name="username"
+                  autoComplete="username"
+                  value={user?.username ?? ''}
+                  readOnly
+                  hidden
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
                     {t('changePassword.currentPassword')}

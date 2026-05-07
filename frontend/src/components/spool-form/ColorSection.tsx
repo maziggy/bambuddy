@@ -1,8 +1,30 @@
-import { useState, useMemo } from 'react';
-import { Search, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Search, Clock, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ColorSectionProps, CatalogDisplayColor } from './types';
 import { QUICK_COLORS, ALL_COLORS } from './constants';
+import { FilamentSwatch } from '../FilamentSwatch';
+import { buildFilamentBackground, FILAMENT_EFFECT_OPTIONS } from '../filamentSwatchHelpers';
+
+/** Parse user paste from 3dfilamentprofiles.com etc.: split on commas/whitespace,
+ *  drop the leading `#`, accept 6/8-char hex, lowercase. Returns null when no
+ *  valid stops are found. Mirrors the server-side validator output. */
+function normalizeExtraColorsInput(raw: string): { value: string; invalid: string[] } {
+  const tokens = raw
+    .split(/[\s,]+/)
+    .map((t) => t.trim().replace(/^#/, ''))
+    .filter(Boolean);
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  for (const tok of tokens) {
+    if ((tok.length === 6 || tok.length === 8) && /^[0-9a-fA-F]+$/.test(tok)) {
+      valid.push(tok.toLowerCase());
+    } else {
+      invalid.push(tok);
+    }
+  }
+  return { value: valid.join(','), invalid };
+}
 
 export function ColorSection({
   formData,
@@ -143,12 +165,60 @@ export function ColorSection({
     return showAllColors ? ALL_COLORS : QUICK_COLORS;
   }, [colorSearch, showAllColors]);
 
+  // #1154: editable buffer for the multi-colour paste field. We keep the raw
+  // text the user typed/pasted so they can still see invalid tokens — only
+  // commit the canonical form to formData on blur or when valid.
+  const [extraColorsDraft, setExtraColorsDraft] = useState<string>(formData.extra_colors);
+  const [extraColorsErrors, setExtraColorsErrors] = useState<string[]>([]);
+
+  // #1154 follow-up: when the modal opens to edit an existing spool, the
+  // parent's ``setFormData(...)`` lands in a useEffect AFTER ColorSection
+  // already mounted with the default-empty formData. Without resyncing,
+  // ``extraColorsDraft`` stays at the initial '' and the field appears
+  // empty even though the spool has saved colours (visible as the gradient
+  // banner above). Track our own commits via a ref so external formData
+  // updates resync the draft without clobbering live user typing.
+  const lastCommittedExtraColorsRef = useRef<string>(formData.extra_colors);
+  useEffect(() => {
+    if (formData.extra_colors !== lastCommittedExtraColorsRef.current) {
+      setExtraColorsDraft(formData.extra_colors);
+      setExtraColorsErrors([]);
+      lastCommittedExtraColorsRef.current = formData.extra_colors;
+    }
+  }, [formData.extra_colors]);
+  const previewBackground = useMemo(
+    () =>
+      buildFilamentBackground({
+        rgba: formData.rgba,
+        extraColors: formData.extra_colors,
+        effectType: formData.effect_type,
+        subtype: formData.subtype,
+        effectSize: 'bar',
+      }),
+    [formData.rgba, formData.extra_colors, formData.effect_type, formData.subtype],
+  );
+
+  const commitExtraColors = (text: string) => {
+    setExtraColorsDraft(text);
+    if (!text.trim()) {
+      setExtraColorsErrors([]);
+      lastCommittedExtraColorsRef.current = '';
+      updateField('extra_colors', '');
+      return;
+    }
+    const { value, invalid } = normalizeExtraColorsInput(text);
+    setExtraColorsErrors(invalid);
+    lastCommittedExtraColorsRef.current = value;
+    updateField('extra_colors', value);
+  };
+
   return (
     <div className="space-y-3">
-      {/* Color preview banner */}
+      {/* Color preview banner — shows gradient + effect overlay. */}
       <div
         className="h-10 rounded-lg border border-bambu-dark-tertiary"
-        style={{ backgroundColor: `#${currentHex}` }}
+        style={previewBackground}
+        data-testid="color-preview-banner"
       />
 
       {/* Recently Used Colors */}
@@ -298,8 +368,18 @@ export function ColorSection({
                 placeholder="RRGGBB"
                 value={currentHex.toUpperCase()}
                 onChange={(e) => {
-                  const val = e.target.value.replace('#', '').replace(/[^0-9A-Fa-f]/g, '');
-                  if (val.length <= 8) updateField('rgba', val.toUpperCase() + (val.length <= 6 ? 'FF' : ''));
+                  const val = e.target.value.replace('#', '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+                  if (val.length > 8) return;
+                  // Normalize to a valid 8-char RRGGBBAA on every keystroke so
+                  // the backend never receives a malformed rgba (#1055). 8-char
+                  // paste passes through; 7-char drops the stray typo; anything
+                  // shorter is right-padded with '0' to a full RGB triplet and
+                  // given FF alpha. Prior logic emitted 3/5/7-char strings mid-
+                  // typing that PATCH would accept (SpoolUpdate was unchecked)
+                  // and later 500 the list endpoint on response serialization.
+                  const rgba =
+                    val.length === 8 ? val : val.length === 7 ? val.substring(0, 6) + 'FF' : val.padEnd(6, '0') + 'FF';
+                  updateField('rgba', rgba);
                 }}
               />
             </div>
@@ -312,6 +392,61 @@ export function ColorSection({
                 updateField('rgba', hex + 'FF');
               }}
               title={t('inventory.pickColor')}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* #1154: Multi-colour gradient stops + visual effect. Optional —
+          empty values keep the spool rendering as a solid swatch. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-bambu-dark-tertiary/50">
+        <div>
+          <label className="block text-sm font-medium text-bambu-gray mb-1">
+            {t('inventory.extraColorsLabel')}
+          </label>
+          <input
+            type="text"
+            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm font-mono placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+            placeholder={t('inventory.extraColorsPlaceholder')}
+            value={extraColorsDraft}
+            onChange={(e) => commitExtraColors(e.target.value)}
+            data-testid="extra-colors-input"
+          />
+          {extraColorsErrors.length > 0 && (
+            <p className="text-xs text-red-400 mt-1">
+              {t('inventory.extraColorsInvalid', { tokens: extraColorsErrors.join(', ') })}
+            </p>
+          )}
+          {!extraColorsErrors.length && (
+            <p className="text-xs text-bambu-gray/70 mt-1">{t('inventory.extraColorsHint')}</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-bambu-gray mb-1 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            {t('inventory.colorEffectLabel')}
+          </label>
+          <div className="flex gap-2 items-stretch">
+            <select
+              className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+              value={formData.effect_type}
+              onChange={(e) => updateField('effect_type', e.target.value)}
+              data-testid="effect-type-select"
+            >
+              {FILAMENT_EFFECT_OPTIONS.map((opt) => (
+                <option key={opt.value || 'none'} value={opt.value}>
+                  {t(opt.labelKey)}
+                </option>
+              ))}
+            </select>
+            <FilamentSwatch
+              rgba={formData.rgba}
+              extraColors={formData.extra_colors}
+              effectType={formData.effect_type}
+              subtype={formData.subtype}
+              effectSize="preview"
+              className="w-10 h-10"
+              shape="square"
             />
           </div>
         </div>

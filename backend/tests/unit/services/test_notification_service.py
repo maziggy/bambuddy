@@ -670,6 +670,119 @@ class TestNotificationProviderTypes:
             assert "image" not in payload
 
 
+class TestNtfyPriority:
+    """Per-event ntfy Priority header (#990)."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @staticmethod
+    def _mock_client(service):
+        """Patch _get_client and return the mock client + 200 response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.put = AsyncMock(return_value=mock_response)
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_priority_header_set_for_mapped_event(self, service):
+        """Mapped event → ntfy Priority header carries the configured value."""
+        config = {
+            "topic": "bambuddy",
+            "event_priorities": {"on_print_failed": 5, "on_print_complete": 2},
+        }
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            success, _ = await service._send_ntfy(config, "Title", "Body", event_type="on_print_failed")
+
+        assert success is True
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert headers.get("Priority") == "5"
+
+    @pytest.mark.asyncio
+    async def test_priority_header_omitted_for_unmapped_event(self, service):
+        """Unmapped event → no Priority header so ntfy uses its server default."""
+        config = {
+            "topic": "bambuddy",
+            "event_priorities": {"on_print_failed": 5},
+        }
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            await service._send_ntfy(config, "Title", "Body", event_type="on_print_complete")
+
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert "Priority" not in headers
+
+    @pytest.mark.asyncio
+    async def test_priority_header_omitted_when_no_priorities_set(self, service):
+        """Existing setups (no event_priorities key) keep current behaviour."""
+        config = {"topic": "bambuddy"}
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            await service._send_ntfy(config, "Title", "Body", event_type="on_print_failed")
+
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert "Priority" not in headers
+
+    @pytest.mark.asyncio
+    async def test_priority_header_omitted_when_event_type_missing(self, service):
+        """Test sends (no event_type) must not emit a Priority header."""
+        config = {
+            "topic": "bambuddy",
+            "event_priorities": {"on_print_failed": 5},
+        }
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            await service._send_ntfy(config, "Title", "Body")
+
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert "Priority" not in headers
+
+    @pytest.mark.asyncio
+    async def test_priority_out_of_range_is_ignored(self, service):
+        """Values outside 1-5 (or non-numeric) are dropped, not clamped."""
+        for bad in (0, 6, 99, -1, "not-a-number", None):
+            config = {
+                "topic": "bambuddy",
+                "event_priorities": {"on_print_failed": bad},
+            }
+            mock_client = self._mock_client(service)
+            with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+                mock_get.return_value = mock_client
+                await service._send_ntfy(config, "Title", "Body", event_type="on_print_failed")
+
+            headers = mock_client.post.call_args.kwargs["headers"]
+            assert "Priority" not in headers, f"unexpected header for bad value {bad!r}"
+
+    @pytest.mark.asyncio
+    async def test_priority_header_set_on_attachment_path(self, service):
+        """Image-attachment path (PUT) must also carry the Priority header."""
+        config = {
+            "topic": "bambuddy",
+            "event_priorities": {"on_first_layer_complete": 4},
+        }
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            await service._send_ntfy(
+                config,
+                "Title",
+                "Body",
+                image_data=b"\xff\xd8\xff\xe0fake-jpeg",
+                event_type="on_first_layer_complete",
+            )
+
+        headers = mock_client.put.call_args.kwargs["headers"]
+        assert headers.get("Priority") == "4"
+
+
 class TestHomeAssistantProvider:
     """Tests for Home Assistant notification provider."""
 
@@ -910,6 +1023,120 @@ class TestNotificationVariableFallbacks:
             # When archive data is provided, duration should not be "Unknown"
             if captured_variables.get("duration"):
                 assert captured_variables["duration"] != "Unknown"
+
+    @pytest.mark.asyncio
+    async def test_duration_prefers_actual_time_seconds_over_slicer_estimate(self, service):
+        """#1198: completion notification duration must reflect *actual* elapsed
+        time from started_at/completed_at, not the slicer's pre-print estimate.
+
+        Pre-fix the duration variable read from `print_time_seconds` (slicer
+        estimate parsed from the 3MF at archive creation), so a print cancelled
+        2 minutes into a 3-hour estimate would notify "duration: 3h"."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables: dict = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_complete(
+                printer_id=1,
+                printer_name="Test",
+                status="cancelled",
+                data={"subtask_name": "test_print"},
+                db=mock_db,
+                archive_data={
+                    "print_time_seconds": 10800,  # 3h slicer estimate
+                    "actual_time_seconds": 120,  # 2m actual elapsed
+                },
+            )
+
+        # 2 minutes — not 3 hours — even though the slicer estimate is in the dict.
+        assert "2m" in captured_variables["duration"]
+        assert "3h" not in captured_variables["duration"]
+
+    @pytest.mark.asyncio
+    async def test_duration_falls_back_to_slicer_estimate_when_actual_time_missing(self, service):
+        """#1198: when actual_time_seconds is absent (e.g. timestamps weren't
+        recorded for some reason), the duration variable falls back to
+        print_time_seconds rather than rendering 'Unknown'. Preserves
+        backwards-compat for any code path that didn't compute actual elapsed."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables: dict = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_complete(
+                printer_id=1,
+                printer_name="Test",
+                status="completed",
+                data={"subtask_name": "test_print"},
+                db=mock_db,
+                archive_data={
+                    "print_time_seconds": 3600,  # 1h slicer estimate, no actual
+                    "actual_time_seconds": None,
+                },
+            )
+
+        assert captured_variables["duration"] != "Unknown"
+        assert "1h" in captured_variables["duration"]
+
+    @pytest.mark.asyncio
+    async def test_duration_unknown_when_both_time_fields_missing(self, service):
+        """#1198: with neither actual nor estimated time available the duration
+        variable surfaces the existing 'Unknown' fallback."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables: dict = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_complete(
+                printer_id=1,
+                printer_name="Test",
+                status="completed",
+                data={"subtask_name": "test_print"},
+                db=mock_db,
+                archive_data={
+                    "print_time_seconds": None,
+                    "actual_time_seconds": None,
+                },
+            )
+
+        assert captured_variables["duration"] == "Unknown"
 
     @pytest.mark.asyncio
     async def test_print_complete_with_finish_photo_url(self, service):

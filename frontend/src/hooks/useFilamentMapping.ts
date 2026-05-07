@@ -96,6 +96,10 @@ export function computeAmsMapping(
   const loadedFilaments = buildLoadedFilaments(printerStatus);
   if (loadedFilaments.length === 0) return undefined;
 
+  // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
+  // doesn't apply when it's installed (#1162).
+  const ftsActive = printerStatus?.fila_switch?.installed === true;
+
   // Track which trays have been assigned to avoid duplicates
   const usedTrayIds = new Set<number>();
 
@@ -108,7 +112,8 @@ export function computeAmsMapping(
     // Nozzle-aware filtering: restrict to trays on the correct nozzle.
     // This is a hard filter — cross-nozzle assignment causes print failures
     // ("position of left hotend is abnormal"), so we never fall back to wrong-nozzle trays.
-    if (req.nozzle_id != null) {
+    // Skip when an FTS is installed: it can route any slot to either extruder.
+    if (req.nozzle_id != null && !ftsActive) {
       available = available.filter((f) => f.extruderId === req.nozzle_id);
     }
 
@@ -311,6 +316,10 @@ export function useFilamentMapping(
 ): UseFilamentMappingResult {
   const loadedFilaments = useLoadedFilaments(printerStatus);
 
+  // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
+  // doesn't apply when it's installed (#1162).
+  const ftsActive = printerStatus?.fila_switch?.installed === true;
+
   const filamentComparison = useMemo(() => {
     if (!filamentReqs?.filaments || filamentReqs.filaments.length === 0) return [];
 
@@ -363,7 +372,8 @@ export function useFilamentMapping(
 
       // Nozzle-aware filtering: restrict to trays on the correct nozzle.
       // This is a hard filter — cross-nozzle assignment causes print failures.
-      if (req.nozzle_id != null) {
+      // Skip when an FTS is installed: it can route any slot to either extruder.
+      if (req.nozzle_id != null && !ftsActive) {
         available = available.filter((f) => f.extruderId === req.nozzle_id);
       }
 
@@ -469,7 +479,7 @@ export function useFilamentMapping(
         isManual: false,
       };
     });
-  }, [filamentReqs, loadedFilaments, manualMappings, preferLowest]);
+  }, [filamentReqs, loadedFilaments, manualMappings, preferLowest, ftsActive]);
 
   // Build AMS mapping from matched filaments
   // Format: array matching 3MF filament slot structure

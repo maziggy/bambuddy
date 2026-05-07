@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import traceback
 from collections.abc import Callable
 
@@ -190,6 +191,18 @@ class PrinterManager:
         Persisted so the gate survives Bambuddy/printer restarts (#961): after Auto Off
         cycles the printer, the printer boots into IDLE with no memory of the previous
         finish, and without persistence the queue would bypass the confirmation prompt.
+
+        Also broadcasts an updated ``printer_status`` over the WebSocket (#1128).
+        ``awaiting_plate_clear`` is a Bambuddy-side flag — toggling it does not
+        produce an MQTT push from the printer, so without an explicit broadcast
+        any UI subscriber that's NOT the originating tab would stay stale until
+        the next coincidental status refresh. The plate-clear button on the
+        printer card disappeared "immediately" only because of an optimistic
+        React Query cache update on the click path; clearing the flag through
+        any other route (an admin script, a second tab, an automation that
+        hits ``POST /printers/{id}/clear-plate`` directly) silently broke the
+        UI without it. Centralised here so every current AND future caller is
+        covered without each one having to remember to broadcast.
         """
         if awaiting:
             self._awaiting_plate_clear.add(printer_id)
@@ -199,6 +212,43 @@ class PrinterManager:
         # emits "coroutine was never awaited" warnings (e.g. in sync unit tests).
         if self._loop and self._loop.is_running():
             self._schedule_async(self._persist_awaiting_plate_clear(printer_id, awaiting))
+            self._schedule_async(self._broadcast_status_change(printer_id))
+
+    async def _broadcast_status_change(self, printer_id: int) -> None:
+        """Emit a ``printer_status`` WebSocket update for this printer (#1128).
+
+        Used for state changes that don't come from MQTT — currently just the
+        ``awaiting_plate_clear`` flag, but any future Bambuddy-side flag added
+        to ``printer_state_to_dict`` should plumb through here too. The
+        existing MQTT-driven broadcast in ``main.on_printer_status_change``
+        deduplicates on a status_key that intentionally excludes Bambuddy
+        flags (so e.g. queue-state changes don't get echoed as printer
+        events), which is precisely why those flags need their own emit.
+
+        Lazy-imports ``ws_manager`` to keep ``printer_manager`` clean of
+        application-layer infra at module-import time — the broadcast is the
+        only thing here that needs it.
+        """
+        state = self.get_status(printer_id)
+        if not state:
+            # Printer disconnected or unknown — nothing to broadcast. The
+            # next reconnect will produce a fresh status push anyway, so the
+            # UI eventually catches up without us forcing a stale snapshot
+            # on subscribers now.
+            return
+        try:
+            from backend.app.core.websocket import ws_manager
+
+            await ws_manager.send_printer_status(
+                printer_id,
+                printer_state_to_dict(state, printer_id, self.get_model(printer_id)),
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to broadcast printer_status after Bambuddy-side state change for printer %d: %s",
+                printer_id,
+                e,
+            )
 
     async def _persist_awaiting_plate_clear(self, printer_id: int, awaiting: bool):
         from backend.app.core.database import async_session
@@ -622,6 +672,45 @@ def get_derived_status_name(state: PrinterState, model: str | None = None) -> st
     return None
 
 
+_PLATE_ID_RE = re.compile(r"plate_(\d+)\.gcode")
+
+
+def parse_plate_id(gcode_file: str | None) -> int | None:
+    """Extract the 1-indexed plate number from a Bambu gcode_file path.
+
+    Returns None when the path is missing or has no `plate_N.gcode` segment.
+    Shared by the REST status route and the WebSocket push path so both agree
+    on the value sent to the frontend (#881 follow-up).
+    """
+    if not gcode_file:
+        return None
+    match = _PLATE_ID_RE.search(gcode_file)
+    return int(match.group(1)) if match else None
+
+
+def resolve_plate_id(state) -> int | None:
+    """Resolve the active plate number from a PrinterState.
+
+    Some firmware versions (e.g. P1S 01.10.00.00, #1166) put only the .3mf
+    filename in print.gcode_file, so parse_plate_id() returns None and the
+    printer card falls back to plate 1 — wrong thumbnail. When Bambuddy
+    dispatched the print itself we already know the right plate, so we prefer
+    that over the gcode_file echo. The subtask check prevents stale values
+    from a previous Bambuddy-dispatched print bleeding into a Studio-direct
+    print on the same printer.
+    """
+    dispatched_plate = getattr(state, "dispatched_plate_id", None)
+    dispatched_subtask = getattr(state, "dispatched_subtask", None)
+    if (
+        dispatched_plate is not None
+        and dispatched_subtask is not None
+        and state.subtask_name
+        and dispatched_subtask == state.subtask_name
+    ):
+        return dispatched_plate
+    return parse_plate_id(state.gcode_file)
+
+
 def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, model: str | None = None) -> dict:
     """Convert PrinterState to a JSON-serializable dict.
 
@@ -838,6 +927,16 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         ],
         # AMS drying support
         "supports_drying": supports_drying(model, state.firmware_version),
+        # 1-indexed plate number parsed from gcode_file (e.g. /Metadata/plate_2.gcode).
+        # Pushed via WebSocket so the printer card picks up plate transitions within
+        # a multi-plate 3MF without waiting for the 30 s REST poll (#881 follow-up).
+        # current_archive_id is intentionally REST-only — it's stable for the life
+        # of a print and needs a DB lookup the WebSocket path shouldn't pay for.
+        "current_plate_id": resolve_plate_id(state),
+        # Plate-clear gate (#939). Lives on the PrinterManager rather than PrinterState,
+        # so surface it here — without this, WebSocket merges drop the flag and the
+        # "Clear Plate" button only appears when the 30 s REST fallback poll runs.
+        "awaiting_plate_clear": printer_manager.is_awaiting_plate_clear(printer_id) if printer_id else False,
     }
     # Add cover URL if there's an active print and printer_id is provided
     # Include PAUSE state so skip objects modal can show cover
@@ -845,6 +944,16 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         result["cover_url"] = f"/api/v1/printers/{printer_id}/cover"
     else:
         result["cover_url"] = None
+    # Surface the display name + model so WS consumers (gcode viewer printer
+    # selector) can render proper labels on the initial snapshot without racing
+    # a separate /api/v1/printers fetch (#963 follow-up). PrinterInfo only
+    # carries name/serial_number; the model comes through via the `model` arg.
+    if printer_id:
+        _printer_info = printer_manager.get_printer(printer_id)
+        if _printer_info is not None:
+            result["name"] = _printer_info.name
+    if model:
+        result["model"] = model
     return result
 
 

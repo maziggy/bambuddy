@@ -257,6 +257,166 @@ class TestPrintersAPI:
 
         assert response.status_code == 404
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_printer_status_includes_fila_switch_when_installed(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """When the FTS accessory is installed, the status response must include
+        the fila_switch object with the routing arrays. See #1162.
+
+        The accessory is detected from print.device.fila_switch in MQTT;
+        we feed a PrinterState with FilaSwitchState(installed=True, ...) and
+        confirm it survives the schema serialization round-trip.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import FilaSwitchState, PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        state.fila_switch = FilaSwitchState(
+            installed=True,
+            in_slots=[-1, 2],
+            out_extruders=[0, 1],
+            stat=0,
+            info=2,
+        )
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["fila_switch"] is not None
+        assert result["fila_switch"]["installed"] is True
+        assert result["fila_switch"]["in_slots"] == [-1, 2]
+        assert result["fila_switch"]["out_extruders"] == [0, 1]
+        assert result["fila_switch"]["stat"] == 0
+        assert result["fila_switch"]["info"] == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cover_uses_dispatched_plate_when_gcode_file_lacks_path(
+        self, async_client: AsyncClient, printer_factory, db_session, tmp_path
+    ):
+        """When firmware drops the plate path from gcode_file (e.g. P1S
+        01.10.00.00, #1166), the dispatched-plate record must take precedence
+        and serve plate 4's thumbnail instead of falling back to plate_1.png."""
+        import io
+        import zipfile
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_ftp import cache_3mf_download
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        # Build a 3MF that mimics a "true" multi-plate archive: thumbnails
+        # for plates 1..4 are all present, gcode files for plates 1..4 are
+        # all present. Without the dispatch record we'd default to plate_1.png.
+        threemf_path = tmp_path / "MyModel.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            for plate in range(1, 5):
+                zf.writestr(f"Metadata/plate_{plate}.png", f"PLATE_{plate}_PNG".encode())
+                zf.writestr(f"Metadata/plate_{plate}.gcode", f"; plate {plate} gcode\n")
+
+        cache_3mf_download(printer.id, "MyModel.3mf", threemf_path)
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.subtask_name = "MyModel"
+        state.gcode_file = "MyModel.3mf"  # firmware drops plate path
+        state.dispatched_plate_id = 4
+        state.dispatched_subtask = "MyModel"
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert response.status_code == 200
+        assert response.content == b"PLATE_4_PNG"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cover_3mf_scan_fallback_for_per_plate_archive(
+        self, async_client: AsyncClient, printer_factory, db_session, tmp_path
+    ):
+        """Per-plate archives sliced separately in Bambu Studio contain a
+        single Metadata/plate_N.gcode (the active plate) but bundle thumbnails
+        for every plate. With no dispatch record (e.g. dispatched via Studio
+        directly) and no plate path in gcode_file, the route must scan the
+        3MF and pick plate N's thumbnail. See #1166 option 4."""
+        import zipfile
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_ftp import cache_3mf_download
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        # Per-plate archive: thumbnails for all plates, gcode for plate 3 only.
+        threemf_path = tmp_path / "PerPlate.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            for plate in range(1, 5):
+                zf.writestr(f"Metadata/plate_{plate}.png", f"PLATE_{plate}_PNG".encode())
+            zf.writestr("Metadata/plate_3.gcode", "; only plate 3 has gcode\n")
+
+        cache_3mf_download(printer.id, "PerPlate.3mf", threemf_path)
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.subtask_name = "PerPlate"
+        state.gcode_file = "PerPlate.3mf"
+        # No dispatch record (Studio-direct dispatch).
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert response.status_code == 200
+        assert response.content == b"PLATE_3_PNG"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_printer_status_omits_fila_switch_when_not_installed(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """Without the FTS accessory, fila_switch must be null so the frontend
+        keeps applying the per-extruder filter on regular dual-nozzle printers."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        # default fila_switch — installed = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["fila_switch"] is None
+
     # ========================================================================
     # Test connection endpoint
     # ========================================================================
@@ -580,6 +740,163 @@ class TestAMSRefreshAPI:
             assert "unload" in response.json()["detail"].lower()
 
 
+class TestAMSLoadUnloadAPI:
+    """Integration tests for AMS load / unload endpoints (#891)."""
+
+    # ── load ─────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_invalid_tray_id(self, async_client: AsyncClient, printer_factory):
+        """tray_id outside {0..15, 254, 255} is rejected."""
+        printer = await printer_factory(name="P")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=99")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/ams/load?tray_id=0")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="Disconnected")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=0")
+
+            assert response.status_code == 400
+            assert "not connected" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_ams_slot_success(self, async_client: AsyncClient, printer_factory):
+        """tray_id=5 → AMS 1 slot 2 (1-indexed in the message)."""
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=5")
+
+            assert response.status_code == 200
+            mock_client.ams_load_filament.assert_called_once_with(5)
+            assert "AMS 1" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_external_left_success(self, async_client: AsyncClient, printer_factory):
+        """tray_id=254 → external spool / Ext-L."""
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=254")
+
+            assert response.status_code == 200
+            mock_client.ams_load_filament.assert_called_once_with(254)
+            assert "external" in response.json()["message"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_external_right_success(self, async_client: AsyncClient, printer_factory):
+        """tray_id=255 → Ext-R on dual-nozzle H2D."""
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=255")
+
+            assert response.status_code == 200
+            mock_client.ams_load_filament.assert_called_once_with(255)
+            assert "Ext-R" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_mqtt_failure_returns_500(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=0")
+
+            assert response.status_code == 500
+            assert "failed" in response.json()["detail"].lower()
+
+    # ── unload ───────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/ams/unload")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="Disconnected")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload")
+
+            assert response.status_code == 400
+            assert "not connected" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_success(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_unload_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload")
+
+            assert response.status_code == 200
+            mock_client.ams_unload_filament.assert_called_once_with()
+            assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_mqtt_failure_returns_500(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_unload_filament.return_value = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload")
+
+            assert response.status_code == 500
+            assert "failed" in response.json()["detail"].lower()
+
+
 class TestConfigureAMSSlotAPI:
     """Integration tests for AMS slot configure endpoint — tray_info_idx resolution."""
 
@@ -802,6 +1119,50 @@ class TestConfigureAMSSlotAPI:
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
             assert call_kwargs.kwargs["tray_info_idx"] == "GFG99"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_pfus_preserves_setting_id_pair(self, async_client: AsyncClient, printer_factory):
+        """Both tray_info_idx=PFUS* and setting_id=PFUS* are forwarded untouched.
+
+        Pins the end-to-end contract the frontend #1053 fix relies on: when the
+        user configures a slot with a custom cloud preset whose cloud detail
+        has filament_id=null, the frontend sends the setting_id in BOTH fields
+        and the backend must not collapse either to a generic GF* ID.
+        """
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        mock_status = MagicMock()
+        mock_status.raw_data = {"ams": {"ams": []}}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/128/0/configure",
+                params={
+                    "tray_info_idx": "PFUSa8fb76f9733e3c",
+                    "tray_type": "ABS",
+                    "tray_sub_brands": "Sting3D ABS",
+                    "tray_color": "000000FF",
+                    "nozzle_temp_min": 240,
+                    "nozzle_temp_max": 280,
+                    "setting_id": "PFUSa8fb76f9733e3c",
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUSa8fb76f9733e3c"
+            assert call_kwargs.kwargs["setting_id"] == "PFUSa8fb76f9733e3c"
+            # Explicitly assert no generic-collapse happened for this HT slot.
+            assert call_kwargs.kwargs["tray_info_idx"] != "GFB99"
 
 
 class TestSkipObjectsAPI:

@@ -130,6 +130,7 @@ async def get_settings(
                 "mqtt_port",
                 "stagger_group_size",
                 "stagger_interval_minutes",
+                "forecast_global_lead_time_days",
             ]:
                 settings_dict[setting.key] = int(setting.value)
             elif setting.key == "default_printer_id":
@@ -566,7 +567,7 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
             #      `spoolman_k_profile`) that hold FK constraints back to
             #      ORM tables. `drop_all` doesn't know they exist and emits
             #      `DROP TABLE printers` without CASCADE — Postgres refuses
-            #      and the whole restore aborts.
+            #      and the whole restore aborts (#XXXX).
             #   2. Even within the metadata, `drop_all` is FK-ordered and
             #      breaks if a future schema rename leaves old constraints
             #      around. CASCADE is the right tool for a destructive
@@ -781,7 +782,38 @@ async def restore_backup(
             logger.info("Restoring database from backup...")
             if is_sqlite():
                 db_path = Path(app_settings.database_url.replace("sqlite+aiosqlite:///", ""))
-                shutil.copy2(backup_db, db_path)
+                # Use SQLite's online backup API instead of shutil.copy2.
+                # The pragma at database.py:19 runs the live DB in WAL mode,
+                # which means a naive file copy is unsafe: anything written
+                # to the live DB before this call that hasn't been
+                # checkpointed yet (seed_default_groups + init_db on first
+                # start, plus whatever background heartbeats wrote during
+                # the request window) sits in bambuddy.db-wal with valid
+                # checksums. The route handler's own `db: Depends(get_db)`
+                # session also keeps a connection checked out across
+                # engine.dispose(), holding fds to the WAL inode. With
+                # `shutil.copy2` SQLite finds the stale WAL on the next
+                # open and silently re-applies those page-level writes on
+                # top of the restored DB, partially clobbering it with
+                # fresh-install state — the user sees a "successful"
+                # restore where most rows and settings have reverted to
+                # defaults (#1211 / #668). The page-by-page backup API
+                # opens both DBs as real SQLite connections, takes the
+                # right locks, and routes new pages through the live DB's
+                # own WAL — so concurrent open sessions see their own
+                # snapshot until they close (transaction isolation) but
+                # can't corrupt the restored state.
+                import sqlite3
+
+                src_conn = sqlite3.connect(str(backup_db))
+                try:
+                    dst_conn = sqlite3.connect(str(db_path))
+                    try:
+                        src_conn.backup(dst_conn)
+                    finally:
+                        dst_conn.close()
+                finally:
+                    src_conn.close()
             else:
                 # Import SQLite backup into PostgreSQL
                 logger.info("Importing SQLite backup into PostgreSQL...")
@@ -925,6 +957,8 @@ async def get_virtual_printer_settings(
     model = await get_setting(db, "virtual_printer_model")
     target_printer_id = await get_setting(db, "virtual_printer_target_printer_id")
     remote_interface_ip = await get_setting(db, "virtual_printer_remote_interface_ip")
+    tailscale_disabled_raw = await get_setting(db, "virtual_printer_tailscale_disabled")
+    archive_name_source = await get_setting(db, "virtual_printer_archive_name_source")
 
     return {
         "enabled": enabled == "true" if enabled else False,
@@ -933,6 +967,8 @@ async def get_virtual_printer_settings(
         "model": model or DEFAULT_VIRTUAL_PRINTER_MODEL,
         "target_printer_id": int(target_printer_id) if target_printer_id else None,
         "remote_interface_ip": remote_interface_ip or "",
+        "tailscale_disabled": tailscale_disabled_raw == "true" if tailscale_disabled_raw else True,
+        "archive_name_source": archive_name_source if archive_name_source in ("metadata", "filename") else "metadata",
         "status": virtual_printer_manager.get_status(),
     }
 
@@ -945,6 +981,8 @@ async def update_virtual_printer_settings(
     model: str = None,
     target_printer_id: int = None,
     remote_interface_ip: str = None,
+    tailscale_disabled: bool = None,
+    archive_name_source: str = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
@@ -971,6 +1009,9 @@ async def update_virtual_printer_settings(
     current_target_id_str = await get_setting(db, "virtual_printer_target_printer_id")
     current_target_id = int(current_target_id_str) if current_target_id_str else None
     current_remote_iface = await get_setting(db, "virtual_printer_remote_interface_ip") or ""
+    current_ts_disabled_raw = await get_setting(db, "virtual_printer_tailscale_disabled")
+    # Default True (opt-in) when the setting has never been saved — matches the model default.
+    current_ts_disabled = current_ts_disabled_raw == "true" if current_ts_disabled_raw else True
 
     # Apply updates
     new_enabled = enabled if enabled is not None else current_enabled
@@ -979,6 +1020,7 @@ async def update_virtual_printer_settings(
     new_model = model if model is not None else current_model
     new_target_id = target_printer_id if target_printer_id is not None else current_target_id
     new_remote_iface = remote_interface_ip if remote_interface_ip is not None else current_remote_iface
+    new_ts_disabled = tailscale_disabled if tailscale_disabled is not None else current_ts_disabled
 
     # Validate mode
     # "review" is the new name for "queue" (pending review before archiving)
@@ -988,6 +1030,13 @@ async def update_virtual_printer_settings(
         return JSONResponse(
             status_code=400,
             content={"detail": "Mode must be 'immediate', 'review', 'print_queue', or 'proxy'"},
+        )
+
+    # Validate archive_name_source
+    if archive_name_source is not None and archive_name_source not in ("metadata", "filename"):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "archive_name_source must be 'metadata' or 'filename'"},
         )
     # Normalize legacy "queue" to "review" for storage
     if new_mode == "queue":
@@ -1057,6 +1106,20 @@ async def update_virtual_printer_settings(
         await set_setting(db, "virtual_printer_target_printer_id", str(target_printer_id))
     if remote_interface_ip is not None:
         await set_setting(db, "virtual_printer_remote_interface_ip", remote_interface_ip)
+    if tailscale_disabled is not None:
+        await set_setting(db, "virtual_printer_tailscale_disabled", "true" if tailscale_disabled else "false")
+    if archive_name_source is not None:
+        await set_setting(db, "virtual_printer_archive_name_source", archive_name_source)
+
+    # Propagate tailscale_disabled to the first VirtualPrinter row so sync_from_db() picks it up
+    if tailscale_disabled is not None:
+        from backend.app.models.virtual_printer import VirtualPrinter as VPModel
+
+        vp_result = await db.execute(select(VPModel).order_by(VPModel.position).limit(1))
+        first_vp = vp_result.scalar_one_or_none()
+        if first_vp is not None:
+            first_vp.tailscale_disabled = new_ts_disabled
+
     await db.commit()
     db.expire_all()
 

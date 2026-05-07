@@ -820,6 +820,62 @@ class TestAsyncWrappers:
         assert result is False
 
     @pytest.mark.asyncio
+    async def test_download_file_async_timeout_waits_for_slow_zombie(self, tmp_path, monkeypatch):
+        """A zombie that completes within the 30s grace window is salvaged.
+
+        Regression for #1014: on slow WiFi, download_to_file can overshoot the
+        user's ftp_timeout by 10–30 s without being stuck. The old fixed 0.5 s
+        post-timeout sleep was too short — it gave up and started attempt 2
+        while attempt 1's zombie thread kept running, and by the time the zombie
+        wrote the file to disk with a success flag, attempt 2 had already
+        reported failure (its own completion dict was still False). The async
+        wrapper now waits up to min(timeout, 30 s) for the worker thread to
+        finish before returning, so a slow-but-progressing download salvages.
+        """
+        from backend.app.services import bambu_ftp
+
+        bambu_ftp.BambuFTPClient._mode_cache.pop("127.0.0.1", None)
+
+        local = tmp_path / "slow_zombie.bin"
+        expected_content = b"finished during grace window"
+
+        class FakeClient:
+            """Mimics a slow FTP: wait_for gives up at 1.0 s but RETR takes
+            1.5 s total. Old 0.5 s fixed sleep would have bailed (0.5 < 0.5
+            extra); new grace = max(min(1.0, 30), 0.5) = 1.0 s covers the
+            remaining 0.5 s so salvage succeeds."""
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                return True
+
+            def download_to_file(self, remote_path, local_path):
+                time.sleep(1.5)  # wait_for times out at 1.0 s; zombie finishes 0.5 s later
+                local_path.write_bytes(expected_content)
+                return True
+
+            def disconnect(self):
+                pass
+
+        monkeypatch.setattr(bambu_ftp, "BambuFTPClient", FakeClient)
+        monkeypatch.setattr(FakeClient, "_mode_cache", {}, raising=False)
+        monkeypatch.setattr(FakeClient, "A1_MODELS", set(), raising=False)
+        monkeypatch.setattr(FakeClient, "cache_mode", staticmethod(lambda ip, mode: None), raising=False)
+
+        result = await download_file_async(
+            "127.0.0.1",
+            "12345678",
+            "/cache/slow_zombie.bin",
+            local,
+            timeout=1.0,
+            printer_model="X1C",
+        )
+        assert result is True
+        assert local.read_bytes() == expected_content
+
+    @pytest.mark.asyncio
     async def test_download_file_try_paths_first_succeeds(self, patch_ftp_port, tmp_path):
         """download_file_try_paths_async succeeds on first path."""
         server = patch_ftp_port
@@ -1142,26 +1198,78 @@ class TestThreeMFCache:
         cache_3mf_download(1, "A.3mf", f)
         assert get_cached_3mf(1, "A.3mf") == f
 
-    def test_clear_by_printer_scoped(self, tmp_path):
+    def test_clear_by_printer_scoped(self, tmp_path, monkeypatch):
         """Clearing one printer leaves the other untouched."""
-        f1 = tmp_path / "one.3mf"
+        from backend.app.core import config as _config
+
+        monkeypatch.setattr(_config.settings, "archive_dir", tmp_path)
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        f1 = temp_dir / "one.3mf"
         f1.write_bytes(b"1")
-        f2 = tmp_path / "two.3mf"
+        f2 = temp_dir / "two.3mf"
         f2.write_bytes(b"2")
         cache_3mf_download(1, "one.3mf", f1)
         cache_3mf_download(2, "two.3mf", f2)
         clear_3mf_cache(1)
         assert get_cached_3mf(1, "one.3mf") is None
         assert get_cached_3mf(2, "two.3mf") == f2
-        # clear_3mf_cache defaulted to delete_files=True, so the file is gone
+        # clear_3mf_cache defaulted to delete_files=True, so the temp file is gone
         assert not f1.exists()
         assert f2.exists()
 
-    def test_clear_without_deleting_files(self, tmp_path):
+    def test_clear_without_deleting_files(self, tmp_path, monkeypatch):
         """delete_files=False leaves files on disk — used by tests."""
-        f = tmp_path / "keep.3mf"
+        from backend.app.core import config as _config
+
+        monkeypatch.setattr(_config.settings, "archive_dir", tmp_path)
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        f = temp_dir / "keep.3mf"
         f.write_bytes(b"x")
         cache_3mf_download(1, "keep.3mf", f)
         clear_3mf_cache(1, delete_files=False)
         assert get_cached_3mf(1, "keep.3mf") is None
         assert f.exists()
+
+    def test_clear_does_not_delete_persistent_files(self, tmp_path, monkeypatch):
+        """Regression for #1212 / "file disappeared overnight" reports.
+
+        Dispatch sites added in #1166 cache the live archive copy and library
+        file bytes — paths outside ``archive_dir/temp`` — so /cover can skip
+        FTP. Those files are user data; the cache cleanup must never unlink
+        them. Pre-fix, ``clear_3mf_cache(printer_id, delete_files=True)`` ran
+        on every ``on_print_complete`` and silently destroyed them, leaving a
+        DB row whose ``file_path`` pointed at nothing — breaking Reprint and
+        View G-code with a 404.
+        """
+        from backend.app.core import config as _config
+
+        monkeypatch.setattr(_config.settings, "archive_dir", tmp_path / "archive")
+        (tmp_path / "archive" / "temp").mkdir(parents=True)
+
+        archive_file = tmp_path / "archive" / "1" / "20260504_wallhooks" / "wallhooks.gcode.3mf"
+        archive_file.parent.mkdir(parents=True)
+        archive_file.write_bytes(b"archive bytes")
+
+        library_file = tmp_path / "library_files" / "abcd.3mf"
+        library_file.parent.mkdir(parents=True)
+        library_file.write_bytes(b"library bytes")
+
+        temp_file = tmp_path / "archive" / "temp" / "cover_1_x.3mf"
+        temp_file.write_bytes(b"temp bytes")
+
+        cache_3mf_download(1, "wallhooks.gcode.3mf", archive_file)
+        cache_3mf_download(1, "library.3mf", library_file)
+        cache_3mf_download(1, "cover_1_x.3mf", temp_file)
+
+        clear_3mf_cache(1)
+
+        # All three cache entries are dropped from the dict.
+        assert get_cached_3mf(1, "wallhooks.gcode.3mf") is None
+        assert get_cached_3mf(1, "library.3mf") is None
+        assert get_cached_3mf(1, "cover_1_x.3mf") is None
+        # But only the temp file is unlinked — user data survives.
+        assert archive_file.exists(), "archive 3mf must not be deleted by cache cleanup"
+        assert library_file.exists(), "library 3mf must not be deleted by cache cleanup"
+        assert not temp_file.exists(), "temp file should still be cleaned up"

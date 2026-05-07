@@ -690,6 +690,174 @@ async def test_find_matching_untagged_spool_relationships_loaded(db_session):
     assert _relationship_is_loaded(found, "assignments")
 
 
+# -- find_matching_untagged_spool: #918 regressions ------------------------
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_null_subtype_fallback(db_session):
+    """#918: Quick-Add spool (subtype=NULL) matches when AMS reports a subtype.
+
+    The form's Quick-Add mode only requires `material`, so bulk-logged spools
+    have subtype=NULL. Before the fix, the strict `subtype = 'Basic'` filter
+    excluded these rows and the system created duplicates on first AMS read.
+    """
+    spool = Spool(
+        material="PLA",
+        subtype=None,  # Quick-Add bulk entry
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    # Tray reports "PLA Basic" → subtype parsed as "Basic"
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is not None
+    assert found.id == spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_prefers_exact_subtype_over_null(db_session):
+    """#918: When both an exact-subtype and a NULL-subtype row match, exact wins.
+
+    The NULL fallback exists only as a backstop for Quick-Add bulk-logged
+    spools — if the user did the work to record subtype="Basic", it must
+    take precedence over a vague "PLA" record, even if the latter is older.
+    """
+    import asyncio
+
+    null_spool = Spool(
+        material="PLA",
+        subtype=None,  # Older but vague — should NOT win
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(null_spool)
+    await db_session.flush()
+
+    await asyncio.sleep(0.05)
+
+    exact_spool = Spool(
+        material="PLA",
+        subtype="Basic",  # Newer but specific — should win
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(exact_spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is not None
+    assert found.id == exact_spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_rejects_non_bambu_brand(db_session):
+    """#918: A same-color non-Bambu spool must NOT attract a Bambu UUID.
+
+    Without the brand filter, a Polymaker untagged spool of matching
+    material/color would silently acquire a Bambu RFID UUID, leaving the
+    user with brand="Polymaker" but a Bambu Lab tray UUID — corrupt data.
+    """
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Polymaker",  # NOT Bambu — must be rejected
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_accepts_null_brand(db_session):
+    """#918: Quick-Add spools with brand=NULL still match a Bambu RFID read.
+
+    Quick-Add doesn't require brand, so a user bulk-logging Bambu spools may
+    leave it empty. The matcher allows NULL brand because the alternative
+    (forcing every Quick-Add spool to be tagged "Bambu") is the exact
+    friction the auto-matcher exists to remove.
+    """
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand=None,  # Quick-Add left brand blank
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is not None
+    assert found.id == spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_accepts_bambu_brand_variants(db_session):
+    """#918: Both 'Bambu' (form dropdown) and 'Bambu Lab' (catalog) match.
+
+    DEFAULT_BRANDS in the form lists 'Bambu'; the catalog uses 'Bambu Lab'.
+    Users can pick either. The fuzzy %bambu% LIKE handles both, plus
+    'BambuLab', 'bambu lab', etc.
+    """
+    for brand_value in ("Bambu", "Bambu Lab", "BambuLab", "bambu lab"):
+        spool = Spool(
+            material="PLA",
+            subtype="Basic",
+            rgba="FFFFFFFF",
+            brand=brand_value,
+            label_weight=1000,
+            core_weight=250,
+        )
+        db_session.add(spool)
+        await db_session.commit()
+
+        found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+        assert found is not None, f"brand={brand_value!r} should match"
+        assert found.id == spool.id
+
+        # Clean up so the next iteration starts fresh.
+        await db_session.delete(spool)
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_null_subtype_with_null_brand(db_session):
+    """#918: Pure Quick-Add row (brand=NULL, subtype=NULL) matches.
+
+    This is the exact scenario from Arn0uDz's report: 20 spools logged via
+    Quick Add, then placed in the AMS one at a time. Before the fix every
+    insertion duplicated; after the fix the first matching row is reused.
+    """
+    spool = Spool(
+        material="PLA",
+        subtype=None,
+        rgba="FFFFFFFF",
+        brand=None,
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is not None
+    assert found.id == spool.id
+
+
 # -- link_tag_to_inventory_spool -------------------------------------------
 
 
@@ -858,6 +1026,157 @@ async def test_color_name_is_none_when_catalog_miss_and_code_unreadable(db_sessi
     }
     spool = await create_spool_from_tray(db_session, tray)
     assert spool.color_name is None
+
+
+@pytest.mark.asyncio
+async def test_ivory_white_pla_matte_resolves_to_ivory_not_jade(db_session):
+    """Regression for #1227 — #FFFFFF is shared by Jade White (PLA Basic),
+    Ivory White (PLA Matte), and White (PLA Silk) in the Bambu catalog. The
+    matcher must filter by `tray_sub_brands` so a new Ivory White PLA Matte
+    roll doesn't auto-name as Jade White just because PLA Basic was inserted
+    first.
+    """
+    # Seed in the order from catalog_defaults.py — PLA Basic first.
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Jade White",
+            hex_color="#FFFFFF",
+            material="PLA Basic",
+            is_default=True,
+        )
+    )
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Ivory White",
+            hex_color="#FFFFFF",
+            material="PLA Matte",
+            is_default=True,
+        )
+    )
+    await db_session.flush()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Matte",
+        "tray_color": "FFFFFFFF",
+        "tray_id_name": "A01-W1",
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.color_name == "Ivory White", (
+        "PLA Matte White must resolve to 'Ivory White', not the PLA Basic 'Jade White' that shares the same hex"
+    )
+
+
+@pytest.mark.asyncio
+async def test_pla_silk_white_resolves_to_white_not_jade(db_session):
+    """Same shared-hex bug as #1227 but for the third collision: PLA Silk
+    White at #FFFFFF must not get the PLA Basic 'Jade White' name either.
+    """
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Jade White",
+            hex_color="#FFFFFF",
+            material="PLA Basic",
+            is_default=True,
+        )
+    )
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="White",
+            hex_color="#FFFFFF",
+            material="PLA Silk",
+            is_default=True,
+        )
+    )
+    await db_session.flush()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Silk",
+        "tray_color": "FFFFFFFF",
+        "tray_id_name": "A05-W0",
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.color_name == "White"
+
+
+@pytest.mark.asyncio
+async def test_jade_white_pla_basic_still_resolves_correctly(db_session):
+    """Happy-path regression guard for #1227: the PLA Basic Jade White case
+    that worked before the fix must still work after it. Catalog has all
+    three #FFFFFF entries; the PLA Basic spool must still get 'Jade White'.
+    """
+    for color_name, material in [
+        ("Jade White", "PLA Basic"),
+        ("Ivory White", "PLA Matte"),
+        ("White", "PLA Silk"),
+    ]:
+        db_session.add(
+            ColorCatalogEntry(
+                manufacturer="Bambu Lab",
+                color_name=color_name,
+                hex_color="#FFFFFF",
+                material=material,
+                is_default=True,
+            )
+        )
+    await db_session.flush()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tray_id_name": "A00-W0",
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.color_name == "Jade White"
+
+
+@pytest.mark.asyncio
+async def test_unknown_material_falls_back_to_hex_only_lookup(db_session):
+    """When `tray_sub_brands` is empty (third-party spool / OpenTag tag without
+    a Bambu material variant), the material filter is dropped and the lookup
+    falls back to hex-only. The deterministic ORDER BY keeps the result
+    reproducible across SQLite/PostgreSQL.
+    """
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Jade White",
+            hex_color="#FFFFFF",
+            material="PLA Basic",
+            is_default=True,
+        )
+    )
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Ivory White",
+            hex_color="#FFFFFF",
+            material="PLA Matte",
+            is_default=True,
+        )
+    )
+    await db_session.flush()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_type": "PLA",
+        "tray_sub_brands": "",  # third-party tag, no material variant
+        "tray_color": "FFFFFFFF",
+        "tray_id_name": "",
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    # Either is acceptable so long as the result is deterministic; the first-
+    # inserted row (Jade White) wins via ORDER BY id.
+    assert spool.color_name == "Jade White"
 
 
 @pytest.mark.asyncio

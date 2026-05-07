@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut } from 'lucide-react';
@@ -19,18 +19,21 @@ export function CameraPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission, authEnabled } = useAuth();
+  const { hasPermission, authEnabled, user } = useAuth();
   const { printerId } = useParams<{ printerId: string }>();
   const id = parseInt(printerId || '0', 10);
+  const [searchParams] = useSearchParams();
+  const fpsParam = parseInt(searchParams.get('fps') || '15', 10);
+  const fps = Math.min(Math.max(isNaN(fpsParam) ? 15 : fpsParam, 1), 30);
 
   // Subscribe to the stream-token query so this page re-renders once the token
   // arrives. useStreamTokenSync (mounted in App) already owns the fetch; this
   // useQuery call dedupes via the shared key and just reads the cached value.
   useStreamTokenSync();
   const { data: streamTokenData } = useQuery({
-    queryKey: ['camera-stream-token'],
+    queryKey: ['camera-stream-token', user?.id ?? null],
     queryFn: () => api.getCameraStreamToken(),
-    enabled: authEnabled,
+    enabled: authEnabled ? !!user : true,
     staleTime: 50 * 60 * 1000,
   });
   const streamTokenValue = streamTokenData?.token ?? getStreamToken();
@@ -599,7 +602,7 @@ export function CameraPage() {
   const currentUrl = transitioning || waitingForStreamToken
     ? ''
     : streamMode === 'stream'
-      ? appendToken(`/api/v1/printers/${id}/camera/stream?fps=15&t=${imageKey}`)
+      ? appendToken(`/api/v1/printers/${id}/camera/stream?fps=${fps}&t=${imageKey}`)
       : appendToken(`/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`);
 
   const isDisabled = streamLoading || transitioning || isReconnecting;

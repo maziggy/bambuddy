@@ -253,12 +253,24 @@ export function SpoolFormModal({
   useEffect(() => {
     if (isOpen) {
       if (spool) {
+        // Legacy rows may carry a malformed rgba (e.g. the 7-char 'FFFFFFF'
+        // from #1055 before the create/update pattern was enforced). The
+        // backend SpoolUpdate schema rejects non-8-char hex on PATCH, so
+        // re-submitting a malformed value would 422 every edit on that spool
+        // — even edits that don't touch color. Normalize on load: any value
+        // that isn't exactly 8 hex chars falls back to the default, so the
+        // user can save unrelated fields (weight, material, note) without
+        // first being forced to fix a color they may not even be aware is
+        // broken. Saving also purges the bad value from the DB.
+        const validRgba = spool.rgba && /^[0-9A-Fa-f]{8}$/.test(spool.rgba) ? spool.rgba : '808080FF';
         setFormData({
           material: spool.material || '',
           subtype: spool.subtype || '',
           brand: spool.brand || '',
           color_name: spool.color_name || '',
-          rgba: spool.rgba || '808080FF',
+          rgba: validRgba,
+          extra_colors: spool.extra_colors || '',
+          effect_type: spool.effect_type || '',
           label_weight: spool.label_weight || 1000,
           core_weight: spool.core_weight || 250,
           core_weight_catalog_id: spool.core_weight_catalog_id ?? null,
@@ -266,6 +278,8 @@ export function SpoolFormModal({
           slicer_filament: spool.slicer_filament || '',
           note: spool.note || '',
           cost_per_kg: spool.cost_per_kg ?? null,
+          category: spool.category || '',
+          low_stock_threshold_pct: spool.low_stock_threshold_pct ?? null,
         });
         setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
 
@@ -375,7 +389,7 @@ export function SpoolFormModal({
       api.updateSpool(spool!.id, { tag_uid: null, tray_uuid: null, tag_type: null, data_origin: null } as Parameters<typeof api.updateSpool>[1]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
-      showToast(t('inventory.tagDeleted', 'Tag removed'), 'success');
+      showToast(t('inventory.rfidCleared', 'RFID tag cleared'), 'success');
       onClose();
     },
     onError: (error: Error) => {
@@ -390,6 +404,28 @@ export function SpoolFormModal({
     enabled: isOpen && isEditing,
   });
   const spoolAssignment = spool ? assignments?.find(a => a.spool_id === spool.id) : undefined;
+
+  // Read inventory + settings caches (already populated by InventoryPage) to
+  // drive the category autocomplete and low-stock-threshold placeholder. #729
+  const { data: allSpools } = useQuery({
+    queryKey: ['inventory-spools'],
+    queryFn: () => api.getSpools(true),
+    enabled: isOpen,
+  });
+  const { data: settingsForForm } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+    enabled: isOpen,
+  });
+  const availableCategories = (() => {
+    const set = new Set<string>();
+    for (const s of allSpools ?? []) {
+      const c = s.category?.trim();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  })();
+  const globalLowStockThreshold = settingsForForm?.low_stock_threshold ?? 20;
 
   const unassignMutation = useMutation({
     mutationFn: () => {
@@ -484,6 +520,8 @@ export function SpoolFormModal({
       brand: formData.brand || null,
       color_name: formData.color_name || null,
       rgba: formData.rgba || null,
+      extra_colors: formData.extra_colors || null,
+      effect_type: formData.effect_type || null,
       label_weight: formData.label_weight,
       core_weight: formData.core_weight,
       core_weight_catalog_id: formData.core_weight_catalog_id,
@@ -493,6 +531,8 @@ export function SpoolFormModal({
       nozzle_temp_max: null,
       note: formData.note || null,
       cost_per_kg: formData.cost_per_kg,
+      category: formData.category.trim() || null,
+      low_stock_threshold_pct: formData.low_stock_threshold_pct,
     };
 
     // Only send weight_used when creating or when explicitly changed by the user.
@@ -643,6 +683,8 @@ export function SpoolFormModal({
                   updateField={updateField}
                   spoolCatalog={spoolCatalog}
                   currencySymbol={currencySymbol}
+                  availableCategories={availableCategories}
+                  globalLowStockThreshold={globalLowStockThreshold}
                 />
               </div>
 
@@ -676,7 +718,7 @@ export function SpoolFormModal({
                 disabled={isPending || !spool?.tag_uid}
               >
                 <Tag className="w-4 h-4" />
-                {t('inventory.deleteTag', 'Delete Tag')}
+                {t('inventory.clearRfid', 'Clear RFID Tag')}
               </Button>
               <Button
                 variant="secondary"

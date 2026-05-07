@@ -10,6 +10,7 @@ class APIKeyCreate(BaseModel):
     can_queue: bool = True
     can_control_printer: bool = False
     can_read_status: bool = True
+    can_access_cloud: bool = False  # Read /cloud/* on the creator's behalf — default off (#1182)
     printer_ids: list[int] | None = None  # null = all printers
     expires_at: datetime | None = None
 
@@ -21,6 +22,7 @@ class APIKeyUpdate(BaseModel):
     can_queue: bool | None = None
     can_control_printer: bool | None = None
     can_read_status: bool | None = None
+    can_access_cloud: bool | None = None
     printer_ids: list[int] | None = None
     enabled: bool | None = None
     expires_at: datetime | None = None
@@ -32,9 +34,11 @@ class APIKeyResponse(BaseModel):
     id: int
     name: str
     key_prefix: str  # First 8 chars for identification
+    user_id: int | None  # Owner — NULL on legacy keys created before per-user ownership (#1182)
     can_queue: bool
     can_control_printer: bool
     can_read_status: bool
+    can_access_cloud: bool
     printer_ids: list[int] | None
     enabled: bool
     last_used: datetime | None

@@ -569,6 +569,62 @@ describe('computeAmsMapping - nozzle filtering', () => {
 
     expect(result).toEqual([0, 4]);  // Left gets AMS0-T0, Right gets AMS1-T0
   });
+
+  // FTS (Filament Track Switch) — when present, AMS slots aren't tied to a
+  // specific extruder. The track switch routes any slot to either extruder, so
+  // the per-nozzle hard filter must NOT apply. See #1162.
+  it('ignores nozzle_id when FTS is installed', () => {
+    // Required filament asks for nozzle 1 (left). Without FTS this would force
+    // AMS 0 (which is on the left nozzle). With FTS we accept any AMS slot
+    // matching by type/color since the FTS routes it to whichever extruder.
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PETG', color: '#00FF00', used_grams: 10, nozzle_id: 1 },
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,  // Without FTS, this AMS would be left/extruder 1; ams_extruder_map
+                // is empty because the printer reports info bits 8-11 = 0xE.
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000' },
+          { id: 1, tray_type: 'PETG', tray_color: '00FF00' },
+        ],
+      },
+    ]);
+    (status as any).ams_extruder_map = {};
+    (status as any).fila_switch = {
+      installed: true,
+      in_slots: [-1, 1],
+      out_extruders: [0, 1],
+      stat: 0,
+      info: 2,
+    };
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([1]);  // Picks AMS 0 tray 1 (PETG green) regardless of nozzle
+  });
+
+  it('still applies nozzle filter when FTS object is null', () => {
+    // Sanity check: explicit null fila_switch behaves like no FTS — nozzle
+    // filter still applies on real dual-nozzle printers.
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, nozzle_id: 1 },
+      ],
+    };
+    const status = createPrinterStatus([
+      { id: 0, tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }] },
+      { id: 1, tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }] },
+    ]);
+    (status as any).ams_extruder_map = { '0': 1, '1': 0 };
+    (status as any).fila_switch = null;
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([0]);  // AMS 0 (left/extruder 1)
+  });
 });
 
 // ============================================================================

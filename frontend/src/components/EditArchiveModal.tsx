@@ -66,6 +66,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
   const { data: projects } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.getProjects(),
+    select: (rows) => [...rows].sort((a, b) => a.name.localeCompare(b.name)),
   });
 
   // Fetch all tags using the dedicated API

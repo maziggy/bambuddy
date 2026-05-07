@@ -206,7 +206,12 @@ class NotificationService:
             return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
     async def _send_ntfy(
-        self, config: dict, title: str, message: str, image_data: bytes | None = None
+        self,
+        config: dict,
+        title: str,
+        message: str,
+        image_data: bytes | None = None,
+        event_type: str | None = None,
     ) -> tuple[bool, str]:
         """Send notification via ntfy."""
         server = config.get("server", "https://ntfy.sh").rstrip("/")
@@ -222,6 +227,19 @@ class NotificationService:
         # non-ASCII characters (e.g. accented letters, CJK). Passing bytes
         # bypasses the ASCII check — ntfy handles UTF-8 headers correctly.
         headers: dict[str, str | bytes] = {"Title": title.encode("utf-8")}
+
+        # Per-event Priority header (#990). Only set when the user has
+        # explicitly mapped this event to a 1-5 value; otherwise fall through
+        # to the ntfy server's default so existing setups stay unchanged.
+        event_priorities = config.get("event_priorities") or {}
+        if event_type and isinstance(event_priorities, dict):
+            raw = event_priorities.get(event_type)
+            try:
+                priority = int(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                priority = None
+            if priority is not None and 1 <= priority <= 5:
+                headers["Priority"] = str(priority)
 
         if auth_token:
             headers["Authorization"] = f"Bearer {auth_token}"
@@ -603,7 +621,7 @@ class NotificationService:
             if provider.provider_type == "callmebot":
                 return await self._send_callmebot(config, f"{title}\n{message}")
             elif provider.provider_type == "ntfy":
-                return await self._send_ntfy(config, title, message, image_data=image_data)
+                return await self._send_ntfy(config, title, message, image_data=image_data, event_type=event_type)
             elif provider.provider_type == "pushover":
                 return await self._send_pushover(config, title, message, image_data=image_data)
             elif provider.provider_type == "telegram":
@@ -888,8 +906,12 @@ class NotificationService:
         }
 
         if archive_data:
-            if archive_data.get("print_time_seconds"):
-                variables["duration"] = self._format_duration(archive_data["print_time_seconds"])
+            # {{duration}} on completion / failure / stopped events is the *actual*
+            # elapsed time (#1198). Slicer-estimated print_time_seconds is only used
+            # as a last-resort fallback when timestamps weren't recorded.
+            duration_seconds = archive_data.get("actual_time_seconds") or archive_data.get("print_time_seconds")
+            if duration_seconds:
+                variables["duration"] = self._format_duration(duration_seconds)
             if archive_data.get("actual_filament_grams"):
                 variables["filament_grams"] = f"{archive_data['actual_filament_grams']:.1f}"
             if status == "failed" and archive_data.get("failure_reason"):
@@ -1639,6 +1661,60 @@ class NotificationService:
 
         title, message = await self._build_message_from_template(db, "queue_completed", variables)
         await self._send_to_providers(providers, title, message, db, "queue_completed", variables=variables)
+
+    # ==================== Inventory Stock Alerts ====================
+
+    async def on_stock_reorder_alert(
+        self,
+        material: str,
+        brand: str | None,
+        stock_g: float,
+        rate_g_day: float,
+        days_left: int,
+        db: AsyncSession,
+    ):
+        """Fire when an inventory SKU reaches its reorder point."""
+        providers = await self._get_providers_for_event(db, "on_stock_reorder_alert", None)
+        if not providers:
+            return
+
+        variables = {
+            "material": material,
+            "brand": brand or "",
+            "stock_g": f"{stock_g:.0f}",
+            "rate_g_day": f"{rate_g_day:.1f}",
+            "days_left": str(days_left),
+        }
+
+        title, message = await self._build_message_from_template(db, "stock_reorder_alert", variables)
+        await self._send_to_providers(providers, title, message, db, "stock_reorder_alert", variables=variables)
+
+    async def on_stock_break_alert(
+        self,
+        material: str,
+        brand: str | None,
+        stock_g: float,
+        rate_g_day: float,
+        days_left: int,
+        lead_time_days: int,
+        db: AsyncSession,
+    ):
+        """Fire when a stock break is detected (stock runs out before lead time)."""
+        providers = await self._get_providers_for_event(db, "on_stock_break_alert", None)
+        if not providers:
+            return
+
+        variables = {
+            "material": material,
+            "brand": brand or "",
+            "stock_g": f"{stock_g:.0f}",
+            "rate_g_day": f"{rate_g_day:.1f}",
+            "days_left": str(days_left),
+            "lead_time_days": str(lead_time_days),
+        }
+
+        title, message = await self._build_message_from_template(db, "stock_break_alert", variables)
+        await self._send_to_providers(providers, title, message, db, "stock_break_alert", variables=variables)
 
     async def _queue_for_digest(
         self,

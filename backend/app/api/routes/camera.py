@@ -31,6 +31,12 @@ from backend.app.services.camera import (
     read_next_chamber_frame,
     test_camera_connection,
 )
+from backend.app.services.camera_fanout import (
+    MjpegBroadcaster,
+    get_or_create_broadcaster,
+    iter_subscriber,
+    shutdown_broadcaster,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
@@ -552,8 +558,6 @@ async def camera_stream(
         printer_id: Printer ID
         fps: Target frames per second (default: 10, max: 30)
     """
-    import uuid
-
     printer = await get_printer_or_404(printer_id, db)
 
     # Check for external camera first
@@ -602,12 +606,6 @@ async def camera_stream(
     else:
         fps = min(max(fps, 1), 30)
 
-    # Generate unique stream ID for tracking
-    stream_id = f"{printer_id}-{uuid.uuid4().hex[:8]}"
-
-    # Create disconnect event that will be set when client disconnects
-    disconnect_event = asyncio.Event()
-
     # Choose the appropriate stream generator based on model
     if is_chamber_image_model(printer.model):
         stream_generator = generate_chamber_mjpeg_stream
@@ -616,80 +614,80 @@ async def camera_stream(
         stream_generator = generate_rtsp_mjpeg_stream
         logger.info("Using RTSP protocol for %s", printer.model)
 
-    # Track stream start time
+    # Track stream start time. Set only if absent so the value reflects when
+    # the SHARED upstream first started streaming, not when each new viewer
+    # attached — otherwise /camera/status would report stream_uptime jumping
+    # backward whenever a second viewer joins. The upstream generator's
+    # finally clears this entry when the upstream actually ends.
     import time
 
-    _stream_start_times[printer_id] = time.time()
+    _stream_start_times.setdefault(printer_id, time.time())
 
-    async def _kill_stream_process(sid: str):
-        """Terminate+kill the ffmpeg process for a stream ID."""
-        proc = _active_streams.get(sid)
-        if proc and proc.returncode is None:
-            try:
-                proc.terminate()
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=2.0)
-                except TimeoutError:
-                    proc.kill()
-                    await proc.wait()
-            except (ProcessLookupError, OSError):
-                pass
+    # Fan-out broadcaster (#1089): one upstream connection per printer, shared
+    # across all viewers. Most Bambu printers only allow a single concurrent
+    # camera connection, so opening the same printer in two tabs would
+    # otherwise kick the first viewer off. The broadcaster owns the single
+    # upstream and the per-viewer disconnect handling.
+    #
+    # Note: the upstream's fps is fixed by the first viewer who creates the
+    # broadcaster. Concurrent viewers share that rate; new viewers after
+    # teardown create a fresh broadcaster at their requested fps.
+    fanout_key = f"printer-{printer_id}"
+    upstream_stream_id = f"{printer_id}-fanout"
 
-    async def _monitor_disconnect():
-        """Background task: poll for client disconnect independently of frame loop."""
+    def _factory(disconnect_event: asyncio.Event):
+        # Re-bind locals into the closure so the async generator below sees
+        # them — disconnect_event is owned by the broadcaster and signalled
+        # when the last subscriber leaves (after the grace window).
+        return stream_generator(
+            ip_address=printer.ip_address,
+            access_code=printer.access_code,
+            model=printer.model,
+            fps=fps,
+            stream_id=upstream_stream_id,
+            disconnect_event=disconnect_event,
+            printer_id=printer_id,
+        )
+
+    # Subscribe with a one-shot retry to close a tiny race: the grace-window
+    # teardown can flip the broadcaster to `stopped=True` between the registry
+    # lookup and our subscribe call. The retry forces the registry to mint a
+    # fresh broadcaster (since the now-stopped one is replaced), and the second
+    # subscribe is guaranteed to land on it before any teardown can fire.
+    broadcaster: MjpegBroadcaster = await get_or_create_broadcaster(fanout_key, _factory)
+    try:
+        queue = await broadcaster.subscribe()
+    except RuntimeError:
+        broadcaster = await get_or_create_broadcaster(fanout_key, _factory)
+        queue = await broadcaster.subscribe()
+    logger.info(
+        "Camera viewer attached to %s (subscribers=%d)",
+        fanout_key,
+        broadcaster.subscriber_count,
+    )
+
+    async def _is_disconnected() -> bool:
         try:
-            while not disconnect_event.is_set():
-                await asyncio.sleep(2)
-                if await request.is_disconnected():
-                    logger.info("Disconnect monitor: client gone (stream %s)", stream_id)
-                    disconnect_event.set()
-                    # Kill ffmpeg process (RTSP streams)
-                    await _kill_stream_process(stream_id)
-                    # Close chamber stream connection if applicable
-                    chamber = _active_chamber_streams.get(stream_id)
-                    if chamber:
-                        try:
-                            chamber[1].close()
-                        except OSError:
-                            pass
-                    break
-        except asyncio.CancelledError:
-            pass
+            return await request.is_disconnected()
+        except Exception:
+            # Older starlette/uvicorn can raise during teardown — treat that
+            # as "client gone" so the subscriber cleanly unsubscribes.
+            return True
 
-    monitor_task = asyncio.create_task(_monitor_disconnect())
+    def _log_detach(remaining: int) -> None:
+        logger.info("Camera viewer detached from %s (subscribers=%d)", fanout_key, remaining)
 
-    async def stream_with_disconnect_check():
-        """Wrapper generator that monitors for client disconnect."""
-        try:
-            async for chunk in stream_generator(
-                ip_address=printer.ip_address,
-                access_code=printer.access_code,
-                model=printer.model,
-                fps=fps,
-                stream_id=stream_id,
-                disconnect_event=disconnect_event,
-                printer_id=printer_id,
-            ):
-                # Check if client is still connected
-                if disconnect_event.is_set() or await request.is_disconnected():
-                    logger.info("Client disconnected detected for stream %s", stream_id)
-                    disconnect_event.set()
-                    break
-                yield chunk
-        except asyncio.CancelledError:
-            logger.info("Stream %s cancelled", stream_id)
-            disconnect_event.set()
-        except GeneratorExit:
-            logger.info("Stream %s generator closed", stream_id)
-            disconnect_event.set()
-        finally:
-            disconnect_event.set()
-            monitor_task.cancel()
-            # Give a moment for the inner generator to clean up
-            await asyncio.sleep(0.1)
+    async def _generate():
+        async for chunk in iter_subscriber(
+            broadcaster,
+            queue,
+            is_disconnected=_is_disconnected,
+            on_unsubscribe=_log_detach,
+        ):
+            yield chunk
 
     return StreamingResponse(
-        stream_with_disconnect_check(),
+        _generate(),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -710,6 +708,12 @@ async def stop_camera_stream(
     Accepts both GET and POST (POST for sendBeacon compatibility).
     """
     stopped = 0
+
+    # Tear down the fan-out broadcaster first (#1089). This cleanly notifies
+    # all subscribed viewers and asks the upstream generator to stop
+    # reconnecting before we fall back to forcefully killing the process below.
+    if await shutdown_broadcaster(f"printer-{printer_id}"):
+        logger.info("Shut down camera fan-out broadcaster for printer %s", printer_id)
 
     # Stop ffmpeg/RTSP streams
     to_remove = []
@@ -788,7 +792,12 @@ async def camera_snapshot(
     if printer.external_camera_enabled and printer.external_camera_url:
         from backend.app.services.external_camera import capture_frame
 
-        frame_data = await capture_frame(printer.external_camera_url, printer.external_camera_type, timeout=15)
+        frame_data = await capture_frame(
+            printer.external_camera_url,
+            printer.external_camera_type,
+            timeout=15,
+            snapshot_url=printer.external_camera_snapshot_url,
+        )
         if not frame_data:
             raise HTTPException(
                 status_code=503,
@@ -1036,6 +1045,7 @@ async def check_plate_empty(
         external_camera_type=printer.external_camera_type if printer.external_camera_enabled else None,
         use_external=use_external,
         roi=roi,
+        external_camera_snapshot_url=printer.external_camera_snapshot_url if printer.external_camera_enabled else None,
     )
 
     # Get reference count for the response
@@ -1120,6 +1130,7 @@ async def calibrate_plate_detection(
         external_camera_url=printer.external_camera_url if printer.external_camera_enabled else None,
         external_camera_type=printer.external_camera_type if printer.external_camera_enabled else None,
         use_external=use_external,
+        external_camera_snapshot_url=printer.external_camera_snapshot_url if printer.external_camera_enabled else None,
     )
 
     if light_warning and success:

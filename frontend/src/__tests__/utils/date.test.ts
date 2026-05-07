@@ -296,14 +296,15 @@ describe('formatTimeOnly', () => {
   it('formats time with 12h format', () => {
     const date = new Date(2025, 5, 15, 14, 30);
     const result = formatTimeOnly(date, '12h');
-    expect(result).toMatch(/2:30|02:30/);
+    // Locale-agnostic: separator is "." in en_DK, " " (NBSP) in some, ":" elsewhere.
+    expect(result).toMatch(/\b0?2\D+30\b/);
     expect(result.toUpperCase()).toContain('PM');
   });
 
   it('formats time with 24h format', () => {
     const date = new Date(2025, 5, 15, 14, 30);
     const result = formatTimeOnly(date, '24h');
-    expect(result).toContain('14:30');
+    expect(result).toMatch(/\b14\D+30\b/);
   });
 });
 

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
   Loader2, Check, AlertTriangle, Eye, EyeOff, Info,
-  ChevronDown, ChevronRight, ArrowRightLeft, Trash2,
+  ChevronDown, ChevronRight, ArrowRightLeft, Trash2, ShieldCheck, Copy,
 } from 'lucide-react';
 import { api, multiVirtualPrinterApi } from '../api/client';
 import type { VirtualPrinterConfig } from '../api/client';
@@ -43,9 +43,63 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState(printer.remote_interface_ip || '');
   const [localModel, setLocalModel] = useState(printer.model || '');
   const [localAutoDispatch, setLocalAutoDispatch] = useState(printer.auto_dispatch ?? true);
+  const [localQueueForceColorMatch, setLocalQueueForceColorMatch] = useState(printer.queue_force_color_match ?? false);
+  const [localTailscaleDisabled, setLocalTailscaleDisabled] = useState(printer.tailscale_disabled ?? true);
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [fqdnCopied, setFqdnCopied] = useState(false);
+
+  // Host-level Tailscale identity (same for every VP) — shown inline on the card when
+  // the user has marked this VP as "exposed over Tailscale". Cert handling does NOT
+  // depend on this toggle; the slicer trusts the bambuddy CA the user imports once.
+  const { data: tailscaleStatus } = useQuery({
+    queryKey: ['tailscale-status'],
+    queryFn: multiVirtualPrinterApi.getTailscaleStatus,
+    enabled: !localTailscaleDisabled,
+    staleTime: 60_000,
+  });
+  const tailscaleFqdn = tailscaleStatus?.available ? tailscaleStatus.fqdn : '';
+  const tailscaleIp = tailscaleStatus?.available ? tailscaleStatus.tailscale_ips?.[0] ?? '' : '';
+
+  const handleCopyFqdn = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const fqdn = tailscaleFqdn;
+    if (!fqdn) return;
+    let ok = false;
+    // Modern API — only works in secure contexts (HTTPS / localhost).
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(fqdn);
+        ok = true;
+      } catch {
+        // fall through to legacy
+      }
+    }
+    // Legacy fallback for HTTP (common when Bambuddy is reached over LAN / tailnet IP).
+    if (!ok) {
+      const ta = document.createElement('textarea');
+      ta.value = fqdn;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      try {
+        ta.select();
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      } finally {
+        if (ta.parentNode) ta.parentNode.removeChild(ta);
+      }
+    }
+    if (ok) {
+      setFqdnCopied(true);
+      showToast(t('printers.copied'));
+      setTimeout(() => setFqdnCopied(false), 2000);
+    } else {
+      showToast(t('virtualPrinter.toast.copyFailed'), 'error');
+    }
+  };
 
   // Sync local state when props change (e.g., after backend auto-disable)
   useEffect(() => {
@@ -58,6 +112,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalRemoteInterfaceIp(printer.remote_interface_ip || '');
       setLocalModel(printer.model || '');
       setLocalAutoDispatch(printer.auto_dispatch ?? true);
+      setLocalQueueForceColorMatch(printer.queue_force_color_match ?? false);
+      setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
     }
   }, [printer, pendingAction]);
 
@@ -87,6 +143,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalMode((printer.mode === 'queue' ? 'review' : printer.mode) as LocalMode);
       setLocalTargetPrinterId(printer.target_printer_id);
       setLocalBindIp(printer.bind_ip || '');
+      setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
       setPendingAction(null);
     },
   });
@@ -241,14 +298,38 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 onKeyDown={(e) => e.key === 'Enter' && handleNameChange()}
                 className="flex-1 text-sm text-white bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-1.5 focus:border-bambu-green focus:outline-none"
               />
-              <span className="text-xs text-bambu-gray font-mono">{printer.serial}</span>
               <button
                 onClick={() => setShowDeleteConfirm(true)}
-                className="p-1.5 text-bambu-gray hover:text-red-400 transition-colors"
+                className="p-1.5 text-bambu-gray hover:text-red-400 transition-colors flex-shrink-0"
                 title={t('common.delete')}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* Tailscale identity (host-level) + serial — compact info row.
+                Shown only when this VP is marked Tailscale-exposed AND the daemon is up. */}
+            <div className="flex items-center gap-2 -mt-2">
+              {tailscaleFqdn && (
+                <span className="flex items-center gap-1 text-green-400/70 min-w-0">
+                  <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="font-mono text-xs truncate">
+                    {tailscaleIp ? `${tailscaleIp} (${tailscaleFqdn})` : tailscaleFqdn}
+                  </span>
+                  <button
+                    onClick={handleCopyFqdn}
+                    className="p-0.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors flex-shrink-0"
+                    title={fqdnCopied ? t('printers.copied') : t('printers.copyToClipboard')}
+                  >
+                    {fqdnCopied ? (
+                      <Check className="w-3.5 h-3.5 text-bambu-green" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </span>
+              )}
+              <span className="text-xs text-bambu-gray font-mono ml-auto flex-shrink-0">{printer.serial}</span>
             </div>
 
             {/* Mode */}
@@ -283,8 +364,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
             {/* Auto-dispatch toggle - only for print_queue mode */}
             {localMode === 'print_queue' && (
               <div className="pt-2 border-t border-bambu-dark-tertiary">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
                     <div className="text-white text-sm font-medium">{t('virtualPrinter.autoDispatch.title')}</div>
                     <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.autoDispatch.description')}</div>
                   </div>
@@ -309,6 +390,64 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 </div>
               </div>
             )}
+
+            {/* Force-color-match toggle - only for print_queue mode (#1188) */}
+            {localMode === 'print_queue' && (
+              <div className="pt-2 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-white text-sm font-medium">{t('virtualPrinter.queueForceColorMatch.title')}</div>
+                    <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.queueForceColorMatch.description')}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newVal = !localQueueForceColorMatch;
+                      setLocalQueueForceColorMatch(newVal);
+                      setPendingAction('queueForceColorMatch');
+                      updateMutation.mutate({ queue_force_color_match: newVal });
+                    }}
+                    disabled={pendingAction === 'queueForceColorMatch'}
+                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
+                      localQueueForceColorMatch ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                    } ${pendingAction === 'queueForceColorMatch' ? 'opacity-50' : ''}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        localQueueForceColorMatch ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tailscale toggle */}
+            <div className="pt-2 border-t border-bambu-dark-tertiary">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-white text-sm font-medium">{t('virtualPrinter.tailscaleDisabled.title')}</div>
+                  <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.tailscaleDisabled.description')}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const newVal = !localTailscaleDisabled;
+                    setLocalTailscaleDisabled(newVal);
+                    setPendingAction('tailscaleDisabled');
+                    updateMutation.mutate({ tailscale_disabled: newVal });
+                  }}
+                  disabled={pendingAction === 'tailscaleDisabled'}
+                  className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${
+                    !localTailscaleDisabled ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                  } ${pendingAction === 'tailscaleDisabled' ? 'opacity-50' : ''}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                      !localTailscaleDisabled ? 'translate-x-5' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
 
             {/* Printer Model - for non-proxy modes */}
             {localMode !== 'proxy' && (

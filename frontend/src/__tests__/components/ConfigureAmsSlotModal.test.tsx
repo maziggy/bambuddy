@@ -185,24 +185,119 @@ describe('ConfigureAmsSlotModal', () => {
     expect(colorInput).toHaveValue('Red');
   });
 
-  it('derives tray_info_idx from base_id when filament_id is null', async () => {
-    // Mock the detail API to return base_id but no filament_id
+  it('sends PFUS setting_id as tray_info_idx when cloud detail has filament_id: null (#1053)', async () => {
+    // Cloud returns a user preset that inherits from a generic Bambu base and
+    // has no distinct filament_id of its own — this is how Bambu Cloud responds
+    // for custom presets built on top of "Generic ABS @BBL H2D" etc.
     (api.getCloudSettingDetail as ReturnType<typeof vi.fn>).mockResolvedValue({
       filament_id: null,
-      base_id: 'GFSL05_09',
+      base_id: 'GFSB99_07',
       name: '# Overture Matte PLA @BBL H2D',
     });
 
-    render(<ConfigureAmsSlotModal {...defaultProps} />);
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'PFUScd84f663d2c2ef',
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
 
-    // Wait for presets to load
     await waitFor(() => {
-      expect(api.getCloudSettings).toHaveBeenCalled();
+      expect(screen.getByText('# Overture Matte PLA @BBL H2D')).toBeInTheDocument();
     });
 
-    // Select a user preset (one without filament_id)
-    // Find and click the preset - this would require the preset to be in the list
-    // The actual tray_info_idx derivation happens during the configure mutation
+    fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+
+    await waitFor(() => {
+      expect(api.configureAmsSlot).toHaveBeenCalled();
+    });
+
+    const payload = (api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3];
+    // Before the fix, this collapsed to 'GFB99' (Generic ABS's filament_id),
+    // which made OrcaSlicer/BambuStudio Sync Filaments resolve to "Generic ABS".
+    expect(payload.tray_info_idx).toBe('PFUScd84f663d2c2ef');
+    expect(payload.setting_id).toBe('PFUScd84f663d2c2ef');
+  });
+
+  it('uses cloud detail filament_id when present', async () => {
+    (api.getCloudSettingDetail as ReturnType<typeof vi.fn>).mockResolvedValue({
+      filament_id: 'P285e239',
+      base_id: 'GFSB99_07',
+      name: '# Overture Matte PLA @BBL H2D',
+    });
+
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'PFUScd84f663d2c2ef',
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('# Overture Matte PLA @BBL H2D')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+
+    await waitFor(() => {
+      expect(api.configureAmsSlot).toHaveBeenCalled();
+    });
+
+    const payload = (api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3];
+    expect(payload.tray_info_idx).toBe('P285e239');
+    expect(payload.setting_id).toBe('PFUScd84f663d2c2ef');
+  });
+
+  it('sends short GF filament_id for Bambu GFS* presets (cloud detail not consulted)', async () => {
+    // Bambu-provided presets (GFS*) convert the setting_id → filament_id locally.
+    // The cloud detail endpoint must NOT be consulted for them; the rewrite that
+    // fixed #1053 preserves this pre-existing shortcut.
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'GFSL05_09',
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Bambu PLA Basic @BBL X1C')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+
+    await waitFor(() => {
+      expect(api.configureAmsSlot).toHaveBeenCalled();
+    });
+
+    const payload = (api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3];
+    expect(payload.tray_info_idx).toBe('GFL05');
+    expect(payload.setting_id).toBe('GFSL05_09');
+    expect(api.getCloudSettingDetail).not.toHaveBeenCalled();
+  });
+
+  it('keeps default PFUS tray_info_idx when cloud detail fetch fails', async () => {
+    // Network/5xx from /cloud/settings/{id} must not abort the configure flow
+    // nor leave tray_info_idx empty — we fall back to the setting_id default.
+    (api.getCloudSettingDetail as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('cloud unreachable')
+    );
+
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'PFUScd84f663d2c2ef',
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('# Overture Matte PLA @BBL H2D')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+
+    await waitFor(() => {
+      expect(api.configureAmsSlot).toHaveBeenCalled();
+    });
+
+    const payload = (api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3];
+    expect(payload.tray_info_idx).toBe('PFUScd84f663d2c2ef');
+    expect(payload.setting_id).toBe('PFUScd84f663d2c2ef');
   });
 
   it('renders configure slot button', async () => {

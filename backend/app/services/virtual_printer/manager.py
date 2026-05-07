@@ -9,14 +9,19 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from backend.app.core.config import settings as app_settings
 from backend.app.services.virtual_printer.bind_server import BindServer
 from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer
+from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
-from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
+from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager, TCPProxy
+
+if TYPE_CHECKING:
+    from backend.app.services.printer_manager import PrinterManager
 
 logger = logging.getLogger(__name__)
 
@@ -110,10 +115,13 @@ class VirtualPrinterInstance:
         target_printer_serial: str = "",
         target_printer_id: int | None = None,
         auto_dispatch: bool = True,
+        queue_force_color_match: bool = False,
         bind_ip: str = "",
         remote_interface_ip: str = "",
+        tailscale_disabled: bool = True,
         base_dir: Path,
         session_factory: Callable | None = None,
+        printer_manager: "PrinterManager | None" = None,
     ):
         self.id = vp_id
         self.name = name
@@ -125,9 +133,12 @@ class VirtualPrinterInstance:
         self.target_printer_serial = target_printer_serial
         self.target_printer_id = target_printer_id
         self.auto_dispatch = auto_dispatch
+        self.queue_force_color_match = queue_force_color_match
         self.bind_ip = bind_ip
         self.remote_interface_ip = remote_interface_ip
+        self.tailscale_disabled = tailscale_disabled
         self._session_factory = session_factory
+        self._printer_manager = printer_manager
 
         # Directories
         self.upload_dir = base_dir / "uploads" / str(vp_id)
@@ -153,6 +164,8 @@ class VirtualPrinterInstance:
         self._proxy: SlicerProxyManager | None = None
         self._ftp: VirtualPrinterFTPServer | None = None
         self._mqtt: SimpleMQTTServer | None = None
+        self._mqtt_bridge: MQTTBridge | None = None
+        self._rtsp_proxy: TCPProxy | None = None
         self._bind: BindServer | None = None
         self._ssdp: VirtualPrinterSSDPServer | None = None
         self._ssdp_proxy: SSDPProxy | None = None
@@ -228,9 +241,12 @@ class VirtualPrinterInstance:
             return
 
         try:
+            from backend.app.api.routes.settings import get_setting
             from backend.app.services.archive import ArchiveService
 
             async with self._session_factory() as db:
+                name_source = await get_setting(db, "virtual_printer_archive_name_source")
+                prefer_filename = name_source == "filename"
                 service = ArchiveService(db)
                 archive = await service.archive_print(
                     printer_id=None,
@@ -240,6 +256,7 @@ class VirtualPrinterInstance:
                         "source": "virtual_printer",
                         "source_ip": source_ip,
                     },
+                    prefer_filename_for_name=prefer_filename,
                 )
                 if archive:
                     logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
@@ -267,6 +284,22 @@ class VirtualPrinterInstance:
                 pass
             return
 
+        # Peek at the 3MF for the embedded title BEFORE we hand it off to the
+        # DB. Storing it now means the /pending-uploads/ list doesn't have to
+        # reopen every 3MF on every render to keep the review card and the
+        # eventual archive name in sync (#1152 follow-up). Failure to parse is
+        # not fatal — the response model falls back to the filename stem.
+        metadata_print_name: str | None = None
+        try:
+            from backend.app.services.archive import ThreeMFParser
+
+            parsed = ThreeMFParser(file_path).parse()
+            raw_name = parsed.get("print_name")
+            if isinstance(raw_name, str) and raw_name.strip():
+                metadata_print_name = raw_name.strip()[:255]
+        except Exception as e:
+            logger.debug("[VP %s] Metadata title peek failed for %s: %s", self.name, file_path.name, e)
+
         try:
             from backend.app.models.pending_upload import PendingUpload
 
@@ -278,6 +311,7 @@ class VirtualPrinterInstance:
                     source_ip=source_ip,
                     status="pending",
                     uploaded_at=datetime.now(timezone.utc),
+                    metadata_print_name=metadata_print_name,
                 )
                 db.add(pending)
                 await db.commit()
@@ -301,10 +335,16 @@ class VirtualPrinterInstance:
             return
 
         try:
+            import json
+
+            from backend.app.api.routes.settings import get_setting
             from backend.app.models.print_queue import PrintQueueItem
             from backend.app.services.archive import ArchiveService
+            from backend.app.services.filament_requirements import extract_filament_requirements
 
             async with self._session_factory() as db:
+                name_source = await get_setting(db, "virtual_printer_archive_name_source")
+                prefer_filename = name_source == "filename"
                 service = ArchiveService(db)
                 archive = await service.archive_print(
                     printer_id=None,
@@ -314,6 +354,7 @@ class VirtualPrinterInstance:
                         "source": "virtual_printer",
                         "source_ip": source_ip,
                     },
+                    prefer_filename_for_name=prefer_filename,
                 )
                 if archive:
                     logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
@@ -322,6 +363,38 @@ class VirtualPrinterInstance:
                     if not self.target_printer_id and self.model:
                         target_model = VIRTUAL_PRINTER_MODELS.get(self.model)
                     plate_id = self._extract_plate_id(file_path)
+
+                    # Parse the 3MF for per-slot filament requirements (#1188).
+                    # The manual /print-queue/ POST flow does this at queue-add
+                    # time; the VP path used to skip it, so the scheduler fell
+                    # through to model-only matching and dispatched onto whatever
+                    # printer happened to be free regardless of loaded colour.
+                    # required_filament_types is populated unconditionally — it's
+                    # cheap, lets the scheduler reject obvious mis-matches even
+                    # without force_color_match. filament_overrides only carries
+                    # force_color_match=True when the per-VP setting is on, so
+                    # upgraders keep the old behaviour by default.
+                    required_filament_types_json: str | None = None
+                    filament_overrides_json: str | None = None
+                    requirements = extract_filament_requirements(file_path, plate_id)
+                    if requirements:
+                        types = sorted({r["type"] for r in requirements if r.get("type")})
+                        if types:
+                            required_filament_types_json = json.dumps(types)
+                        if self.queue_force_color_match:
+                            overrides = [
+                                {
+                                    "slot_id": r["slot_id"],
+                                    "type": r.get("type", ""),
+                                    "color": r.get("color", ""),
+                                    "force_color_match": True,
+                                }
+                                for r in requirements
+                                if r.get("type") and r.get("color")
+                            ]
+                            if overrides:
+                                filament_overrides_json = json.dumps(overrides)
+
                     queue_item = PrintQueueItem(
                         printer_id=self.target_printer_id,
                         target_model=target_model,
@@ -330,6 +403,8 @@ class VirtualPrinterInstance:
                         position=1,
                         status="pending",
                         manual_start=not self.auto_dispatch,
+                        required_filament_types=required_filament_types_json,
+                        filament_overrides=filament_overrides_json,
                     )
                     db.add(queue_item)
                     await db.commit()
@@ -366,11 +441,23 @@ class VirtualPrinterInstance:
 
     # -- Service lifecycle --
 
+    def _resolve_cert_and_advertise(self) -> tuple[Path, Path, str]:
+        """Return (cert_path, key_path, advertise_address) for TLS services.
+
+        Always uses the self-signed cert chain (signed by `bbl_ca`). The user
+        imports `bbl_ca.crt` once into the slicer; per-VP certs validate from
+        there. Tailscale exposure is handled by the user picking the Tailscale
+        IP in the bind_ip dropdown.
+        """
+        cert_path, key_path = self.generate_certificates()
+        advertise = self.remote_interface_ip or self.bind_ip or ""
+        return cert_path, key_path, advertise
+
     async def start_server(self) -> None:
         """Start server-mode services (FTP, MQTT, SSDP, Bind) on this VP's bind_ip."""
         logger.info("[VP %s] Starting server-mode services on %s", self.name, self.bind_ip)
 
-        cert_path, key_path = self.generate_certificates()
+        cert_path, key_path, advertise_addr = self._resolve_cert_and_advertise()
         bind_addr = self.bind_ip or "0.0.0.0"  # nosec B104
 
         async def run_with_logging(coro, svc_name):
@@ -416,6 +503,44 @@ class VirtualPrinterInstance:
             )
         )
 
+        # MQTT bridge — fans out the target printer's pushes to slicers connected
+        # to this VP and forwards their commands back to the printer. Only meaningful
+        # when a target printer is configured AND printer_manager was injected (it
+        # always is at runtime; tests may omit it).
+        if self.target_printer_id is not None and self._printer_manager is not None:
+            self._mqtt_bridge = MQTTBridge(
+                vp_id=self.id,
+                vp_name=self.name,
+                vp_serial=self.serial,
+                target_printer_id=self.target_printer_id,
+                mqtt_server=self._mqtt,
+                printer_manager=self._printer_manager,
+            )
+            self._mqtt.set_bridge(self._mqtt_bridge)
+            await self._mqtt_bridge.start()
+
+            # RTSPS camera passthrough on port 322. BambuStudio's camera button
+            # connects to the device IP it bound on (the VP), not the IP in
+            # `ipcam.rtsp_url`. Without a listener on <bind_ip>:322 the slicer
+            # gets connection refused → "LAN connection failed". Same raw TCP
+            # pass-through used by SlicerProxyManager in proxy mode.
+            target_client = self._printer_manager.get_client(self.target_printer_id)
+            target_ip = getattr(target_client, "ip_address", None) if target_client else None
+            if target_ip:
+                self._rtsp_proxy = TCPProxy(
+                    name="RTSP",
+                    listen_port=322,
+                    target_host=target_ip,
+                    target_port=322,
+                    bind_address=bind_addr,
+                )
+                self._tasks.append(
+                    asyncio.create_task(
+                        run_with_logging(self._rtsp_proxy.start(), "RTSP"),
+                        name=f"vp_{self.id}_rtsp",
+                    )
+                )
+
         # Bind server
         self._bind = BindServer(
             serial=self.serial,
@@ -432,12 +557,13 @@ class VirtualPrinterInstance:
             )
         )
 
-        # SSDP server
+        # SSDP server — advertise_addr is the Tailscale FQDN when available,
+        # otherwise the bind/remote IP (existing behaviour)
         self._ssdp = VirtualPrinterSSDPServer(
             name=self.name,
             serial=self.serial,
             model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
-            advertise_ip=self.remote_interface_ip or self.bind_ip or "",
+            advertise_ip=advertise_addr,
             bind_ip=bind_addr,
         )
         self._tasks.append(
@@ -451,6 +577,20 @@ class VirtualPrinterInstance:
 
     async def stop_server(self) -> None:
         """Stop server-mode services."""
+        if self._mqtt_bridge:
+            try:
+                await self._mqtt_bridge.stop()
+            except Exception:
+                logger.exception("[VP %s] MQTT bridge stop failed", self.name)
+            if self._mqtt:
+                self._mqtt.set_bridge(None)
+            self._mqtt_bridge = None
+        if self._rtsp_proxy:
+            try:
+                await self._rtsp_proxy.stop()
+            except Exception:
+                logger.exception("[VP %s] RTSP proxy stop failed", self.name)
+            self._rtsp_proxy = None
         if self._ftp:
             await self._ftp.stop()
             self._ftp = None
@@ -469,7 +609,7 @@ class VirtualPrinterInstance:
         """Start proxy mode services for this instance."""
         logger.info("[VP %s] Starting proxy mode to %s", self.name, self.target_printer_ip)
 
-        cert_path, key_path = self.generate_certificates()
+        cert_path, key_path, _ = self._resolve_cert_and_advertise()
 
         self._proxy = SlicerProxyManager(
             target_host=self.target_printer_ip,
@@ -583,6 +723,7 @@ class VirtualPrinterManager:
 
     def __init__(self):
         self._session_factory: Callable | None = None
+        self._printer_manager: PrinterManager | None = None
         self._instances: dict[int, VirtualPrinterInstance] = {}
 
         # Directories
@@ -606,6 +747,10 @@ class VirtualPrinterManager:
     def set_session_factory(self, session_factory: Callable) -> None:
         """Set the database session factory."""
         self._session_factory = session_factory
+
+    def set_printer_manager(self, printer_manager: "PrinterManager") -> None:
+        """Inject the global printer_manager so non-proxy VPs can mirror their target's MQTT stream."""
+        self._printer_manager = printer_manager
 
     @property
     def is_enabled(self) -> bool:
@@ -695,6 +840,7 @@ class VirtualPrinterManager:
                     auto_dispatch=vp.auto_dispatch,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
+                    tailscale_disabled=vp.tailscale_disabled,
                     base_dir=self._base_dir,
                     session_factory=self._session_factory,
                 )
@@ -711,10 +857,13 @@ class VirtualPrinterManager:
                     serial_suffix=vp.serial_suffix,
                     target_printer_id=vp.target_printer_id,
                     auto_dispatch=vp.auto_dispatch,
+                    queue_force_color_match=vp.queue_force_color_match,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
+                    tailscale_disabled=vp.tailscale_disabled,
                     base_dir=self._base_dir,
                     session_factory=self._session_factory,
+                    printer_manager=self._printer_manager,
                 )
                 self._instances[vp.id] = instance
                 await instance.start_server()

@@ -108,12 +108,11 @@ class SetupRequest(BaseModel):
     admin_username: str | None = Field(default=None, max_length=150)
     admin_password: str | None = Field(default=None, max_length=256)
 
-    @field_validator("admin_password")
-    @classmethod
-    def validate_admin_password(cls, v: str | None) -> str | None:
-        if v is not None:
-            _validate_password_complexity(v)
-        return v
+    # Password complexity is NOT validated at the schema layer. When re-enabling auth
+    # with an existing admin user (or when LDAP is the auth backend), the frontend
+    # still sends whatever is in the password field but the route ignores it.
+    # Enforcing complexity here would reject those legitimate flows. The route body
+    # applies the check only when a brand-new local admin is actually being created.
 
 
 class SetupResponse(BaseModel):
@@ -297,6 +296,19 @@ class AdminDisable2FARequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+AUTO_LINK_REQUIREMENTS_ERROR = (
+    "auto_link_existing_accounts requires require_email_verified=True when email_claim='email'"
+)
+
+
+def _validate_email_claim_name(v: str) -> str:
+    # Accepts only alphanumeric/underscore/hyphen claim names starting with a letter —
+    # prevents log injection and limits the attack surface of operator-supplied claim names.
+    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_\-]{0,63}", v):
+        raise ValueError("Invalid claim name")
+    return v
+
+
 def _validate_icon_url(v: str | None) -> str | None:
     """Reject non-HTTPS icon URLs to prevent SSRF / mixed-content issues."""
     if v is None:
@@ -356,26 +368,45 @@ class OIDCProviderCreate(BaseModel):
     is_enabled: bool = True
     auto_create_users: bool = False
     auto_link_existing_accounts: bool = False  # M-2: conservative default, opt-in only
+    email_claim: str = Field(default="email", max_length=64)
+    require_email_verified: bool = True
     icon_url: str | None = None
+    default_group_id: int | None = None
 
     @field_validator("issuer_url")
     @classmethod
     def validate_issuer_url(cls, v: str) -> str:
         result = _validate_issuer_url(v)
-        assert result is not None
+        if result is None:
+            raise ValueError("issuer_url is required")
         return result
 
     @field_validator("scopes")
     @classmethod
     def validate_scopes(cls, v: str) -> str:
         result = _validate_scopes(v)
-        assert result is not None
+        if result is None:
+            raise ValueError("scopes is required")
         return result
+
+    @field_validator("email_claim")
+    @classmethod
+    def validate_email_claim(cls, v: str) -> str:
+        return _validate_email_claim_name(v)
 
     @field_validator("icon_url")
     @classmethod
     def validate_icon_url(cls, v: str | None) -> str | None:
         return _validate_icon_url(v)
+
+    # SEC-1: auto_link with email_claim='email' requires require_email_verified=True.
+    # Fall B (require_email_verified=False + email_claim='email') accepts absent email_verified → account-takeover risk.
+    # Fall C (custom claim != 'email') is safe: no email_verified gate on that path regardless of require_email_verified.
+    @model_validator(mode="after")
+    def check_auto_link_requires_verified(self) -> "OIDCProviderCreate":
+        if self.auto_link_existing_accounts and self.email_claim == "email" and not self.require_email_verified:
+            raise ValueError(AUTO_LINK_REQUIREMENTS_ERROR)
+        return self
 
 
 class OIDCProviderUpdate(BaseModel):
@@ -393,17 +424,41 @@ class OIDCProviderUpdate(BaseModel):
     is_enabled: bool | None = None
     auto_create_users: bool | None = None
     auto_link_existing_accounts: bool | None = None
+    email_claim: str | None = Field(default=None, max_length=64)
+    require_email_verified: bool | None = None
     icon_url: str | None = None
+    default_group_id: int | None = None
 
     @field_validator("scopes")
     @classmethod
     def validate_scopes(cls, v: str | None) -> str | None:
         return _validate_scopes(v)
 
+    @field_validator("email_claim")
+    @classmethod
+    def validate_email_claim(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _validate_email_claim_name(v)
+
     @field_validator("icon_url")
     @classmethod
     def validate_icon_url(cls, v: str | None) -> str | None:
         return _validate_icon_url(v)
+
+    # SEC-1 (schema-level): blocks only when auto_link=True + email_claim='email' + require_email_verified=False
+    # arrive in the same request. email_claim=None means the request leaves it unchanged (still 'email' by default),
+    # so that is also treated as 'email'. Partial updates spanning two requests are caught by the
+    # Combined-State-Guard in the route handler after the setattr loop.
+    @model_validator(mode="after")
+    def check_auto_link_requires_verified(self) -> "OIDCProviderUpdate":
+        if (
+            self.auto_link_existing_accounts is True
+            and self.require_email_verified is False
+            and (self.email_claim is None or self.email_claim == "email")
+        ):
+            raise ValueError(AUTO_LINK_REQUIREMENTS_ERROR)
+        return self
 
 
 class OIDCProviderResponse(BaseModel):
@@ -415,7 +470,10 @@ class OIDCProviderResponse(BaseModel):
     is_enabled: bool
     auto_create_users: bool
     auto_link_existing_accounts: bool = False
+    email_claim: str = "email"
+    require_email_verified: bool = True
     icon_url: str | None = None
+    default_group_id: int | None = None
 
     class Config:
         from_attributes = True

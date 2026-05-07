@@ -173,17 +173,30 @@ def get_ffmpeg_path() -> str | None:
     return None
 
 
-async def capture_frame(url: str, camera_type: str, timeout: int = 15) -> bytes | None:
+async def capture_frame(
+    url: str,
+    camera_type: str,
+    timeout: int = 15,
+    snapshot_url: str | None = None,
+) -> bytes | None:
     """Capture single frame from external camera.
 
     Args:
-        url: Camera URL (MJPEG stream, RTSP URL, HTTP snapshot URL, or USB device path)
-        camera_type: "mjpeg", "rtsp", "snapshot", or "usb"
-        timeout: Connection timeout in seconds
+        url: Live-stream URL (MJPEG stream, RTSP URL, HTTP snapshot URL, or USB device path).
+        camera_type: "mjpeg", "rtsp", "snapshot", or "usb".
+        timeout: Connection timeout in seconds.
+        snapshot_url: Optional override for single-frame capture. When set, fetched
+            via plain HTTP GET regardless of `camera_type`. Bypasses MJPEG warm-up
+            handling on sources that expose a dedicated frame endpoint (e.g. go2rtc's
+            `/api/frame.jpeg` reliably returns a clean image while the MJPEG stream's
+            first frame is often the encoder's stale keyframe). #1177.
 
     Returns:
         JPEG bytes or None on failure
     """
+    if snapshot_url:
+        logger.debug("capture_frame using snapshot override url=%s...", snapshot_url[:50])
+        return await _capture_snapshot(snapshot_url, timeout)
     logger.debug("capture_frame called: type=%s, url=%s...", camera_type, url[:50] if url else "None")
     if camera_type == "mjpeg":
         return await _capture_mjpeg_frame(url, timeout)
@@ -280,17 +293,31 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
 
 
 async def _capture_mjpeg_frame(url: str, timeout: int) -> bytes | None:
-    """Extract single frame from MJPEG stream.
+    """Extract a single representative frame from an MJPEG stream.
 
-    Note: This function intentionally makes requests to user-configured URLs.
-    External camera support requires connecting to user-specified camera endpoints.
-    URL is sanitized and dangerous destinations are blocked.
+    Many MJPEG sources — go2rtc most notably (#1177), and several IP cameras —
+    emit a "warm-up" frame on the byte that follows connection accept: usually
+    the last keyframe held in the encoder, which is often black or stale until
+    the encoder catches up to live content. To return a frame that's actually
+    representative of the scene we read past the first frame and return the
+    second; if the connection closes / times out / hits the buffer cap before
+    a second frame ever arrives we fall back to the first so callers still
+    get *something* (better than degrading slow / single-frame streams to None,
+    which would regress every code path that consumed pre-fix behaviour).
+
+    Note: this function intentionally makes requests to user-configured URLs.
+    External camera support requires connecting to user-specified camera
+    endpoints. URL is sanitized and dangerous destinations are blocked.
     """
-    # Sanitize URL - returns reconstructed URL from validated components
     safe_url = _sanitize_camera_url(url, ("http", "https"))
     if not safe_url:
         logger.error("Invalid MJPEG URL format: %s...", url[:50])
         return None
+
+    jpeg_start = b"\xff\xd8"
+    jpeg_end = b"\xff\xd9"
+    first_frame: bytes | None = None  # warm-up frame; fallback if no second arrives
+    buffer = b""
 
     try:
         async with (
@@ -301,38 +328,45 @@ async def _capture_mjpeg_frame(url: str, timeout: int) -> bytes | None:
                 logger.error("MJPEG stream returned status %s", response.status)
                 return None
 
-            # Read chunks until we find a complete JPEG frame
-            buffer = b""
-            jpeg_start = b"\xff\xd8"
-            jpeg_end = b"\xff\xd9"
-
             async for chunk in response.content.iter_chunked(8192):
                 buffer += chunk
 
-                # Look for complete JPEG frame
-                start_idx = buffer.find(jpeg_start)
-                if start_idx == -1:
-                    continue
-
-                end_idx = buffer.find(jpeg_end, start_idx + 2)
-                if end_idx != -1:
-                    # Found complete frame
+                # A single chunk can carry multiple frames (e.g. high-FPS sources)
+                # or a partial frame. Drain every complete frame we already have
+                # before pulling the next chunk.
+                while True:
+                    start_idx = buffer.find(jpeg_start)
+                    if start_idx == -1:
+                        # No frame start yet — drop trailing garbage, keep waiting.
+                        break
+                    end_idx = buffer.find(jpeg_end, start_idx + 2)
+                    if end_idx == -1:
+                        # Partial frame; trim already-discarded prefix so the
+                        # buffer stays bounded across long-running streams.
+                        if start_idx > 0:
+                            buffer = buffer[start_idx:]
+                        break
                     frame = buffer[start_idx : end_idx + 2]
-                    return frame
+                    buffer = buffer[end_idx + 2 :]
+                    if first_frame is None:
+                        first_frame = frame  # warm-up; keep but don't return yet
+                        continue
+                    return frame  # representative second frame
 
-                # Keep searching, but limit buffer size
                 if len(buffer) > 5 * 1024 * 1024:  # 5MB limit
                     logger.warning("MJPEG buffer exceeded 5MB without finding frame")
-                    return None
+                    break  # exit chunk loop, fall through to first_frame fallback
 
     except TimeoutError:
         logger.warning("MJPEG frame capture timed out after %ss", timeout)
-        return None
     except (aiohttp.ClientError, OSError) as e:
         logger.error("MJPEG frame capture failed: %s", e)
-        return None
 
-    return None
+    # Stream ended / timed out / buffer cap before a second frame arrived.
+    # Return whatever warm-up frame we managed to read; better an iffy frame
+    # than None for callers that need *some* image (snapshot UX, plate-detect
+    # CV, finish photo). None only if no frame ever arrived at all.
+    return first_frame
 
 
 async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:

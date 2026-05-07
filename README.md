@@ -60,7 +60,7 @@ You don't need to be a developer for the docs or moderator roles. If you enjoy w
 **Print from anywhere in the world** — Bambuddy's new Proxy Mode acts as a secure relay between your slicer and printer:
 
 - 🔒 **End-to-end TLS encryption** — FTP, file transfer, and camera are transparently proxied with the printer's real TLS certificate
-- 🛡️ **VPN recommended** — Use Tailscale/WireGuard for full data encryption ([details](https://wiki.bambuddy.cool/features/virtual-printer/))
+- 🛡️ **Optional Tailscale integration** — per-VP toggle + Docker socket mount surface the host's Tailscale IP on the VP card, so you know which `100.x.x.x` to paste into the slicer when you want a virtual printer reachable over your tailnet ([setup](https://wiki.bambuddy.cool/features/virtual-printer/)). Bambuddy's self-signed CA import is still required for the slicer side — the Bambu Studio / OrcaSlicer printer-MQTT trust path uses a bundled BBL CA, not the system trust store, so even a publicly-trusted cert wouldn't help. Tailscale's role is the private tunnel (reachability from anywhere, no port forwarding), not cert-import elimination.
 - 🌍 **No cloud dependency** — Direct connection through your own Bambuddy server
 - 🔑 **Uses printer's access code** — No additional credentials needed
 - ⚡ **Full-speed printing** — Transparent TCP proxy, only MQTT is decrypted for IP rewriting
@@ -92,7 +92,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Duplicate detection & full-text search
 - Photo attachments & failure analysis
 - Timelapse editor (trim, speed, music) with automatic AVI-to-MP4 conversion for P1-series printers, manual upload & remove
-- Re-print to any connected printer with AMS mapping (auto-match or manual slot selection, multi-plate support, nozzle-aware matching for dual-nozzle H2D/H2D Pro)
+- Re-print to any connected printer with AMS mapping (auto-match or manual slot selection, multi-plate support, nozzle-aware matching for dual-nozzle H2D/H2D Pro, **Filament Track Switch (FTS) support** — when the FTS accessory is installed the per-nozzle filter is suppressed since the FTS routes any AMS slot to either extruder)
 - Plate thumbnail browsing for multi-plate archives (hover to navigate between plates)
 - Archive comparison (side-by-side diff)
 - Tag management (rename/delete across all archives)
@@ -100,7 +100,8 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 
 ### 📊 Monitoring & Control
 - Real-time printer status via WebSocket
-- Live camera streaming (MJPEG) & snapshots with multi-viewer support
+- Live camera streaming (MJPEG) & snapshots with multi-viewer support — most Bambu printers only allow one upstream connection, so Bambuddy fans out a single shared stream to all browser tabs / cards / overlays
+- **Long-lived camera tokens** for Home Assistant / Frigate / kiosks — mint a token from Settings → API Keys, paste it once, capped at 365 days, revocable at any time (no infinite tokens — leaked permanent tokens are unsafe by design)
 - **Streaming overlay for OBS** - Embeddable page with camera + status for live streaming (`/overlay/:printerId`), configurable FPS (`?fps=30`), status-only mode (`?camera=false`)
 - External camera support (MJPEG, RTSP, HTTP snapshot, USB/V4L2) with layer-based timelapse
 - **Build plate empty detection** - Auto-pause print if objects detected on plate (multi-reference calibration, ROI adjustment)
@@ -113,6 +114,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Resizable printer cards (S/M/L/XL)
 - Skip objects during print
 - AMS slot RFID re-read
+- **AMS slot Load / Unload from the printer card** — Hover any AMS slot or external spool, click the menu button, and load that tray or unload the currently-loaded one without going to the touchscreen; supports dual-extruder H2D (Ext-L / Ext-R drive their own nozzle)
 - AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
 - AMS info card (hover for serial number, firmware version) with custom friendly names that persist across printers
 - **AMS remote drying** — Start, monitor, and stop drying sessions for AMS 2 Pro and AMS-HT directly from the Printers page with filament-based temperature/duration presets, optional spool rotation; automatic PSU detection and HMS power error reporting
@@ -167,12 +169,24 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Plate selection for multi-plate 3MF files
 - Duplicate detection via file hash
 - Mobile-friendly with always-visible action buttons
+- **Server-side Slice button** (optional) — slice STL/3MF without a desktop slicer when the [`slicer-api/` Compose stack](slicer-api/README.md) is running; the result lands as a new `.gcode.3mf` in the same folder, with progress shown via a toast tracker that follows the job to completion. Supports importing **Bambu Studio Printer Preset Bundles** (`.bbscfg`) so a curated printer + process + filament triplet can be picked in the Slice dialog without re-uploading JSON profiles ([details](https://wiki.bambuddy.cool/features/slicer-api/#slicer-bundles-bbscfg))
+
+### 🌍 MakerWorld Integration
+- Paste any `makerworld.com/models/…` URL → preview, plate picker, and import without leaving Bambuddy
+- Per-plate **Save** or **Save & Slice in Bambu Studio / OrcaSlicer** (your preferred slicer from Settings)
+- **Import all plates** button for multi-plate models
+- Auto-creates a "MakerWorld" folder in File Manager; override with any existing folder via the picker
+- Per-plate image gallery with keyboard-navigable lightbox
+- Recent imports sidebar — last 10 MakerWorld imports with one-click jump to File Manager or slicer
+- Remove-from-library for imported plates with confirm modal (no LAN cookie paste, no browser extension)
+- Reuses your existing Bambu Cloud login — no separate OAuth flow or browser extension to install
 
 ### 📁 Projects
 - Group related prints (e.g., "Voron Build")
 - Track plates (print jobs) and parts separately
 - Auto-detect parts count from 3MF files
 - Color-coded project badges
+- **Project URL + cover photo** — paste a MakerWorld/Printables/Thingiverse link and upload a hero image so each card is immediately recognisable; the URL renders as a one-click link beside the project name
 - Bulk assign archives via multi-select toolbar
 - Import/Export projects as ZIP (includes files) or JSON
 - Print or queue files from linked library folders directly in the project view (resulting archive auto-linked to the project)
@@ -182,7 +196,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 
 ### 🔔 Notifications
 - WhatsApp, Telegram, Discord
-- Email, Pushover, ntfy
+- Email, Pushover, ntfy (with per-event priority — Min / Low / Default / High / Urgent)
 - Home Assistant persistent notifications
 - Custom webhooks
 - Quiet hours & daily digest
@@ -204,6 +218,8 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - **Per-spool cost tracking** — Set cost/kg on each spool; costs are automatically calculated at print completion and aggregated to archives. Print modal shows real-time cost preview. Configurable default cost and currency in Settings.
 - **Bulk spool addition** — Add multiple identical spools at once (quantity 1–100) with a single form submission. Quick Add mode for stock spools that only need material, color, and weight.
 - Spool catalog, color catalog, PA profile matching, and low-stock alerts
+- **Multi-colour gradients, transparency, and visual effects** — Paste a comma-separated hex list (e.g. from 3dfilamentprofiles.com) to render a spool as a gradient or conic colour wheel; transparency shows through a checkerboard so the alpha you set is the alpha you see; pick a visual effect (sparkle, wood, marble, glow, matte) for the swatch overlay. Same fields are editable on the colour catalog so combos can be reused across spools.
+- **Printable spool labels** — Generate PDF labels for any selection of spools in four pre-built sizes: AMS holder (30×15 mm), box label (62×29 mm), Avery L7160 sheet (A4, 21 per page), and Avery 5160 sheet (US Letter, 30 per page). Each label shows the colour swatch, brand, material, name, the **spool ID** (for at-a-glance identification across many similar spools), and a QR code that deep-links straight back to the spool's row in Bambuddy when scanned with a phone. Pick from the inventory page — search, filter by material, multi-select spools, then print or save to PDF.
 
 ### 🔧 Integrations
 - [Spoolman](https://github.com/Donkie/Spoolman) filament sync with per-filament usage tracking and fill level display
@@ -216,14 +232,18 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - **Scheduled local backups** - Automatic backup snapshots on hourly/daily/weekly schedule with retention management and NAS-mountable output
 - External sidebar links
 - Webhooks & API keys
+  - Per-user ownership — each key acts on behalf of its creator
+  - Optional **cloud-access scope** — opt in to let an API key read its owner's Bambu Cloud presets / filament catalogue / device list (off by default)
 - Interactive API browser with live testing
 
 ### 🖨️ Virtual Printer & Remote Printing
-- **🌐 Proxy Mode (NEW!)** — Print remotely from anywhere via secure TLS relay
+- **🌐 Proxy Mode** — Print remotely from anywhere via secure TLS relay
+- **🪞 Live target-printer mirror in non-proxy modes (NEW!)** — Immediate / Review / Queue VPs now mirror their target printer's live state to the slicer: AMS slot contents, FTS / dual-extruder routing, k-profiles, AMS load / dry / calibration commands, and the camera stream all flow through the VP. Use the slicer as a full remote for the printer behind the VP without giving up Bambuddy's queue / archive / dispatch features.
 - Emulates a Bambu Lab printer on your network
 - Send prints directly from Bambu Studio/Orca Slicer
 - Configurable printer model (X1C, P1S, A1, H2D, etc.)
 - Archive mode, Review mode, Queue mode, or Proxy mode
+- Queue mode: optional **force-color-match** so the scheduler refuses to dispatch onto a printer with the wrong filament loaded
 - SSDP discovery (same LAN) or manual IP entry (VPN/remote)
 - Network interface override for multi-NIC/Docker/VPN setups
 - Secure TLS/MQTT/FTP communication

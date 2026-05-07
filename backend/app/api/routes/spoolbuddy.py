@@ -279,6 +279,17 @@ async def device_heartbeat(
     if was_offline:
         logger.info("SpoolBuddy device back online: %s", device.device_id)
 
+    # Include current SSH public key so the daemon can re-deploy it whenever
+    # Bambuddy's keypair rotates (data dir wiped, container recreated, etc.) —
+    # otherwise SSH updates fail until the daemon restarts.
+    ssh_public_key: str | None = None
+    try:
+        from backend.app.services.spoolbuddy_ssh import get_public_key
+
+        ssh_public_key = await get_public_key()
+    except Exception:
+        pass
+
     return HeartbeatResponse(
         pending_command=pending,
         pending_write_payload=pending_write,
@@ -287,6 +298,7 @@ async def device_heartbeat(
         calibration_factor=device.calibration_factor,
         display_brightness=device.display_brightness,
         display_blank_timeout=device.display_blank_timeout,
+        ssh_public_key=ssh_public_key,
     )
 
 

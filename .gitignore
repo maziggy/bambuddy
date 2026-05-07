@@ -79,3 +79,7 @@ db_backup/
 support-packages/
 backups/
 bin/
+advertisements/
+
+# gitleaks reports
+gitleaks-report.json

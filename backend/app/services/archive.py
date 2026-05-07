@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import zipfile
@@ -17,6 +18,104 @@ from backend.app.models.filament import Filament
 from backend.app.models.printer import Printer
 
 logger = logging.getLogger(__name__)
+
+
+def _copy_and_fsync(src: Path, dst: Path, chunk_size: int = 1024 * 1024) -> None:
+    """Copy src to dst with an explicit chunked read/write and fsync the dst.
+
+    Replacement for shutil.copy2 in the archive pipeline. shutil.copy2 uses
+    Linux sendfile(), which on some kernels/filesystems has returned a short
+    count on the first call and truncated the destination for larger 3MF
+    uploads (#1032, observed on Raspberry Pi OS bookworm / armv7l). An
+    explicit loop with fsync avoids that path and guarantees the dest bytes
+    are on disk before the caller inspects them as a ZIP.
+    """
+    with src.open("rb") as rf, dst.open("wb") as wf:
+        while True:
+            buf = rf.read(chunk_size)
+            if not buf:
+                break
+            wf.write(buf)
+        wf.flush()
+        os.fsync(wf.fileno())
+    shutil.copystat(src, dst)
+
+
+def resolve_display_stem(filename: str) -> str:
+    """Return a clean human-readable stem from a 3MF/gcode filename.
+
+    Bambu Studio's "Send to printer" dialog typically writes files like
+    ``Plate_1.gcode.3mf`` (a sliced gcode payload wrapped in a 3MF container).
+    The naive ``Path(filename).stem`` only drops the last suffix, leaving
+    ``Plate_1.gcode`` — which then surfaces in the archive UI as a confusing
+    ``Plate_1.gcode`` rather than ``Plate_1`` (#1152 follow-up).
+
+    Strip the recognised print-format suffixes in order:
+
+    - ``.gcode.3mf`` → bare stem (Bambu Studio FTP send)
+    - ``.3mf``       → bare stem
+    - ``.gcode``     → bare stem (rare standalone gcode upload)
+
+    Anything else passes through unchanged.
+    """
+    name = Path(filename).name  # drop any path components
+    lower = name.lower()
+    for suffix in (".gcode.3mf", ".3mf", ".gcode"):
+        if lower.endswith(suffix):
+            return name[: -len(suffix)]
+    return Path(name).stem
+
+
+def peek_plate_index_in_3mf(file_path: Path) -> int | None:
+    """Return the plate index recorded inside a Bambu 3MF, or None.
+
+    Reads only ``Metadata/slice_info.config`` to keep this cheap — used by
+    the print-start callback to verify that the 3MF we just downloaded over
+    FTP actually matches the plate the printer is running (#1204). The full
+    ThreeMFParser does much more work and runs later inside ArchiveService.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/slice_info.config" not in zf.namelist():
+                return None
+            content = zf.read("Metadata/slice_info.config").decode()
+            root = ET.fromstring(content)
+            plate = root.find(".//plate")
+            if plate is None:
+                return None
+            for meta in plate.findall("metadata"):
+                if meta.get("key") == "index":
+                    value = meta.get("value")
+                    if value:
+                        try:
+                            return int(value)
+                        except ValueError:
+                            return None
+    except Exception:
+        return None
+    return None
+
+
+_PLATE_SUFFIX_RE = re.compile(r"^(.*?)(\s*-\s*Plate\s+|_plate_)(\d+)$", re.IGNORECASE)
+
+
+def swap_plate_suffix(name: str | None, target_plate: int) -> str | None:
+    """Return ``name`` with its trailing plate number replaced, or None.
+
+    Bambu Studio names multi-plate uploads ``"<Project> - Plate <N>"`` (and
+    a lowercase ``"_plate_<N>"`` variant exists too — see
+    test_print_start_expected_promotion). When MQTT subtask_name lags
+    across consecutive plates of the same model (#1204) the suffix points
+    at the previous plate; swapping it gives us the correct upload to
+    re-fetch from FTP. Returns None if no recognised suffix is present.
+    """
+    if not name:
+        return None
+    m = _PLATE_SUFFIX_RE.match(name)
+    if not m:
+        return None
+    base, separator, _ = m.groups()
+    return f"{base}{separator}{target_plate}"
 
 
 class ThreeMFParser:
@@ -56,8 +155,16 @@ class ThreeMFParser:
                 self.metadata.pop("_slice_filament_type", None)
                 self.metadata.pop("_slice_filament_color", None)
                 self.metadata.pop("_plate_index", None)
-        except Exception:
-            pass  # Return whatever metadata was extracted before the error
+        except Exception as e:
+            # Return whatever metadata was extracted before the error, but
+            # surface the failure so corrupted / truncated 3MF archives are
+            # visible in support bundles (#1032).
+            logger.warning(
+                "ThreeMFParser: failed to parse %s: %s(%s) — returning partial metadata",
+                self.file_path,
+                type(e).__name__,
+                e,
+            )
         return self.metadata
 
     def _parse_slice_info(self, zf: zipfile.ZipFile):
@@ -856,6 +963,7 @@ class ArchiveService:
         original_filename: str | None = None,
         project_id: int | None = None,
         subtask_id: str | None = None,
+        prefer_filename_for_name: bool = False,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -871,6 +979,11 @@ class ArchiveService:
             subtask_id: MQTT-provided task identifier (optional). Used to match an
                 existing archive across a backend restart mid-print so the
                 original row can be resumed instead of cancelled (#972).
+            prefer_filename_for_name: When True, use the uploaded filename stem as the
+                archive's display name even if the 3MF embeds a `print_name` in its
+                metadata. Used by virtual-printer flows so users who rename a job in
+                BambuStudio's "send to printer" dialog see that name instead of the
+                creator-baked title (#1152).
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -881,16 +994,53 @@ class ArchiveService:
 
         # Create archive directory structure
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        display_stem = Path(original_filename).stem if original_filename else source_file.stem
+        display_stem = resolve_display_stem(original_filename if original_filename else source_file.name)
         archive_name = f"{timestamp}_{display_stem}"
         # Use "unassigned" folder for archives without a printer
         printer_folder = str(printer_id) if printer_id is not None else "unassigned"
         archive_dir = settings.archive_dir / printer_folder / archive_name
         archive_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy 3MF file
+        # Copy 3MF file with an explicit fsync'd loop (avoids a sendfile
+        # short-read quirk that silently truncated 3MF archives on some
+        # platforms — see _copy_and_fsync and #1032).
         dest_file = archive_dir / source_file.name
-        shutil.copy2(source_file, dest_file)
+        _copy_and_fsync(source_file, dest_file)
+
+        # If we just archived a 3MF, verify the dest is a valid ZIP before
+        # going any further. Staying quiet here is how #1032 escaped review —
+        # the archive row was written but every later zipfile.ZipFile() call
+        # on the dest failed with "File is not a zip file".
+        if (
+            source_file.suffix.lower() == ".3mf"
+            and zipfile.is_zipfile(source_file)
+            and not zipfile.is_zipfile(dest_file)
+        ):
+            try:
+                src_size = source_file.stat().st_size
+                dst_size = dest_file.stat().st_size
+            except OSError:
+                src_size = dst_size = -1
+            logger.error(
+                "Archive copy corrupted 3MF: src=%s (%s bytes, valid ZIP) -> dst=%s (%s bytes, NOT a ZIP). Refusing to create archive row.",
+                source_file,
+                src_size,
+                dest_file,
+                dst_size,
+            )
+            # Narrow cleanup: remove only the truncated file and the archive
+            # directory if it's now empty. archive_dir was created with
+            # exist_ok=True so it could in theory pre-date this call (e.g.
+            # same-second same-filename collision); rmtree would be too broad.
+            try:
+                dest_file.unlink()
+            except OSError:
+                pass
+            try:
+                archive_dir.rmdir()
+            except OSError:
+                pass  # directory not empty — leave untouched
+            return None
 
         # Compute content hash for duplicate detection
         content_hash = self.compute_file_hash(dest_file)
@@ -961,7 +1111,7 @@ class ArchiveService:
             file_size=dest_file.stat().st_size,
             content_hash=content_hash,
             thumbnail_path=thumbnail_path,
-            print_name=metadata.get("print_name") or display_stem,
+            print_name=display_stem if prefer_filename_for_name else (metadata.get("print_name") or display_stem),
             print_time_seconds=metadata.get("print_time_seconds"),
             filament_used_grams=metadata.get("filament_used_grams"),
             filament_type=metadata.get("filament_type"),

@@ -1,0 +1,109 @@
+name: Cleanup GHCR untagged images
+
+# Deletes untagged (orphan) container versions from GHCR while preserving
+# any digest that is still referenced by a tagged multi-arch manifest list.
+# Without that cross-reference, off-the-shelf cleanup actions can silently
+# break multi-arch tags by deleting referenced platform manifests.
+#
+# Requires a repo secret `GHCR_CLEANUP_TOKEN` — a classic PAT with
+# `read:packages` + `delete:packages` scope. GITHUB_TOKEN cannot delete
+# versions of user-owned packages (only org-owned).
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'  # Sundays at 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List orphans without deleting'
+        type: boolean
+        default: false
+
+# This workflow authenticates exclusively via GHCR_CLEANUP_TOKEN (a classic PAT)
+# and never reads/writes via the default GITHUB_TOKEN. Strip every permission
+# from the GITHUB_TOKEN so a stolen workflow run can't reach the repo at all
+# — least privilege per CodeQL `actions/missing-workflow-permissions`.
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [bambuddy, bambuddy-beta]
+    steps:
+      - name: Cleanup ${{ matrix.package }}
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: ${{ matrix.package }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          # 1. Fetch all versions for the package.
+          gh api "users/${OWNER}/packages/container/${PACKAGE}/versions?per_page=100" \
+            --paginate --slurp > all.json
+          total=$(jq 'add | length' all.json)
+          echo "Total versions: $total"
+
+          # 2. Build the live-digest set: digests referenced by any tagged
+          #    multi-arch manifest list. Use the registry token (separate from
+          #    GH_TOKEN) for ghcr.io manifest reads.
+          REG_TOKEN=$(curl -sS \
+            "https://ghcr.io/token?scope=repository:${OWNER}/${PACKAGE}:pull&service=ghcr.io" \
+            | jq -r .token)
+
+          jq -r 'add | map(select(.metadata.container.tags | length > 0))
+                 | .[] | .metadata.container.tags[0]' all.json > tags.txt
+
+          : > live.txt
+          while IFS= read -r tag; do
+            curl -sS \
+              -H "Authorization: Bearer $REG_TOKEN" \
+              -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/${OWNER}/${PACKAGE}/manifests/${tag}" \
+            | jq -r '(.manifests // []) | .[].digest' >> live.txt 2>/dev/null || true
+          done < tags.txt
+          sort -u live.txt -o live.txt
+          echo "Live digests referenced by manifest lists: $(wc -l < live.txt)"
+
+          # 3. Untagged digests minus live = true orphans.
+          jq -r 'add | map(select(.metadata.container.tags | length == 0))
+                 | .[] | .name' all.json | sort -u > untagged.txt
+          comm -23 untagged.txt live.txt > orphan_digests.txt
+          orphan_count=$(wc -l < orphan_digests.txt)
+          echo "Orphan digests safe to delete: $orphan_count"
+
+          if [ "$orphan_count" -eq 0 ]; then
+            echo "Nothing to delete."
+            exit 0
+          fi
+
+          # 4. Map orphan digests -> version IDs.
+          jq -r --slurpfile orphans <(jq -R . orphan_digests.txt) '
+            add
+            | map(select(.name as $n | ($orphans | flatten | index($n))))
+            | .[] | .id
+          ' all.json > delete_ids.txt
+          echo "Version IDs queued for deletion: $(wc -l < delete_ids.txt)"
+
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            echo "Dry run — not deleting."
+            head -20 delete_ids.txt
+            exit 0
+          fi
+
+          # 5. Delete.
+          deleted=0
+          failed=0
+          while IFS= read -r id; do
+            if gh api -X DELETE "users/${OWNER}/packages/container/${PACKAGE}/versions/${id}" --silent; then
+              deleted=$((deleted + 1))
+            else
+              failed=$((failed + 1))
+            fi
+          done < delete_ids.txt
+          echo "Deleted: $deleted  Failed: $failed"
+          [ "$failed" -eq 0 ]

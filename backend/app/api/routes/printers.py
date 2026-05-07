@@ -19,6 +19,7 @@ from backend.app.schemas.printer import (
     AmsLabelBody,
     AMSTray,
     AMSUnit,
+    FilaSwitchResponse,
     HMSErrorResponse,
     NozzleInfoResponse,
     NozzleRackSlot,
@@ -40,6 +41,7 @@ from backend.app.services.bambu_ftp import (
 from backend.app.services.printer_manager import (
     get_derived_status_name,
     printer_manager,
+    resolve_plate_id,
     supports_chamber_temp,
     supports_drying,
 )
@@ -561,6 +563,26 @@ async def get_printer_status(
             k: v for k, v in temperatures.items() if k not in ("chamber", "chamber_target", "chamber_heating")
         }
 
+    # Resolve the active print's archive + plate (#881 follow-up): lets the
+    # printer card show the actual plate name for multi-plate 3MFs instead of
+    # just the 3MF filename. Only attempted for active prints, since subtask_id
+    # is only meaningful then.
+    current_archive_id: int | None = None
+    current_plate_id: int | None = None
+    if state.state in ("RUNNING", "PAUSE"):
+        current_plate_id = resolve_plate_id(state)
+        if state.subtask_id:
+            from backend.app.models.archive import PrintArchive
+
+            archive_row = await db.execute(
+                select(PrintArchive.id)
+                .where(PrintArchive.subtask_id == state.subtask_id)
+                .where(PrintArchive.printer_id == printer_id)
+                .order_by(PrintArchive.created_at.desc())
+                .limit(1)
+            )
+            current_archive_id = archive_row.scalar_one_or_none()
+
     return PrinterStatus(
         id=printer_id,
         name=printer.name,
@@ -612,6 +634,19 @@ async def get_printer_status(
         developer_mode=state.developer_mode if state else None,
         awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
         supports_drying=supports_drying(printer.model, state.firmware_version),
+        current_archive_id=current_archive_id,
+        current_plate_id=current_plate_id,
+        fila_switch=(
+            FilaSwitchResponse(
+                installed=state.fila_switch.installed,
+                in_slots=list(state.fila_switch.in_slots),
+                out_extruders=list(state.fila_switch.out_extruders),
+                stat=state.fila_switch.stat,
+                info=state.fila_switch.info,
+            )
+            if state.fila_switch and state.fila_switch.installed
+            else None
+        ),
     )
 
 
@@ -703,7 +738,9 @@ async def test_printer_connection(
     return result
 
 
-# Cache for cover images (printer_id -> {(subtask_name, plate_num, view) -> image_bytes})
+# Cache for cover images (printer_id -> {(subtask_name, view_key) -> image_bytes}).
+# Cleared on every print start by main.py::on_print_start, so re-dispatches with
+# different plates always fetch a fresh thumbnail without needing plate in the key.
 _cover_cache: dict[int, dict[tuple[str, str], bytes]] = {}
 
 
@@ -739,21 +776,28 @@ async def get_printer_cover(
     if not subtask_name:
         raise HTTPException(404, f"No subtask_name in printer state (state={state.state})")
 
-    # Extract plate number from gcode_file (e.g., "/data/Metadata/plate_12.gcode" -> 12)
-    plate_num = 1
-    gcode_file = state.gcode_file
-    if gcode_file:
-        match = re.search(r"plate_(\d+)\.gcode", gcode_file)
-        if match:
-            plate_num = int(match.group(1))
-            logger.info("Detected plate number %s from gcode_file: %s", plate_num, gcode_file)
+    # Resolve the active plate. Precedence (#1166):
+    #   1. The plate Bambuddy dispatched (authoritative when we sent the print)
+    #   2. plate_(\d+)\.gcode regex on state.gcode_file (works on firmware that
+    #      reflects the full path, e.g. some X1C builds)
+    #   3. Scan the downloaded 3MF for a unique Metadata/plate_*.gcode (covers
+    #      per-plate archives sliced separately in Bambu Studio, where the
+    #      printer's gcode_file echo is just the .3mf filename)
+    #   4. Fall back to plate 1
+    # The 3MF-scan fallback runs later — after the file is on disk.
+    plate_num = resolve_plate_id(state)
+    if plate_num is not None:
+        logger.info("Cover: resolved plate %s before download (subtask=%s)", plate_num, subtask_name)
 
     # Normalize view parameter
     view_key = view or "default"
 
-    # Check cache - include plate_num in cache key for multi-plate projects
+    # Check cache. Cache by (subtask_name, view_key) only — clear_cover_cache()
+    # runs on every print start, so a re-dispatch with a different plate gets
+    # a fresh image regardless. Pre-#1166 the key included plate_num, but with
+    # late plate resolution the cache check would always miss.
     if printer_id in _cover_cache:
-        cache_key = (subtask_name, plate_num, view_key)
+        cache_key = (subtask_name, view_key)
         if cache_key in _cover_cache[printer_id]:
             return Response(content=_cover_cache[printer_id][cache_key], media_type="image/png")
 
@@ -872,6 +916,21 @@ async def get_printer_cover(
             raise HTTPException(500, "Failed to open 3MF file. Check server logs for details.")
 
         try:
+            # 3MF-scan fallback for plate detection (#1166). Per-plate archives
+            # sliced separately in Bambu Studio contain a single
+            # Metadata/plate_N.gcode for the active plate, even though
+            # thumbnails for all plates are bundled. Using that gcode's plate
+            # number prevents falling back to plate_1.png.
+            if plate_num is None:
+                plate_gcodes = [name for name in zf.namelist() if re.match(r"^Metadata/plate_\d+\.gcode$", name)]
+                if len(plate_gcodes) == 1:
+                    match = re.search(r"plate_(\d+)\.gcode", plate_gcodes[0])
+                    if match:
+                        plate_num = int(match.group(1))
+                        logger.info("Cover: detected plate %s from 3MF contents", plate_num)
+            if plate_num is None:
+                plate_num = 1
+
             # Try common thumbnail paths in 3MF files
             # Use plate_num to get the correct plate's thumbnail for multi-plate projects
             # Use top-down view if requested (better for skip objects modal)
@@ -899,10 +958,9 @@ async def get_printer_cover(
             for thumb_path in thumbnail_paths:
                 try:
                     image_data = zf.read(thumb_path)
-                    # Cache the result - include plate_num in cache key
                     if printer_id not in _cover_cache:
                         _cover_cache[printer_id] = {}
-                    _cover_cache[printer_id][(subtask_name, plate_num, view_key)] = image_data
+                    _cover_cache[printer_id][(subtask_name, view_key)] = image_data
                     return Response(content=image_data, media_type="image/png")
                 except KeyError:
                     continue
@@ -913,7 +971,7 @@ async def get_printer_cover(
                     image_data = zf.read(name)
                     if printer_id not in _cover_cache:
                         _cover_cache[printer_id] = {}
-                    _cover_cache[printer_id][(subtask_name, plate_num, view_key)] = image_data
+                    _cover_cache[printer_id][(subtask_name, view_key)] = image_data
                     return Response(content=image_data, media_type="image/png")
 
             raise HTTPException(404, "No thumbnail found in 3MF file")
@@ -1725,6 +1783,15 @@ async def start_calibration(
 # ============================================================================
 
 
+def _slot_preset_key(ams_id: int, tray_id: int) -> int:
+    # Mirrors frontend getGlobalTrayId (amsHelpers.ts): AMS-HT (128-135) is keyed
+    # by ams_id since each unit has a single slot and shares its global ID with
+    # the unit itself. Regular AMS and external (255) use ams_id*4+tray_id.
+    if 128 <= ams_id <= 135:
+        return ams_id
+    return ams_id * 4 + tray_id
+
+
 @router.get("/{printer_id}/slot-presets")
 async def get_slot_presets(
     printer_id: int,
@@ -1736,7 +1803,7 @@ async def get_slot_presets(
     mappings = result.scalars().all()
 
     return {
-        mapping.ams_id * 4 + mapping.tray_id: {
+        _slot_preset_key(mapping.ams_id, mapping.tray_id): {
             "ams_id": mapping.ams_id,
             "tray_id": mapping.tray_id,
             "preset_id": mapping.preset_id,
@@ -2291,6 +2358,17 @@ async def stop_print(
     if not success:
         raise HTTPException(500, "Failed to stop print")
 
+    # Mark this printer as user-stopped so on_print_complete reclassifies
+    # the resulting "failed"/"aborted" MQTT status as "cancelled" — otherwise
+    # the HMS heuristic in _dispatch_archive_update mislabels user-cancels
+    # (e.g. the H2D's cancel-sequence module-0x0C HMS) as "Layer shift".
+    try:
+        from backend.app.main import mark_printer_stopped_by_user
+
+        mark_printer_stopped_by_user(printer_id)
+    except Exception as _mark_err:
+        logger.warning("Failed to mark printer %s as user-stopped: %s", printer_id, _mark_err)
+
     return {"success": True, "message": "Print stop command sent"}
 
 
@@ -2497,19 +2575,30 @@ async def bed_jog(
 @router.post("/{printer_id}/home-axes")
 async def home_axes(
     printer_id: int,
-    axes: str = Query("z", description="Axes to home: 'z', 'xy', or 'all'"),
+    axes: str = Query(
+        "all",
+        description="Legacy; accepted values are 'z' | 'xy' | 'all'. Always runs the printer's full auto-home sequence — see below.",
+    ),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
-    """Home one or more axes via G28."""
+    """Run the printer's full auto-home sequence via bare `G28`.
+
+    Bambu printers (H2C / H2D / H2S / X1 family) home the Z axis by moving
+    the BED UP toward an endstop at the top of travel. If the toolhead is
+    not already parked out of the way, a bare `G28 Z` will crash the bed
+    into the toolhead — #1052 reported exactly that on H2C: the bed rose
+    without stopping at a safe height because `G28 Z` skipped the
+    toolhead-park step that a full `G28` runs first.
+
+    The endpoint therefore ignores the `axes` argument and always sends a
+    bare `G28`, which the firmware expands into a safe multi-step sequence
+    (park toolhead → home XY → home Z). The argument is kept only for
+    backward-compat with existing clients; sending an invalid value still
+    returns 400 so typos surface instead of silently proceeding.
+    """
     axes = axes.lower()
-    if axes == "z":
-        gcode = "G28 Z"
-    elif axes == "xy":
-        gcode = "G28 X Y"
-    elif axes == "all":
-        gcode = "G28"
-    else:
+    if axes not in ("z", "xy", "all"):
         raise HTTPException(400, "axes must be 'z', 'xy', or 'all'")
 
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -2521,10 +2610,10 @@ async def home_axes(
     if not client:
         raise HTTPException(400, "Printer not connected")
 
-    if not client.send_gcode(gcode):
+    if not client.send_gcode("G28"):
         raise HTTPException(500, "Failed to send home command")
 
-    return {"success": True, "message": f"Home {axes} command sent"}
+    return {"success": True, "message": "Full auto-home sequence sent"}
 
 
 @router.post("/{printer_id}/hms/clear")
@@ -2862,6 +2951,68 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
             )
     except Exception as e:
         logger.warning("Failed to apply PA profile after RFID re-read: %s", e)
+
+
+@router.post("/{printer_id}/ams/load")
+async def ams_load(
+    printer_id: int,
+    tray_id: int = Query(..., description="Tray ID: 0-15 for AMS slots (ams_id*4+slot_id), 254 for external spool"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Load filament from a specific AMS slot or external spool.
+
+    Tray ID encoding (matches Bambu firmware convention):
+    - 0..15: AMS slot, computed as ams_id * 4 + slot_id
+    - 254: external spool (single-external printers, or Ext-L on dual-nozzle H2D)
+    - 255: Ext-R on dual-nozzle H2D
+    """
+    if tray_id not in range(16) and tray_id not in (254, 255):
+        raise HTTPException(400, "tray_id must be 0..15 (AMS slot), 254 (external / Ext-L), or 255 (Ext-R)")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.ams_load_filament(tray_id)
+    if not success:
+        raise HTTPException(500, "Failed to send load command")
+
+    if tray_id == 254:
+        target = "external spool"
+    elif tray_id == 255:
+        target = "Ext-R"
+    else:
+        target = f"AMS {tray_id // 4} slot {tray_id % 4 + 1}"
+    return {"success": True, "message": f"Loading filament from {target}"}
+
+
+@router.post("/{printer_id}/ams/unload")
+async def ams_unload(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unload the currently loaded filament."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.ams_unload_filament()
+    if not success:
+        raise HTTPException(500, "Failed to send unload command")
+
+    return {"success": True, "message": "Unloading filament"}
 
 
 @router.get("/{printer_id}/runtime-debug")

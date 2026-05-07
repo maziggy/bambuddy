@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -31,6 +31,7 @@ import {
   Unlink,
   Archive as ArchiveIcon,
   Briefcase,
+  Cog,
   Printer,
   Pencil,
   Play,
@@ -56,7 +57,9 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
+import { SliceModal } from '../components/SliceModal';
 import { FileUploadModal } from '../components/FileUploadModal';
+import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
 import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useAuth } from '../contexts/AuthContext';
@@ -373,6 +376,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
   const { data: projects } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.getProjects(),
+    select: (rows) => [...rows].sort((a, b) => a.name.localeCompare(b.name)),
   });
 
   const { data: archives } = useQuery({
@@ -525,12 +529,13 @@ interface FolderTreeItemProps {
   onRename: (folder: LibraryFolderTree) => void;
   depth?: number;
   wrapNames?: boolean;
+  defaultExpanded?: boolean;
   hasPermission: (permission: Permission) => boolean;
   t: TFunction;
 }
 
-function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, depth = 0, wrapNames = false, hasPermission, t }: FolderTreeItemProps) {
-  const [expanded, setExpanded] = useState(true);
+function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, depth = 0, wrapNames = false, defaultExpanded = true, hasPermission, t }: FolderTreeItemProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [showActions, setShowActions] = useState(false);
   const hasChildren = folder.children.length > 0;
   const isLinked = folder.project_id || folder.archive_id;
@@ -664,6 +669,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
               onRename={onRename}
               depth={depth + 1}
               wrapNames={wrapNames}
+              defaultExpanded={defaultExpanded}
               hasPermission={hasPermission}
               t={t}
             />
@@ -680,6 +686,14 @@ function isSlicedFilename(filename: string): boolean {
   return lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf');
 }
 
+// Files that can be fed to the slicer sidecar (model geometry inputs).
+// Excludes .gcode.* (already sliced) and any other non-model formats.
+function isSliceableFilename(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf')) return false;
+  return lower.endsWith('.stl') || lower.endsWith('.3mf') || lower.endsWith('.step') || lower.endsWith('.stp');
+}
+
 // File Card
 interface FileCardProps {
   file: LibraryFileListItem;
@@ -690,6 +704,8 @@ interface FileCardProps {
   onDownload: (id: number) => void;
   onAddToQueue?: (id: number) => void;
   onPrint?: (file: LibraryFileListItem) => void;
+  onSlice?: (file: LibraryFileListItem) => void;
+  useSlicerApi?: boolean;
   onPreview3d?: (file: LibraryFileListItem) => void;
   onRename?: (file: LibraryFileListItem) => void;
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
@@ -700,7 +716,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onPreview3d, onRename, onGenerateThumbnail, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -805,6 +821,19 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('fileManager.schedulePrint')}
                 </button>
               )}
+              {onSlice && useSlicerApi && isSliceableFilename(file.filename) && (
+                <button
+                  className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
+                    hasPermission('library:upload') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                  }`}
+                  onClick={() => { if (hasPermission('library:upload')) { onSlice(file); setShowActions(false); } }}
+                  disabled={!hasPermission('library:upload')}
+                  title={!hasPermission('library:upload') ? t('fileManager.noPermissionSlice') : undefined}
+                >
+                  <Cog className="w-3.5 h-3.5" />
+                  {t('slice.action')}
+                </button>
+              )}
               {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
@@ -889,6 +918,7 @@ export function FileManagerPage() {
   const { showToast } = useToast();
   const { hasPermission, hasAnyPermission, canModify, authEnabled } = useAuth();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // Read folder ID from URL query parameter
   const folderIdFromUrl = searchParams.get('folder');
@@ -901,11 +931,13 @@ export function FileManagerPage() {
   const [showExternalFolderModal, setShowExternalFolderModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [printMultiFile, setPrintMultiFile] = useState<LibraryFileListItem | null>(null);
   const [scheduleFile, setScheduleFile] = useState<LibraryFileListItem | null>(null);
+  const [sliceFile, setSliceFile] = useState<LibraryFileListItem | null>(null);
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<number, number>>({});
   const [viewerFile, setViewerFile] = useState<LibraryFileListItem | null>(null);
@@ -914,6 +946,9 @@ export function FileManagerPage() {
   });
   const [wrapFolderNames, setWrapFolderNames] = useState(() => {
     return localStorage.getItem('library-wrap-folders') === 'true';
+  });
+  const [collapseFoldersByDefault, setCollapseFoldersByDefault] = useState(() => {
+    return localStorage.getItem('library-collapse-folders') === 'true';
   });
 
   // Resizable sidebar state
@@ -995,6 +1030,21 @@ export function FileManagerPage() {
   const { data: folders, isLoading: foldersLoading } = useQuery({
     queryKey: ['library-folders'],
     queryFn: () => api.getLibraryFolders(),
+  });
+
+  // Trash count for the header badge (#1008). Empty/error are silently treated
+  // as zero so a broken trash endpoint doesn't break the File Manager.
+  const { data: trashCount } = useQuery({
+    queryKey: ['library-trash-count'],
+    queryFn: async () => {
+      try {
+        const res = await api.listLibraryTrash(1, 0);
+        return res.total;
+      } catch {
+        return 0;
+      }
+    },
+    staleTime: 30_000,
   });
 
   const { data: files, isLoading: filesLoading } = useQuery({
@@ -1146,6 +1196,7 @@ export function FileManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       queryClient.invalidateQueries({ queryKey: ['library-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['library-trash-count'] });
       setSelectedFiles((prev) => prev.filter((id) => id !== deleteConfirm?.id));
       setDeleteConfirm(null);
       showToast(t('fileManager.toast.fileDeleted'), 'success');
@@ -1162,6 +1213,7 @@ export function FileManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       queryClient.invalidateQueries({ queryKey: ['library-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['library-trash-count'] });
       showToast(t('fileManager.toast.filesDeleted', { count: fileIds.length }), 'success');
       setSelectedFiles([]);
       setDeleteConfirm(null);
@@ -1420,6 +1472,31 @@ export function FileManagerPage() {
             <FolderPlus className="w-4 h-4 mr-2" />
             {t('fileManager.newFolder')}
           </Button>
+          {hasPermission('library:purge') && (
+            <Button
+              variant="secondary"
+              onClick={() => setShowPurgeModal(true)}
+              title={t('libraryPurge.headerTooltip')}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              {t('libraryPurge.headerButton')}
+            </Button>
+          )}
+          {(hasAnyPermission('library:delete_own', 'library:delete_all')) && (
+            <Link
+              to="/files/trash"
+              className="inline-flex items-center px-3 py-1.5 text-sm rounded bg-bambu-dark-secondary text-bambu-gray hover:text-white hover:bg-bambu-dark transition-colors"
+              title={t('libraryTrash.headerTooltip')}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              {t('libraryTrash.headerButton')}
+              {typeof trashCount === 'number' && trashCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-bambu-green/20 text-bambu-green">
+                  {trashCount}
+                </span>
+              )}
+            </Link>
+          )}
           <Button
             onClick={() => setShowUploadModal(true)}
             disabled={!hasPermission('library:upload')}
@@ -1532,21 +1609,38 @@ export function FileManagerPage() {
           </div>
           <div className="p-3 border-b border-bambu-dark-tertiary flex items-center justify-between">
             <h2 className="text-sm font-medium text-white">{t('fileManager.folders')}</h2>
-            <button
-              onClick={() => {
-                const newValue = !wrapFolderNames;
-                setWrapFolderNames(newValue);
-                localStorage.setItem('library-wrap-folders', String(newValue));
-              }}
-              className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
-                wrapFolderNames
-                  ? 'bg-bambu-green/20 text-bambu-green'
-                  : 'text-bambu-gray hover:text-white hover:bg-bambu-dark'
-              }`}
-              title={wrapFolderNames ? t('fileManager.disableTextWrapping') : t('fileManager.enableTextWrapping')}
-            >
-              {t('fileManager.wrap')}
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  const newValue = !collapseFoldersByDefault;
+                  setCollapseFoldersByDefault(newValue);
+                  localStorage.setItem('library-collapse-folders', String(newValue));
+                }}
+                className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
+                  collapseFoldersByDefault
+                    ? 'bg-bambu-green/20 text-bambu-green'
+                    : 'text-bambu-gray hover:text-white hover:bg-bambu-dark'
+                }`}
+                title={collapseFoldersByDefault ? t('fileManager.expandFoldersByDefault') : t('fileManager.collapseFoldersByDefault')}
+              >
+                {t('fileManager.collapse')}
+              </button>
+              <button
+                onClick={() => {
+                  const newValue = !wrapFolderNames;
+                  setWrapFolderNames(newValue);
+                  localStorage.setItem('library-wrap-folders', String(newValue));
+                }}
+                className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
+                  wrapFolderNames
+                    ? 'bg-bambu-green/20 text-bambu-green'
+                    : 'text-bambu-gray hover:text-white hover:bg-bambu-dark'
+                }`}
+                title={wrapFolderNames ? t('fileManager.disableTextWrapping') : t('fileManager.enableTextWrapping')}
+              >
+                {t('fileManager.wrap')}
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
             {/* All Files (root) */}
@@ -1562,10 +1656,12 @@ export function FileManagerPage() {
               <span className="text-sm">{t('fileManager.allFiles')}</span>
             </div>
 
-            {/* Folder tree */}
+            {/* Folder tree — re-key on the collapse toggle so flipping it
+                remounts every FolderTreeItem, which re-reads defaultExpanded
+                and makes the preference take effect immediately. */}
             {folders?.map((folder) => (
               <FolderTreeItem
-                key={folder.id}
+                key={`${folder.id}-${collapseFoldersByDefault ? 'c' : 'e'}`}
                 folder={folder}
                 selectedFolderId={selectedFolderId}
                 onSelect={setSelectedFolderId}
@@ -1573,6 +1669,7 @@ export function FileManagerPage() {
                 onLink={setLinkFolder}
                 onRename={(f) => setRenameItem({ type: 'folder', id: f.id, name: f.name })}
                 wrapNames={wrapFolderNames}
+                defaultExpanded={!collapseFoldersByDefault}
                 hasPermission={hasPermission}
                 t={t}
               />
@@ -1878,7 +1975,19 @@ export function FileManagerPage() {
                       if (file) setScheduleFile(file);
                     }}
                     onPrint={setPrintFile}
-                    onPreview3d={setViewerFile}
+                    onSlice={setSliceFile}
+                    useSlicerApi={settings?.use_slicer_api ?? false}
+                    onPreview3d={(f) => {
+                      // Sliced files (.gcode / .gcode.3mf) open the same
+                      // full-page gcode viewer the archive card uses, so
+                      // the two paths feel consistent. STL / source 3MF
+                      // continue to use the in-app 3D model viewer modal.
+                      if (isSlicedFilename(f.filename)) {
+                        navigate(`/gcode-viewer?library_file=${f.id}`);
+                      } else {
+                        setViewerFile(f);
+                      }
+                    }}
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
                     thumbnailVersion={thumbnailVersions[file.id]}
@@ -2014,9 +2123,30 @@ export function FileManagerPage() {
                           </button>
                         </>
                       )}
+                      {(settings?.use_slicer_api ?? false) && isSliceableFilename(file.filename) && (
+                        <button
+                          onClick={() => hasPermission('library:upload') && setSliceFile(file)}
+                          className={`p-1.5 rounded transition-colors ${
+                            hasPermission('library:upload')
+                              ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
+                              : 'text-bambu-gray/50 cursor-not-allowed'
+                          }`}
+                          title={hasPermission('library:upload') ? t('slice.action') : t('fileManager.noPermissionSlice')}
+                          disabled={!hasPermission('library:upload')}
+                        >
+                          <Cog className="w-4 h-4" />
+                        </button>
+                      )}
                       {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
                         <button
-                          onClick={() => hasPermission('library:read') && setViewerFile(file)}
+                          onClick={() => {
+                            if (!hasPermission('library:read')) return;
+                            if (isSlicedFilename(file.filename)) {
+                              navigate(`/gcode-viewer?library_file=${file.id}`);
+                            } else {
+                              setViewerFile(file);
+                            }
+                          }}
                           className={`p-1.5 rounded transition-colors ${
                             hasPermission('library:read')
                               ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
@@ -2127,6 +2257,10 @@ export function FileManagerPage() {
         />
       )}
 
+      {showPurgeModal && (
+        <PurgeOldFilesModal onClose={() => setShowPurgeModal(false)} />
+      )}
+
       {linkFolder && (
         <LinkFolderModal
           folder={linkFolder}
@@ -2204,6 +2338,13 @@ export function FileManagerPage() {
             queryClient.invalidateQueries({ queryKey: ['queue'] });
             queryClient.invalidateQueries({ queryKey: ['archives'] });
           }}
+        />
+      )}
+
+      {sliceFile && (
+        <SliceModal
+          source={{ kind: 'libraryFile', id: sliceFile.id, filename: sliceFile.filename }}
+          onClose={() => setSliceFile(null)}
         />
       )}
 

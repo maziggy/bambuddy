@@ -18,12 +18,34 @@ function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
+    // navigator.clipboard is gated by the secure-context requirement, so on
+    // plain-HTTP LAN deployments (#1174) the API is undefined and the previous
+    // code silently swallowed the failure — the icon never flipped to the tick
+    // and nothing landed on the user's clipboard. Fall back to the legacy
+    // execCommand path via an off-screen textarea, matching the pattern used
+    // by CameraTokensPage's plaintext-token modal.
     try {
-      await navigator.clipboard.writeText(value);
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = value;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        try {
+          ta.select();
+          const ok = document.execCommand('copy');
+          if (!ok) return;
+        } finally {
+          document.body.removeChild(ta);
+        }
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard may not be available in non-secure contexts
+      // Both paths failed (no clipboard API, no execCommand). Leave the icon
+      // unchanged so the user knows nothing was copied.
     }
   };
 

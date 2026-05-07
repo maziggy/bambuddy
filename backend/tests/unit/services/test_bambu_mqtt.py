@@ -427,6 +427,142 @@ class TestRealisticMessageFlow:
         assert complete_data["status"] == "failed"
 
 
+class TestPrePrintFailureCompletion:
+    """Tests for completion detection when the print errors before reaching RUNNING (#1111).
+
+    Common trigger: a file sliced for the wrong nozzle diameter is dispatched. The
+    printer transitions IDLE -> PREPARE -> FAILED without ever entering RUNNING, so
+    the legacy completion detection (which required _previous_gcode_state == 'RUNNING'
+    or _was_running == True) left the queue item stuck at 'printing' forever.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    def test_prepare_to_failed_triggers_completion(self, mqtt_client):
+        """PREPARE -> FAILED must fire on_print_complete (wrong nozzle size etc.)."""
+        complete_data = {}
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: complete_data.update(data)
+
+        mqtt_client._previous_gcode_state = "PREPARE"
+        mqtt_client._was_running = False
+        mqtt_client._completion_triggered = False
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/plate_1.gcode",
+                    "subtask_name": "WrongNozzle",
+                }
+            }
+        )
+
+        assert complete_data.get("status") == "failed"
+
+    def test_slicing_to_failed_triggers_completion(self, mqtt_client):
+        """SLICING -> FAILED also treated as a pre-print failure."""
+        complete_data = {}
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: complete_data.update(data)
+
+        mqtt_client._previous_gcode_state = "SLICING"
+        mqtt_client._was_running = False
+        mqtt_client._completion_triggered = False
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/plate_1.gcode",
+                    "subtask_name": "WrongNozzle",
+                }
+            }
+        )
+
+        assert complete_data.get("status") == "failed"
+
+    def test_initial_failed_does_not_trigger_completion(self, mqtt_client):
+        """First message arriving with FAILED (no prior state) must NOT fire completion.
+
+        Protects against a stale FAILED on reconnect being mistaken for a fresh failure
+        and marking an unrelated queue item as failed.
+        """
+        calls = []
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: calls.append(data)
+
+        assert mqtt_client._previous_gcode_state is None
+        assert mqtt_client._was_running is False
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/plate_1.gcode",
+                    "subtask_name": "Stale",
+                }
+            }
+        )
+
+        assert calls == []
+
+    def test_idle_to_failed_does_not_trigger_completion(self, mqtt_client):
+        """IDLE -> FAILED (no print ever dispatched) must NOT fire completion."""
+        calls = []
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: calls.append(data)
+
+        mqtt_client._previous_gcode_state = "IDLE"
+        mqtt_client._was_running = False
+        mqtt_client._completion_triggered = False
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "subtask_name": "Stale",
+                }
+            }
+        )
+
+        assert calls == []
+
+    def test_prepare_to_failed_includes_hms_errors_in_callback(self, mqtt_client):
+        """Pre-print FAILED callback should carry the current HMS error list so the
+        queue handler can populate a meaningful error_message."""
+        complete_data = {}
+        mqtt_client.on_print_start = lambda data: None
+        mqtt_client.on_print_complete = lambda data: complete_data.update(data)
+
+        mqtt_client._previous_gcode_state = "PREPARE"
+        mqtt_client._was_running = False
+
+        # Message carries HMS data for a nozzle-size mismatch (0500_4038) and the
+        # PREPARE -> FAILED gcode_state transition in a single update.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/plate_1.gcode",
+                    "hms": [{"attr": 0x05000000, "code": 0x4038}],
+                }
+            }
+        )
+
+        assert complete_data.get("status") == "failed"
+        errs = complete_data.get("hms_errors") or []
+        assert any(e.get("code") == "0x4038" for e in errs)
+
+
 class TestAMSDataMerging:
     """Tests for AMS data merging, particularly handling empty slots."""
 
@@ -2595,83 +2731,129 @@ class TestTrayChangeLog:
 
         assert mqtt_client.state.tray_change_log == [(1, 0)]
 
+    # Helper that mirrors the production gate at bambu_mqtt.py:1571 — tests
+    # below replicate the gate so they validate the *contract* without needing
+    # to feed a synthetic AMS push through the full _process_message path.
+    @staticmethod
+    def _record_if_change(client, tn: int) -> None:
+        if (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
+            if tn != client.state.last_loaded_tray and client._was_running and not client._completion_triggered:
+                client.state.tray_change_log.append((tn, client.state.layer_num))
+            client.state.last_loaded_tray = tn
+
     def test_tray_change_recorded_during_running(self, mqtt_client):
         """Tray change while RUNNING is appended to the log."""
         mqtt_client.state.state = "RUNNING"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
         mqtt_client.state.layer_num = 50
         mqtt_client.state.last_loaded_tray = 0
         mqtt_client.state.tray_change_log = [(0, 0)]
 
-        # Simulate tray_now update via AMS data
         mqtt_client.state.tray_now = 1
-        # Trigger the tracking code path
-        tn = mqtt_client.state.tray_now
-        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-        mqtt_client.state.last_loaded_tray = tn
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
 
         assert mqtt_client.state.tray_change_log == [(0, 0), (1, 50)]
 
     def test_tray_change_not_recorded_when_idle(self, mqtt_client):
-        """Tray changes while IDLE are NOT logged."""
+        """Tray changes outside an active print are NOT logged."""
+        # IDLE between prints — both lifecycle flags in the cleared state.
         mqtt_client.state.state = "IDLE"
+        mqtt_client._was_running = False
+        mqtt_client._completion_triggered = False
         mqtt_client.state.layer_num = 0
         mqtt_client.state.last_loaded_tray = 0
         mqtt_client.state.tray_change_log = []
 
         mqtt_client.state.tray_now = 3
-        tn = mqtt_client.state.tray_now
-        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-        mqtt_client.state.last_loaded_tray = tn
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
 
         assert mqtt_client.state.tray_change_log == []
 
     def test_tray_change_recorded_during_pause(self, mqtt_client):
         """Tray change while PAUSE is also logged (AMS can swap during pause)."""
         mqtt_client.state.state = "PAUSE"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
         mqtt_client.state.layer_num = 75
         mqtt_client.state.last_loaded_tray = 2
         mqtt_client.state.tray_change_log = [(2, 0)]
 
         mqtt_client.state.tray_now = 5
-        tn = mqtt_client.state.tray_now
-        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-        mqtt_client.state.last_loaded_tray = tn
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
 
         assert mqtt_client.state.tray_change_log == [(2, 0), (5, 75)]
+
+    def test_tray_change_recorded_during_intermediate_state(self, mqtt_client):
+        """Tray change during a transient non-RUNNING state mid-print is logged.
+
+        Regression for #957: P2S firmware briefly transitions out of RUNNING
+        (e.g. into LOADING) when the AMS auto-falls-back from an empty spool to
+        a same-material sibling. The previous gate ``state in ("RUNNING",
+        "PAUSE")`` missed this transition entirely, so the usage tracker had no
+        evidence of the switch and double-credited the original tray with the
+        full 3MF estimate while the remain%-delta path added the fallback
+        weight on top. The new gate keys on the print-lifecycle flags
+        (``_was_running and not _completion_triggered``) so any tray change
+        between print start and completion is captured regardless of the
+        momentary gcode_state string.
+        """
+        mqtt_client.state.state = "LOADING"  # not RUNNING/PAUSE — old gate would skip
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
+        mqtt_client.state.layer_num = 42
+        mqtt_client.state.last_loaded_tray = 0
+        mqtt_client.state.tray_change_log = [(0, 0)]
+
+        # AMS auto-fallback: T0 ran out, swapped to T1 of same material
+        mqtt_client.state.tray_now = 1
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
+
+        assert mqtt_client.state.tray_change_log == [(0, 0), (1, 42)]
+
+    def test_tray_change_not_recorded_after_completion(self, mqtt_client):
+        """Once on_print_complete has fired, further tray changes don't pollute the log."""
+        mqtt_client.state.state = "FINISH"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = True  # completion already triggered
+        mqtt_client.state.layer_num = 0
+        mqtt_client.state.last_loaded_tray = 1
+        mqtt_client.state.tray_change_log = [(0, 0), (1, 50)]
+
+        mqtt_client.state.tray_now = 2
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
+
+        # Log unchanged — completion already triggered so post-print tray
+        # movement (e.g. printer self-cleaning) doesn't bleed into the next
+        # print's attribution.
+        assert mqtt_client.state.tray_change_log == [(0, 0), (1, 50)]
 
     def test_same_tray_not_logged_twice(self, mqtt_client):
         """Same tray value doesn't create duplicate log entries."""
         mqtt_client.state.state = "RUNNING"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
         mqtt_client.state.layer_num = 30
         mqtt_client.state.last_loaded_tray = 2
         mqtt_client.state.tray_change_log = [(2, 0)]
 
-        # Same tray again
         mqtt_client.state.tray_now = 2
-        tn = mqtt_client.state.tray_now
-        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-        mqtt_client.state.last_loaded_tray = tn
+        self._record_if_change(mqtt_client, mqtt_client.state.tray_now)
 
         assert mqtt_client.state.tray_change_log == [(2, 0)]
 
     def test_multiple_tray_changes(self, mqtt_client):
         """Multiple tray changes create a full history."""
         mqtt_client.state.state = "RUNNING"
+        mqtt_client._was_running = True
+        mqtt_client._completion_triggered = False
         mqtt_client.state.last_loaded_tray = 0
         mqtt_client.state.tray_change_log = [(0, 0)]
 
-        changes = [(1, 50), (3, 120), (0, 200)]
-        for tray, layer in changes:
+        for tray, layer in [(1, 50), (3, 120), (0, 200)]:
             mqtt_client.state.tray_now = tray
             mqtt_client.state.layer_num = layer
-            tn = mqtt_client.state.tray_now
-            if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
-                mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
-            mqtt_client.state.last_loaded_tray = tn
+            self._record_if_change(mqtt_client, tray)
 
         assert mqtt_client.state.tray_change_log == [(0, 0), (1, 50), (3, 120), (0, 200)]
 
@@ -2847,7 +3029,11 @@ class TestDeveloperModeProbeTimeout:
         assert mqtt_client.state.connected is True
 
     def test_second_timeout_forces_reconnect(self, mqtt_client):
-        """After two consecutive probe timeouts, force-close the socket."""
+        """After two consecutive probe timeouts, force-close the socket.
+
+        Probe timeout detection runs from paho's network thread (no asyncio
+        loop), so force_reconnect_stale_session routes through socket-close
+        rather than hard-reset (loop_stop from inside the loop deadlocks)."""
         import time
 
         data = self._make_pushall_data()
@@ -2869,9 +3055,8 @@ class TestDeveloperModeProbeTimeout:
         assert mqtt_client._dev_mode_probe_failures == 2
         assert mqtt_client.state.connected is False
         assert mqtt_client._stale_reconnecting is True
-        # Socket should have been closed
+        # Sync test → no running loop → socket-close fallback path
         mqtt_client._client.socket().close.assert_called()
-        # on_state_change should have been called
         assert len(state_change_called) > 0
 
     def test_successful_probe_resets_failure_counter(self, mqtt_client):
@@ -3480,16 +3665,28 @@ class TestStartPrintUniqueIdentityFields:
         assert first["project_id"] != second["project_id"]
 
     def test_submission_id_is_numeric_string(self, mqtt_client):
-        """ID format: digits-only string (epoch millis). Studio uses cloud
-        task IDs that are also numeric-looking strings; the DB column is
-        VARCHAR(64) and Bambuddy's own subtask_id parser treats '0'/'' as
-        absent — any valid digit string that isn't '0' is fine."""
+        """ID format: digits-only string. Studio uses cloud task IDs that are
+        also numeric-looking strings; the DB column is VARCHAR(64) and
+        Bambuddy's own subtask_id parser treats '0'/'' as absent — any valid
+        digit string that isn't '0' is fine."""
         mqtt_client.start_print("test.3mf")
         cmd = self._get_published_command(mqtt_client)
         assert cmd["task_id"].isdigit()
         assert int(cmd["task_id"]) > 0
-        # Must fit in VARCHAR(64); epoch-ms is 13 digits
         assert len(cmd["task_id"]) <= 64
+
+    def test_submission_id_fits_signed_int32(self, mqtt_client):
+        """Regression for #1042: P1S firmware clamps oversized task identity
+        fields to signed int32 max (2**31-1 = 2147483647). If we send raw
+        epoch-ms (~1.7e12), the printer sees a saturated constant on every
+        submission and treats fresh dispatches as continuations of the last
+        FAILED job — never leaves IDLE. Keep below 2**31.
+        """
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert int(cmd["task_id"]) < 2**31
+        assert int(cmd["project_id"]) < 2**31
+        assert int(cmd["subtask_id"]) < 2**31
 
     def test_unrelated_payload_fields_untouched(self, mqtt_client):
         """Regression guard: fix only touches identity fields; everything else
@@ -3543,6 +3740,14 @@ class TestDeleteKProfileDualNozzleDetection:
 
     def test_x2d_serial_uses_dual_nozzle_format(self):
         client = self._make_client("20P90A000000001")
+        client.delete_kprofile(cali_idx=1, filament_id="GFA00", nozzle_id="HH00-0.4")
+        cmd = self._published(client)
+        assert "setting_id" not in cmd
+        assert cmd["extruder_id"] == 0
+
+    def test_h2c_new_prefix_uses_dual_nozzle_format(self):
+        """Post-2026 H2C batches ship with '31B8B' prefix instead of '094' (#1105)."""
+        client = self._make_client("31B8BP000000001")
         client.delete_kprofile(cali_idx=1, filament_id="GFA00", nozzle_id="HH00-0.4")
         cmd = self._published(client)
         assert "setting_id" not in cmd
@@ -3932,7 +4137,13 @@ class TestZombieSessionDetection:
         assert mqtt_client.state.connected is True
 
     def test_two_timeouts_force_reconnect(self, mqtt_client):
-        """Two consecutive unanswered commands trigger force_reconnect."""
+        """Two consecutive unanswered commands trigger force_reconnect.
+
+        Zombie detection runs from paho's network thread (no asyncio loop), so
+        the routing in force_reconnect_stale_session falls back to socket-close
+        — which is the safe option since loop_stop() from inside the loop
+        thread would deadlock. Hard-reset is reserved for async-context callers
+        (background_dispatch dispatch path)."""
         import time
 
         state_change_called = []
@@ -3951,6 +4162,7 @@ class TestZombieSessionDetection:
         assert mqtt_client._ams_cmd_unanswered == 0  # reset after reconnect
         assert mqtt_client.state.connected is False
         assert mqtt_client._stale_reconnecting is True
+        # Sync test → no running loop → socket-close fallback path
         mqtt_client._client.socket().close.assert_called()
         assert len(state_change_called) > 0
 
@@ -3973,6 +4185,54 @@ class TestZombieSessionDetection:
         mqtt_client._update_state({"gcode_state": "IDLE"})
         assert mqtt_client._ams_cmd_unanswered == 1
         assert mqtt_client.state.connected is True  # no reconnect
+
+    def test_late_response_after_watchdog_clears_counter_issue_1164(self, mqtt_client):
+        """Regression for #1164: a late ams_filament_setting response — one
+        that arrives AFTER the watchdog has already zeroed
+        `_last_ams_cmd_time` and incremented the unanswered counter — must
+        still reset the counter. Without this, a single sluggish response
+        leaves the counter armed at 1 indefinitely; the next slow response
+        on a totally unrelated command (possibly minutes or hours later)
+        takes it to 2 and force-reconnects, surfacing as 'AMS slot config
+        doesn't reach the printer ~6 changes in'."""
+        import time
+
+        # First command publishes, then doesn't get a response for >10s.
+        # Watchdog fires: counter=1, _last_ams_cmd_time zeroed.
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 11.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+        assert mqtt_client._ams_cmd_unanswered == 1
+        assert mqtt_client._last_ams_cmd_time == 0.0  # watchdog cleared it
+
+        # Late response arrives — the `_process_message` path used to require
+        # `_last_ams_cmd_time > 0` before resetting the counter, so this would
+        # have silently been ignored.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "ams_filament_setting",
+                    "sequence_id": "0",
+                    "result": "success",
+                    "reason": "success",
+                }
+            }
+        )
+
+        # Counter MUST be reset — the response proves the channel is alive.
+        assert mqtt_client._ams_cmd_unanswered == 0, (
+            "Late ams_filament_setting response must reset the unanswered "
+            "counter even when the watchdog already zeroed _last_ams_cmd_time. "
+            "If this assertion fails the #1164 regression is back: a single "
+            "sluggish response will leave the counter armed and cause a "
+            "spurious force_reconnect on the next slow response."
+        )
+
+        # Now even if a future command times out, the counter starts fresh
+        # and a single timeout doesn't trip the 2x reconnect threshold.
+        mqtt_client._last_ams_cmd_time = time.monotonic() - 11.0
+        mqtt_client._update_state({"gcode_state": "IDLE"})
+        assert mqtt_client._ams_cmd_unanswered == 1
+        assert mqtt_client.state.connected is True  # no force reconnect
 
     def test_on_connect_resets_tracking(self, mqtt_client):
         """_on_connect resets zombie tracking fields."""
@@ -4002,3 +4262,409 @@ class TestZombieSessionDetection:
         mqtt_client._update_state({"gcode_state": "IDLE"})
         assert mqtt_client._ams_cmd_unanswered == 0
         assert mqtt_client._last_ams_cmd_time > 0  # still pending
+
+
+class TestHMSUserActionFiltering:
+    """HMS short codes the printer firmware emits during user-cancel sequences
+    must not appear in state.hms_errors — they're status echoes, not faults,
+    and shouldn't drive the printer card's "X problem" badge or red pip."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_HMS",
+            access_code="12345678",
+        )
+
+    def test_task_cancelled_echo_0300_400c_filtered(self, mqtt_client):
+        """0300_400C ("The task was canceled.") is the user-cancel echo that was
+        leaving the printer card stuck on "1 problem" after every stop."""
+        mqtt_client._update_state({"hms": [{"attr": 0x03000300, "code": 0x400C}]})
+        assert mqtt_client.state.hms_errors == []
+
+    def test_printing_cancelled_echo_0500_400e_filtered(self, mqtt_client):
+        """0500_400E ("Printing was cancelled.") — the corresponding nozzle-module
+        echo that the backend notification path was already suppressing for the
+        same reason."""
+        mqtt_client._update_state({"hms": [{"attr": 0x05000300, "code": 0x400E}]})
+        assert mqtt_client.state.hms_errors == []
+
+    def test_real_layer_shift_still_passes_through(self, mqtt_client):
+        """0300_4057 (Z-axis step loss) is a real fault and must NOT be filtered."""
+        mqtt_client._update_state({"hms": [{"attr": 0x03000100, "code": 0x4057}]})
+        assert len(mqtt_client.state.hms_errors) == 1
+        assert mqtt_client.state.hms_errors[0].code == "0x4057"
+
+    def test_filter_only_drops_user_action_codes_keeps_concurrent_real_faults(self, mqtt_client):
+        """When the user cancels mid-fault, the firmware sends the real fault HMS
+        alongside the cancel echo. Drop only the echo, keep the real fault."""
+        mqtt_client._update_state(
+            {
+                "hms": [
+                    {"attr": 0x03000300, "code": 0x400C},  # cancel echo — drop
+                    {"attr": 0x07FF0200, "code": 0x8011},  # filament runout — keep
+                ]
+            }
+        )
+        codes = [e.code for e in mqtt_client.state.hms_errors]
+        assert "0x8011" in codes
+        assert "0x400c" not in codes
+        assert len(mqtt_client.state.hms_errors) == 1
+
+    def test_print_error_path_also_filters_cancel_echo(self, mqtt_client):
+        """`print_error` is a second route that appends into state.hms_errors. The
+        same user-action codes (e.g. 0500_400E "Printing was cancelled") must be
+        filtered there too — otherwise the printer card stays on "1 problem"
+        when the firmware reports the cancel via print_error rather than hms[]."""
+        mqtt_client._update_state({"print_error": 0x0500_400E})
+        assert mqtt_client.state.hms_errors == []
+
+    def test_print_error_path_passes_real_errors_through(self, mqtt_client):
+        """Real print_error codes still reach state.hms_errors."""
+        mqtt_client._update_state({"print_error": 0x0500_8061})
+        assert len(mqtt_client.state.hms_errors) == 1
+        assert mqtt_client.state.hms_errors[0].code == "0x8061"
+
+
+class TestForceReconnectRouting:
+    """#1136 — force_reconnect_stale_session routes between hard-reset (full
+    paho-client teardown, wipes the QoS 1 queue) and socket-close (the legacy
+    behaviour, safe to call from paho's own network thread). The routing
+    decision is based on whether an asyncio loop is running: hard-reset
+    requires loop_stop() which would deadlock if called from inside the
+    network thread itself."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_HARD_RESET",
+            access_code="12345678",
+        )
+        client.state.connected = True
+        client._client = MagicMock()
+        return client
+
+    def test_routing_falls_back_to_socket_close_without_running_loop(self, mqtt_client):
+        """Sync caller → no asyncio loop → socket-close path (legacy behaviour
+        preserved for paho-thread callers like zombie detection)."""
+        mqtt_client.force_reconnect_stale_session("test")
+        mqtt_client._client.socket().close.assert_called()
+        # Old client is NOT torn down on this path; same-instance reconnect
+        # via paho's auto-reconnect handles it.
+        assert mqtt_client._client is not None
+
+    def test_routing_uses_hard_reset_when_loop_is_running(self, mqtt_client):
+        """Async caller → loop available → hard-reset path wipes the queue."""
+        import asyncio
+
+        original = mqtt_client._client
+        # Stub connect() so the rebuild doesn't open a real socket.
+        mqtt_client.connect = lambda loop=None: None
+
+        async def _trigger():
+            mqtt_client.force_reconnect_stale_session("test")
+
+        asyncio.run(_trigger())
+        original.disconnect.assert_called()
+        original.loop_stop.assert_called()
+        # connect() stub didn't repopulate _client, so it's None — the contract
+        # in production is that connect() builds a fresh mqtt.Client here.
+        assert mqtt_client._client is None
+
+    def test_marks_state_disconnected_and_broadcasts(self, mqtt_client):
+        """Both routing paths must broadcast the disconnected state once."""
+        broadcasts: list[bool] = []
+        mqtt_client.on_state_change = lambda s: broadcasts.append(s.connected)
+        mqtt_client.force_reconnect_stale_session("test")
+        assert mqtt_client.state.connected is False
+        assert mqtt_client._stale_reconnecting is True
+        assert broadcasts == [False]
+
+
+class TestHardResetClientDirect:
+    """Lower-level coverage of `_hard_reset_client` itself — the helper called
+    by the routing layer when a full paho-client teardown is safe. These tests
+    drive the helper directly so they don't depend on the routing decision."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_HARD_DIRECT",
+            access_code="12345678",
+        )
+        client.state.connected = True
+        client._client = MagicMock()
+        # Stub connect() so the rebuild doesn't open a real socket.
+        client.connect = lambda loop=None: None
+        return client
+
+    def test_disconnects_and_stops_old_client(self, mqtt_client):
+        """Old paho client must receive DISCONNECT (broker drops session) +
+        loop_stop (network thread exits, taking its QoS 1 queue with it)."""
+        original = mqtt_client._client
+        mqtt_client._hard_reset_client()
+        original.disconnect.assert_called()
+        original.loop_stop.assert_called()
+
+    def test_clears_client_reference(self, mqtt_client):
+        """Old reference must go to None so subsequent code can't accidentally
+        publish through the dying client."""
+        mqtt_client._hard_reset_client()
+        assert mqtt_client._client is None
+
+    def test_swallows_disconnect_exception(self, mqtt_client):
+        """A failing disconnect() (e.g. paho already in error state) must not
+        propagate — the await chain in background_dispatch.py would otherwise
+        raise instead of moving on, and a single broken client could brick
+        every future dispatch."""
+        original = mqtt_client._client
+        original.disconnect.side_effect = RuntimeError("boom")
+        # No exception escapes the call (test would fail if it did).
+        mqtt_client._hard_reset_client()
+        # loop_stop is still attempted after the disconnect failure.
+        original.loop_stop.assert_called()
+        assert mqtt_client._client is None
+
+
+class TestStartPrintRecordsDispatchedPlate:
+    """Tests for the dispatched-plate record set by start_print() — used by the
+    /cover route to pick the right thumbnail when the printer's gcode_file
+    echo doesn't include the plate path (#1166).
+
+    Some firmware versions (P1S 01.10.00.00) only put the .3mf filename in
+    print.gcode_file, so the regex falls back to plate 1 and the printer card
+    shows the wrong plate's thumbnail. Recording what we dispatched at the
+    publish site lets resolve_plate_id() return the right plate without
+    needing to introspect the 3MF.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        client.state.connected = True
+        return client
+
+    def test_dispatched_plate_recorded_after_start_print(self, mqtt_client):
+        # Default state has no dispatched plate.
+        assert mqtt_client.state.dispatched_plate_id is None
+        assert mqtt_client.state.dispatched_subtask is None
+
+        mqtt_client.start_print("Luigi.3mf", plate_id=2)
+
+        # The subtask_name we record matches the one we send (and the printer
+        # reflects back via MQTT), so resolve_plate_id() can validate the
+        # match downstream.
+        assert mqtt_client.state.dispatched_plate_id == 2
+        assert mqtt_client.state.dispatched_subtask == "Luigi"
+
+    def test_dispatched_plate_default_is_one(self, mqtt_client):
+        # When start_print is called without plate_id (legacy/single-plate
+        # flow), we still record plate=1 — the contract is that dispatched_*
+        # describes the active dispatch.
+        mqtt_client.start_print("Single.3mf")
+        assert mqtt_client.state.dispatched_plate_id == 1
+        assert mqtt_client.state.dispatched_subtask == "Single"
+
+    def test_dispatched_plate_overwritten_by_subsequent_dispatch(self, mqtt_client):
+        # Each dispatch replaces the prior record so we can never serve a
+        # stale plate from an older print.
+        mqtt_client.start_print("First.3mf", plate_id=4)
+        mqtt_client.start_print("Second.3mf", plate_id=2)
+
+        assert mqtt_client.state.dispatched_plate_id == 2
+        assert mqtt_client.state.dispatched_subtask == "Second"
+
+    def test_dispatched_plate_not_recorded_when_publish_skipped(self, mqtt_client):
+        # If start_print early-returns because we're not connected, no record
+        # should land — otherwise the next print's /cover call would believe
+        # a phantom dispatch happened.
+        mqtt_client.state.connected = False
+        result = mqtt_client.start_print("Phantom.3mf", plate_id=3)
+
+        assert result is False
+        assert mqtt_client.state.dispatched_plate_id is None
+        assert mqtt_client.state.dispatched_subtask is None
+
+
+class TestFilamentTrackSwitchDetection:
+    """Tests for Filament Track Switch (FTS) accessory detection (#1162).
+
+    The FTS is an accessory that sits between an AMS and the printer's
+    extruders, dynamically routing any slot to either nozzle. When installed,
+    each AMS unit reports info bits 8-11 = 0xE (uninitialized) since slots are
+    no longer tied to a specific extruder. Detection comes from the presence of
+    the print.device.fila_switch object in MQTT push_status.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    def test_fts_default_not_installed(self, mqtt_client):
+        """Without any MQTT data, fila_switch.installed must be False so the
+        frontend keeps applying the per-extruder filter on regular dual-nozzle
+        printers."""
+        assert mqtt_client.state.fila_switch.installed is False
+        assert mqtt_client.state.fila_switch.in_slots == []
+        assert mqtt_client.state.fila_switch.out_extruders == []
+
+    def test_fts_detected_from_device_fila_switch(self, mqtt_client):
+        """A push_status with print.device.fila_switch present must mark FTS
+        installed and capture its routing arrays. Mirrors the user's MQTT
+        bundle in #1162."""
+        data = {
+            "gcode_state": "RUNNING",
+            "device": {
+                "fila_switch": {
+                    "in": [-1, 2],
+                    "info": 2,
+                    "out": [0, 1],
+                    "stat": 0,
+                }
+            },
+        }
+        mqtt_client._update_state(data)
+        fs = mqtt_client.state.fila_switch
+        assert fs.installed is True
+        assert fs.in_slots == [-1, 2]
+        assert fs.out_extruders == [0, 1]
+        assert fs.stat == 0
+        assert fs.info == 2
+
+    def test_fts_absent_when_no_fila_switch_field(self, mqtt_client):
+        """A push_status that has device.* but no fila_switch must leave
+        fila_switch.installed = False — only that specific field flips it on."""
+        data = {
+            "gcode_state": "IDLE",
+            "device": {"extruder": {"state": 0}},
+        }
+        mqtt_client._update_state(data)
+        assert mqtt_client.state.fila_switch.installed is False
+
+    def test_fts_handles_missing_in_out_arrays(self, mqtt_client):
+        """If the firmware sends fila_switch with missing or non-list in/out,
+        we must still mark it installed (presence is the signal) and default
+        the arrays to empty lists rather than crashing."""
+        data = {
+            "gcode_state": "IDLE",
+            "device": {"fila_switch": {"stat": 0, "info": 0}},
+        }
+        mqtt_client._update_state(data)
+        fs = mqtt_client.state.fila_switch
+        assert fs.installed is True
+        assert fs.in_slots == []
+        assert fs.out_extruders == []
+
+
+class TestAmsLoadFilamentEncoding:
+    """Per-target ams_change_filament command encoding (#891)."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        # Pretend the MQTT layer is connected so the publish path is reached.
+        client._client = MagicMock()
+        client.state.connected = True
+        return client
+
+    @staticmethod
+    def _published(client) -> dict:
+        """Return the JSON of the most recent publish() call."""
+        last_call = client._client.publish.call_args_list[-1]
+        topic, payload, *_ = last_call.args
+        return json.loads(payload)
+
+    def test_ams_slot_uses_local_index_and_minus_one_temps(self, mqtt_client):
+        """tray_id=5 → ams_id=1, slot_id=1, target=5, curr/tar=-1."""
+        assert mqtt_client.ams_load_filament(5) is True
+        cmd = self._published(mqtt_client)["print"]
+        assert cmd["command"] == "ams_change_filament"
+        assert cmd["ams_id"] == 1
+        assert cmd["slot_id"] == 1
+        assert cmd["target"] == 5
+        assert cmd["curr_temp"] == -1
+        assert cmd["tar_temp"] == -1
+
+    def test_external_left_keeps_legacy_encoding(self, mqtt_client):
+        """tray_id=254 → ams_id=255, slot_id=254, target=254, curr/tar=-1.
+
+        This is the original capture from a single-extruder printer; preserved
+        verbatim so existing single-external setups don't regress.
+        """
+        assert mqtt_client.ams_load_filament(254) is True
+        cmd = self._published(mqtt_client)["print"]
+        assert cmd["ams_id"] == 255
+        assert cmd["slot_id"] == 254
+        assert cmd["target"] == 254
+        assert cmd["curr_temp"] == -1
+        assert cmd["tar_temp"] == -1
+
+    def test_external_right_uses_extruder_index_and_actual_temp(self, mqtt_client):
+        """tray_id=255 → captured BambuStudio shape on dual-nozzle H2D:
+        ams_id=255, slot_id=0 (right extruder), target=255, curr/tar = right
+        nozzle temp.
+        """
+        # Simulate a heated right nozzle.
+        mqtt_client.state.temperatures["nozzle_2"] = 215.0
+
+        assert mqtt_client.ams_load_filament(255) is True
+        cmd = self._published(mqtt_client)["print"]
+        assert cmd["ams_id"] == 255
+        assert cmd["slot_id"] == 0
+        assert cmd["target"] == 255
+        assert cmd["curr_temp"] == 215
+        assert cmd["tar_temp"] == 215
+
+    def test_external_right_falls_back_when_nozzle_cold(self, mqtt_client):
+        """If the right nozzle reports < 180 °C, fall back to a sane default
+        so the printer accepts the command rather than rejecting it on a
+        nonsensical temperature.
+        """
+        mqtt_client.state.temperatures["nozzle_2"] = 25.0
+
+        assert mqtt_client.ams_load_filament(255) is True
+        cmd = self._published(mqtt_client)["print"]
+        assert cmd["curr_temp"] == 215
+        assert cmd["tar_temp"] == 215
+
+    def test_returns_false_when_disconnected(self, mqtt_client):
+        """Disconnected client must not publish anything."""
+        mqtt_client.state.connected = False
+        assert mqtt_client.ams_load_filament(0) is False
+        mqtt_client._client.publish.assert_not_called()

@@ -13,6 +13,7 @@ from backend.app.services.printer_manager import (
     get_derived_status_name,
     has_stg_cur_idle_bug,
     init_printer_connections,
+    parse_plate_id,
     printer_state_to_dict,
     supports_chamber_temp,
     supports_drying,
@@ -834,6 +835,22 @@ class TestPrinterStateToDict:
 
         assert result["cover_url"] == "/api/v1/printers/1/cover"
 
+    def test_current_plate_id_extracted_from_gcode_file(self, mock_state):
+        """Verify current_plate_id is parsed from a Bambu plate path (#881)."""
+        mock_state.gcode_file = "/Metadata/plate_3.gcode"
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["current_plate_id"] == 3
+
+    def test_current_plate_id_none_when_no_plate_segment(self, mock_state):
+        """Verify current_plate_id stays None when gcode_file has no plate marker."""
+        mock_state.gcode_file = "/sdcard/test.gcode"
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["current_plate_id"] is None
+
     def test_cover_url_none_when_not_running(self, mock_state):
         """Verify cover_url is None when not printing."""
         mock_state.state = "IDLE"
@@ -948,6 +965,71 @@ class TestPrinterStateToDict:
         tray = ams_unit["tray"][0]
         assert tray["drying_temp"] == 55
         assert tray["drying_time"] == 240
+
+    def test_awaiting_plate_clear_defaults_false(self, mock_state):
+        """Without a printer_id, awaiting_plate_clear is False (no lookup possible)."""
+        result = printer_state_to_dict(mock_state)
+        assert result["awaiting_plate_clear"] is False
+
+    def test_awaiting_plate_clear_surfaced_when_set(self, mock_state):
+        """With printer_id, awaiting_plate_clear reflects PrinterManager state.
+
+        Regression: PR #939 left this flag off the WebSocket payload, so the
+        "Clear Plate" button only appeared after the 30 s REST fallback poll.
+        """
+        from backend.app.services.printer_manager import printer_manager
+
+        printer_manager.set_awaiting_plate_clear(12345, True)
+        try:
+            result = printer_state_to_dict(mock_state, printer_id=12345)
+            assert result["awaiting_plate_clear"] is True
+        finally:
+            printer_manager.set_awaiting_plate_clear(12345, False)
+
+    def test_name_and_model_surfaced_when_registered(self, mock_state):
+        """Registered PrinterInfo name + model arg should land in the WS payload.
+
+        Regression for #963 follow-up: without this, the gcode viewer's printer
+        selector had to wait on a /printers fetch before it could render real
+        names, and the initial WS snapshot showed "Printer 1" fallbacks.
+        """
+        from backend.app.services.printer_manager import PrinterInfo, printer_manager
+
+        # Register a stub PrinterInfo; the real manager writes this on connect.
+        printer_manager._printer_info[98765] = PrinterInfo(name="My X1C", serial_number="01S00-0")
+        try:
+            result = printer_state_to_dict(mock_state, printer_id=98765, model="X1C")
+            assert result["name"] == "My X1C"
+            assert result["model"] == "X1C"
+        finally:
+            printer_manager._printer_info.pop(98765, None)
+
+    def test_name_and_model_absent_when_no_printer_id(self, mock_state):
+        """Without a printer_id (unusual callsites), name/model keys stay absent.
+
+        The consumers (gcode viewer, frontend card) tolerate missing keys; what
+        they can't tolerate is an unrelated printer's name accidentally leaking
+        into a status meant for a different one.
+        """
+        result = printer_state_to_dict(mock_state)
+        assert "name" not in result
+        assert "model" not in result
+
+    def test_model_absent_when_arg_is_none(self, mock_state):
+        """`model` arg=None must not plant a `model` key at all.
+
+        If the arg is None, callers didn't know the model yet; emitting a
+        `model: null` field would overwrite a good value cached client-side.
+        """
+        from backend.app.services.printer_manager import PrinterInfo, printer_manager
+
+        printer_manager._printer_info[55555] = PrinterInfo(name="N", serial_number="S")
+        try:
+            result = printer_state_to_dict(mock_state, printer_id=55555, model=None)
+            assert "model" not in result
+            assert result["name"] == "N"
+        finally:
+            printer_manager._printer_info.pop(55555, None)
 
 
 class TestStatusKeyDryingDedup:
@@ -1295,3 +1377,126 @@ class TestAmsChangeCallback:
         # This tests the callback signature
         assert manager._on_ams_change is not None
         assert callable(manager._on_ams_change)
+
+
+class TestParsePlateId:
+    """Tests for parse_plate_id() — active-print plate extraction from gcode paths.
+
+    Regression coverage for #881 follow-up: the REST /status endpoint and the
+    WebSocket push path both use this helper, so they must agree on the plate
+    number the frontend sees.
+    """
+
+    def test_bambu_metadata_path(self):
+        # Canonical path that Bambu Studio / OrcaSlicer stamp into the 3MF.
+        assert parse_plate_id("/Metadata/plate_2.gcode") == 2
+
+    def test_plate_one(self):
+        assert parse_plate_id("/Metadata/plate_1.gcode") == 1
+
+    def test_double_digit_plate(self):
+        assert parse_plate_id("/Metadata/plate_12.gcode") == 12
+
+    def test_none_input(self):
+        assert parse_plate_id(None) is None
+
+    def test_empty_string(self):
+        assert parse_plate_id("") is None
+
+    def test_path_without_plate_segment(self):
+        # Some firmware / slicers report a bare filename without the plate marker.
+        assert parse_plate_id("/upload/my-model.gcode") is None
+
+    def test_similar_but_non_matching_names(self):
+        # "plate.gcode" (no number) and "nameplate_2.gcode" (substring) must not
+        # be mistaken for real plate markers. The regex anchors on `plate_<num>`.
+        assert parse_plate_id("/Metadata/plate.gcode") is None
+        assert parse_plate_id("/plates/3.gcode") is None
+
+    def test_substring_match_still_extracts(self):
+        # The regex isn't anchored to the start of a segment — any occurrence
+        # wins. This matches real Bambu paths where the segment is preceded by
+        # arbitrary directory noise, and matches the equivalent frontend regex.
+        assert parse_plate_id("/uploads/project/plate_5.gcode.md5") == 5
+
+
+class TestResolvePlateId:
+    """Tests for resolve_plate_id() — plate resolution with dispatch precedence.
+
+    Regression coverage for #1166: P1S firmware 01.10.00.00 only puts the .3mf
+    filename in print.gcode_file, so parse_plate_id() returns None and the
+    printer card falls back to plate 1. When Bambuddy dispatches the print
+    itself we know the right plate; resolve_plate_id() prefers that record over
+    the gcode_file regex when subtask_name matches.
+    """
+
+    def _make_state(self, **kwargs):
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        state = PrinterState()
+        for k, v in kwargs.items():
+            setattr(state, k, v)
+        return state
+
+    def test_dispatched_plate_wins_when_subtask_matches(self):
+        # User dispatches plate 4 via Bambuddy. Printer reflects subtask_name
+        # but firmware drops the plate path from gcode_file. Without the dispatch
+        # record we'd default to plate 1.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="MyModel.3mf",  # No plate path — firmware bug
+            subtask_name="MyModel",
+            dispatched_plate_id=4,
+            dispatched_subtask="MyModel",
+        )
+        assert resolve_plate_id(state) == 4
+
+    def test_dispatched_ignored_when_subtask_differs(self):
+        # Bambuddy's dispatch record is for a previous print; the printer is
+        # now running a different subtask (Studio-direct dispatch). The stale
+        # record must not be used — fall back to gcode_file regex.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="/Metadata/plate_2.gcode",
+            subtask_name="DifferentPrint",
+            dispatched_plate_id=4,
+            dispatched_subtask="MyModel",
+        )
+        assert resolve_plate_id(state) == 2
+
+    def test_falls_back_to_gcode_regex_without_dispatch(self):
+        # Studio-direct dispatch — no Bambuddy dispatch record. Existing logic
+        # (parse_plate_id on gcode_file) must still work.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="/Metadata/plate_3.gcode",
+            subtask_name="MyModel",
+        )
+        assert resolve_plate_id(state) == 3
+
+    def test_returns_none_when_nothing_resolvable(self):
+        # No dispatch record AND firmware swallowed the plate path. The route
+        # uses this signal to invoke the 3MF-scan fallback.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="MyModel.3mf",
+            subtask_name="MyModel",
+        )
+        assert resolve_plate_id(state) is None
+
+    def test_dispatched_subtask_required_to_avoid_false_match(self):
+        # dispatched_plate_id without dispatched_subtask is incomplete — we
+        # can't validate it points at the current print, so we ignore it.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="MyModel.3mf",
+            subtask_name="MyModel",
+            dispatched_plate_id=4,
+            dispatched_subtask=None,
+        )
+        assert resolve_plate_id(state) is None

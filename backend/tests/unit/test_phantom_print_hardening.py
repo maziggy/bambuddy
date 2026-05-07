@@ -209,3 +209,140 @@ class TestMultiplePrintingQueueItemsWarning:
         bug_warnings = [r for r in caplog.records if "BUG: Multiple queue items" in r.message]
         assert len(bug_warnings) == 1
         assert "printer 7" in bug_warnings[0].message
+
+
+class TestBusyPrinterSeedingFromPrintingItems:
+    """Regression for the duplicate-dispatch bug observed with quantity>1 batches.
+
+    The old scheduler seeded ``busy_printers`` with an empty set and relied on
+    ``_is_printer_idle()`` to gate dispatch. On H2D / P1 series the MQTT state
+    lags several seconds behind the print command, so the next ``check_queue``
+    tick saw IDLE and dispatched a second queue item onto the same printer —
+    both items ended up in 'printing' status. The fix seeds ``busy_printers``
+    up-front with every printer that already has an item in 'printing' status.
+    """
+
+    @pytest.mark.asyncio
+    async def test_seed_query_returns_printers_with_printing_items(self):
+        """The seeding query must return every printer_id that has a 'printing' item."""
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        import backend.app.models  # noqa: F401
+        from backend.app.core.database import Base
+        from backend.app.models.print_queue import PrintQueueItem
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        async with session_maker() as db:
+            db.add_all(
+                [
+                    PrintQueueItem(printer_id=1, status="printing", position=1, archive_id=10),
+                    PrintQueueItem(printer_id=1, status="pending", position=2, archive_id=10),
+                    PrintQueueItem(printer_id=2, status="printing", position=1, archive_id=11),
+                    PrintQueueItem(printer_id=3, status="pending", position=1, archive_id=12),
+                    PrintQueueItem(printer_id=None, status="pending", position=1, archive_id=13),
+                ]
+            )
+            await db.commit()
+
+            result = await db.execute(
+                select(PrintQueueItem.printer_id)
+                .where(PrintQueueItem.status == "printing")
+                .where(PrintQueueItem.printer_id.is_not(None))
+            )
+            busy_printers = {pid for (pid,) in result.all() if pid is not None}
+
+        assert busy_printers == {1, 2}
+
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_seed_query_empty_when_no_printing_items(self):
+        """With only pending items, no printer is considered busy by the query."""
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        import backend.app.models  # noqa: F401
+        from backend.app.core.database import Base
+        from backend.app.models.print_queue import PrintQueueItem
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        async with session_maker() as db:
+            db.add_all(
+                [
+                    PrintQueueItem(printer_id=1, status="pending", position=1, archive_id=10),
+                    PrintQueueItem(printer_id=2, status="completed", position=1, archive_id=11),
+                    PrintQueueItem(printer_id=3, status="failed", position=1, archive_id=12),
+                    PrintQueueItem(printer_id=4, status="cancelled", position=1, archive_id=13),
+                ]
+            )
+            await db.commit()
+
+            result = await db.execute(
+                select(PrintQueueItem.printer_id)
+                .where(PrintQueueItem.status == "printing")
+                .where(PrintQueueItem.printer_id.is_not(None))
+            )
+            busy_printers = {pid for (pid,) in result.all() if pid is not None}
+
+        assert busy_printers == set()
+
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_check_queue_skips_printer_with_existing_printing_item(self, caplog):
+        """Simulate the exact observed bug: a pending item targets a printer that already
+        has another queue item in 'printing' status. The scheduler must NOT dispatch the
+        pending item even if the live MQTT state reports IDLE.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        import backend.app.models  # noqa: F401
+        from backend.app.core.database import Base
+        from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.services.print_scheduler import PrintScheduler
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        async with session_maker() as db:
+            db.add_all(
+                [
+                    PrintQueueItem(printer_id=1, status="printing", position=1, archive_id=84),
+                    PrintQueueItem(printer_id=1, status="pending", position=2, archive_id=84),
+                ]
+            )
+            await db.commit()
+
+        scheduler = PrintScheduler()
+        start_print_mock = AsyncMock()
+
+        with (
+            patch("backend.app.services.print_scheduler.async_session", session_maker),
+            patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=False)),
+            patch.object(scheduler, "_is_printer_idle", return_value=True),
+            patch.object(scheduler, "_check_auto_drying", AsyncMock()),
+            patch.object(scheduler, "_start_print", start_print_mock),
+            patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        ):
+            mock_pm.is_connected.return_value = True
+            await scheduler.check_queue()
+
+        start_print_mock.assert_not_called()
+
+        async with session_maker() as db:
+            rows = (await db.execute(select(PrintQueueItem).order_by(PrintQueueItem.position))).scalars().all()
+            statuses = [r.status for r in rows]
+        assert statuses == ["printing", "pending"]
+
+        await engine.dispose()

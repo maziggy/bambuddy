@@ -173,6 +173,8 @@ export function AdditionalSection({
   updateField,
   spoolCatalog,
   currencySymbol,
+  availableCategories,
+  globalLowStockThreshold,
 }: AdditionalSectionProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -301,6 +303,64 @@ export function AdditionalSection({
             />
           </div>
         </div>
+      </div>
+
+      {/* Category (#729) */}
+      <div>
+        <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-category">
+          {t('inventory.category')}
+        </label>
+        <input
+          id="spool-category"
+          type="text"
+          list="spool-category-options"
+          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+          placeholder={t('inventory.categoryPlaceholder')}
+          value={formData.category}
+          maxLength={50}
+          onChange={(e) => updateField('category', e.target.value)}
+        />
+        {availableCategories.length > 0 && (
+          <datalist id="spool-category-options">
+            {availableCategories.map((c) => <option key={c} value={c} />)}
+          </datalist>
+        )}
+      </div>
+
+      {/* Per-spool low-stock threshold override (#729) */}
+      <div>
+        <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-low-stock-threshold">
+          {t('inventory.lowStockThresholdOverride')}
+        </label>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              id="spool-low-stock-threshold"
+              type="number"
+              className="w-full px-3 py-2 pr-8 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+              placeholder={String(globalLowStockThreshold)}
+              value={formData.low_stock_threshold_pct ?? ''}
+              min={1}
+              max={99}
+              step={1}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === '') {
+                  updateField('low_stock_threshold_pct', null);
+                  return;
+                }
+                const n = Number(raw);
+                if (Number.isFinite(n)) {
+                  updateField('low_stock_threshold_pct', Math.min(99, Math.max(1, Math.round(n))));
+                }
+              }}
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-bambu-gray pointer-events-none">%</span>
+          </div>
+        </div>
+        <p className="text-xs text-bambu-gray mt-1">
+          {t('inventory.lowStockThresholdOverrideHelp', { global: globalLowStockThreshold })}
+        </p>
       </div>
 
       {/* Note */}

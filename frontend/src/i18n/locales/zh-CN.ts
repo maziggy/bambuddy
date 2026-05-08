@@ -3447,6 +3447,7 @@ export default {
     },
     addSpool: '添加耗材',
     editSpool: '编辑耗材',
+    copySpool: '复制耗材',
     material: '材料',
     selectMaterial: '选择材料...',
     subtype: '子类型',

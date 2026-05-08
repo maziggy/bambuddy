@@ -3459,6 +3459,7 @@ export default {
     },
     addSpool: 'スプールを追加',
     editSpool: 'スプールを編集',
+    copySpool: 'スプールをコピー',
     material: '素材',
     selectMaterial: '素材を選択...',
     subtype: 'サブタイプ',

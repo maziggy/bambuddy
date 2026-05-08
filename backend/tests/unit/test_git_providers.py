@@ -329,6 +329,79 @@ class TestGiteaBackendListShapeRefResponse:
         assert result["status"] == "success"
 
 
+class TestGiteaBackendWrappedCommitResponse:
+    """#1224 regression: Gitea wraps the GitCommit fields under ``commit``.
+
+    GitHub's ``GET /git/commits/{sha}`` returns the unwrapped GitCommit schema
+    (``tree`` at top level). Gitea's same-named endpoint returns the wrapped
+    Commit schema where ``tree`` lives at ``commit.tree`` (Gitea 1.24+).
+
+    Pre-fix code did ``commit_response.json()["tree"]["sha"]`` and raised
+    ``KeyError: 'tree'`` on every backup *after* the initial one — surfaced to
+    the user as the opaque ``Backup failed: 'tree'`` message.
+    """
+
+    def setup_method(self):
+        self.backend = GiteaBackend()
+        self.repo_url = "https://git.example.com/owner/repo"
+        self.token = "gitea-token"
+        self.branch = "bambuddy-backup"
+
+    def test_commit_tree_sha_reads_flat_shape(self):
+        """GitHub-compatible / older Gitea: ``tree`` at top level."""
+        assert self.backend._commit_tree_sha({"tree": {"sha": "abc"}}) == "abc"
+
+    def test_commit_tree_sha_reads_wrapped_shape(self):
+        """Gitea 1.24+ / Forgejo: ``tree`` nested under ``commit``."""
+        assert self.backend._commit_tree_sha({"sha": "c1", "commit": {"tree": {"sha": "abc"}}}) == "abc"
+
+    def test_commit_tree_sha_returns_none_on_missing(self):
+        assert self.backend._commit_tree_sha({"sha": "c1", "commit": {}}) is None
+        assert self.backend._commit_tree_sha({}) is None
+
+    @pytest.mark.asyncio
+    async def test_push_files_handles_wrapped_commit_response(self):
+        """Subsequent backup against Gitea 1.24+ — commit endpoint returns wrapped shape."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "base-commit"}}]),
+                # Wrapped Gitea commit response — tree under "commit", not top level
+                _make_mock_response(200, {"sha": "base-commit", "commit": {"tree": {"sha": "base-tree"}}}),
+                _make_mock_response(200, {"tree": []}),
+            ]
+        )
+        client.post = AsyncMock(
+            side_effect=[
+                _make_mock_response(201, {"sha": "blob1"}),
+                _make_mock_response(201, {"sha": "new-tree"}),
+                _make_mock_response(201, {"sha": "new-commit"}),
+            ]
+        )
+        client.patch = AsyncMock(return_value=_make_mock_response(200, {}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "success"
+        assert result["commit_sha"] == "new-commit"
+
+    @pytest.mark.asyncio
+    async def test_push_files_fails_cleanly_when_tree_sha_missing(self):
+        """Defensive: malformed/unexpected commit response surfaces a clear error, not KeyError."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "base-commit"}}]),
+                _make_mock_response(200, {"sha": "base-commit"}),  # no tree at all
+            ]
+        )
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "failed"
+        assert "tree SHA" in result["message"]
+
+
 class TestGiteaBackendEmptyRepoInitialCommit:
     """#1224 regression: Git Data API refuses writes against empty Gitea repos.
 

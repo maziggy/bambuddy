@@ -6743,6 +6743,7 @@ export function PrintersPage() {
     setCompactToolbar(prev => (prev === shouldCompact ? prev : shouldCompact));
   }, []);
 
+  const smartPlugCount = Object.keys(smartPlugByPrinter).length;
   useLayoutEffect(() => {
     measureToolbar();
 
@@ -6767,7 +6768,7 @@ export function PrintersPage() {
     printers?.length,
     availableLocations.length,
     hideDisconnected,
-    Object.keys(smartPlugByPrinter).length,
+    smartPlugCount,
   ]);
 
   const renderFilterControls = (inMenu = false) => (

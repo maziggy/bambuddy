@@ -796,3 +796,176 @@ class TestAssignSpoolEmptySlotPreConfig:
 
         # Fingerprint was already set — re-fire path skipped
         mock_client.ams_set_filament_setting.assert_not_called()
+
+
+class TestAssignSpoolEmptyDetection:
+    """Bambu firmware reports tray.state — 11=loaded, 9=empty, 10=spool present
+    but filament not in feeder. The assign route must prefer that signal over
+    tray_type for the empty-vs-loaded check, because a manual "Reset slot"
+    clears tray_type to "" while leaving filament physically loaded — the
+    legacy heuristic would route to the pending-config path and skip MQTT
+    forever, since on_ams_change replay only fires on an empty→loaded
+    transition that never comes when the slot is already loaded.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_loaded_with_empty_tray_type_fires_mqtt(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Post-reset case: state=11 (loaded) but tray_type='' — MQTT must fire."""
+        printer = await printer_factory()
+        spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PLA")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+
+        # Simulates the "reset slot" aftermath: filament physically loaded
+        # (state=11) but tray_type/tray_color/tray_info_idx have been cleared.
+        tray_data = {"id": 3, "state": 11, "tray_type": "", "tray_color": "", "tray_info_idx": ""}
+        status = _make_mock_status(ams_data=[{"id": 2, "tray": [tray_data]}])
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 2, "tray_id": 3},
+            )
+
+        assert response.status_code == 200
+        # MQTT must have fired — the bug was that legacy detection saw the
+        # empty tray_type and skipped this entirely.
+        mock_client.ams_set_filament_setting.assert_called_once()
+        # Response must report configured=True, pending_config=False — the
+        # slot is loaded, just had stale metadata cleared.
+        body = response.json()
+        assert body["pending_config"] is False
+        assert body["configured"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_empty_skips_mqtt_and_marks_pending(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Genuinely empty slot: state=9 — MQTT skipped, pending_config=True."""
+        printer = await printer_factory()
+        spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PLA")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+
+        tray_data = {"id": 3, "state": 9, "tray_type": "", "tray_color": "", "tray_info_idx": ""}
+        status = _make_mock_status(ams_data=[{"id": 2, "tray": [tray_data]}])
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 2, "tray_id": 3},
+            )
+
+        assert response.status_code == 200
+        # SpoolBuddy weigh-then-assign workflow: firmware drops MQTT for
+        # unloaded slots, so we don't bother sending it.
+        mock_client.ams_set_filament_setting.assert_not_called()
+        body = response.json()
+        assert body["pending_config"] is True
+        assert body["configured"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_missing_falls_back_to_tray_type_loaded(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Older firmware without state field: tray_type='PLA' → treated as loaded."""
+        printer = await printer_factory()
+        spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PLA")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+
+        # No 'state' key at all — older firmware behaviour.
+        tray_data = {"id": 3, "tray_type": "PLA", "tray_color": "FF0000FF"}
+        status = _make_mock_status(ams_data=[{"id": 2, "tray": [tray_data]}])
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 2, "tray_id": 3},
+            )
+
+        assert response.status_code == 200
+        # Legacy fallback: tray_type non-empty → treated as loaded → MQTT fires.
+        mock_client.ams_set_filament_setting.assert_called_once()
+        body = response.json()
+        assert body["pending_config"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_state_missing_falls_back_to_tray_type_empty(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Older firmware without state field + empty tray_type → pending."""
+        printer = await printer_factory()
+        spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PLA")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+
+        tray_data = {"id": 3, "tray_type": "", "tray_color": ""}
+        status = _make_mock_status(ams_data=[{"id": 2, "tray": [tray_data]}])
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 2, "tray_id": 3},
+            )
+
+        assert response.status_code == 200
+        # Legacy fallback: empty tray_type + no state → treated as empty.
+        mock_client.ams_set_filament_setting.assert_not_called()
+        body = response.json()
+        assert body["pending_config"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_external_slot_state_loaded_with_empty_tray_type_fires_mqtt(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """External (vt_tray) slot post-reset: same fix applies for ams_id=255."""
+        printer = await printer_factory(name="X1C")
+        spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PLA")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+
+        # External slot tray_id=0 → vt_tray id=254. state=11 (loaded), tray_type
+        # cleared by reset.
+        vt_data = [{"id": 254, "state": 11, "tray_type": "", "tray_color": "", "tray_info_idx": ""}]
+        status = _make_mock_status(ams_data=[], vt_tray=vt_data)
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 255, "tray_id": 0},
+            )
+
+        assert response.status_code == 200
+        mock_client.ams_set_filament_setting.assert_called_once()
+        body = response.json()
+        assert body["pending_config"] is False
+        assert body["configured"] is True

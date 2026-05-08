@@ -380,37 +380,26 @@ async def nfc_tag_scanned(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
-    """RPi reports NFC tag detected — lookup spool and broadcast."""
-    spool = await get_spool_by_tag(db, req.tag_uid, req.tray_uuid or "")
+    """RPi reports NFC tag detected — lookup spool and broadcast.
 
-    if spool:
-        await ws_manager.broadcast(
-            {
-                "type": "spoolbuddy_tag_matched",
-                "device_id": req.device_id,
-                "tag_uid": req.tag_uid,
-                "tray_uuid": req.tray_uuid,
-                "spool": {
-                    "id": spool.id,
-                    "material": spool.material,
-                    "subtype": spool.subtype,
-                    "color_name": spool.color_name,
-                    "rgba": spool.rgba,
-                    "brand": spool.brand,
-                    "label_weight": spool.label_weight,
-                    "core_weight": spool.core_weight,
-                    "weight_used": spool.weight_used,
-                },
-            }
-        )
-        logger.info("SpoolBuddy tag matched (local): %s -> spool %d", req.tag_uid, spool.id)
-        return {"status": "ok", "matched": True, "spool_id": spool.id}
-
-    # Local DB miss — fall back to Spoolman when enabled
+    Routes the lookup to the inventory backend Bambuddy is configured for:
+    Spoolman exclusively when ``spoolman_enabled`` is true, local DB
+    exclusively otherwise. The previous implementation always tried local
+    first and only consulted Spoolman as a fallback on local-DB miss, which
+    meant a stale local copy of a tag would silently win over the
+    authoritative Spoolman row, and deleting the local copy was the only way
+    to surface the Spoolman match. Operators expect the SpoolBuddy lookup to
+    follow the inventory mode they selected in Bambuddy settings.
+    """
     from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
 
+    # _get_spoolman_client_or_none returns a usable client when spoolman_enabled
+    # is true (and the URL passes the SSRF guard), None otherwise — so its
+    # return value doubles as the mode discriminator.
     client = await _get_spoolman_client_or_none(db)
+
     if client is not None:
+        # Spoolman mode — exclusive lookup, no local-DB fallback.
         try:
             cached_spools = await client.get_spools()
             sm_spool: dict | None = None
@@ -481,6 +470,31 @@ async def nfc_tag_scanned(
             # Same silent-return policy: an unexpected error must not break device operation
             # or trigger spurious duplicate-registration flows in the UI.
             return {"status": "ok", "matched": False, "spool_id": None}
+    else:
+        # Local mode — exclusive lookup, no Spoolman fallback.
+        spool = await get_spool_by_tag(db, req.tag_uid, req.tray_uuid or "")
+        if spool:
+            await ws_manager.broadcast(
+                {
+                    "type": "spoolbuddy_tag_matched",
+                    "device_id": req.device_id,
+                    "tag_uid": req.tag_uid,
+                    "tray_uuid": req.tray_uuid,
+                    "spool": {
+                        "id": spool.id,
+                        "material": spool.material,
+                        "subtype": spool.subtype,
+                        "color_name": spool.color_name,
+                        "rgba": spool.rgba,
+                        "brand": spool.brand,
+                        "label_weight": spool.label_weight,
+                        "core_weight": spool.core_weight,
+                        "weight_used": spool.weight_used,
+                    },
+                }
+            )
+            logger.info("SpoolBuddy tag matched (local): %s -> spool %d", req.tag_uid, spool.id)
+            return {"status": "ok", "matched": True, "spool_id": spool.id}
 
     await ws_manager.broadcast(
         {
@@ -571,7 +585,14 @@ async def nfc_write_tag(
         data_origin = "spoolman"
 
         # Warn when fields that drive NFC content are absent in Spoolman.
-        if not mapped.get("color_name"):
+        # color_name specifically must check the raw filament field, not the
+        # mapped value — _map_spoolman_spool falls back to the filament's
+        # subtype when color_name is unset (so LinkSpoolModal stops showing
+        # "Unknown color"), but the NFC tag should still warn when Spoolman
+        # has no genuine color_name on file. Without this, the fallback
+        # silently masks a real missing-data condition.
+        raw_filament: dict = sm_spool.get("filament") or {}
+        if not raw_filament.get("color_name"):
             nfc_warnings.append("color_name not set in Spoolman — tag encodes empty color name")
         if not mapped.get("nozzle_temp_min"):
             nfc_warnings.append("nozzle_temp_min not set in Spoolman — tag encodes 0 °C")
@@ -663,6 +684,40 @@ async def nfc_write_result(
             _tag_link_ok = False
             try:
                 tag_value = json.dumps(req.tag_uid.upper())
+                # Tag uniqueness: a single physical NFC UID must map to at most
+                # one Spoolman spool, otherwise find_spool_by_tag returns
+                # whichever spool comes first in the cached list (usually the
+                # older one) and the dashboard shows the wrong spool when the
+                # tag is scanned. Before binding the new owner, clear the tag
+                # from any other spool that currently has it. Best-effort:
+                # cleanup failure does not block the write itself, but the
+                # warning surfaces in logs so a stale duplicate can be tracked
+                # down manually.
+                try:
+                    cached_spools = await sm_client.get_spools()
+                    duplicate = await sm_client.find_spool_by_tag(req.tag_uid, cached_spools=cached_spools)
+                    if duplicate is not None and duplicate.get("id") != req.spool_id:
+                        await sm_client.merge_spool_extra(int(duplicate["id"]), {"tag": ""})
+                        logger.info(
+                            "Spoolman: cleared tag %s from previous holder spool %d before binding to spool %d",
+                            req.tag_uid,
+                            duplicate["id"],
+                            req.spool_id,
+                        )
+                except (SpoolmanNotFoundError, SpoolmanUnavailableError, SpoolmanClientError) as cleanup_exc:
+                    logger.warning(
+                        "Spoolman: failed to clear duplicate tag %s before binding to spool %d (proceeding anyway): %s",
+                        req.tag_uid,
+                        req.spool_id,
+                        cleanup_exc,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Spoolman: unexpected error clearing duplicate tag %s before binding to spool %d (proceeding anyway)",
+                        req.tag_uid,
+                        req.spool_id,
+                    )
+
                 await sm_client.merge_spool_extra(req.spool_id, {"tag": tag_value})
                 logger.info(
                     "Spoolman tag written and linked: spool %d -> tag %s",

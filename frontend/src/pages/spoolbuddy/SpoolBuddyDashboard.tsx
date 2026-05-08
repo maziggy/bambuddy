@@ -155,11 +155,21 @@ export function SpoolBuddyDashboard() {
     enabled: spoolmanSettings !== undefined,
   });
 
+  // Kiosk caveat: the SpoolBuddy display is a long-running browser window with
+  // no focus/remount events, so a staleTime alone leaves this cache effectively
+  // permanent. When slot assignments change from another client (Bambuddy main
+  // UI, direct Spoolman edit, AssignToAmsModal on a separate browser), the
+  // kiosk keeps showing the spool as still-assigned forever and isSpoolAssigned
+  // reports stale, disabling the Assign button. Polling every 3 s is cheap
+  // (slot-assignments/all is a tiny DB query) and bounds staleness to a window
+  // operators don't notice.
   const { data: spoolmanSlotAssignments = [] } = useQuery({
     queryKey: ['spoolman-slot-assignments'],
     queryFn: () => api.getSpoolmanSlotAssignments(),
     enabled: spoolmanMode,
-    staleTime: 30 * 1000,
+    staleTime: 3 * 1000,
+    refetchInterval: 3 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   // Fetch printers and their statuses for the status badges
@@ -260,8 +270,39 @@ export function SpoolBuddyDashboard() {
     return null;
   }, [displayedTagId, sbState.matchedSpool, spools, justLinkedSpool]);
 
-  const isSpoolAssigned = spoolmanMode && displayedSpool != null
-    ? spoolmanSlotAssignments.some(a => a.spoolman_spool_id === displayedSpool.id)
+  // Effective spool for the Assign-to-AMS modal: prefer the fully-typed
+  // InventorySpool from the local query cache, fall back to the
+  // WebSocket-delivered MatchedSpool when the cached query hasn't caught up
+  // (Spoolman spool added or unarchived after the dashboard loaded — the
+  // initial fetch with includeArchived=false misses it). Without this
+  // fallback the SpoolInfoCard renders via its own
+  // `displayedSpool ?? sbState.matchedSpool` path while the modal's stricter
+  // guard silently fails to mount, so the "Assign to AMS" button looks
+  // clickable but does nothing on click. MatchedSpool is a 9-field subset
+  // of InventorySpool — slicer_filament* are absent, which is acceptable:
+  // the modal's mismatch check yields 'none' for profile (same as a manual
+  // inventory spool without a preset), and the assign API only needs the
+  // spool id to route to the correct row.
+  const effectiveModalSpool: InventorySpool | null = useMemo(() => {
+    if (displayedSpool && !justLinkedSpool) return displayedSpool;
+    const m = sbState.matchedSpool;
+    if (!m) return null;
+    return {
+      id: m.id,
+      tag_uid: m.tag_uid,
+      material: m.material,
+      subtype: m.subtype,
+      color_name: m.color_name,
+      rgba: m.rgba,
+      brand: m.brand,
+      label_weight: m.label_weight,
+      core_weight: m.core_weight,
+      weight_used: m.weight_used,
+    } as unknown as InventorySpool;
+  }, [displayedSpool, justLinkedSpool, sbState.matchedSpool]);
+
+  const isSpoolAssigned = spoolmanMode && effectiveModalSpool != null
+    ? spoolmanSlotAssignments.some(a => a.spoolman_spool_id === effectiveModalSpool.id)
     : false;
 
   // Untagged spools for the Link feature
@@ -612,13 +653,16 @@ export function SpoolBuddyDashboard() {
         </div>
       </div>
 
-      {/* Assign to AMS Modal — only when displayedSpool is a real InventorySpool,
-          not the justLinkedSpool bridge (which only has the 9 MatchedSpool fields). */}
-      {displayedSpool && !justLinkedSpool && displayedTagId && (
+      {/* Assign to AMS Modal — uses effectiveModalSpool which falls back to
+          sbState.matchedSpool when the cached inventory query hasn't caught up
+          to the matched spool (newly-added or unarchived in Spoolman). The
+          !justLinkedSpool guard still excludes the freshly-linked synthetic
+          spool because that path goes through a different flow. */}
+      {effectiveModalSpool && !justLinkedSpool && displayedTagId && (
         <AssignToAmsModal
           isOpen={showAssignAmsModal}
           onClose={() => setShowAssignAmsModal(false)}
-          spool={displayedSpool}
+          spool={effectiveModalSpool}
           printerId={selectedPrinterId}
           spoolmanMode={spoolmanMode}
         />

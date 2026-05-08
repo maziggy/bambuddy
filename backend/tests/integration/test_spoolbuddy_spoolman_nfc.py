@@ -31,6 +31,18 @@ async def spoolman_settings_local(db_session: AsyncSession):
 
 
 @pytest.fixture
+async def spoolman_settings_disabled(db_session: AsyncSession):
+    """Spoolman disabled — used by tests that exercise the local-DB-only
+    lookup path on /nfc/tag-scanned. With the mode-routing in the #1228
+    follow-up, Spoolman is now consulted exclusively when enabled, so the
+    local-DB broadcast tests have to disable Spoolman to reach the local
+    code path.
+    """
+    db_session.add(Settings(key="spoolman_enabled", value="false"))
+    await db_session.commit()
+
+
+@pytest.fixture
 async def spoolman_settings_inventory(db_session: AsyncSession):
     """Spoolman enabled, URL = localhost (matches inventory proxy patches)."""
     db_session.add(Settings(key="spoolman_enabled", value="true"))
@@ -75,7 +87,9 @@ class TestTagScannedBroadcastsTrayUuid:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_local_match_broadcast_includes_tray_uuid(self, async_client: AsyncClient, spoolman_settings_local):
+    async def test_local_match_broadcast_includes_tray_uuid(
+        self, async_client: AsyncClient, spoolman_settings_disabled
+    ):
         """Local DB match broadcasts tray_uuid alongside tag_uid."""
         mock_local_spool = MagicMock()
         mock_local_spool.id = 1

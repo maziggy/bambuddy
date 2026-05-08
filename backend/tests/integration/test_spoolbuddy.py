@@ -429,6 +429,134 @@ class TestNfcEndpoints:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_tag_scanned_spoolman_mode_skips_local_lookup(self, async_client: AsyncClient, db_session):
+        """When spoolman_enabled=true, /nfc/tag-scanned must use Spoolman
+        exclusively — local DB lookup must not be consulted at all. The
+        previous always-local-first behaviour caused stale local rows to
+        win over the authoritative Spoolman data (#1228 follow-up).
+        """
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value="http://127.0.0.1:7912"))
+        await db_session.commit()
+
+        # Mock Spoolman match and verify get_spool_by_tag (the local-DB lookup)
+        # is never called in Spoolman-enabled mode.
+        sm_match = {
+            "id": 7,
+            "filament": {
+                "material": "PLA",
+                "name": "PLA Basic Red",
+                "color_hex": "FF0000",
+                "weight": 1000.0,
+                "vendor": {"name": "Bambu Lab"},
+            },
+            "extra": {"tag": '"AABB1122"'},
+            "used_weight": 0.0,
+        }
+        mock_client = MagicMock()
+        mock_client.get_spools = AsyncMock(return_value=[sm_match])
+        mock_client.find_spool_by_tag = AsyncMock(return_value=sm_match)
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.api.routes.spoolbuddy._get_spoolman_client_or_none",
+                new_callable=AsyncMock,
+            ) as mock_get_client,
+            patch(
+                "backend.app.api.routes.spoolbuddy.get_spool_by_tag",
+                new_callable=AsyncMock,
+            ) as mock_local_lookup,
+        ):
+            mock_ws.broadcast = AsyncMock()
+            mock_get_client.return_value = mock_client
+            # Sentinel so a misrouted call would surface as a wrong spool_id.
+            mock_local_lookup.return_value = MagicMock(id=999)
+
+            resp = await async_client.post(
+                f"{API}/nfc/tag-scanned",
+                json={"device_id": "sb-1", "tag_uid": "AABB1122"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["matched"] is True
+        # Spoolman result, not local DB sentinel — proves the local lookup was skipped.
+        assert data["spool_id"] == 7
+        mock_local_lookup.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_write_result_clears_duplicate_tag_binding(
+        self, async_client: AsyncClient, db_session, device_factory
+    ):
+        """Writing a tag for spool B must clear the same tag binding from any
+        other spool that currently has it. Without this guard, find_spool_by_tag
+        returns whichever spool comes first in the cached list (typically the
+        older one), so the dashboard shows the wrong spool when the tag is
+        scanned.
+        """
+        import json as _json
+
+        from backend.app.models.settings import Settings
+        from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(Settings(key="spoolman_url", value="http://127.0.0.1:7912"))
+        await device_factory(
+            device_id="sb-write",
+            pending_command="write_tag",
+            pending_write_payload=_json.dumps({"spool_id": 22, "ndef_data_hex": "DEAD", "data_origin": "spoolman"}),
+        )
+        await db_session.commit()
+
+        # Spool A (id=11) currently holds the tag we're about to bind to spool B (id=22).
+        spool_a_with_tag = {
+            "id": 11,
+            "filament": {"material": "PLA", "name": "PLA Old", "color_hex": "AAAAAA", "weight": 1000.0},
+            "extra": {"tag": '"DEADBEEF"'},
+        }
+
+        mock_client = MagicMock()
+        mock_client.get_spools = AsyncMock(return_value=[spool_a_with_tag])
+        mock_client.find_spool_by_tag = AsyncMock(return_value=spool_a_with_tag)
+        mock_client.merge_spool_extra = AsyncMock(return_value={})
+
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch(
+                "backend.app.api.routes.spoolbuddy._get_spoolman_client_or_none",
+                new_callable=AsyncMock,
+            ) as mock_get_client,
+        ):
+            mock_ws.broadcast = AsyncMock()
+            mock_get_client.return_value = mock_client
+
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": "sb-write",
+                    "spool_id": 22,
+                    "tag_uid": "DEADBEEF",
+                    "success": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        # merge_spool_extra was called twice:
+        #   1. clear tag from spool A (id=11) — set tag to ""
+        #   2. set tag on spool B (id=22) — set tag to "DEADBEEF" (JSON-encoded)
+        assert mock_client.merge_spool_extra.await_count == 2
+        clear_call, bind_call = mock_client.merge_spool_extra.await_args_list
+        assert clear_call.args[0] == 11
+        assert clear_call.args[1] == {"tag": ""}
+        assert bind_call.args[0] == 22
+        assert bind_call.args[1] == {"tag": '"DEADBEEF"'}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_tag_removed(self, async_client: AsyncClient):
         with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()

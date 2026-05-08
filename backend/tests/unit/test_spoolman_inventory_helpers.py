@@ -171,6 +171,52 @@ class TestMapSpoolmanSpool:
         result = _map_spoolman_spool(spool)
         assert result["rgba"] == "808080FF"
 
+    def test_color_name_uses_explicit_field_when_present(self):
+        """When Spoolman's filament has color_name set, that wins over the subtype fallback."""
+        spool = {
+            **MINIMAL_SPOOL,
+            "filament": {**MINIMAL_SPOOL["filament"], "color_name": "Sunrise Orange"},
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["color_name"] == "Sunrise Orange"
+
+    def test_color_name_falls_back_to_subtype_when_field_missing(self):
+        """Spoolman doesn't standardise color_name; the LinkSpoolModal would
+        otherwise show 'Unknown color' for every Spoolman spool. The mapper
+        falls back to the filament's name minus material prefix (which the
+        subtype field already carries) so the user can tell spools apart at a
+        glance even on installs that don't fill color_name.
+        """
+        spool = {
+            **MINIMAL_SPOOL,
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "name": "PLA Basic Red",
+                # No color_name field — the common case for default Spoolman installs.
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        # subtype is filament_name minus material prefix → "Basic Red"
+        assert result["subtype"] == "Basic Red"
+        # color_name falls back to subtype.
+        assert result["color_name"] == "Basic Red"
+
+    def test_color_name_none_when_both_fields_empty(self):
+        """If neither color_name nor a usable subtype exists, return None — UI
+        falls back to its own 'Unknown color' string rather than showing a
+        misleading material-only label.
+        """
+        spool = {
+            **MINIMAL_SPOOL,
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "name": "PLA",  # name == material → subtype becomes None
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["subtype"] is None
+        assert result["color_name"] is None
+
     def test_color_hex_with_hash_prefix_stripped(self):
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "color_hex": "#00FF00"}}
         result = _map_spoolman_spool(spool)

@@ -268,7 +268,15 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
 
     created_at: str | None = spool.get("registered") or None
 
-    color_name: str | None = filament.get("color_name") or None
+    # Spoolman doesn't standardise a `color_name` field — most installs only
+    # populate `color_hex` (the swatch) and the filament's `name` (which often
+    # carries the colour, e.g. "PLA Basic Red"). Without a fallback the
+    # frontend lists a sea of "Unknown color" entries that all look identical
+    # except for the swatch. Fall back to the filament name minus material
+    # prefix (the same string the `subtype` field already carries — typically
+    # "Basic Red" / "PLA+ Black" / etc.) so the user can tell spools apart at
+    # a glance even on Spoolman installs that don't fill color_name.
+    color_name: str | None = filament.get("color_name") or subtype or None
 
     nozzle_temp_raw = filament.get("settings_extruder_temp")
     nozzle_temp_min: int | None = _safe_int(nozzle_temp_raw, 0) or None

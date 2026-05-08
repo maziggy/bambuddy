@@ -3188,7 +3188,7 @@ export default {
     title: 'Inventário de Carretéis',
     addSpool: 'Adicionar Carretel',
     editSpool: 'Editar Carretel',
-    cloneSpool: 'Clonar Carretel',
+    copySpool: 'Copiar Carretel',
     material: 'Material',
     selectMaterial: 'Selecionar material...',
     subtype: 'Subtipo',

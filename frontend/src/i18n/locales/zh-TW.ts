@@ -3240,6 +3240,7 @@ export default {
     title: '耗材庫存',
     addSpool: '新增耗材',
     editSpool: '編輯耗材',
+    cloneSpool: '複製耗材',
     material: '材料',
     selectMaterial: '選擇材料...',
     subtype: '子類型',

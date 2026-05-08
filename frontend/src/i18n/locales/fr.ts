@@ -3175,6 +3175,7 @@ export default {
     title: 'Inventaire de Bobines',
     addSpool: 'Ajouter Bobine',
     editSpool: 'Modifier Bobine',
+    cloneSpool: 'Cloner Bobine',
     material: 'Matériau',
     selectMaterial: 'Choisir matériau...',
     subtype: 'Sous-type',

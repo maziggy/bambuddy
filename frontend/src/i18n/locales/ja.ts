@@ -3213,6 +3213,7 @@ export default {
     title: 'スプール在庫管理',
     addSpool: 'スプールを追加',
     editSpool: 'スプールを編集',
+    cloneSpool: 'スプールを複製',
     material: '素材',
     selectMaterial: '素材を選択...',
     subtype: 'サブタイプ',

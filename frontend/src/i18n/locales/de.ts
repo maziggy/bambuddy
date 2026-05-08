@@ -3253,6 +3253,7 @@ export default {
     title: 'Spulen-Inventar',
     addSpool: 'Spule hinzufügen',
     editSpool: 'Spule bearbeiten',
+    cloneSpool: 'Spule klonen',
     material: 'Material',
     selectMaterial: 'Material auswählen...',
     subtype: 'Untertyp',

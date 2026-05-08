@@ -5,7 +5,7 @@ import {
   Plus, Loader2, Trash2, Archive, RotateCcw, Edit2, Package,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
-  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw,
+  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, Copy,
 } from 'lucide-react';
 import { api, spoolbuddyApi } from '../api/client';
 import type { InventorySpool, SpoolAssignment, SpoolCatalogEntry } from '../api/client';
@@ -433,7 +433,7 @@ function InventoryPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null } | null>(null);
+  const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null; cloneFrom?: boolean | null | undefined} | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
 
   // Filter state
@@ -1352,6 +1352,7 @@ function InventoryPage() {
                           isExpanded={isExpanded}
                           onToggle={() => toggleGroupExpand(key)}
                           onEdit={(s) => setFormModal({ spool: s })}
+                          onClone={(s) => setFormModal({ spool: s, cloneFrom: true })}
                           onArchive={(id) => setConfirmAction({ type: 'archive', spoolId: id })}
                           onDelete={(id) => setConfirmAction({ type: 'delete', spoolId: id })}
                           visibleColumns={visibleColumns}
@@ -1374,6 +1375,7 @@ function InventoryPage() {
                         remaining={remaining}
                         pct={pct}
                         onEdit={() => setFormModal({ spool })}
+                        onClone={() => setFormModal({ spool: spool, cloneFrom: true })}
                         onRestore={() => restoreMutation.mutate(spool.id)}
                         onArchive={() => setConfirmAction({ type: 'archive', spoolId: spool.id })}
                         onDelete={() => setConfirmAction({ type: 'delete', spoolId: spool.id })}
@@ -1470,6 +1472,7 @@ function InventoryPage() {
           isOpen={true}
           onClose={() => setFormModal(null)}
           spool={formModal.spool}
+          cloneFrom={formModal.cloneFrom}
           currencySymbol={currencySymbol}
         />
       )}
@@ -1659,13 +1662,14 @@ function SpoolCard({
 
 /* Single spool row for table view */
 function SpoolTableRow({
-  spool, remaining, pct, onEdit, onRestore, onArchive, onDelete,
+  spool, remaining, pct, onEdit, onClone, onRestore, onArchive, onDelete,
   visibleColumns, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight,
 }: {
   spool: InventorySpool;
   remaining: number;
   pct: number;
   onEdit: () => void;
+  onClone: () => void;
   onRestore: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -1694,6 +1698,9 @@ function SpoolTableRow({
           <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('common.edit')}>
             <Edit2 className="w-4 h-4" />
           </button>
+          <button onClick={onClone} className="p-1.5 text-bambu-gray hover:text-bambu-green rounded transition-colors" title={t('inventory.cloneSpool')}>
+            <Copy className="w-4 h-4" />
+          </button>
           {spool.archived_at ? (
             <button onClick={onRestore} className="p-1.5 text-bambu-gray hover:text-bambu-green rounded transition-colors" title={t('inventory.restore')}>
               <RotateCcw className="w-4 h-4" />
@@ -1715,7 +1722,7 @@ function SpoolTableRow({
 /* Grouped spool rows for table view */
 function SpoolTableGroup({
   spools, representative, remaining, pct, isExpanded, onToggle,
-  onEdit, onArchive, onDelete,
+  onEdit, onClone, onArchive, onDelete,
   visibleColumns, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight,
 }: {
   spools: InventorySpool[];
@@ -1725,6 +1732,7 @@ function SpoolTableGroup({
   isExpanded: boolean;
   onToggle: () => void;
   onEdit: (spool: InventorySpool) => void;
+  onClone: (spool: InventorySpool) => void;
   onArchive: (id: number) => void;
   onDelete: (id: number) => void;
   visibleColumns: string[];
@@ -1775,6 +1783,7 @@ function SpoolTableGroup({
             remaining={r}
             pct={p}
             onEdit={() => onEdit(spool)}
+            onClone={() => onClone(spool)}
             onRestore={() => {}}
             onArchive={() => onArchive(spool.id)}
             onDelete={() => onDelete(spool.id)}

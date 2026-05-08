@@ -22,6 +22,7 @@ interface SpoolFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   spool?: InventorySpool | null;
+  cloneFrom: boolean | null | undefined;
   printersWithCalibrations?: PrinterWithCalibrations[];
   currencySymbol: string;
   onSpoolsCreated?: (spools: InventorySpool[]) => void;
@@ -31,6 +32,7 @@ export function SpoolFormModal({
   isOpen,
   onClose,
   spool,
+  cloneFrom,
   printersWithCalibrations = [],
   currencySymbol,
   onSpoolsCreated,
@@ -39,7 +41,8 @@ export function SpoolFormModal({
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const isEditing = !!spool;
+  const isEditing = !!spool && !cloneFrom;
+  const isCloning = !!spool && !!cloneFrom;
 
   // Form state
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
@@ -272,7 +275,7 @@ export function SpoolFormModal({
           label_weight: spool.label_weight || 1000,
           core_weight: spool.core_weight || 250,
           core_weight_catalog_id: spool.core_weight_catalog_id ?? null,
-          weight_used: spool.weight_used || 0,
+          weight_used: isCloning ? 0 : spool.weight_used || 0,
           slicer_filament: spool.slicer_filament || '',
           note: spool.note || '',
           cost_per_kg: spool.cost_per_kg ?? null,
@@ -302,7 +305,7 @@ export function SpoolFormModal({
       setActiveTab('filament');
       setWeightTouched(false);
     }
-  }, [isOpen, spool]);
+  }, [isOpen, spool, cloneFrom]);
 
   // Expand all printers in PA profile section when calibrations are available
   useEffect(() => {
@@ -533,7 +536,7 @@ export function SpoolFormModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary flex-shrink-0">
           <h2 className="text-lg font-semibold text-white">
-            {isEditing ? t('inventory.editSpool') : t('inventory.addSpool')}
+            {isEditing ? t('inventory.editSpool') : isCloning ? t('inventory.cloneSpool') : t('inventory.addSpool')}
           </h2>
           <button
             onClick={onClose}
@@ -713,8 +716,8 @@ export function SpoolFormModal({
               </>
             ) : (
               <>
-                <Save className="w-4 h-4" />
-                {isEditing ? t('common.save') : t('inventory.addSpool')}
+                 <Save className="w-4 h-4" />
+                 {isEditing ? t('common.save') : isCloning ? t('inventory.cloneSpool') : t('inventory.addSpool')}
               </>
             )}
           </Button>

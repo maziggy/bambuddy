@@ -30,6 +30,7 @@ from backend.app.models.spool import Spool
 from backend.app.models.user import User
 from backend.app.services.label_renderer import LabelData, TemplateName, render_labels
 from backend.app.services.spoolman import get_spoolman_client
+from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ def _stream_pdf(pdf: bytes, filename: str) -> StreamingResponse:
         io.BytesIO(pdf),
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Disposition": build_content_disposition(filename, disposition="inline"),
             "Content-Length": str(len(pdf)),
             # PDFs are deterministic per request; tell the browser not to cache
             # so re-printing after edits picks up the new data.

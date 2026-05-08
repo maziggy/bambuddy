@@ -218,8 +218,10 @@ async def perform_ssh_update(device_id: str, ip_address: str, install_path: str 
     known_hosts: asyncssh.SSHKnownHosts | None = None
     if stored_host_key:
         try:
-            known_hosts = asyncssh.import_known_hosts(f"{ip_address} {stored_host_key}\n".encode())
-        except (ValueError, asyncssh.Error) as exc:
+            # asyncssh.import_known_hosts() expects str — passing bytes crashes
+            # inside its line-by-line parser with a TypeError.
+            known_hosts = asyncssh.import_known_hosts(f"{ip_address} {stored_host_key}\n")
+        except (ValueError, TypeError, asyncssh.Error) as exc:
             logger.warning(
                 "Could not parse stored SSH host key for %s, falling back to TOFU: %s",
                 device_id,
@@ -269,8 +271,8 @@ async def perform_ssh_update(device_id: str, ip_address: str, install_path: str 
                     await db.commit()
             logger.info("TOFU: stored SSH host key for SpoolBuddy %s", device_id)
             try:
-                known_hosts = asyncssh.import_known_hosts(f"{ip_address} {observed_key}\n".encode())
-            except (ValueError, asyncssh.Error) as exc:
+                known_hosts = asyncssh.import_known_hosts(f"{ip_address} {observed_key}\n")
+            except (ValueError, TypeError, asyncssh.Error) as exc:
                 logger.error(
                     "TOFU: could not parse just-stored host key for %s; "
                     "remaining SSH steps in this run will not verify host key: %s",

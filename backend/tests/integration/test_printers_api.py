@@ -4,6 +4,7 @@ Tests the full request/response cycle for /api/v1/printers/ endpoints.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import unquote
 
 import pytest
 from httpx import AsyncClient
@@ -230,6 +231,53 @@ class TestPrintersAPI:
         response = await async_client.delete("/api/v1/printers/9999")
 
         assert response.status_code == 404
+
+    # ========================================================================
+    # File download endpoint — non-ASCII filename regression (#1245)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("filename", "ascii_fallback"),
+        [
+            ("龙泡泡石墩子_p2s_ok.gcode.3mf", "p2s_ok.gcode.3mf"),
+            ("こんにちは.gcode.3mf", "gcode.3mf"),
+            ("résumé.gcode.3mf", "rsum.gcode.3mf"),
+            ("مرحبا.gcode.3mf", "gcode.3mf"),
+            ("文件.3mf", "3mf"),
+            ("hello.3mf", "hello.3mf"),
+        ],
+    )
+    async def test_download_printer_file_non_ascii_filename(
+        self,
+        async_client: AsyncClient,
+        printer_factory,
+        filename: str,
+        ascii_fallback: str,
+        db_session,
+    ):
+        """Non-ASCII filenames must not crash header encoding (issue #1245)."""
+        printer = await printer_factory()
+        file_bytes = b"fake 3mf content"
+
+        with patch(
+            "backend.app.api.routes.printers.download_file_bytes_async",
+            new=AsyncMock(return_value=file_bytes),
+        ):
+            response = await async_client.get(
+                f"/api/v1/printers/{printer.id}/files/download",
+                params={"path": f"/cache/{filename}"},
+            )
+
+        assert response.status_code == 200
+        assert response.content == file_bytes
+
+        content_disposition = response.headers["content-disposition"]
+        assert f'filename="{ascii_fallback}"' in content_disposition
+        assert "filename*=UTF-8''" in content_disposition
+        encoded_name = content_disposition.split("filename*=UTF-8''", 1)[1]
+        assert unquote(encoded_name) == filename
 
     # ========================================================================
     # Status endpoint

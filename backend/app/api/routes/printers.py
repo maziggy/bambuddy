@@ -45,6 +45,7 @@ from backend.app.services.printer_manager import (
     supports_chamber_temp,
     supports_drying,
 )
+from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
@@ -1057,7 +1058,7 @@ async def download_printer_file(
     return Response(
         content=data,
         media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": build_content_disposition(filename)},
     )
 
 

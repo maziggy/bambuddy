@@ -1319,7 +1319,14 @@ async def trigger_daemon_update(
     device_id: str,
     req: dict | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    # Aligns with the rest of the kiosk-scoped device routes (calibration,
+    # display, cancel-write, system/command — all INVENTORY_UPDATE).
+    # SETTINGS_UPDATE is on the API-key deny-list, which blocks the Update
+    # button from the kiosk's own Settings page even when the operator has
+    # physical access. Update only acts on the device the operator already
+    # controls (git fetch + pip install + systemctl restart on that one
+    # host) — same blast radius as the restart_daemon command.
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Trigger a SpoolBuddy update over SSH.
 

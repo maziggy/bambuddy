@@ -672,3 +672,48 @@ async def test_perform_ssh_update_corrupt_stored_key_falls_back_to_tofu(tmp_path
     # Broadcast must show success, not error
     error_broadcasts = [c for c in mock_ws.broadcast.call_args_list if c[0][0].get("update_status") == "error"]
     assert not error_broadcasts, f"Got unexpected error broadcast: {error_broadcasts}"
+
+
+@pytest.mark.asyncio
+async def test_perform_ssh_update_passes_str_not_bytes_to_import_known_hosts(tmp_path):
+    """asyncssh.import_known_hosts() is a str-only API — passing bytes crashes
+    inside its line parser (`line.startswith('#')` against a bytes line raises
+    TypeError). Pin both call sites — the stored-key parse and the just-stored
+    TOFU re-parse — to ensure we never re-introduce the .encode() bug."""
+    ssh_dir = tmp_path / "spoolbuddy" / "ssh"
+    ssh_dir.mkdir(parents=True)
+    (ssh_dir / "id_ed25519").write_text("PRIVATE")
+    (ssh_dir / "id_ed25519.pub").write_text("PUBLIC")
+
+    captured_args: list[object] = []
+
+    def capture_import(arg):
+        captured_args.append(arg)
+        return MagicMock(name="known_hosts")
+
+    async def mock_ssh(ip, cmd, key, *, known_hosts=None, timeout=60):
+        # Surface a freshly observed key on the first call so the TOFU branch
+        # also re-imports — exercises the second call site too.
+        observed = "ssh-rsa AAAAOBSERVED first-tofu" if not captured_args else None
+        return 0, "ok", "", observed
+
+    mock_device, mock_ctx, mock_ws = _make_update_mocks(tmp_path)
+    mock_device.ssh_host_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 storedkey"
+
+    with (
+        patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings,
+        patch("backend.app.services.spoolbuddy_ssh._run_ssh_command", side_effect=mock_ssh),
+        patch("backend.app.services.spoolbuddy_ssh.detect_current_branch", return_value="main"),
+        patch(
+            "backend.app.services.spoolbuddy_ssh.asyncssh.import_known_hosts",
+            side_effect=capture_import,
+        ),
+        patch("backend.app.core.database.async_session", return_value=mock_ctx),
+        patch("backend.app.api.routes.spoolbuddy.ws_manager", mock_ws),
+    ):
+        mock_settings.base_dir = tmp_path
+        await perform_ssh_update("sb-test", "10.0.0.1")
+
+    assert captured_args, "import_known_hosts was never called"
+    for arg in captured_args:
+        assert isinstance(arg, str), f"asyncssh.import_known_hosts must receive str, got {type(arg).__name__}: {arg!r}"

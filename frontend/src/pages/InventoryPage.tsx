@@ -14,7 +14,7 @@ import type { InventorySpool, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
 import { FilamentSwatch } from '../components/FilamentSwatch';
 import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
-import { SpoolFormModal } from '../components/SpoolFormModal';
+import {SpoolFormModal, type SpoolFormMode} from '../components/SpoolFormModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
@@ -463,7 +463,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const { hasPermission, loading: authLoading } = useAuth();
   const canViewForecast = !authLoading && hasPermission('inventory:forecast_read');
   const [searchParams, setSearchParams] = useSearchParams();
-  const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null; copy?: boolean | null | undefined} | null>(null);
+  const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null; mode: SpoolFormMode } | null>(null);
   const deepLinkHandled = useRef(false);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
   // Label printing (#809). null = closed; otherwise the IDs to print labels for.
@@ -557,14 +557,14 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     // Case 1: spool is already in the fetched list
     if (spoolmanModeReady && deepLinkSpoolId && deepLinkInList) {
       clearDeepLinkParam();
-      setFormModal({ spool: deepLinkInList });
+      setFormModal({ spool: deepLinkInList, mode: 'edit' });
       return;
     }
 
     // Case 2: spool was fetched individually
     if (deepLinkSpool) {
       clearDeepLinkParam();
-      setFormModal({ spool: deepLinkSpool });
+      setFormModal({ spool: deepLinkSpool, mode: 'edit' });
       return;
     }
 
@@ -1045,7 +1045,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             <Printer className="w-4 h-4" />
             {t('inventory.labels.printLabels', 'Print labels…')}
           </Button>
-          <Button onClick={() => setFormModal({ spool: null })}>
+          <Button onClick={() => setFormModal({ spool: null, mode: 'create' })}>
             <Plus className="w-4 h-4" />
             {t('inventory.addSpool')}
           </Button>
@@ -1527,9 +1527,9 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                                 spool={spool}
                                 remaining={remaining}
                                 pct={pct}
-                                onClick={() => setFormModal({ spool })}
+                                onClick={() => setFormModal({ spool, mode: 'edit' })}
                                 onPrintLabel={() => setLabelPickerSpoolIds([spool.id])}
-                                onCopy={() => setFormModal({ spool: spool, copy: true })}
+                                onCopy={() => setFormModal({ spool: spool, mode: 'copy' })}
                                 t={t}
                               />
                             );
@@ -1548,9 +1548,9 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                     spool={spool}
                     remaining={remaining}
                     pct={pct}
-                    onClick={() => setFormModal({ spool })}
+                    onClick={() => setFormModal({ spool, mode: 'edit' })}
                     onPrintLabel={() => setLabelPickerSpoolIds([spool.id])}
-                    onCopy={() => setFormModal({ spool: spool, copy: true })}
+                    onCopy={() => setFormModal({ spool: spool, mode: 'copy' })}
                     t={t}
                   />
                 );
@@ -1570,7 +1570,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         ) : (
           <EmptyFilterState
             hasFilters={hasActiveFilters}
-            onAddSpool={() => setFormModal({ spool: null })}
+            onAddSpool={() => setFormModal({ spool: null, mode: 'create' })}
             t={t}
           />
         )
@@ -1625,8 +1625,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                           pct={pct}
                           isExpanded={isExpanded}
                           onToggle={() => toggleGroupExpand(key)}
-                          onEdit={(s) => setFormModal({ spool: s })}
-                          onCopy={(s) => setFormModal({ spool: s, copy: true })}
+                          onEdit={(s) => setFormModal({ spool: s, mode: 'edit' })}
+                          onCopy={(s) => setFormModal({ spool: s, mode: 'copy' })}
                           onArchive={(id) => setConfirmAction({ type: 'archive', spoolId: id })}
                           onDelete={(id) => setConfirmAction({ type: 'delete', spoolId: id })}
                           onPrintLabel={(id) => setLabelPickerSpoolIds([id])}
@@ -1649,8 +1649,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                         spool={spool}
                         remaining={remaining}
                         pct={pct}
-                        onEdit={() => setFormModal({ spool })}
-                        onCopy={() => setFormModal({ spool: spool, copy: true })}
+                        onEdit={() => setFormModal({ spool, mode: 'edit' })}
+                        onCopy={() => setFormModal({ spool: spool, mode: 'copy' })}
                         onRestore={() => restoreMutation.mutate(spool.id)}
                         onArchive={() => setConfirmAction({ type: 'archive', spoolId: spool.id })}
                         onDelete={() => setConfirmAction({ type: 'delete', spoolId: spool.id })}
@@ -1736,7 +1736,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         ) : (
           <EmptyFilterState
             hasFilters={hasActiveFilters}
-            onAddSpool={() => setFormModal({ spool: null })}
+            onAddSpool={() => setFormModal({ spool: null, mode: 'create' })}
             t={t}
           />
         )
@@ -1748,7 +1748,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           isOpen={true}
           onClose={() => setFormModal(null)}
           spool={formModal.spool}
-          copy={formModal.copy}
+          mode={formModal.mode}
           currencySymbol={currencySymbol}
           spoolmanMode={spoolmanMode}
           spoolsQueryKey={spoolsQueryKey}
@@ -1884,7 +1884,7 @@ function SpoolCard({
   pct: number;
   onClick: () => void;
   onPrintLabel?: () => void;
-  onCopy: () => void;
+  onCopy?: () => void;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
   const bannerStyle = buildFilamentBackground({
@@ -1903,14 +1903,16 @@ function SpoolCard({
         <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
           {resolveSpoolColorName(spool.color_name, spool.rgba) || '-'}
         </span>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onCopy(); }}
-          className="p-1.5 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors"
-          title={t('inventory.copySpool')}
-        >
-          <Copy className="w-3.5 h-3.5" />
-        </button>
+        {onCopy && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onCopy(); }}
+            className="p-1.5 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors"
+            title={t('inventory.copySpool')}
+          >
+            <Copy className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
       <div className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
@@ -1987,7 +1989,7 @@ function SpoolTableRow({
   remaining: number;
   pct: number;
   onEdit: () => void;
-  onCopy: () => void;
+  onCopy?: () => void;
   onRestore: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -2017,9 +2019,11 @@ function SpoolTableRow({
           <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('common.edit')}>
             <Edit2 className="w-4 h-4" />
           </button>
-          <button onClick={onCopy} className="p-1.5 text-bambu-gray hover:text-bambu-green rounded transition-colors" title={t('inventory.copySpool')}>
-            <Copy className="w-4 h-4" />
-          </button>
+          {onCopy && (
+            <button onClick={onCopy} className="p-1.5 text-bambu-gray hover:text-bambu-green rounded transition-colors" title={t('inventory.copySpool')}>
+              <Copy className="w-4 h-4" />
+            </button>
+          )}
           {onPrintLabel && (
             <button onClick={onPrintLabel} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('inventory.labels.printOne')}>
               <Printer className="w-4 h-4" />
@@ -2056,7 +2060,7 @@ function SpoolTableGroup({
   isExpanded: boolean;
   onToggle: () => void;
   onEdit: (spool: InventorySpool) => void;
-  onCopy: (spool: InventorySpool) => void;
+  onCopy?: (spool: InventorySpool) => void;
   onArchive: (id: number) => void;
   onDelete: (id: number) => void;
   onPrintLabel?: (spoolId: number) => void;
@@ -2108,7 +2112,7 @@ function SpoolTableGroup({
             remaining={r}
             pct={p}
             onEdit={() => onEdit(spool)}
-            onCopy={() => onCopy(spool)}
+            onCopy={onCopy ? () => onCopy(spool) : undefined}
             onRestore={() => {}}
             onArchive={() => onArchive(spool.id)}
             onDelete={() => onDelete(spool.id)}

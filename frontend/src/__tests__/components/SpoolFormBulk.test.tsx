@@ -160,6 +160,7 @@ describe('SpoolFormModal quick-add toggle', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={existingSpool}
+        mode="edit"
         currencySymbol="$"
       />,
     );
@@ -255,6 +256,7 @@ describe('SpoolFormModal quick-add toggle', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={existingSpool}
+        mode="edit"
         currencySymbol="$"
       />,
     );

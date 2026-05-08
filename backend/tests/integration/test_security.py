@@ -1677,21 +1677,125 @@ class TestEncryptionStatusEndpoint:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_status_surfaces_migration_error_count(self, async_client, monkeypatch):
-        """B2: get_migration_error_count() value flows through to the endpoint
-        as `migration_error_count` so operators see poison-row counts.
+    async def test_status_decryption_broken_with_only_totp_rows(self, async_client, db_session, monkeypatch):
+        """B4: the sample-decrypt fallback to UserTOTP fires when there are no
+        encrypted OIDC rows but TOTP rows exist. The OIDC-only test above
+        proves the primary path; this pins the second branch in the same
+        try-block so a future refactor of the row-source switch can't silently
+        regress wrong-key detection for TOTP-only deployments.
         """
+        from cryptography.fernet import Fernet
+        from sqlalchemy import select
+
+        import backend.app.core.encryption as enc_mod
+        from backend.app.models.user import User
+        from backend.app.models.user_totp import UserTOTP
+
         token = await self._create_admin_and_login(async_client)
 
-        # Force the module-level counter to a known value.
-        import backend.app.core.database as db_mod
+        # Look up the admin user created by login so we can attach a TOTP row.
+        admin_row = await db_session.execute(select(User).where(User.username == "admin1219"))
+        admin = admin_row.scalar_one()
 
-        monkeypatch.setattr(db_mod, "_migration_error_count", 7)
+        # Seed a UserTOTP row encrypted under key A. No OIDC rows exist, so
+        # the endpoint's first branch (oidc_providers > 0) misses and the
+        # sample falls through to UserTOTP.
+        key_a_ciphertext = Fernet(Fernet.generate_key()).encrypt(b"original-totp-secret").decode()
+        db_session.add(UserTOTP(user_id=admin.id, _secret_enc=f"fernet:{key_a_ciphertext}", is_enabled=True))
+        await db_session.commit()
+
+        # Activate a DIFFERENT key — the TOTP-fallback sample-decrypt must fail.
+        monkeypatch.setenv("MFA_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        enc_mod._fernet_instance = None
+        enc_mod._key_source = None
 
         resp = await async_client.get(self.STATUS_URL, headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        assert data["migration_error_count"] == 7
+        assert data["key_configured"] is True
+        assert data["encrypted_rows"]["oidc_providers"] == 0, "test premise: no OIDC rows so TOTP branch fires"
+        assert data["encrypted_rows"]["user_totp"] >= 1
+        assert data["decryption_broken"] is True, "B4: TOTP-fallback sample-decrypt must detect wrong-key state"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_status_surfaces_real_migration_error_count(self, async_client, db_session, monkeypatch, caplog):
+        """B2: a real migration with a poison row produces an error_count that
+        flows through to the endpoint's `migration_error_count` field.
+
+        Replaces an earlier tautology that patched the module-level counter
+        directly. The chained version verifies the full path: poison row →
+        per-row migration skip → ``get_migration_error_count()`` →
+        ``GET /encryption-status``.
+        """
+        import logging
+
+        from backend.app.core.database import _migrate_encrypt_legacy_secrets, get_migration_error_count
+        from backend.app.models.oidc_provider import OIDCProvider
+
+        token = await self._create_admin_and_login(async_client)
+
+        # Bind the migration's session factory to the test engine and activate a key.
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from backend.app.core import database as db_mod
+
+        test_factory = async_sessionmaker(db_session.bind, class_=AsyncSession, expire_on_commit=False)
+        monkeypatch.setattr(db_mod, "async_session", test_factory)
+        from cryptography.fernet import Fernet
+
+        import backend.app.core.encryption as enc_mod
+
+        monkeypatch.setenv("MFA_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        enc_mod._fernet_instance = None
+
+        # Two legacy plaintext rows; force the SECOND row's encrypt call to raise.
+        db_session.add_all(
+            [
+                OIDCProvider(
+                    name="GoodRow",
+                    issuer_url="https://good.example.com",
+                    client_id="c1",
+                    _client_secret_enc="plaintext-good",
+                    scopes="openid email profile",
+                ),
+                OIDCProvider(
+                    name="BadRow",
+                    issuer_url="https://bad.example.com",
+                    client_id="c2",
+                    _client_secret_enc="plaintext-bad",
+                    scopes="openid email profile",
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        import backend.app.models.oidc_provider as oidc_mod
+
+        real_encrypt = oidc_mod.mfa_encrypt
+        call_count = [0]
+
+        def _sometimes_raise(value):
+            call_count[0] += 1
+            if call_count[0] == 2:
+                raise RuntimeError("simulated encrypt failure")
+            return real_encrypt(value)
+
+        monkeypatch.setattr(oidc_mod, "mfa_encrypt", _sometimes_raise)
+
+        with caplog.at_level(logging.ERROR, logger="backend.app.core.database"):
+            await _migrate_encrypt_legacy_secrets()
+
+        # Sanity: the migration's own counter saw the failure.
+        assert get_migration_error_count() == 1
+
+        # The endpoint must surface the same number — full path pinned, not just the getter.
+        resp = await async_client.get(self.STATUS_URL, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["migration_error_count"] == 1, (
+            "endpoint must report the actual migration outcome, not just read a stub global"
+        )
 
 
 # ============================================================================

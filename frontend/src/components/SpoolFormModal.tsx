@@ -22,7 +22,7 @@ interface SpoolFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   spool?: InventorySpool | null;
-  clone: boolean | null | undefined;
+  copy: boolean | null | undefined;
   printersWithCalibrations?: PrinterWithCalibrations[];
   currencySymbol: string;
   onSpoolsCreated?: (spools: InventorySpool[]) => void;
@@ -32,7 +32,7 @@ export function SpoolFormModal({
   isOpen,
   onClose,
   spool,
-  clone,
+  copy,
   printersWithCalibrations = [],
   currencySymbol,
   onSpoolsCreated,
@@ -41,8 +41,8 @@ export function SpoolFormModal({
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const isEditing = !!spool && !clone;
-  const isCloning = !!spool && !!clone;
+  const isEditing = !!spool && !copy;
+  const isCloning = !!spool && !!copy;
 
   // Form state
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
@@ -305,7 +305,7 @@ export function SpoolFormModal({
       setActiveTab('filament');
       setWeightTouched(false);
     }
-  }, [isOpen, spool, clone]);
+  }, [isOpen, spool, copy]);
 
   // Expand all printers in PA profile section when calibrations are available
   useEffect(() => {
@@ -536,7 +536,7 @@ export function SpoolFormModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary flex-shrink-0">
           <h2 className="text-lg font-semibold text-white">
-            {isEditing ? t('inventory.editSpool') : isCloning ? t('inventory.cloneSpool') : t('inventory.addSpool')}
+            {isEditing ? t('inventory.editSpool') : isCloning ? t('inventory.copySpool') : t('inventory.addSpool')}
           </h2>
           <button
             onClick={onClose}
@@ -717,7 +717,7 @@ export function SpoolFormModal({
             ) : (
               <>
                  <Save className="w-4 h-4" />
-                 {isEditing ? t('common.save') : isCloning ? t('inventory.cloneSpool') : t('inventory.addSpool')}
+                 {isEditing ? t('common.save') : isCloning ? t('inventory.copySpool') : t('inventory.addSpool')}
               </>
             )}
           </Button>

@@ -8,6 +8,8 @@ import httpx
 import pytest
 
 from backend.app.services.slicer_api import (
+    BundleNotFoundError,
+    BundleSummary,
     SlicerApiServerError,
     SlicerApiService,
     SlicerApiUnavailableError,
@@ -479,3 +481,246 @@ class TestSliceWithProfilesProgress:
         assert result is not None
         # Sustained 404 → no snapshots ever forwarded.
         assert snapshots == []
+
+
+# ── BundleSummary parsing + bundle CRUD client methods ─────────────────────
+
+
+class TestBundleClientMethods:
+    """Coverage for import_bundle / list_bundles / get_bundle / delete_bundle.
+
+    Mirrors the existing SlicerApiService tests' mock-transport pattern. The
+    bundle endpoints are simple JSON CRUD on the sidecar, but the response
+    parsing has to remain forgiving (newer sidecars may add fields, older
+    ones may omit some) and the failure modes have to map cleanly to our
+    typed exceptions so route handlers can pick the right HTTP status.
+    """
+
+    SAMPLE_SUMMARY = {
+        "id": "2bd8722dd20a837e",
+        "printer_preset_name": "# Bambu Lab H2D 0.4 nozzle",
+        "printer": ["# Bambu Lab H2D 0.4 nozzle"],
+        "process": ["# 0.20mm Standard @BBL H2D"],
+        "filament": ["# Bambu PLA Basic @BBL H2D"],
+        "version": "02.06.00.50",
+    }
+
+    @pytest.mark.asyncio
+    async def test_import_bundle_happy_path(self):
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["method"] = request.method
+            captured["content_type"] = request.headers.get("content-type", "")
+            return httpx.Response(status_code=201, json=self.SAMPLE_SUMMARY)
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        summary = await service.import_bundle(b"PK\x03\x04zip-bytes", filename="H2D.bbscfg")
+
+        assert isinstance(summary, BundleSummary)
+        assert summary.id == "2bd8722dd20a837e"
+        assert summary.printer == ["# Bambu Lab H2D 0.4 nozzle"]
+        assert summary.process == ["# 0.20mm Standard @BBL H2D"]
+        assert summary.filament == ["# Bambu PLA Basic @BBL H2D"]
+        assert captured["method"] == "POST"
+        assert captured["url"].endswith("/profiles/bundle")
+        assert captured["content_type"].startswith("multipart/form-data")
+
+    @pytest.mark.asyncio
+    async def test_import_bundle_400_raises_input_error(self):
+        # Non-.bbscfg uploads, corrupt zips, malicious entry names — all
+        # rejected by the sidecar with 4xx so the user can fix and retry.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code=400,
+                json={"message": "Bundle is missing bundle_structure.json"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(SlicerInputError) as exc_info:
+            await service.import_bundle(b"not a zip")
+        assert "missing bundle_structure" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_import_bundle_5xx_raises_server_error(self):
+        # Disk-write failure on DATA_PATH — rare but observable when /data
+        # is a tmpfs that filled up.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=500, json={"message": "ENOSPC"})
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(SlicerApiServerError):
+            await service.import_bundle(b"x")
+
+    @pytest.mark.asyncio
+    async def test_import_bundle_connection_error(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused")
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(SlicerApiUnavailableError):
+            await service.import_bundle(b"x")
+
+    @pytest.mark.asyncio
+    async def test_list_bundles_returns_summaries(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/profiles/bundles"
+            return httpx.Response(status_code=200, json=[self.SAMPLE_SUMMARY])
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        bundles = await service.list_bundles()
+        assert len(bundles) == 1
+        assert bundles[0].id == self.SAMPLE_SUMMARY["id"]
+
+    @pytest.mark.asyncio
+    async def test_list_bundles_empty_array(self):
+        # Sidecar returns [] when no bundles imported yet — must not raise.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=200, json=[])
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        assert await service.list_bundles() == []
+
+    @pytest.mark.asyncio
+    async def test_list_bundles_non_array_raises(self):
+        # Older / mis-configured sidecar returning {} instead of []. Surface
+        # the bug with a clear server error rather than silently treating
+        # malformed payload as empty.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=200, json={"unexpected": "shape"})
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(SlicerApiServerError):
+            await service.list_bundles()
+
+    @pytest.mark.asyncio
+    async def test_get_bundle_404_raises_not_found(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=404, json={"message": "not found"})
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(BundleNotFoundError):
+            await service.get_bundle("deadbeef00000000")
+
+    @pytest.mark.asyncio
+    async def test_get_bundle_happy_path(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/profiles/bundles/2bd8722dd20a837e"
+            return httpx.Response(status_code=200, json=self.SAMPLE_SUMMARY)
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        summary = await service.get_bundle("2bd8722dd20a837e")
+        assert summary.id == "2bd8722dd20a837e"
+
+    @pytest.mark.asyncio
+    async def test_delete_bundle_204_succeeds_silently(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.method == "DELETE"
+            return httpx.Response(status_code=204)
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        # Should not raise.
+        await service.delete_bundle("2bd8722dd20a837e")
+
+    @pytest.mark.asyncio
+    async def test_delete_bundle_404_raises_not_found(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=404, json={"message": "not found"})
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(BundleNotFoundError):
+            await service.delete_bundle("missing")
+
+
+class TestSliceWithBundle:
+    """The bundle slice path takes the same model upload but replaces the
+    profile-attachment fields with bundle-id + preset-name form fields.
+    Coverage for the form shape, the multi-filament join, and the same
+    4xx/5xx mapping as slice_with_profiles."""
+
+    @pytest.mark.asyncio
+    async def test_form_fields_and_filament_join(self):
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["body"] = request.content
+            captured["content_type"] = request.headers.get("content-type", "")
+            return httpx.Response(
+                status_code=200,
+                content=b"; G-CODE",
+                headers={
+                    "x-print-time-seconds": "60",
+                    "x-filament-used-g": "1.0",
+                    "x-filament-used-mm": "100.0",
+                },
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        result = await service.slice_with_bundle(
+            model_bytes=b"solid Cube\n",
+            model_filename="Cube.stl",
+            bundle_id="2bd8722dd20a837e",
+            printer_name="# Bambu Lab H2D 0.4 nozzle",
+            process_name="# 0.20mm Standard @BBL H2D",
+            filament_names=["# Bambu PLA Basic @BBL H2D", "# Bambu PETG HF @BBL H2D"],
+        )
+
+        assert isinstance(result, SliceResult)
+        assert result.print_time_seconds == 60
+        assert captured["url"].endswith("/slice")
+        assert captured["content_type"].startswith("multipart/form-data")
+        # Multi-filament joined with ';' — the sidecar's parser splits on
+        # both ';' and ',' so the wire format is the more-explicit ';'.
+        body = captured["body"]
+        assert b"# Bambu PLA Basic @BBL H2D;# Bambu PETG HF @BBL H2D" in body
+        # Each form field appears in the multipart body.
+        assert b'name="bundle"' in body
+        assert b'name="printerName"' in body
+        assert b'name="processName"' in body
+        assert b'name="filamentNames"' in body
+        # Bundle id round-trips on the wire.
+        assert b"2bd8722dd20a837e" in body
+
+    @pytest.mark.asyncio
+    async def test_404_unknown_preset_maps_to_input_error(self):
+        # Sidecar returns 404 when bundle exists but preset name doesn't.
+        # The slice route classifies this as user-correctable input error,
+        # not server failure.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code=404,
+                json={"message": 'process preset "Imaginary" not found in bundle "abc"'},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(SlicerInputError):
+            await service.slice_with_bundle(
+                model_bytes=b"x",
+                model_filename="Cube.stl",
+                bundle_id="abc",
+                printer_name="p",
+                process_name="Imaginary",
+                filament_names=["f"],
+            )
+
+    @pytest.mark.asyncio
+    async def test_5xx_maps_to_server_error(self):
+        # CLI segfault on the resolved triplet — same handling as slice_with_profiles.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code=500,
+                json={"message": "Slicer process failed (signal SIGSEGV)"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(SlicerApiServerError):
+            await service.slice_with_bundle(
+                model_bytes=b"x",
+                model_filename="Cube.3mf",
+                bundle_id="abc",
+                printer_name="p",
+                process_name="pr",
+                filament_names=["f"],
+            )

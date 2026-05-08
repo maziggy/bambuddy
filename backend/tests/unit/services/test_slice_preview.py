@@ -72,7 +72,18 @@ class _StubService:
         return False
 
     async def slice_without_profiles(self, **kw):
-        self.calls.append(kw)
+        self.calls.append({"method": "slice_without_profiles", **kw})
+        if self.raise_exc is not None:
+            raise self.raise_exc
+        return SliceResult(
+            content=self.response_bytes or b"",
+            print_time_seconds=0,
+            filament_used_g=0.0,
+            filament_used_mm=0.0,
+        )
+
+    async def slice_with_bundle(self, **kw):
+        self.calls.append({"method": "slice_with_bundle", **kw})
         if self.raise_exc is not None:
             raise self.raise_exc
         return SliceResult(
@@ -254,3 +265,174 @@ class TestGetPreviewFilaments:
         assert len(slice_preview._preview_cache) == _PREVIEW_CACHE_MAX
         # Lock dict is also pruned (no leak): same size as cache.
         assert len(slice_preview._preview_locks) == _PREVIEW_CACHE_MAX
+
+
+# ---------------------------------------------------------------------------
+# Bundle-aware preview path — when bundle context is supplied, the preview
+# routes through `slice_with_bundle` so its gram numbers reflect the same
+# triplet the real print will use. Cache must distinguish between bundle
+# picks so a fresh selection doesn't re-serve a prior preview's output.
+# ---------------------------------------------------------------------------
+
+
+class TestBundleAwarePreview:
+    @pytest.mark.asyncio
+    async def test_full_bundle_context_uses_slice_with_bundle(self):
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _StubService(response_bytes=body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            result = await get_preview_filaments(
+                kind="library_file",
+                source_id=42,
+                plate_id=1,
+                file_bytes=b"abc",
+                file_name="x.3mf",
+                api_url="http://sidecar",
+                bundle_id="abc123",
+                printer_name="# Bambu Lab H2D 0.4 nozzle",
+                process_name="# 0.20mm Standard @BBL H2D",
+                filament_names=["# Bambu PLA Basic @BBL H2D"],
+            )
+        assert result is not None
+        assert result[0]["slot_id"] == 1
+        # The bundle path engaged — slice_with_bundle was called, not the
+        # embedded-settings fallback.
+        assert len(stub.calls) == 1
+        assert stub.calls[0]["method"] == "slice_with_bundle"
+        assert stub.calls[0]["bundle_id"] == "abc123"
+        assert stub.calls[0]["filament_names"] == ["# Bambu PLA Basic @BBL H2D"]
+
+    @pytest.mark.asyncio
+    async def test_partial_bundle_context_falls_back_to_embedded(self):
+        # Modal-in-progress case: user picked a bundle id but hasn't yet
+        # picked the filament. Falling back to embedded settings keeps
+        # the preview's slot mapping fresh while gram numbers will firm
+        # up once the selection completes.
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _StubService(response_bytes=body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            await get_preview_filaments(
+                kind="library_file",
+                source_id=42,
+                plate_id=1,
+                file_bytes=b"abc",
+                file_name="x.3mf",
+                api_url="http://sidecar",
+                bundle_id="abc123",
+                printer_name="# Bambu Lab H2D 0.4 nozzle",
+                process_name="# 0.20mm Standard @BBL H2D",
+                # filament_names missing
+            )
+        assert len(stub.calls) == 1
+        assert stub.calls[0]["method"] == "slice_without_profiles"
+
+    @pytest.mark.asyncio
+    async def test_empty_filament_names_list_falls_back(self):
+        # Empty list (vs None) is treated as "incomplete context" since
+        # passing `[]` to slice_with_bundle would yield no
+        # --load-filaments arg and confuse the CLI.
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _StubService(response_bytes=body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            await get_preview_filaments(
+                kind="library_file",
+                source_id=42,
+                plate_id=1,
+                file_bytes=b"abc",
+                file_name="x.3mf",
+                api_url="http://sidecar",
+                bundle_id="abc123",
+                printer_name="P",
+                process_name="Q",
+                filament_names=[],
+            )
+        assert stub.calls[0]["method"] == "slice_without_profiles"
+
+    @pytest.mark.asyncio
+    async def test_cache_separates_bundle_picks(self):
+        # Same file/plate, two different bundle picks → two distinct cache
+        # entries → two slices run. Without the bundle-fingerprint cache key,
+        # the second call would erroneously serve the first's output.
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _StubService(response_bytes=body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            await get_preview_filaments(
+                kind="library_file",
+                source_id=42,
+                plate_id=1,
+                file_bytes=b"abc",
+                file_name="x.3mf",
+                api_url="http://sidecar",
+                bundle_id="bundleA",
+                printer_name="P",
+                process_name="Q",
+                filament_names=["F"],
+            )
+            await get_preview_filaments(
+                kind="library_file",
+                source_id=42,
+                plate_id=1,
+                file_bytes=b"abc",
+                file_name="x.3mf",
+                api_url="http://sidecar",
+                bundle_id="bundleB",
+                printer_name="P",
+                process_name="Q",
+                filament_names=["F"],
+            )
+        assert len(stub.calls) == 2
+        assert stub.calls[0]["bundle_id"] == "bundleA"
+        assert stub.calls[1]["bundle_id"] == "bundleB"
+
+    @pytest.mark.asyncio
+    async def test_cache_separates_bundle_vs_embedded(self):
+        # Same file/plate, one call without bundle and one with bundle →
+        # both must run. The embedded-settings cache entry must NOT be
+        # served as the bundle-picked result (gram numbers would be wrong).
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _StubService(response_bytes=body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            await get_preview_filaments(
+                kind="library_file",
+                source_id=42,
+                plate_id=1,
+                file_bytes=b"abc",
+                file_name="x.3mf",
+                api_url="http://sidecar",
+            )
+            await get_preview_filaments(
+                kind="library_file",
+                source_id=42,
+                plate_id=1,
+                file_bytes=b"abc",
+                file_name="x.3mf",
+                api_url="http://sidecar",
+                bundle_id="bundleA",
+                printer_name="P",
+                process_name="Q",
+                filament_names=["F"],
+            )
+        methods = [c["method"] for c in stub.calls]
+        assert methods == ["slice_without_profiles", "slice_with_bundle"]
+
+    @pytest.mark.asyncio
+    async def test_bundle_repeat_call_hits_cache(self):
+        # Sanity check that the new cache key is otherwise stable: same
+        # bundle pick on the same file → cache hit on second call.
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _StubService(response_bytes=body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            for _ in range(2):
+                await get_preview_filaments(
+                    kind="library_file",
+                    source_id=42,
+                    plate_id=1,
+                    file_bytes=b"abc",
+                    file_name="x.3mf",
+                    api_url="http://sidecar",
+                    bundle_id="bundleA",
+                    printer_name="P",
+                    process_name="Q",
+                    filament_names=["F"],
+                )
+        assert len(stub.calls) == 1

@@ -4,6 +4,7 @@ import base64
 import binascii
 import contextlib
 import hashlib
+import json
 import logging
 import os
 import re
@@ -2362,6 +2363,10 @@ async def _try_preview_slice_filaments(
     plate_id: int,
     file_path: Path,
     request_id: str | None = None,
+    bundle_id: str | None = None,
+    printer_name: str | None = None,
+    process_name: str | None = None,
+    filament_names: list[str] | None = None,
 ) -> list[dict] | None:
     """Run a preview slice via the user's configured sidecar. Same shape as
     the matching helper in archives.py — see that module for rationale.
@@ -2369,6 +2374,13 @@ async def _try_preview_slice_filaments(
     ``request_id``: when supplied, forwarded to the sidecar so the
     SliceModal's inline spinner + toast can poll the matching progress
     endpoint and show "Generating G-code (45%)" for the preview as well.
+
+    ``bundle_id`` / ``printer_name`` / ``process_name`` / ``filament_names``:
+    when all are supplied, the preview uses ``slice_with_bundle`` against
+    the named bundle's preset triplet so the preview's gram numbers reflect
+    the same profiles the real print will use. Partial context falls back
+    to the embedded-settings path so a half-completed Bundle-tier selection
+    in the modal doesn't error out.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
@@ -2397,6 +2409,10 @@ async def _try_preview_slice_filaments(
         file_name=file_path.name,
         api_url=api_url,
         request_id=request_id,
+        bundle_id=bundle_id,
+        printer_name=printer_name,
+        process_name=process_name,
+        filament_names=filament_names,
     )
 
 
@@ -2405,6 +2421,10 @@ async def get_library_file_filament_requirements(
     file_id: int,
     plate_id: int | None = None,
     request_id: str | None = None,
+    bundle_id: str | None = None,
+    printer_name: str | None = None,
+    process_name: str | None = None,
+    filament_names: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
@@ -2416,6 +2436,12 @@ async def get_library_file_filament_requirements(
     Args:
         file_id: The library file ID
         plate_id: Optional plate index to get filaments for a specific plate
+        bundle_id / printer_name / process_name / filament_names: Optional
+            bundle context. When all four are supplied, the preview slice
+            (run for unsliced project files) uses ``slice_with_bundle``
+            against the named preset triplet instead of the embedded-
+            settings fallback. ``filament_names`` is comma- or semicolon-
+            separated to mirror the slice route's multi-color form.
     """
     import defusedxml.ElementTree as ET
 
@@ -2535,6 +2561,14 @@ async def get_library_file_filament_requirements(
                 project_filaments = extract_project_filaments_from_3mf(zf)
                 used_slot_ids: set[int] = set()
                 if project_filaments and plate_id is not None:
+                    # Bundle context flows through optional query params so
+                    # callers without a Bundle-tier selection (the common
+                    # case) hit the same path as before.
+                    parsed_filament_names: list[str] | None = None
+                    if filament_names:
+                        parsed_filament_names = [
+                            n.strip() for n in filament_names.replace(";", ",").split(",") if n.strip()
+                        ] or None
                     preview = await _try_preview_slice_filaments(
                         db,
                         kind="library_file",
@@ -2542,6 +2576,10 @@ async def get_library_file_filament_requirements(
                         plate_id=plate_id,
                         file_path=file_path,
                         request_id=request_id,
+                        bundle_id=bundle_id,
+                        printer_name=printer_name,
+                        process_name=process_name,
+                        filament_names=parsed_filament_names,
                     )
                     if preview is not None:
                         used_slot_ids = {f["slot_id"] for f in preview}
@@ -2632,6 +2670,84 @@ def _strip_3mf_embedded_settings(zip_bytes: bytes) -> bytes:
     return dst.getvalue()
 
 
+# Keys in ``Metadata/project_settings.config`` that BambuStudio writes ``"-1"``
+# to when the user wants the value inherited from the parent process preset.
+# The CLI's ``StaticPrintConfig`` validator runs against the embedded settings
+# *before* ``--load-settings`` overrides apply, so a sentinel ``"-1"`` trips
+# the field's lower-bound range check and the CLI exits non-zero before our
+# profile triplet is ever consulted (#1201 — MakerWorld P2S models).
+#
+# Allowlisted (rather than "strip every '-1' value") because some fields
+# legitimately accept negative numbers (z_offset, translation values, etc.)
+# and a blanket strip would silently corrupt those.
+#
+# Add new entries here as more reports surface — the slicer's error message
+# names the offending field directly (`<field>: -1 not in range [...]`).
+_PROJECT_SETTINGS_SENTINEL_KEYS = frozenset(
+    {
+        # Reported in #1201 (MakerWorld P2S 3MFs).
+        "raft_first_layer_expansion",
+        "tree_support_wall_count",
+        # Cited in the strip-experiment comment block above as a known sentinel
+        # case from earlier reports.
+        "prime_tower_brim_width",
+    }
+)
+
+
+def _sanitize_project_settings_sentinels(zip_bytes: bytes) -> bytes:
+    """Strip ``"-1"`` inherit-from-parent sentinels from the 3MF's
+    ``Metadata/project_settings.config`` so the slicer CLI's range validator
+    accepts the file (#1201).
+
+    Removes only allowlisted keys (see ``_PROJECT_SETTINGS_SENTINEL_KEYS``)
+    when their value is exactly ``"-1"``. The rest of the config — and every
+    other entry in the zip — is preserved byte-for-byte. Unlike the earlier
+    full-strip experiment (see ``_strip_3mf_embedded_settings`` and the
+    cautionary comment in ``_run_slicer_with_fallback``) this leaves
+    ``StaticPrintConfig`` initialisation intact: the file is still present,
+    still parses, and the slicer falls back to the supplied
+    ``--load-settings`` value for the removed key.
+
+    Returns the original bytes unchanged when no sanitisation is needed
+    (input isn't a valid zip, no ``project_settings.config``, no allowlisted
+    sentinels present, or any other parse failure) so the caller can pass
+    the result on without further checks.
+    """
+    from io import BytesIO
+
+    try:
+        with zipfile.ZipFile(BytesIO(zip_bytes), "r") as zin:
+            if "Metadata/project_settings.config" not in zin.namelist():
+                return zip_bytes
+            try:
+                config = json.loads(zin.read("Metadata/project_settings.config").decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return zip_bytes
+            if not isinstance(config, dict):
+                return zip_bytes
+            removed = [key for key in _PROJECT_SETTINGS_SENTINEL_KEYS if config.get(key) == "-1"]
+            if not removed:
+                return zip_bytes
+            for key in removed:
+                config.pop(key, None)
+            patched = json.dumps(config)
+            logger.info(
+                "3MF sanitiser: removed sentinel '-1' for keys %s — slicer will use --load-settings defaults",
+                sorted(removed),
+            )
+            dst = BytesIO()
+            with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    if item.filename == "Metadata/project_settings.config":
+                        zout.writestr(item, patched)
+                    else:
+                        zout.writestr(item, zin.read(item.filename))
+            return dst.getvalue()
+    except (zipfile.BadZipFile, OSError):
+        return zip_bytes
+
+
 async def _run_slicer_with_fallback(
     db: AsyncSession,
     *,
@@ -2666,29 +2782,37 @@ async def _run_slicer_with_fallback(
         SlicerInputError,
     )
 
-    # Resolve each slot via the source-aware resolver. The schema validator
-    # has already normalised legacy `*_preset_id: int` fields into
-    # `PresetRef(source='local', id=str(int))`, so all three are guaranteed
-    # non-None here.
-    user: User | None = None
-    if current_user_id is not None:
-        user = await db.get(User, current_user_id)
+    # Bundle dispatch path: when SliceRequest.bundle is set, the schema
+    # validator short-circuited the presets-required check, so the
+    # PresetRef fields may all be None. Skip resolve_preset_ref entirely
+    # — the sidecar will materialise the per-category JSONs from the
+    # bundle's extracted directory at slice time.
+    use_bundle = request.bundle is not None
 
+    user: User | None = None
     presets: dict[str, str] = {}
-    refs = {
-        "printer": request.printer_preset,
-        "process": request.process_preset,
-    }
-    for slot, ref in refs.items():
-        assert ref is not None, "schema validator guarantees PresetRef is set"
-        presets[slot] = await resolve_preset_ref(db, user, ref, slot)
-    # Multi-color: resolve each filament slot in plate order. The schema
-    # validator backfilled `filament_presets` from the legacy `filament_preset`
-    # field for single-color callers, so this list is always non-empty.
     filament_jsons: list[str] = []
-    for ref in request.filament_presets:
-        assert ref is not None, "schema validator guarantees filament list is non-None"
-        filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
+    if not use_bundle:
+        # Resolve each slot via the source-aware resolver. The schema
+        # validator has already normalised legacy `*_preset_id: int`
+        # fields into `PresetRef(source='local', id=str(int))`, so all
+        # three are guaranteed non-None here.
+        if current_user_id is not None:
+            user = await db.get(User, current_user_id)
+
+        refs = {
+            "printer": request.printer_preset,
+            "process": request.process_preset,
+        }
+        for slot, ref in refs.items():
+            assert ref is not None, "schema validator guarantees PresetRef is set"
+            presets[slot] = await resolve_preset_ref(db, user, ref, slot)
+        # Multi-color: resolve each filament slot in plate order. The schema
+        # validator backfilled `filament_presets` from the legacy `filament_preset`
+        # field for single-color callers, so this list is always non-empty.
+        for ref in request.filament_presets:
+            assert ref is not None, "schema validator guarantees filament list is non-None"
+            filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
 
     # Slicer routing — pick the sidecar URL by preferred_slicer.
     # The per-install URL setting (Settings UI → Slicer card) wins; an
@@ -2725,6 +2849,14 @@ async def _run_slicer_with_fallback(
     # the embedded plate / model definitions remain intact.
     is_3mf = model_filename.lower().endswith(".3mf")
     primary_bytes = model_bytes
+    if is_3mf:
+        # Strip "-1" inherit-from-parent sentinels from
+        # Metadata/project_settings.config so the CLI's StaticPrintConfig
+        # range validator accepts the file (#1201). Surgical — keeps the
+        # config present, just removes the offending keys; the supplied
+        # --load-settings (and the fallback's embedded values for keys we
+        # didn't touch) still drive the slice.
+        primary_bytes = _sanitize_project_settings_sentinels(primary_bytes)
 
     used_embedded_settings = False
     service = SlicerApiService(api_url)
@@ -2747,17 +2879,35 @@ async def _run_slicer_with_fallback(
         progress_callback = _on_progress
     try:
         try:
-            result = await service.slice_with_profiles(
-                model_bytes=primary_bytes,
-                model_filename=model_filename,
-                printer_profile_json=presets["printer"],
-                process_profile_json=presets["process"],
-                filament_profile_jsons=filament_jsons,
-                plate=request.plate,
-                export_3mf=request.export_3mf,
-                request_id=progress_request_id,
-                on_progress=progress_callback,
-            )
+            if use_bundle:
+                # Bundle dispatch: sidecar materialises the JSON triplet
+                # from the stored .bbscfg by name. ``request.bundle`` is
+                # guaranteed non-None here by the use_bundle branch above.
+                assert request.bundle is not None
+                result = await service.slice_with_bundle(
+                    model_bytes=primary_bytes,
+                    model_filename=model_filename,
+                    bundle_id=request.bundle.bundle_id,
+                    printer_name=request.bundle.printer_name,
+                    process_name=request.bundle.process_name,
+                    filament_names=request.bundle.filament_names,
+                    plate=request.plate,
+                    export_3mf=request.export_3mf,
+                    request_id=progress_request_id,
+                    on_progress=progress_callback,
+                )
+            else:
+                result = await service.slice_with_profiles(
+                    model_bytes=primary_bytes,
+                    model_filename=model_filename,
+                    printer_profile_json=presets["printer"],
+                    process_profile_json=presets["process"],
+                    filament_profile_jsons=filament_jsons,
+                    plate=request.plate,
+                    export_3mf=request.export_3mf,
+                    request_id=progress_request_id,
+                    on_progress=progress_callback,
+                )
         except SlicerApiServerError as exc:
             if not is_3mf:
                 raise
@@ -2768,9 +2918,17 @@ async def _run_slicer_with_fallback(
             )
             # Forward the same request_id + callback so the toast's live
             # progress keeps updating across the fallback retry instead
-            # of going blank for the rest of the slice.
+            # of going blank for the rest of the slice. Use the sanitised
+            # bytes — the embedded-settings path also reads the same
+            # project_settings.config and the same range validator runs
+            # there too, so without sanitisation the fallback would die
+            # on the same sentinel error (#1201). Same fallback applies
+            # to the bundle path: if the resolved triplet crashes the CLI,
+            # embedded settings give the user *something* rather than a
+            # hard failure (the SliceModal flags the difference via
+            # used_embedded_settings).
             result = await service.slice_without_profiles(
-                model_bytes=model_bytes,
+                model_bytes=primary_bytes,
                 model_filename=model_filename,
                 plate=request.plate,
                 export_3mf=request.export_3mf,
@@ -2886,7 +3044,9 @@ async def slice_and_persist(
     )
     db.add(new_file)
     await db.commit()
-    await db.refresh(new_file)
+    # No refresh: expire_on_commit=False keeps id/filename accessible, and
+    # refreshing here flakes under pytest-xdist when teardown of a sibling
+    # test races the SELECT.
 
     return SliceResponse(
         library_file_id=new_file.id,

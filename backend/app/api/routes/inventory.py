@@ -5,11 +5,15 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_auth_if_enabled
+from backend.app.core.auth import (
+    RequireAnyPermissionIfAuthEnabled,
+    RequirePermissionIfAuthEnabled,
+    require_auth_if_enabled,
+)
 from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG, DEFAULT_SPOOL_CATALOG
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -34,30 +38,364 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
-from backend.app.utils.filament_ids import filament_id_to_setting_id, normalize_slicer_filament
+from backend.app.utils.filament_ids import (
+    GENERIC_FILAMENT_IDS,
+    MATERIAL_TEMPS,
+    filament_id_to_setting_id,
+    normalize_slicer_filament,
+)
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/inventory", tags=["inventory"])
+_GENERIC_ID_VALUES = set(GENERIC_FILAMENT_IDS.values())
 
-# Material temperature defaults (nozzle min/max)
-MATERIAL_TEMPS: dict[str, tuple[int, int]] = {
-    "PLA": (190, 230),
-    "PETG": (220, 260),
-    "ABS": (240, 270),
-    "ASA": (240, 270),
-    "TPU": (200, 240),
-    "PA": (260, 290),
-    "PC": (250, 280),
-    "PVA": (190, 210),
-    "PLA-CF": (210, 240),
-    "PETG-CF": (240, 270),
-    "PA-CF": (270, 300),
-}
+router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 # FilamentColors.xyz API
 FILAMENT_COLORS_API = "https://filamentcolors.xyz/api"
+
+# Generic Bambu filament IDs by material — fallback when no specific
+# preset is resolvable. Keep aligned with the inline table in
+# apply_spool_to_slot_via_mqtt below; both paths must produce the same
+# value for a given material.
+_GENERIC_FILAMENT_IDS: dict[str, str] = {
+    "PLA": "GFL99",
+    "PETG": "GFG99",
+    "ABS": "GFB99",
+    "ASA": "GFB98",
+    "PC": "GFC99",
+    "PA": "GFN99",
+    "NYLON": "GFN99",
+    "TPU": "GFU99",
+    "PVA": "GFS99",
+    "HIPS": "GFS98",
+    "PLA-CF": "GFL98",
+    "PETG-CF": "GFG98",
+    "PA-CF": "GFN98",
+    "PETG HF": "GFG96",
+}
+
+
+async def apply_spool_to_slot_via_mqtt(
+    *,
+    db: AsyncSession,
+    current_user: User | None,
+    spool: Spool,
+    printer_id: int,
+    ams_id: int,
+    tray_id: int,
+    current_tray_info_idx: str = "",
+    current_tray_type: str = "",
+) -> bool:
+    """Publish ams_filament_setting + extrusion_cali_sel for a spool on a slot.
+
+    Shared by `assign_spool` (initial assign for a loaded slot) and
+    `on_ams_change` (re-fire when a SpoolBuddy-pre-assigned slot transitions
+    empty → loaded). Returns True when MQTT commands were published, False if
+    no client was available or setup failed mid-way.
+
+    `current_tray_info_idx` / `current_tray_type` describe the live tray state
+    used as fallback hints when the spool's slicer_filament can't be resolved.
+    Caller should not pass these for the empty-slot re-fire path (they'll be
+    the freshly-loaded values, which is the intended fallback).
+    """
+    from backend.app.services.printer_manager import printer_manager
+
+    client = printer_manager.get_client(printer_id)
+    if client is None:
+        return False
+
+    state = printer_manager.get_status(printer_id)
+
+    tray_type = spool.material
+    tray_sub_brands = (
+        f"{spool.brand} {spool.material} {spool.subtype}".strip()
+        if spool.brand
+        else f"{spool.material} {spool.subtype}"
+        if spool.subtype
+        else spool.material
+    )
+    tray_color = spool.rgba or "FFFFFFFF"
+
+    _generic_id_values = set(_GENERIC_FILAMENT_IDS.values())
+
+    tray_info_idx = ""
+    setting_id = ""
+    sf = spool.slicer_filament or ""
+
+    if sf:
+        base_sf = sf.split("_")[0] if "_" in sf else sf
+        if base_sf.startswith("GFS") or base_sf.startswith("PFUS"):
+            setting_id = base_sf
+            try:
+                from backend.app.api.routes.cloud import build_authenticated_cloud
+
+                cloud = await build_authenticated_cloud(db, current_user)
+                if cloud is not None and cloud.is_authenticated:
+                    try:
+                        detail = await cloud.get_setting_detail(base_sf)
+                        if detail.get("filament_id"):
+                            tray_info_idx = detail["filament_id"]
+                            cloud_name = detail.get("name", "")
+                            if cloud_name:
+                                tray_sub_brands = cloud_name.replace(r"@.*$", "").split("@")[0].strip()
+                        elif detail.get("base_id"):
+                            bid = detail["base_id"].split("_")[0]
+                            if bid.startswith("GFS") and len(bid) >= 5:
+                                tray_info_idx = f"GF{bid[3:]}"
+                            else:
+                                tray_info_idx = bid
+                    finally:
+                        await cloud.close()
+                elif cloud is not None:
+                    await cloud.close()
+            except Exception as e:
+                logger.warning("Spool assign: cloud lookup failed for %r: %s", sf, e)
+
+            if not tray_info_idx:
+                tray_info_idx, setting_id = normalize_slicer_filament(sf)
+        elif base_sf.startswith("GF"):
+            tray_info_idx, setting_id = normalize_slicer_filament(sf)
+        else:
+            try:
+                local_id = int(sf)
+                from backend.app.models.local_preset import LocalPreset as LP
+
+                lp_result = await db.execute(select(LP).where(LP.id == local_id, LP.preset_type == "filament"))
+                lp = lp_result.scalar_one_or_none()
+                if lp:
+                    mat = (spool.material or lp.filament_type or "").upper().strip()
+                    tray_info_idx = (
+                        _GENERIC_FILAMENT_IDS.get(mat)
+                        or _GENERIC_FILAMENT_IDS.get(mat.split("-")[0].split(" ")[0])
+                        or ""
+                    )
+                    if lp.name:
+                        tray_sub_brands = lp.name.split("@")[0].strip()
+            except (ValueError, TypeError):
+                tray_info_idx, setting_id = normalize_slicer_filament(sf)
+
+    if tray_info_idx and spool.slicer_filament_name:
+        from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
+
+        expected_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx, "")
+        if expected_name and expected_name != spool.slicer_filament_name:
+            for fid, fname in _BUILTIN_FILAMENT_NAMES.items():
+                if fname == spool.slicer_filament_name:
+                    tray_info_idx = fid
+                    setting_id = filament_id_to_setting_id(fid)
+                    break
+
+    if not tray_info_idx:
+        if (
+            current_tray_info_idx
+            and current_tray_info_idx not in _generic_id_values
+            and current_tray_type
+            and current_tray_type.upper() == tray_type.upper()
+        ):
+            tray_info_idx = current_tray_info_idx
+        elif tray_type:
+            material = tray_type.upper().strip()
+            generic = (
+                _GENERIC_FILAMENT_IDS.get(material)
+                or _GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
+                or ""
+            )
+            if generic:
+                tray_info_idx = generic
+
+    temp_min, temp_max = MATERIAL_TEMPS.get((spool.material or "").upper(), (200, 240))
+    if spool.nozzle_temp_min is not None:
+        temp_min = spool.nozzle_temp_min
+    if spool.nozzle_temp_max is not None:
+        temp_max = spool.nozzle_temp_max
+
+    nozzle_diameter = "0.4"
+    if state and state.nozzles:
+        nd = state.nozzles[0].nozzle_diameter
+        if nd:
+            nozzle_diameter = nd
+
+    slot_extruder = None
+    if state and state.ams_extruder_map:
+        if ams_id == 255:
+            slot_extruder = 1 - tray_id  # ext-L (tray 0) → extruder 1, ext-R (tray 1) → extruder 0
+        else:
+            slot_extruder = state.ams_extruder_map.get(str(ams_id))
+
+    # Prefer exact extruder match, fall back to extruder-agnostic kp for the
+    # same nozzle. Hard-skipping on mismatch silently drops valid stored
+    # profiles when the AMS-extruder mapping has shifted.
+    exact_kp = None
+    fallback_kp = None
+    for kp in spool.k_profiles:
+        if kp.printer_id != printer_id or kp.nozzle_diameter != nozzle_diameter:
+            continue
+        if slot_extruder is not None and kp.extruder is not None and kp.extruder == slot_extruder:
+            exact_kp = kp
+            break
+        if fallback_kp is None:
+            fallback_kp = kp
+    matching_kp = exact_kp or fallback_kp
+
+    # Resolve the printer-side calibration entry by looking up the cali_idx
+    # in state.kprofiles. The printer keys its calibration table by
+    # (filament_id, cali_idx) — for the cali_idx to stick, the slot's
+    # filament_id must match the kp's. PFUS-prefix cloud user presets are
+    # rejected by the slicer in tray_info_idx; the printer-reported
+    # filament_id is typically a P-prefix local preset which is valid.
+    printer_kp = None
+    if matching_kp and matching_kp.cali_idx is not None and state and getattr(state, "kprofiles", None):
+        for pkp in state.kprofiles:
+            if pkp.slot_id == matching_kp.cali_idx and pkp.nozzle_diameter == nozzle_diameter:
+                printer_kp = pkp
+                break
+
+    effective_tray_info_idx = tray_info_idx
+    effective_setting_id = setting_id
+    if printer_kp and printer_kp.filament_id:
+        effective_tray_info_idx = printer_kp.filament_id
+    target_setting_id = (printer_kp.setting_id if printer_kp else None) or (
+        matching_kp.setting_id if matching_kp else None
+    )
+    if target_setting_id:
+        effective_setting_id = target_setting_id
+    if effective_tray_info_idx != tray_info_idx or effective_setting_id != setting_id:
+        logger.info(
+            "Spool assign: realigning tray_info_idx %r → %r, setting_id %r → %r (source=%s)",
+            tray_info_idx,
+            effective_tray_info_idx,
+            setting_id,
+            effective_setting_id,
+            "printer" if printer_kp else "stored",
+        )
+
+    client.ams_set_filament_setting(
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=effective_tray_info_idx,
+        tray_type=tray_type,
+        tray_sub_brands=tray_sub_brands,
+        tray_color=tray_color,
+        nozzle_temp_min=temp_min,
+        nozzle_temp_max=temp_max,
+        setting_id=effective_setting_id,
+    )
+
+    if matching_kp and matching_kp.cali_idx is not None:
+        # filament_id for cali_sel must match the preset under which the kp
+        # was registered. Priority: live printer kp > stored kp.setting_id >
+        # spool.slicer_filament > realigned tray_info_idx.
+        if printer_kp and printer_kp.filament_id:
+            cali_filament_id = printer_kp.filament_id
+        elif matching_kp.setting_id:
+            cali_filament_id = normalize_slicer_filament(matching_kp.setting_id)[0] or matching_kp.setting_id
+        else:
+            cali_filament_id = spool.slicer_filament or effective_tray_info_idx
+        client.extrusion_cali_sel(
+            ams_id=ams_id,
+            tray_id=tray_id,
+            cali_idx=matching_kp.cali_idx,
+            filament_id=cali_filament_id,
+            nozzle_diameter=nozzle_diameter,
+        )
+    else:
+        # No stored K-profile for this slot — preserve the slot's current live
+        # cali_idx if the printer has one. cali_idx is read from state.raw_data
+        # using the same idiom as the route's `current_tray_info_idx` lookup.
+        # Negative values (e.g. -1) mean "no calibration recorded" and must not
+        # be sent.
+        live_cali_idx: int | None = None
+        if state and getattr(state, "raw_data", None):
+            if ams_id == 255:
+                for vt in state.raw_data.get("vt_tray") or []:
+                    if isinstance(vt, dict) and int(vt.get("id", 254)) == (tray_id + 254):
+                        raw = vt.get("cali_idx")
+                        if isinstance(raw, int):
+                            live_cali_idx = raw
+                        break
+            else:
+                ams_section = state.raw_data.get("ams", {})
+                ams_list = (
+                    ams_section.get("ams", [])
+                    if isinstance(ams_section, dict)
+                    else ams_section
+                    if isinstance(ams_section, list)
+                    else []
+                )
+                tray_dict = _find_tray_in_ams_data(ams_list, ams_id, tray_id)
+                if tray_dict:
+                    raw = tray_dict.get("cali_idx")
+                    if isinstance(raw, int):
+                        live_cali_idx = raw
+        if live_cali_idx is not None and live_cali_idx >= 0:
+            cali_filament_id = spool.slicer_filament or effective_tray_info_idx
+            client.extrusion_cali_sel(
+                ams_id=ams_id,
+                tray_id=tray_id,
+                cali_idx=live_cali_idx,
+                filament_id=cali_filament_id,
+                nozzle_diameter=nozzle_diameter,
+            )
+            logger.info(
+                "No stored K-profile for spool %d — preserved live cali_idx=%d",
+                spool.id,
+                live_cali_idx,
+            )
+
+    # Persist slot preset mapping for UI display (preset_name on hover card).
+    try:
+        from backend.app.models.slot_preset import SlotPresetMapping
+
+        preset_name = spool.slicer_filament_name or tray_sub_brands or tray_type
+        preset_source = "cloud"
+        if sf:
+            base_sf_mapping = sf.split("_")[0] if "_" in sf else sf
+            try:
+                int(base_sf_mapping)
+                preset_id_to_save = f"local_{base_sf_mapping}"
+                preset_source = "local"
+            except (ValueError, TypeError):
+                preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else setting_id
+        else:
+            preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else ""
+
+        if preset_id_to_save:
+            existing_mapping = await db.execute(
+                select(SlotPresetMapping).where(
+                    SlotPresetMapping.printer_id == printer_id,
+                    SlotPresetMapping.ams_id == ams_id,
+                    SlotPresetMapping.tray_id == tray_id,
+                )
+            )
+            mapping = existing_mapping.scalar_one_or_none()
+            if mapping:
+                mapping.preset_id = preset_id_to_save
+                mapping.preset_name = preset_name
+                mapping.preset_source = preset_source
+            else:
+                mapping = SlotPresetMapping(
+                    printer_id=printer_id,
+                    ams_id=ams_id,
+                    tray_id=tray_id,
+                    preset_id=preset_id_to_save,
+                    preset_name=preset_name,
+                    preset_source=preset_source,
+                )
+                db.add(mapping)
+            await db.commit()
+    except Exception as e:
+        logger.warning("Failed to save slot preset mapping for spool %d: %s", spool.id, e)
+
+    logger.info(
+        "Auto-configured AMS slot ams=%d tray=%d for spool %d on printer %d",
+        ams_id,
+        tray_id,
+        spool.id,
+        printer_id,
+    )
+    return True
 
 
 # ── Spool Catalog Schemas ──────────────────────────────────────────────────
@@ -834,10 +1172,17 @@ async def assign_spool(
     if spool.archived_at:
         raise HTTPException(400, "Cannot assign an archived spool")
 
-    # 2. Get current AMS tray state for fingerprint + existing filament ID
+    # 2. Get current AMS tray state for fingerprint + existing filament ID.
+    # tray_state: Bambu firmware reports 11=loaded, 9=empty, 10=spool present
+    # but filament not in feeder. Captured here so the empty-slot heuristic
+    # below can prefer it over tray_type — a manual "Reset slot" clears
+    # tray_type to "" while leaving state at 11 (filament still physically
+    # present), which would otherwise mislead the heuristic into the
+    # pending-config branch and skip MQTT forever (#1228 follow-up).
     fingerprint_color = None
     fingerprint_type = None
     current_tray_info_idx = ""
+    tray_state: int | None = None
     state = printer_manager.get_status(data.printer_id)
     if state and state.raw_data:
         if data.ams_id == 255:
@@ -849,6 +1194,9 @@ async def assign_spool(
                     fingerprint_color = vt.get("tray_color", "")
                     fingerprint_type = vt.get("tray_type", "")
                     current_tray_info_idx = vt.get("tray_info_idx", "")
+                    raw_state = vt.get("state")
+                    if isinstance(raw_state, int):
+                        tray_state = raw_state
                     break
         else:
             ams_data = state.raw_data.get("ams", {})
@@ -868,6 +1216,9 @@ async def assign_spool(
                 fingerprint_color = tray.get("tray_color", "")
                 fingerprint_type = tray.get("tray_type", "")
                 current_tray_info_idx = tray.get("tray_info_idx", "")
+                raw_state = tray.get("state")
+                if isinstance(raw_state, int):
+                    tray_state = raw_state
 
     # 3. Upsert assignment (replace if same printer+ams+tray)
     existing = await db.execute(
@@ -894,285 +1245,45 @@ async def assign_spool(
     await db.commit()
     await db.refresh(assignment)
 
-    # 4. Auto-configure AMS slot via MQTT
+    # 4. Auto-configure AMS slot via MQTT.
+    #
+    # Skip the publish entirely when the target slot is empty: Bambu firmware
+    # silently drops ams_filament_setting / extrusion_cali_sel for unloaded
+    # slots (there is no filament context for the cali_idx to attach to). The
+    # SpoolAssignment row is preserved with an empty fingerprint_type, which
+    # acts as the "pending config" marker — when the spool is physically
+    # inserted later, on_ams_change re-fires the full configuration. This is
+    # the SpoolBuddy primary workflow: weigh-then-assign before insertion.
+    #
+    # Empty-detection: prefer the printer's tray.state when it's reported
+    # (11=loaded, 9=empty, 10=spool present but filament not in feeder).
+    # tray_type alone is wrong post-"Reset slot" — that flow clears tray_type
+    # to "" while leaving filament physically loaded, and the old check
+    # would then mark it as a pending-config SpoolBuddy assignment, skip
+    # MQTT, and the slot would stay unconfigured forever because the
+    # on_ams_change replay only fires on an empty→loaded transition that
+    # never comes (the slot is already loaded). When state is not reported
+    # (older firmware), fall back to the tray_type heuristic.
+    if tray_state is not None:
+        slot_is_empty = tray_state != 11
+    else:
+        slot_is_empty = not (fingerprint_type and fingerprint_type.strip())
     configured = False
-    try:
-        client = printer_manager.get_client(data.printer_id)
-        if client:
-            # Build filament setting from spool data
-            tray_type = spool.material
-            tray_sub_brands = (
-                f"{spool.brand} {spool.material} {spool.subtype}".strip()
-                if spool.brand
-                else f"{spool.material} {spool.subtype}"
-                if spool.subtype
-                else spool.material
-            )
-            tray_color = spool.rgba or "FFFFFFFF"
-
-            _GENERIC_IDS = {
-                "PLA": "GFL99",
-                "PETG": "GFG99",
-                "ABS": "GFB99",
-                "ASA": "GFB98",
-                "PC": "GFC99",
-                "PA": "GFN99",
-                "NYLON": "GFN99",
-                "TPU": "GFU99",
-                "PVA": "GFS99",
-                "HIPS": "GFS98",
-                "PLA-CF": "GFL98",
-                "PETG-CF": "GFG98",
-                "PA-CF": "GFN98",
-                "PETG HF": "GFG96",
-            }
-            _GENERIC_ID_VALUES = set(_GENERIC_IDS.values())
-
-            # Resolve tray_info_idx + setting_id for the MQTT command.
-            # Three sources in priority order:
-            #   1. Cloud profile (if cloud connected) — resolve filament_id
-            #      from setting_id via cloud API
-            #   2. Local profile — use generic filament ID for material
-            #   3. Hard-coded fallback — generic Bambu filament IDs
-            tray_info_idx = ""
-            setting_id = ""
-            sf = spool.slicer_filament or ""
-
-            if sf:
-                # Check if it's a cloud preset (GFS*, PFUS*, or GF* official)
-                base_sf = sf.split("_")[0] if "_" in sf else sf
-                if base_sf.startswith("GFS") or base_sf.startswith("PFUS"):
-                    # Cloud setting_id — need to resolve real filament_id
-                    # Use base_sf (version suffix stripped) for cloud API + MQTT
-                    setting_id = base_sf
-                    try:
-                        from backend.app.api.routes.cloud import build_authenticated_cloud
-
-                        cloud = await build_authenticated_cloud(db, current_user)
-                        if cloud is not None and cloud.is_authenticated:
-                            try:
-                                detail = await cloud.get_setting_detail(base_sf)
-                                if detail.get("filament_id"):
-                                    tray_info_idx = detail["filament_id"]
-                                    logger.info(
-                                        "Spool assign: resolved filament_id=%r from cloud for setting_id=%r",
-                                        tray_info_idx,
-                                        sf,
-                                    )
-                                    # Use cloud preset name for tray_sub_brands if available
-                                    cloud_name = detail.get("name", "")
-                                    if cloud_name:
-                                        tray_sub_brands = cloud_name.replace(r"@.*$", "").split("@")[0].strip()
-                                elif detail.get("base_id"):
-                                    # Derive from base_id (e.g. "GFSL05" → "GFL05")
-                                    bid = detail["base_id"].split("_")[0]
-                                    if bid.startswith("GFS") and len(bid) >= 5:
-                                        tray_info_idx = f"GF{bid[3:]}"
-                                    else:
-                                        tray_info_idx = bid
-                                    logger.info(
-                                        "Spool assign: derived filament_id=%r from base_id=%r",
-                                        tray_info_idx,
-                                        detail["base_id"],
-                                    )
-                            finally:
-                                await cloud.close()
-                        elif cloud is not None:
-                            await cloud.close()
-                    except Exception as e:
-                        logger.warning("Spool assign: cloud lookup failed for %r: %s", sf, e)
-
-                    if not tray_info_idx:
-                        # Cloud lookup failed — use normalize as fallback
-                        tray_info_idx, setting_id = normalize_slicer_filament(sf)
-                elif base_sf.startswith("GF"):
-                    # Official Bambu filament_id (e.g. "GFL05")
-                    tray_info_idx, setting_id = normalize_slicer_filament(sf)
-                    logger.info("Spool assign: using official filament_id=%r", tray_info_idx)
-
-                else:
-                    # Could be a local preset ID or material type — try local DB
-                    try:
-                        local_id = int(sf)
-                        from backend.app.models.local_preset import LocalPreset as LP
-
-                        lp_result = await db.execute(select(LP).where(LP.id == local_id, LP.preset_type == "filament"))
-                        lp = lp_result.scalar_one_or_none()
-                        if lp:
-                            mat = (spool.material or lp.filament_type or "").upper().strip()
-                            tray_info_idx = (
-                                _GENERIC_IDS.get(mat) or _GENERIC_IDS.get(mat.split("-")[0].split(" ")[0]) or ""
-                            )
-                            # Use local preset name for tray_sub_brands
-                            if lp.name:
-                                tray_sub_brands = lp.name.split("@")[0].strip()
-                            logger.info(
-                                "Spool assign: local preset %d, material=%r, tray_info_idx=%r",
-                                local_id,
-                                mat,
-                                tray_info_idx,
-                            )
-                    except (ValueError, TypeError):
-                        # Not a numeric ID — treat as material type string
-                        tray_info_idx, setting_id = normalize_slicer_filament(sf)
-
-            # Cross-check: the cloud API returns the base filament_id for
-            # versioned setting_ids (e.g. GFSL99 → GFL99 for all PLA variants).
-            # If the spool has a specific preset name (e.g. "Generic PLA Silk"),
-            # reverse-lookup the correct filament_id from the built-in table.
-            if tray_info_idx and spool.slicer_filament_name:
-                from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
-
-                expected_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx, "")
-                if expected_name and expected_name != spool.slicer_filament_name:
-                    for fid, fname in _BUILTIN_FILAMENT_NAMES.items():
-                        if fname == spool.slicer_filament_name:
-                            logger.info(
-                                "Spool assign: corrected filament_id %r→%r (name=%r)",
-                                tray_info_idx,
-                                fid,
-                                spool.slicer_filament_name,
-                            )
-                            tray_info_idx = fid
-                            setting_id = filament_id_to_setting_id(fid)
-                            break
-
-            if not tray_info_idx:
-                # Fallback: reuse slot's existing tray_info_idx or generic ID
-                if (
-                    current_tray_info_idx
-                    and current_tray_info_idx not in _GENERIC_ID_VALUES
-                    and fingerprint_type
-                    and fingerprint_type.upper() == tray_type.upper()
-                ):
-                    logger.info(
-                        "Spool assign: reusing slot's existing tray_info_idx=%r (same material %r)",
-                        current_tray_info_idx,
-                        tray_type,
-                    )
-                    tray_info_idx = current_tray_info_idx
-                elif tray_type:
-                    material = tray_type.upper().strip()
-                    generic = _GENERIC_IDS.get(material) or _GENERIC_IDS.get(material.split("-")[0].split(" ")[0]) or ""
-                    if generic:
-                        logger.info("Spool assign: falling back to generic %r for material %r", generic, tray_type)
-                        tray_info_idx = generic
-
-            # Temperature: use spool overrides if set, else material defaults
-            temp_min, temp_max = MATERIAL_TEMPS.get(spool.material.upper(), (200, 240))
-            if spool.nozzle_temp_min is not None:
-                temp_min = spool.nozzle_temp_min
-            if spool.nozzle_temp_max is not None:
-                temp_max = spool.nozzle_temp_max
-
-            # a. Set filament setting
-            client.ams_set_filament_setting(
+    pending_config = slot_is_empty
+    if not slot_is_empty:
+        try:
+            configured = await apply_spool_to_slot_via_mqtt(
+                db=db,
+                current_user=current_user,
+                spool=spool,
+                printer_id=data.printer_id,
                 ams_id=data.ams_id,
                 tray_id=data.tray_id,
-                tray_info_idx=tray_info_idx,
-                tray_type=tray_type,
-                tray_sub_brands=tray_sub_brands,
-                tray_color=tray_color,
-                nozzle_temp_min=temp_min,
-                nozzle_temp_max=temp_max,
-                setting_id=setting_id,
+                current_tray_info_idx=current_tray_info_idx,
+                current_tray_type=fingerprint_type or "",
             )
-
-            # b. Look up K-profile for this spool + printer + nozzle + extruder
-            nozzle_diameter = "0.4"
-            if state and state.nozzles:
-                nd = state.nozzles[0].nozzle_diameter
-                if nd:
-                    nozzle_diameter = nd
-
-            # Determine slot's extruder from ams_extruder_map
-            slot_extruder = None
-            if state and state.ams_extruder_map:
-                if data.ams_id == 255:
-                    # External slots: ext-L (tray 0) → extruder 1, ext-R (tray 1) → extruder 0
-                    slot_extruder = 1 - data.tray_id  # 0→1, 1→0
-                else:
-                    slot_extruder = state.ams_extruder_map.get(str(data.ams_id))
-
-            matching_kp = None
-            for kp in spool.k_profiles:
-                if kp.printer_id == data.printer_id and kp.nozzle_diameter == nozzle_diameter:
-                    if slot_extruder is not None and kp.extruder is not None and kp.extruder != slot_extruder:
-                        continue
-                    matching_kp = kp
-                    break
-
-            if matching_kp and matching_kp.cali_idx is not None:
-                client.extrusion_cali_sel(
-                    ams_id=data.ams_id,
-                    tray_id=data.tray_id,
-                    cali_idx=matching_kp.cali_idx,
-                    filament_id=tray_info_idx,
-                    nozzle_diameter=nozzle_diameter,
-                )
-
-            configured = True
-            logger.info(
-                "Auto-configured AMS slot ams=%d tray=%d for spool %d on printer %d",
-                data.ams_id,
-                data.tray_id,
-                spool.id,
-                data.printer_id,
-            )
-
-            # Save slot preset mapping so the UI shows the correct preset name.
-            # Use slicer_filament_name (authoritative) with fallback to tray_sub_brands.
-            try:
-                from backend.app.models.slot_preset import SlotPresetMapping
-
-                preset_name = spool.slicer_filament_name or tray_sub_brands or tray_type
-                preset_source = "cloud"
-                if sf:
-                    base_sf_mapping = sf.split("_")[0] if "_" in sf else sf
-                    try:
-                        local_id = int(base_sf_mapping)
-                        preset_id_to_save = f"local_{local_id}"
-                        preset_source = "local"
-                    except (ValueError, TypeError):
-                        # Cloud or builtin preset — convert filament_id to setting_id
-                        preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else setting_id
-                else:
-                    preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else ""
-
-                if preset_id_to_save:
-                    existing_mapping = await db.execute(
-                        select(SlotPresetMapping).where(
-                            SlotPresetMapping.printer_id == data.printer_id,
-                            SlotPresetMapping.ams_id == data.ams_id,
-                            SlotPresetMapping.tray_id == data.tray_id,
-                        )
-                    )
-                    mapping = existing_mapping.scalar_one_or_none()
-                    if mapping:
-                        mapping.preset_id = preset_id_to_save
-                        mapping.preset_name = preset_name
-                        mapping.preset_source = preset_source
-                    else:
-                        mapping = SlotPresetMapping(
-                            printer_id=data.printer_id,
-                            ams_id=data.ams_id,
-                            tray_id=data.tray_id,
-                            preset_id=preset_id_to_save,
-                            preset_name=preset_name,
-                            preset_source=preset_source,
-                        )
-                        db.add(mapping)
-                    await db.commit()
-                    logger.info(
-                        "Saved slot preset mapping: preset_id=%r, preset_name=%r",
-                        preset_id_to_save,
-                        preset_name,
-                    )
-            except Exception as e:
-                logger.warning("Failed to save slot preset mapping: %s", e)
-
-    except Exception as e:
-        logger.warning("MQTT auto-configure failed for spool %d: %s", spool.id, e)
+        except Exception as e:
+            logger.warning("MQTT auto-configure failed for spool %d: %s", spool.id, e)
 
     # Return assignment with spool data
     result = await db.execute(
@@ -1186,6 +1297,16 @@ async def assign_spool(
     resp = result.scalar_one()
     response = SpoolAssignmentResponse.model_validate(resp)
     response.configured = configured
+    response.pending_config = pending_config
+
+    if pending_config:
+        logger.info(
+            "Pre-configured assignment: spool %d → printer %d AMS%d-T%d (slot empty, will configure on insert)",
+            spool.id,
+            data.printer_id,
+            data.ams_id,
+            data.tray_id,
+        )
 
     await ws_manager.broadcast(
         {
@@ -1529,3 +1650,253 @@ def _find_tray_in_ams_data(ams_data: list, ams_id: int, tray_id: int) -> dict | 
             if int(tray.get("id", -1)) == tray_id:
                 return tray
     return None
+
+
+# ── Filament SKU Settings (reorder forecasting) ───────────────────────────────
+
+
+class FilamentSkuSettingsResponse(BaseModel):
+    id: int
+    material: str
+    subtype: str | None
+    brand: str | None
+    lead_time_days: int
+    safety_margin_value: int
+    safety_margin_unit: str
+    alerts_snoozed: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class FilamentSkuSettingsUpsert(BaseModel):
+    material: str
+    subtype: str | None = None
+    brand: str | None = None
+    lead_time_days: int = 0
+    safety_margin_value: int = 14
+    safety_margin_unit: str = "days"
+    alerts_snoozed: bool = False
+
+
+@router.get("/sku-settings", response_model=list[FilamentSkuSettingsResponse])
+async def list_sku_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.INVENTORY_FORECAST_READ),
+):
+    """List all filament SKU reorder settings."""
+    from backend.app.models.filament_sku_settings import FilamentSkuSettings
+
+    result = await db.execute(
+        select(FilamentSkuSettings).order_by(FilamentSkuSettings.material, FilamentSkuSettings.brand)
+    )
+    return list(result.scalars().all())
+
+
+@router.post("/sku-settings", response_model=FilamentSkuSettingsResponse)
+async def upsert_sku_settings(
+    data: FilamentSkuSettingsUpsert,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
+):
+    """Create or update reorder settings for a filament SKU (material/subtype/brand)."""
+    from backend.app.models.filament_sku_settings import FilamentSkuSettings
+
+    result = await db.execute(
+        select(FilamentSkuSettings).where(
+            FilamentSkuSettings.material == data.material,
+            FilamentSkuSettings.subtype == data.subtype,
+            FilamentSkuSettings.brand == data.brand,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row:
+        row.lead_time_days = data.lead_time_days
+        row.safety_margin_value = data.safety_margin_value
+        row.safety_margin_unit = data.safety_margin_unit
+        row.alerts_snoozed = data.alerts_snoozed
+    else:
+        row = FilamentSkuSettings(
+            material=data.material,
+            subtype=data.subtype,
+            brand=data.brand,
+            lead_time_days=data.lead_time_days,
+            safety_margin_value=data.safety_margin_value,
+            safety_margin_unit=data.safety_margin_unit,
+            alerts_snoozed=data.alerts_snoozed,
+        )
+        db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+# ── Shopping List ─────────────────────────────────────────────────────────────
+
+
+class ShoppingListItemResponse(BaseModel):
+    id: int
+    material: str
+    subtype: str | None
+    brand: str | None
+    quantity_spools: int
+    note: str | None
+    status: str
+    purchased_at: str | None
+    added_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class ShoppingListItemCreate(BaseModel):
+    material: str
+    subtype: str | None = None
+    brand: str | None = None
+    quantity_spools: int = 1
+    note: str | None = None
+
+
+class ShoppingListItemStatusUpdate(BaseModel):
+    status: str  # pending | purchased | received
+
+
+@router.get("/shopping-list", response_model=list[ShoppingListItemResponse])
+async def get_shopping_list(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.INVENTORY_FORECAST_READ),
+):
+    """Get the filament shopping list."""
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    result = await db.execute(select(ShoppingListItem).order_by(ShoppingListItem.added_at.desc()))
+    items = result.scalars().all()
+    return [
+        ShoppingListItemResponse(
+            id=i.id,
+            material=i.material,
+            subtype=i.subtype,
+            brand=i.brand,
+            quantity_spools=i.quantity_spools,
+            note=i.note,
+            status=i.status or "pending",
+            purchased_at=i.purchased_at.isoformat() if i.purchased_at else None,
+            added_at=i.added_at.isoformat() if i.added_at else "",
+        )
+        for i in items
+    ]
+
+
+@router.post("/shopping-list", response_model=ShoppingListItemResponse)
+async def add_to_shopping_list(
+    data: ShoppingListItemCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
+):
+    """Add a filament SKU to the shopping list."""
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    item = ShoppingListItem(
+        material=data.material,
+        subtype=data.subtype,
+        brand=data.brand,
+        quantity_spools=data.quantity_spools,
+        note=data.note,
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return ShoppingListItemResponse(
+        id=item.id,
+        material=item.material,
+        subtype=item.subtype,
+        brand=item.brand,
+        quantity_spools=item.quantity_spools,
+        note=item.note,
+        status=item.status or "pending",
+        purchased_at=item.purchased_at.isoformat() if item.purchased_at else None,
+        added_at=item.added_at.isoformat() if item.added_at else "",
+    )
+
+
+@router.patch("/shopping-list/{item_id}/status", response_model=ShoppingListItemResponse)
+async def update_shopping_list_status(
+    item_id: int,
+    data: ShoppingListItemStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
+):
+    """Update the purchase status of a shopping list item."""
+    from datetime import datetime, timezone
+
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    if data.status not in ("pending", "purchased", "received"):
+        raise HTTPException(400, "Invalid status")
+
+    result = await db.execute(select(ShoppingListItem).where(ShoppingListItem.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "Item not found")
+
+    item.status = data.status
+    if data.status in ("purchased", "received") and item.purchased_at is None:
+        item.purchased_at = datetime.now(timezone.utc)
+    elif data.status == "pending":
+        item.purchased_at = None
+
+    await db.commit()
+    await db.refresh(item)
+    return ShoppingListItemResponse(
+        id=item.id,
+        material=item.material,
+        subtype=item.subtype,
+        brand=item.brand,
+        quantity_spools=item.quantity_spools,
+        note=item.note,
+        status=item.status or "pending",
+        purchased_at=item.purchased_at.isoformat() if item.purchased_at else None,
+        added_at=item.added_at.isoformat() if item.added_at else "",
+    )
+
+
+@router.delete("/shopping-list/{item_id}")
+async def remove_from_shopping_list(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
+):
+    """Remove a single item from the shopping list."""
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    result = await db.execute(select(ShoppingListItem).where(ShoppingListItem.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "Item not found")
+    await db.delete(item)
+    await db.commit()
+    return {"status": "deleted"}
+
+
+@router.delete("/shopping-list")
+async def clear_shopping_list(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(
+        Permission.INVENTORY_FORECAST_WRITE, Permission.INVENTORY_UPDATE
+    ),
+):
+    """Clear all items from the shopping list."""
+    from backend.app.models.shopping_list import ShoppingListItem
+
+    result = await db.execute(delete(ShoppingListItem).returning(ShoppingListItem.id))
+    deleted = len(result.fetchall())
+    await db.commit()
+    return {"deleted": deleted}

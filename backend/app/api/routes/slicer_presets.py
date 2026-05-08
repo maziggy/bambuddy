@@ -16,7 +16,7 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +37,14 @@ from backend.app.services.bambu_cloud import (
     BambuCloudError,
     BambuCloudService,
 )
-from backend.app.services.slicer_api import SlicerApiError, SlicerApiService
+from backend.app.services.slicer_api import (
+    BundleNotFoundError,
+    BundleSummary,
+    SlicerApiError,
+    SlicerApiService,
+    SlicerApiUnavailableError,
+    SlicerInputError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -368,6 +375,145 @@ async def list_unified_presets(
     )
 
 
+def _bundle_summary_to_dict(b: BundleSummary) -> dict:
+    """Serialize a BundleSummary for the JSON response. The frontend uses
+    these arrays to populate the preset dropdowns when a user picks the
+    bundle as the slice source.
+    """
+    return {
+        "id": b.id,
+        "printer_preset_name": b.printer_preset_name,
+        "printer": b.printer,
+        "process": b.process,
+        "filament": b.filament,
+        "version": b.version,
+    }
+
+
+@router.post("/bundles", status_code=201)
+async def import_slicer_bundle(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
+):
+    """Forward a BambuStudio Printer Preset Bundle (.bbscfg) to the sidecar.
+
+    The user exports their printer's preset bundle from BambuStudio (File
+    -> Export -> Export Preset Bundle, "Printer preset bundle" option).
+    Uploading it here unpacks the bundle on the sidecar and exposes its
+    inner printer / process / filament presets to subsequent slice
+    requests via the bundle-id selector.
+
+    Idempotent: re-uploading the same file yields the same id (sidecar
+    hashes the zip content), so duplicate uploads collapse rather than
+    accumulate.
+    """
+    api_url = await _resolve_slicer_api_url(db)
+    if not api_url:
+        raise HTTPException(status_code=503, detail="No slicer sidecar configured")
+
+    # Multer on the sidecar caps bundle uploads at 50MB. We don't enforce
+    # that here — let the sidecar's filter own the limit so it stays in
+    # one place — but we do reject empty / huge files at the FastAPI
+    # layer to avoid pointlessly streaming them to the sidecar first.
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Bundle file is empty")
+    filename = file.filename or "bundle.bbscfg"
+
+    try:
+        async with SlicerApiService(base_url=api_url) as svc:
+            summary = await svc.import_bundle(contents, filename=filename)
+    except SlicerInputError as e:
+        # Sidecar's 4xx — most likely a non-.bbscfg upload, a corrupt zip,
+        # or a path-traversal entry that the manifest validator caught.
+        # Surface verbatim so the user sees the actual reason in the toast.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except SlicerApiUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except SlicerApiError as e:
+        # 5xx from the sidecar's import path is rare — usually a disk
+        # write failure inside DATA_PATH/bundles. 502 (bad gateway) is
+        # closer to the truth than 500 here, since we're proxying.
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return _bundle_summary_to_dict(summary)
+
+
+@router.get("/bundles")
+async def list_slicer_bundles(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
+):
+    """List every Printer Preset Bundle currently stored on the sidecar.
+
+    Drives the SliceModal's "Bundle" tier and a Settings panel where
+    users can review / delete imported bundles. Returns ``[]`` when the
+    sidecar has no bundles imported yet.
+    """
+    api_url = await _resolve_slicer_api_url(db)
+    if not api_url:
+        # No sidecar configured: empty list rather than 503 so the modal
+        # renders cleanly. Same shape as the bundled-presets fallback.
+        return []
+    try:
+        async with SlicerApiService(base_url=api_url) as svc:
+            bundles = await svc.list_bundles()
+    except SlicerApiUnavailableError as e:
+        # Sidecar offline: surface as 503 so the frontend can show a
+        # banner. Differs from the bundled-tier behaviour because that
+        # path also has cloud + local fallbacks; bundles is the only
+        # source for its tier.
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except SlicerApiError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return [_bundle_summary_to_dict(b) for b in bundles]
+
+
+@router.get("/bundles/{bundle_id}")
+async def get_slicer_bundle(
+    bundle_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
+):
+    """Return one bundle by id. 404 if it doesn't exist on the sidecar."""
+    api_url = await _resolve_slicer_api_url(db)
+    if not api_url:
+        raise HTTPException(status_code=503, detail="No slicer sidecar configured")
+    try:
+        async with SlicerApiService(base_url=api_url) as svc:
+            summary = await svc.get_bundle(bundle_id)
+    except BundleNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except SlicerApiUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except SlicerApiError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return _bundle_summary_to_dict(summary)
+
+
+@router.delete("/bundles/{bundle_id}", status_code=204)
+async def delete_slicer_bundle(
+    bundle_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
+):
+    """Remove a stored bundle from the sidecar. Future slice requests
+    referencing this id will fail with 404 from the sidecar.
+    """
+    api_url = await _resolve_slicer_api_url(db)
+    if not api_url:
+        raise HTTPException(status_code=503, detail="No slicer sidecar configured")
+    try:
+        async with SlicerApiService(base_url=api_url) as svc:
+            await svc.delete_bundle(bundle_id)
+    except BundleNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except SlicerApiUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except SlicerApiError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
 @router.get("/preview-progress/{request_id}")
 async def get_preview_slice_progress(
     request_id: str,
@@ -392,8 +538,6 @@ async def get_preview_slice_progress(
 
     api_url = await _resolve_slicer_api_url(db)
     if not api_url:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=503, detail="No slicer sidecar configured")
     url = f"{api_url}/slice/progress/{request_id}"
     try:
@@ -402,11 +546,7 @@ async def get_preview_slice_progress(
     except httpx.RequestError:
         # Sidecar unreachable: surface as 503 instead of 500 so the
         # frontend's poller can keep trying without flagging a hard error.
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=503, detail="Slicer sidecar unreachable") from None
     if response.status_code == 404:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Progress unavailable")
     return response.json()

@@ -2,6 +2,19 @@ import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/
 
 const API_BASE = '/api/v1';
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+// Auth token storage
+// By default tokens are stored in sessionStorage (tab-scoped, cleared on close).
+// When the token originates from the ?token= URL param (kiosk bootstrap), it is
+// additionally persisted in localStorage so the kiosk survives page reloads.
 // 'persistent' also writes to localStorage so the token survives tab close
 // (used by Remember Me and the ?token= kiosk bootstrap).
 let authToken: string | null =
@@ -112,7 +125,7 @@ async function request<T>(
       }
     }
 
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   // Handle empty responses (204 No Content, etc.)
@@ -1000,6 +1013,8 @@ export interface AppSettings {
   obico_action: 'notify' | 'pause' | 'pause_and_off';
   obico_poll_interval: number;
   obico_enabled_printers: string;
+  // Inventory forecasting global lead time
+  forecast_global_lead_time_days: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -1153,6 +1168,13 @@ export interface PresetRef {
   source: PresetSource;
   id: string;
 }
+export interface SliceBundleSpec {
+  bundle_id: string;
+  printer_name: string;
+  process_name: string;
+  // Per-slot filament names in plate order. Index 0 = slot 1, etc.
+  filament_names: string[];
+}
 export interface SliceRequest {
   printer_preset_id?: number;
   process_preset_id?: number;
@@ -1165,8 +1187,27 @@ export interface SliceRequest {
   // backend validator promotes a singular into a one-element list when this
   // is omitted, so legacy single-color clients keep working unchanged.
   filament_presets?: PresetRef[];
+  // Bundle dispatch: when set, the backend skips PresetRef resolution and
+  // picks the JSON triplet from a sidecar-stored .bbscfg by name. Mutually
+  // exclusive with the preset fields above (validator accepts both, but
+  // dispatch ignores the preset side when bundle is set).
+  bundle?: SliceBundleSpec;
   plate?: number;
   export_3mf?: boolean;
+}
+
+// GET /api/v1/slicer/bundles — Printer Preset Bundles imported from
+// BambuStudio's "File → Export → Export Preset Bundle" dialog. Each bundle
+// is a .bbscfg zip the user uploads once per printer, after which the
+// SliceModal can pick its inner presets by name (no re-upload per slice).
+// Backend: backend/app/api/routes/slicer_presets.py — bundle endpoints.
+export interface SlicerBundle {
+  id: string;
+  printer_preset_name: string;
+  printer: string[];
+  process: string[];
+  filament: string[];
+  version: string | null;
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
@@ -1852,6 +1893,9 @@ export interface NotificationProvider {
   on_bed_cooled: boolean;
   // First layer complete
   on_first_layer_complete: boolean;
+  // Inventory stock alerts
+  on_stock_reorder_alert: boolean;
+  on_stock_break_alert: boolean;
   // Print queue events
   on_queue_job_added: boolean;
   on_queue_job_assigned: boolean;
@@ -1907,6 +1951,9 @@ export interface NotificationProviderCreate {
   on_bed_cooled?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
+  // Inventory stock alerts
+  on_stock_reorder_alert?: boolean;
+  on_stock_break_alert?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -1955,6 +2002,9 @@ export interface NotificationProviderUpdate {
   on_bed_cooled?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
+  // Inventory stock alerts
+  on_stock_reorder_alert?: boolean;
+  on_stock_break_alert?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -2258,7 +2308,26 @@ export interface LinkedSpoolsMap {
   linked: Record<string, LinkedSpoolInfo>; // tag (uppercase) -> spool info
 }
 
+export interface SpoolmanVendor {
+  id: number;
+  name: string;
+}
+
+export interface SpoolmanFilamentEntry {
+  id: number;
+  name: string;
+  material: string | null;
+  color_hex: string | null;
+  color_name: string | null;
+  weight: number | null;
+  spool_weight: number | null;
+  vendor: SpoolmanVendor | null;
+}
+
 // Inventory types
+// Label printing (#809). Mirror of backend.app.services.label_renderer.TemplateName.
+export type SpoolLabelTemplate = 'ams_30x15' | 'box_62x29' | 'avery_5160' | 'avery_l7160';
+
 export interface InventorySpool {
   id: number;
   material: string;
@@ -2297,6 +2366,13 @@ export interface InventorySpool {
   category: string | null;
   low_stock_threshold_pct: number | null;
   k_profiles?: SpoolKProfile[];
+  storage_location?: string | null;
+}
+
+export interface SpoolmanBulkCreateResult {
+  created: InventorySpool[];
+  requested_count: number;
+  failed_count: number;
 }
 
 export interface SpoolUsageRecord {
@@ -2347,8 +2423,40 @@ export interface SpoolAssignment {
   fingerprint_type: string | null;
   spool?: InventorySpool | null;
   configured: boolean;
+  pending_config?: boolean;  // Slot was empty at assign time; will configure on insert
   created_at: string;
   ams_label?: string | null;  // User-defined friendly name for the AMS unit
+}
+
+export interface FilamentSkuSettings {
+  id: number;
+  material: string;
+  subtype: string | null;
+  brand: string | null;
+  lead_time_days: number;
+  safety_margin_value: number;
+  safety_margin_unit: 'days' | 'g';
+  alerts_snoozed: boolean;
+}
+
+export interface ShoppingListItem {
+  id: number;
+  material: string;
+  subtype: string | null;
+  brand: string | null;
+  quantity_spools: number;
+  note: string | null;
+  status: 'pending' | 'purchased' | 'received';
+  purchased_at: string | null;
+  added_at: string;
+}
+
+export interface ShoppingListItemCreate {
+  material: string;
+  subtype: string | null;
+  brand: string | null;
+  quantity_spools: number;
+  note?: string | null;
 }
 
 // Update types
@@ -2494,6 +2602,7 @@ export type Permission =
   | 'projects:read' | 'projects:create' | 'projects:update' | 'projects:delete'
   | 'filaments:read' | 'filaments:create' | 'filaments:update' | 'filaments:delete'
   | 'inventory:read' | 'inventory:create' | 'inventory:update' | 'inventory:delete' | 'inventory:view_assignments'
+  | 'inventory:forecast_read' | 'inventory:forecast_write'
   | 'smart_plugs:read' | 'smart_plugs:create' | 'smart_plugs:update' | 'smart_plugs:delete' | 'smart_plugs:control'
   | 'camera:view'
   | 'maintenance:read' | 'maintenance:create' | 'maintenance:update' | 'maintenance:delete'
@@ -2737,6 +2846,22 @@ export interface LDAPStatus {
   ldap_configured: boolean;
 }
 
+export interface EncryptionRowCounts {
+  oidc_providers: number;
+  user_totp: number;
+}
+
+export interface EncryptionStatus {
+  key_configured: boolean;
+  key_source: 'env' | 'file' | 'generated' | 'none';
+  legacy_plaintext_rows: EncryptionRowCounts;
+  encrypted_rows: EncryptionRowCounts;
+  decryption_broken: boolean;
+  // B2: count of rows skipped during the last legacy re-encryption migration.
+  // Surfaced via a yellow secondary banner in SecurityStatusCard.
+  migration_error_count: number;
+}
+
 export interface LDAPTestResponse {
   success: boolean;
   message: string;
@@ -2799,6 +2924,7 @@ export const api = {
   getAdvancedAuthStatus: () => request<AdvancedAuthStatus>('/auth/advanced-auth/status'),
   // LDAP Authentication
   getLDAPStatus: () => request<LDAPStatus>('/auth/ldap/status'),
+  getEncryptionStatus: () => request<EncryptionStatus>('/auth/encryption-status'),
   testLDAP: () =>
     request<LDAPTestResponse>('/auth/ldap/test', {
       method: 'POST',
@@ -3730,10 +3856,31 @@ export const api = {
   },
   getArchivePlates: (archiveId: number) =>
     request<ArchivePlatesResponse>(`/archives/${archiveId}/plates`),
-  getArchiveFilamentRequirements: (archiveId: number, plateId?: number, requestId?: string) => {
+  getArchiveFilamentRequirements: (
+    archiveId: number,
+    plateId?: number,
+    requestId?: string,
+    // Optional bundle context: when supplied, the backend's preview slice
+    // (run for unsliced project files) uses slice_with_bundle so gram
+    // numbers reflect the same triplet the real print will use. All four
+    // fields must be set for the bundle path to engage; partial context
+    // falls back to the embedded-settings preview without erroring.
+    bundle?: {
+      bundle_id: string;
+      printer_name: string;
+      process_name: string;
+      filament_names: string[];
+    },
+  ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (bundle) {
+      qs.set('bundle_id', bundle.bundle_id);
+      qs.set('printer_name', bundle.printer_name);
+      qs.set('process_name', bundle.process_name);
+      qs.set('filament_names', bundle.filament_names.join(';'));
+    }
     return request<{
       archive_id: number;
       filename: string;
@@ -4305,8 +4452,19 @@ export const api = {
     }),
   getSpoolmanSpools: () =>
     request<{ spools: unknown[] }>('/spoolman/spools'),
+  /** @deprecated Use getSpoolmanInventoryFilaments() — this endpoint has no SSRF guard */
   getSpoolmanFilaments: () =>
     request<{ filaments: unknown[] }>('/spoolman/filaments'),
+  getSpoolmanInventoryFilaments: () =>
+    request<SpoolmanFilamentEntry[]>('/spoolman/inventory/filaments'),
+  patchSpoolmanFilament: (
+    filamentId: number,
+    data: { name?: string; spool_weight?: number | null; keep_existing_spools?: boolean },
+  ) =>
+    request<SpoolmanFilamentEntry>(`/spoolman/inventory/filaments/${filamentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   getUnlinkedSpools: () =>
     request<UnlinkedSpool[]>('/spoolman/spools/unlinked'),
   getLinkedSpools: () =>
@@ -4382,6 +4540,37 @@ export const api = {
     }),
   unassignSpool: (printerId: number, amsId: number, trayId: number) =>
     request<{ status: string }>(`/inventory/assignments/${printerId}/${amsId}/${trayId}`, { method: 'DELETE' }),
+  // ── Spool label printing (#809) ──────────────────────────────────────────
+  // Both endpoints return application/pdf. Frontend opens the resulting Blob
+  // in a new tab so the user can print or save from the browser's PDF viewer.
+  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/inventory/labels`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
+  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/spoolman/labels`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
   getSpoolCatalog: () =>
     request<SpoolCatalogEntry[]>('/inventory/catalog'),
   addCatalogEntry: (data: { name: string; weight: number }) =>
@@ -4441,8 +4630,109 @@ export const api = {
     request<{ status: string }>(`/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
   syncWeightsFromAms: () =>
     request<{ synced: number; skipped: number }>('/inventory/sync-ams-weights', { method: 'POST' }),
+  getSkuSettings: () =>
+    request<FilamentSkuSettings[]>('/inventory/sku-settings'),
+  upsertSkuSettings: (data: Omit<FilamentSkuSettings, 'id'>) =>
+    request<FilamentSkuSettings>('/inventory/sku-settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getShoppingList: () =>
+    request<ShoppingListItem[]>('/inventory/shopping-list'),
+  addToShoppingList: (data: ShoppingListItemCreate) =>
+    request<ShoppingListItem>('/inventory/shopping-list', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  removeFromShoppingList: (id: number) =>
+    request<{ status: string }>(`/inventory/shopping-list/${id}`, { method: 'DELETE' }),
+  clearShoppingList: () =>
+    request<{ deleted: number }>('/inventory/shopping-list', { method: 'DELETE' }),
+  updateShoppingListStatus: (id: number, status: 'pending' | 'purchased' | 'received') =>
+    request<ShoppingListItem>(`/inventory/shopping-list/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
   getFilamentPresets: () =>
     request<SlicerSetting[]>('/cloud/filaments'),
+
+  // Spoolman Inventory proxy (unified UI when Spoolman is enabled)
+  getSpoolmanInventorySpools: (includeArchived = false) =>
+    request<InventorySpool[]>(`/spoolman/inventory/spools?include_archived=${includeArchived}`),
+  getSpoolmanInventorySpool: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}`),
+  createSpoolmanInventorySpool: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>) =>
+    request<InventorySpool>('/spoolman/inventory/spools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  bulkCreateSpoolmanInventorySpools: (
+    data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>,
+    quantity: number,
+  ) =>
+    request<SpoolmanBulkCreateResult | InventorySpool[]>('/spoolman/inventory/spools/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ spool: data, quantity }),
+    }),
+  updateSpoolmanInventorySpool: (
+    id: number,
+    data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>,
+  ) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteSpoolmanInventorySpool: (id: number) =>
+    request<{ status: string }>(`/spoolman/inventory/spools/${id}`, { method: 'DELETE' }),
+  archiveSpoolmanInventorySpool: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}/archive`, { method: 'POST' }),
+  restoreSpoolmanInventorySpool: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}/restore`, { method: 'POST' }),
+  linkTagToSpoolmanSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string }) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${spoolId}/tag`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  syncSpoolmanSpoolWeight: (spoolId: number, weightGrams: number) =>
+    request<{ status: string; weight_used: number }>(`/spoolman/inventory/spools/${spoolId}/weight`, {
+      method: 'PATCH',
+      body: JSON.stringify({ weight_grams: weightGrams }),
+    }),
+  assignSpoolmanSlot: (data: { spoolman_spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
+    request<InventorySpool>('/spoolman/inventory/slot-assignments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  unassignSpoolmanSlot: (spoolmanSpoolId: number) =>
+    request<InventorySpool>(`/spoolman/inventory/slot-assignments/${spoolmanSpoolId}`, { method: 'DELETE' }),
+  getSpoolmanSlotAssignment: (printerId: number, amsId: number, trayId: number) =>
+    request<InventorySpool | null>(
+      `/spoolman/inventory/slot-assignments?printer_id=${printerId}&ams_id=${amsId}&tray_id=${trayId}`,
+    ),
+  getSpoolmanSlotAssignments: (printerId?: number) =>
+    request<Array<{
+      printer_id: number;
+      printer_name: string | null;
+      ams_id: number;
+      tray_id: number;
+      spoolman_spool_id: number;
+      ams_label: string | null;
+    }>>(
+      printerId !== undefined
+        ? `/spoolman/inventory/slot-assignments/all?printer_id=${printerId}`
+        : '/spoolman/inventory/slot-assignments/all',
+    ),
+  syncSpoolmanAmsWeights: () =>
+    request<{ synced: number; skipped: number }>('/spoolman/inventory/sync-ams-weights', { method: 'POST' }),
+
+  getSpoolmanKProfiles: (spoolId: number) =>
+    request<SpoolKProfile[]>(`/spoolman/inventory/spools/${spoolId}/k-profiles`),
+
+  saveSpoolmanKProfiles: (spoolId: number, profiles: SpoolKProfileInput[]) =>
+    request<SpoolKProfile[]>(`/spoolman/inventory/spools/${spoolId}/k-profiles`, {
+      method: 'PUT',
+      body: JSON.stringify(profiles),
+    }),
 
   // Updates
   getVersion: () => request<VersionInfo>('/updates/version'),
@@ -5041,10 +5331,28 @@ export const api = {
     }),
   getLibraryFilePlates: (fileId: number) =>
     request<LibraryFilePlatesResponse>(`/library/files/${fileId}/plates`),
-  getLibraryFileFilamentRequirements: (fileId: number, plateId?: number, requestId?: string) => {
+  getLibraryFileFilamentRequirements: (
+    fileId: number,
+    plateId?: number,
+    requestId?: string,
+    // Optional bundle context — see getArchiveFilamentRequirements above
+    // for the contract. Same shape so callers can share a builder helper.
+    bundle?: {
+      bundle_id: string;
+      printer_name: string;
+      process_name: string;
+      filament_names: string[];
+    },
+  ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (bundle) {
+      qs.set('bundle_id', bundle.bundle_id);
+      qs.set('printer_name', bundle.printer_name);
+      qs.set('process_name', bundle.process_name);
+      qs.set('filament_names', bundle.filament_names.join(';'));
+    }
     return request<{
       file_id: number;
       filename: string;
@@ -5168,6 +5476,35 @@ export const api = {
   // backend/app/api/routes/slicer_presets.py for the priority rules.
   getSlicerPresets: () =>
     request<UnifiedPresetsResponse>('/slicer/presets'),
+
+  // Slicer Bundles (.bbscfg) — Printer Preset Bundles imported from BambuStudio.
+  // Settings → Slicer Bundles uploads/lists/deletes; the SliceModal picks
+  // presets by name from a chosen bundle (separate follow-up).
+  listSlicerBundles: () =>
+    request<SlicerBundle[]>('/slicer/bundles'),
+  importSlicerBundle: (file: File) => {
+    // The /slicer/bundles upload accepts multipart with field name "file"
+    // (matches the FastAPI route's UploadFile parameter). Bypass `request`
+    // because it always JSON-stringifies the body — multipart needs the
+    // browser to set the boundary in the Content-Type header.
+    const fd = new FormData();
+    fd.append('file', file);
+    return fetch(`${API_BASE}/slicer/bundles`, {
+      method: 'POST',
+      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+      body: fd,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return res.json() as Promise<SlicerBundle>;
+    });
+  },
+  deleteSlicerBundle: (bundleId: string) =>
+    request<void>(`/slicer/bundles/${encodeURIComponent(bundleId)}`, {
+      method: 'DELETE',
+    }),
 
   // Local Presets (OrcaSlicer imports)
   getLocalPresets: () =>
@@ -5646,7 +5983,6 @@ export interface VirtualPrinterStatus {
   pending_files: number;
   target_printer_ip?: string;  // For proxy mode
   proxy?: VirtualPrinterProxyStatus;  // For proxy mode
-  tailscale_fqdn?: string;  // Set when Tailscale cert is active
 }
 
 export interface VirtualPrinterSettings {
@@ -5741,7 +6077,7 @@ export interface VirtualPrinterConfig {
   bind_ip: string | null;
   remote_interface_ip: string | null;
   position: number;
-  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus; tailscale_fqdn?: string };
+  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus };
 }
 
 export interface VirtualPrinterListResponse {
@@ -6067,7 +6403,7 @@ export const spoolbuddyApi = {
     request<{ public_key: string }>('/spoolbuddy/ssh/public-key'),
 
   writeTag: (deviceId: string, spoolId: number) =>
-    request<{ status: string }>('/spoolbuddy/nfc/write-tag', {
+    request<{ status: string; warnings?: string[] }>('/spoolbuddy/nfc/write-tag', {
       method: 'POST',
       body: JSON.stringify({ device_id: deviceId, spool_id: spoolId }),
     }),

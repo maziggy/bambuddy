@@ -32,6 +32,7 @@ from backend.app.api.routes import (
     groups,
     inventory,
     kprofiles,
+    labels,
     library,
     library_trash,
     local_backup,
@@ -54,6 +55,7 @@ from backend.app.api.routes import (
     smart_plugs,
     spoolbuddy,
     spoolman,
+    spoolman_inventory,
     support,
     system,
     updates,
@@ -69,7 +71,7 @@ from backend.app.core.config import APP_VERSION, settings as app_settings
 from backend.app.core.database import async_session, engine, init_db
 from backend.app.core.websocket import ws_manager
 from backend.app.models.smart_plug import SmartPlug
-from backend.app.services.archive import ArchiveService
+from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
 from backend.app.services.archive_purge import archive_purge_service
 from backend.app.services.background_dispatch import background_dispatch
 from backend.app.services.bambu_ftp import (
@@ -93,6 +95,7 @@ from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_scheduler import scheduler as print_scheduler
 from backend.app.services.printer_manager import (
     init_printer_connections,
+    parse_plate_id,
     printer_manager,
     printer_state_to_dict,
 )
@@ -927,9 +930,14 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from sqlalchemy.orm import selectinload
 
             from backend.app.api.routes.inventory import _find_tray_in_ams_data
+            from backend.app.models.spool import Spool as _Spool
             from backend.app.models.spool_assignment import SpoolAssignment as SA
 
-            result = await db.execute(select(SA).where(SA.printer_id == printer_id).options(selectinload(SA.spool)))
+            result = await db.execute(
+                select(SA)
+                .where(SA.printer_id == printer_id)
+                .options(selectinload(SA.spool).selectinload(_Spool.k_profiles))
+            )
             stale = []
             for assignment in result.scalars().all():
                 # External spool assignments (ams_id=255) live in vt_tray, not AMS data
@@ -1000,8 +1008,56 @@ async def on_ams_change(printer_id: int, ams_data: list):
                 else:
                     cur_color = current_tray.get("tray_color", "")
                     cur_type = current_tray.get("tray_type", "")
+                    cur_state = current_tray.get("state")
                     fp_color = assignment.fingerprint_color or ""
                     fp_type = assignment.fingerprint_type or ""
+
+                    # SpoolBuddy pre-config replay: fingerprint_type empty means
+                    # the slot was empty when the user pre-assigned via SpoolBuddy
+                    # (the firmware drops ams_filament_setting on empty slots, so
+                    # MQTT was deferred). The moment any filament gets inserted
+                    # — Bambu RFID, 3rd-party, or even an existing-but-now-
+                    # reconfigured spool — fire the deferred configuration.
+                    # The "loaded" signal is `state == 11` (Bambu's "filament fed
+                    # to extruder" code), NOT tray_type — 3rd-party spools without
+                    # readable RFID report state=11 but tray_type="" because the
+                    # AMS sensor reads no filament metadata. Requiring a non-empty
+                    # tray_type would lock out the exact users this feature targets.
+                    if not fp_type.strip() and cur_state == 11 and assignment.spool:
+                        try:
+                            from backend.app.api.routes.inventory import (
+                                apply_spool_to_slot_via_mqtt,
+                            )
+
+                            await apply_spool_to_slot_via_mqtt(
+                                db=db,
+                                current_user=None,
+                                spool=assignment.spool,
+                                printer_id=printer_id,
+                                ams_id=assignment.ams_id,
+                                tray_id=assignment.tray_id,
+                                current_tray_info_idx=current_tray.get("tray_info_idx", ""),
+                                current_tray_type=cur_type,
+                            )
+                            logger.info(
+                                "SpoolBuddy pre-config applied on insert: spool %d → printer %d AMS%d-T%d",
+                                assignment.spool_id,
+                                printer_id,
+                                assignment.ams_id,
+                                assignment.tray_id,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Pre-config apply failed for spool %d on printer %d AMS%d-T%d",
+                                assignment.spool_id,
+                                printer_id,
+                                assignment.ams_id,
+                                assignment.tray_id,
+                            )
+                        assignment.fingerprint_color = cur_color
+                        assignment.fingerprint_type = cur_type
+                        continue
+
                     if not _colors_similar(cur_color, fp_color) or cur_type.upper() != fp_type.upper():
                         # Fingerprint mismatch — but check if tray now matches the
                         # assigned spool (e.g. auto-configure changed the tray).
@@ -1010,7 +1066,6 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             spool_color = (spool.rgba or "FFFFFFFF").upper()
                             spool_type = (spool.material or "").upper()
                             if _colors_similar(cur_color, spool_color) and cur_type.upper() == spool_type:
-                                # Tray was reconfigured to match the spool — update fingerprint
                                 logger.info(
                                     "Auto-unlink: spool %d AMS%d-T%d — fingerprint mismatch but tray matches spool, updating fp",
                                     assignment.spool_id,
@@ -1052,6 +1107,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
     try:
         async with _get_ams_assignment_lock(printer_id), async_session() as db:
             from backend.app.api.routes.settings import get_setting
+            from backend.app.models.spool import Spool
             from backend.app.models.spool_assignment import SpoolAssignment as SA
             from backend.app.services.spool_tag_matcher import (
                 auto_assign_spool,
@@ -1081,7 +1137,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         # Check if assignment already exists for this slot
                         existing = await db.execute(
                             select(SA)
-                            .options(selectinload(SA.spool))
+                            .options(selectinload(SA.spool).selectinload(Spool.k_profiles))
                             .where(SA.printer_id == printer_id, SA.ams_id == ams_id, SA.tray_id == tray_id)
                         )
                         existing_assignment = existing.scalar_one_or_none()
@@ -1119,6 +1175,93 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                         )
                                         existing_assignment.spool.weight_used = new_used
                                         await db.commit()
+
+                            # Re-apply stored K-profile when the live tray's
+                            # cali_idx drifted from the spool's stored profile.
+                            # This catches "reset slot → re-read" and any other
+                            # path where the firmware loses the user's K-profile
+                            # selection while the SpoolAssignment row persists.
+                            # Per the maintainer's rule: any time a spool tag is
+                            # identified and matches inventory, the slot must be
+                            # configured with the spool's stored settings. Without
+                            # this block the existing-assignment branch only ran
+                            # weight-sync and let the firmware-default cali_idx win.
+                            try:
+                                spool = existing_assignment.spool
+                                if (
+                                    spool is not None
+                                    and is_bambu_tag(tag_uid, tray_uuid, tray_info_idx)
+                                    and spool.k_profiles
+                                ):
+                                    state = printer_manager.get_status(printer_id)
+                                    nozzle_diameter = "0.4"
+                                    if state and state.nozzles:
+                                        nd = state.nozzles[0].nozzle_diameter
+                                        if nd:
+                                            nozzle_diameter = nd
+                                    slot_extruder: int | None = None
+                                    if state and state.ams_extruder_map:
+                                        if ams_id == 255:
+                                            slot_extruder = 1 - tray_id
+                                        else:
+                                            slot_extruder = state.ams_extruder_map.get(str(ams_id))
+                                    # Prefer exact extruder match, fall back to
+                                    # extruder-agnostic kp for the same printer +
+                                    # nozzle. Avoids hard-skipping when the AMS is
+                                    # mapped differently than at calibration time.
+                                    matching_kp = None
+                                    fallback_kp = None
+                                    for kp in spool.k_profiles:
+                                        if (
+                                            kp.printer_id != printer_id
+                                            or kp.nozzle_diameter != nozzle_diameter
+                                            or kp.cali_idx is None
+                                        ):
+                                            continue
+                                        if (
+                                            slot_extruder is not None
+                                            and kp.extruder is not None
+                                            and kp.extruder == slot_extruder
+                                        ):
+                                            matching_kp = kp
+                                            break
+                                        if fallback_kp is None:
+                                            fallback_kp = kp
+                                    chosen_kp = matching_kp or fallback_kp
+                                    if chosen_kp is not None:
+                                        live_cali_idx = tray.get("cali_idx")
+                                        # Only fire MQTT when the printer's live
+                                        # cali_idx differs from the stored value.
+                                        # Avoids spamming the broker on every
+                                        # MQTT push during steady-state operation.
+                                        if live_cali_idx != chosen_kp.cali_idx:
+                                            client = printer_manager.get_client(printer_id)
+                                            if client:
+                                                cali_filament_id = spool.slicer_filament or tray_info_idx or ""
+                                                client.extrusion_cali_sel(
+                                                    ams_id=ams_id,
+                                                    tray_id=tray_id,
+                                                    cali_idx=chosen_kp.cali_idx,
+                                                    filament_id=cali_filament_id,
+                                                    nozzle_diameter=nozzle_diameter,
+                                                )
+                                                logger.info(
+                                                    "Re-applied K-profile cali_idx=%d for spool %d "
+                                                    "on printer %d AMS%d-T%d (live=%s drift detected)",
+                                                    chosen_kp.cali_idx,
+                                                    spool.id,
+                                                    printer_id,
+                                                    ams_id,
+                                                    tray_id,
+                                                    live_cali_idx,
+                                                )
+                            except Exception:
+                                logger.exception(
+                                    "K-profile re-apply failed for printer %d AMS%d-T%d",
+                                    printer_id,
+                                    ams_id,
+                                    tray_id,
+                                )
                             continue
 
                         if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
@@ -1211,7 +1354,11 @@ async def on_ams_change(printer_id: int, ams_data: list):
             # Get or create Spoolman client
             client = await get_spoolman_client()
             if not client:
-                client = await init_spoolman_client(spoolman_url)
+                try:
+                    client = await init_spoolman_client(spoolman_url)
+                except ValueError as exc:
+                    logger.warning("Spoolman URL %r rejected by SSRF guard: %s", spoolman_url, exc)
+                    return
 
             # Check if Spoolman is reachable
             if not await client.health_check():
@@ -1241,6 +1388,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from sqlalchemy.orm import selectinload
 
             from backend.app.models.spool_assignment import SpoolAssignment
+            from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 
             inventory_weights: dict[tuple[int, int], float] = {}
             try:
@@ -1255,29 +1403,47 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         remaining = max(0.0, spool.label_weight - (spool.weight_used or 0))
                         inventory_weights[(assignment.ams_id, assignment.tray_id)] = remaining
             except Exception as e:
-                logger.debug("Could not load inventory weights for printer %s: %s", printer_id, e)
+                logger.warning("Could not load inventory weights for printer %s: %s", printer_id, e)
 
-            # Sync each AMS tray, tracking UUIDs and spool IDs for cleanup
+            # Load existing Spoolman slot assignments for the no-RFID fallback path
+            spoolman_slot_map: dict[tuple[int, int], int] = {}
+            try:
+                slot_result = await db.execute(
+                    select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id)
+                )
+                for slot in slot_result.scalars().all():
+                    spoolman_slot_map[(slot.ams_id, slot.tray_id)] = slot.spoolman_spool_id
+            except Exception as e:
+                logger.warning("Could not load Spoolman slot assignments for printer %s: %s", printer_id, e)
+
+            # Sync each AMS tray and collect slot changes for DB persistence
             synced = 0
-            current_tray_uuids: set[str] = set()
-            synced_spool_ids: set[int] = set()
+            slot_changes: list[tuple[int, int, int]] = []  # (ams_id, tray_id, spoolman_spool_id) to upsert
+            empty_slots: list[tuple[int, int]] = []  # (ams_id, tray_id) whose tray is now empty
             for ams_unit in ams_data:
+                if not isinstance(ams_unit, dict):
+                    continue
                 ams_id = int(ams_unit.get("id", 0))
                 trays = ams_unit.get("tray", [])
 
                 for tray_data in trays:
+                    if not isinstance(tray_data, dict):
+                        continue
+                    tray_id_raw = int(tray_data.get("id", 0))
                     tray = client.parse_ams_tray(ams_id, tray_data)
                     if not tray:
-                        continue  # Empty tray
+                        # Empty tray slot — record for local assignment cleanup
+                        empty_slots.append((ams_id, tray_id_raw))
+                        continue
 
-                    # Track this spool's UUID as currently present in the AMS
                     spool_tag = (
                         tray.tray_uuid
                         if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000"
                         else tray.tag_uid
                     )
-                    if spool_tag:
-                        current_tray_uuids.add(spool_tag.upper())
+
+                    # Provide the hint only when no RFID is available
+                    hint = spoolman_slot_map.get((ams_id, tray.tray_id)) if not spool_tag else None
 
                     try:
                         inv_remaining = inventory_weights.get((ams_id, tray.tray_id))
@@ -1287,14 +1453,14 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             disable_weight_sync=disable_weight_sync,
                             cached_spools=cached_spools,
                             inventory_remaining=inv_remaining,
+                            spoolman_spool_id_hint=hint,
                         )
                         if result:
                             synced += 1
                             if result.get("id"):
-                                synced_spool_ids.add(result["id"])
+                                slot_changes.append((ams_id, tray.tray_id, result["id"]))
                                 # If a new spool was created, add it to the cache
                                 # so subsequent trays can find it if they reference the same tag
-                                # Check if this spool already exists in cache
                                 spool_exists = any(s.get("id") == result["id"] for s in cached_spools)
                                 if not spool_exists:
                                     cached_spools.append(result)
@@ -1309,18 +1475,40 @@ async def on_ams_change(printer_id: int, ams_data: list):
             if synced > 0:
                 logger.info("Auto-synced %s AMS trays to Spoolman for printer %s", synced, printer_id)
 
-            # Clear location for spools no longer in this printer's AMS
-            try:
-                cleared = await client.clear_location_for_removed_spools(
-                    printer_name, current_tray_uuids, cached_spools=cached_spools, synced_spool_ids=synced_spool_ids
-                )
-                if cleared > 0:
-                    logger.info("Auto-cleared location for %s spools removed from printer %s", cleared, printer_id)
-            except Exception as e:
-                logger.error("Error clearing locations for removed spools on printer %s: %s", printer_id, e)
+            # Persist slot assignment changes to the local table
+            if slot_changes or empty_slots:
+                try:
+                    for ams_id, tray_id, spool_id in slot_changes:
+                        await db.execute(
+                            text(
+                                "INSERT INTO spoolman_slot_assignments"
+                                " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                                " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+                                " ON CONFLICT(printer_id, ams_id, tray_id)"
+                                " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+                            ),
+                            {
+                                "printer_id": printer_id,
+                                "ams_id": ams_id,
+                                "tray_id": tray_id,
+                                "spool_id": spool_id,
+                            },
+                        )
+                    for ams_id, tray_id in empty_slots:
+                        await db.execute(
+                            delete(SpoolmanSlotAssignment).where(
+                                SpoolmanSlotAssignment.printer_id == printer_id,
+                                SpoolmanSlotAssignment.ams_id == ams_id,
+                                SpoolmanSlotAssignment.tray_id == tray_id,
+                            )
+                        )
+                    await db.commit()
+                except Exception as e:
+                    await db.rollback()
+                    logger.error("Error persisting Spoolman slot assignments for printer %s: %s", printer_id, e)
 
     except Exception as e:
-        logging.getLogger(__name__).warning(f"Spoolman AMS sync failed: {e}")
+        logging.getLogger(__name__).error("Spoolman AMS sync failed for printer %s: %s", printer_id, e)
 
 
 async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -> bytes | None:
@@ -2150,6 +2338,114 @@ async def on_print_start(printer_id: int, data: dict):
                                 break
                 except Exception as e:
                     logger.debug("Failed to list %s: %s", search_dir, e)
+
+        # Validate the downloaded 3MF actually matches the plate that's running
+        # (#1204): subtask_name lags across consecutive plates of the same model,
+        # so the first FTP candidate (built from subtask_name) can land on the
+        # previous plate's still-resident upload. Cross-check the slice_info
+        # plate index against the plate parsed from gcode_file (always fresh —
+        # it's the field whose change triggered this callback).
+        if downloaded_filename and temp_path:
+            expected_plate = parse_plate_id(filename)
+            actual_plate = peek_plate_index_in_3mf(temp_path) if expected_plate is not None else None
+            if expected_plate is not None and actual_plate is not None and actual_plate != expected_plate:
+                logger.warning(
+                    "[CALLBACK] 3MF plate mismatch: downloaded %s reports plate %s but printer is "
+                    "running plate %s — subtask_name=%r appears stale, retrying with corrected name",
+                    downloaded_filename,
+                    actual_plate,
+                    expected_plate,
+                    subtask_name,
+                )
+                corrected_subtask = swap_plate_suffix(subtask_name, expected_plate)
+                retry_succeeded = False
+                if corrected_subtask and corrected_subtask != subtask_name:
+                    for try_filename in (f"{corrected_subtask}.gcode.3mf", f"{corrected_subtask}.3mf"):
+                        retry_temp_path = app_settings.archive_dir / "temp" / try_filename
+                        retry_temp_path.parent.mkdir(parents=True, exist_ok=True)
+                        for remote_path in (
+                            f"/{try_filename}",
+                            f"/cache/{try_filename}",
+                            f"/model/{try_filename}",
+                            f"/data/{try_filename}",
+                            f"/data/Metadata/{try_filename}",
+                        ):
+                            try:
+                                if ftp_retry_enabled:
+                                    downloaded = await with_ftp_retry(
+                                        download_file_async,
+                                        printer.ip_address,
+                                        printer.access_code,
+                                        remote_path,
+                                        retry_temp_path,
+                                        timeout=ftp_timeout,
+                                        socket_timeout=ftp_timeout,
+                                        printer_model=printer.model,
+                                        max_retries=ftp_retry_count,
+                                        retry_delay=ftp_retry_delay,
+                                        operation_name=f"Re-download 3MF from {remote_path}",
+                                        non_retry_exceptions=(FileNotOnPrinterError,),
+                                    )
+                                else:
+                                    downloaded = await download_file_async(
+                                        printer.ip_address,
+                                        printer.access_code,
+                                        remote_path,
+                                        retry_temp_path,
+                                        timeout=ftp_timeout,
+                                        socket_timeout=ftp_timeout,
+                                        printer_model=printer.model,
+                                    )
+                                if downloaded and peek_plate_index_in_3mf(retry_temp_path) == expected_plate:
+                                    logger.info(
+                                        "[CALLBACK] Re-download succeeded with corrected name %s "
+                                        "(plate %s) — replacing wrong file",
+                                        try_filename,
+                                        expected_plate,
+                                    )
+                                    try:
+                                        temp_path.unlink(missing_ok=True)
+                                    except OSError:
+                                        pass
+                                    temp_path = retry_temp_path
+                                    downloaded_filename = try_filename
+                                    subtask_name = corrected_subtask
+                                    cache_3mf_download(printer_id, try_filename, temp_path)
+                                    retry_succeeded = True
+                                    break
+                                elif downloaded:
+                                    # Wrong plate again — discard and keep trying
+                                    try:
+                                        retry_temp_path.unlink(missing_ok=True)
+                                    except OSError:
+                                        pass
+                            except FileNotOnPrinterError:
+                                continue
+                            except Exception as e:
+                                logger.debug("Re-download failed for %s: %s", remote_path, e)
+                        if retry_succeeded:
+                            break
+                # If the retry didn't find a matching file, drop the wrong 3MF
+                # so the no-3MF fallback below creates an archive whose name
+                # at least reflects the right plate.
+                if not retry_succeeded:
+                    logger.warning(
+                        "[CALLBACK] Could not re-download correct plate %s — falling back to no-3MF archive",
+                        expected_plate,
+                    )
+                    try:
+                        temp_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    temp_path = None
+                    downloaded_filename = None
+                    # Override the stale subtask_name so the fallback archive's
+                    # print_name reflects the correct plate. Prefer the swapped
+                    # name when we have one; otherwise let filename win.
+                    if corrected_subtask:
+                        subtask_name = corrected_subtask
+                    else:
+                        subtask_name = ""
 
         if not downloaded_filename or not temp_path:
             logger.warning("Could not find 3MF file for print: %s", filename or subtask_name)
@@ -4376,7 +4672,20 @@ async def lifespan(app: FastAPI):
                 if await client.health_check():
                     logging.info("Auto-connected to Spoolman at %s", spoolman_url)
                     # Ensure the 'tag' extra field exists for RFID/UUID storage
-                    await client.ensure_tag_extra_field()
+                    field_ok = await client.ensure_tag_extra_field()
+                    if not field_ok:
+                        logging.error("Spoolman tag extra field registration failed — NFC tag links may not persist")
+                    # Register the BambuStudio slicer-preset fields used by the
+                    # spool-edit / assign flow. Spoolman rejects PATCHes with
+                    # unknown extra keys, so these must exist before any update
+                    # that touches them.
+                    for field_name in ("bambu_slicer_filament", "bambu_slicer_filament_name"):
+                        if not await client.ensure_extra_field(field_name):
+                            logging.warning(
+                                "Spoolman extra field %r registration failed — "
+                                "spool slicer-preset edits will return 502",
+                                field_name,
+                            )
                 else:
                     logging.warning("Spoolman at %s is not reachable", spoolman_url)
             except Exception as e:
@@ -4433,6 +4742,7 @@ async def lifespan(app: FastAPI):
     from backend.app.services.virtual_printer import virtual_printer_manager
 
     virtual_printer_manager.set_session_factory(async_session)
+    virtual_printer_manager.set_printer_manager(printer_manager)
     try:
         await virtual_printer_manager.sync_from_db()
         logging.info("Virtual printer manager synced from database")
@@ -4882,6 +5192,7 @@ app.include_router(printers.router, prefix=app_settings.api_prefix)
 app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
 app.include_router(inventory.router, prefix=app_settings.api_prefix)
+app.include_router(labels.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
@@ -4894,6 +5205,7 @@ app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)
 app.include_router(user_notifications.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman.router, prefix=app_settings.api_prefix)
+app.include_router(spoolman_inventory.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
 app.include_router(camera.router, prefix=app_settings.api_prefix)
@@ -5014,6 +5326,19 @@ async def serve_sw_register():
 # Served via explicit routes so ordering is guaranteed (app.mount() loses
 # to the /{full_path:path} catch-all in some Starlette versions).
 _gcode_viewer_dir = (app_settings.static_dir.parent / "gcode_viewer").resolve()
+
+# Surface packaging gaps at startup instead of as silent runtime 404s. If the
+# directory is missing the explicit @app.get("/gcode-viewer/...") routes below
+# return bare HTTPException(404) which renders as {"detail":"Not Found"} in
+# the 3D Preview iframe (#1218) — easy to miss in normal operation, easy to
+# spot if the operator scans the startup log or a support bundle.
+if not (_gcode_viewer_dir / "index.html").is_file():
+    logging.getLogger(__name__).error(
+        "Embedded GCode viewer assets missing at %s — /gcode-viewer/ will return 404 "
+        "and 3D Preview will fail. This indicates a packaging bug; the gcode_viewer/ "
+        "directory must be present alongside static/.",
+        _gcode_viewer_dir,
+    )
 
 
 def _gcode_viewer_response(rel: str) -> FileResponse:

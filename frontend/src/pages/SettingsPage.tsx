@@ -8,6 +8,7 @@ import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
+import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
 import { Collapsible } from '../components/Collapsible';
 import { Button } from '../components/Button';
@@ -31,6 +32,7 @@ import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
 import { TwoFactorSettings } from '../components/TwoFactorSettings';
 import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
+import { SecurityStatusCard } from '../components/SecurityStatusCard';
 import { APIBrowser } from '../components/APIBrowser';
 import { Toggle } from '../components/Toggle';
 import { virtualPrinterApi, spoolbuddyApi } from '../api/client';
@@ -41,10 +43,10 @@ import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, t
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Palette } from 'lucide-react';
 import { registerSettingsSearch, getSettingsSearchEntries } from '../lib/settingsSearch';
+import type { UsersSubTab } from '../lib/settingsSearch';
 
 const validTabs = ['general', 'plugs', 'notifications', 'queue', 'filament', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
-type UsersSubTab = 'users' | 'email' | 'ldap' | 'twofa' | 'oidc';
 
 // Cross-tab search registrations for cards rendered inline in this file.
 // Adding a new settings card? Register it here (or, if the card lives in its
@@ -4262,6 +4264,12 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Slicer Preset Bundles — only meaningful when the sidecar is in use,
+              since uploads / lists round-trip through it. Hide it entirely when
+              use_slicer_api is off so the Settings page doesn't show a panel that
+              can't do anything. */}
+          {(localSettings.use_slicer_api ?? false) && <SlicerBundlesPanel />}
+
           {/* Auto-Drying */}
           <Card>
             <CardHeader>
@@ -4884,6 +4892,19 @@ export function SettingsPage() {
                 />
               </button>
             )}
+            {isAdmin && (
+              <button
+                onClick={() => setUsersSubTab('security')}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+                  usersSubTab === 'security'
+                    ? 'text-bambu-green border-bambu-green'
+                    : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+                }`}
+              >
+                <Shield className="w-4 h-4" />
+                {t('settings.tabs.security')}
+              </button>
+            )}
           </div>
 
           {/* Users Sub-tab */}
@@ -5220,6 +5241,12 @@ export function SettingsPage() {
           {usersSubTab === 'oidc' && isAdmin && (
             <div className="max-w-3xl">
               <OIDCProviderSettings />
+            </div>
+          )}
+
+          {usersSubTab === 'security' && isAdmin && (
+            <div className="max-w-3xl">
+              <SecurityStatusCard />
             </div>
           )}
         </div>
@@ -5693,6 +5720,10 @@ export function SettingsPage() {
 
       {activeTab === 'backup' && (
         <div id="card-backup">
+          <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2">
+            <Shield className="text-amber-400 flex-shrink-0 mt-0.5" size={16} />
+            <p className="text-sm text-amber-400">{t('backup.includesEncryptionKey')}</p>
+          </div>
           <GitHubBackupSettings />
         </div>
       )}

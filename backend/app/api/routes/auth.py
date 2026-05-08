@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from fastapi.security import HTTPAuthorizationCredentials
 from jwt.exceptions import PyJWTError
 from sqlalchemy import delete, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -39,6 +40,8 @@ from backend.app.models.group import Group
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.schemas.auth import (
+    EncryptionRowCounts,
+    EncryptionStatusResponse,
     ForgotPasswordConfirmRequest,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -1473,3 +1476,102 @@ async def revoke_long_lived_token(
         current_user.username,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/encryption-status", response_model=EncryptionStatusResponse)
+async def get_encryption_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+) -> EncryptionStatusResponse:
+    """Report at-rest encryption status for OIDC + TOTP secrets.
+
+    Surfaces:
+      (a) whether a key is configured and where it came from
+      (b) how many rows are still legacy plaintext
+      (c) whether decryption is broken (no key OR key cannot decrypt existing rows)
+      (d) the count of rows skipped during the last re-encryption migration
+
+    S2: gated on SETTINGS_UPDATE so Viewers (who only have SETTINGS_READ)
+    cannot read encryption-status — admin/operator only.
+    """
+    from sqlalchemy import case, func, not_, select
+
+    from backend.app.core.database import get_migration_error_count
+    from backend.app.core.encryption import get_key_source, is_encryption_active, mfa_decrypt
+    from backend.app.models.oidc_provider import OIDCProvider
+    from backend.app.models.user_totp import UserTOTP
+
+    key_configured = is_encryption_active()
+    key_source = get_key_source() or "none"
+
+    try:
+        oidc_row = await db.execute(
+            select(
+                func.sum(case((not_(OIDCProvider._client_secret_enc.like("fernet:%")), 1), else_=0)),
+                func.sum(case((OIDCProvider._client_secret_enc.like("fernet:%"), 1), else_=0)),
+            )
+        )
+        legacy_oidc, encrypted_oidc = oidc_row.one()
+        totp_row = await db.execute(
+            select(
+                func.sum(case((not_(UserTOTP._secret_enc.like("fernet:%")), 1), else_=0)),
+                func.sum(case((UserTOTP._secret_enc.like("fernet:%"), 1), else_=0)),
+            )
+        )
+        legacy_totp, encrypted_totp = totp_row.one()
+    except SQLAlchemyError:
+        _logger.exception("Failed to query encryption row counts")
+        raise HTTPException(status_code=500, detail="Failed to retrieve encryption status")
+
+    legacy_plaintext_rows = EncryptionRowCounts(
+        oidc_providers=int(legacy_oidc or 0),
+        user_totp=int(legacy_totp or 0),
+    )
+    encrypted_rows = EncryptionRowCounts(
+        oidc_providers=int(encrypted_oidc or 0),
+        user_totp=int(encrypted_totp or 0),
+    )
+
+    # B4: detect "wrong key" state — sample-decrypt one encrypted row to
+    # distinguish "no key" from "key configured but cannot decrypt these rows".
+    # The legacy computed-field check (key_configured=False AND encrypted>0)
+    # missed the case where an operator pasted a different valid Fernet key
+    # (rotation, cross-deployment restore, env override) — status would show
+    # green while every encrypted row was unrecoverable.
+    decryption_broken = False
+    total_encrypted = encrypted_rows.oidc_providers + encrypted_rows.user_totp
+    if not key_configured and total_encrypted > 0:
+        decryption_broken = True
+    elif key_configured and total_encrypted > 0:
+        sample_value: str | None = None
+        try:
+            if encrypted_rows.oidc_providers > 0:
+                r = await db.execute(
+                    select(OIDCProvider._client_secret_enc)
+                    .where(OIDCProvider._client_secret_enc.like("fernet:%"))
+                    .limit(1)
+                )
+                sample_value = r.scalar_one_or_none()
+            if sample_value is None and encrypted_rows.user_totp > 0:
+                r = await db.execute(select(UserTOTP._secret_enc).where(UserTOTP._secret_enc.like("fernet:%")).limit(1))
+                sample_value = r.scalar_one_or_none()
+        except SQLAlchemyError:
+            _logger.exception("Failed to query sample encrypted row for decryption probe")
+            # Over-alert is safer than silent corruption — surface as broken.
+            decryption_broken = True
+            sample_value = None
+
+        if sample_value:
+            try:
+                mfa_decrypt(sample_value)
+            except RuntimeError:
+                decryption_broken = True
+
+    return EncryptionStatusResponse(
+        key_configured=key_configured,
+        key_source=key_source,
+        legacy_plaintext_rows=legacy_plaintext_rows,
+        encrypted_rows=encrypted_rows,
+        decryption_broken=decryption_broken,
+        migration_error_count=get_migration_error_count(),
+    )

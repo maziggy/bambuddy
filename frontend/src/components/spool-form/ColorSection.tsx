@@ -193,6 +193,7 @@ export function ColorSection({
         extraColors: formData.extra_colors,
         effectType: formData.effect_type,
         subtype: formData.subtype,
+        effectSize: 'bar',
       }),
     [formData.rgba, formData.extra_colors, formData.effect_type, formData.subtype],
   );
@@ -443,6 +444,7 @@ export function ColorSection({
               extraColors={formData.extra_colors}
               effectType={formData.effect_type}
               subtype={formData.subtype}
+              effectSize="preview"
               className="w-10 h-10"
               shape="square"
             />

@@ -31,6 +31,10 @@ export interface SpoolFormData {
   // User-defined category + per-spool low-stock threshold override (#729).
   category: string;
   low_stock_threshold_pct: number | null;
+  storage_location: string;
+  // When set the spool is linked to a specific Spoolman filament catalog entry;
+  // the backend skips find_or_create_filament() and uses this ID directly.
+  spoolman_filament_id: number | null;
 }
 
 export const defaultFormData: SpoolFormData = {
@@ -50,6 +54,8 @@ export const defaultFormData: SpoolFormData = {
   cost_per_kg: null,
   category: '',
   low_stock_threshold_pct: null,
+  storage_location: '',
+  spoolman_filament_id: null,
 };
 
 // Printer with calibrations type
@@ -125,6 +131,9 @@ export interface AdditionalSectionProps extends SectionProps {
   // Global low-stock threshold (%); shown as placeholder on the per-spool
   // override input so users see what they're overriding. #729
   globalLowStockThreshold: number;
+  // When true the empty-spool weight is managed by Spoolman on the filament
+  // object, so SpoolWeightPicker is hidden and an info notice is shown instead.
+  spoolmanMode?: boolean;
 }
 
 // PA Profile section props
@@ -136,17 +145,34 @@ export interface PAProfileSectionProps extends SectionProps {
   setExpandedPrinters: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
+// Fields that are prefilled by SpoolmanFilamentPicker. A manual edit to any of
+// these breaks the Spoolman catalog link (clears spoolman_filament_id).
+// Defined at module scope to avoid stale-closure issues if handlers are memoised.
+export const SPOOLMAN_LINKED_FIELDS = new Set<keyof SpoolFormData>([
+  'material',
+  'subtype',
+  'brand',
+  'rgba',
+  'color_name',
+  'label_weight',
+]);
+
 // Validation result
 export interface ValidationResult {
   isValid: boolean;
   errors: Partial<Record<keyof SpoolFormData, string>>;
 }
 
-export function validateForm(formData: SpoolFormData, quickAdd = false): ValidationResult {
+export function validateForm(
+  formData: SpoolFormData,
+  quickAdd = false,
+  spoolmanMode = false,
+): ValidationResult {
   const errors: Partial<Record<keyof SpoolFormData, string>> = {};
 
-  if (quickAdd) {
-    if (!formData.material) {
+  // Quick-add and Spoolman mode only require material (unless a catalog entry is pre-selected)
+  if (quickAdd || spoolmanMode) {
+    if (!formData.material && !formData.spoolman_filament_id) {
       errors.material = 'Material is required';
     }
     return {

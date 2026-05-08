@@ -71,8 +71,8 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         ...state,
         matchedSpool: null,
         unknownTagUid: action.tagUid,
-        unknownTrayUuid: action.trayUuid,
-        currentTrayUuid: action.trayUuid,
+        unknownTrayUuid: action.trayUuid ?? null,
+        currentTrayUuid: action.trayUuid ?? null,
         deviceId: action.deviceId,
       };
     case 'TAG_REMOVED':

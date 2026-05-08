@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { PrintersPage } from '../../pages/PrintersPage';
 import { http, HttpResponse } from 'msw';
@@ -58,6 +59,13 @@ const mockPrinterStatus = {
   filename: null,
   wifi_signal: -50,
   vt_tray: [],
+};
+
+const selectToolbarDropdownOption = async (triggerName: RegExp, optionName: RegExp) => {
+  const user = userEvent.setup();
+
+  await user.click(screen.getByRole('button', { name: triggerName }));
+  await user.click(await screen.findByRole('button', { name: optionName }));
 };
 
 describe('PrintersPage', () => {
@@ -811,9 +819,7 @@ describe('PrintersPage', () => {
       render(<PrintersPage />);
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
-      // Select "Offline" from the status filter dropdown
-      const statusSelect = screen.getByDisplayValue('All statuses');
-      fireEvent.change(statusSelect, { target: { value: 'offline' } });
+      await selectToolbarDropdownOption(/all statuses/i, /^offline$/i);
 
       await waitFor(() => {
         expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
@@ -826,8 +832,7 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
       // Both printers are IDLE; filtering by "printing" should yield no results
-      const statusSelect = screen.getByDisplayValue('All statuses');
-      fireEvent.change(statusSelect, { target: { value: 'printing' } });
+      await selectToolbarDropdownOption(/all statuses/i, /^printing$/i);
 
       await waitFor(() => {
         expect(screen.getByText('No printers match your search or filters')).toBeInTheDocument();
@@ -849,7 +854,7 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
       // Filter to only "printing" printers
-      fireEvent.change(screen.getByDisplayValue('All statuses'), { target: { value: 'printing' } });
+      await selectToolbarDropdownOption(/all statuses/i, /^printing$/i);
 
       // Then also search for a term that only matches printer 1
       fireEvent.change(screen.getByPlaceholderText('Search printers...'), { target: { value: 'X1' } });
@@ -878,16 +883,14 @@ describe('PrintersPage', () => {
         expect(screen.getByText('P1S Backup')).toBeInTheDocument();
       });
 
-      // Select "Workshop" from the location filter dropdown
-      fireEvent.change(screen.getByDisplayValue('All locations'), { target: { value: 'Workshop' } });
+      await selectToolbarDropdownOption(/all locations/i, /^workshop$/i);
 
       await waitFor(() => {
         expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
         expect(screen.queryByText('P1S Backup')).not.toBeInTheDocument();
       });
 
-      // Switch to "Office" — the other printer should now be the only one visible
-      fireEvent.change(screen.getByDisplayValue('Workshop'), { target: { value: 'Office' } });
+      await selectToolbarDropdownOption(/^workshop$/i, /^office$/i);
 
       await waitFor(() => {
         expect(screen.queryByText('X1 Carbon')).not.toBeInTheDocument();
@@ -910,8 +913,325 @@ describe('PrintersPage', () => {
       await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
 
       // Status filter is still there, but the location filter should be absent.
-      expect(screen.getByDisplayValue('All statuses')).toBeInTheDocument();
-      expect(screen.queryByDisplayValue('All locations')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /all statuses/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /all locations/i })).not.toBeInTheDocument();
     });
+  });
+
+  describe('Spoolman loading guard', () => {
+    it('does not show Assign Spool button while Spoolman queries are loading', async () => {
+      // Spoolman enabled but inventory and slot-assignment queries never resolve
+      server.use(
+        http.get('/api/v1/spoolman/status', () =>
+          HttpResponse.json({ enabled: true, connected: true })
+        ),
+        http.get('/api/v1/spoolman/inventory/spools', () =>
+          new Promise(() => {})  // never resolves
+        ),
+        http.get('/api/v1/spoolman/inventory/slot-assignments/all', () =>
+          new Promise(() => {})  // never resolves
+        )
+      );
+
+      render(<PrintersPage />);
+
+      // Wait for the page to render (printers should be visible)
+      await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+
+      // While Spoolman queries are still loading, the "Assign Spool" button must
+      // not appear (inventory prop is undefined → {inventory && ...} guard fires)
+      expect(screen.queryByText('Assign Spool')).not.toBeInTheDocument();
+    });
+  });
+
+});
+
+/**
+ * Phase 13 P13-1 (PrintersPage EmptySlotHoverCard onAssignSpool gate removal)
+ *
+ * Pre-Phase-13 each of the three EmptySlotHoverCard call-sites in PrintersPage
+ * gated `onAssignSpool` on `spoolmanEnabled ? (...) : undefined`, so empty
+ * slots in local-Inventory mode never showed an Assign action. Maintainer
+ * Foto 7 confirmed users expect the button regardless of mode.
+ *
+ * To assert wiring without going through hover-card animations, we mock the
+ * EmptySlotHoverCard component at module level and capture every props
+ * payload. The same mock is active in both modes; tests differ only in the
+ * spoolman-settings mock. The mock module covers BOTH FilamentHoverCard exports
+ * so tests outside this `describe` aren't affected (we re-export the real
+ * FilamentHoverCard).
+ */
+const phase13EmptySlotProps: Array<Record<string, unknown>> = [];
+const phase14HoverCardProps: Array<Record<string, unknown>> = [];
+
+vi.mock('../../components/FilamentHoverCard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../components/FilamentHoverCard')>();
+  return {
+    ...actual,
+    EmptySlotHoverCard: (props: Record<string, unknown>) => {
+      phase13EmptySlotProps.push({ ...props });
+      return null;
+    },
+    FilamentHoverCard: (props: Record<string, unknown>) => {
+      phase14HoverCardProps.push({ ...props });
+      return null;
+    },
+  };
+});
+
+describe('PrintersPage Phase 13 — EmptySlotHoverCard onAssignSpool wiring', () => {
+  beforeEach(() => {
+    phase13EmptySlotProps.length = 0;
+    localStorage.removeItem('printerCardSize');
+
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      // Status response includes an empty AMS slot so EmptySlotHoverCard renders.
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 0,
+          tray: [{ id: 0, tray_type: '' }],
+        }],
+      })),
+      http.get('/api/v1/settings/', () => HttpResponse.json({
+        auto_archive: true, save_thumbnails: true, capture_finish_photo: true,
+        default_filament_cost: 25.0, currency: 'USD',
+        ams_humidity_good: 40, ams_humidity_fair: 60,
+        ams_temp_good: 30, ams_temp_fair: 35,
+      })),
+      http.get('/api/v1/queue/', () => HttpResponse.json([])),
+    );
+  });
+
+  it('P13-1 (local mode): EmptySlotHoverCard receives onAssignSpool callback', async () => {
+    server.use(
+      http.get('/api/v1/spoolman/settings', () => HttpResponse.json({
+        spoolman_enabled: 'false', spoolman_url: '',
+      })),
+    );
+    render(<PrintersPage />);
+
+    // Wait for printer status to load and at least one EmptySlotHoverCard
+    // to mount with an onAssignSpool callback. Pre-Phase-13 this would have
+    // been undefined in local mode (the gate filtered it out).
+    await waitFor(() => {
+      const withCallback = phase13EmptySlotProps.filter(p => typeof p.onAssignSpool === 'function');
+      expect(withCallback.length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
+  });
+
+  it('P13-1 (spoolman mode): EmptySlotHoverCard still receives onAssignSpool callback', async () => {
+    server.use(
+      http.get('/api/v1/spoolman/settings', () => HttpResponse.json({
+        spoolman_enabled: 'true', spoolman_url: 'http://x:7912',
+      })),
+      http.get('/api/v1/spoolman/spools/inventory*', () => HttpResponse.json([])),
+      http.get('/api/v1/spoolman/inventory/spools', () => HttpResponse.json([])),
+      http.get('/api/v1/spoolman/inventory/slot-assignments/all', () => HttpResponse.json([])),
+    );
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      const withCallback = phase13EmptySlotProps.filter(p => typeof p.onAssignSpool === 'function');
+      expect(withCallback.length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
+  });
+});
+
+/**
+ * Phase 14 — Local-Branch BL-detection symmetry.
+ *
+ * The Spoolman branch of every IIFE in PrintersPage already passes
+ *   isAssigned: !!slotAssignment || isBambuLabSpool(tray)
+ *   onUnassignSpool: (spoolmanSpool && !isBambuLabSpool(tray)) ? ... : undefined
+ *
+ * The local branch was missing both. As a result a BL-RFID-tagged slot in
+ * local-Inventory mode showed an "Assign Spool" button (because no manual
+ * SpoolAssignment exists), and a manually-assigned BL-RFID slot showed
+ * "Unassign" — which would be overwritten on the next RFID re-read.
+ *
+ * The same FilamentHoverCard mock from the Phase 13 block above captures
+ * inventory props on every render so we can inspect them after setup.
+ */
+describe('PrintersPage Phase 14 — Local-Branch BL-detection symmetry', () => {
+  beforeEach(() => {
+    phase14HoverCardProps.length = 0;
+    localStorage.removeItem('printerCardSize');
+
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.get('/api/v1/settings/', () => HttpResponse.json({
+        auto_archive: true, save_thumbnails: true, capture_finish_photo: true,
+        default_filament_cost: 25.0, currency: 'USD',
+        ams_humidity_good: 40, ams_humidity_fair: 60,
+        ams_temp_good: 30, ams_temp_fair: 35,
+      })),
+      http.get('/api/v1/queue/', () => HttpResponse.json([])),
+      http.get('/api/v1/spoolman/settings', () => HttpResponse.json({
+        spoolman_enabled: 'false', spoolman_url: '',
+      })),
+    );
+  });
+
+  it('P14-1a (local + BL-RFID + no assignment): inventory.isAssigned=true', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 0,
+          tray: [{
+            id: 0,
+            tray_type: 'PLA',
+            tray_uuid: '11223344556677880011223344556677',
+            tag_uid: '0000000000000000',
+            tray_color: 'FF0000FF',
+            tray_sub_brands: 'Bambu PLA Basic',
+          }],
+        }],
+      })),
+      http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
+    );
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      const matches = phase14HoverCardProps.filter(
+        p => (p.inventory as { isAssigned?: boolean } | undefined)?.isAssigned === true
+      );
+      expect(matches.length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
+  });
+
+  it('P14-1b (local + non-BL + no assignment): inventory.isAssigned is falsy', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 0,
+          tray: [{
+            id: 0,
+            tray_type: 'PLA',
+            tray_uuid: '00000000000000000000000000000000',
+            tag_uid: '0000000000000000',
+            tray_color: 'FF0000FF',
+            tray_sub_brands: 'Generic PLA',
+          }],
+        }],
+      })),
+      http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
+    );
+    render(<PrintersPage />);
+
+    // Wait for FilamentHoverCard to render at least once.
+    await waitFor(() => {
+      expect(phase14HoverCardProps.length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
+
+    // No render should ever set isAssigned=true for this slot.
+    const truthyMatches = phase14HoverCardProps.filter(
+      p => (p.inventory as { isAssigned?: boolean } | undefined)?.isAssigned === true
+    );
+    expect(truthyMatches.length).toBe(0);
+  });
+
+  it('P14-1c (local + manual assignment): inventory.isAssigned=true', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 0,
+          tray: [{
+            id: 0,
+            tray_type: 'PLA',
+            tray_uuid: '00000000000000000000000000000000',
+            tag_uid: '0000000000000000',
+            tray_color: 'FF0000FF',
+            tray_sub_brands: 'Generic PLA',
+          }],
+        }],
+      })),
+      http.get('/api/v1/inventory/assignments', () => HttpResponse.json([
+        {
+          id: 1,
+          spool_id: 42,
+          printer_id: 1,
+          ams_id: 0,
+          tray_id: 0,
+          printer_name: 'X1 Carbon',
+          ams_label: null,
+          spool: {
+            id: 42,
+            material: 'PLA',
+            brand: 'Generic',
+            color_name: 'Red',
+            label_weight: 1000,
+            weight_used: 0,
+            rgba: 'FF0000FF',
+          },
+        },
+      ])),
+    );
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      const matches = phase14HoverCardProps.filter(
+        p => (p.inventory as { isAssigned?: boolean } | undefined)?.isAssigned === true
+      );
+      expect(matches.length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
+  });
+
+  it('P14-2 (local + BL-RFID + manual assignment): onUnassignSpool=undefined', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 0,
+          tray: [{
+            id: 0,
+            tray_type: 'PLA',
+            tray_uuid: '11223344556677880011223344556677',
+            tag_uid: '0000000000000000',
+            tray_color: 'FF0000FF',
+            tray_sub_brands: 'Bambu PLA Basic',
+          }],
+        }],
+      })),
+      http.get('/api/v1/inventory/assignments', () => HttpResponse.json([
+        {
+          id: 1,
+          spool_id: 42,
+          printer_id: 1,
+          ams_id: 0,
+          tray_id: 0,
+          printer_name: 'X1 Carbon',
+          ams_label: null,
+          spool: {
+            id: 42,
+            material: 'PLA',
+            brand: 'Bambu Lab',
+            color_name: 'Red',
+            label_weight: 1000,
+            weight_used: 0,
+            rgba: 'FF0000FF',
+          },
+        },
+      ])),
+    );
+    render(<PrintersPage />);
+
+    // Wait for FilamentHoverCard renders to settle.
+    await waitFor(() => {
+      expect(phase14HoverCardProps.length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
+
+    // For BL-detected slots in local mode, onUnassignSpool must always be
+    // undefined — even when a manual assignment exists. Otherwise the user
+    // could unassign a BL-RFID slot that the printer would re-assign on the
+    // next re-read, surprising them with phantom ghost-assignments.
+    const definedUnassign = phase14HoverCardProps.filter(
+      p => typeof (p.inventory as { onUnassignSpool?: () => void } | undefined)?.onUnassignSpool === 'function'
+    );
+    expect(definedUnassign.length).toBe(0);
   });
 });

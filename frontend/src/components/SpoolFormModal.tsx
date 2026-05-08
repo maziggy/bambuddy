@@ -22,7 +22,7 @@ interface SpoolFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   spool?: InventorySpool | null;
-  cloneFrom: boolean | null | undefined;
+  clone: boolean | null | undefined;
   printersWithCalibrations?: PrinterWithCalibrations[];
   currencySymbol: string;
   onSpoolsCreated?: (spools: InventorySpool[]) => void;
@@ -32,7 +32,7 @@ export function SpoolFormModal({
   isOpen,
   onClose,
   spool,
-  cloneFrom,
+  clone,
   printersWithCalibrations = [],
   currencySymbol,
   onSpoolsCreated,
@@ -41,8 +41,8 @@ export function SpoolFormModal({
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const isEditing = !!spool && !cloneFrom;
-  const isCloning = !!spool && !!cloneFrom;
+  const isEditing = !!spool && !clone;
+  const isCloning = !!spool && !!clone;
 
   // Form state
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
@@ -305,7 +305,7 @@ export function SpoolFormModal({
       setActiveTab('filament');
       setWeightTouched(false);
     }
-  }, [isOpen, spool, cloneFrom]);
+  }, [isOpen, spool, clone]);
 
   // Expand all printers in PA profile section when calibrations are available
   useEffect(() => {

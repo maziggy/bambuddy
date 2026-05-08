@@ -433,7 +433,7 @@ function InventoryPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null; cloneFrom?: boolean | null | undefined} | null>(null);
+  const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null; clone?: boolean | null | undefined} | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
 
   // Filter state
@@ -1352,7 +1352,7 @@ function InventoryPage() {
                           isExpanded={isExpanded}
                           onToggle={() => toggleGroupExpand(key)}
                           onEdit={(s) => setFormModal({ spool: s })}
-                          onClone={(s) => setFormModal({ spool: s, cloneFrom: true })}
+                          onClone={(s) => setFormModal({ spool: s, clone: true })}
                           onArchive={(id) => setConfirmAction({ type: 'archive', spoolId: id })}
                           onDelete={(id) => setConfirmAction({ type: 'delete', spoolId: id })}
                           visibleColumns={visibleColumns}
@@ -1375,7 +1375,7 @@ function InventoryPage() {
                         remaining={remaining}
                         pct={pct}
                         onEdit={() => setFormModal({ spool })}
-                        onClone={() => setFormModal({ spool: spool, cloneFrom: true })}
+                        onClone={() => setFormModal({ spool: spool, clone: true })}
                         onRestore={() => restoreMutation.mutate(spool.id)}
                         onArchive={() => setConfirmAction({ type: 'archive', spoolId: spool.id })}
                         onDelete={() => setConfirmAction({ type: 'delete', spoolId: spool.id })}
@@ -1472,7 +1472,7 @@ function InventoryPage() {
           isOpen={true}
           onClose={() => setFormModal(null)}
           spool={formModal.spool}
-          cloneFrom={formModal.cloneFrom}
+          clone={formModal.clone}
           currencySymbol={currencySymbol}
         />
       )}

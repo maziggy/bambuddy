@@ -1529,7 +1529,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                                 pct={pct}
                                 onClick={() => setFormModal({ spool })}
                                 onPrintLabel={() => setLabelPickerSpoolIds([spool.id])}
-                                onClone={() => setFormModal({ spool: null, cloneFrom: spool })}
+                                onCopy={() => setFormModal({ spool: spool, copy: true })}
                                 t={t}
                               />
                             );
@@ -1550,7 +1550,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                     pct={pct}
                     onClick={() => setFormModal({ spool })}
                     onPrintLabel={() => setLabelPickerSpoolIds([spool.id])}
-                    onClone={() => setFormModal({ spool: null, cloneFrom: spool })}
+                    onCopy={() => setFormModal({ spool: spool, copy: true })}
                     t={t}
                   />
                 );
@@ -1877,14 +1877,14 @@ function PaginationBar({
 
 /* Spool card for cards view */
 function SpoolCard({
-  spool, remaining, pct, onClick, onPrintLabel, onClone, t,
+  spool, remaining, pct, onClick, onPrintLabel, onCopy, t,
 }: {
   spool: InventorySpool;
   remaining: number;
   pct: number;
   onClick: () => void;
   onPrintLabel?: () => void;
-  onClone: () => void;
+  onCopy: () => void;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
   const bannerStyle = buildFilamentBackground({
@@ -1905,9 +1905,9 @@ function SpoolCard({
         </span>
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onClone(); }}
+          onClick={(e) => { e.stopPropagation(); onCopy(); }}
           className="p-1.5 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors"
-          title={t('inventory.cloneSpool')}
+          title={t('inventory.copySpool')}
         >
           <Copy className="w-3.5 h-3.5" />
         </button>

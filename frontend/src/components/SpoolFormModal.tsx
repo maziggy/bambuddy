@@ -327,27 +327,6 @@ export function SpoolFormModal({
         } else {
           setSelectedProfiles(new Set());
         }
-      } else if (cloneFrom) {
-        // Clone mode: pre-fill with cloned spool's data but reset usage fields
-        const validRgba = cloneFrom.rgba && /^[0-9A-Fa-f]{8}$/.test(cloneFrom.rgba) ? cloneFrom.rgba : '808080FF';
-        setFormData({
-          material: cloneFrom.material || '',
-          subtype: cloneFrom.subtype || '',
-          brand: cloneFrom.brand || '',
-          color_name: cloneFrom.color_name || '',
-          rgba: validRgba,
-          label_weight: cloneFrom.label_weight || 1000,
-          core_weight: cloneFrom.core_weight || 250,
-          core_weight_catalog_id: cloneFrom.core_weight_catalog_id ?? null,
-          weight_used: 0,
-          slicer_filament: cloneFrom.slicer_filament || '',
-          note: cloneFrom.note || '',
-          cost_per_kg: cloneFrom.cost_per_kg ?? null,
-        });
-        setPresetInputValue(cloneFrom.slicer_filament_name || cloneFrom.slicer_filament || '');
-        setSelectedProfiles(new Set());
-        setQuickAdd(false);
-        setQuantity(1);
       } else {
         setFormData(defaultFormData);
         setPresetInputValue('');

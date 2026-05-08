@@ -3447,6 +3447,7 @@ export default {
     },
     addSpool: 'Adicionar Carretel',
     editSpool: 'Editar Carretel',
+    copySpool: 'Copiar Carretel',
     material: 'Material',
     selectMaterial: 'Selecionar material...',
     subtype: 'Subtipo',

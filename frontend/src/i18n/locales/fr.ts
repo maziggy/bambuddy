@@ -3448,6 +3448,7 @@ export default {
     },
     addSpool: 'Ajouter Bobine',
     editSpool: 'Modifier Bobine',
+    copySpool: 'Copier Bobine',
     material: 'Matériau',
     selectMaterial: 'Choisir matériau...',
     subtype: 'Sous-type',

@@ -659,6 +659,20 @@ class SimpleMQTTServer:
                 else:
                     # Don't override real subtask_name with empty if no upload pending.
                     print_block.setdefault("subtask_name", "")
+                # Storage-availability indicators the slicer's "Send" pre-flight reads
+                # (#1228). P1S/A1-class firmware doesn't always include these in
+                # push_status (no SD card inserted, older field shapes), and BambuStudio
+                # rejects the send pre-flight with the generic "storage needs to be
+                # inserted before send to printer" error before even attempting FTP.
+                # For VP usage the slicer uploads via FTPS to Bambuddy's filesystem —
+                # the printer's actual SD/storage state is irrelevant on that path.
+                # Force "available" indicators so the pre-flight passes regardless of
+                # what the real printer reports. Restores the 0.2.3.2 synthetic-stub
+                # behaviour for these fields without losing the live AMS / k-profile /
+                # camera mirror cached-as-base provides.
+                print_block["home_flag"] = print_block.get("home_flag", 0) | 0x100  # bit 8 = HAS_SDCARD_NORMAL
+                print_block["sdcard"] = True
+                print_block.setdefault("storage", {"free": 1_000_000_000, "total": 32_000_000_000})
                 status = {"print": print_block}
                 await self._publish_to_report(writer, status, serial or self.serial)
                 return

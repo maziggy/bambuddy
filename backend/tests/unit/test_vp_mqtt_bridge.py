@@ -394,6 +394,65 @@ class TestStatusReportCachedAsBase:
         assert "storage" in payload["print"]
 
     @pytest.mark.asyncio
+    async def test_storage_indicators_overlaid_for_send_preflight(self):
+        """#1228: P1S/A1-class firmware doesn't always include the SD/storage
+        fields BambuStudio's "Send" pre-flight reads. Without these the
+        slicer rejects with 'storage needs to be inserted' before even
+        attempting FTP. The cached-as-base path now overlays them so the
+        pre-flight passes regardless of what the real printer reports.
+        """
+        server = _make_server()
+        bridge = MagicMock()
+        # Real P1S push without SD card inserted: home_flag has other bits set
+        # but the SD bit (0x100) is clear; sdcard is False; no storage field.
+        bridge.get_latest_print_state.return_value = {
+            "command": "push_status",
+            "msg": 0,
+            "home_flag": 0x42,
+            "sdcard": False,
+        }
+        server.set_bridge(bridge)
+        published = self._capture_published(server)
+
+        await server._send_status_report(MagicMock())
+        _serial, payload = published[0]
+        # SD bit ORed onto whatever was there — other bits preserved.
+        assert payload["print"]["home_flag"] & 0x100 == 0x100
+        assert payload["print"]["home_flag"] & 0x42 == 0x42
+        # Force-set so a False from the printer doesn't trip the pre-flight.
+        assert payload["print"]["sdcard"] is True
+        # storage was missing — the overlay must inject a non-empty default.
+        assert "storage" in payload["print"]
+        assert payload["print"]["storage"]["free"] > 0
+        assert payload["print"]["storage"]["total"] > 0
+
+    @pytest.mark.asyncio
+    async def test_storage_indicators_preserve_real_storage_when_present(self):
+        """When the real printer DOES report a storage block, pass it through
+        unchanged (the overlay only fills in the missing field, not overrides).
+        """
+        server = _make_server()
+        bridge = MagicMock()
+        real_storage = {"free": 12345, "total": 67890}
+        bridge.get_latest_print_state.return_value = {
+            "command": "push_status",
+            "msg": 0,
+            "home_flag": 0x100,  # SD bit already set on the real printer
+            "sdcard": True,
+            "storage": real_storage,
+        }
+        server.set_bridge(bridge)
+        published = self._capture_published(server)
+
+        await server._send_status_report(MagicMock())
+        _serial, payload = published[0]
+        # SD bit OR is idempotent — already-set bit stays set.
+        assert payload["print"]["home_flag"] == 0x100
+        assert payload["print"]["sdcard"] is True
+        # Real values pass through, NOT the synthetic defaults.
+        assert payload["print"]["storage"] == real_storage
+
+    @pytest.mark.asyncio
     async def test_overrides_protocol_fields_even_when_cache_present(self):
         """Cached value's gcode_state must NOT win over our local upload-state-machine value."""
         server = _make_server()

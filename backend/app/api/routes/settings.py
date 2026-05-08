@@ -455,6 +455,24 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                 except PermissionError as e:
                     logger.warning("Permission denied copying %s: %s", name, e)
 
+        # Include the MFA encryption key as a ZIP top-level entry alongside
+        # bambuddy.db. Without it, encrypted client_secret / TOTP secret rows
+        # would be unrecoverable after restore on a host without MFA_ENCRYPTION_KEY set.
+        from backend.app.core.paths import resolve_data_dir
+
+        mfa_key_src = resolve_data_dir() / ".mfa_encryption_key"
+        if mfa_key_src.exists() and mfa_key_src.is_file():
+            try:
+                shutil.copy2(mfa_key_src, temp_path / ".mfa_encryption_key")
+            except OSError as exc:
+                logger.error(
+                    "Could not include MFA encryption key in backup (%s). "
+                    "The backup ZIP will not contain the key — restore on a "
+                    "keyless host will fail for encrypted secrets.",
+                    exc,
+                )
+                raise
+
         # Create ZIP
         if output_path is not None:
             zip_file = output_path / filename
@@ -723,6 +741,18 @@ async def restore_backup(
 
         try:
             with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+                for name in zf.namelist():
+                    # Reject path-traversal payloads: any entry whose resolved
+                    # path escapes temp_path would allow writing arbitrary files
+                    # on the host (ZipSlip / CVE-2006-5456).
+                    dest = (temp_path / name).resolve()
+                    # is_relative_to (Python 3.9+) covers both relative
+                    # path-traversal (../etc/passwd) and absolute-path overrides
+                    # (/etc/passwd) — str.startswith was vulnerable to
+                    # prefix-collision attacks (e.g. /tmp/abc_evil/file passing
+                    # a /tmp/abc prefix check).
+                    if not dest.is_relative_to(temp_path.resolve()):
+                        raise HTTPException(400, f"Invalid backup: unsafe path in ZIP: {name!r}")
                 zf.extractall(temp_path)
         except zipfile.BadZipFile:
             raise HTTPException(400, "Invalid backup file: not a valid ZIP")
@@ -747,6 +777,54 @@ async def restore_backup(
             # 4. Close current database connections
             logger.info("Closing database connections...")
             await close_all_connections()
+
+            # B1: Restore the MFA encryption key file BEFORE the database swap.
+            # If the key write fails (OSError, RO disk, full disk, EACCES) we
+            # can still abort while the live DB is intact. Doing this AFTER the
+            # DB swap would leave the database with rows encrypted under the
+            # backup's key but the running install holding only the old key —
+            # every encrypted secret becomes unrecoverable.
+            from backend.app.core.paths import resolve_data_dir
+
+            mfa_key_src = temp_path / ".mfa_encryption_key"
+            if mfa_key_src.exists() and mfa_key_src.is_file():
+                dst_key = resolve_data_dir() / ".mfa_encryption_key"
+                tmp_key = dst_key.parent / ".mfa_encryption_key.restore-tmp"
+                try:
+                    dst_key.parent.mkdir(parents=True, exist_ok=True)
+                    # S1: atomic write with restrictive mode from creation.
+                    # O_TRUNC because a stale tmp may exist from a prior
+                    # failed restore attempt — we want to overwrite it.
+                    fd = os.open(str(tmp_key), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                    try:
+                        os.write(fd, mfa_key_src.read_bytes())
+                    finally:
+                        os.close(fd)
+                    # POSIX rename(2) — atomic when source/dest are on the
+                    # same filesystem (we're staying inside dst_key.parent).
+                    os.replace(str(tmp_key), str(dst_key))
+                    # S9: warn if the FS doesn't enforce 0o600
+                    actual_mode = dst_key.stat().st_mode & 0o777
+                    if actual_mode != 0o600:
+                        logger.warning(
+                            "Restored MFA key file %s: filesystem did not enforce 0o600 "
+                            "(actual: 0o%o). Key may be world-readable on Windows / SMB / FUSE.",
+                            dst_key,
+                            actual_mode,
+                        )
+                    logger.info("Restored .mfa_encryption_key from backup")
+                except OSError as e:
+                    logger.error(
+                        "Could not write restored MFA key file to %s: %s — "
+                        "aborting BEFORE database swap (DB unchanged).",
+                        dst_key,
+                        e,
+                        exc_info=True,
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail=("Restore aborted: MFA key write failed. Database is unchanged. Check server logs."),
+                    ) from e
 
             # 5. Replace database
             logger.info("Restoring database from backup...")
@@ -828,7 +906,17 @@ async def restore_backup(
                         logger.warning("Could not restore %s directory: %s", name, e)
                         skipped_dirs.append(name)
 
-            # 7. Reinitialize the database engine and apply schema migrations so that
+            # 7. Reset the encryption singleton so the migration that runs
+            # inside init_db() picks up the restored key file (if a new one
+            # was written above). Without this reset, _get_fernet would
+            # return the cached Fernet instance built from the previous key.
+            import backend.app.core.encryption as _enc_mod
+
+            _enc_mod._fernet_instance = None
+            _enc_mod._key_source = None
+            _enc_mod._warn_shown = False
+
+            # 8. Reinitialize the database engine and apply schema migrations so that
             # tables added after the backup was created (e.g. ams_labels) exist
             # immediately, without requiring a manual restart.
             await reinitialize_database()
@@ -843,6 +931,12 @@ async def restore_backup(
                 "message": message,
             }
 
+        except HTTPException:
+            # Preserve specific HTTP error responses raised inside the restore
+            # body (e.g. the key-write OSError → 500). The blanket
+            # except Exception below would otherwise swallow them and replace
+            # the operator-facing detail with a generic message.
+            raise
         except Exception as e:
             logger.error("Restore failed: %s", e, exc_info=True)
             return JSONResponse(

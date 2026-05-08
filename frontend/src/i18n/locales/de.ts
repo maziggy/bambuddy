@@ -40,6 +40,8 @@ export default {
     confirm: 'Bestätigen',
     loading: 'Lädt...',
     error: 'Fehler',
+    errorLoading: 'Fehler beim Laden',
+    retry: 'Erneut versuchen',
     success: 'Erfolg',
     warning: 'Warnung',
     enabled: 'Aktiviert',
@@ -1379,6 +1381,7 @@ export default {
       ldap: 'LDAP',
       twoFa: 'Zwei-Faktor-Auth',
       oidc: 'SSO / OIDC',
+      security: 'Sicherheit',
     },
     spoolbuddy: {
       infoTitle: 'SpoolBuddy-Geräte',
@@ -2262,6 +2265,23 @@ export default {
         defaultGroupDesc: 'Gruppe, der automatisch erstellte Benutzer zugewiesen werden. Fallback auf Viewers, wenn nicht gesetzt.',
         defaultGroupViewersFallback: 'Viewers (Standard)',
       },
+    },
+
+    encryption: {
+      title: 'MFA-Verschlüsselungsstatus',
+      enabledFromEnv: 'At-Rest-Verschlüsselung aktiv (Schlüssel aus Umgebungsvariable MFA_ENCRYPTION_KEY)',
+      enabledFromFile: 'At-Rest-Verschlüsselung aktiv (Schlüssel aus dem Datenverzeichnis geladen)',
+      enabledGenerated: 'At-Rest-Verschlüsselung aktiv mit automatisch generiertem Schlüssel',
+      notConfigured: 'At-Rest-Verschlüsselung nicht konfiguriert',
+      notConfiguredDesc: 'TOTP-Geheimnisse und OIDC-Client-Secrets werden im Klartext gespeichert. Setze MFA_ENCRYPTION_KEY oder starte Bambuddy mit beschreibbarem Datenverzeichnis neu, damit ein Schlüssel automatisch erzeugt wird.',
+      allEncrypted: 'Alle MFA-Geheimnisse sind verschlüsselt gespeichert.',
+      legacyRowsLabel: 'Klartext-Zeilen (Altbestand)',
+      encryptedRowsLabel: 'Verschlüsselte Zeilen',
+      legacyRowsWarning: '{{count}} Klartext-Zeile(n) erkannt. Den OIDC-Provider neu speichern oder den Authenticator des Benutzers neu einrichten, um die Daten verschlüsselt abzulegen.',
+      backupHint: 'Der automatisch erzeugte Schlüssel liegt unter DATA_DIR/.mfa_encryption_key und wird in lokalen Backup-ZIPs mitgesichert. Backups sicher aufbewahren oder MFA_ENCRYPTION_KEY explizit setzen.',
+      decryptionBrokenTitle: 'Verschlüsselungsschlüssel fehlt',
+      decryptionBrokenError: '{{count}} verschlüsselte Datensätze können nicht entschlüsselt werden, weil der Schlüssel nicht mehr verfügbar ist. Den vorherigen MFA_ENCRYPTION_KEY oder DATA_DIR/.mfa_encryption_key wiederherstellen.',
+      migrationErrorWarning: '{{count}} Legacy-Eintrag/Einträge konnten beim Start nicht verschlüsselt werden. Prüfen Sie die Server-Logs und starten Sie Bambuddy neu.',
     },
 
   },
@@ -3698,6 +3718,7 @@ export default {
 
   // Backup
   backup: {
+    includesEncryptionKey: 'Lokale Sicherungen enthalten die MFA-Schlüsseldatei (DATA_DIR/.mfa_encryption_key), damit ein Backup-ZIP selbstkonsistent ist. Behandle das ZIP als sensibel — wer Zugriff auf die Datei hat, kann die darin enthaltenen OIDC-Client-Secrets und TOTP-Geheimnisse entschlüsseln.',
     title: 'Sichern & Wiederherstellen',
     createBackup: 'Sicherung erstellen',
     restoreBackup: 'Sicherung wiederherstellen',

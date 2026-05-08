@@ -40,6 +40,8 @@ export default {
     confirm: '确认',
     loading: '加载中...',
     error: '错误',
+    errorLoading: '加载错误',
+    retry: '重试',
     success: '成功',
     warning: '警告',
     enabled: '已启用',
@@ -1379,6 +1381,7 @@ export default {
       ldap: 'LDAP',
       twoFa: '双因素认证',
       oidc: 'SSO / OIDC',
+      security: 'Security',
     },
     spoolbuddy: {
       infoTitle: 'SpoolBuddy 设备',
@@ -2249,6 +2252,24 @@ export default {
         defaultGroupDesc: '自动创建用户时分配的组。未设置时回退到 Viewers。',
         defaultGroupViewersFallback: 'Viewers（默认）',
       },
+    },
+
+    // TODO: translate encryption keys
+    encryption: {
+      title: 'MFA Encryption Status',
+      enabledFromEnv: 'At-rest encryption enabled (key from MFA_ENCRYPTION_KEY environment variable)',
+      enabledFromFile: 'At-rest encryption enabled (key loaded from data directory)',
+      enabledGenerated: 'At-rest encryption enabled with auto-generated key',
+      notConfigured: 'At-rest encryption not configured',
+      notConfiguredDesc: 'TOTP secrets and OIDC client_secrets are stored in plaintext. Set MFA_ENCRYPTION_KEY or restart Bambuddy with a writable data directory to auto-generate one.',
+      allEncrypted: 'All MFA secrets are encrypted at rest.',
+      legacyRowsLabel: 'Legacy plaintext rows',
+      encryptedRowsLabel: 'Encrypted rows',
+      legacyRowsWarning: '{{count}} legacy plaintext row(s) detected. Re-save the OIDC provider or re-enroll the user’s authenticator app to migrate to encrypted storage.',
+      backupHint: 'The auto-generated key is stored at DATA_DIR/.mfa_encryption_key and is included in local backup ZIPs. Keep your backups secure or set MFA_ENCRYPTION_KEY explicitly.',
+      decryptionBrokenTitle: 'Encryption key missing',
+      decryptionBrokenError: '{{count}} encrypted record(s) cannot be decrypted because the encryption key is no longer available. Restore the previous MFA_ENCRYPTION_KEY or DATA_DIR/.mfa_encryption_key to recover.',
+      migrationErrorWarning: '{{count}} 行旧数据在启动时未能重新加密。请检查服务器日志并重启 Bambuddy 以重试。',
     },
 
   },
@@ -3685,6 +3706,7 @@ export default {
 
   // Backup
   backup: {
+    includesEncryptionKey: 'Local backups include the MFA encryption key file (DATA_DIR/.mfa_encryption_key) so a backup ZIP is self-contained. Treat the ZIP as sensitive — anyone with the file can decrypt the OIDC client secrets and TOTP secrets stored inside.',
     title: '备份与恢复',
     createBackup: '创建备份',
     restoreBackup: '恢复备份',

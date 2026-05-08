@@ -40,6 +40,8 @@ export default {
     confirm: 'Confirmer',
     loading: 'Chargement...',
     error: 'Erreur',
+    errorLoading: 'Erreur de chargement',
+    retry: 'Réessayer',
     success: 'Succès',
     warning: 'Avertissement',
     enabled: 'Activé',
@@ -1378,6 +1380,7 @@ export default {
       ldap: 'LDAP',
       twoFa: 'Authentification 2FA',
       oidc: 'SSO / OIDC',
+      security: 'Security',
       spoolbuddy: 'SpoolBuddy',
     },
     ldap: {
@@ -2207,6 +2210,25 @@ export default {
         defaultGroupViewersFallback: 'Viewers (par défaut)',
       },
     },
+
+    // TODO: translate encryption keys
+    encryption: {
+      title: 'MFA Encryption Status',
+      enabledFromEnv: 'At-rest encryption enabled (key from MFA_ENCRYPTION_KEY environment variable)',
+      enabledFromFile: 'At-rest encryption enabled (key loaded from data directory)',
+      enabledGenerated: 'At-rest encryption enabled with auto-generated key',
+      notConfigured: 'At-rest encryption not configured',
+      notConfiguredDesc: 'TOTP secrets and OIDC client_secrets are stored in plaintext. Set MFA_ENCRYPTION_KEY or restart Bambuddy with a writable data directory to auto-generate one.',
+      allEncrypted: 'All MFA secrets are encrypted at rest.',
+      legacyRowsLabel: 'Legacy plaintext rows',
+      encryptedRowsLabel: 'Encrypted rows',
+      legacyRowsWarning: '{{count}} legacy plaintext row(s) detected. Re-save the OIDC provider or re-enroll the user’s authenticator app to migrate to encrypted storage.',
+      backupHint: 'The auto-generated key is stored at DATA_DIR/.mfa_encryption_key and is included in local backup ZIPs. Keep your backups secure or set MFA_ENCRYPTION_KEY explicitly.',
+      decryptionBrokenTitle: 'Encryption key missing',
+      decryptionBrokenError: '{{count}} encrypted record(s) cannot be decrypted because the encryption key is no longer available. Restore the previous MFA_ENCRYPTION_KEY or DATA_DIR/.mfa_encryption_key to recover.',
+      migrationErrorWarning: "{{count}} ligne(s) ancienne(s) n'ont pas pu être rechiffrée(s) au démarrage. Vérifiez les journaux du serveur et redémarrez Bambuddy pour réessayer.",
+    },
+
 
     spoolbuddy: {
       infoTitle: 'Périphériques SpoolBuddy',
@@ -3685,6 +3707,7 @@ export default {
 
   // Backup
   backup: {
+    includesEncryptionKey: 'Local backups include the MFA encryption key file (DATA_DIR/.mfa_encryption_key) so a backup ZIP is self-contained. Treat the ZIP as sensitive — anyone with the file can decrypt the OIDC client secrets and TOTP secrets stored inside.',
     title: 'Sauvegarde & Restauration',
     createBackup: 'Créer Sauvegarde',
     restoreBackup: 'Restaurer Sauvegarde',

@@ -218,6 +218,13 @@ async def init_db():
         # Run migrations for new columns (SQLite doesn't auto-add columns)
         await run_migrations(conn)
 
+    # Re-encrypt any legacy plaintext OIDC client_secret / TOTP secret rows
+    # that exist from before the encryption key was configured.
+    # Runs on a fresh AsyncSession (NOT the run_migrations() connection) so it
+    # doesn't share a transaction with the schema-DDL block above — required to
+    # avoid SQLite "database is locked" contention on the WAL writer.
+    await _migrate_encrypt_legacy_secrets()
+
     # Seed default notification templates
     await seed_notification_templates()
 
@@ -227,6 +234,134 @@ async def init_db():
     # Seed default catalog entries
     await seed_spool_catalog()
     await seed_color_catalog()
+
+
+# B2: Module-level counter exposing the number of rows skipped during the last
+# _migrate_encrypt_legacy_secrets() invocation. Surfaced via /encryption-status
+# (migration_error_count) so operators can spot poison rows that need attention.
+_migration_error_count: int = 0
+
+
+def get_migration_error_count() -> int:
+    """Return the number of rows that failed to re-encrypt during the last
+    _migrate_encrypt_legacy_secrets() run."""
+    return _migration_error_count
+
+
+async def _migrate_encrypt_legacy_secrets() -> None:
+    """Re-encrypt OIDC ``client_secret`` and TOTP ``secret`` rows that are still
+    stored as plaintext (no ``fernet:`` prefix).
+
+    Called from :func:`init_db` after :func:`run_migrations` finishes. No-ops
+    when no encryption key is configured (so plaintext storage stays the
+    legacy behaviour for installs without a key).
+
+    B2: per-row strategy — each row is committed in its own AsyncSession so a
+    single corrupt row does NOT block other successful re-encryptions on every
+    startup forever. The skipped-row count is exposed via
+    :func:`get_migration_error_count` and surfaced on /encryption-status.
+
+    B3: unexpected (non-row) failures during the read phase are re-raised so
+    operators see the problem instead of silent data corruption — startup
+    fails loudly rather than running with half-migrated rows.
+
+    Idempotent: rows that already start with ``fernet:`` are skipped, and the
+    write-phase re-checks the prefix before encrypting (guards against double
+    encryption from concurrent workers).
+    """
+    from sqlalchemy import not_, select
+
+    from backend.app.core.encryption import is_encryption_active
+    from backend.app.models.oidc_provider import OIDCProvider
+    from backend.app.models.user_totp import UserTOTP
+
+    global _migration_error_count
+
+    if not is_encryption_active():
+        # Reset stale counter from a previous active-key run — we no longer
+        # have any rows to migrate, so the count must not leak across runs.
+        _migration_error_count = 0
+        return
+
+    # Phase 1 (read): collect (id, stored_value) tuples for plaintext rows.
+    # Read phase failures are startup-fatal — re-raise (B3).
+    try:
+        async with async_session() as ro:
+            oidc_rows = await ro.execute(
+                select(OIDCProvider.id, OIDCProvider._client_secret_enc).where(
+                    not_(OIDCProvider._client_secret_enc.like("fernet:%"))
+                )
+            )
+            oidc_candidates = [(r[0], r[1]) for r in oidc_rows.all()]
+            totp_rows = await ro.execute(
+                select(UserTOTP.id, UserTOTP._secret_enc).where(not_(UserTOTP._secret_enc.like("fernet:%")))
+            )
+            totp_candidates = [(r[0], r[1]) for r in totp_rows.all()]
+    except Exception:
+        logger.error("_migrate_encrypt_legacy_secrets: phase 1 read failed", exc_info=True)
+        raise  # B3
+
+    oidc_count = totp_count = error_count = 0
+
+    # Phase 2 (write): each row in its own AsyncSession + transaction.
+    # Failure of one row does NOT block the others.
+    for oidc_id, stored in oidc_candidates:
+        if not stored:
+            continue  # defensive: skip empty strings
+        try:
+            async with async_session() as wr:
+                provider = await wr.get(OIDCProvider, oidc_id)
+                if provider is None:
+                    continue  # row deleted between phase 1 and phase 2
+                # Idempotent guard: re-check inside the write session in case a
+                # concurrent worker beat us to it.
+                if not provider._client_secret_enc.startswith("fernet:"):
+                    provider.client_secret = stored  # setter -> mfa_encrypt
+                    await wr.commit()
+                    oidc_count += 1
+        except Exception:
+            logger.error(
+                "Failed to re-encrypt OIDCProvider id=%s — skipping",
+                oidc_id,
+                exc_info=True,
+            )
+            error_count += 1
+
+    for totp_id, stored in totp_candidates:
+        if not stored:
+            continue
+        try:
+            async with async_session() as wr:
+                totp = await wr.get(UserTOTP, totp_id)
+                if totp is None:
+                    continue
+                if not totp._secret_enc.startswith("fernet:"):
+                    totp.secret = stored
+                    await wr.commit()
+                    totp_count += 1
+        except Exception:
+            logger.error(
+                "Failed to re-encrypt UserTOTP id=%s — skipping",
+                totp_id,
+                exc_info=True,
+            )
+            error_count += 1
+
+    _migration_error_count = error_count
+    if oidc_count or totp_count:
+        logger.info(
+            "Re-encrypted legacy plaintext secrets: %d OIDC client_secret(s), %d TOTP secret(s)",
+            oidc_count,
+            totp_count,
+        )
+    elif error_count == 0:
+        logger.debug("_migrate_encrypt_legacy_secrets: no rows needed re-encryption")
+    if error_count:
+        logger.error(
+            "_migrate_encrypt_legacy_secrets: %d row(s) skipped due to errors. "
+            "See /api/v1/auth/encryption-status (migration_error_count).",
+            error_count,
+        )
 
 
 async def _safe_execute(conn, sql):

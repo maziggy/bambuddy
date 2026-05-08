@@ -2809,6 +2809,22 @@ export interface LDAPStatus {
   ldap_configured: boolean;
 }
 
+export interface EncryptionRowCounts {
+  oidc_providers: number;
+  user_totp: number;
+}
+
+export interface EncryptionStatus {
+  key_configured: boolean;
+  key_source: 'env' | 'file' | 'generated' | 'none';
+  legacy_plaintext_rows: EncryptionRowCounts;
+  encrypted_rows: EncryptionRowCounts;
+  decryption_broken: boolean;
+  // B2: count of rows skipped during the last legacy re-encryption migration.
+  // Surfaced via a yellow secondary banner in SecurityStatusCard.
+  migration_error_count: number;
+}
+
 export interface LDAPTestResponse {
   success: boolean;
   message: string;
@@ -2871,6 +2887,7 @@ export const api = {
   getAdvancedAuthStatus: () => request<AdvancedAuthStatus>('/auth/advanced-auth/status'),
   // LDAP Authentication
   getLDAPStatus: () => request<LDAPStatus>('/auth/ldap/status'),
+  getEncryptionStatus: () => request<EncryptionStatus>('/auth/encryption-status'),
   testLDAP: () =>
     request<LDAPTestResponse>('/auth/ldap/test', {
       method: 'POST',

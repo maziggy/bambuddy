@@ -45,6 +45,42 @@ from backend.app.core.database import Base  # noqa: E402
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
+@pytest.fixture(autouse=True)
+def mfa_encryption_isolation(monkeypatch, tmp_path):
+    """Per-test isolation for MFA encryption state.
+
+    - Sets ``DATA_DIR`` to an isolated tmp path so the auto-bootstrap can
+      never write ``.mfa_encryption_key`` into the repo or share state
+      across tests / xdist workers.
+    - Removes any inherited ``MFA_ENCRYPTION_KEY`` env var.
+    - With ``DATA_DIR`` pointing at a writable ``tmp_path``, the default
+      bootstrap path on first ``_get_fernet()`` call is **auto-generation**
+      (key_source='generated'), NOT plaintext fallback. Tests that need the
+      plaintext fallback path must monkeypatch ``_load_or_generate_key`` to
+      return ``(None, 'none')`` (or 'none_write_failed' / 'none_corrupted')
+      explicitly — see ``test_plaintext_passthrough_without_key`` for an
+      example.
+    - Resets the ``encryption`` module-level singletons before AND after the
+      test so reorder doesn't leak cached Fernet instances.
+
+    Tests that want to exercise an active key should call
+    ``monkeypatch.setenv("MFA_ENCRYPTION_KEY", valid_key)`` and
+    ``enc_mod._fernet_instance = None`` inside the test body — the autouse
+    fixture only sets defaults, it doesn't lock them in.
+    """
+    from backend.app.core import encryption as enc_mod
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("MFA_ENCRYPTION_KEY", raising=False)
+    enc_mod._fernet_instance = None
+    enc_mod._warn_shown = False
+    enc_mod._key_source = None
+    yield
+    enc_mod._fernet_instance = None
+    enc_mod._warn_shown = False
+    enc_mod._key_source = None
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create an instance of the default event loop for each test session."""

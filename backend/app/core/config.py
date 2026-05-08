@@ -1,5 +1,6 @@
 import logging
 import os
+import re as _re
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -91,9 +92,38 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        # Don't reject unknown env vars — MFA_ENCRYPTION_KEY (#1219) and other
+        # operational env vars are read directly by their owning modules and
+        # never declared as Settings fields.
+        extra = "ignore"
 
 
 settings = Settings()
+
+# S6: Warn on unknown MFA_*/BAMBUDDY_* env vars so typos like MFA_ENCYPTION_KEY
+# are not silently swallowed by ``extra = "ignore"``. The original Pydantic
+# behaviour rejected them outright and broke startup (#1219); we now accept
+# them but log every unrecognised one at INFO so operators can spot mistakes.
+_INTENTIONAL_UNSETTINGS = {
+    "MFA_ENCRYPTION_KEY",  # encryption.py reads this directly
+    "DATA_DIR",  # paths.py / config.py
+    "DATABASE_URL",  # config.py (above)
+    "LOG_DIR",  # config.py (above)
+    "LOG_LEVEL",  # main.py logging setup
+    "BUG_REPORT_RELAY_URL",  # config.py (above)
+}
+
+_known_settings_fields = {f.upper() for f in settings.model_fields}
+
+for _env_key in os.environ:
+    if _re.match(r"^(MFA_|BAMBUDDY_)", _env_key, _re.IGNORECASE):
+        _norm = _env_key.upper()
+        if _norm not in _known_settings_fields and _norm not in _INTENTIONAL_UNSETTINGS:
+            logging.info(
+                "Unknown env var %r — not a declared Settings field. Possible typo? Recognised operational vars: %s",
+                _env_key,
+                sorted(_INTENTIONAL_UNSETTINGS),
+            )
 
 # Ensure directories exist
 settings.archive_dir.mkdir(parents=True, exist_ok=True)

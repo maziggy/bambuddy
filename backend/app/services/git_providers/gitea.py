@@ -40,6 +40,23 @@ class GiteaBackend(GitHubBackend):
             return ref_data[0]["object"]["sha"]
         return ref_data["object"]["sha"]
 
+    @staticmethod
+    def _commit_tree_sha(commit_data: dict) -> str | None:
+        """Extract the tree SHA from a commit response.
+
+        GitHub's ``GET /git/commits/{sha}`` returns the GitCommit schema with
+        ``tree`` at the top level. Gitea's same-named endpoint returns the
+        wrapped Commit schema where ``tree`` lives under ``commit``. Try the
+        flat shape first (GitHub-compatible deployments / Gitea ≤ 1.23) then
+        fall back to the wrapped shape (Gitea 1.24+, Forgejo).
+        """
+        tree_node = commit_data.get("tree")
+        if not isinstance(tree_node, dict):
+            tree_node = (commit_data.get("commit") or {}).get("tree")
+        if isinstance(tree_node, dict):
+            return tree_node.get("sha")
+        return None
+
     def parse_repo_url(self, url: str) -> tuple[str, str]:
         """Return (owner, repo) — accepts both https:// and http:// for self-hosted instances."""
         if not url or len(url) > 500:
@@ -106,7 +123,9 @@ class GiteaBackend(GitHubBackend):
             if commit_response.status_code != 200:
                 return {"status": "failed", "message": "Failed to get current commit"}
 
-            current_tree_sha = commit_response.json()["tree"]["sha"]
+            current_tree_sha = self._commit_tree_sha(commit_response.json())
+            if not current_tree_sha:
+                return {"status": "failed", "message": "Failed to extract tree SHA from commit response"}
 
             tree_response = await client.get(
                 f"{api_base}/repos/{owner}/{repo}/git/trees/{current_tree_sha}?recursive=1", headers=headers

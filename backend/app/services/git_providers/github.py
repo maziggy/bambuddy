@@ -168,9 +168,16 @@ class GitHubBackend(GitProviderBackend):
                     headers=headers,
                     json={"content": base64.b64encode(content_bytes).decode(), "encoding": "base64"},
                 )
+                if blob_response.status_code == 404:
+                    return {
+                        "status": "failed",
+                        "message": "Git Data API endpoint not found — this provider may not support the Git Data API (POST /git/blobs returned 404)",
+                    }
                 if blob_response.status_code != 201:
-                    logger.error("Failed to create blob for %s: %s", path, self._truncated_response_text(blob_response))
-                    continue
+                    return {
+                        "status": "failed",
+                        "message": f"Failed to create blob for {path}: {self._truncated_response_text(blob_response)}",
+                    }
 
                 tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]})
                 files_changed += 1
@@ -290,10 +297,19 @@ class GitHubBackend(GitProviderBackend):
                     headers=headers,
                     json={"content": base64.b64encode(content_str.encode()).decode(), "encoding": "base64"},
                 )
-                if blob_response.status_code == 201:
-                    tree_items.append(
-                        {"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]}
-                    )
+                if blob_response.status_code == 404:
+                    return {
+                        "status": "failed",
+                        "message": "Git Data API endpoint not found — this provider may not support the Git Data API (POST /git/blobs returned 404)",
+                    }
+                if blob_response.status_code != 201:
+                    return {
+                        "status": "failed",
+                        "message": f"Failed to create blob for {path}: {self._truncated_response_text(blob_response)}",
+                    }
+                tree_items.append(
+                    {"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]}
+                )
 
             tree_response = await client.post(
                 f"{api_base}/repos/{owner}/{repo}/git/trees",

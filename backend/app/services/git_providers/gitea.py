@@ -136,73 +136,44 @@ class GiteaBackend(GitHubBackend):
                     if item["type"] == "blob":
                         existing_files[item["path"]] = item["sha"]
 
-            tree_items = []
+            api_files = []
             files_changed = 0
 
             for path, content in files.items():
                 content_str = json.dumps(content, indent=2, default=str)
                 content_bytes = content_str.encode("utf-8")
+                content_b64 = base64.b64encode(content_bytes).decode()
                 content_sha = self._blob_sha(content_bytes)
 
-                if path in existing_files and existing_files[path] == content_sha:
-                    continue
-
-                blob_response = await client.post(
-                    f"{api_base}/repos/{owner}/{repo}/git/blobs",
-                    headers=headers,
-                    json={"content": base64.b64encode(content_bytes).decode(), "encoding": "base64"},
-                )
-                if blob_response.status_code != 201:
-                    logger.error("Failed to create blob for %s: %s", path, self._truncated_response_text(blob_response))
-                    continue
-
-                tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]})
+                if path in existing_files:
+                    if existing_files[path] == content_sha:
+                        continue
+                    api_files.append({"operation": "update", "path": path, "content": content_b64, "sha": existing_files[path]})
+                else:
+                    api_files.append({"operation": "create", "path": path, "content": content_b64})
                 files_changed += 1
 
-            if not tree_items:
+            if not api_files:
                 return {"status": "skipped", "message": "No changes to commit", "commit_sha": None, "files_changed": 0}
 
-            tree_response = await client.post(
-                f"{api_base}/repos/{owner}/{repo}/git/trees",
-                headers=headers,
-                json={"base_tree": current_tree_sha, "tree": tree_items},
-            )
-            if tree_response.status_code != 201:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to create tree: {self._truncated_response_text(tree_response)}",
-                }
-
-            new_tree_sha = tree_response.json()["sha"]
             commit_message = f"Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
-            commit_response = await client.post(
-                f"{api_base}/repos/{owner}/{repo}/git/commits",
+            response = await client.post(
+                f"{api_base}/repos/{owner}/{repo}/contents",
                 headers=headers,
-                json={"message": commit_message, "tree": new_tree_sha, "parents": [current_commit_sha]},
+                json={"branch": branch, "message": commit_message, "files": api_files},
             )
-            if commit_response.status_code != 201:
+
+            if response.status_code not in (200, 201):
                 return {
                     "status": "failed",
-                    "message": f"Failed to create commit: {self._truncated_response_text(commit_response)}",
+                    "message": f"Backup commit failed: {self._truncated_response_text(response)}",
                 }
 
-            new_commit_sha = commit_response.json()["sha"]
-
-            ref_update = await client.patch(
-                f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{branch}",
-                headers=headers,
-                json={"sha": new_commit_sha},
-            )
-            if ref_update.status_code != 200:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to update branch: {self._truncated_response_text(ref_update)}",
-                }
-
+            commit_sha = (response.json().get("commit") or {}).get("sha")
             return {
                 "status": "success",
                 "message": f"Backup successful - {files_changed} files updated",
-                "commit_sha": new_commit_sha,
+                "commit_sha": commit_sha,
                 "files_changed": files_changed,
             }
 
@@ -236,12 +207,10 @@ class GiteaBackend(GitHubBackend):
             if ref_response.status_code != 200:
                 return await self._create_initial_commit(client, headers, api_base, owner, repo, branch, files)
 
-            base_sha = self._ref_sha(ref_response.json())
-
             create_ref = await client.post(
-                f"{api_base}/repos/{owner}/{repo}/git/refs",
+                f"{api_base}/repos/{owner}/{repo}/branches",
                 headers=headers,
-                json={"ref": f"refs/heads/{branch}", "sha": base_sha},
+                json={"new_branch_name": branch, "old_ref_name": default_branch},
             )
             if create_ref.status_code != 201:
                 return {

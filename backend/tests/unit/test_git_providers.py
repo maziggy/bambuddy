@@ -727,6 +727,88 @@ class TestForgejoBackendApiBase:
         assert repo == "repo"
 
 
+class TestForgejoTestConnection:
+    """ForgejoBackend overrides test_connection to handle Forgejo v15+ 404-not-403 behaviour."""
+
+    def setup_method(self):
+        self.backend = ForgejoBackend()
+        self.repo_url = "https://forgejo.example.com/owner/repo"
+        self.token = "fj-token"
+
+    @pytest.mark.asyncio
+    async def test_valid_token_and_push_permission_returns_success(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"login": "user"}),
+                _make_mock_response(200, {"full_name": "owner/repo", "permissions": {"push": True, "pull": True}}),
+            ]
+        )
+
+        result = await self.backend.test_connection(self.repo_url, self.token, client)
+
+        assert result["success"] is True
+        assert result["repo_name"] == "owner/repo"
+
+    @pytest.mark.asyncio
+    async def test_invalid_token_returns_clear_message_without_repo_call(self):
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=_make_mock_response(401, {}))
+
+        result = await self.backend.test_connection(self.repo_url, self.token, client)
+
+        assert result["success"] is False
+        assert result["message"] == "Invalid access token"
+        assert client.get.call_count == 1  # only /user was called
+
+    @pytest.mark.asyncio
+    async def test_repo_404_after_valid_token_surfaces_v15_scope_hint(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"login": "user"}),
+                _make_mock_response(404, {}),
+            ]
+        )
+
+        result = await self.backend.test_connection(self.repo_url, self.token, client)
+
+        assert result["success"] is False
+        assert "v15" in result["message"]
+        assert "scope" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_token_lacks_push_permission_returns_failed(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"login": "user"}),
+                _make_mock_response(200, {"full_name": "owner/repo", "permissions": {"push": False, "pull": True}}),
+            ]
+        )
+
+        result = await self.backend.test_connection(self.repo_url, self.token, client)
+
+        assert result["success"] is False
+        assert "push permission" in result["message"]
+        assert result["repo_name"] == "owner/repo"
+
+    @pytest.mark.asyncio
+    async def test_non_404_api_error_returns_status_code(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"login": "user"}),
+                _make_mock_response(500, {}),
+            ]
+        )
+
+        result = await self.backend.test_connection(self.repo_url, self.token, client)
+
+        assert result["success"] is False
+        assert "API error: 500" in result["message"]
+
+
 class TestGitLabBackend:
     def setup_method(self):
         self.backend = GitLabBackend()

@@ -31,6 +31,7 @@ vi.mock('../../api/client', () => ({
     getSpoolCatalog: vi.fn().mockResolvedValue([]),
     getColorCatalog: vi.fn().mockResolvedValue([]),
     getLocalPresets: vi.fn().mockResolvedValue({ filament: [] }),
+    getBuiltinFilaments: vi.fn().mockResolvedValue([]),
     getPrinters: vi.fn().mockResolvedValue([]),
     getSpoolUsageHistory: vi.fn().mockResolvedValue([]),
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
@@ -144,6 +145,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );
@@ -161,6 +163,7 @@ describe('SpoolFormModal quick-add toggle', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={existingSpool}
+        mode="edit"
         currencySymbol="$"
       />,
     );
@@ -177,6 +180,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );
@@ -209,6 +213,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );
@@ -226,6 +231,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );
@@ -256,6 +262,7 @@ describe('SpoolFormModal quick-add toggle', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={existingSpool}
+        mode="edit"
         currencySymbol="$"
       />,
     );
@@ -273,6 +280,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );

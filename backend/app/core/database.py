@@ -1564,6 +1564,11 @@ async def run_migrations(conn):
 
     # Migration: Add SSH host key for TOFU verification (H1 security fix)
     await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN ssh_host_key VARCHAR(500)")
+    # Migration: Widen ssh_host_key from VARCHAR(500) to TEXT — RSA-3072+ host keys
+    # in OpenSSH format exceed 500 chars (RSA-4096 ~720 chars). PostgreSQL enforces
+    # the limit and rejects the UPDATE; SQLite ignores VARCHAR length so no-op there.
+    if not is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ALTER COLUMN ssh_host_key TYPE TEXT")
 
     # Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
     # Labels are now keyed by AMS serial number so they persist when the AMS is moved to another printer.

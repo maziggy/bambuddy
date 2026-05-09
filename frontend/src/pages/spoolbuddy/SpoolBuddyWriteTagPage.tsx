@@ -7,6 +7,7 @@ import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolB
 import {
   api,
   spoolbuddyApi,
+  type BuiltinFilament,
   type InventorySpool,
   type LocalPreset,
   type SlicerSetting,
@@ -414,6 +415,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
   const [loadingCloudPresets, setLoadingCloudPresets] = useState(false);
   const [cloudPresets, setCloudPresets] = useState<SlicerSetting[]>([]);
   const [localPresets, setLocalPresets] = useState<LocalPreset[]>([]);
+  const [builtinFilaments, setBuiltinFilaments] = useState<BuiltinFilament[]>([]);
   const [spoolCatalog, setSpoolCatalog] = useState<SpoolCatalogEntry[]>([]);
   const [colorCatalog, setColorCatalog] = useState<
     { manufacturer: string; color_name: string; hex_color: string; material: string | null }[]
@@ -453,6 +455,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
       api.getSpoolCatalog().then(setSpoolCatalog).catch(() => undefined);
       api.getColorCatalog().then(setColorCatalog).catch(() => undefined);
       api.getLocalPresets().then(r => setLocalPresets(r.filament)).catch(() => undefined);
+      api.getBuiltinFilaments().then(setBuiltinFilaments).catch(() => undefined);
 
       try {
         const printers = await api.getPrinters();
@@ -498,8 +501,8 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
   }, [printersWithCalibrations]);
 
   const filamentOptions = useMemo(
-    () => buildFilamentOptions(cloudPresets, new Set(), localPresets),
-    [cloudPresets, localPresets],
+    () => buildFilamentOptions(cloudPresets, new Set(), localPresets, builtinFilaments),
+    [cloudPresets, localPresets, builtinFilaments],
   );
 
   const selectedPresetOption = useMemo(

@@ -1103,7 +1103,7 @@ function ArchiveCard({
                 title={!archive.file_path ? t('archives.card.noFileForReprint') : !canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : undefined}
               >
                 <Printer className="w-3 h-3 flex-shrink-0" />
-                <span className="hidden sm:inline truncate">{t('archives.card.reprint')}</span>
+                <span className="hidden xl:inline truncate">{t('archives.card.reprint')}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -1114,7 +1114,7 @@ function ArchiveCard({
                 title={!archive.file_path ? t('archives.card.noFileForReprint') : !hasPermission('queue:create') ? t('archives.permission.noAddToQueue') : t('archives.card.schedulePrint')}
               >
                 <Calendar className="w-3 h-3 flex-shrink-0" />
-                <span className="hidden sm:inline truncate">{t('archives.card.schedule')}</span>
+                <span className="hidden xl:inline truncate">{t('archives.card.schedule')}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -1150,7 +1150,7 @@ function ArchiveCard({
               ) : (
                 <ExternalLink className="w-3 h-3 flex-shrink-0" />
               )}
-              <span className="hidden sm:inline truncate">{t('archives.card.slice')}</span>
+              <span className="hidden xl:inline truncate">{t('archives.card.slice')}</span>
             </Button>
           )}
           <Button

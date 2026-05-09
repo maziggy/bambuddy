@@ -3431,6 +3431,10 @@ export default {
           label: 'AMS holder (30 × 15 mm)',
           hint: 'Single label per page; fits the popular AMS filament label holder.',
         },
+        box40x30: {
+          label: '盒標籤 (40 × 30 mm)',
+          hint: '每頁一張；常見的 DK/Brother 捲尺寸,適合用於耗材袋與儲物盒標籤。',
+        },
         box: {
           label: 'Box label (62 × 29 mm)',
           hint: 'Single label per page; sized for Brother PT/QL and Dymo small labels.',
@@ -3447,6 +3451,7 @@ export default {
     },
     addSpool: '新增耗材',
     editSpool: '編輯耗材',
+    copySpool: '複製耗材',
     material: '材料',
     selectMaterial: '選擇材料...',
     subtype: '子類型',

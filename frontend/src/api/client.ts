@@ -2326,7 +2326,7 @@ export interface SpoolmanFilamentEntry {
 
 // Inventory types
 // Label printing (#809). Mirror of backend.app.services.label_renderer.TemplateName.
-export type SpoolLabelTemplate = 'ams_30x15' | 'box_62x29' | 'avery_5160' | 'avery_l7160';
+export type SpoolLabelTemplate = 'ams_30x15' | 'box_40x30' | 'box_62x29' | 'avery_5160' | 'avery_l7160';
 
 export interface InventorySpool {
   id: number;

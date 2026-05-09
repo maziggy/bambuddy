@@ -122,6 +122,21 @@ function setupCommonHandlers(spoolList: object[]) {
     http.get('/api/v1/inventory/spools', () => HttpResponse.json(spoolList)),
     http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
     http.get('/api/v1/inventory/catalog', () => HttpResponse.json([])),
+    // Deep-link flows open SpoolFormModal, which fires off these fetches the
+    // moment it mounts. Without handlers MSW would passthrough to the real
+    // network (ECONNREFUSED); the rejected fetch then resolves after the
+    // test environment is torn down, surfacing as an unhandled rejection
+    // ("window is not defined") in the modal's setState finally.
+    http.get('/api/v1/cloud/status', () =>
+      HttpResponse.json({ is_authenticated: false })
+    ),
+    http.get('/api/v1/cloud/local-presets', () =>
+      HttpResponse.json({ filament: [], printer: [], process: [] })
+    ),
+    http.get('/api/v1/cloud/builtin-filaments', () => HttpResponse.json([])),
+    http.get('/api/v1/inventory/color-catalog', () => HttpResponse.json([])),
+    http.get('/api/v1/inventory/spool-catalog', () => HttpResponse.json([])),
+    http.get('/api/v1/printers/', () => HttpResponse.json([])),
   );
 }
 

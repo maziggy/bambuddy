@@ -528,6 +528,14 @@ SUDOERS
 download_spoolbuddy() {
     if [[ -d "$INSTALL_PATH/.git" ]]; then
         info "Existing installation found, updating..."
+        # Pre-emptively normalise tree ownership before git touches anything.
+        # Stray root-owned files (e.g. static/assets/* left by an earlier
+        # `sudo` run, or a frontend build that wrote as root) make
+        # `git reset --hard` fail with EACCES on the unlink/replace step,
+        # aborting the update before the post-install chown below ever
+        # runs. The script already runs as root (see check_root), so this
+        # is always safe.
+        chown -R "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$INSTALL_PATH"
         git config --global --add safe.directory "$INSTALL_PATH" 2>/dev/null || true
         cd "$INSTALL_PATH"
         git remote set-url origin "$INSTALL_REPO" 2>/dev/null || true

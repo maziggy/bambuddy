@@ -39,6 +39,12 @@ const TEMPLATE_OPTIONS: TemplateOption[] = [
     fallbackHint: 'Single label per page; fits the popular AMS filament label holder.',
   },
   {
+    value: 'box_40x30',
+    i18nKey: 'box40x30',
+    fallbackLabel: 'Box label (40 × 30 mm)',
+    fallbackHint: 'Single label per page; common DK/Brother roll size, good for filament-bag and storage-bin labels.',
+  },
+  {
     value: 'box_62x29',
     i18nKey: 'box',
     fallbackLabel: 'Box label (62 × 29 mm)',

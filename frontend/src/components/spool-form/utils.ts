@@ -1,4 +1,4 @@
-import type { SlicerSetting, LocalPreset } from '../../api/client';
+import type { SlicerSetting, LocalPreset, BuiltinFilament } from '../../api/client';
 import type { ColorPreset, FilamentOption } from './types';
 import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, MAX_RECENT_COLORS } from './constants';
 
@@ -119,92 +119,118 @@ export function extractBrandsFromPresets(presets: SlicerSetting[], localPresets?
   return Array.from(brandSet).sort((a, b) => a.localeCompare(b));
 }
 
-// Build filament options from local presets (OrcaSlicer imports)
+// Build filament options from local presets (OrcaSlicer / BambuStudio imports).
+// Each preset gets its own entry — no base-name collapse — so the spool form
+// shows all per-printer/per-nozzle variants the user has imported. The spool
+// itself is printer-agnostic, so the variant the user picks just becomes the
+// stored slicer_filament code (consumed by normalize_slicer_filament during
+// slicing — kept as preset.filament_type when available so the existing
+// "GFL05"-style normalisation still resolves).
 function buildLocalFilamentOptions(localPresets: LocalPreset[]): FilamentOption[] {
   const filamentPresets = localPresets.filter(p => p.preset_type === 'filament');
   if (filamentPresets.length === 0) return [];
 
-  const presetsMap = new Map<string, FilamentOption>();
-  for (const preset of filamentPresets) {
-    const baseName = preset.name.replace(/@.*$/, '').trim();
-    const existing = presetsMap.get(baseName);
-    if (existing) {
-      existing.allCodes.push(String(preset.id));
-    } else {
-      // Use filament_type as the code if available (e.g. "GFL00"), otherwise use the id
-      const code = preset.filament_type || String(preset.id);
-      presetsMap.set(baseName, {
-        code,
-        name: baseName,
-        displayName: baseName,
-        isCustom: false,
-        allCodes: [code],
-      });
-    }
-  }
-  return Array.from(presetsMap.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const options: FilamentOption[] = filamentPresets.map(preset => {
+    const code = preset.filament_type || String(preset.id);
+    // allCodes carries every shape an existing saved spool might have stored
+    // for this preset (filament_type and the row id), so findPresetOption
+    // resolves both old and new picks.
+    const allCodes = Array.from(new Set([code, String(preset.id)]));
+    return {
+      code,
+      name: preset.name,
+      displayName: preset.name,
+      isCustom: false,
+      allCodes,
+    };
+  });
+  return options.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
-// Build filament options: cloud presets → local presets → hardcoded fallback
+// Build filament options by merging cloud presets, local profiles, and built-in
+// filaments — matching the behavior of ConfigureAmsSlotModal and the wiki's
+// "Where Presets Come From" section. Earlier versions were precedence-based
+// (cloud-only when cloud had any presets), which silently hid Local Profiles
+// from users logged into Bambu Cloud — see #1248.
 export function buildFilamentOptions(
   cloudPresets: SlicerSetting[],
   configuredPrinterModels: Set<string>,
   localPresets?: LocalPreset[],
+  builtinFilaments?: BuiltinFilament[],
 ): FilamentOption[] {
-  // 1. Cloud presets (highest priority)
-  if (cloudPresets.length > 0) {
-    const customPresets: FilamentOption[] = [];
-    const defaultPresetsMap = new Map<string, FilamentOption>();
+  const customPresets: FilamentOption[] = [];
+  const defaultPresets: FilamentOption[] = [];
+  const cloudCodes = new Set<string>();
 
-    for (const preset of cloudPresets) {
-      if (preset.is_custom) {
-        // Custom presets: include if matches configured printers or no printer filter
-        const presetNameUpper = preset.name.toUpperCase();
-        const matchesPrinter = configuredPrinterModels.size === 0 ||
-          Array.from(configuredPrinterModels).some(model => presetNameUpper.includes(model)) ||
-          !presetNameUpper.includes('@');
+  // 1. Cloud presets — each setting_id gets its own entry. The spool form is
+  // printer-agnostic so we deliberately do NOT collapse "@P1S" / "@X1C"
+  // variants into a single row; the user picks the variant they want and
+  // its setting_id is what gets persisted.
+  for (const preset of cloudPresets) {
+    if (preset.is_custom) {
+      const presetNameUpper = preset.name.toUpperCase();
+      const matchesPrinter = configuredPrinterModels.size === 0 ||
+        Array.from(configuredPrinterModels).some(model => presetNameUpper.includes(model)) ||
+        !presetNameUpper.includes('@');
 
-        if (matchesPrinter) {
-          customPresets.push({
-            code: preset.setting_id,
-            name: preset.name,
-            displayName: `${preset.name} (Custom)`,
-            isCustom: true,
-            allCodes: [preset.setting_id],
-          });
-        }
-      } else {
-        // Default presets: deduplicate by base name
-        const baseName = preset.name.replace(/@.*$/, '').trim();
-        const existing = defaultPresetsMap.get(baseName);
-        if (existing) {
-          existing.allCodes.push(preset.setting_id);
-        } else {
-          defaultPresetsMap.set(baseName, {
-            code: preset.setting_id,
-            name: baseName,
-            displayName: baseName,
-            isCustom: false,
-            allCodes: [preset.setting_id],
-          });
-        }
+      if (matchesPrinter) {
+        customPresets.push({
+          code: preset.setting_id,
+          name: preset.name,
+          displayName: `${preset.name} (Custom)`,
+          isCustom: true,
+          allCodes: [preset.setting_id],
+        });
+        cloudCodes.add(preset.setting_id);
       }
+    } else {
+      defaultPresets.push({
+        code: preset.setting_id,
+        name: preset.name,
+        displayName: preset.name,
+        isCustom: false,
+        allCodes: [preset.setting_id],
+      });
+      cloudCodes.add(preset.setting_id);
     }
-
-    return [
-      ...customPresets,
-      ...Array.from(defaultPresetsMap.values()),
-    ].sort((a, b) => a.displayName.localeCompare(b.displayName));
   }
 
-  // 2. Local presets (OrcaSlicer imports)
-  if (localPresets && localPresets.length > 0) {
-    const localOptions = buildLocalFilamentOptions(localPresets);
-    if (localOptions.length > 0) return localOptions;
+  // 2. Local profiles (OrcaSlicer / BambuStudio imports)
+  const localOptions = localPresets && localPresets.length > 0
+    ? buildLocalFilamentOptions(localPresets)
+    : [];
+
+  // 3. Built-in filaments — only those not already represented by a cloud preset.
+  // Cloud setting_ids look like "GFSA00", built-in filament_ids look like "GFA00";
+  // map between the two so we don't render the same filament twice.
+  const builtinOptions: FilamentOption[] = [];
+  if (builtinFilaments && builtinFilaments.length > 0) {
+    for (const bf of builtinFilaments) {
+      const settingId = bf.filament_id.startsWith('GF')
+        ? 'GFS' + bf.filament_id.slice(2)
+        : bf.filament_id;
+      if (cloudCodes.has(bf.filament_id) || cloudCodes.has(settingId)) continue;
+      builtinOptions.push({
+        code: bf.filament_id,
+        name: bf.name,
+        displayName: bf.name,
+        isCustom: false,
+        allCodes: [bf.filament_id, settingId],
+      });
+    }
   }
 
-  // 3. Hardcoded fallback
-  return FALLBACK_PRESETS;
+  const merged = [
+    ...customPresets,
+    ...defaultPresets,
+    ...localOptions,
+    ...builtinOptions,
+  ];
+
+  // 4. Hardcoded fallback only when literally every source is empty.
+  if (merged.length === 0) return FALLBACK_PRESETS;
+
+  return merged.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 // Find selected preset option

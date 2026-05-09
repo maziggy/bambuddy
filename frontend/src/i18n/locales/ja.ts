@@ -3443,6 +3443,10 @@ export default {
           label: 'AMS holder (30 × 15 mm)',
           hint: 'Single label per page; fits the popular AMS filament label holder.',
         },
+        box40x30: {
+          label: 'ボックスラベル (40 × 30 mm)',
+          hint: '1ページに1枚。DK/Brother の一般的なロールサイズで、フィラメント袋や保管箱のラベルに適しています。',
+        },
         box: {
           label: 'Box label (62 × 29 mm)',
           hint: 'Single label per page; sized for Brother PT/QL and Dymo small labels.',
@@ -3459,6 +3463,7 @@ export default {
     },
     addSpool: 'スプールを追加',
     editSpool: 'スプールを編集',
+    copySpool: 'スプールをコピー',
     material: '素材',
     selectMaterial: '素材を選択...',
     subtype: 'サブタイプ',

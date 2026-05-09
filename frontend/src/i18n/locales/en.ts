@@ -3446,6 +3446,10 @@ export default {
           label: 'AMS holder (30 × 15 mm)',
           hint: 'Single label per page; fits the popular AMS filament label holder.',
         },
+        box40x30: {
+          label: 'Box label (40 × 30 mm)',
+          hint: 'Single label per page; common DK/Brother roll size, good for filament-bag and storage-bin labels.',
+        },
         box: {
           label: 'Box label (62 × 29 mm)',
           hint: 'Single label per page; sized for Brother PT/QL and Dymo small labels.',
@@ -3462,6 +3466,7 @@ export default {
     },
     addSpool: 'Add Spool',
     editSpool: 'Edit Spool',
+    copySpool: 'Copy Spool',
     material: 'Material',
     selectMaterial: 'Select material...',
     subtype: 'Subtype',

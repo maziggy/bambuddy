@@ -3432,6 +3432,10 @@ export default {
           label: 'AMS holder (30 × 15 mm)',
           hint: 'Single label per page; fits the popular AMS filament label holder.',
         },
+        box40x30: {
+          label: 'Étiquette boîte (40 × 30 mm)',
+          hint: 'Une étiquette par page ; taille de rouleau DK/Brother courante, idéale pour étiqueter sachets de filament et bacs de stockage.',
+        },
         box: {
           label: 'Box label (62 × 29 mm)',
           hint: 'Single label per page; sized for Brother PT/QL and Dymo small labels.',
@@ -3448,6 +3452,7 @@ export default {
     },
     addSpool: 'Ajouter Bobine',
     editSpool: 'Modifier Bobine',
+    copySpool: 'Copier Bobine',
     material: 'Matériau',
     selectMaterial: 'Choisir matériau...',
     subtype: 'Sous-type',

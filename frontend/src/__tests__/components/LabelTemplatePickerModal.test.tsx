@@ -193,7 +193,9 @@ describe('LabelTemplatePickerModal', () => {
     );
 
     fireEvent.click(screen.getByText(/Blue · Sunlu/));  // uncheck spool 2
-    fireEvent.click(screen.getByText(/Box label/i));
+    // Two "Box label …" templates exist now (40×30 and 62×29) — pin the
+    // specific one we want to send so the assertion below stays meaningful.
+    fireEvent.click(screen.getByText(/Box label \(62 × 29 mm\)/i));
 
     await waitFor(() => {
       expect(api.printSpoolLabels).toHaveBeenCalledWith({
@@ -275,15 +277,15 @@ describe('LabelTemplatePickerModal', () => {
     expect(screen.getByText(/No spools match/i)).toBeInTheDocument();
   });
 
-  it('packs templates into a 2x2 grid so all 4 plus Cancel fit on short viewports (#1230)', () => {
-    // Regression for #1230: with 4 templates stacked vertically (~310px) plus
+  it('packs templates into a 2-column grid so they plus Cancel fit on short viewports (#1230)', () => {
+    // Regression for #1230: with templates stacked vertically (~310-390px) plus
     // header/search/action bar/footer, the modal blew past max-h-[90vh] on
     // Windows-11 + Brave-style viewports where browser chrome eats into 90vh.
-    // overflow-hidden on the modal then clipped Avery 5160 and the Cancel
-    // footer with no scroll path. The fix uses sm:grid-cols-2 so the 4
-    // templates render as a 2x2 grid (~155px), trimming ~150px of vertical
-    // and leaving room for the footer. The earlier min-h-0 on the spool list
-    // is kept so it still yields any remaining slack.
+    // overflow-hidden on the modal then clipped the bottom templates and the
+    // Cancel footer with no scroll path. The fix uses sm:grid-cols-2 so the
+    // templates render as a 2-column grid, trimming ~150px of vertical and
+    // leaving room for the footer. The earlier min-h-0 on the spool list is
+    // kept so it still yields any remaining slack.
     const { container } = render(
       <LabelTemplatePickerModal
         isOpen={true}
@@ -294,9 +296,11 @@ describe('LabelTemplatePickerModal', () => {
       />,
     );
 
-    // All 4 templates must be in the DOM, including the last one.
+    // All five templates must be in the DOM. Use the dimension suffix to
+    // disambiguate the two "Box label …" entries.
     expect(screen.getByText(/AMS holder/i)).toBeInTheDocument();
-    expect(screen.getByText(/Box label/i)).toBeInTheDocument();
+    expect(screen.getByText(/Box label \(40 × 30 mm\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Box label \(62 × 29 mm\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Avery L7160/i)).toBeInTheDocument();
     expect(screen.getByText(/Avery 5160/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
@@ -307,7 +311,7 @@ describe('LabelTemplatePickerModal', () => {
     const templatesSection = container.querySelector('div.grid.sm\\:grid-cols-2');
     expect(templatesSection).not.toBeNull();
     expect(templatesSection!.className).toContain('grid-cols-1');
-    expect(templatesSection!.querySelectorAll('button').length).toBe(4);
+    expect(templatesSection!.querySelectorAll('button').length).toBe(5);
 
     // Spool list still uses min-h-0 so it can yield further on very tight viewports.
     const spoolListScroller = container.querySelector('div.flex-1.overflow-y-auto');

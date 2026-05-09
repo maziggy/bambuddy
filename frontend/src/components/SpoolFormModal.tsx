@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Unlink } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, SpoolmanBulkCreateResult, SpoolKProfileInput, SpoolmanFilamentEntry } from '../api/client';
+import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolKProfileInput, SpoolmanFilamentEntry } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
@@ -21,10 +21,13 @@ type TabId = 'filament' | 'pa-profile';
 
 const CLEAR_TAG_PAYLOAD = { tag_uid: null, tray_uuid: null, tag_type: null, data_origin: null };
 
+export type SpoolFormMode = 'create' | 'edit' | 'copy';
+
 interface SpoolFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   spool?: InventorySpool | null;
+  mode: SpoolFormMode;
   printersWithCalibrations?: PrinterWithCalibrations[];
   currencySymbol: string;
   onSpoolsCreated?: (spools: InventorySpool[]) => void;
@@ -38,6 +41,7 @@ export function SpoolFormModal({
   isOpen,
   onClose,
   spool,
+  mode,
   printersWithCalibrations = [],
   currencySymbol,
   onSpoolsCreated,
@@ -48,7 +52,8 @@ export function SpoolFormModal({
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const isEditing = !!spool;
+  const isEditing = mode === 'edit';
+  const isCopying = mode === 'copy';
 
   // Form state
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
@@ -70,6 +75,9 @@ export function SpoolFormModal({
 
   // Local presets (OrcaSlicer imports)
   const [localPresets, setLocalPresets] = useState<LocalPreset[]>([]);
+
+  // Built-in filaments (static fallback)
+  const [builtinFilaments, setBuiltinFilaments] = useState<BuiltinFilament[]>([]);
 
   // Color catalog
   const [colorCatalog, setColorCatalog] = useState<{ manufacturer: string; color_name: string; hex_color: string; material: string | null }[]>([]);
@@ -130,6 +138,7 @@ export function SpoolFormModal({
       }
       api.getColorCatalog().then(setColorCatalog).catch(console.error);
       api.getLocalPresets().then(r => setLocalPresets(r.filament)).catch(console.error);
+      api.getBuiltinFilaments().then(setBuiltinFilaments).catch(console.error);
 
       // Fetch printer calibrations if not provided via props
       if (printersWithCalibrations.length === 0) {
@@ -182,8 +191,8 @@ export function SpoolFormModal({
 
   // Build filament options: cloud → local → fallback
   const filamentOptions = useMemo(
-    () => buildFilamentOptions(cloudPresets, new Set(), localPresets),
-    [cloudPresets, localPresets],
+    () => buildFilamentOptions(cloudPresets, new Set(), localPresets, builtinFilaments),
+    [cloudPresets, localPresets, builtinFilaments],
   );
 
   // Extract brands from presets
@@ -301,7 +310,7 @@ export function SpoolFormModal({
           label_weight: spool.label_weight || 1000,
           core_weight: spool.core_weight || 250,
           core_weight_catalog_id: spool.core_weight_catalog_id ?? null,
-          weight_used: spool.weight_used || 0,
+          weight_used: isCopying ? 0 : spool.weight_used || 0,
           slicer_filament: spool.slicer_filament || '',
           note: spool.note || '',
           cost_per_kg: spool.cost_per_kg ?? null,
@@ -336,7 +345,7 @@ export function SpoolFormModal({
       setWeightTouched(false);
       setStorageLocationTouched(false);
     }
-  }, [isOpen, spool]);
+  }, [isOpen, spool, mode, isCopying]);
 
   // Expand all printers in PA profile section when calibrations are available
   useEffect(() => {
@@ -700,7 +709,7 @@ export function SpoolFormModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary flex-shrink-0">
           <h2 className="text-lg font-semibold text-white">
-            {isEditing ? t('inventory.editSpool') : t('inventory.addSpool')}
+            {isEditing ? t('inventory.editSpool') : isCopying ? t('inventory.copySpool') : t('inventory.addSpool')}
           </h2>
           <button
             onClick={onClose}
@@ -710,8 +719,12 @@ export function SpoolFormModal({
           </button>
         </div>
 
-        {/* Quick Add toggle — only in create mode */}
-        {!isEditing && (
+        {/* Quick Add toggle — only in create mode (not edit, not copy).
+            In copy mode the modal title is the singular "Copy Spool", so the
+            quantity-driven bulkCreateMutation path would silently produce N
+            copies under a misleading title — keep this toggle out of that
+            mode entirely. */}
+        {mode === 'create' && (
           <div className="flex items-center justify-between px-4 py-2 border-b border-bambu-dark-tertiary flex-shrink-0">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-400" />
@@ -900,7 +913,7 @@ export function SpoolFormModal({
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                {isEditing ? t('common.save') : t('inventory.addSpool')}
+                {isEditing ? t('common.save') : isCopying ? t('inventory.copySpool') : t('inventory.addSpool')}
               </>
             )}
           </Button>

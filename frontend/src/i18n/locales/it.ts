@@ -3431,6 +3431,10 @@ export default {
           label: 'AMS holder (30 × 15 mm)',
           hint: 'Single label per page; fits the popular AMS filament label holder.',
         },
+        box40x30: {
+          label: 'Etichetta scatola (40 × 30 mm)',
+          hint: 'Una etichetta per pagina; misura comune DK/Brother, ideale per etichette di sacchetti filamento e contenitori.',
+        },
         box: {
           label: 'Box label (62 × 29 mm)',
           hint: 'Single label per page; sized for Brother PT/QL and Dymo small labels.',
@@ -3447,6 +3451,7 @@ export default {
     },
     addSpool: 'Aggiungi Bobina',
     editSpool: 'Modifica Bobina',
+    copySpool: 'Copia Bobina',
     material: 'Materiale',
     selectMaterial: 'Seleziona materiale...',
     subtype: 'Sottotipo',

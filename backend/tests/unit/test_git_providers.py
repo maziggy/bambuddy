@@ -82,6 +82,96 @@ class TestGitHubBackendApiBase:
         assert self.backend.get_api_base("git@github.example.com:owner/repo.git") == "https://github.example.com/api/v3"
 
 
+class TestGitHubBackendPushFiles:
+    def setup_method(self):
+        self.backend = GitHubBackend()
+        self.repo_url = "https://github.com/owner/repo"
+        self.token = "ghp_token"
+        self.branch = "bambuddy-backup"
+
+    @pytest.mark.asyncio
+    async def test_successful_push(self):
+        """Happy path: changed file goes through blob→tree→commit→ref-update."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"object": {"sha": "c1"}}),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": []}),
+            ]
+        )
+        client.post = AsyncMock(
+            side_effect=[
+                _make_mock_response(201, {"sha": "blob1"}),
+                _make_mock_response(201, {"sha": "new-tree"}),
+                _make_mock_response(201, {"sha": "new-commit"}),
+            ]
+        )
+        client.patch = AsyncMock(return_value=_make_mock_response(200, {}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "success"
+        assert result["files_changed"] == 1
+
+    @pytest.mark.asyncio
+    async def test_skips_unchanged_files(self):
+        """File whose blob SHA matches the existing tree entry is excluded from the commit."""
+        content = {"name": "my-printer"}
+        sha = _blob_sha(content)
+
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"object": {"sha": "c1"}}),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": [{"type": "blob", "path": "config.json", "sha": sha}]}),
+            ]
+        )
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"config.json": content}, client)
+
+        assert result["status"] == "skipped"
+        client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_blob_failure_returns_failed_not_skipped(self):
+        """A non-201 blob response must return 'failed', not silently fall through to 'skipped'."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"object": {"sha": "c1"}}),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": []}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(500, {}, text="Internal Server Error"))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "failed"
+        assert "failed" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_blob_404_surfaces_endpoint_not_found(self):
+        """A 404 on POST /git/blobs surfaces a clear 'endpoint not found' message, not 'skipped'."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, {"object": {"sha": "c1"}}),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": []}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(404, {}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "failed"
+        assert "404" in result["message"]
+        assert "endpoint not found" in result["message"].lower()
+
+
 class TestGiteaBackendApiBase:
     def setup_method(self):
         self.backend = GiteaBackend()
@@ -113,7 +203,7 @@ class TestGiteaBackendPushFiles:
 
     @pytest.mark.asyncio
     async def test_n_files_produce_single_commit(self):
-        """All changed files are bundled into one commit via the Git Data API."""
+        """All changed files are bundled into one Contents API call."""
         files = {"a.json": {"k": "v1"}, "b.json": {"k": "v2"}}
         client = AsyncMock()
         client.get = AsyncMock(
@@ -123,26 +213,18 @@ class TestGiteaBackendPushFiles:
                 _make_mock_response(200, {"tree": []}),
             ]
         )
-        client.post = AsyncMock(
-            side_effect=[
-                _make_mock_response(201, {"sha": "blob1"}),
-                _make_mock_response(201, {"sha": "blob2"}),
-                _make_mock_response(201, {"sha": "new-tree"}),
-                _make_mock_response(201, {"sha": "new-commit"}),
-            ]
-        )
-        client.patch = AsyncMock(return_value=_make_mock_response(200, {}))
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-commit"}}))
 
         result = await self.backend.push_files(self.repo_url, self.token, self.branch, files, client)
 
         assert result["status"] == "success"
         assert result["files_changed"] == 2
-        commit_calls = [c for c in client.post.call_args_list if "/git/commits" in c.args[0]]
-        assert len(commit_calls) == 1
+        contents_calls = [c for c in client.post.call_args_list if "/contents" in c.args[0]]
+        assert len(contents_calls) == 1
 
     @pytest.mark.asyncio
     async def test_uses_gitea_api_v1_base_not_github(self):
-        """Git Data API calls target the instance's /api/v1, not api.github.com."""
+        """Contents API calls target the instance's /api/v1, not api.github.com."""
         client = AsyncMock()
         client.get = AsyncMock(
             side_effect=[
@@ -151,14 +233,7 @@ class TestGiteaBackendPushFiles:
                 _make_mock_response(200, {"tree": []}),
             ]
         )
-        client.post = AsyncMock(
-            side_effect=[
-                _make_mock_response(201, {"sha": "blob1"}),
-                _make_mock_response(201, {"sha": "new-tree"}),
-                _make_mock_response(201, {"sha": "new-commit"}),
-            ]
-        )
-        client.patch = AsyncMock(return_value=_make_mock_response(200, {}))
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-commit"}}))
 
         await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
 
@@ -189,8 +264,100 @@ class TestGiteaBackendPushFiles:
         client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_creates_missing_branch_via_git_refs_api(self):
-        """A missing backup branch is created via the Git Data API refs endpoint."""
+    async def test_changed_file_sent_as_update_with_sha(self):
+        """A file whose content changed is sent with operation='update' and the current blob SHA."""
+        old_content = {"version": "1.0", "archives": []}
+        new_content = {"version": "1.0", "archives": [{"id": 1}]}
+        old_sha = _blob_sha(old_content)
+
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "c1"}}]),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": [{"type": "blob", "path": "archives/print_history.json", "sha": old_sha}]}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-sha"}}))
+
+        result = await self.backend.push_files(
+            self.repo_url, self.token, self.branch,
+            {"archives/print_history.json": new_content}, client,
+        )
+
+        assert result["status"] == "success"
+        assert result["files_changed"] == 1
+        body = client.post.call_args.kwargs["json"]
+        assert body["files"][0]["operation"] == "update"
+        assert body["files"][0]["sha"] == old_sha
+
+    @pytest.mark.asyncio
+    async def test_new_file_sent_as_create_without_sha(self):
+        """A file not yet in the repo is sent with operation='create' and no sha field."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "c1"}}]),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": []}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-sha"}}))
+
+        result = await self.backend.push_files(
+            self.repo_url, self.token, self.branch, {"new.json": {"k": "v"}}, client
+        )
+
+        assert result["status"] == "success"
+        body = client.post.call_args.kwargs["json"]
+        assert body["files"][0]["operation"] == "create"
+        assert "sha" not in body["files"][0]
+
+    @pytest.mark.asyncio
+    async def test_unchanged_file_excluded_from_contents_call(self):
+        """A file whose blob SHA matches the existing tree entry is not included in the Contents API call."""
+        content = {"name": "printer-1"}
+        sha = _blob_sha(content)
+
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "c1"}}]),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": [{"type": "blob", "path": "config.json", "sha": sha}]}),
+            ]
+        )
+
+        result = await self.backend.push_files(
+            self.repo_url, self.token, self.branch, {"config.json": content}, client
+        )
+
+        assert result["status"] == "skipped"
+        client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_contents_api_failure_returns_failed(self):
+        """A non-2xx response from the Contents API returns status='failed', not 'skipped'."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "c1"}}]),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": []}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(403, {}, text="Forbidden"))
+
+        result = await self.backend.push_files(
+            self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client
+        )
+
+        assert result["status"] == "failed"
+        assert "failed" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_creates_missing_branch_via_branches_api(self):
+        """A missing backup branch is created via POST /branches, not /git/refs."""
         client = AsyncMock()
         client.get = AsyncMock(
             side_effect=[
@@ -208,20 +375,18 @@ class TestGiteaBackendPushFiles:
         )
         client.post = AsyncMock(
             side_effect=[
-                _make_mock_response(201, {}),  # create ref
-                _make_mock_response(201, {"sha": "blob1"}),
-                _make_mock_response(201, {"sha": "new-tree"}),
-                _make_mock_response(201, {"sha": "new-commit"}),
+                _make_mock_response(201, {}),  # POST /branches
+                _make_mock_response(201, {"commit": {"sha": "new-commit"}}),  # POST /contents
             ]
         )
-        client.patch = AsyncMock(return_value=_make_mock_response(200, {}))
 
         result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
 
         assert result["status"] == "success"
-        ref_create_call = client.post.call_args_list[0]
-        assert "/git/refs" in ref_create_call.args[0]
-        assert ref_create_call.kwargs["json"]["ref"] == f"refs/heads/{self.branch}"
+        branch_call = client.post.call_args_list[0]
+        assert "/branches" in branch_call.args[0]
+        assert "/git/refs" not in branch_call.args[0]
+        assert branch_call.kwargs["json"]["new_branch_name"] == self.branch
 
     @pytest.mark.asyncio
     async def test_truncates_upstream_error_body_in_failure_message(self):
@@ -233,17 +398,12 @@ class TestGiteaBackendPushFiles:
                 _make_mock_response(200, {"tree": []}),
             ]
         )
-        client.post = AsyncMock(
-            side_effect=[
-                _make_mock_response(201, {"sha": "blob1"}),
-                _make_mock_response(500, {}, text="x" * 500),
-            ]
-        )
+        client.post = AsyncMock(return_value=_make_mock_response(500, {}, text="x" * 500))
 
         result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
 
         assert result["status"] == "failed"
-        assert result["message"] == f"Failed to create tree: {'x' * 197}..."
+        assert result["message"] == f"Backup commit failed: {'x' * 197}..."
 
 
 class TestGiteaBackendListShapeRefResponse:
@@ -285,14 +445,7 @@ class TestGiteaBackendListShapeRefResponse:
                 _make_mock_response(200, {"tree": []}),
             ]
         )
-        client.post = AsyncMock(
-            side_effect=[
-                _make_mock_response(201, {"sha": "blob1"}),
-                _make_mock_response(201, {"sha": "new-tree"}),
-                _make_mock_response(201, {"sha": "new-commit"}),
-            ]
-        )
-        client.patch = AsyncMock(return_value=_make_mock_response(200, {}))
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-commit"}}))
 
         result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
 
@@ -316,13 +469,10 @@ class TestGiteaBackendListShapeRefResponse:
         )
         client.post = AsyncMock(
             side_effect=[
-                _make_mock_response(201, {}),  # create branch ref
-                _make_mock_response(201, {"sha": "blob1"}),
-                _make_mock_response(201, {"sha": "new-tree"}),
-                _make_mock_response(201, {"sha": "new-commit"}),
+                _make_mock_response(201, {}),  # POST /branches
+                _make_mock_response(201, {"commit": {"sha": "new-commit"}}),  # POST /contents
             ]
         )
-        client.patch = AsyncMock(return_value=_make_mock_response(200, {}))
 
         result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
 
@@ -371,14 +521,7 @@ class TestGiteaBackendWrappedCommitResponse:
                 _make_mock_response(200, {"tree": []}),
             ]
         )
-        client.post = AsyncMock(
-            side_effect=[
-                _make_mock_response(201, {"sha": "blob1"}),
-                _make_mock_response(201, {"sha": "new-tree"}),
-                _make_mock_response(201, {"sha": "new-commit"}),
-            ]
-        )
-        client.patch = AsyncMock(return_value=_make_mock_response(200, {}))
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-commit"}}))
 
         result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
 
@@ -524,14 +667,7 @@ class TestForgejoInheritsGiteaFixes:
                 _make_mock_response(200, {"tree": []}),
             ]
         )
-        client.post = AsyncMock(
-            side_effect=[
-                _make_mock_response(201, {"sha": "blob1"}),
-                _make_mock_response(201, {"sha": "new-tree"}),
-                _make_mock_response(201, {"sha": "new-commit"}),
-            ]
-        )
-        client.patch = AsyncMock(return_value=_make_mock_response(200, {}))
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-commit"}}))
 
         result = await backend.push_files(
             "https://forgejo.example.com/owner/repo",

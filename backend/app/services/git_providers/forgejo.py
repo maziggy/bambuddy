@@ -1,4 +1,4 @@
-"""Forgejo backend — currently API-compatible with Gitea (/api/v1)."""
+"""Forgejo backend — diverges from Gitea on token-scope validation (v15+)."""
 
 import logging
 
@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 class ForgejoBackend(GiteaBackend):
     """Backend for Forgejo instances.
 
-    Currently API-compatible with Gitea (/api/v1). Override methods here
-    as the two projects' APIs diverge.
+    Forgejo v15+ returns 404 (not 403) for private repositories when the token
+    lacks repository scope, requiring a /user pre-check to distinguish bad tokens
+    from inaccessible repos. test_connection is overridden to handle this.
+    Other methods are inherited from GiteaBackend unchanged.
     """
 
     async def test_connection(self, repo_url: str, token: str, client: httpx.AsyncClient) -> dict:
@@ -28,6 +30,20 @@ class ForgejoBackend(GiteaBackend):
             user_resp = await client.get(f"{api_base}/user", headers=headers)
             if user_resp.status_code == 401:
                 return {"success": False, "message": "Invalid access token", "repo_name": None, "permissions": None}
+            if user_resp.status_code == 403:
+                return {
+                    "success": False,
+                    "message": "Token has no read:user scope; cannot validate identity",
+                    "repo_name": None,
+                    "permissions": None,
+                }
+            if user_resp.status_code != 200:
+                return {
+                    "success": False,
+                    "message": f"Forgejo API error on /user: {user_resp.status_code}",
+                    "repo_name": None,
+                    "permissions": None,
+                }
 
             repo_resp = await client.get(f"{api_base}/repos/{owner}/{repo}", headers=headers)
 
@@ -70,5 +86,10 @@ class ForgejoBackend(GiteaBackend):
             }
 
         except Exception as e:
-            logger.error("Forgejo connection test failed: %s", e)
-            return {"success": False, "message": f"Connection failed: {type(e).__name__}", "repo_name": None, "permissions": None}
+            logger.exception("Forgejo connection test failed")
+            return {
+                "success": False,
+                "message": f"Connection failed: {type(e).__name__}",
+                "repo_name": None,
+                "permissions": None,
+            }

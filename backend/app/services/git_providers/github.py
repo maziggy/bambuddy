@@ -97,7 +97,7 @@ class GitHubBackend(GitProviderBackend):
             }
 
         except Exception as e:
-            logger.error("Git connection test failed: %s", e)
+            logger.exception("Git connection test failed")
             return {
                 "success": False,
                 "message": f"Connection failed: {type(e).__name__}",
@@ -112,6 +112,7 @@ class GitHubBackend(GitProviderBackend):
         branch: str,
         files: dict,
         client: httpx.AsyncClient,
+        _allow_branch_create: bool = True,
     ) -> dict:
         """Push files to the repository using the Git Data API."""
         try:
@@ -122,6 +123,14 @@ class GitHubBackend(GitProviderBackend):
             ref_response = await client.get(f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{branch}", headers=headers)
 
             if ref_response.status_code == 404:
+                if not _allow_branch_create:
+                    return {
+                        "status": "failed",
+                        "message": (
+                            f"Branch '{branch}' not found after creation — possible replication lag. "
+                            "The next scheduled backup will retry."
+                        ),
+                    }
                 return await self._create_branch_and_push(
                     client, headers, api_base, owner, repo, branch, files, repo_url, token
                 )
@@ -149,8 +158,13 @@ class GitHubBackend(GitProviderBackend):
             existing_files: dict[str, str] = {}
             if tree_response.status_code == 200:
                 for item in tree_response.json().get("tree", []):
-                    if item["type"] == "blob":
-                        existing_files[item["path"]] = item["sha"]
+                    if item.get("type") != "blob":
+                        continue
+                    path, sha = item.get("path"), item.get("sha")
+                    if not path or not sha:
+                        logger.warning("push_files: skipping malformed tree entry: %s", item)
+                        continue
+                    existing_files[path] = sha
 
             tree_items = []
             files_changed = 0
@@ -171,7 +185,7 @@ class GitHubBackend(GitProviderBackend):
                 if blob_response.status_code == 404:
                     return {
                         "status": "failed",
-                        "message": "Git Data API endpoint not found — this provider may not support the Git Data API (POST /git/blobs returned 404)",
+                        "message": "GitHub API returned 404 for POST /git/blobs — check repository visibility and token scope",
                     }
                 if blob_response.status_code != 201:
                     return {
@@ -230,7 +244,7 @@ class GitHubBackend(GitProviderBackend):
             }
 
         except Exception as e:
-            logger.error("Push to Git failed: %s", e)
+            logger.exception("push_files failed for %s branch=%s", repo_url, branch)
             return {"status": "failed", "message": str(e), "error": str(e)}
 
     async def _create_branch_and_push(
@@ -272,10 +286,11 @@ class GitHubBackend(GitProviderBackend):
                     "message": f"Failed to create branch: {self._truncated_response_text(create_ref)}",
                 }
 
-            return await self.push_files(repo_url, token, branch, files, client)
+            return await self.push_files(repo_url, token, branch, files, client, _allow_branch_create=False)
 
         except Exception as e:
-            return {"status": "failed", "message": str(e)}
+            logger.exception("_create_branch_and_push failed for %s/%s branch=%s", owner, repo, branch)
+            return {"status": "failed", "message": str(e), "error": str(e)}
 
     async def _create_initial_commit(
         self,
@@ -300,16 +315,14 @@ class GitHubBackend(GitProviderBackend):
                 if blob_response.status_code == 404:
                     return {
                         "status": "failed",
-                        "message": "Git Data API endpoint not found — this provider may not support the Git Data API (POST /git/blobs returned 404)",
+                        "message": "GitHub API returned 404 for POST /git/blobs — check repository visibility and token scope",
                     }
                 if blob_response.status_code != 201:
                     return {
                         "status": "failed",
                         "message": f"Failed to create blob for {path}: {self._truncated_response_text(blob_response)}",
                     }
-                tree_items.append(
-                    {"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]}
-                )
+                tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]})
 
             tree_response = await client.post(
                 f"{api_base}/repos/{owner}/{repo}/git/trees",
@@ -348,4 +361,5 @@ class GitHubBackend(GitProviderBackend):
             }
 
         except Exception as e:
-            return {"status": "failed", "message": str(e)}
+            logger.exception("_create_initial_commit failed for %s/%s branch=%s", owner, repo, branch)
+            return {"status": "failed", "message": str(e), "error": str(e)}

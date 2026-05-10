@@ -17,8 +17,8 @@ class GiteaBackend(GitHubBackend):
     """Backend for Gitea instances.
 
     Gitea's Git Data API (/api/v1/repos/{owner}/{repo}/git/...) is *mostly*
-    compatible with GitHub's, but diverges on two points that broke real-world
-    backups (#1224, #1225):
+    compatible with GitHub's, but diverges on three points that broke real-world
+    backups (#1224, #1225, #1239):
 
     1. ``GET /git/refs/heads/{branch}`` returns a *list* of matching refs even
        when only one matches; GitHub returns a single object. The push paths
@@ -29,6 +29,12 @@ class GiteaBackend(GitHubBackend):
        empty repository — every blob POST returns 404 until the repo has at
        least one commit. ``_create_initial_commit()`` is overridden to use the
        Contents API, which seeds the branch + initial commit in a single call.
+
+    3. The Git Data API does not support atomic multi-file commits — each file
+       requires a separate blob POST followed by a tree/commit/ref sequence.
+       ``push_files()`` is overridden to use the Contents API
+       (``POST /repos/.../contents`` with a ``files`` array), which commits all
+       changed files in a single round-trip and avoids partial-commit failures.
     """
 
     @staticmethod
@@ -45,10 +51,10 @@ class GiteaBackend(GitHubBackend):
         """Extract the tree SHA from a commit response.
 
         GitHub's ``GET /git/commits/{sha}`` returns the GitCommit schema with
-        ``tree`` at the top level. Gitea's same-named endpoint returns the
+        ``tree`` at the top level. Gitea's same-named endpoint may return the
         wrapped Commit schema where ``tree`` lives under ``commit``. Try the
-        flat shape first (GitHub-compatible deployments / Gitea ≤ 1.23) then
-        fall back to the wrapped shape (Gitea 1.24+, Forgejo).
+        flat shape first (GitHub-compatible deployments and some Gitea/Forgejo
+        versions) then fall back to the wrapped shape.
         """
         tree_node = commit_data.get("tree")
         if not isinstance(tree_node, dict):
@@ -94,6 +100,7 @@ class GiteaBackend(GitHubBackend):
         branch: str,
         files: dict,
         client: httpx.AsyncClient,
+        _allow_branch_create: bool = True,
     ) -> dict:
         """Push files via the Git Data API, normalising Gitea's list-shaped ref response."""
         try:
@@ -104,6 +111,14 @@ class GiteaBackend(GitHubBackend):
             ref_response = await client.get(f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{branch}", headers=headers)
 
             if ref_response.status_code == 404:
+                if not _allow_branch_create:
+                    return {
+                        "status": "failed",
+                        "message": (
+                            f"Branch '{branch}' not found after creation — possible replication lag. "
+                            "The next scheduled backup will retry."
+                        ),
+                    }
                 return await self._create_branch_and_push(
                     client, headers, api_base, owner, repo, branch, files, repo_url, token
                 )
@@ -130,11 +145,21 @@ class GiteaBackend(GitHubBackend):
             tree_response = await client.get(
                 f"{api_base}/repos/{owner}/{repo}/git/trees/{current_tree_sha}?recursive=1", headers=headers
             )
+            if tree_response.status_code != 200:
+                return {
+                    "status": "failed",
+                    "message": f"Failed to list existing tree: {tree_response.status_code}",
+                    "error": self._truncated_response_text(tree_response),
+                }
             existing_files: dict[str, str] = {}
-            if tree_response.status_code == 200:
-                for item in tree_response.json().get("tree", []):
-                    if item["type"] == "blob":
-                        existing_files[item["path"]] = item["sha"]
+            for item in tree_response.json().get("tree", []):
+                if item.get("type") != "blob":
+                    continue
+                path, sha = item.get("path"), item.get("sha")
+                if not path or not sha:
+                    logger.warning("push_files: skipping malformed tree entry: %s", item)
+                    continue
+                existing_files[path] = sha
 
             api_files = []
             files_changed = 0
@@ -148,7 +173,9 @@ class GiteaBackend(GitHubBackend):
                 if path in existing_files:
                     if existing_files[path] == content_sha:
                         continue
-                    api_files.append({"operation": "update", "path": path, "content": content_b64, "sha": existing_files[path]})
+                    api_files.append(
+                        {"operation": "update", "path": path, "content": content_b64, "sha": existing_files[path]}
+                    )
                 else:
                     api_files.append({"operation": "create", "path": path, "content": content_b64})
                 files_changed += 1
@@ -163,6 +190,20 @@ class GiteaBackend(GitHubBackend):
                 json={"branch": branch, "message": commit_message, "files": api_files},
             )
 
+            if response.status_code == 404:
+                return {
+                    "status": "failed",
+                    "message": "Contents API endpoint not found — your Gitea instance may be older than v1.18 or the API may be disabled by an administrator (POST /contents returned 404)",
+                }
+            if response.status_code == 409:
+                return {
+                    "status": "failed",
+                    "message": (
+                        "Conflict committing files — one or more blob SHAs are stale. "
+                        "This can happen if a file was edited via the Gitea web UI between "
+                        "the backup read and write. The next scheduled backup will resolve this."
+                    ),
+                }
             if response.status_code not in (200, 201):
                 return {
                     "status": "failed",
@@ -170,15 +211,20 @@ class GiteaBackend(GitHubBackend):
                 }
 
             commit_sha = (response.json().get("commit") or {}).get("sha")
+            message = (
+                f"Backup successful - {files_changed} files updated"
+                if commit_sha
+                else f"Backup successful - {files_changed} files updated (commit SHA not reported by server)"
+            )
             return {
                 "status": "success",
-                "message": f"Backup successful - {files_changed} files updated",
+                "message": message,
                 "commit_sha": commit_sha,
                 "files_changed": files_changed,
             }
 
         except Exception as e:
-            logger.error("Push to Git failed: %s", e)
+            logger.exception("push_files failed for %s branch=%s", repo_url, branch)
             return {"status": "failed", "message": str(e), "error": str(e)}
 
     async def _create_branch_and_push(
@@ -201,6 +247,8 @@ class GiteaBackend(GitHubBackend):
 
             default_branch = repo_response.json().get("default_branch", "main")
 
+            # GET the default branch to confirm the repo is non-empty; SHA is intentionally unused —
+            # POST /branches takes a branch name, not a SHA.
             ref_response = await client.get(
                 f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{default_branch}", headers=headers
             )
@@ -212,16 +260,24 @@ class GiteaBackend(GitHubBackend):
                 headers=headers,
                 json={"new_branch_name": branch, "old_ref_name": default_branch},
             )
+            if create_ref.status_code == 403:
+                msg = f"Permission denied creating branch '{branch}' — token may lack write access to this repository"
+                logger.warning("_create_branch_and_push %s/%s: 403 %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
+            if create_ref.status_code == 409:
+                msg = f"Branch '{branch}' already exists (possible race condition)"
+                logger.warning("_create_branch_and_push %s/%s: 409 %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
             if create_ref.status_code != 201:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to create branch: {self._truncated_response_text(create_ref)}",
-                }
+                msg = f"Failed to create branch '{branch}' (HTTP {create_ref.status_code}): {self._truncated_response_text(create_ref)}"
+                logger.warning("_create_branch_and_push %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
-            return await self.push_files(repo_url, token, branch, files, client)
+            return await self.push_files(repo_url, token, branch, files, client, _allow_branch_create=False)
 
         except Exception as e:
-            return {"status": "failed", "message": str(e)}
+            logger.exception("_create_branch_and_push failed for %s/%s branch=%s", owner, repo, branch)
+            return {"status": "failed", "message": str(e), "error": str(e)}
 
     async def _create_initial_commit(
         self,
@@ -274,13 +330,18 @@ class GiteaBackend(GitHubBackend):
 
             data = response.json()
             commit_sha = (data.get("commit") or {}).get("sha")
+            message = (
+                f"Initial backup created - {len(files)} files"
+                if commit_sha
+                else f"Initial backup created - {len(files)} files (commit SHA not reported by server)"
+            )
             return {
                 "status": "success",
-                "message": f"Initial backup created - {len(files)} files",
+                "message": message,
                 "commit_sha": commit_sha,
                 "files_changed": len(files),
             }
 
         except Exception as e:
-            logger.error("Gitea initial commit failed: %s", e)
+            logger.exception("_create_initial_commit failed for %s/%s branch=%s", owner, repo, branch)
             return {"status": "failed", "message": str(e), "error": str(e)}

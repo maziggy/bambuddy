@@ -12,9 +12,7 @@ class GitProviderBackend(ABC):
     @staticmethod
     def _blob_sha(content_bytes: bytes) -> str:
         """Compute the git blob SHA for content_bytes (sha1("blob {len}\\0" + data))."""
-        return hashlib.sha1(
-            f"blob {len(content_bytes)}\0".encode() + content_bytes, usedforsecurity=False
-        ).hexdigest()
+        return hashlib.sha1(f"blob {len(content_bytes)}\0".encode() + content_bytes, usedforsecurity=False).hexdigest()
 
     @staticmethod
     def _truncated_response_text(response: httpx.Response, max_length: int = 200) -> str:

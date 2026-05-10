@@ -164,9 +164,7 @@ class TestGitHubBackupConfigAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_config_rejects_disabling_insecure_http_for_stored_http_url(
-        self, async_client: AsyncClient
-    ):
+    async def test_update_config_rejects_disabling_insecure_http_for_stored_http_url(self, async_client: AsyncClient):
         """Verify PATCH rejects leaving a stored HTTP URL without explicit insecure-HTTP allowance."""
         create_data = {
             "repository_url": "http://git.example.com/test/httprepo",

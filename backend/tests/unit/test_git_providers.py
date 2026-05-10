@@ -153,8 +153,8 @@ class TestGitHubBackendPushFiles:
         assert "failed" in result["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_blob_404_surfaces_endpoint_not_found(self):
-        """A 404 on POST /git/blobs surfaces a clear 'endpoint not found' message, not 'skipped'."""
+    async def test_blob_404_surfaces_token_scope_hint(self):
+        """A 404 on POST /git/blobs surfaces a token scope/visibility hint, not 'skipped'."""
         client = AsyncMock()
         client.get = AsyncMock(
             side_effect=[
@@ -169,7 +169,44 @@ class TestGitHubBackendPushFiles:
 
         assert result["status"] == "failed"
         assert "404" in result["message"]
-        assert "endpoint not found" in result["message"].lower()
+        assert "token scope" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_initial_commit_blob_404_surfaces_token_scope_hint(self):
+        """Empty repo path: 404 on POST /git/blobs surfaces token scope hint."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(404, {}),  # backup branch missing
+                _make_mock_response(200, {"default_branch": "main"}),  # repo info
+                _make_mock_response(404, {}),  # default branch missing -> empty repo
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(404, {}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "failed"
+        assert "404" in result["message"]
+        assert "token scope" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_initial_commit_blob_non_201_returns_path_in_message(self):
+        """Empty repo path: non-201 on POST /git/blobs includes the file path in the failure message."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(404, {}),  # backup branch missing
+                _make_mock_response(200, {"default_branch": "main"}),  # repo info
+                _make_mock_response(404, {}),  # default branch missing -> empty repo
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(500, {}, text="Internal Server Error"))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "failed"
+        assert "a.json" in result["message"]
 
 
 class TestGiteaBackendApiBase:
@@ -275,14 +312,19 @@ class TestGiteaBackendPushFiles:
             side_effect=[
                 _make_mock_response(200, [{"object": {"sha": "c1"}}]),
                 _make_mock_response(200, {"tree": {"sha": "t1"}}),
-                _make_mock_response(200, {"tree": [{"type": "blob", "path": "archives/print_history.json", "sha": old_sha}]}),
+                _make_mock_response(
+                    200, {"tree": [{"type": "blob", "path": "archives/print_history.json", "sha": old_sha}]}
+                ),
             ]
         )
         client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-sha"}}))
 
         result = await self.backend.push_files(
-            self.repo_url, self.token, self.branch,
-            {"archives/print_history.json": new_content}, client,
+            self.repo_url,
+            self.token,
+            self.branch,
+            {"archives/print_history.json": new_content},
+            client,
         )
 
         assert result["status"] == "success"
@@ -304,9 +346,7 @@ class TestGiteaBackendPushFiles:
         )
         client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-sha"}}))
 
-        result = await self.backend.push_files(
-            self.repo_url, self.token, self.branch, {"new.json": {"k": "v"}}, client
-        )
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"new.json": {"k": "v"}}, client)
 
         assert result["status"] == "success"
         body = client.post.call_args.kwargs["json"]
@@ -328,11 +368,77 @@ class TestGiteaBackendPushFiles:
             ]
         )
 
-        result = await self.backend.push_files(
-            self.repo_url, self.token, self.branch, {"config.json": content}, client
-        )
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"config.json": content}, client)
 
         assert result["status"] == "skipped"
+        client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_mixed_batch_create_update_unchanged_in_single_call(self):
+        """A batch with one new file, one changed file, and one unchanged file produces
+        exactly one create + one update in the Contents API payload, files_changed=2."""
+        unchanged_content = {"version": 1}
+        unchanged_sha = _blob_sha(unchanged_content)
+        old_content = {"version": 1}
+        old_sha = _blob_sha(old_content)
+
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "c1"}}]),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(
+                    200,
+                    {
+                        "tree": [
+                            {"type": "blob", "path": "unchanged.json", "sha": unchanged_sha},
+                            {"type": "blob", "path": "updated.json", "sha": old_sha},
+                        ]
+                    },
+                ),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-sha"}}))
+
+        result = await self.backend.push_files(
+            self.repo_url,
+            self.token,
+            self.branch,
+            {
+                "unchanged.json": unchanged_content,  # same SHA — should be skipped
+                "updated.json": {"version": 2},  # changed — should be update
+                "new.json": {"created": True},  # new — should be create
+            },
+            client,
+        )
+
+        assert result["status"] == "success"
+        assert result["files_changed"] == 2
+        body = client.post.call_args.kwargs["json"]
+        ops = {f["path"]: f for f in body["files"]}
+        assert set(ops.keys()) == {"updated.json", "new.json"}
+        assert ops["updated.json"]["operation"] == "update"
+        assert ops["updated.json"]["sha"] == old_sha
+        assert ops["new.json"]["operation"] == "create"
+        assert "sha" not in ops["new.json"]
+
+    @pytest.mark.asyncio
+    async def test_tree_fetch_failure_returns_failed(self):
+        """A non-200 tree GET surfaces a clear failure, not a downstream 422 from the Contents API."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "c1"}}]),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(500, {}, text="Internal Server Error"),
+            ]
+        )
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "failed"
+        assert "existing tree" in result["message"]
+        assert "500" in result["message"]
         client.post.assert_not_called()
 
     @pytest.mark.asyncio
@@ -348,12 +454,100 @@ class TestGiteaBackendPushFiles:
         )
         client.post = AsyncMock(return_value=_make_mock_response(403, {}, text="Forbidden"))
 
-        result = await self.backend.push_files(
-            self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client
-        )
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
 
         assert result["status"] == "failed"
         assert "failed" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_contents_api_404_surfaces_version_hint(self):
+        """A 404 from POST /contents surfaces a Gitea version hint, not a generic 'Not Found'."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "c1"}}]),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": []}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(404, {}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "failed"
+        assert "v1.18" in result["message"]
+        assert "404" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_contents_api_409_surfaces_stale_sha_hint(self):
+        """409 on POST /contents surfaces a stale-SHA hint, not a generic failure."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "c1"}}]),
+                _make_mock_response(200, {"tree": {"sha": "t1"}}),
+                _make_mock_response(200, {"tree": []}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(409, {}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "failed"
+        assert "stale" in result["message"].lower()
+        assert "next scheduled backup" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_replication_lag_guard_fires_on_second_404(self):
+        """Branch 404 after successful creation (replication lag) returns a clear message, not infinite recursion."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(404, {}),  # first push_files: branch missing
+                _make_mock_response(200, {"default_branch": "main"}),  # repo info
+                _make_mock_response(200, [{"object": {"sha": "main-sha"}}]),  # default branch ref
+                _make_mock_response(404, {}),  # second push_files: branch still missing (lag)
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {}))  # POST /branches succeeds
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {}}, client)
+
+        assert result["status"] == "failed"
+        assert "replication lag" in result["message"]
+        assert "next scheduled backup" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_malformed_tree_entry_skipped_valid_entry_retained(self):
+        """A tree entry missing 'sha' is skipped; the valid entry is still compared for deduplication."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "abc"}}]),  # branch ref
+                _make_mock_response(200, {"tree": {"sha": "tree-sha"}}),  # commit
+                _make_mock_response(
+                    200,
+                    {
+                        "tree": [  # tree listing
+                            {"type": "blob", "path": "valid.json", "sha": "old-sha"},
+                            {"type": "blob", "path": "broken.json"},  # missing sha
+                        ]
+                    },
+                ),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {"commit": {"sha": "new-commit"}}))
+
+        result = await self.backend.push_files(
+            self.repo_url,
+            self.token,
+            self.branch,
+            {"valid.json": {"changed": True}, "broken.json": {"x": 1}},
+            client,
+        )
+
+        assert result["status"] == "success"
+        assert result["files_changed"] == 2  # both files pushed (broken.json treated as new)
 
     @pytest.mark.asyncio
     async def test_creates_missing_branch_via_branches_api(self):
@@ -478,6 +672,59 @@ class TestGiteaBackendListShapeRefResponse:
 
         assert result["status"] == "success"
 
+    @pytest.mark.asyncio
+    async def test_create_branch_403_returns_permission_message(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(404, {}),  # missing backup branch
+                _make_mock_response(200, {"default_branch": "main"}),  # repo info
+                _make_mock_response(200, [{"object": {"sha": "main-sha"}}]),  # default branch ref
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(403, {"message": "Forbidden"}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {}}, client)
+
+        assert result["status"] == "failed"
+        assert "Permission denied" in result["message"]
+        assert "write access" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_create_branch_409_returns_race_condition_message(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(404, {}),  # missing backup branch
+                _make_mock_response(200, {"default_branch": "main"}),  # repo info
+                _make_mock_response(200, [{"object": {"sha": "main-sha"}}]),  # default branch ref
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(409, {"message": "Conflict"}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {}}, client)
+
+        assert result["status"] == "failed"
+        assert "already exists" in result["message"]
+        assert "race" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_create_branch_unexpected_status_includes_code_in_message(self):
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(404, {}),  # missing backup branch
+                _make_mock_response(200, {"default_branch": "main"}),  # repo info
+                _make_mock_response(200, [{"object": {"sha": "main-sha"}}]),  # default branch ref
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(422, {"message": "Unprocessable"}))
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {}}, client)
+
+        assert result["status"] == "failed"
+        assert "422" in result["message"] or "Unprocessable" in result["message"]
+
 
 class TestGiteaBackendWrappedCommitResponse:
     """#1224 regression: Gitea wraps the GitCommit fields under ``commit``.
@@ -527,6 +774,25 @@ class TestGiteaBackendWrappedCommitResponse:
 
         assert result["status"] == "success"
         assert result["commit_sha"] == "new-commit"
+
+    @pytest.mark.asyncio
+    async def test_missing_commit_sha_in_push_response_surfaces_warning(self):
+        """200/201 with no commit.sha -> success with a human-readable note, not silent None."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(200, [{"object": {"sha": "base-commit"}}]),
+                _make_mock_response(200, {"sha": "base-commit", "commit": {"tree": {"sha": "base-tree"}}}),
+                _make_mock_response(200, {"tree": []}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {}))  # no commit key
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {"k": "v"}}, client)
+
+        assert result["status"] == "success"
+        assert result["commit_sha"] is None
+        assert "not reported" in result["message"]
 
     @pytest.mark.asyncio
     async def test_push_files_fails_cleanly_when_tree_sha_missing(self):
@@ -652,6 +918,25 @@ class TestGiteaBackendEmptyRepoInitialCommit:
         assert result["files_changed"] == 0
         client.post.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_missing_commit_sha_in_initial_commit_response_surfaces_warning(self):
+        """200/201 with no commit.sha -> success with a human-readable note, not silent None."""
+        client = AsyncMock()
+        client.get = AsyncMock(
+            side_effect=[
+                _make_mock_response(404, {}),
+                _make_mock_response(200, {"default_branch": "main"}),
+                _make_mock_response(404, {}),
+            ]
+        )
+        client.post = AsyncMock(return_value=_make_mock_response(201, {}))  # no commit key
+
+        result = await self.backend.push_files(self.repo_url, self.token, self.branch, {"a.json": {}}, client)
+
+        assert result["status"] == "success"
+        assert result["commit_sha"] is None
+        assert "not reported" in result["message"]
+
 
 class TestForgejoInheritsGiteaFixes:
     """ForgejoBackend extends GiteaBackend with no overrides — must inherit both fixes."""
@@ -760,6 +1045,30 @@ class TestForgejoTestConnection:
         assert result["success"] is False
         assert result["message"] == "Invalid access token"
         assert client.get.call_count == 1  # only /user was called
+
+    @pytest.mark.asyncio
+    async def test_zero_scope_token_403_on_user_returns_scope_hint(self):
+        """A 403 from /user (v15+ zero-scope token) returns a clear message without hitting the repo."""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=_make_mock_response(403, {}))
+
+        result = await self.backend.test_connection(self.repo_url, self.token, client)
+
+        assert result["success"] is False
+        assert "read:user scope" in result["message"]
+        assert client.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_unexpected_user_status_returns_status_code(self):
+        """A non-200/401/403 response from /user (e.g. 429, 5xx) surfaces the status code."""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=_make_mock_response(429, {}))
+
+        result = await self.backend.test_connection(self.repo_url, self.token, client)
+
+        assert result["success"] is False
+        assert "429" in result["message"]
+        assert client.get.call_count == 1
 
     @pytest.mark.asyncio
     async def test_repo_404_after_valid_token_surfaces_v15_scope_hint(self):

@@ -88,6 +88,11 @@ services:
       # for the sidecars lives in the orca-slicer-api fork
       # (https://github.com/maziggy/orca-slicer-api).
       #- SLICER_API_URL=http://localhost:3003
+      #
+      # MFA at-rest encryption key (#1219). Auto-generated to
+      # DATA_DIR/.mfa_encryption_key on first startup if unset. Override here
+      # to manage the key out-of-band (e.g. via a secret manager).
+      #- MFA_ENCRYPTION_KEY=
     restart: unless-stopped
 
   # Optional: External PostgreSQL database

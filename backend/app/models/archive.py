@@ -33,6 +33,7 @@ class PrintArchive(Base):
     total_layers: Mapped[int | None] = mapped_column(Integer)
     nozzle_diameter: Mapped[float | None] = mapped_column(Float)
     bed_temperature: Mapped[int | None] = mapped_column(Integer)
+    bed_type: Mapped[str | None] = mapped_column(String(64))  # e.g. "Cool Plate", "Textured PEI Plate"
     nozzle_temperature: Mapped[int | None] = mapped_column(Integer)
 
     # Printer model this file was sliced for (extracted from 3MF metadata)

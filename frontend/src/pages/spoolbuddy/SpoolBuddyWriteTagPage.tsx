@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useToast } from '../../contexts/ToastContext';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import {
   api,
   spoolbuddyApi,
+  type BuiltinFilament,
   type InventorySpool,
   type LocalPreset,
   type SlicerSetting,
@@ -34,6 +36,7 @@ const SIMPLE_COMMON_MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC',
 
 export function SpoolBuddyWriteTagPage() {
   const { t } = useTranslation();
+  const { showToast } = useToast();
   const { sbState } = useOutletContext<SpoolBuddyOutletContext>();
 
   const [activeTab, setActiveTab] = useState<Tab>('existing');
@@ -163,7 +166,12 @@ export function SpoolBuddyWriteTagPage() {
     setWriteStatus('writing');
     setWriteMessage(t('spoolbuddy.writeTag.waiting', 'Waiting for SpoolBuddy...'));
     try {
-      await spoolbuddyApi.writeTag(device.device_id, selectedSpool.id);
+      const resp = await spoolbuddyApi.writeTag(device.device_id, selectedSpool.id);
+      if (resp?.warnings?.length) {
+        for (const w of resp.warnings) {
+          showToast(w, 'warning');
+        }
+      }
     } catch {
       setWriteStatus('error');
       setWriteMessage(t('spoolbuddy.writeTag.queueFailed', 'Failed to queue write command'));
@@ -405,6 +413,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
   const [loadingCloudPresets, setLoadingCloudPresets] = useState(false);
   const [cloudPresets, setCloudPresets] = useState<SlicerSetting[]>([]);
   const [localPresets, setLocalPresets] = useState<LocalPreset[]>([]);
+  const [builtinFilaments, setBuiltinFilaments] = useState<BuiltinFilament[]>([]);
   const [spoolCatalog, setSpoolCatalog] = useState<SpoolCatalogEntry[]>([]);
   const [colorCatalog, setColorCatalog] = useState<
     { manufacturer: string; color_name: string; hex_color: string; material: string | null }[]
@@ -444,6 +453,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
       api.getSpoolCatalog().then(setSpoolCatalog).catch(() => undefined);
       api.getColorCatalog().then(setColorCatalog).catch(() => undefined);
       api.getLocalPresets().then(r => setLocalPresets(r.filament)).catch(() => undefined);
+      api.getBuiltinFilaments().then(setBuiltinFilaments).catch(() => undefined);
 
       try {
         const printers = await api.getPrinters();
@@ -489,8 +499,8 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
   }, [printersWithCalibrations]);
 
   const filamentOptions = useMemo(
-    () => buildFilamentOptions(cloudPresets, new Set(), localPresets),
-    [cloudPresets, localPresets],
+    () => buildFilamentOptions(cloudPresets, new Set(), localPresets, builtinFilaments),
+    [cloudPresets, localPresets, builtinFilaments],
   );
 
   const selectedPresetOption = useMemo(

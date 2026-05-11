@@ -47,10 +47,14 @@ RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
 # which depends on ambient capability support in the container runtime.
 RUN setcap cap_net_bind_service=+ep "$(readlink -f /usr/local/bin/python3)"
 
-# Install Python dependencies with cache mount
+# Install Python dependencies with cache mount.
+# pip is upgraded to >=26.1 first to close CVE-2026-6357 — the python:3.13-slim
+# base image ships pip 26.0.1, which runs its self-update check after installing
+# wheels (so a hostile wheel could hijack stdlib imports during install).
 COPY requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --root-user-action=ignore -r requirements.txt
+    pip install --root-user-action=ignore --upgrade 'pip>=26.1' \
+ && pip install --root-user-action=ignore -r requirements.txt
 
 # Copy backend
 COPY backend/ ./backend/

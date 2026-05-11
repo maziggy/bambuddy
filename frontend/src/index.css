@@ -28,6 +28,10 @@
    BASE DEFAULTS
    ============================================ */
 
+html {
+  font-size: 14.4px;
+}
+
 :root {
   /* Default accent color (green) */
   --accent: #00ae42;

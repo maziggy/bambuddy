@@ -66,6 +66,7 @@ class ArchiveResponse(BaseModel):
     total_layers: int | None = None
     nozzle_diameter: float | None
     bed_temperature: int | None
+    bed_type: str | None = None  # e.g. "Cool Plate", "Textured PEI Plate" (from 3MF curr_bed_type)
     nozzle_temperature: int | None
 
     sliced_for_model: str | None = None  # Printer model this file was sliced for

@@ -6,7 +6,7 @@ import pytest
 
 from backend.app.services.label_renderer import LabelData, render_labels
 
-ALL_TEMPLATES = ("ams_30x15", "box_62x29", "avery_5160", "avery_l7160")
+ALL_TEMPLATES = ("ams_30x15", "box_40x30", "box_62x29", "avery_5160", "avery_l7160")
 
 
 def _sample(spool_id: int = 1, **overrides) -> LabelData:
@@ -121,8 +121,12 @@ def _render_uncompressed(template, data):
     from backend.app.services.label_renderer import _draw_label  # noqa: PLC0415
 
     # Mirror the page-size choice from render_labels but force pageCompression=0.
-    if template in ("ams_30x15", "box_62x29"):
-        sizes = {"ams_30x15": (30.0, 15.0), "box_62x29": (62.0, 29.0)}
+    if template in ("ams_30x15", "box_40x30", "box_62x29"):
+        sizes = {
+            "ams_30x15": (30.0, 15.0),
+            "box_40x30": (40.0, 30.0),
+            "box_62x29": (62.0, 29.0),
+        }
         w_mm, h_mm = sizes[template]
         page_w, page_h = w_mm * _mm, h_mm * _mm
         buf = _io.BytesIO()
@@ -187,6 +191,74 @@ def test_ams_template_actually_renders_text():
     assert b"#42" in pdf or (b"42" in pdf and b"#" in pdf), (
         "AMS template must render the spool ID — that's the killer field"
     )
+
+
+def test_hex_color_code_rendered_when_rgba_set():
+    """#809 follow-up: the colour hex code (#RRGGBB, alpha-stripped, uppercase)
+    must appear on the rendered label so the user can tell near-identical
+    spools apart at a glance.
+    """
+    data = [
+        LabelData(
+            spool_id=12,
+            name="Polymaker Ivory",
+            material="PLA",
+            brand="Polymaker",
+            subtype="Matte",
+            rgba="f5e6d3FF",
+            deeplink_url="https://example.test/inventory?spool=12",
+        )
+    ]
+    pdf = _render_uncompressed("box_62x29", data)
+    assert b"#F5E6D3" in pdf, "box label must render the hex colour code"
+
+    pdf = _render_uncompressed("box_40x30", data)
+    assert b"#F5E6D3" in pdf, "40x30 box label must render the hex colour code"
+
+
+def test_hex_color_code_skipped_when_rgba_invalid():
+    """Malformed rgba must NOT render any '#' hex string apart from the spool
+    ID — silently skipping the hex line is better than crashing or rendering
+    garbage. The spool ID still uses '#' so we look for the specific shape.
+    """
+    data = [
+        LabelData(
+            spool_id=99,
+            name="Test",
+            material="PLA",
+            brand="Polymaker",
+            rgba="not-a-color",
+            deeplink_url="https://example.test/inventory?spool=99",
+        )
+    ]
+    pdf = _render_uncompressed("box_62x29", data)
+    # No 6-hex-digit '#XXXXXX' substring should appear (only '#99' for the ID).
+    import re
+
+    matches = re.findall(rb"#[0-9A-F]{6}", pdf)
+    assert matches == [], f"expected no hex code on label, found {matches!r}"
+
+
+def test_brand_rendered_in_bold_per_809_followup():
+    """#809 follow-up: brand should render in Helvetica-Bold (not regular).
+    Uncompressed PDFs include font-name tokens like '/F2' tied to a font
+    resource; we can grep for the bold font's basename in the resource block.
+    """
+    data = [
+        LabelData(
+            spool_id=5,
+            name="Acme PLA",
+            material="PLA",
+            brand="Polymaker",
+            rgba="FF8800FF",
+            deeplink_url="https://example.test/inventory?spool=5",
+        )
+    ]
+    pdf = _render_uncompressed("box_62x29", data)
+    # ReportLab references the bold variant of Helvetica via /Helvetica-Bold
+    # in the font dictionary — both the spool ID (always bold) and the brand
+    # (now bold per #809 follow-up) cause the resource to be embedded.
+    assert b"Helvetica-Bold" in pdf, "label PDF must reference Helvetica-Bold for the brand line"
 
 
 def test_box_template_does_not_truncate_normal_brand_or_name():

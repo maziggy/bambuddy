@@ -16,7 +16,19 @@ import type { PrinterStatus } from '../api/client';
 export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): LoadedFilament[] {
   const filaments: LoadedFilament[] = [];
   const amsExtruderMap = printerStatus?.ams_extruder_map;
-  const hasDualNozzle = amsExtruderMap && Object.keys(amsExtruderMap).length > 0;
+  // Dual-nozzle detection. The backend always emits a 2-entry nozzles array
+  // (default-stub second entry for single-nozzle printers), so length is not
+  // a reliable signal. Real second-nozzle hardware sets `nozzle_diameter` from
+  // the MQTT `right_nozzle_diameter` field (bambu_mqtt.py:2619-2621); without
+  // that field, nozzles[1] stays at its empty default. Belt-and-braces: a
+  // populated ams_extruder_map (dual-nozzle with AMS) and >1 vt_tray (only
+  // dual-nozzle hardware exposes multiple external feeds) each independently
+  // imply dual-nozzle — keep them as fallbacks for any firmware rev that
+  // surfaces one signal but not the other. (#1257)
+  const hasDualNozzle =
+    Boolean(printerStatus?.nozzles?.[1]?.nozzle_diameter)
+    || (amsExtruderMap && Object.keys(amsExtruderMap).length > 0)
+    || (printerStatus?.vt_tray?.length ?? 0) > 1;
 
   // Add filaments from all AMS units (regular and HT)
   printerStatus?.ams?.forEach((amsUnit) => {

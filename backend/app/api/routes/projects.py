@@ -40,6 +40,7 @@ from backend.app.schemas.project import (
     ProjectUpdate,
     TimelineEvent,
 )
+from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
 
@@ -1651,7 +1652,7 @@ async def export_project(
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": build_content_disposition(filename)},
     )
 
 

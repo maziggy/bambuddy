@@ -5,7 +5,8 @@
 <h1 align="center">Bambuddy</h1>
 
 <p align="center">
-  <strong>Self-hosted print archive and management system for Bambu Lab 3D printers</strong>
+  <strong>Your printers. No cloud. Your rules.</strong><br>
+  Self-hosted command center for Bambu Lab &mdash; from one A1 to a 40-printer farm.
 </p>
 
 <p align="center">
@@ -22,6 +23,7 @@
 </p>
 
 <p align="center">
+  <a href="https://demo.bambuddy.cool"><strong>🎮 Try the Live Demo</strong></a> •
   <a href="#-features">Features</a> •
   <a href="#-screenshots">Screenshots</a> •
   <a href="#-quick-start">Quick Start</a> •
@@ -30,6 +32,38 @@
   <a href="https://discord.gg/aFS3ZfScHM">Discord</a> •
   <a href="#-contributing">Contributing</a>
 </p>
+
+<p align="center">
+  <a href="https://demo.bambuddy.cool">
+    <img src="https://img.shields.io/badge/🎮_Live_Demo-demo.bambuddy.cool-00ae42?style=for-the-badge&labelColor=0a0d14" alt="Live Demo">
+  </a>
+  <br>
+  <em>Spin up your own private Bambuddy in ~10 seconds — no install, no signup, 30-minute session.</em>
+</p>
+
+---
+
+## 📰 As Featured In
+
+> **"Bambuddy is the companion app that Bambu Lab should have built from day one."**
+> — Adam Conway, [XDA-Developers](https://www.xda-developers.com/finally-have-full-control-bambu-lab-printer-ditched-bambu-cloud/)
+
+<p align="center">
+  <a href="https://www.xda-developers.com/finally-have-full-control-bambu-lab-printer-ditched-bambu-cloud/"><img src="https://img.shields.io/badge/XDA--Developers-Read-C8102E?style=flat-square" alt="XDA-Developers"></a>
+  <a href="https://www.howtogeek.com/free-your-bambu-lab-3d-printer-from-the-cloud/"><img src="https://img.shields.io/badge/How--To%20Geek-Read-33A6CA?style=flat-square" alt="How-To Geek"></a>
+  <a href="https://www.fabbaloo.com/news/bambuddy-launches-as-open-source-alternative-to-bambu-labs-cloud"><img src="https://img.shields.io/badge/Fabbaloo-Read-F77B0F?style=flat-square" alt="Fabbaloo"></a>
+  <a href="https://www.igorslab.de/en/bambuddy-the-silent-alternative-to-the-bamboo-cloud/"><img src="https://img.shields.io/badge/Igor's%20Lab-Read-E10000?style=flat-square" alt="Igor's Lab"></a>
+  <a href="https://3druck.com/en/programs/bambuddy-open-source-tool-replaces-bambu-cloud-for-management-and-automation-of-3d-print-jobs-38153226/"><img src="https://img.shields.io/badge/3Druck-Read-0080C0?style=flat-square" alt="3Druck"></a>
+  <a href="https://www.fastblinker.com/bambuddy-the-open-source-solution-thats-revolutionizing-bambu-lab-3d-printer-management/"><img src="https://img.shields.io/badge/FastBlinker-Read-00B0FF?style=flat-square" alt="FastBlinker"></a>
+</p>
+
+Two leading 3D-printing publications independently concluded that Bambuddy's feature set **already exceeds Bambu's own cloud**:
+
+> *"The features seem to exceed those provided by Bambu Lab's own cloud."* — [Fabbaloo](https://www.fabbaloo.com/news/bambuddy-launches-as-open-source-alternative-to-bambu-labs-cloud)
+>
+> *"The list of functions seems so extensive that it even goes beyond what Bambu Lab offers in its own cloud."* — [3Druck.com](https://3druck.com/en/programs/bambuddy-open-source-tool-replaces-bambu-cloud-for-management-and-automation-of-3d-print-jobs-38153226/)
+
+📄 **[See all press coverage →](https://bambuddy.cool/press.html)**
 
 ---
 
@@ -68,6 +102,21 @@ You don't need to be a developer for the docs or moderator roles. If you enjoy w
 Perfect for remote print farms, traveling makers, or accessing your home printer from work.
 
 👉 **[Setup Guide →](https://wiki.bambuddy.cool/features/virtual-printer/#proxy-mode-new-in-017)**
+
+---
+
+## 🍰 NEW: Integrated Slicing — Slice & Print, All In One Place
+
+**No desktop slicer required.** Drop an STL or 3MF into Bambuddy's File Manager, hit **Slice**, and the result lands as a ready-to-print `.gcode.3mf` in the same folder — without ever opening Bambu Studio or Orca Slicer.
+
+- 🍰 **One-click slicing** — Slice from any browser. The job runs server-side in a [tiny sidecar container](slicer-api/README.md), progress streams back as a toast, and the sliced file appears in your library when it's done.
+- 📱 **Slice from your phone or tablet** — Bambuddy's PWA + the new server-side slicer means you can drop an STL in from mobile and queue a print without ever touching a desktop.
+- 🎒 **Bring your own profiles** — Import a `Printer Preset Bundle` (`.bbscfg`) exported from Bambu Studio: pick a curated **printer + process + filament** triplet from a dropdown in the Slice dialog, no more juggling JSON files.
+- 🔁 **Same dispatch as the rest of Bambuddy** — The sliced output flows into the existing queue / plate-picker / AMS-mapping path, so all the regular conveniences (multi-printer dispatch, AMS routing, scheduled prints) just work.
+
+Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/README.md) next to your Bambuddy install and the **Slice** button lights up everywhere.
+
+👉 **[Slicer Integration Guide →](https://wiki.bambuddy.cool/features/slicer-api/)**
 
 ---
 
@@ -285,6 +334,18 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 ---
 
 ## 🎬 Demo
+
+<p align="center">
+  <a href="https://demo.bambuddy.cool">
+    <img src="https://img.shields.io/badge/🎮_Try_It_Live-demo.bambuddy.cool-00ae42?style=for-the-badge&labelColor=0a0d14" alt="Live Demo">
+  </a>
+  <br>
+  <em>Spin up your own private Bambuddy with simulated printers and pre-loaded print history. Click around freely — it's your sandbox. ~10 seconds to spawn, 30-minute session, no signup.</em>
+</p>
+
+<p align="center">
+  <strong>Prefer a video walkthrough?</strong>
+</p>
 
 <p align="center">
   <a href="https://youtu.be/bmq2Z0lEXeo">

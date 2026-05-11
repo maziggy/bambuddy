@@ -38,27 +38,19 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
-from backend.app.utils.filament_ids import filament_id_to_setting_id, normalize_slicer_filament
+from backend.app.utils.filament_ids import (
+    GENERIC_FILAMENT_IDS,
+    MATERIAL_TEMPS,
+    filament_id_to_setting_id,
+    normalize_slicer_filament,
+)
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/inventory", tags=["inventory"])
+_GENERIC_ID_VALUES = set(GENERIC_FILAMENT_IDS.values())
 
-# Material temperature defaults (nozzle min/max)
-MATERIAL_TEMPS: dict[str, tuple[int, int]] = {
-    "PLA": (190, 230),
-    "PETG": (220, 260),
-    "ABS": (240, 270),
-    "ASA": (240, 270),
-    "TPU": (200, 240),
-    "PA": (260, 290),
-    "PC": (250, 280),
-    "PVA": (190, 210),
-    "PLA-CF": (210, 240),
-    "PETG-CF": (240, 270),
-    "PA-CF": (270, 300),
-}
+router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 # FilamentColors.xyz API
 FILAMENT_COLORS_API = "https://filamentcolors.xyz/api"
@@ -308,6 +300,49 @@ async def apply_spool_to_slot_via_mqtt(
             filament_id=cali_filament_id,
             nozzle_diameter=nozzle_diameter,
         )
+    else:
+        # No stored K-profile for this slot — preserve the slot's current live
+        # cali_idx if the printer has one. cali_idx is read from state.raw_data
+        # using the same idiom as the route's `current_tray_info_idx` lookup.
+        # Negative values (e.g. -1) mean "no calibration recorded" and must not
+        # be sent.
+        live_cali_idx: int | None = None
+        if state and getattr(state, "raw_data", None):
+            if ams_id == 255:
+                for vt in state.raw_data.get("vt_tray") or []:
+                    if isinstance(vt, dict) and int(vt.get("id", 254)) == (tray_id + 254):
+                        raw = vt.get("cali_idx")
+                        if isinstance(raw, int):
+                            live_cali_idx = raw
+                        break
+            else:
+                ams_section = state.raw_data.get("ams", {})
+                ams_list = (
+                    ams_section.get("ams", [])
+                    if isinstance(ams_section, dict)
+                    else ams_section
+                    if isinstance(ams_section, list)
+                    else []
+                )
+                tray_dict = _find_tray_in_ams_data(ams_list, ams_id, tray_id)
+                if tray_dict:
+                    raw = tray_dict.get("cali_idx")
+                    if isinstance(raw, int):
+                        live_cali_idx = raw
+        if live_cali_idx is not None and live_cali_idx >= 0:
+            cali_filament_id = spool.slicer_filament or effective_tray_info_idx
+            client.extrusion_cali_sel(
+                ams_id=ams_id,
+                tray_id=tray_id,
+                cali_idx=live_cali_idx,
+                filament_id=cali_filament_id,
+                nozzle_diameter=nozzle_diameter,
+            )
+            logger.info(
+                "No stored K-profile for spool %d — preserved live cali_idx=%d",
+                spool.id,
+                live_cali_idx,
+            )
 
     # Persist slot preset mapping for UI display (preset_name on hover card).
     try:
@@ -1137,10 +1172,17 @@ async def assign_spool(
     if spool.archived_at:
         raise HTTPException(400, "Cannot assign an archived spool")
 
-    # 2. Get current AMS tray state for fingerprint + existing filament ID
+    # 2. Get current AMS tray state for fingerprint + existing filament ID.
+    # tray_state: Bambu firmware reports 11=loaded, 9=empty, 10=spool present
+    # but filament not in feeder. Captured here so the empty-slot heuristic
+    # below can prefer it over tray_type — a manual "Reset slot" clears
+    # tray_type to "" while leaving state at 11 (filament still physically
+    # present), which would otherwise mislead the heuristic into the
+    # pending-config branch and skip MQTT forever (#1228 follow-up).
     fingerprint_color = None
     fingerprint_type = None
     current_tray_info_idx = ""
+    tray_state: int | None = None
     state = printer_manager.get_status(data.printer_id)
     if state and state.raw_data:
         if data.ams_id == 255:
@@ -1152,6 +1194,9 @@ async def assign_spool(
                     fingerprint_color = vt.get("tray_color", "")
                     fingerprint_type = vt.get("tray_type", "")
                     current_tray_info_idx = vt.get("tray_info_idx", "")
+                    raw_state = vt.get("state")
+                    if isinstance(raw_state, int):
+                        tray_state = raw_state
                     break
         else:
             ams_data = state.raw_data.get("ams", {})
@@ -1171,6 +1216,9 @@ async def assign_spool(
                 fingerprint_color = tray.get("tray_color", "")
                 fingerprint_type = tray.get("tray_type", "")
                 current_tray_info_idx = tray.get("tray_info_idx", "")
+                raw_state = tray.get("state")
+                if isinstance(raw_state, int):
+                    tray_state = raw_state
 
     # 3. Upsert assignment (replace if same printer+ams+tray)
     existing = await db.execute(
@@ -1206,7 +1254,20 @@ async def assign_spool(
     # acts as the "pending config" marker — when the spool is physically
     # inserted later, on_ams_change re-fires the full configuration. This is
     # the SpoolBuddy primary workflow: weigh-then-assign before insertion.
-    slot_is_empty = not (fingerprint_type and fingerprint_type.strip())
+    #
+    # Empty-detection: prefer the printer's tray.state when it's reported
+    # (11=loaded, 9=empty, 10=spool present but filament not in feeder).
+    # tray_type alone is wrong post-"Reset slot" — that flow clears tray_type
+    # to "" while leaving filament physically loaded, and the old check
+    # would then mark it as a pending-config SpoolBuddy assignment, skip
+    # MQTT, and the slot would stay unconfigured forever because the
+    # on_ams_change replay only fires on an empty→loaded transition that
+    # never comes (the slot is already loaded). When state is not reported
+    # (older firmware), fall back to the tray_type heuristic.
+    if tray_state is not None:
+        slot_is_empty = tray_state != 11
+    else:
+        slot_is_empty = not (fingerprint_type and fingerprint_type.strip())
     configured = False
     pending_config = slot_is_empty
     if not slot_is_empty:

@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequirePermissionIfAuthEnabled, caller_is_api_key
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -22,8 +22,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-# Default settings
 DEFAULT_SETTINGS = AppSettings()
+
+# Sensitive credential fields blanked for API-key callers
+_SENSITIVE_FIELDS_FOR_API_KEY = (
+    "mqtt_password",
+    "ha_token",
+    "prometheus_token",
+    "virtual_printer_access_code",
+    "ldap_bind_password",
+)
 
 
 async def get_setting(db: AsyncSession, key: str) -> str | None:
@@ -61,92 +69,98 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
     await upsert_setting(db, Settings, key, value)
 
 
+async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -> AppSettings:
+    """Build the full settings response, scrubbing secrets for API-key callers."""
+    settings_dict = DEFAULT_SETTINGS.model_dump()
+
+    result = await db.execute(select(Settings))
+    for setting in result.scalars().all():
+        if setting.key not in settings_dict:
+            continue
+        if setting.key in [
+            "auto_archive",
+            "save_thumbnails",
+            "capture_finish_photo",
+            "spoolman_enabled",
+            "spoolman_disable_weight_sync",
+            "spoolman_report_partial_usage",
+            "disable_filament_warnings",
+            "prefer_lowest_filament",
+            "check_updates",
+            "check_printer_firmware",
+            "include_beta_updates",
+            "virtual_printer_enabled",
+            "ftp_retry_enabled",
+            "mqtt_enabled",
+            "mqtt_use_tls",
+            "ha_enabled",
+            "per_printer_mapping_expanded",
+            "prometheus_enabled",
+            "user_notifications_enabled",
+            "queue_drying_enabled",
+            "queue_drying_block",
+            "ambient_drying_enabled",
+            "require_plate_clear",
+            "queue_shortest_first",
+            "default_bed_levelling",
+            "default_flow_cali",
+            "default_vibration_cali",
+            "default_layer_inspect",
+            "default_timelapse",
+            "ldap_enabled",
+            "ldap_auto_provision",
+        ]:
+            settings_dict[setting.key] = setting.value.lower() == "true"
+        elif setting.key in [
+            "default_filament_cost",
+            "energy_cost_per_kwh",
+            "ams_temp_good",
+            "ams_temp_fair",
+            "library_disk_warning_gb",
+            "low_stock_threshold",
+        ]:
+            settings_dict[setting.key] = float(setting.value)
+        elif setting.key in [
+            "ams_humidity_good",
+            "ams_humidity_fair",
+            "ams_history_retention_days",
+            "ftp_retry_count",
+            "ftp_retry_delay",
+            "ftp_timeout",
+            "mqtt_port",
+            "stagger_group_size",
+            "stagger_interval_minutes",
+            "forecast_global_lead_time_days",
+        ]:
+            settings_dict[setting.key] = int(setting.value)
+        elif setting.key == "default_printer_id":
+            settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
+        else:
+            settings_dict[setting.key] = setting.value
+
+    ha_settings = await get_homeassistant_settings(db)
+    settings_dict.update(ha_settings)
+
+    # ldap_bind_password is never returned to any caller
+    settings_dict["ldap_bind_password"] = ""
+
+    if is_api_key:
+        for field in _SENSITIVE_FIELDS_FOR_API_KEY:
+            if field in settings_dict:
+                settings_dict[field] = ""
+
+    return AppSettings(**settings_dict)
+
+
 @router.get("", response_model=AppSettings)
 @router.get("/", response_model=AppSettings)
 async def get_settings(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _is_api_key: bool = Depends(caller_is_api_key),
 ):
     """Get all application settings."""
-    settings_dict = DEFAULT_SETTINGS.model_dump()
-
-    # Load saved settings from database
-    result = await db.execute(select(Settings))
-    db_settings = result.scalars().all()
-
-    for setting in db_settings:
-        if setting.key in settings_dict:
-            # Parse the value based on the expected type
-            if setting.key in [
-                "auto_archive",
-                "save_thumbnails",
-                "capture_finish_photo",
-                "spoolman_enabled",
-                "spoolman_disable_weight_sync",
-                "spoolman_report_partial_usage",
-                "disable_filament_warnings",
-                "prefer_lowest_filament",
-                "check_updates",
-                "check_printer_firmware",
-                "include_beta_updates",
-                "virtual_printer_enabled",
-                "ftp_retry_enabled",
-                "mqtt_enabled",
-                "mqtt_use_tls",
-                "ha_enabled",
-                "per_printer_mapping_expanded",
-                "prometheus_enabled",
-                "user_notifications_enabled",
-                "queue_drying_enabled",
-                "queue_drying_block",
-                "ambient_drying_enabled",
-                "require_plate_clear",
-                "queue_shortest_first",
-                "default_bed_levelling",
-                "default_flow_cali",
-                "default_vibration_cali",
-                "default_layer_inspect",
-                "default_timelapse",
-                "ldap_enabled",
-                "ldap_auto_provision",
-            ]:
-                settings_dict[setting.key] = setting.value.lower() == "true"
-            elif setting.key in [
-                "default_filament_cost",
-                "energy_cost_per_kwh",
-                "ams_temp_good",
-                "ams_temp_fair",
-                "library_disk_warning_gb",
-                "low_stock_threshold",
-            ]:
-                settings_dict[setting.key] = float(setting.value)
-            elif setting.key in [
-                "ams_humidity_good",
-                "ams_humidity_fair",
-                "ams_history_retention_days",
-                "ftp_retry_count",
-                "ftp_retry_delay",
-                "ftp_timeout",
-                "mqtt_port",
-                "stagger_group_size",
-                "stagger_interval_minutes",
-                "forecast_global_lead_time_days",
-            ]:
-                settings_dict[setting.key] = int(setting.value)
-            elif setting.key == "default_printer_id":
-                # Handle nullable integer
-                settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
-            else:
-                settings_dict[setting.key] = setting.value
-
-    # Get Home Assistant settings (with environment variable overrides)
-    ha_settings = await get_homeassistant_settings(db)
-    settings_dict.update(ha_settings)
-
-    # Never return LDAP bind password in API responses
-    settings_dict["ldap_bind_password"] = ""
-
-    return AppSettings(**settings_dict)
+    return await _build_settings_response(db, is_api_key=_is_api_key)
 
 
 @router.put("/", response_model=AppSettings)
@@ -202,8 +216,8 @@ async def update_settings(
         except Exception:
             pass  # Don't fail the settings update if MQTT reconfiguration fails
 
-    # Return updated settings
-    return await get_settings(db)
+    # Return updated settings (never scrub secrets on PUT — caller has SETTINGS_UPDATE permission)
+    return await _build_settings_response(db, is_api_key=False)
 
 
 @router.patch("/", response_model=AppSettings)
@@ -454,6 +468,24 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                     logger.warning("Some files in %s could not be copied: %s", name, e)
                 except PermissionError as e:
                     logger.warning("Permission denied copying %s: %s", name, e)
+
+        # Include the MFA encryption key as a ZIP top-level entry alongside
+        # bambuddy.db. Without it, encrypted client_secret / TOTP secret rows
+        # would be unrecoverable after restore on a host without MFA_ENCRYPTION_KEY set.
+        from backend.app.core.paths import resolve_data_dir
+
+        mfa_key_src = resolve_data_dir() / ".mfa_encryption_key"
+        if mfa_key_src.exists() and mfa_key_src.is_file():
+            try:
+                shutil.copy2(mfa_key_src, temp_path / ".mfa_encryption_key")
+            except OSError as exc:
+                logger.error(
+                    "Could not include MFA encryption key in backup (%s). "
+                    "The backup ZIP will not contain the key — restore on a "
+                    "keyless host will fail for encrypted secrets.",
+                    exc,
+                )
+                raise
 
         # Create ZIP
         if output_path is not None:
@@ -723,6 +755,18 @@ async def restore_backup(
 
         try:
             with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+                for name in zf.namelist():
+                    # Reject path-traversal payloads: any entry whose resolved
+                    # path escapes temp_path would allow writing arbitrary files
+                    # on the host (ZipSlip / CVE-2006-5456).
+                    dest = (temp_path / name).resolve()
+                    # is_relative_to (Python 3.9+) covers both relative
+                    # path-traversal (../etc/passwd) and absolute-path overrides
+                    # (/etc/passwd) — str.startswith was vulnerable to
+                    # prefix-collision attacks (e.g. /tmp/abc_evil/file passing
+                    # a /tmp/abc prefix check).
+                    if not dest.is_relative_to(temp_path.resolve()):
+                        raise HTTPException(400, f"Invalid backup: unsafe path in ZIP: {name!r}")
                 zf.extractall(temp_path)
         except zipfile.BadZipFile:
             raise HTTPException(400, "Invalid backup file: not a valid ZIP")
@@ -747,6 +791,54 @@ async def restore_backup(
             # 4. Close current database connections
             logger.info("Closing database connections...")
             await close_all_connections()
+
+            # B1: Restore the MFA encryption key file BEFORE the database swap.
+            # If the key write fails (OSError, RO disk, full disk, EACCES) we
+            # can still abort while the live DB is intact. Doing this AFTER the
+            # DB swap would leave the database with rows encrypted under the
+            # backup's key but the running install holding only the old key —
+            # every encrypted secret becomes unrecoverable.
+            from backend.app.core.paths import resolve_data_dir
+
+            mfa_key_src = temp_path / ".mfa_encryption_key"
+            if mfa_key_src.exists() and mfa_key_src.is_file():
+                dst_key = resolve_data_dir() / ".mfa_encryption_key"
+                tmp_key = dst_key.parent / ".mfa_encryption_key.restore-tmp"
+                try:
+                    dst_key.parent.mkdir(parents=True, exist_ok=True)
+                    # S1: atomic write with restrictive mode from creation.
+                    # O_TRUNC because a stale tmp may exist from a prior
+                    # failed restore attempt — we want to overwrite it.
+                    fd = os.open(str(tmp_key), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                    try:
+                        os.write(fd, mfa_key_src.read_bytes())
+                    finally:
+                        os.close(fd)
+                    # POSIX rename(2) — atomic when source/dest are on the
+                    # same filesystem (we're staying inside dst_key.parent).
+                    os.replace(str(tmp_key), str(dst_key))
+                    # S9: warn if the FS doesn't enforce 0o600
+                    actual_mode = dst_key.stat().st_mode & 0o777
+                    if actual_mode != 0o600:
+                        logger.warning(
+                            "Restored MFA key file %s: filesystem did not enforce 0o600 "
+                            "(actual: 0o%o). Key may be world-readable on Windows / SMB / FUSE.",
+                            dst_key,
+                            actual_mode,
+                        )
+                    logger.info("Restored .mfa_encryption_key from backup")
+                except OSError as e:
+                    logger.error(
+                        "Could not write restored MFA key file to %s: %s — "
+                        "aborting BEFORE database swap (DB unchanged).",
+                        dst_key,
+                        e,
+                        exc_info=True,
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail=("Restore aborted: MFA key write failed. Database is unchanged. Check server logs."),
+                    ) from e
 
             # 5. Replace database
             logger.info("Restoring database from backup...")
@@ -828,7 +920,17 @@ async def restore_backup(
                         logger.warning("Could not restore %s directory: %s", name, e)
                         skipped_dirs.append(name)
 
-            # 7. Reinitialize the database engine and apply schema migrations so that
+            # 7. Reset the encryption singleton so the migration that runs
+            # inside init_db() picks up the restored key file (if a new one
+            # was written above). Without this reset, _get_fernet would
+            # return the cached Fernet instance built from the previous key.
+            import backend.app.core.encryption as _enc_mod
+
+            _enc_mod._fernet_instance = None
+            _enc_mod._key_source = None
+            _enc_mod._warn_shown = False
+
+            # 8. Reinitialize the database engine and apply schema migrations so that
             # tables added after the backup was created (e.g. ams_labels) exist
             # immediately, without requiring a manual restart.
             await reinitialize_database()
@@ -843,6 +945,12 @@ async def restore_backup(
                 "message": message,
             }
 
+        except HTTPException:
+            # Preserve specific HTTP error responses raised inside the restore
+            # body (e.g. the key-write OSError → 500). The blanket
+            # except Exception below would otherwise swallow them and replace
+            # the operator-facing detail with a generic message.
+            raise
         except Exception as e:
             logger.error("Restore failed: %s", e, exc_info=True)
             return JSONResponse(

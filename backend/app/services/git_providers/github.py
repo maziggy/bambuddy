@@ -97,10 +97,16 @@ class GitHubBackend(GitProviderBackend):
             }
 
         except Exception as e:
-            logger.error("Git connection test failed: %s", e)
+            logger.exception("Git connection test failed")
+            detail = str(e)[:200]
+            message = (
+                f"Connection failed: {type(e).__name__}: {detail}"
+                if detail
+                else f"Connection failed: {type(e).__name__}"
+            )
             return {
                 "success": False,
-                "message": f"Connection failed: {type(e).__name__}",
+                "message": message,
                 "repo_name": None,
                 "permissions": None,
             }
@@ -112,6 +118,7 @@ class GitHubBackend(GitProviderBackend):
         branch: str,
         files: dict,
         client: httpx.AsyncClient,
+        _allow_branch_create: bool = True,
     ) -> dict:
         """Push files to the repository using the Git Data API."""
         try:
@@ -122,35 +129,72 @@ class GitHubBackend(GitProviderBackend):
             ref_response = await client.get(f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{branch}", headers=headers)
 
             if ref_response.status_code == 404:
+                if not _allow_branch_create:
+                    return {
+                        "status": "failed",
+                        "message": (
+                            f"Branch '{branch}' not found after creation — possible replication lag. "
+                            "The next scheduled backup will retry."
+                        ),
+                    }
                 return await self._create_branch_and_push(
                     client, headers, api_base, owner, repo, branch, files, repo_url, token
                 )
 
             if ref_response.status_code != 200:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to get branch ref: {ref_response.status_code}",
-                    "error": self._truncated_response_text(ref_response),
-                }
+                msg = f"Failed to get branch ref (HTTP {ref_response.status_code}): {self._truncated_response_text(ref_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg, "error": self._truncated_response_text(ref_response)}
 
-            current_commit_sha = ref_response.json()["object"]["sha"]
+            current_commit_sha, err = self._read_sha(ref_response, "object", "sha")
+            if err:
+                msg = f"Malformed ref response ({err}): {self._truncated_response_text(ref_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             commit_response = await client.get(
                 f"{api_base}/repos/{owner}/{repo}/git/commits/{current_commit_sha}", headers=headers
             )
             if commit_response.status_code != 200:
-                return {"status": "failed", "message": "Failed to get current commit"}
+                msg = f"Failed to get current commit (HTTP {commit_response.status_code}): {self._truncated_response_text(commit_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
-            current_tree_sha = commit_response.json()["tree"]["sha"]
+            current_tree_sha, err = self._read_sha(commit_response, "tree", "sha")
+            if err:
+                msg = f"Malformed commit response ({err}): {self._truncated_response_text(commit_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             tree_response = await client.get(
                 f"{api_base}/repos/{owner}/{repo}/git/trees/{current_tree_sha}?recursive=1", headers=headers
             )
+            if tree_response.status_code != 200:
+                msg = f"Failed to list existing tree (HTTP {tree_response.status_code}): {self._truncated_response_text(tree_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg, "error": self._truncated_response_text(tree_response)}
+            tree_data = tree_response.json()
+            # GitHub's tree API truncates >7MB / >100k entries. A truncated tree
+            # listing makes the SHA-equality dedup miss and every file gets
+            # re-uploaded as a new blob each run — silent churn until someone
+            # notices the bloated history. Fail loudly so the user rotates the
+            # backup repo.
+            if tree_data.get("truncated"):
+                msg = (
+                    "Repository tree exceeds the GitHub API listing limit (truncated=true). "
+                    "Rotate the backup repository to avoid silent file-by-file churn on every backup."
+                )
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
             existing_files: dict[str, str] = {}
-            if tree_response.status_code == 200:
-                for item in tree_response.json().get("tree", []):
-                    if item["type"] == "blob":
-                        existing_files[item["path"]] = item["sha"]
+            for item in tree_data.get("tree", []):
+                if item.get("type") != "blob":
+                    continue
+                path, sha = item.get("path"), item.get("sha")
+                if not path or not sha:
+                    logger.warning("push_files: skipping malformed tree entry: %s", item)
+                    continue
+                existing_files[path] = sha
 
             tree_items = []
             files_changed = 0
@@ -168,11 +212,21 @@ class GitHubBackend(GitProviderBackend):
                     headers=headers,
                     json={"content": base64.b64encode(content_bytes).decode(), "encoding": "base64"},
                 )
+                if blob_response.status_code == 404:
+                    msg = "GitHub API returned 404 for POST /git/blobs — check repository visibility and token scope"
+                    logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                    return {"status": "failed", "message": msg}
                 if blob_response.status_code != 201:
-                    logger.error("Failed to create blob for %s: %s", path, self._truncated_response_text(blob_response))
-                    continue
+                    msg = f"Failed to create blob for {path} (HTTP {blob_response.status_code}): {self._truncated_response_text(blob_response)}"
+                    logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                    return {"status": "failed", "message": msg}
 
-                tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]})
+                blob_sha, err = self._read_sha(blob_response, "sha")
+                if err:
+                    msg = f"Malformed blob response for {path} ({err}): {self._truncated_response_text(blob_response)}"
+                    logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                    return {"status": "failed", "message": msg}
+                tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_sha})
                 files_changed += 1
 
             if not tree_items:
@@ -184,12 +238,15 @@ class GitHubBackend(GitProviderBackend):
                 json={"base_tree": current_tree_sha, "tree": tree_items},
             )
             if tree_response.status_code != 201:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to create tree: {self._truncated_response_text(tree_response)}",
-                }
+                msg = f"Failed to create tree (HTTP {tree_response.status_code}): {self._truncated_response_text(tree_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
-            new_tree_sha = tree_response.json()["sha"]
+            new_tree_sha, err = self._read_sha(tree_response, "sha")
+            if err:
+                msg = f"Malformed tree-create response ({err}): {self._truncated_response_text(tree_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
             commit_message = f"Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
             commit_response = await client.post(
                 f"{api_base}/repos/{owner}/{repo}/git/commits",
@@ -197,12 +254,15 @@ class GitHubBackend(GitProviderBackend):
                 json={"message": commit_message, "tree": new_tree_sha, "parents": [current_commit_sha]},
             )
             if commit_response.status_code != 201:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to create commit: {self._truncated_response_text(commit_response)}",
-                }
+                msg = f"Failed to create commit (HTTP {commit_response.status_code}): {self._truncated_response_text(commit_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
-            new_commit_sha = commit_response.json()["sha"]
+            new_commit_sha, err = self._read_sha(commit_response, "sha")
+            if err:
+                msg = f"Malformed commit-create response ({err}): {self._truncated_response_text(commit_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             ref_update = await client.patch(
                 f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{branch}",
@@ -210,10 +270,9 @@ class GitHubBackend(GitProviderBackend):
                 json={"sha": new_commit_sha},
             )
             if ref_update.status_code != 200:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to update branch: {self._truncated_response_text(ref_update)}",
-                }
+                msg = f"Failed to update branch (HTTP {ref_update.status_code}): {self._truncated_response_text(ref_update)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             return {
                 "status": "success",
@@ -223,7 +282,7 @@ class GitHubBackend(GitProviderBackend):
             }
 
         except Exception as e:
-            logger.error("Push to Git failed: %s", e)
+            logger.exception("push_files failed for %s branch=%s", repo_url, branch)
             return {"status": "failed", "message": str(e), "error": str(e)}
 
     async def _create_branch_and_push(
@@ -242,9 +301,16 @@ class GitHubBackend(GitProviderBackend):
         try:
             repo_response = await client.get(f"{api_base}/repos/{owner}/{repo}", headers=headers)
             if repo_response.status_code != 200:
-                return {"status": "failed", "message": "Failed to get repo info"}
+                msg = f"Failed to get repo info (HTTP {repo_response.status_code}): {self._truncated_response_text(repo_response)}"
+                logger.warning("_create_branch_and_push %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
-            default_branch = repo_response.json().get("default_branch", "main")
+            try:
+                default_branch = repo_response.json().get("default_branch", "main")
+            except ValueError:
+                msg = f"Malformed repo-info response (non-JSON body): {self._truncated_response_text(repo_response)}"
+                logger.warning("_create_branch_and_push %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             ref_response = await client.get(
                 f"{api_base}/repos/{owner}/{repo}/git/refs/heads/{default_branch}", headers=headers
@@ -252,7 +318,11 @@ class GitHubBackend(GitProviderBackend):
             if ref_response.status_code != 200:
                 return await self._create_initial_commit(client, headers, api_base, owner, repo, branch, files)
 
-            base_sha = ref_response.json()["object"]["sha"]
+            base_sha, err = self._read_sha(ref_response, "object", "sha")
+            if err:
+                msg = f"Malformed default-branch ref response ({err}): {self._truncated_response_text(ref_response)}"
+                logger.warning("_create_branch_and_push %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             create_ref = await client.post(
                 f"{api_base}/repos/{owner}/{repo}/git/refs",
@@ -260,15 +330,16 @@ class GitHubBackend(GitProviderBackend):
                 json={"ref": f"refs/heads/{branch}", "sha": base_sha},
             )
             if create_ref.status_code != 201:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to create branch: {self._truncated_response_text(create_ref)}",
-                }
+                msg = f"Failed to create branch '{branch}' (HTTP {create_ref.status_code}): {self._truncated_response_text(create_ref)}"
+                logger.warning("_create_branch_and_push %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
-            return await self.push_files(repo_url, token, branch, files, client)
+            logger.info("Re-entering push_files after branch create %s/%s -> %s", owner, repo, branch)
+            return await self.push_files(repo_url, token, branch, files, client, _allow_branch_create=False)
 
         except Exception as e:
-            return {"status": "failed", "message": str(e)}
+            logger.exception("_create_branch_and_push failed for %s/%s branch=%s", owner, repo, branch)
+            return {"status": "failed", "message": str(e), "error": str(e)}
 
     async def _create_initial_commit(
         self,
@@ -290,10 +361,20 @@ class GitHubBackend(GitProviderBackend):
                     headers=headers,
                     json={"content": base64.b64encode(content_str.encode()).decode(), "encoding": "base64"},
                 )
-                if blob_response.status_code == 201:
-                    tree_items.append(
-                        {"path": path, "mode": "100644", "type": "blob", "sha": blob_response.json()["sha"]}
-                    )
+                if blob_response.status_code == 404:
+                    msg = "GitHub API returned 404 for POST /git/blobs — check repository visibility and token scope"
+                    logger.warning("_create_initial_commit %s/%s: %s", owner, repo, msg)
+                    return {"status": "failed", "message": msg}
+                if blob_response.status_code != 201:
+                    msg = f"Failed to create blob for {path} (HTTP {blob_response.status_code}): {self._truncated_response_text(blob_response)}"
+                    logger.warning("_create_initial_commit %s/%s: %s", owner, repo, msg)
+                    return {"status": "failed", "message": msg}
+                blob_sha, err = self._read_sha(blob_response, "sha")
+                if err:
+                    msg = f"Malformed blob response for {path} ({err}): {self._truncated_response_text(blob_response)}"
+                    logger.warning("_create_initial_commit %s/%s: %s", owner, repo, msg)
+                    return {"status": "failed", "message": msg}
+                tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob_sha})
 
             tree_response = await client.post(
                 f"{api_base}/repos/{owner}/{repo}/git/trees",
@@ -301,9 +382,15 @@ class GitHubBackend(GitProviderBackend):
                 json={"tree": tree_items},
             )
             if tree_response.status_code != 201:
-                return {"status": "failed", "message": "Failed to create tree"}
+                msg = f"Failed to create tree (HTTP {tree_response.status_code}): {self._truncated_response_text(tree_response)}"
+                logger.warning("_create_initial_commit %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
-            tree_sha = tree_response.json()["sha"]
+            tree_sha, err = self._read_sha(tree_response, "sha")
+            if err:
+                msg = f"Malformed tree-create response ({err}): {self._truncated_response_text(tree_response)}"
+                logger.warning("_create_initial_commit %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
             commit_response = await client.post(
                 f"{api_base}/repos/{owner}/{repo}/git/commits",
                 headers=headers,
@@ -313,16 +400,24 @@ class GitHubBackend(GitProviderBackend):
                 },
             )
             if commit_response.status_code != 201:
-                return {"status": "failed", "message": "Failed to create commit"}
+                msg = f"Failed to create commit (HTTP {commit_response.status_code}): {self._truncated_response_text(commit_response)}"
+                logger.warning("_create_initial_commit %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
-            commit_sha = commit_response.json()["sha"]
+            commit_sha, err = self._read_sha(commit_response, "sha")
+            if err:
+                msg = f"Malformed commit-create response ({err}): {self._truncated_response_text(commit_response)}"
+                logger.warning("_create_initial_commit %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
             ref_response = await client.post(
                 f"{api_base}/repos/{owner}/{repo}/git/refs",
                 headers=headers,
                 json={"ref": f"refs/heads/{branch}", "sha": commit_sha},
             )
             if ref_response.status_code != 201:
-                return {"status": "failed", "message": "Failed to create branch ref"}
+                msg = f"Failed to create branch ref (HTTP {ref_response.status_code}): {self._truncated_response_text(ref_response)}"
+                logger.warning("_create_initial_commit %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             return {
                 "status": "success",
@@ -332,4 +427,5 @@ class GitHubBackend(GitProviderBackend):
             }
 
         except Exception as e:
-            return {"status": "failed", "message": str(e)}
+            logger.exception("_create_initial_commit failed for %s/%s branch=%s", owner, repo, branch)
+            return {"status": "failed", "message": str(e), "error": str(e)}

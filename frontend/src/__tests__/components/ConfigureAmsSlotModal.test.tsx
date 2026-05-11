@@ -338,6 +338,23 @@ describe('ConfigureAmsSlotModal', () => {
     });
   });
 
+  it('preset row expands inline on hover so the full name is readable (#1237)', async () => {
+    // Long preset names (e.g. "SUNLU PETG GLOW IN THE DARK GEN2 @Bambu Lab H2C 0.4 nozzle")
+    // get visually truncated; the row un-truncates on hover via group-hover so the
+    // nozzle suffix is readable without waiting on the browser's title-tooltip delay,
+    // and the title attribute remains as a fallback for assistive tech / touch.
+    render(<ConfigureAmsSlotModal {...defaultProps} />);
+    await waitFor(() => {
+      const fullName = 'Bambu PLA Basic @BBL X1C';
+      const span = screen.getByText(fullName);
+      expect(span).toHaveAttribute('title', fullName);
+      expect(span).toHaveClass('truncate');
+      expect(span).toHaveClass('group-hover:whitespace-normal');
+      expect(span).toHaveClass('group-hover:break-all');
+      expect(span.closest('button')).toHaveClass('group');
+    });
+  });
+
   it('pre-selects saved preset when opening configured slot', async () => {
     const slotInfo = {
       ...defaultProps.slotInfo,

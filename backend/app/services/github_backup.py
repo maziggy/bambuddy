@@ -76,8 +76,8 @@ class GitHubBackupService:
                 await self._check_scheduled_backups()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error("Error in GitHub backup scheduler: %s", e)
+            except Exception:
+                logger.exception("Error in GitHub backup scheduler")
                 await asyncio.sleep(60)
 
     async def _check_scheduled_backups(self):
@@ -202,7 +202,7 @@ class GitHubBackupService:
                     }
 
                 except Exception as e:
-                    logger.error("Backup failed: %s", e)
+                    logger.exception("Backup failed")
                     log.status = "failed"
                     log.completed_at = datetime.now(timezone.utc)
                     log.error_message = str(e)
@@ -381,12 +381,14 @@ class GitHubBackupService:
                 }
 
             logger.info(
-                f"Collected cloud profiles: {len(filament_settings)} filament, "
-                f"{len(printer_settings)} printer, {len(process_settings)} process"
+                "Collected cloud profiles: %d filament, %d printer, %d process",
+                len(filament_settings),
+                len(printer_settings),
+                len(process_settings),
             )
 
-        except Exception as e:
-            logger.warning("Failed to collect cloud profiles: %s", e)
+        except Exception:
+            logger.warning("Failed to collect cloud profiles", exc_info=True)
         finally:
             await cloud.close()
 

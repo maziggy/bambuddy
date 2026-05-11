@@ -1,19 +1,33 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Database, Plus, Trash2, RotateCcw, Loader2, Pencil, Check, X, Search, Download, Upload } from 'lucide-react';
-import { api } from '../api/client';
-import type { SpoolCatalogEntry } from '../api/client';
+import { api, ApiError } from '../api/client';
+import type { SpoolCatalogEntry, SpoolmanFilamentEntry } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
 import { ConfirmModal } from './ConfirmModal';
+import { SpoolWeightUpdateModal } from './SpoolWeightUpdateModal';
 
 export function SpoolCatalogSettings() {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [catalog, setCatalog] = useState<SpoolCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Spoolman inline-edit state
+  const [editingFilamentId, setEditingFilamentId] = useState<number | null>(null);
+  const [editingFilamentName, setEditingFilamentName] = useState('');
+  const [editingFilamentWeight, setEditingFilamentWeight] = useState('');
+  const [pendingWeightEdit, setPendingWeightEdit] = useState<{
+    filamentId: number;
+    name: string;
+    oldWeight: number | null;
+    newWeight: number;
+  } | null>(null);
 
   // Add/Edit form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -30,11 +44,92 @@ export function SpoolCatalogSettings() {
   const [deleteEntry, setDeleteEntry] = useState<SpoolCatalogEntry | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
+  // Spoolman filament query — hoisted to determine display mode
+  const {
+    data: spoolmanFilaments,
+    isLoading: spoolmanLoading,
+    error: spoolmanError,
+  } = useQuery<SpoolmanFilamentEntry[], Error>({
+    queryKey: ['spoolman-inventory-filaments'],
+    queryFn: () => api.getSpoolmanInventoryFilaments(),
+    retry: false, // Spoolman may be intentionally disabled (400) — don't retry
+    staleTime: 60_000,
+  });
+
+  // 400 = Spoolman explicitly disabled; all other states (data / 503 / …) mean Spoolman mode
+  const isSpoolmanDisabled =
+    !spoolmanLoading &&
+    spoolmanError instanceof ApiError &&
+    spoolmanError.status === 400;
+  const isSpoolmanMode = !spoolmanLoading && !isSpoolmanDisabled;
+
+  const patchFilamentMutation = useMutation<
+    SpoolmanFilamentEntry,
+    Error,
+    { filamentId: number; data: { name?: string; spool_weight?: number | null; keep_existing_spools?: boolean } }
+  >({
+    mutationFn: ({ filamentId, data }) => api.patchSpoolmanFilament(filamentId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-filaments'] });
+      showToast(t('settings.catalog.filamentUpdated'), 'success');
+      setEditingFilamentId(null);
+      setEditingFilamentName('');
+      setEditingFilamentWeight('');
+      setPendingWeightEdit(null);
+    },
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 503) {
+        showToast(t('inventory.spoolmanUnreachable'), 'error');
+      } else if (error instanceof ApiError && error.status === 422) {
+        showToast(t('settings.catalog.filamentUpdateInvalid'), 'error');
+      } else {
+        showToast(t('settings.catalog.filamentUpdateFailed'), 'error');
+      }
+    },
+  });
+
+  const handleFilamentSave = (f: SpoolmanFilamentEntry) => {
+    const nameChanged = editingFilamentName.trim() !== f.name;
+    const weightChanged = editingFilamentWeight !== '' && editingFilamentWeight !== String(f.spool_weight ?? '');
+    const parsedWeight = editingFilamentWeight !== '' ? parseFloat(editingFilamentWeight) : null;
+
+    if (weightChanged && parsedWeight !== null && !isNaN(parsedWeight) && parsedWeight > 0) {
+      setPendingWeightEdit({
+        filamentId: f.id,
+        name: nameChanged ? editingFilamentName.trim() : f.name,
+        oldWeight: f.spool_weight,
+        newWeight: parsedWeight,
+      });
+    } else {
+      const data: { name?: string } = {};
+      if (nameChanged && editingFilamentName.trim()) data.name = editingFilamentName.trim();
+      if (Object.keys(data).length > 0) {
+        patchFilamentMutation.mutate({ filamentId: f.id, data });
+      } else {
+        setEditingFilamentId(null);
+      }
+    }
+  };
+
+  const handleWeightModalConfirm = (keepExisting: boolean) => {
+    if (!pendingWeightEdit) return;
+    const { filamentId, name, newWeight } = pendingWeightEdit;
+    const currentFilament = spoolmanFilaments?.find(f => f.id === filamentId);
+    const nameChanged = currentFilament && name !== currentFilament.name;
+    const data: { name?: string; spool_weight: number; keep_existing_spools: boolean } = {
+      spool_weight: newWeight,
+      keep_existing_spools: keepExisting,
+    };
+    if (nameChanged) data.name = name;
+    patchFilamentMutation.mutate({ filamentId, data });
+  };
+
   const loadCatalog = useCallback(async () => {
     try {
       const entries = await api.getSpoolCatalog();
       setCatalog(entries);
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.loadCatalog failed:', err);
       showToast(t('settings.catalog.loadFailed'), 'error');
     } finally {
       setLoading(false);
@@ -47,6 +142,11 @@ export function SpoolCatalogSettings() {
 
   const filteredCatalog = catalog.filter(entry =>
     entry.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const filteredSpoolmanFilaments = (spoolmanFilaments ?? []).filter(f =>
+    f.name.toLowerCase().includes(search.toLowerCase()) ||
+    (f.vendor?.name ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
   const handleAdd = async () => {
@@ -62,7 +162,8 @@ export function SpoolCatalogSettings() {
       setFormName('');
       setFormWeight('');
       showToast(t('settings.catalog.entryAdded'), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleAdd failed:', err);
       showToast(t('settings.catalog.addFailed'), 'error');
     } finally {
       setSaving(false);
@@ -94,7 +195,8 @@ export function SpoolCatalogSettings() {
       setFormName('');
       setFormWeight('');
       showToast(t('settings.catalog.entryUpdated'), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleUpdate failed:', err);
       showToast(t('settings.catalog.updateFailed'), 'error');
     } finally {
       setSaving(false);
@@ -107,7 +209,8 @@ export function SpoolCatalogSettings() {
       await api.deleteCatalogEntry(deleteEntry.id);
       setCatalog(prev => prev.filter(e => e.id !== deleteEntry.id));
       showToast(t('settings.catalog.entryDeleted'), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleDelete failed:', err);
       showToast(t('settings.catalog.deleteFailed'), 'error');
     } finally {
       setDeleteEntry(null);
@@ -121,7 +224,8 @@ export function SpoolCatalogSettings() {
       await api.resetSpoolCatalog();
       await loadCatalog();
       showToast(t('settings.catalog.resetSuccess'), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleReset failed:', err);
       showToast(t('settings.catalog.resetFailed'), 'error');
       setLoading(false);
     }
@@ -152,7 +256,8 @@ export function SpoolCatalogSettings() {
       setCatalog(prev => prev.filter(e => !selectedIds.has(e.id)));
       setSelectedIds(new Set());
       showToast(t('settings.catalog.bulkDeleted', { count: result.deleted }), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleBulkDelete failed:', err);
       showToast(t('settings.catalog.bulkDeleteFailed'), 'error');
     }
   };
@@ -189,10 +294,14 @@ export function SpoolCatalogSettings() {
           const entry = await api.addCatalogEntry({ name: item.name, weight: item.weight });
           setCatalog(prev => [...prev, entry].sort((a, b) => a.name.localeCompare(b.name)));
           added++;
-        } catch { skipped++; }
+        } catch (err) {
+          console.error('SpoolCatalogSettings import item failed:', err);
+          skipped++;
+        }
       }
       showToast(t('settings.catalog.imported', { added, skipped }), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleImport failed:', err);
       showToast(t('settings.catalog.importFailed'), 'error');
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -203,44 +312,56 @@ export function SpoolCatalogSettings() {
       <CardHeader>
         <div className="flex items-center gap-2 mb-3">
           <Database className="w-5 h-5 text-bambu-gray" />
-          <h2 className="text-lg font-semibold text-white">{t('settings.catalog.spoolCatalog')}</h2>
-          <span className="text-sm text-bambu-gray">({catalog.length})</span>
+          <h2 className="text-lg font-semibold text-white">
+            {isSpoolmanMode
+              ? t('settings.spoolmanFilamentCatalogTitle')
+              : t('settings.catalog.spoolCatalog')}
+          </h2>
+          <span className="text-sm text-bambu-gray">
+            ({spoolmanLoading ? '…' : isSpoolmanMode ? (spoolmanFilaments?.length ?? 0) : catalog.length})
+          </span>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={handleExport}
-            className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
-            title={t('settings.catalog.exportTooltip')}
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('common.export')}</span>
-          </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
-            title={t('settings.catalog.importTooltip')}
-          >
-            <Upload className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('common.import')}</span>
-          </button>
-          <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-          <button
-            onClick={() => setShowResetConfirm(true)}
-            className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
-            title={t('settings.catalog.resetTooltip')}
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('common.reset')}</span>
-          </button>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="px-3 py-1.5 text-sm bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 transition-colors flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('common.add')}</span>
-          </button>
-        </div>
-        {selectedIds.size > 0 && (
+
+        {/* CRUD buttons — local mode only */}
+        {!isSpoolmanMode && !spoolmanLoading && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleExport}
+              className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
+              title={t('settings.catalog.exportTooltip')}
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('common.export')}</span>
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
+              title={t('settings.catalog.importTooltip')}
+            >
+              <Upload className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('common.import')}</span>
+            </button>
+            <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
+              title={t('settings.catalog.resetTooltip')}
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('common.reset')}</span>
+            </button>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="px-3 py-1.5 text-sm bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 transition-colors flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('common.add')}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Bulk-delete bar — local mode only */}
+        {!isSpoolmanMode && selectedIds.size > 0 && (
           <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
             <span className="text-sm text-red-400">
               {t('settings.catalog.selectedCount', { count: selectedIds.size })}
@@ -261,12 +382,16 @@ export function SpoolCatalogSettings() {
           </div>
         )}
       </CardHeader>
+
       <CardContent className="space-y-4">
+        {/* Description */}
         <p className="text-sm text-bambu-gray">
-          {t('settings.catalog.spoolCatalogDescription')}
+          {isSpoolmanMode
+            ? t('settings.spoolmanFilamentCatalogDesc')
+            : t('settings.catalog.spoolCatalogDescription')}
         </p>
 
-        {/* Search */}
+        {/* Search — always shown */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
           <input
@@ -278,177 +403,302 @@ export function SpoolCatalogSettings() {
           />
         </div>
 
-        {/* Add form */}
-        {showAddForm && (
-          <div className="p-4 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
-            <h3 className="text-sm font-medium text-white mb-3">{t('settings.catalog.addNewEntry')}</h3>
-            <div className="flex gap-2 items-center">
-              <div className="flex-1 min-w-0">
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
-                  placeholder={t('settings.catalog.namePlaceholder')}
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                />
-              </div>
-              <input
-                type="number"
-                className="w-20 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white text-center focus:border-bambu-green focus:outline-none"
-                placeholder="g"
-                value={formWeight}
-                onChange={(e) => setFormWeight(e.target.value)}
-              />
-              <span className="text-bambu-gray shrink-0">g</span>
-              <button
-                onClick={handleAdd}
-                disabled={saving}
-                className="px-3 py-2 bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 flex items-center gap-1 shrink-0"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                {t('common.add')}
-              </button>
-              <button
-                onClick={() => { setShowAddForm(false); setFormName(''); setFormWeight(''); }}
-                className="p-2 rounded-lg text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Catalog list */}
-        {loading ? (
+        {/* Mode-determination loading spinner */}
+        {spoolmanLoading && (
           <div className="flex items-center justify-center py-8 text-bambu-gray">
             <Loader2 className="w-5 h-5 animate-spin mr-2" />
             {t('common.loading')}
           </div>
-        ) : (
-          <div className="max-h-[600px] overflow-y-auto border border-bambu-dark-tertiary rounded-lg">
-            <table className="w-full text-sm">
-              <thead className="bg-bambu-dark sticky top-0">
-                <tr>
-                  <th className="px-2 py-2 w-10">
+        )}
+
+        {/* ── LOCAL MODE ── */}
+        {!spoolmanLoading && !isSpoolmanMode && (
+          <>
+            {/* Add form */}
+            {showAddForm && (
+              <div className="p-4 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
+                <h3 className="text-sm font-medium text-white mb-3">{t('settings.catalog.addNewEntry')}</h3>
+                <div className="flex gap-2 items-center">
+                  <div className="flex-1 min-w-0">
                     <input
-                      type="checkbox"
-                      checked={filteredCatalog.length > 0 && selectedIds.size === filteredCatalog.length}
-                      onChange={toggleSelectAll}
-                      className="w-4 h-4 accent-bambu-green cursor-pointer"
+                      type="text"
+                      className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                      placeholder={t('settings.catalog.namePlaceholder')}
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
                     />
-                  </th>
-                  <th className="px-4 py-2 text-left text-bambu-gray font-medium">{t('common.name')}</th>
-                  <th className="px-4 py-2 text-right text-bambu-gray font-medium w-24">{t('settings.catalog.weight')}</th>
-                  <th className="px-4 py-2 text-center text-bambu-gray font-medium w-20">{t('settings.catalog.type')}</th>
-                  <th className="px-4 py-2 w-24"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCatalog.length === 0 ? (
+                  </div>
+                  <input
+                    type="number"
+                    className="w-20 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white text-center focus:border-bambu-green focus:outline-none"
+                    placeholder="g"
+                    value={formWeight}
+                    onChange={(e) => setFormWeight(e.target.value)}
+                  />
+                  <span className="text-bambu-gray shrink-0">g</span>
+                  <button
+                    onClick={handleAdd}
+                    disabled={saving}
+                    className="px-3 py-2 bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 flex items-center gap-1 shrink-0"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    {t('common.add')}
+                  </button>
+                  <button
+                    onClick={() => { setShowAddForm(false); setFormName(''); setFormWeight(''); }}
+                    className="p-2 rounded-lg text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Local catalog table */}
+            {loading ? (
+              <div className="flex items-center justify-center py-8 text-bambu-gray">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                {t('common.loading')}
+              </div>
+            ) : (
+              <div className="max-h-[600px] overflow-y-auto border border-bambu-dark-tertiary rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-bambu-dark sticky top-0">
+                    <tr>
+                      <th className="px-2 py-2 w-10">
+                        <input
+                          type="checkbox"
+                          checked={filteredCatalog.length > 0 && selectedIds.size === filteredCatalog.length}
+                          onChange={toggleSelectAll}
+                          className="w-4 h-4 accent-bambu-green cursor-pointer"
+                        />
+                      </th>
+                      <th className="px-4 py-2 text-left text-bambu-gray font-medium">{t('common.name')}</th>
+                      <th className="px-4 py-2 text-right text-bambu-gray font-medium w-24">{t('settings.catalog.weight')}</th>
+                      <th className="px-4 py-2 text-center text-bambu-gray font-medium w-20">{t('settings.catalog.type')}</th>
+                      <th className="px-4 py-2 w-24"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCatalog.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-bambu-gray">
+                          {search ? t('settings.catalog.noMatch') : t('settings.catalog.empty')}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredCatalog.map(entry => (
+                        <tr key={entry.id} className={`border-t border-bambu-dark-tertiary hover:bg-bambu-dark ${selectedIds.has(entry.id) ? 'bg-bambu-dark' : ''}`}>
+                          {editingId === entry.id ? (
+                            <>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(entry.id)}
+                                  onChange={() => toggleSelect(entry.id)}
+                                  className="w-4 h-4 accent-bambu-green cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input
+                                  type="text"
+                                  className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white focus:border-bambu-green focus:outline-none"
+                                  value={formName}
+                                  onChange={(e) => setFormName(e.target.value)}
+                                />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input
+                                  type="number"
+                                  className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-right focus:border-bambu-green focus:outline-none"
+                                  value={formWeight}
+                                  onChange={(e) => setFormWeight(e.target.value)}
+                                />
+                              </td>
+                              <td className="px-4 py-2 text-center">
+                                <span className="text-xs text-bambu-gray">-</span>
+                              </td>
+                              <td className="px-4 py-2">
+                                <div className="flex justify-end gap-1">
+                                  <button
+                                    onClick={() => handleUpdate(entry.id)}
+                                    disabled={saving}
+                                    className="p-1.5 rounded hover:bg-green-500/20 text-green-500"
+                                  >
+                                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                  </button>
+                                  <button onClick={cancelEdit} className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray">
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(entry.id)}
+                                  onChange={() => toggleSelect(entry.id)}
+                                  className="w-4 h-4 accent-bambu-green cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-4 py-2 text-white">{entry.name}</td>
+                              <td className="px-4 py-2 text-right font-mono text-white">{entry.weight}g</td>
+                              <td className="px-4 py-2 text-center">
+                                {entry.is_default ? (
+                                  <span className="text-xs px-2 py-0.5 rounded bg-bambu-dark-tertiary text-bambu-gray">
+                                    {t('settings.catalog.default')}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs px-2 py-0.5 rounded bg-bambu-green/20 text-bambu-green">
+                                    {t('settings.catalog.custom')}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2">
+                                <div className="flex justify-end gap-1">
+                                  <button
+                                    onClick={() => startEdit(entry)}
+                                    className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteEntry(entry)}
+                                    className="p-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-500"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── SPOOLMAN MODE ── */}
+        {!spoolmanLoading && isSpoolmanMode && (
+          <div className="max-h-[600px] overflow-y-auto border border-bambu-dark-tertiary rounded-lg">
+            {spoolmanError ? (
+              <p className="px-4 py-8 text-center text-sm text-red-400">
+                {t('inventory.spoolmanCatalogLoadFailed')}
+              </p>
+            ) : filteredSpoolmanFilaments.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-bambu-gray">
+                {t('inventory.noSpoolmanFilaments')}
+              </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-bambu-dark sticky top-0">
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-bambu-gray">
-                      {search ? t('settings.catalog.noMatch') : t('settings.catalog.empty')}
-                    </td>
+                    <th className="px-3 py-2 w-8"></th>
+                    <th className="px-4 py-2 text-left text-bambu-gray font-medium">{t('common.name')}</th>
+                    <th className="px-4 py-2 text-left text-bambu-gray font-medium w-28">{t('settings.catalog.material')}</th>
+                    <th className="px-4 py-2 text-right text-bambu-gray font-medium w-24">{t('settings.catalog.weight')}</th>
+                    <th className="px-4 py-2 text-right text-bambu-gray font-medium w-28">{t('settings.catalog.spoolWeight')}</th>
+                    <th className="px-3 py-2 w-20"></th>
                   </tr>
-                ) : (
-                  filteredCatalog.map(entry => (
-                    <tr key={entry.id} className={`border-t border-bambu-dark-tertiary hover:bg-bambu-dark ${selectedIds.has(entry.id) ? 'bg-bambu-dark' : ''}`}>
-                      {editingId === entry.id ? (
-                        <>
-                          <td className="px-2 py-2">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(entry.id)}
-                              onChange={() => toggleSelect(entry.id)}
-                              className="w-4 h-4 accent-bambu-green cursor-pointer"
-                            />
-                          </td>
-                          <td className="px-4 py-2">
+                </thead>
+                <tbody>
+                  {filteredSpoolmanFilaments.map(f => {
+                    const isEditing = editingFilamentId === f.id;
+                    const isSaving = patchFilamentMutation.isPending && editingFilamentId === f.id;
+                    return (
+                      <tr key={f.id} className="border-t border-bambu-dark-tertiary hover:bg-bambu-dark">
+                        <td className="px-3 py-2">
+                          <span
+                            className="w-4 h-4 rounded-full block shrink-0 border border-white/20"
+                            style={{ backgroundColor: f.color_hex ? `#${f.color_hex.replace('#', '')}` : '#808080' }}
+                            aria-label={t('inventory.spoolmanFilamentColorSwatch')}
+                          />
+                        </td>
+                        <td className="px-4 py-2 text-white truncate max-w-0">
+                          {isEditing ? (
                             <input
                               type="text"
-                              className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white focus:border-bambu-green focus:outline-none"
-                              value={formName}
-                              onChange={(e) => setFormName(e.target.value)}
+                              value={editingFilamentName}
+                              onChange={e => setEditingFilamentName(e.target.value)}
+                              className="w-full bg-bambu-dark-tertiary text-white rounded px-2 py-0.5 text-sm border border-bambu-dark-secondary focus:outline-none focus:border-bambu-green"
+                              aria-label={t('common.name')}
                             />
-                          </td>
-                          <td className="px-4 py-2">
+                          ) : (
+                            <span className="block truncate">
+                              {f.vendor?.name ? `${f.vendor.name} — ` : ''}{f.name}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-bambu-gray">{f.material ?? '—'}</td>
+                        <td className="px-4 py-2 text-right font-mono text-white">
+                          {f.weight ? `${f.weight}g` : '—'}
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-bambu-gray">
+                          {isEditing ? (
                             <input
                               type="number"
-                              className="w-full px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-right focus:border-bambu-green focus:outline-none"
-                              value={formWeight}
-                              onChange={(e) => setFormWeight(e.target.value)}
+                              value={editingFilamentWeight}
+                              onChange={e => setEditingFilamentWeight(e.target.value)}
+                              min="0"
+                              step="1"
+                              className="w-20 bg-bambu-dark-tertiary text-white rounded px-2 py-0.5 text-sm border border-bambu-dark-secondary focus:outline-none focus:border-bambu-green text-right"
+                              aria-label={t('settings.catalog.spoolWeight')}
                             />
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                            <span className="text-xs text-bambu-gray">-</span>
-                          </td>
-                          <td className="px-4 py-2">
-                            <div className="flex justify-end gap-1">
+                          ) : (
+                            f.spool_weight != null ? `${f.spool_weight}g` : '—'
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {isEditing ? (
+                            <div className="flex items-center gap-1 justify-end">
                               <button
-                                onClick={() => handleUpdate(entry.id)}
-                                disabled={saving}
-                                className="p-1.5 rounded hover:bg-green-500/20 text-green-500"
+                                onClick={() => handleFilamentSave(f)}
+                                disabled={isSaving || !editingFilamentName.trim() || (editingFilamentWeight !== '' && (isNaN(parseFloat(editingFilamentWeight)) || parseFloat(editingFilamentWeight) <= 0))}
+                                className="p-1 text-bambu-green hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                                aria-label={t('common.save')}
                               >
-                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                               </button>
-                              <button onClick={cancelEdit} className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray">
+                              <button
+                                onClick={() => { setEditingFilamentId(null); setEditingFilamentName(''); setEditingFilamentWeight(''); }}
+                                className="p-1 text-bambu-gray hover:text-white"
+                                aria-label={t('common.cancel')}
+                              >
                                 <X className="w-4 h-4" />
                               </button>
                             </div>
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="px-2 py-2">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(entry.id)}
-                              onChange={() => toggleSelect(entry.id)}
-                              className="w-4 h-4 accent-bambu-green cursor-pointer"
-                            />
-                          </td>
-                          <td className="px-4 py-2 text-white">{entry.name}</td>
-                          <td className="px-4 py-2 text-right font-mono text-white">{entry.weight}g</td>
-                          <td className="px-4 py-2 text-center">
-                            {entry.is_default ? (
-                              <span className="text-xs px-2 py-0.5 rounded bg-bambu-dark-tertiary text-bambu-gray">
-                                {t('settings.catalog.default')}
-                              </span>
-                            ) : (
-                              <span className="text-xs px-2 py-0.5 rounded bg-bambu-green/20 text-bambu-green">
-                                {t('settings.catalog.custom')}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2">
-                            <div className="flex justify-end gap-1">
-                              <button
-                                onClick={() => startEdit(entry)}
-                                className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => setDeleteEntry(entry)}
-                                className="p-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-500"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingFilamentId(f.id);
+                                setEditingFilamentName(f.name);
+                                setEditingFilamentWeight(f.spool_weight != null ? String(f.spool_weight) : '');
+                              }}
+                              className="p-1 text-bambu-gray hover:text-white"
+                              aria-label={t('common.edit')}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </CardContent>
 
-      {/* Delete confirmation */}
-      {deleteEntry && (
+      {/* Confirmation modals — local mode only */}
+      {!isSpoolmanMode && deleteEntry && (
         <ConfirmModal
           title={t('settings.catalog.deleteEntry')}
           message={t('settings.catalog.deleteConfirm', { name: deleteEntry.name })}
@@ -459,8 +709,7 @@ export function SpoolCatalogSettings() {
         />
       )}
 
-      {/* Bulk delete confirmation */}
-      {showBulkDeleteConfirm && (
+      {!isSpoolmanMode && showBulkDeleteConfirm && (
         <ConfirmModal
           title={t('settings.catalog.deleteSelected')}
           message={t('settings.catalog.bulkDeleteConfirm', { count: selectedIds.size })}
@@ -471,8 +720,7 @@ export function SpoolCatalogSettings() {
         />
       )}
 
-      {/* Reset confirmation */}
-      {showResetConfirm && (
+      {!isSpoolmanMode && showResetConfirm && (
         <ConfirmModal
           title={t('settings.catalog.resetCatalog')}
           message={t('settings.catalog.resetConfirm')}
@@ -482,6 +730,15 @@ export function SpoolCatalogSettings() {
           onCancel={() => setShowResetConfirm(false)}
         />
       )}
+
+      <SpoolWeightUpdateModal
+        isOpen={pendingWeightEdit !== null}
+        filamentName={pendingWeightEdit?.name ?? ''}
+        oldWeight={pendingWeightEdit?.oldWeight ?? null}
+        newWeight={pendingWeightEdit?.newWeight ?? 0}
+        onConfirm={handleWeightModalConfirm}
+        onClose={() => setPendingWeightEdit(null)}
+      />
     </Card>
   );
 }

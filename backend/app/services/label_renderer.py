@@ -1,9 +1,12 @@
 """PDF spool label rendering.
 
-Four fixed templates:
+Five fixed templates:
 
 - ``ams_30x15``  — 30×15 mm single label, fits the popular Makerworld AMS
   Filament Label Holder (model 752566). One label per page.
+- ``box_40x30``  — 40×30 mm single label, common DK/Brother roll size and a
+  good fit for filament-bag/storage-bin labels (#809 follow-up). Roomy
+  layout — swatch, QR, full text column with hex code.
 - ``box_62x29``  — 62×29 mm single label, sized for Brother PT/QL and Dymo
   generic small labels. One label per page.
 - ``avery_5160`` — US Letter sheet, 25.4×66.7 mm × 30 per sheet.
@@ -31,7 +34,7 @@ from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as rl_canvas
 
-TemplateName = Literal["ams_30x15", "box_62x29", "avery_5160", "avery_l7160"]
+TemplateName = Literal["ams_30x15", "box_40x30", "box_62x29", "avery_5160", "avery_l7160"]
 
 
 @dataclass
@@ -81,6 +84,25 @@ def _color_from_hex(hex_str: str | None, fallback: Color = HexColor(0x808080)) -
 def _luminance(color: Color) -> float:
     """Perceived luminance of a ReportLab Color (0–1, WCAG-style approximation)."""
     return 0.299 * color.red + 0.587 * color.green + 0.114 * color.blue
+
+
+def _hex_code_label(rgba: str | None) -> str:
+    """Format ``data.rgba`` as a printable ``#RRGGBB`` string for the label.
+
+    Drops the alpha channel (printed labels can't show transparency) and
+    upper-cases the hex digits to match the colour-picker convention used in
+    the inventory UI. Returns an empty string for None / malformed input so
+    the caller can ``if hex_code:`` skip drawing without an exception.
+    """
+    if not rgba:
+        return ""
+    h = rgba.lstrip("#").strip()
+    if len(h) not in (6, 8):
+        return ""
+    rgb = h[:6]
+    if not all(c in "0123456789abcdefABCDEF" for c in rgb):
+        return ""
+    return f"#{rgb.upper()}"
 
 
 # ── QR generation ────────────────────────────────────────────────────────────
@@ -201,7 +223,7 @@ def _draw_label_tight(
     pad: float,
     data: LabelData,
 ) -> None:
-    """AMS-holder layout (e.g. 30×15 mm). Swatch + 3-line text, no QR."""
+    """AMS-holder layout (e.g. 30×15 mm). Swatch + brand/material/hex/ID, no QR."""
     swatch_w = min(inner_h, inner_w * 0.35)
     swatch_y = inner_y + (inner_h - swatch_w) / 2
     _draw_swatch(c, inner_x, swatch_y, swatch_w, swatch_w, data)
@@ -213,21 +235,33 @@ def _draw_label_tight(
 
     c.setFillColor(black)
 
-    # Top: brand (small)
-    brand_size = 5.5
+    # Top: brand — bumped to bold + larger per the #809 follow-up so it's the
+    # easiest thing to read on a small AMS holder at arm's length.
+    brand_size = 6.5
     if data.brand:
-        c.setFont("Helvetica", brand_size)
-        brand = _truncate_to_width(c, data.brand, "Helvetica", brand_size, text_w)
+        c.setFont("Helvetica-Bold", brand_size)
+        brand = _truncate_to_width(c, data.brand, "Helvetica-Bold", brand_size, text_w)
         c.drawString(text_x, y + h - pad - brand_size, brand)
 
     # Second line: material + subtype, small
-    sub_size = 5.5
+    sub_size = 5
     sub_line = " ".join(filter(None, [data.material, data.subtype]))
+    sub_y_baseline = y + h - pad - brand_size - 0.6 - sub_size
     if sub_line:
         c.setFont("Helvetica", sub_size)
         sub_line = _truncate_to_width(c, sub_line, "Helvetica", sub_size, text_w)
-        sub_y = y + h - pad - brand_size - 0.6 - sub_size
-        c.drawString(text_x, sub_y, sub_line)
+        c.drawString(text_x, sub_y_baseline, sub_line)
+
+    # Third line (when there's room): hex code, tiny — useful when the user
+    # has multiple near-identical colours in the same material family.
+    hex_code = _hex_code_label(data.rgba)
+    if hex_code:
+        hex_size = 4.5
+        hex_y = sub_y_baseline - 0.4 - hex_size
+        # Don't render if it'd collide with the spool ID at the bottom.
+        if hex_y > inner_y + 13:
+            c.setFont("Helvetica", hex_size)
+            c.drawString(text_x, hex_y, hex_code)
 
     # Bottom: BIG spool ID — the killer field at-a-glance.
     id_size = 13
@@ -274,14 +308,16 @@ def _draw_label_roomy(
     line1 = data.brand or ""
     line2 = " · ".join(filter(None, [data.material, data.subtype]))
     name = data.name or ""
+    hex_code = _hex_code_label(data.rgba)
 
     # Layout from the top of the text column.
     cursor_y = y + h - pad
 
+    # Brand — bumped to bold + larger per the #809 follow-up.
     if line1:
-        size = 7
-        c.setFont("Helvetica", size)
-        text = _truncate_to_width(c, line1, "Helvetica", size, text_w)
+        size = 8
+        c.setFont("Helvetica-Bold", size)
+        text = _truncate_to_width(c, line1, "Helvetica-Bold", size, text_w)
         cursor_y -= size
         c.drawString(text_x, cursor_y, text)
         cursor_y -= 1.2
@@ -293,6 +329,15 @@ def _draw_label_roomy(
         cursor_y -= size
         c.drawString(text_x, cursor_y, text)
         cursor_y -= 1.5
+
+    # Hex colour code — useful for telling near-identical material+colour
+    # spools apart when the swatch is small or the user is colour-blind.
+    if hex_code:
+        size = 6.5
+        c.setFont("Helvetica", size)
+        cursor_y -= size
+        c.drawString(text_x, cursor_y, hex_code)
+        cursor_y -= 1.2
 
     if name and name != line1:
         size = 9
@@ -321,6 +366,7 @@ def _draw_label_roomy(
 # (label_w_mm, label_h_mm) for single-label-per-page templates.
 _SINGLE_LABEL_SIZES_MM: dict[str, tuple[float, float]] = {
     "ams_30x15": (30.0, 15.0),
+    "box_40x30": (40.0, 30.0),
     "box_62x29": (62.0, 29.0),
 }
 

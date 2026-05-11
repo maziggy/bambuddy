@@ -776,36 +776,44 @@ describe('SettingsPage', () => {
       expect(screen.queryByPlaceholderText(/api\/frame\.jpeg\?src=printer/)).not.toBeInTheDocument();
     });
 
-    it('PATCHes the printer with external_camera_snapshot_url when the user types into the input', async () => {
-      let receivedBody: Record<string, unknown> | null = null;
-      server.use(
-        http.get('/api/v1/printers/', () => HttpResponse.json([mjpegPrinter])),
-        http.patch('/api/v1/printers/7', async ({ request }) => {
-          receivedBody = (await request.json()) as Record<string, unknown>;
-          return HttpResponse.json({ ...mjpegPrinter, ...receivedBody });
-        }),
-      );
+    it(
+      'PATCHes the printer with external_camera_snapshot_url when the user types into the input',
+      async () => {
+        let receivedBody: Record<string, unknown> | null = null;
+        server.use(
+          http.get('/api/v1/printers/', () => HttpResponse.json([mjpegPrinter])),
+          http.patch('/api/v1/printers/7', async ({ request }) => {
+            receivedBody = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({ ...mjpegPrinter, ...receivedBody });
+          }),
+        );
 
-      render(<SettingsPage />);
+        render(<SettingsPage />);
 
-      const input = await waitFor(() =>
-        screen.getByPlaceholderText(/api\/frame\.jpeg\?src=printer/),
-      );
+        const input = await waitFor(() =>
+          screen.getByPlaceholderText(/api\/frame\.jpeg\?src=printer/),
+        );
 
-      const user = userEvent.setup();
-      await user.type(input, 'http://192.168.1.61:1984/api/frame.jpeg?src=printer');
+        const user = userEvent.setup();
+        await user.type(input, 'http://192.168.1.61:1984/api/frame.jpeg?src=printer');
 
-      // Save is debounced by 800ms; assert the PATCH eventually fires with
-      // the typed snapshot URL.
-      await waitFor(
-        () => {
-          expect(receivedBody).not.toBeNull();
-          expect(receivedBody!.external_camera_snapshot_url).toBe(
-            'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
-          );
-        },
-        { timeout: 3000 },
-      );
-    });
+        // Save is debounced by 800ms; assert the PATCH eventually fires with
+        // the typed snapshot URL.
+        await waitFor(
+          () => {
+            expect(receivedBody).not.toBeNull();
+            expect(receivedBody!.external_camera_snapshot_url).toBe(
+              'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
+            );
+          },
+          { timeout: 5000 },
+        );
+      },
+      // Per-test timeout raised to 15s — `user.type()` of a 49-char URL plus
+      // the 800ms save debounce fits in 5s locally (~2.3s typical) but blows
+      // past it on slow GitHub Actions runners (5000ms timeout was the failure
+      // mode on PR #1263).
+      15_000,
+    );
   });
 });

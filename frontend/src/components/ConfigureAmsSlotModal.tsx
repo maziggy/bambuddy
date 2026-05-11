@@ -928,14 +928,14 @@ export function ConfigureAmsSlotModal({
                         key={preset.id}
                         data-preset-id={preset.id}
                         onClick={() => setSelectedPresetId(preset.id)}
-                        className={`w-full p-2 rounded-lg border text-left transition-colors ${
+                        className={`group w-full p-2 rounded-lg border text-left transition-colors ${
                           selectedPresetId === preset.id
                             ? 'bg-bambu-green/20 border-bambu-green'
                             : 'bg-bambu-dark border-bambu-dark-tertiary hover:border-bambu-gray'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-white text-sm truncate">{preset.name}</span>
+                          <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {preset.source === 'local' && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
@@ -1163,14 +1163,14 @@ export function ConfigureAmsSlotModal({
                           key={preset.id}
                           data-preset-id={preset.id}
                           onClick={() => setSelectedPresetId(preset.id)}
-                          className={`w-full p-2 rounded-lg border text-left transition-colors ${
+                          className={`group w-full p-2 rounded-lg border text-left transition-colors ${
                             selectedPresetId === preset.id
                               ? 'bg-bambu-green/20 border-bambu-green'
                               : 'bg-bambu-dark border-bambu-dark-tertiary hover:border-bambu-gray'
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-white text-sm truncate">{preset.name}</span>
+                            <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               {preset.source === 'local' && (
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">

@@ -60,6 +60,7 @@ import { SliceModal } from '../components/SliceModal';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
+import { getBedTypeInfo } from '../utils/bedType';
 import { useIsMobile } from '../hooks/useIsMobile';
 import type { Archive, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -926,6 +927,12 @@ function ArchiveCard({
         </div>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <p className="text-xs text-bambu-gray">{printerName}</p>
+          {(() => {
+            const bed = getBedTypeInfo(archive.bed_type);
+            return bed ? (
+              <img src={bed.icon} alt={bed.label} title={bed.label} className="w-4 h-4 flex-shrink-0" />
+            ) : null;
+          })()}
           {/* File type badge */}
           <span
             className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
@@ -2030,6 +2037,12 @@ function ArchiveListRow({
                   {archive.sliced_for_model}
                 </span>
               )}
+              {(() => {
+                const bed = getBedTypeInfo(archive.bed_type);
+                return bed ? (
+                  <img src={bed.icon} alt={bed.label} title={bed.label} className="w-3.5 h-3.5 flex-shrink-0" />
+                ) : null;
+              })()}
               {archive.sliced_for_model && archive.filament_type && (
                 <span className="text-bambu-gray/50">·</span>
               )}
@@ -3463,7 +3476,7 @@ export function ArchivesPage() {
               <ArchiveCard
                 key={archive.id}
                 archive={archive}
-                printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model ? `Sliced for ${archive.sliced_for_model}` : 'No Printer')}
+                printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model || 'No Printer')}
                 isSelected={selectedIds.has(archive.id)}
                 onSelect={toggleSelect}
                 selectionMode={selectionMode}
@@ -3506,7 +3519,7 @@ export function ArchivesPage() {
                 <ArchiveListRow
                   key={archive.id}
                   archive={archive}
-                  printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model ? `Sliced for ${archive.sliced_for_model}` : 'No Printer')}
+                  printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model || 'No Printer')}
                   isSelected={selectedIds.has(archive.id)}
                   onSelect={toggleSelect}
                   selectionMode={selectionMode}

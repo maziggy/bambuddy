@@ -453,6 +453,7 @@ export interface Archive {
   total_layers: number | null;
   nozzle_diameter: number | null;
   bed_temperature: number | null;
+  bed_type: string | null;  // Build plate type from 3MF (e.g. "Cool Plate", "Textured PEI Plate")
   nozzle_temperature: number | null;
   sliced_for_model: string | null;  // Printer model this file was sliced for
   status: string;

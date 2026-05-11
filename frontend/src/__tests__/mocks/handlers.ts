@@ -421,4 +421,135 @@ export const handlers = [
       total_folders: 0,
     });
   }),
+
+  // ========================================================================
+  // Read-on-mount fallbacks
+  // ------------------------------------------------------------------------
+  // Components fire background fetches when they mount (status badges,
+  // notification-template loaders, oidc/ldap/2fa probes, etc.). Without
+  // handlers these fall through to the real network and the rejected promise
+  // surfaces as an ECONNREFUSED stack trace in test stderr. These minimal
+  // disabled-state stubs silence the trace. Per-test handlers added via
+  // server.use(...) still win.
+  // ========================================================================
+
+  // Lists → empty arrays
+  http.get('/api/v1/archives/', () => HttpResponse.json([])),
+  http.get('/api/v1/auth/oidc/providers', () => HttpResponse.json([])),
+  http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([])),
+  http.get('/api/v1/auth/tokens', () => HttpResponse.json([])),
+  http.get('/api/v1/auth/tokens/all', () => HttpResponse.json([])),
+  http.get('/api/v1/external-links/', () => HttpResponse.json([])),
+  http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
+  http.get('/api/v1/inventory/catalog', () => HttpResponse.json([])),
+  http.get('/api/v1/inventory/colors', () => HttpResponse.json([])),
+  http.get('/api/v1/inventory/spools', () => HttpResponse.json([])),
+  http.get('/api/v1/library/folders', () => HttpResponse.json([])),
+  http.get('/api/v1/library/folders/by-archive/:id', () => HttpResponse.json([])),
+  http.get('/api/v1/maintenance/overview', () => HttpResponse.json([])),
+  http.get('/api/v1/makerworld/recent-imports', () => HttpResponse.json([])),
+  http.get('/api/v1/notification-templates', () => HttpResponse.json([])),
+  http.get('/api/v1/pending-uploads/', () => HttpResponse.json([])),
+  http.get('/api/v1/printers/:id/ams-labels', () => HttpResponse.json([])),
+  http.get('/api/v1/printers/:id/slot-presets', () => HttpResponse.json([])),
+  http.get('/api/v1/smart-plugs/by-printer/:id', () => HttpResponse.json([])),
+  http.get('/api/v1/smart-plugs/by-printer/:id/scripts', () => HttpResponse.json([])),
+  http.get('/api/v1/spoolbuddy/devices', () => HttpResponse.json([])),
+  http.get('/api/v1/spoolman/inventory/filaments', () => HttpResponse.json([])),
+  http.get('/api/v1/spoolman/spools/linked', () => HttpResponse.json([])),
+  http.get('/api/v1/spoolman/spools/unlinked', () => HttpResponse.json([])),
+  http.get('/api/v1/users/', () => HttpResponse.json([])),
+
+  // Status / object endpoints → minimal disabled-state responses
+  http.get('/api/v1/archives/purge/settings', () =>
+    HttpResponse.json({ enabled: false, retention_days: 0 })
+  ),
+  http.get('/api/v1/auth/2fa/status', () =>
+    HttpResponse.json({ totp_enabled: false, email_otp_enabled: false, backup_codes_remaining: 0 })
+  ),
+  http.get('/api/v1/auth/advanced-auth/status', () =>
+    HttpResponse.json({ advanced_auth_enabled: false, smtp_configured: false })
+  ),
+  http.get('/api/v1/auth/ldap/status', () =>
+    HttpResponse.json({ ldap_enabled: false, ldap_configured: false })
+  ),
+  http.get('/api/v1/cloud/status', () =>
+    HttpResponse.json({ is_authenticated: false, email: null, region: null })
+  ),
+  http.get('/api/v1/firmware/updates/:id', () => HttpResponse.json(null)),
+  http.get('/api/v1/github-backup/status', () =>
+    HttpResponse.json({
+      enabled: false,
+      configured: false,
+      last_backup_at: null,
+      last_error: null,
+      schedule_enabled: false,
+    })
+  ),
+  http.get('/api/v1/library/trash', () => HttpResponse.json({ items: [], total: 0 })),
+  http.get('/api/v1/library/trash/settings', () =>
+    HttpResponse.json({ enabled: false, retention_days: 0 })
+  ),
+  http.get('/api/v1/obico/status', () =>
+    HttpResponse.json({
+      is_running: false,
+      last_error: null,
+      per_printer: {},
+      thresholds: { low: 0, high: 0 },
+      history: [],
+      enabled: false,
+      ml_url: '',
+      sensitivity: 'medium',
+      action: 'notify',
+      poll_interval: 30,
+      external_url_configured: false,
+    })
+  ),
+  http.get('/api/v1/printers/:id/current-print-user', () => HttpResponse.json(null)),
+  http.get('/api/v1/settings/check-ffmpeg', () =>
+    HttpResponse.json({ available: false, version: null })
+  ),
+  http.get('/api/v1/settings/mqtt/status', () =>
+    HttpResponse.json({ enabled: false, connected: false, broker: '', port: 1883, topic_prefix: '' })
+  ),
+  // NOTE: /api/v1/settings/spoolman intentionally NOT stubbed globally —
+  // src/__tests__/api/client.test.ts uses it as an auth-header canary with
+  // its own setupServer instance, and a global default would race with that
+  // file's runtime handlers. Tests that need this endpoint stub it locally.
+  http.get('/api/v1/settings/virtual-printer', () => HttpResponse.json({})),
+  http.get('/api/v1/spoolman/status', () =>
+    HttpResponse.json({ enabled: false, connected: false, url: null })
+  ),
+  http.get('/api/v1/system/storage-usage', () =>
+    HttpResponse.json({
+      roots: [],
+      total_bytes: 0,
+      total_formatted: '0 B',
+      categories: [],
+      other_breakdown: [],
+      scan_errors: 0,
+      generated_at: '2024-01-01T00:00:00Z',
+      cache: { hit: false, age_seconds: 0, max_age_seconds: 0 },
+    })
+  ),
+  http.get('/api/v1/updates/check', () =>
+    HttpResponse.json({ update_available: false, latest_version: null })
+  ),
+  http.get('/api/v1/updates/status', () =>
+    HttpResponse.json({ update_available: false, latest_version: null })
+  ),
+  http.get('/api/v1/updates/version', () =>
+    HttpResponse.json({ version: '0.1.5', commit: 'test' })
+  ),
+  http.get('/openapi.json', () =>
+    HttpResponse.json({ openapi: '3.0.0', info: { title: 'Bambuddy', version: '0.1.5' }, paths: {} })
+  ),
+  http.post('/api/v1/cloud/filament-info', () => HttpResponse.json({ filaments: [] })),
+  http.post('/api/v1/printers/camera/stream-token', () =>
+    HttpResponse.json({ token: 'test-token', expires_at: '2099-01-01T00:00:00Z' })
+  ),
+  http.put('/api/v1/settings/', async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json(body);
+  }),
 ];

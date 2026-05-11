@@ -1814,6 +1814,11 @@ async def run_migrations(conn):
     # stale-cancel + new-archive, losing started_at continuity.
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN subtask_id VARCHAR(64)")
 
+    # Migration: Add bed_type to print_archives (#1253)
+    # Build plate type extracted from 3MF (curr_bed_type), drives the bed icon
+    # rendered on archive cards.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN bed_type VARCHAR(64)")
+
     # Migration: Create smart_plug_energy_snapshots table (#941)
     # Hourly snapshots of each plug's lifetime counter, so date-range queries in
     # "total consumption" energy mode can compute (last - first) deltas.

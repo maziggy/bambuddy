@@ -120,6 +120,7 @@ function setupCommonHandlers(spoolList: object[]) {
       HttpResponse.json({ spoolman_enabled: 'false', spoolman_url: '', spoolman_sync_mode: 'auto', spoolman_disable_weight_sync: 'false', spoolman_report_partial_usage: 'true' })
     ),
     http.get('/api/v1/inventory/spools', () => HttpResponse.json(spoolList)),
+    http.get('/api/v1/inventory/spools/:id/usage', () => HttpResponse.json([])),
     http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
     http.get('/api/v1/inventory/catalog', () => HttpResponse.json([])),
     // Deep-link flows open SpoolFormModal, which fires off these fetches the
@@ -133,8 +134,12 @@ function setupCommonHandlers(spoolList: object[]) {
     http.get('/api/v1/cloud/local-presets', () =>
       HttpResponse.json({ filament: [], printer: [], process: [] })
     ),
+    http.get('/api/v1/local-presets/', () =>
+      HttpResponse.json({ filament: [], printer: [], process: [] })
+    ),
     http.get('/api/v1/cloud/builtin-filaments', () => HttpResponse.json([])),
     http.get('/api/v1/inventory/color-catalog', () => HttpResponse.json([])),
+    http.get('/api/v1/inventory/colors', () => HttpResponse.json([])),
     http.get('/api/v1/inventory/spool-catalog', () => HttpResponse.json([])),
     http.get('/api/v1/printers/', () => HttpResponse.json([])),
   );
@@ -249,7 +254,11 @@ describe('InventoryPage - deep-link ?spool= flow', () => {
   describe('scenario 5 (T-Gap 8): deep-link works in Spoolman mode', () => {
     beforeEach(() => {
       window.history.pushState({}, '', '/?spool=42');
-      // Override settings with Spoolman enabled
+      // Inherit common modal stubs (cloud/status, colors, presets, etc.) — then
+      // override the bits that flip into Spoolman mode. Runtime handlers added
+      // last win, so the spoolman_enabled: true settings response shadows the
+      // common one.
+      setupCommonHandlers([BASE_SPOOL]);
       server.use(
         http.get('/api/v1/settings/', () =>
           HttpResponse.json({ ...MOCK_SETTINGS, spoolman_enabled: true, spoolman_url: 'http://spoolman.local:7912' })
@@ -257,10 +266,11 @@ describe('InventoryPage - deep-link ?spool= flow', () => {
         http.get('/api/v1/settings/spoolman', () =>
           HttpResponse.json({ spoolman_enabled: 'true', spoolman_url: 'http://spoolman.local:7912', spoolman_sync_mode: 'auto', spoolman_disable_weight_sync: 'false', spoolman_report_partial_usage: 'true' })
         ),
-        // In Spoolman mode the component fetches from /api/v1/spoolman/inventory/spools
+        // Spoolman-mode list + per-spool fetches the modal makes when editing a Spoolman spool
         http.get('/api/v1/spoolman/inventory/spools', () => HttpResponse.json([BASE_SPOOL])),
-        http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
-        http.get('/api/v1/inventory/catalog', () => HttpResponse.json([])),
+        http.get('/api/v1/spoolman/inventory/spools/:id', () => HttpResponse.json(BASE_SPOOL)),
+        http.get('/api/v1/spoolman/inventory/slot-assignments/all', () => HttpResponse.json([])),
+        http.get('/api/v1/spoolman/inventory/filaments', () => HttpResponse.json([])),
       );
     });
 

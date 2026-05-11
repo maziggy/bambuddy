@@ -429,6 +429,10 @@ export default {
       powerOffMessage: 'Are you sure you want to turn OFF the power for "{{name}}"?',
       powerOffWarning: 'WARNING: "{{name}}" is currently printing! Are you sure you want to turn OFF the power? This will interrupt the print and may damage the printer.',
       powerOffButton: 'Power Off',
+      haToggleTitle: 'Toggle "{{name}}"',
+      haToggleMessage: 'Toggle the Home Assistant entity {{entity}}? This may turn power off if it is currently on.',
+      haToggleWarning: 'WARNING: "{{name}}" is currently printing! Toggling {{entity}} may cut power and interrupt the print. Continue?',
+      haToggleButton: 'Toggle',
     },
     // Bulk actions
     bulk: {
@@ -5459,6 +5463,11 @@ export default {
       downloadFailed: 'Download failed. Please try again.',
       deleteFailed: 'Could not remove the file from the library.',
     },
+  },
+  gcodeViewer: {
+    back: 'Back',
+    backToArchives: 'Back to Print Archives',
+    backToFiles: 'Back to File Manager',
   },
   libraryTrash: {
     title: 'Trash',

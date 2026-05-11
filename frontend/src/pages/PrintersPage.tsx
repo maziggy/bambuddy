@@ -65,7 +65,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -1470,6 +1470,7 @@ function PrinterCard({
   const [showMQTTDebug, setShowMQTTDebug] = useState(false);
   const [showPowerOnConfirm, setShowPowerOnConfirm] = useState(false);
   const [showPowerOffConfirm, setShowPowerOffConfirm] = useState(false);
+  const [haToggleConfirm, setHaToggleConfirm] = useState<SmartPlug | null>(null);
   const [showHMSModal, setShowHMSModal] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
@@ -4645,7 +4646,13 @@ function PrinterCard({
                     return (
                       <button
                         key={script.id}
-                        onClick={() => runScriptMutation.mutate({ id: script.id, action: isScript ? 'on' : 'toggle' })}
+                        onClick={() => {
+                          if (isScript) {
+                            runScriptMutation.mutate({ id: script.id, action: 'on' });
+                          } else {
+                            setHaToggleConfirm(script);
+                          }
+                        }}
                         disabled={runScriptMutation.isPending}
                         title={`${isScript ? 'Run' : 'Toggle'} ${script.ha_entity_id}`}
                         className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
@@ -5124,6 +5131,25 @@ function PrinterCard({
             setShowPowerOffConfirm(false);
           }}
           onCancel={() => setShowPowerOffConfirm(false)}
+        />
+      )}
+
+      {/* HA entity toggle confirmation (Show on Printer Card switches) */}
+      {haToggleConfirm && (
+        <ConfirmModal
+          title={t('printers.confirm.haToggleTitle', { name: haToggleConfirm.name })}
+          message={
+            status?.state === 'RUNNING'
+              ? t('printers.confirm.haToggleWarning', { name: printer.name, entity: haToggleConfirm.ha_entity_id || haToggleConfirm.name })
+              : t('printers.confirm.haToggleMessage', { entity: haToggleConfirm.ha_entity_id || haToggleConfirm.name })
+          }
+          confirmText={t('printers.confirm.haToggleButton')}
+          variant={status?.state === 'RUNNING' ? 'danger' : 'default'}
+          onConfirm={() => {
+            runScriptMutation.mutate({ id: haToggleConfirm.id, action: 'toggle' });
+            setHaToggleConfirm(null);
+          }}
+          onCancel={() => setHaToggleConfirm(null)}
         />
       )}
 

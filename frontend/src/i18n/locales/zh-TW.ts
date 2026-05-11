@@ -429,6 +429,10 @@ export default {
       powerOffMessage: '確定要關閉"{{name}}"的電源嗎？',
       powerOffWarning: '警告："{{name}}"正在列印中！確定要關閉電源嗎？這將中斷列印並可能損壞印表機。',
       powerOffButton: '關機',
+      haToggleTitle: '切換"{{name}}"',
+      haToggleMessage: '切換 Home Assistant 實體 {{entity}}？如果目前為開啟狀態，可能會關閉電源。',
+      haToggleWarning: '警告："{{name}}"正在列印中！切換 {{entity}} 可能會切斷電源並中斷列印。是否繼續？',
+      haToggleButton: '切換',
     },
     // Bulk actions
     bulk: {
@@ -5437,6 +5441,11 @@ export default {
       downloadFailed: '下載失敗。請重試。',
       deleteFailed: '無法從資料庫中移除檔案。',
     },
+  },
+  gcodeViewer: {
+    back: '返回',
+    backToArchives: '返回列印歸檔',
+    backToFiles: '返回檔案管理器',
   },
   libraryTrash: {
     title: '資源回收筒',

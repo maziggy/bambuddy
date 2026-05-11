@@ -429,6 +429,10 @@ export default {
       powerOffMessage: 'Tem certeza de que deseja desligar a impressora "{{name}}"?',
       powerOffWarning: 'AVISO: "{{name}}" está imprimindo no momento! Tem certeza de que deseja desligar a impressora? Isso interromperá a impressão e pode danificar a impressora.',
       powerOffButton: 'Desligar',
+      haToggleTitle: 'Alternar "{{name}}"',
+      haToggleMessage: 'Alternar a entidade Home Assistant {{entity}}? Isso pode desligar a energia se estiver ligada no momento.',
+      haToggleWarning: 'AVISO: "{{name}}" está imprimindo no momento! Alternar {{entity}} pode cortar a energia e interromper a impressão. Continuar?',
+      haToggleButton: 'Alternar',
     },
     // Bulk actions
     bulk: {
@@ -5438,6 +5442,11 @@ export default {
       downloadFailed: 'Falha no download. Tente novamente.',
       deleteFailed: 'Não foi possível remover o arquivo da biblioteca.',
     },
+  },
+  gcodeViewer: {
+    back: 'Voltar',
+    backToArchives: 'Voltar para os arquivos de impressão',
+    backToFiles: 'Voltar para o gerenciador de arquivos',
   },
   libraryTrash: {
     title: 'Lixeira',

@@ -122,9 +122,9 @@ class AppSettings(BaseModel):
     )
 
     # Dark mode theme settings
-    dark_style: str = Field(default="classic", description="Dark mode style: classic, glow, vibrant")
+    dark_style: str = Field(default="vibrant", description="Dark mode style: classic, glow, vibrant")
     dark_background: str = Field(
-        default="neutral", description="Dark mode background: neutral, warm, cool, oled, slate, forest"
+        default="cool", description="Dark mode background: neutral, warm, cool, oled, slate, forest"
     )
     dark_accent: str = Field(default="green", description="Dark mode accent: green, teal, blue, orange, purple, red")
 

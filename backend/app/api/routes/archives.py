@@ -128,6 +128,7 @@ def archive_to_response(
         "total_layers": archive.total_layers,
         "nozzle_diameter": archive.nozzle_diameter,
         "bed_temperature": archive.bed_temperature,
+        "bed_type": archive.bed_type,
         "nozzle_temperature": archive.nozzle_temperature,
         "sliced_for_model": archive.sliced_for_model,
         "status": archive.status,
@@ -1220,6 +1221,8 @@ async def rescan_archive(
         archive.nozzle_diameter = metadata["nozzle_diameter"]
     if metadata.get("bed_temperature"):
         archive.bed_temperature = metadata["bed_temperature"]
+    if metadata.get("bed_type"):
+        archive.bed_type = metadata["bed_type"]
     if metadata.get("nozzle_temperature"):
         archive.nozzle_temperature = metadata["nozzle_temperature"]
     if metadata.get("makerworld_url"):

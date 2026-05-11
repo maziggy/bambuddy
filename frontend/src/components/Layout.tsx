@@ -26,17 +26,16 @@ interface NavItem {
 }
 
 export const defaultNavItems: NavItem[] = [
-  // Primary workflow items
   { id: 'printers', to: '/', icon: Printer, labelKey: 'nav.printers' },
+  { id: 'inventory', to: '/inventory', icon: Disc3, labelKey: 'nav.inventory' },
   { id: 'archives', to: '/archives', icon: Archive, labelKey: 'nav.archives' },
   { id: 'queue', to: '/queue', icon: Calendar, labelKey: 'nav.queue' },
-  { id: 'stats', to: '/stats', icon: BarChart3, labelKey: 'nav.stats' },
-  { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
-  { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
-  { id: 'inventory', to: '/inventory', icon: Disc3, labelKey: 'nav.inventory' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
   { id: 'makerworld', to: '/makerworld', icon: Globe, labelKey: 'nav.makerworld' },
+  { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
+  { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
+  { id: 'stats', to: '/stats', icon: BarChart3, labelKey: 'nav.stats' },
   // User-account features: kept adjacent to Settings intentionally
   { id: 'notifications', to: '/notifications', icon: Bell, labelKey: 'nav.notifications' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },

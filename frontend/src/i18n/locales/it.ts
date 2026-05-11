@@ -429,6 +429,10 @@ export default {
       powerOffMessage: 'Sei sicuro di spegnere "{{name}}"?',
       powerOffWarning: 'AVVISO: "{{name}}" sta stampando! Sei sicuro di spegnere? Questo interromperà la stampa e potrebbe danneggiare la stampante.',
       powerOffButton: 'Spegni',
+      haToggleTitle: 'Commuta "{{name}}"',
+      haToggleMessage: 'Commutare l\'entità Home Assistant {{entity}}? Questo potrebbe spegnere l\'alimentazione se attualmente è accesa.',
+      haToggleWarning: 'AVVISO: "{{name}}" sta stampando! La commutazione di {{entity}} potrebbe togliere l\'alimentazione e interrompere la stampa. Continuare?',
+      haToggleButton: 'Commuta',
     },
     // Bulk actions
     bulk: {

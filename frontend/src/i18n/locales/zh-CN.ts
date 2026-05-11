@@ -429,6 +429,10 @@ export default {
       powerOffMessage: '确定要关闭"{{name}}"的电源吗？',
       powerOffWarning: '警告："{{name}}"正在打印中！确定要关闭电源吗？这将中断打印并可能损坏打印机。',
       powerOffButton: '关机',
+      haToggleTitle: '切换"{{name}}"',
+      haToggleMessage: '切换 Home Assistant 实体 {{entity}}？如果当前为开启状态，可能会关闭电源。',
+      haToggleWarning: '警告："{{name}}"正在打印中！切换 {{entity}} 可能会切断电源并中断打印。是否继续？',
+      haToggleButton: '切换',
     },
     // Bulk actions
     bulk: {

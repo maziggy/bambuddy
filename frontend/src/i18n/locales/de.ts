@@ -429,6 +429,10 @@ export default {
       powerOffMessage: 'Möchten Sie die Stromversorgung für "{{name}}" wirklich AUSSCHALTEN?',
       powerOffWarning: 'WARNUNG: "{{name}}" druckt gerade! Möchten Sie die Stromversorgung wirklich AUSSCHALTEN? Dies unterbricht den Druck und kann den Drucker beschädigen.',
       powerOffButton: 'Ausschalten',
+      haToggleTitle: '"{{name}}" umschalten',
+      haToggleMessage: 'Home-Assistant-Entität {{entity}} umschalten? Das kann die Stromversorgung ausschalten, falls sie gerade an ist.',
+      haToggleWarning: 'WARNUNG: "{{name}}" druckt gerade! Umschalten von {{entity}} kann die Stromversorgung trennen und den Druck abbrechen. Fortfahren?',
+      haToggleButton: 'Umschalten',
     },
     // Bulk actions
     bulk: {

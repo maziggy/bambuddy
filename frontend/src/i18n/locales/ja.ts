@@ -428,6 +428,10 @@ export default {
       powerOffMessage: '「{{name}}」の電源をオフにしますか？',
       powerOffWarning: '警告: 「{{name}}」は現在印刷中です！電源をオフにしますか？印刷が中断され、プリンターが損傷する可能性があります。',
       powerOffButton: '電源オフ',
+      haToggleTitle: '「{{name}}」を切り替え',
+      haToggleMessage: 'Home Assistant エンティティ {{entity}} を切り替えますか？現在オンの場合、電源がオフになる可能性があります。',
+      haToggleWarning: '警告: 「{{name}}」は現在印刷中です！{{entity}} を切り替えると電源が切れ、印刷が中断される可能性があります。続行しますか？',
+      haToggleButton: '切り替え',
     },
     // Bulk actions
     bulk: {

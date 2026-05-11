@@ -429,6 +429,10 @@ export default {
       powerOffMessage: 'Éteindre "{{name}}" ?',
       powerOffWarning: 'ATTENTION : "{{name}}" imprime ! L\'éteindre maintenant peut endommager l\'imprimante.',
       powerOffButton: 'Éteindre',
+      haToggleTitle: 'Basculer "{{name}}"',
+      haToggleMessage: 'Basculer l\'entité Home Assistant {{entity}} ? Cela peut couper l\'alimentation si elle est actuellement activée.',
+      haToggleWarning: 'ATTENTION : "{{name}}" imprime ! Basculer {{entity}} peut couper l\'alimentation et interrompre l\'impression. Continuer ?',
+      haToggleButton: 'Basculer',
     },
     // Bulk actions
     bulk: {

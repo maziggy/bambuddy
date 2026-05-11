@@ -231,7 +231,16 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   ),
   location: ({ spool, assignmentMap }) => {
     const assignment = assignmentMap[spool.id];
-    if (!assignment) return <span className="text-sm text-bambu-gray">-</span>;
+    if (!assignment) {
+      if (spool.storage_location) {
+        return (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
+            {spool.storage_location}
+          </span>
+        );
+      }
+      return <span className="text-sm text-bambu-gray">-</span>;
+    }
     const printerLabel = assignment.printer_name || `Printer ${assignment.printer_id}`;
     const isExternal = assignment.ams_id === 254 || assignment.ams_id === 255;
     const isHt = !isExternal && assignment.ams_id >= 128;

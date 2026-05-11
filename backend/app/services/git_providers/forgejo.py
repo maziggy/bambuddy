@@ -87,9 +87,15 @@ class ForgejoBackend(GiteaBackend):
 
         except Exception as e:
             logger.exception("Forgejo connection test failed")
+            detail = str(e)[:200]
+            message = (
+                f"Connection failed: {type(e).__name__}: {detail}"
+                if detail
+                else f"Connection failed: {type(e).__name__}"
+            )
             return {
                 "success": False,
-                "message": f"Connection failed: {type(e).__name__}",
+                "message": message,
                 "repo_name": None,
                 "permissions": None,
             }

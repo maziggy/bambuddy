@@ -136,23 +136,38 @@ class GiteaBackend(GitHubBackend):
                 f"{api_base}/repos/{owner}/{repo}/git/commits/{current_commit_sha}", headers=headers
             )
             if commit_response.status_code != 200:
-                return {"status": "failed", "message": "Failed to get current commit"}
+                msg = f"Failed to get current commit (HTTP {commit_response.status_code}): {self._truncated_response_text(commit_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             current_tree_sha = self._commit_tree_sha(commit_response.json())
             if not current_tree_sha:
-                return {"status": "failed", "message": "Failed to extract tree SHA from commit response"}
+                msg = (
+                    f"Failed to extract tree SHA from commit response: {self._truncated_response_text(commit_response)}"
+                )
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             tree_response = await client.get(
                 f"{api_base}/repos/{owner}/{repo}/git/trees/{current_tree_sha}?recursive=1", headers=headers
             )
             if tree_response.status_code != 200:
-                return {
-                    "status": "failed",
-                    "message": f"Failed to list existing tree: {tree_response.status_code}",
-                    "error": self._truncated_response_text(tree_response),
-                }
+                msg = f"Failed to list existing tree (HTTP {tree_response.status_code}): {self._truncated_response_text(tree_response)}"
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg, "error": self._truncated_response_text(tree_response)}
+            tree_data = tree_response.json()
+            # Gitea's tree API can report ``truncated: true`` for large
+            # listings; if we honour the partial map, the dedup check misses
+            # and every file gets re-uploaded each run.
+            if tree_data.get("truncated"):
+                msg = (
+                    "Repository tree exceeds the Gitea API listing limit (truncated=true). "
+                    "Rotate the backup repository to avoid silent file-by-file churn on every backup."
+                )
+                logger.warning("push_files %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
             existing_files: dict[str, str] = {}
-            for item in tree_response.json().get("tree", []):
+            for item in tree_data.get("tree", []):
                 if item.get("type") != "blob":
                     continue
                 path, sha = item.get("path"), item.get("sha")
@@ -199,9 +214,9 @@ class GiteaBackend(GitHubBackend):
                 return {
                     "status": "failed",
                     "message": (
-                        "Conflict committing files — one or more blob SHAs are stale. "
-                        "This can happen if a file was edited via the Gitea web UI between "
-                        "the backup read and write. The next scheduled backup will resolve this."
+                        "Conflict committing files — the branch likely advanced concurrently "
+                        "(web-UI edit, another backup run, or path-vs-tree collision). "
+                        "The next scheduled backup will re-read the current tree and resolve this."
                     ),
                 }
             if response.status_code not in (200, 201):
@@ -243,7 +258,9 @@ class GiteaBackend(GitHubBackend):
         try:
             repo_response = await client.get(f"{api_base}/repos/{owner}/{repo}", headers=headers)
             if repo_response.status_code != 200:
-                return {"status": "failed", "message": "Failed to get repo info"}
+                msg = f"Failed to get repo info (HTTP {repo_response.status_code}): {self._truncated_response_text(repo_response)}"
+                logger.warning("_create_branch_and_push %s/%s: %s", owner, repo, msg)
+                return {"status": "failed", "message": msg}
 
             default_branch = repo_response.json().get("default_branch", "main")
 
@@ -273,6 +290,7 @@ class GiteaBackend(GitHubBackend):
                 logger.warning("_create_branch_and_push %s/%s: %s", owner, repo, msg)
                 return {"status": "failed", "message": msg}
 
+            logger.info("Re-entering push_files after branch create %s/%s -> %s", owner, repo, branch)
             return await self.push_files(repo_url, token, branch, files, client, _allow_branch_create=False)
 
         except Exception as e:

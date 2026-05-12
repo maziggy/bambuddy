@@ -1864,11 +1864,16 @@ async def list_oidc_links(
         select(UserOIDCLink).where(UserOIDCLink.user_id == current_user.id).options(selectinload(UserOIDCLink.provider))
     )
     links = result.scalars().all()
+    # Defensive null-check on link.provider: on PostgreSQL the FK cascade
+    # ensures provider exists, but SQLite ships with FK enforcement off, so
+    # a deleted provider could in theory leave the link briefly orphan until
+    # the next init_db() cleanup runs. Returning "<deleted>" instead of
+    # crashing keeps the endpoint usable in that edge case (#1285 follow-up).
     return [
         OIDCLinkResponse(
             id=link.id,
             provider_id=link.provider_id,
-            provider_name=link.provider.name,
+            provider_name=link.provider.name if link.provider else "<deleted>",
             provider_email=link.provider_email,
             created_at=link.created_at.isoformat(),
         )

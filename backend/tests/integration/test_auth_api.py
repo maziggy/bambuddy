@@ -424,8 +424,22 @@ class TestUsersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_user(self, async_client: AsyncClient, auth_token: str):
-        """Verify admin can delete a user."""
+    async def test_delete_user(self, async_client: AsyncClient, auth_token: str, db_session):
+        """Verify admin can delete a user and that all auth-table side effects cascade.
+
+        The auth-cleanup side effects matter on SQLite (FK enforcement off by default):
+        without explicit DELETEs in the endpoint, deleting a user leaves orphan rows
+        in user_oidc_links / user_totp / user_otp_codes / api_keys — which would
+        block SSO re-login and leak MFA secrets (#1285).
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.api_key import APIKey
+        from backend.app.models.oidc_provider import UserOIDCLink
+        from backend.app.models.user import User
+        from backend.app.models.user_otp_code import UserOTPCode
+        from backend.app.models.user_totp import UserTOTP
+
         # Create user
         create_response = await async_client.post(
             "/api/v1/users/",
@@ -445,6 +459,15 @@ class TestUsersAPI:
         )
 
         assert response.status_code == 204
+
+        # All auth-related rows for this user must be gone — see #1285.
+        await db_session.commit()
+        user_row = await db_session.execute(select(User).where(User.id == user_id))
+        assert user_row.scalar_one_or_none() is None, "User row not deleted"
+
+        for model in (UserOIDCLink, UserTOTP, UserOTPCode, APIKey):
+            rows = await db_session.execute(select(model).where(model.user_id == user_id))
+            assert rows.scalars().all() == [], f"Orphan {model.__name__} rows left after user delete"
 
 
 class TestAuthDisableAPI:

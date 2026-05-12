@@ -25,9 +25,12 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
+from backend.app.models.oidc_provider import UserOIDCLink
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
+from backend.app.models.user_otp_code import UserOTPCode
+from backend.app.models.user_totp import UserTOTP
 from backend.app.schemas.auth import ChangePasswordRequest, GroupBrief, UserCreate, UserResponse, UserUpdate
 from backend.app.services.email_service import (
     create_welcome_email_from_template,
@@ -416,6 +419,18 @@ async def delete_user(
     # /cloud/* — but the rest of the API would still accept them, which is
     # exactly the orphan-key state the CASCADE was meant to prevent).
     await db.execute(delete(APIKey).where(APIKey.user_id == user_id))
+
+    # Drop OIDC links and MFA state owned by this user. Same SQLite/FK
+    # pattern as APIKey above. Without these, deleting an SSO-linked user
+    # on SQLite blocks re-login: the OIDC callback finds the orphan
+    # UserOIDCLink, fails to resolve the (now missing) user, and falls
+    # through to "account_inactive" instead of triggering auto_create.
+    # See issue #1285. UserTOTP / UserOTPCode would otherwise leave MFA
+    # secrets and pending email codes in the DB after the owning user is
+    # gone.
+    await db.execute(delete(UserOIDCLink).where(UserOIDCLink.user_id == user_id))
+    await db.execute(delete(UserTOTP).where(UserTOTP.user_id == user_id))
+    await db.execute(delete(UserOTPCode).where(UserOTPCode.user_id == user_id))
 
     await db.delete(user)
     await db.commit()

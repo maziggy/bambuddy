@@ -1,0 +1,333 @@
+"""Regression test for the orphan OIDC/MFA cleanup migration (#1285).
+
+On SQLite (PRAGMA foreign_keys=OFF by default), the ON DELETE CASCADE
+declared on user_oidc_links.user_id / user_totp.user_id /
+user_otp_codes.user_id is NOT enforced. Users deleted via the API before
+the fix (PR for #1285) left orphan rows pointing to non-existent users.
+The OIDC callback would then find the orphan UserOIDCLink, fail to load
+the deleted user, and redirect to ``account_inactive`` instead of running
+auto_create_users.
+
+run_migrations now sweeps orphans on every startup; this test verifies it
+on all three tables and proves idempotency + no-op behaviour on fresh DBs.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from backend.app.core.database import run_migrations
+
+
+@pytest.fixture(autouse=True)
+def force_sqlite_dialect(monkeypatch):
+    """Pin the SQLite branch in run_migrations regardless of env."""
+    from backend.app.core import database as database_module, db_dialect
+
+    monkeypatch.setattr(db_dialect, "is_sqlite", lambda: True)
+    monkeypatch.setattr(db_dialect, "is_postgres", lambda: False)
+    monkeypatch.setattr(database_module, "is_sqlite", lambda: True)
+
+
+def _register_all_models():
+    """Import every model so Base.metadata knows about them. run_migrations
+    touches multiple tables; the full schema must exist before calling it."""
+    from backend.app.models import (  # noqa: F401
+        ams_history,
+        ams_label,
+        api_key,
+        archive,
+        auth_ephemeral,
+        color_catalog,
+        external_link,
+        filament,
+        group,
+        kprofile_note,
+        long_lived_token,
+        maintenance,
+        notification,
+        notification_template,
+        oidc_provider,
+        print_queue,
+        printer,
+        project,
+        project_bom,
+        settings,
+        slot_preset,
+        smart_plug,
+        smart_plug_energy_snapshot,
+        spool,
+        spool_assignment,
+        spool_catalog,
+        spool_k_profile,
+        spool_usage_history,
+        spoolbuddy_device,
+        spoolman_k_profile,
+        spoolman_slot_assignment,
+        user,
+        user_email_pref,
+        user_otp_code,
+        user_totp,
+        virtual_printer,
+    )
+
+
+@pytest.fixture
+async def engine_with_full_schema():
+    """In-memory SQLite with the full schema via create_all (no manual SQL)."""
+    from backend.app.core.database import Base
+
+    _register_all_models()
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+# -----------------------------------------------------------------------------
+# Per-table orphan cleanup
+# -----------------------------------------------------------------------------
+
+
+async def test_migration_deletes_orphan_user_oidc_links(engine_with_full_schema):
+    """Orphan rows in user_oidc_links must be removed; rows pointing at a real
+    user must stay."""
+    async with engine_with_full_schema.begin() as conn:
+        # One real user, one nonexistent referenced by an OIDC link
+        await conn.execute(
+            text(
+                "INSERT INTO users (id, username, password_hash, is_active, created_at, updated_at, "
+                "role, auth_source) VALUES (1, 'survivor', 'h', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+                "'user', 'local')"
+            )
+        )
+        # Provider (any provider — the link only requires existence)
+        await conn.execute(
+            text(
+                "INSERT INTO oidc_providers (id, name, issuer_url, client_id, client_secret, "
+                "scopes, is_enabled, auto_create_users, auto_link_existing_accounts, email_claim, "
+                "require_email_verified, created_at, updated_at) VALUES (1, 'p', 'https://x', 'c', "
+                "'s', 'openid', 1, 1, 0, 'email', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+        # Valid link
+        await conn.execute(
+            text(
+                "INSERT INTO user_oidc_links (id, user_id, provider_id, provider_user_id, created_at) "
+                "VALUES (10, 1, 1, 'sub-real', CURRENT_TIMESTAMP)"
+            )
+        )
+        # Orphan link — user_id=999 does not exist
+        await conn.execute(
+            text(
+                "INSERT INTO user_oidc_links (id, user_id, provider_id, provider_user_id, created_at) "
+                "VALUES (11, 999, 1, 'sub-orphan', CURRENT_TIMESTAMP)"
+            )
+        )
+
+    async with engine_with_full_schema.begin() as conn:
+        await run_migrations(conn)
+
+    async with engine_with_full_schema.begin() as conn:
+        ids = [row[0] for row in (await conn.execute(text("SELECT id FROM user_oidc_links ORDER BY id"))).all()]
+        assert ids == [10], f"Expected only the valid link to survive, got {ids}"
+
+
+async def test_migration_deletes_orphan_user_totp(engine_with_full_schema):
+    """Orphan rows in user_totp must be removed; rows for real users must stay."""
+    async with engine_with_full_schema.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO users (id, username, password_hash, is_active, created_at, updated_at, "
+                "role, auth_source) VALUES (1, 'survivor', 'h', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+                "'user', 'local')"
+            )
+        )
+        # Valid TOTP
+        await conn.execute(
+            text(
+                "INSERT INTO user_totp (id, user_id, secret, is_enabled, created_at, updated_at) "
+                "VALUES (10, 1, 'enc', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+        # Orphan TOTP — user_id=999 does not exist (would never happen with FK on,
+        # but SQLite tolerates it because PRAGMA foreign_keys=OFF)
+        await conn.execute(
+            text(
+                "INSERT INTO user_totp (id, user_id, secret, is_enabled, created_at, updated_at) "
+                "VALUES (11, 999, 'orphan_enc', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+
+    async with engine_with_full_schema.begin() as conn:
+        await run_migrations(conn)
+
+    async with engine_with_full_schema.begin() as conn:
+        ids = [row[0] for row in (await conn.execute(text("SELECT id FROM user_totp ORDER BY id"))).all()]
+        assert ids == [10], f"Expected only the valid TOTP row to survive, got {ids}"
+
+
+async def test_migration_deletes_orphan_user_otp_codes(engine_with_full_schema):
+    """Orphan rows in user_otp_codes must be removed; rows for real users must stay."""
+    exp = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    async with engine_with_full_schema.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO users (id, username, password_hash, is_active, created_at, updated_at, "
+                "role, auth_source) VALUES (1, 'survivor', 'h', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+                "'user', 'local')"
+            )
+        )
+        # Valid OTP code
+        await conn.execute(
+            text(
+                "INSERT INTO user_otp_codes (id, user_id, code_hash, attempts, used, expires_at, created_at) "
+                "VALUES (10, 1, '$h$', 0, 0, :exp, CURRENT_TIMESTAMP)"
+            ),
+            {"exp": exp},
+        )
+        # Two orphan OTP codes
+        await conn.execute(
+            text(
+                "INSERT INTO user_otp_codes (id, user_id, code_hash, attempts, used, expires_at, created_at) "
+                "VALUES (11, 999, '$h$', 0, 0, :exp, CURRENT_TIMESTAMP)"
+            ),
+            {"exp": exp},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO user_otp_codes (id, user_id, code_hash, attempts, used, expires_at, created_at) "
+                "VALUES (12, 1000, '$h$', 0, 0, :exp, CURRENT_TIMESTAMP)"
+            ),
+            {"exp": exp},
+        )
+
+    async with engine_with_full_schema.begin() as conn:
+        await run_migrations(conn)
+
+    async with engine_with_full_schema.begin() as conn:
+        ids = [row[0] for row in (await conn.execute(text("SELECT id FROM user_otp_codes ORDER BY id"))).all()]
+        assert ids == [10], f"Expected only the valid OTP row to survive, got {ids}"
+
+
+# -----------------------------------------------------------------------------
+# No-op and idempotency
+# -----------------------------------------------------------------------------
+
+
+async def test_migration_is_noop_on_fresh_install(engine_with_full_schema):
+    """A fresh DB with empty users + auth tables must not raise and must not
+    modify anything."""
+    async with engine_with_full_schema.begin() as conn:
+        await run_migrations(conn)
+        await run_migrations(conn)  # second run, still fine
+
+    async with engine_with_full_schema.begin() as conn:
+        for tbl in ("user_oidc_links", "user_totp", "user_otp_codes"):
+            count = (await conn.execute(text(f"SELECT COUNT(*) FROM {tbl}"))).scalar_one()
+            assert count == 0
+
+
+async def test_migration_is_idempotent(engine_with_full_schema):
+    """Running the migration twice on data with orphans cleans them once, the
+    second run finds nothing left and is a no-op."""
+    async with engine_with_full_schema.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO users (id, username, password_hash, is_active, created_at, updated_at, "
+                "role, auth_source) VALUES (1, 'u', 'h', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+                "'user', 'local')"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO oidc_providers (id, name, issuer_url, client_id, client_secret, "
+                "scopes, is_enabled, auto_create_users, auto_link_existing_accounts, email_claim, "
+                "require_email_verified, created_at, updated_at) VALUES (1, 'p', 'https://x', 'c', "
+                "'s', 'openid', 1, 1, 0, 'email', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO user_oidc_links (id, user_id, provider_id, provider_user_id, created_at) "
+                "VALUES (1, 999, 1, 'orphan', CURRENT_TIMESTAMP)"
+            )
+        )
+
+    async with engine_with_full_schema.begin() as conn:
+        await run_migrations(conn)
+    # Second run must not crash, must not double-touch anything
+    async with engine_with_full_schema.begin() as conn:
+        await run_migrations(conn)
+
+    async with engine_with_full_schema.begin() as conn:
+        count = (await conn.execute(text("SELECT COUNT(*) FROM user_oidc_links"))).scalar_one()
+        assert count == 0
+
+
+async def test_migration_keeps_rows_for_existing_users(engine_with_full_schema):
+    """Belt-and-braces: rows for real users must never be touched even when
+    other tables have orphans being cleaned at the same time."""
+    exp = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    async with engine_with_full_schema.begin() as conn:
+        for uid in (1, 2):
+            await conn.execute(
+                text(
+                    "INSERT INTO users (id, username, password_hash, is_active, created_at, updated_at, "
+                    "role, auth_source) VALUES (:id, :name, 'h', 1, CURRENT_TIMESTAMP, "
+                    "CURRENT_TIMESTAMP, 'user', 'local')"
+                ),
+                {"id": uid, "name": f"u{uid}"},
+            )
+        await conn.execute(
+            text(
+                "INSERT INTO oidc_providers (id, name, issuer_url, client_id, client_secret, "
+                "scopes, is_enabled, auto_create_users, auto_link_existing_accounts, email_claim, "
+                "require_email_verified, created_at, updated_at) VALUES (1, 'p', 'https://x', 'c', "
+                "'s', 'openid', 1, 1, 0, 'email', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+        # Mix: valid + orphan in each table
+        await conn.execute(
+            text(
+                "INSERT INTO user_oidc_links (id, user_id, provider_id, provider_user_id, created_at) "
+                "VALUES (1, 1, 1, 'real', CURRENT_TIMESTAMP), "
+                "(2, 999, 1, 'orphan', CURRENT_TIMESTAMP)"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO user_totp (id, user_id, secret, is_enabled, created_at, updated_at) "
+                "VALUES (1, 2, 'enc', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
+                "(2, 998, 'orphan', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO user_otp_codes (id, user_id, code_hash, attempts, used, expires_at, "
+                "created_at) VALUES (1, 1, '$h$', 0, 0, :exp, CURRENT_TIMESTAMP), "
+                "(2, 997, '$h$', 0, 0, :exp, CURRENT_TIMESTAMP)"
+            ),
+            {"exp": exp},
+        )
+
+    async with engine_with_full_schema.begin() as conn:
+        await run_migrations(conn)
+
+    async with engine_with_full_schema.begin() as conn:
+        links = [
+            row[0] for row in (await conn.execute(text("SELECT user_id FROM user_oidc_links ORDER BY user_id"))).all()
+        ]
+        totps = [row[0] for row in (await conn.execute(text("SELECT user_id FROM user_totp ORDER BY user_id"))).all()]
+        otps = [
+            row[0] for row in (await conn.execute(text("SELECT user_id FROM user_otp_codes ORDER BY user_id"))).all()
+        ]
+        assert links == [1], f"Expected only user_id=1 to survive in user_oidc_links, got {links}"
+        assert totps == [2], f"Expected only user_id=2 to survive in user_totp, got {totps}"
+        assert otps == [1], f"Expected only user_id=1 to survive in user_otp_codes, got {otps}"

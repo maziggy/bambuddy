@@ -4843,3 +4843,52 @@ class TestOIDCAutoCreateDefaultGroup:
             jwks_data=jwks_data,
         )
         assert "Administrators" in group_names, f"Expected Administrators, got {group_names}"
+
+
+class TestListOidcLinksDefensiveProviderNull:
+    """list_oidc_links must not crash if a link's provider is orphaned on SQLite.
+
+    PR for #1285 added a defensive null-check at mfa.py:1871 so the endpoint
+    returns ``provider_name="<deleted>"`` for orphan links instead of raising
+    AttributeError when accessing ``link.provider.name``. This scenario is
+    only reachable on SQLite (PRAGMA foreign_keys=OFF) when an OIDCProvider
+    row is removed without the ORM cascade running.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_oidc_links_returns_deleted_marker_for_orphan_provider(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import UserOIDCLink
+
+        admin_token = await _setup_and_login(async_client, "linkorphan_adm", "LinkOrphanAdm1!")
+
+        admin_row = await db_session.execute(select(User).where(User.username == "linkorphan_adm"))
+        admin_user = admin_row.scalar_one()
+
+        # Orphan link: provider_id=99999 deliberately points at no row.
+        db_session.add(
+            UserOIDCLink(
+                user_id=admin_user.id,
+                provider_id=99999,
+                provider_user_id="orphan-sub",
+                provider_email="orphan@example.com",
+            )
+        )
+        await db_session.commit()
+
+        resp = await async_client.get(
+            "/api/v1/auth/oidc/links",
+            headers=_auth_header(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        links = resp.json()
+        assert len(links) == 1
+        # The fix: orphan provider_id no longer crashes — returns "<deleted>" instead.
+        assert links[0]["provider_name"] == "<deleted>", (
+            f"Expected '<deleted>' fallback for orphan provider, got {links[0]['provider_name']!r}"
+        )
+        assert links[0]["provider_id"] == 99999

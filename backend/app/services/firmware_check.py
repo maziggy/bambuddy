@@ -122,7 +122,11 @@ class FirmwareCheckService:
         self._client = httpx.AsyncClient(
             timeout=30.0,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                # Identify honestly as Bambuddy when scraping the public Bambu
+                # Lab firmware wiki — verified 2026-05-12 that the wiki serves
+                # this UA identically to a Chrome UA (same HTML response shape).
+                # No browser impersonation needed for read-only public pages.
+                "User-Agent": "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
             },
         )
 

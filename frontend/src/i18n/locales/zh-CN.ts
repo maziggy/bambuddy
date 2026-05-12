@@ -3,7 +3,7 @@ export default {
   nav: {
     printers: '打印机',
     archives: '归档',
-    queue: '队列',
+    queue: '打印队列',
     stats: '统计',
     profiles: '配置文件',
     maintenance: '维护',
@@ -186,9 +186,9 @@ export default {
       allLocations: '所有位置',
     },
     toolbar: {
-      filters: 'Filters',
-      view: 'View',
-      actions: 'Actions',
+      filters: '筛选',
+      view: '视图',
+      actions: '操作',
     },
     // Printer card
     readyToPrint: '准备打印',
@@ -1141,7 +1141,7 @@ export default {
 
   // Statistics page
   stats: {
-    title: '仪表板',
+    title: '统计',
     subtitle: '拖动小部件以重新排列。点击眼睛图标隐藏。',
     overview: '概览',
     totalPrints: '总打印次数',
@@ -3408,6 +3408,7 @@ export default {
   // Inventory
   inventory: {
     title: '耗材库存',
+    subtitle: '管理您的料盘',
     spoolmanMixedContentTitle: 'Spoolman 无法通过 HTTPS 加载 — 浏览器已阻止混合内容',
     spoolmanMixedContentBody: 'Bambuddy 通过您的反向代理以 HTTPS 提供服务，但您的 Spoolman 地址仍为 HTTP。出于安全考虑，浏览器会阻止混合内容，因此嵌入式 Spoolman 界面无法加载。Spoolman 也必须通过 HTTPS 访问。',
     spoolmanMixedContentFixReverseProxy: '请将 Spoolman 置于与 Bambuddy 相同的反向代理（Traefik / Nginx / Caddy）之后并启用 HTTPS，然后在设置中将 Spoolman URL 更新为新的 HTTPS 地址。',

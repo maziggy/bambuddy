@@ -217,6 +217,67 @@ class TestVirtualPrinterInstance:
 
             assert "verify_job" not in instance._pending_files
 
+    @pytest.mark.asyncio
+    async def test_archive_file_broadcasts_archive_created(self, tmp_path):
+        """#1282: VP immediate-mode archives must broadcast archive_created so
+        the Archives page refreshes without a tab switch. Real-printer prints
+        get this via main.py's MQTT print_start handler; the VP path used to
+        skip the broadcast entirely."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=30,
+            name="ImmediateBroadcast",
+            mode="immediate",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800030",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 99
+        mock_archive.printer_id = None
+        mock_archive.filename = "test.3mf"
+        mock_archive.print_name = "test"
+        mock_archive.status = "archived"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+            patch(
+                "backend.app.core.websocket.ws_manager.send_archive_created",
+                new_callable=AsyncMock,
+            ) as mock_broadcast,
+        ):
+            await inst._archive_file(file_path, "192.168.1.100")
+
+        mock_broadcast.assert_awaited_once()
+        payload = mock_broadcast.await_args.args[0]
+        assert payload["id"] == 99
+        assert payload["filename"] == "test.3mf"
+        assert payload["status"] == "archived"
+
     # ========================================================================
     # Tests for auto_dispatch
     # ========================================================================
@@ -293,6 +354,68 @@ class TestVirtualPrinterInstance:
         assert len(added_items) == 1
         queue_item = added_items[0]
         assert queue_item.manual_start is False
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_broadcasts_archive_created(self, tmp_path):
+        """#1282: VP queue-mode uploads must broadcast archive_created so the
+        Archives page picks up the new entry live. Pre-fix the page only
+        refreshed when the user manually switched tabs."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=31,
+            name="QueueBroadcast",
+            mode="print_queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800031",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 77
+        mock_archive.printer_id = None
+        mock_archive.filename = "test.3mf"
+        mock_archive.print_name = "test"
+        mock_archive.status = "archived"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+            patch(
+                "backend.app.core.websocket.ws_manager.send_archive_created",
+                new_callable=AsyncMock,
+            ) as mock_broadcast,
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        mock_broadcast.assert_awaited_once()
+        payload = mock_broadcast.await_args.args[0]
+        assert payload["id"] == 77
+        assert payload["print_name"] == "test"
+        assert payload["status"] == "archived"
 
     @pytest.mark.asyncio
     async def test_add_to_print_queue_with_auto_dispatch_off(self, tmp_path):

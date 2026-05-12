@@ -3,7 +3,7 @@ export default {
   nav: {
     printers: 'Drucker',
     archives: 'Archiv',
-    queue: 'Warteschlange',
+    queue: 'Druckwarteschlange',
     stats: 'Statistiken',
     profiles: 'Profile',
     maintenance: 'Wartung',
@@ -1141,7 +1141,7 @@ export default {
 
   // Statistics page
   stats: {
-    title: 'Dashboard',
+    title: 'Statistiken',
     subtitle: 'Widgets zum Neuanordnen ziehen. Auf das Augensymbol klicken zum Ausblenden.',
     overview: 'Übersicht',
     totalPrints: 'Gesamtdrucke',
@@ -3420,6 +3420,7 @@ export default {
   // Inventar
   inventory: {
     title: 'Spulen-Inventar',
+    subtitle: 'Verwalten Sie Ihre Spulen',
     spoolmanMixedContentTitle: 'Spoolman lässt sich nicht über HTTPS laden — Browser blockiert gemischte Inhalte',
     spoolmanMixedContentBody: 'Bambuddy wird über HTTPS ausgeliefert (über deinen Reverse-Proxy), aber deine Spoolman-URL ist nach wie vor HTTP. Browser blockieren gemischte Inhalte aus Sicherheitsgründen, daher kann die eingebettete Spoolman-Oberfläche nicht geladen werden. Spoolman muss ebenfalls über HTTPS erreichbar sein.',
     spoolmanMixedContentFixReverseProxy: 'Stelle Spoolman hinter denselben Reverse-Proxy wie Bambuddy (Traefik / Nginx / Caddy) mit HTTPS und aktualisiere die Spoolman-URL in den Einstellungen auf die neue HTTPS-Adresse.',

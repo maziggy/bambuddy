@@ -3,7 +3,7 @@ export default {
   nav: {
     printers: 'プリンター',
     archives: 'アーカイブ',
-    queue: 'キュー',
+    queue: '印刷キュー',
     stats: '統計',
     profiles: 'プロファイル',
     maintenance: 'メンテナンス',
@@ -185,9 +185,9 @@ export default {
       allLocations: 'すべての場所',
     },
     toolbar: {
-      filters: 'Filters',
-      view: 'View',
-      actions: 'Actions',
+      filters: 'フィルター',
+      view: '表示',
+      actions: '操作',
     },
     // Printer card
     readyToPrint: '印刷可能',
@@ -3420,6 +3420,7 @@ export default {
   // Inventory
   inventory: {
     title: 'スプール在庫管理',
+    subtitle: 'スプールを管理',
     spoolmanMixedContentTitle: 'Spoolman を HTTPS で読み込めません — ブラウザが混在コンテンツをブロックしています',
     spoolmanMixedContentBody: 'Bambuddy はリバースプロキシ経由で HTTPS 配信されていますが、Spoolman の URL は HTTP のままです。ブラウザはセキュリティ上の理由で混在コンテンツをブロックするため、埋め込みの Spoolman UI を表示できません。Spoolman も HTTPS でアクセスできる必要があります。',
     spoolmanMixedContentFixReverseProxy: 'Spoolman を Bambuddy と同じリバースプロキシ（Traefik / Nginx / Caddy）の後ろに HTTPS で配置し、設定で Spoolman URL を新しい HTTPS アドレスに更新してください。',

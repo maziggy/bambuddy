@@ -14,6 +14,24 @@ logger = logging.getLogger(__name__)
 BAMBU_API_BASE = "https://api.bambulab.com"
 BAMBU_API_BASE_CN = "https://api.bambulab.cn"
 
+# Client identity sent to Bambu Lab's cloud services. We identify honestly as
+# Bambuddy — the URL in parens makes the source unambiguous so Bambu can
+# distinguish our traffic from impersonators. This is the opposite of what the
+# OrcaSlicer fork was called out for in the May 2026 Bambu Lab blog post
+# ("Setting the record straight on cloud access and community"): we do not
+# introduce ourselves as official Bambu Studio.
+_USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
+
+# The `/v1/iot-service/api/slicer/setting` endpoint requires a `version` query
+# parameter in the XX.YY.ZZ.WW format Bambu Studio releases use (without it the
+# API returns HTTP 400 "field 'version' is not set"; non-matching formats like
+# "bambuddy-1.0" return HTTP 422 "Invalid input parameters"). However, Bambu's
+# server accepts ANY value within that format — it doesn't validate against a
+# release manifest. We therefore use a neutral "1.0.0.0" placeholder that does
+# not impersonate any real Bambu Studio release. Our client identity is in the
+# User-Agent header.
+_SLICER_API_VERSION = "1.0.0.0"
+
 
 class BambuCloudError(Exception):
     """Base exception for Bambu Cloud errors."""
@@ -74,7 +92,7 @@ class BambuCloudService:
         """Get headers for authenticated requests."""
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "Bambuddy/1.0",
+            "User-Agent": _USER_AGENT,
         }
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
@@ -174,24 +192,25 @@ class BambuCloudService:
             code: 6-digit TOTP code from authenticator app
         """
         try:
-            # TFA endpoint is on bambulab.com, NOT api.bambulab.com
-            # Requires browser-like headers to bypass Cloudflare
+            # TFA endpoint is on bambulab.com, NOT api.bambulab.com.
+            # We previously sent a Chrome User-Agent plus Origin/Referer headers
+            # under the assumption Cloudflare would block bot-identified
+            # requests. Verified 2026-05-12 via curl that the endpoint accepts
+            # honest "Bambuddy/X.Y.Z" identification cleanly (HTTP 400 with the
+            # expected application-level "Login failed" JSON, no Cloudflare
+            # interstitial). Browser-impersonation removed to stay clearly on
+            # the right side of Bambu Lab's "no falsified client identity" line.
             tfa_url = "https://bambulab.com/api/sign-in/tfa"
             if "bambulab.cn" in self.base_url:
                 tfa_url = "https://bambulab.cn/api/sign-in/tfa"
 
-            browser_headers = {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Origin": "https://bambulab.com",
-                "Referer": "https://bambulab.com/",
-            }
-
             response = await self._client.post(
                 tfa_url,
-                headers=browser_headers,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": _USER_AGENT,
+                    "Accept": "application/json",
+                },
                 json={
                     "tfaKey": tfa_key,
                     "tfaCode": code,
@@ -281,12 +300,16 @@ class BambuCloudService:
         except httpx.RequestError as e:
             raise BambuCloudError(f"Request failed: {e}")
 
-    async def get_slicer_settings(self, version: str = "02.04.00.70") -> dict:
+    async def get_slicer_settings(self, version: str = _SLICER_API_VERSION) -> dict:
         """
         Get all slicer settings (filament, printer, process presets).
 
         Args:
-            version: Slicer version string
+            version: Slicer version string. Bambu's API requires the XX.YY.ZZ.WW
+                format but does not validate against a release manifest — we
+                default to the neutral _SLICER_API_VERSION placeholder so we
+                never claim to be a specific Bambu Studio build. Callers should
+                normally use the default.
         """
         if not self.is_authenticated:
             raise BambuCloudAuthError("Not authenticated")

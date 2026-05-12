@@ -54,6 +54,7 @@ import {
   ClipboardList,
   Zap,
   Cog,
+  Archive as ArchiveIcon,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { SliceModal } from '../components/SliceModal';
@@ -3076,10 +3077,18 @@ export function ArchivesPage() {
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-white">Archives</h1>
+          <div className="flex items-start gap-3">
+            <div>
+              <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+                <ArchiveIcon className="w-7 h-7 text-bambu-green" />
+                Archives
+              </h1>
+              <p className="text-bambu-gray mt-1">
+                {filteredArchives?.length || 0} of {archives?.length || 0} prints
+              </p>
+            </div>
             <select
-              className="px-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray-light text-sm focus:border-bambu-green focus:outline-none"
+              className="mt-0.5 px-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray-light text-sm focus:border-bambu-green focus:outline-none"
               value={collection}
               onChange={(e) => setCollection(e.target.value as Collection)}
             >
@@ -3090,9 +3099,6 @@ export function ArchivesPage() {
               ))}
             </select>
           </div>
-          <p className="text-bambu-gray">
-            {filteredArchives?.length || 0} of {archives?.length || 0} prints
-          </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Export dropdown */}

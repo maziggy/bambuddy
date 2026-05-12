@@ -269,6 +269,7 @@ class VirtualPrinterInstance:
                 )
                 if archive:
                     logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
+                    await self._broadcast_archive_created(archive)
                     try:
                         file_path.unlink()
                     except OSError:
@@ -437,6 +438,7 @@ class VirtualPrinterInstance:
                     db.add(queue_item)
                     await db.commit()
                     logger.info("[VP %s] Added to queue: %s", self.name, queue_item.id)
+                    await self._broadcast_archive_created(archive)
                     try:
                         file_path.unlink()
                     except OSError:
@@ -446,6 +448,28 @@ class VirtualPrinterInstance:
                     logger.error("Failed to archive file: %s", file_path.name)
         except Exception as e:
             logger.error("Error adding to print queue: %s", e)
+
+    async def _broadcast_archive_created(self, archive) -> None:
+        """Notify connected clients that a new archive exists.
+
+        Real-printer prints get this from main.py's MQTT print_start handler;
+        VP-uploaded prints need their own broadcast or the Archives page stays
+        stale until the user switches tabs (#1282).
+        """
+        try:
+            from backend.app.core.websocket import ws_manager
+
+            await ws_manager.send_archive_created(
+                {
+                    "id": archive.id,
+                    "printer_id": archive.printer_id,
+                    "filename": archive.filename,
+                    "print_name": archive.print_name,
+                    "status": archive.status,
+                }
+            )
+        except Exception as e:
+            logger.debug("[VP %s] archive_created broadcast failed: %s", self.name, e)
 
     @staticmethod
     def _extract_plate_id(file_path: Path) -> int | None:

@@ -178,8 +178,9 @@ async def sync_printer_ams(
 ):
     """Sync AMS data from a specific printer to Spoolman."""
     # Check if Spoolman is enabled and connected
+    # disable_weight_sync is deprecated (#1119); weight comes from per-print tracking.
     sm = await get_spoolman_settings(db)
-    enabled, url, disable_weight_sync = sm["enabled"], sm["url"], sm["disable_weight_sync"]
+    enabled, url = sm["enabled"], sm["url"]
     if not enabled:
         raise HTTPException(status_code=400, detail="Spoolman integration is not enabled")
 
@@ -318,7 +319,9 @@ async def sync_printer_ams(
                 sync_result = await client.sync_ams_tray(
                     tray,
                     printer.name,
-                    disable_weight_sync=disable_weight_sync,
+                    # Per-print tracking owns weight updates (#1119); manual sync
+                    # only refreshes spool metadata + slot assignments here.
+                    disable_weight_sync=True,
                     cached_spools=cached_spools,
                     inventory_remaining=inv_remaining,
                     spoolman_spool_id_hint=hint,
@@ -394,8 +397,9 @@ async def sync_all_printers(
 ):
     """Sync AMS data from all connected printers to Spoolman."""
     # Check if Spoolman is enabled
+    # disable_weight_sync is deprecated (#1119); weight comes from per-print tracking.
     sm = await get_spoolman_settings(db)
-    enabled, url, disable_weight_sync = sm["enabled"], sm["url"], sm["disable_weight_sync"]
+    enabled, url = sm["enabled"], sm["url"]
     if not enabled:
         raise HTTPException(status_code=400, detail="Spoolman integration is not enabled")
 
@@ -517,7 +521,9 @@ async def sync_all_printers(
                     sync_result = await client.sync_ams_tray(
                         tray,
                         printer.name,
-                        disable_weight_sync=disable_weight_sync,
+                        # Per-print tracking owns weight updates (#1119); manual
+                        # sync-all only refreshes spool metadata + slot assignments.
+                        disable_weight_sync=True,
                         cached_spools=cached_spools,
                         inventory_remaining=inv_remaining,
                         spoolman_spool_id_hint=hint,

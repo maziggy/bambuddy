@@ -1,0 +1,200 @@
+2026-05-12 10:45:56,770 INFO [backend.app.main] [-] Recorded 3 AMS sensor history entries
+2026-05-12 10:46:17,753 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 10:46:17,753 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 10:46:17,754 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 10:46:57,756 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 10:50:56,775 INFO [backend.app.main] [-] Recorded 3 AMS sensor history entries
+2026-05-12 10:55:33,719 INFO [uvicorn.access] [-] [IP]:51478 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-12 10:55:34,321 INFO [uvicorn.access] [-] [IP]:51498 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-12 10:55:34,627 INFO [backend.app.api.routes.cloud] [113aec08] get_filament_info called with 4 IDs: ['GFA00', 'GFG00', 'GFG02', 'GFB00']
+2026-05-12 10:55:35,042 WARNING [backend.app.api.routes.cloud] [113aec08] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-05-12 10:55:35,243 WARNING [backend.app.api.routes.cloud] [113aec08] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400
+2026-05-12 10:55:35,430 INFO [uvicorn.access] [-] [IP]:51594 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-12 10:55:35,652 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 10:55:35,652 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 10:55:35,653 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 10:55:56,780 INFO [backend.app.main] [-] Recorded 3 AMS sensor history entries
+2026-05-12 10:56:03,778 INFO [backend.app.api.routes.smart_plugs] [989fc441] Updated smart plug '[PRINTER]'
+2026-05-12 10:56:03,778 INFO [uvicorn.access] [-] [IP]:44766 - "PATCH /api/v1/smart-plugs/1 HTTP/1.1" 200
+2026-05-12 10:56:55,871 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 10:57:05,654 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 10:57:05,654 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 10:57:05,655 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 10:57:45,657 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 10:57:52,375 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 10:57:52,375 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 10:57:52,376 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 10:57:58,729 INFO [backend.app.services.homeassistant] [96f65e24] Turned OFF HA entity '[PRINTER]' (switch.x2d)
+2026-05-12 10:57:58,729 INFO [backend.app.services.printer_manager] [96f65e24] Marking printer 1 as offline (smart plug power off)
+2026-05-12 10:57:58,732 INFO [uvicorn.access] [-] [IP]:45212 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-05-12 10:58:00,547 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 10:58:00,547 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 10:58:00,556 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 10:58:32,378 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 10:58:47,207 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-05-12 10:58:47,208 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-05-12 10:59:00,678 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 11:17:47,876 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 11:17:47,876 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 11:17:47,877 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 11:18:27,879 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 11:59:43,895 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 11:59:43,895 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 11:59:43,896 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 12:00:23,899 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 12:07:55,053 INFO [uvicorn.access] [-] [IP]:53966 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-12 12:07:55,717 INFO [uvicorn.access] [-] [IP]:53966 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-12 12:07:56,081 INFO [backend.app.api.routes.cloud] [a3540fb5] get_filament_info called with 4 IDs: ['GFA00', 'GFG00', 'GFG02', 'GFB00']
+2026-05-12 12:07:56,125 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 12:07:56,125 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 12:07:56,126 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 12:07:56,515 WARNING [backend.app.api.routes.cloud] [a3540fb5] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-05-12 12:07:56,633 INFO [backend.app.services.firmware_check] [81dd61ee] Got Bambu Lab build ID: T3V8iVAkjHwVRd4TmOpG_
+2026-05-12 12:07:56,696 WARNING [backend.app.api.routes.cloud] [a3540fb5] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400
+2026-05-12 12:07:56,884 INFO [uvicorn.access] [-] [IP]:54088 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-12 12:09:16,288 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 12:11:20,780 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 12:11:20,781 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 12:11:20,782 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 12:11:23,708 INFO [uvicorn.access] [-] [IP]:41576 - "POST /api/v1/makerworld/resolve HTTP/1.1" 200
+2026-05-12 12:11:36,788 INFO [uvicorn.access] [-] [IP]:41640 - "POST /api/v1/makerworld/import HTTP/1.1" 200
+2026-05-12 12:13:40,650 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 12:43:56,878 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 12:43:56,878 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 12:43:56,878 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 12:44:57,021 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 12:50:46,673 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 12:50:46,673 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 12:50:46,674 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 12:51:26,677 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 12:55:54,027 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 12:55:54,027 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 12:55:54,028 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 12:56:34,029 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 12:56:40,482 INFO [uvicorn.access] [-] [IP]:57668 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-12 12:56:40,794 INFO [uvicorn.access] [-] [IP]:57668 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-12 12:56:41,170 INFO [backend.app.api.routes.cloud] [67c34e42] get_filament_info called with 4 IDs: ['GFA00', 'GFG00', 'GFG02', 'GFB00']
+2026-05-12 12:56:41,401 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 12:56:41,401 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 12:56:41,402 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 12:56:41,611 WARNING [backend.app.api.routes.cloud] [67c34e42] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-05-12 12:56:41,791 WARNING [backend.app.api.routes.cloud] [67c34e42] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400
+2026-05-12 12:56:41,977 INFO [uvicorn.access] [-] [IP]:57782 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-12 12:57:41,464 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 13:25:53,158 INFO [uvicorn.access] [-] [IP]:49562 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-12 13:25:53,373 INFO [uvicorn.access] [-] [IP]:49566 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-12 13:25:53,385 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 13:25:53,385 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 13:25:53,388 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 13:25:53,576 INFO [backend.app.api.routes.cloud] [c50fd12b] get_filament_info called with 4 IDs: ['GFA00', 'GFG00', 'GFG02', 'GFB00']
+2026-05-12 13:25:53,981 WARNING [backend.app.api.routes.cloud] [c50fd12b] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-05-12 13:25:54,164 WARNING [backend.app.api.routes.cloud] [c50fd12b] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400
+2026-05-12 13:25:54,343 INFO [uvicorn.access] [-] [IP]:49670 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-12 13:25:55,234 INFO [backend.app.services.firmware_check] [c880e68a] Got Bambu Lab build ID: T3V8iVAkjHwVRd4TmOpG_
+2026-05-12 13:29:37,421 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 13:29:37,421 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 13:29:37,422 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 13:30:17,424 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 13:44:18,202 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 13:44:18,202 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 13:44:18,203 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 13:45:03,554 INFO [backend.app.api.routes.cloud] [6c81aebf] get_filament_info called with 4 IDs: ['GFA00', 'GFG00', 'GFG02', 'GFB00']
+2026-05-12 13:45:04,006 WARNING [backend.app.api.routes.cloud] [6c81aebf] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-05-12 13:45:04,186 WARNING [backend.app.api.routes.cloud] [6c81aebf] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400
+2026-05-12 13:45:05,668 INFO [uvicorn.access] [-] [IP]:53044 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-12 13:45:38,387 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 13:52:32,376 INFO [backend.app.api.routes.cloud] [2d2ded6d] get_filament_info called with 4 IDs: ['GFA00', 'GFG00', 'GFG02', 'GFB00']
+2026-05-12 13:52:32,777 WARNING [backend.app.api.routes.cloud] [2d2ded6d] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-05-12 13:52:32,953 WARNING [backend.app.api.routes.cloud] [2d2ded6d] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400
+2026-05-12 13:52:33,138 INFO [uvicorn.access] [-] [IP]:40880 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-12 13:57:37,916 INFO [backend.app.api.routes.cloud] [479e50ae] get_filament_info called with 4 IDs: ['GFA00', 'GFG00', 'GFG02', 'GFB00']
+2026-05-12 13:57:38,340 WARNING [backend.app.api.routes.cloud] [479e50ae] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-05-12 13:57:38,522 WARNING [backend.app.api.routes.cloud] [479e50ae] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400
+2026-05-12 13:57:38,700 INFO [uvicorn.access] [-] [IP]:33910 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-12 13:58:13,348 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-12 13:58:13,348 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-12 13:58:13,349 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-12 13:58:53,352 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-12 13:58:54,619 INFO [backend.app.services.virtual_printer.bind_server] [7d509700] Bind server: client connected from [IP]:42723
+2026-05-12 13:58:54,651 INFO [backend.app.services.virtual_printer.bind_server] [7d509700] Bind server: received from [IP]:42723: {'login': {'command': 'detect', 'sequence_id': '20000'}}
+2026-05-12 13:58:54,652 INFO [backend.app.services.virtual_printer.bind_server] [7d509700] Bind server: sent detect response to [IP]:42723 (serial=20P90A391800001)
+2026-05-12 13:58:56,459 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] [[PRINTER]-VIRT] MQTT TLS connection from ('[IP]', 42724) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-05-12 13:58:56,459 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] [[PRINTER]-VIRT] MQTT client connected: [IP]:42724
+2026-05-12 13:58:56,489 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] [[PRINTER]-VIRT] MQTT client authenticated successfully
+2026-05-12 13:58:56,523 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] [[PRINTER]-VIRT] MQTT subscribe: device/20P90A391800001/report QoS=0
+2026-05-12 13:58:56,625 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20001","version":1}}...
+2026-05-12 13:58:56,625 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT pushing command: pushall
+2026-05-12 13:58:56,626 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] Sending status report in response to pushall
+2026-05-12 13:58:56,658 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT publish to device/20P90A391800001/request: {"info":{"command":"get_version","sequence_id":"20002"}}...
+2026-05-12 13:58:56,658 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT info command: get_version
+2026-05-12 13:58:56,659 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] Sent version response (product_name=[PRINTER])
+2026-05-12 13:58:56,659 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT publish to device/20P90A391800001/request: {"info":{"command":"get_version","sequence_id":"20003"}}...
+2026-05-12 13:58:56,659 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT info command: get_version
+2026-05-12 13:58:56,659 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] Sent version response (product_name=[PRINTER])
+2026-05-12 13:59:57,748 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] [[PRINTER]-VIRT] MQTT TLS connection from ('[IP]', 43165) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-05-12 13:59:57,748 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] [[PRINTER]-VIRT] MQTT client connected: [IP]:43165
+2026-05-12 13:59:57,785 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] [[PRINTER]-VIRT] MQTT client authenticated successfully
+2026-05-12 13:59:57,817 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] [[PRINTER]-VIRT] MQTT subscribe: device/20P90A391800001/report QoS=0
+2026-05-12 14:00:04,421 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT publish to device/20P90A391800001/request: {"info":{"command":"get_version","sequence_id":"20004"}}...
+2026-05-12 14:00:04,421 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT info command: get_version
+2026-05-12 14:00:04,421 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] Sent version response (product_name=[PRINTER])
+2026-05-12 14:00:04,455 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20005","version":1}}...
+2026-05-12 14:00:04,455 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT pushing command: pushall
+2026-05-12 14:00:04,455 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] Sending status report in response to pushall
+2026-05-12 14:00:11,629 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] [[PRINTER]-VIRT] FTP connection from ('[IP]', 31793)
+2026-05-12 14:00:11,691 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] [[PRINTER]-VIRT] FTP login from [IP]
+2026-05-12 14:00:11,834 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP EPSV listening on port 50053
+2026-05-12 14:00:11,933 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP receiving file: verify_job from [IP]
+2026-05-12 14:00:12,002 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP data TLS from [IP]: cipher=('ECDHE-RSA-AES256-GCM-SHA384', 'TLSv1.2', 256), version=TLSv1.2, session_reused=True
+2026-05-12 14:00:12,002 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP data connection established from [IP]
+2026-05-12 14:00:12,104 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP saved file: /app/data/virtual_printer/uploads/1/verify_job (16 bytes)
+2026-05-12 14:00:12,104 INFO [backend.app.services.virtual_printer.manager] [7d509700] [VP [PRINTER]-VIRT] Received file: verify_job from [IP]
+2026-05-12 14:00:12,136 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] [[PRINTER]-VIRT] FTP session cancelled from [IP]
+2026-05-12 14:00:12,136 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] [[PRINTER]-VIRT] FTP session ended from [IP]
+2026-05-12 14:00:12,274 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] [[PRINTER]-VIRT] FTP connection from ('[IP]', 31797)
+2026-05-12 14:00:12,338 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] [[PRINTER]-VIRT] FTP login from [IP]
+2026-05-12 14:00:12,474 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP EPSV listening on port 50065
+2026-05-12 14:00:12,571 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP receiving file: Disc-Shooter-Print-in-Place.gcode.3mf from [IP]
+2026-05-12 14:00:12,638 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP data TLS from [IP]: cipher=('ECDHE-RSA-AES256-GCM-SHA384', 'TLSv1.2', 256), version=TLSv1.2, session_reused=True
+2026-05-12 14:00:12,639 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP data connection established from [IP]
+2026-05-12 14:00:18,538 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] FTP saved file: /app/data/virtual_printer/uploads/1/Disc-Shooter-Print-in-Place.gcode.3mf (9942341 bytes)
+2026-05-12 14:00:18,538 INFO [backend.app.services.virtual_printer.manager] [7d509700] [VP [PRINTER]-VIRT] Received file: Disc-Shooter-Print-in-Place.gcode.3mf from [IP]
+2026-05-12 14:00:18,578 INFO [backend.app.services.virtual_printer.manager] [7d509700] [VP [PRINTER]-VIRT] Archived: 8 - Disc Shooter - with Performance - Print-in-Place Design
+2026-05-12 14:00:21,586 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] [[PRINTER]-VIRT] FTP session cancelled from [IP]
+2026-05-12 14:00:21,586 INFO [backend.app.services.virtual_printer.ftp_server] [7d509700] [[PRINTER]-VIRT] FTP session ended from [IP]
+2026-05-12 14:00:41,909 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT publish to device/20P90A391800001/request: {"info":{"command":"get_version","sequence_id":"20006"}}...
+2026-05-12 14:00:41,909 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT info command: get_version
+2026-05-12 14:00:41,910 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] Sent version response (product_name=[PRINTER])
+2026-05-12 14:00:41,946 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20007","version":1}}...
+2026-05-12 14:00:41,946 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] MQTT pushing command: pushall
+2026-05-12 14:00:41,946 INFO [backend.app.services.virtual_printer.mqtt_server] [7d509700] Sending status report in response to pushall
+2026-05-12 14:01:08,294 INFO [uvicorn.access] [-] [IP]:45476 - "POST /api/v1/makerworld/resolve HTTP/1.1" 200
+2026-05-12 14:01:12,125 INFO [uvicorn.access] [-] [IP]:45658 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-05-12 14:01:31,070 INFO [backend.app.api.routes.print_queue] [a6bee9fe] Added archive 8 to queue for 1
+2026-05-12 14:01:31,072 INFO [uvicorn.access] [-] [IP]:51362 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-05-12 14:01:42,282 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(8, 1, 8, None)]
+2026-05-12 14:01:42,283 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=False, state=FINISH, awaiting_plate_clear=False
+2026-05-12 14:02:12,289 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(8, 1, 8, None)]
+2026-05-12 14:02:12,290 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=False, state=FINISH, awaiting_plate_clear=False
+2026-05-12 14:02:25,573 INFO [backend.app.api.routes.print_queue] [e7dc92d6] Cancelled queue item 8
+2026-05-12 14:02:25,573 INFO [uvicorn.access] [-] [IP]:34240 - "POST /api/v1/queue/8/cancel HTTP/1.1" 200
+2026-05-12 14:04:17,769 INFO [backend.app.api.routes.cloud] [a2d4f2d5] get_filament_info called with 4 IDs: ['GFA00', 'GFG00', 'GFG02', 'GFB00']
+2026-05-12 14:04:18,223 WARNING [backend.app.api.routes.cloud] [a2d4f2d5] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-05-12 14:04:18,405 WARNING [backend.app.api.routes.cloud] [a2d4f2d5] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400
+2026-05-12 14:04:18,592 INFO [uvicorn.access] [-] [IP]:33646 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-12 14:04:27,876 INFO [backend.app.api.routes.support] [802b101e] Log level changed to DEBUG
+2026-05-12 14:04:27,876 INFO [backend.app.api.routes.bug_report] [802b101e] Bug report: enabled debug logging
+2026-05-12 14:04:27,876 WARNING [backend.app.services.bambu_mqtt] [802b101e] [[SERIAL]] request_status_update: not connected
+2026-05-12 14:04:27,877 INFO [uvicorn.access] [-] [IP]:33646 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-12 14:04:32,627 DEBUG [backend.app.api.routes.printers] [09e1d897] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-12 14:04:32,627 DEBUG [backend.app.api.routes.printers] [09e1d897] Using tray_now directly as global ID: 255
+2026-05-12 14:04:32,632 DEBUG [backend.app.api.routes.printers] [3ecf5f07] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-12 14:04:32,632 DEBUG [backend.app.api.routes.printers] [3ecf5f07] Using tray_now directly as global ID: 255
+2026-05-12 14:04:37,902 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-05-12 14:04:38,340 INFO [backend.app.api.routes.print_queue] [586eaf71] Added archive 8 to queue for 1
+2026-05-12 14:04:38,342 INFO [uvicorn.access] [-] [IP]:54154 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-05-12 14:04:42,324 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(9, 1, 8, None)]
+2026-05-12 14:04:42,324 DEBUG [backend.app.services.print_scheduler] [-] Printer 1: not connected
+2026-05-12 14:04:42,325 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=False, state=FINISH, awaiting_plate_clear=False
+2026-05-12 14:04:42,328 DEBUG [backend.app.services.print_scheduler] [-] Auto-drying: printer 1 skipped — busy
+2026-05-12 14:04:56,777 DEBUG [backend.app.services.virtual_printer.ssdp_server] [7d509700] Sent SSDP NOTIFY for [PRINTER]-VIRT (Location=[IP], USN=20P90A391800001, bind=[IP])

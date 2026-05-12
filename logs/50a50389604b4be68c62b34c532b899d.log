@@ -1,0 +1,200 @@
+2026-05-11 23:19:39,611 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP -> [IP]: 257 "/" is current directory
+2026-05-11 23:19:39,611 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP <- [IP]: EPSV
+2026-05-11 23:19:39,612 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP -> [IP]: 229 Entering Extended Passive Mode (|||50001|)
+2026-05-11 23:19:39,612 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP EPSV listening on port 50001
+2026-05-11 23:19:39,613 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP <- [IP]: TYPE I
+2026-05-11 23:19:39,613 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP -> [IP]: 200 Type set to Binary
+2026-05-11 23:19:39,613 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP <- [IP]: STOR _V2_AM4xS_-_AMS_SLIDING_Stacking_System.gcode.3mf
+2026-05-11 23:19:39,613 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP receiving file: _V2_AM4xS_-_AMS_SLIDING_Stacking_System.gcode.3mf from [IP]
+2026-05-11 23:19:39,613 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP -> [IP]: 150 Opening data connection for _V2_AM4xS_-_AMS_SLIDING_Stacking_System.gcode.3mf
+2026-05-11 23:19:39,614 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP data TLS from [IP]: cipher=('ECDHE-RSA-AES256-GCM-SHA384', 'TLSv1.2', 256), version=TLSv1.2, session_reused=True
+2026-05-11 23:19:39,615 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP data connection established from [IP]
+2026-05-11 23:19:39,615 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 16384)
+2026-05-11 23:19:39,615 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 32768)
+2026-05-11 23:19:39,615 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 49152)
+2026-05-11 23:19:39,616 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 81920)
+2026-05-11 23:19:39,616 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 98304)
+2026-05-11 23:19:39,616 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 131072)
+2026-05-11 23:19:39,616 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 163840)
+2026-05-11 23:19:39,617 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 180224)
+2026-05-11 23:19:39,617 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 196608)
+2026-05-11 23:19:39,617 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 229376)
+2026-05-11 23:19:39,617 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 245760)
+2026-05-11 23:19:39,617 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 262144)
+2026-05-11 23:19:39,618 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 278528)
+2026-05-11 23:19:39,618 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 49152 bytes (total: 327680)
+2026-05-11 23:19:39,618 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 344064)
+2026-05-11 23:19:39,618 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 360448)
+2026-05-11 23:19:39,619 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 376832)
+2026-05-11 23:19:39,619 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 393216)
+2026-05-11 23:19:39,619 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 409600)
+2026-05-11 23:19:39,619 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 442368)
+2026-05-11 23:19:39,620 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 458752)
+2026-05-11 23:19:39,620 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 475136)
+2026-05-11 23:19:39,620 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 491520)
+2026-05-11 23:19:39,620 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 507904)
+2026-05-11 23:19:39,620 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 524288)
+2026-05-11 23:19:39,620 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 540672)
+2026-05-11 23:19:39,621 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 557056)
+2026-05-11 23:19:39,621 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 589824)
+2026-05-11 23:19:39,621 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 606208)
+2026-05-11 23:19:39,621 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 638976)
+2026-05-11 23:19:39,622 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 655360)
+2026-05-11 23:19:39,622 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 671744)
+2026-05-11 23:19:39,622 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 704512)
+2026-05-11 23:19:39,622 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 720896)
+2026-05-11 23:19:39,623 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 737280)
+2026-05-11 23:19:39,623 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 770048)
+2026-05-11 23:19:39,623 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 786432)
+2026-05-11 23:19:39,623 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 802816)
+2026-05-11 23:19:39,623 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 835584)
+2026-05-11 23:19:39,624 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 868352)
+2026-05-11 23:19:39,624 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 884736)
+2026-05-11 23:19:39,624 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 901120)
+2026-05-11 23:19:39,624 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 917504)
+2026-05-11 23:19:39,625 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 950272)
+2026-05-11 23:19:39,625 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 966656)
+2026-05-11 23:19:39,625 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 983040)
+2026-05-11 23:19:39,625 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1015808)
+2026-05-11 23:19:39,625 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1032192)
+2026-05-11 23:19:39,626 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1048576)
+2026-05-11 23:19:39,626 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1064960)
+2026-05-11 23:19:39,626 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1097728)
+2026-05-11 23:19:39,626 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1114112)
+2026-05-11 23:19:39,627 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1146880)
+2026-05-11 23:19:39,627 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1163264)
+2026-05-11 23:19:39,627 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1196032)
+2026-05-11 23:19:39,627 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1212416)
+2026-05-11 23:19:39,627 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1228800)
+2026-05-11 23:19:39,628 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1245184)
+2026-05-11 23:19:39,628 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1261568)
+2026-05-11 23:19:39,628 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1277952)
+2026-05-11 23:19:39,628 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1310720)
+2026-05-11 23:19:39,629 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1327104)
+2026-05-11 23:19:39,629 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1343488)
+2026-05-11 23:19:39,629 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1359872)
+2026-05-11 23:19:39,629 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1376256)
+2026-05-11 23:19:39,629 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1392640)
+2026-05-11 23:19:39,630 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1425408)
+2026-05-11 23:19:39,630 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1441792)
+2026-05-11 23:19:39,630 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1458176)
+2026-05-11 23:19:39,630 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1474560)
+2026-05-11 23:19:39,630 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1507328)
+2026-05-11 23:19:39,631 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1523712)
+2026-05-11 23:19:39,631 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1556480)
+2026-05-11 23:19:39,631 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1572864)
+2026-05-11 23:19:39,631 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1605632)
+2026-05-11 23:19:39,632 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1622016)
+2026-05-11 23:19:39,632 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1638400)
+2026-05-11 23:19:39,632 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1654784)
+2026-05-11 23:19:39,632 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1687552)
+2026-05-11 23:19:39,633 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1720320)
+2026-05-11 23:19:39,633 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1736704)
+2026-05-11 23:19:39,633 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1753088)
+2026-05-11 23:19:39,633 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1769472)
+2026-05-11 23:19:39,633 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1785856)
+2026-05-11 23:19:39,634 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1802240)
+2026-05-11 23:19:39,634 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 32768 bytes (total: 1835008)
+2026-05-11 23:19:39,634 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1851392)
+2026-05-11 23:19:39,634 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1867776)
+2026-05-11 23:19:39,634 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 16384 bytes (total: 1884160)
+2026-05-11 23:19:39,635 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] FTP received chunk: 17121 bytes (total: 1901281)
+2026-05-11 23:19:39,738 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP saved file: /app/data/virtual_printer/uploads/1/_V2_AM4xS_-_AMS_SLIDING_Stacking_System.gcode.3mf (1901281 bytes)
+2026-05-11 23:19:39,738 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP -> [IP]: 226 Transfer complete
+2026-05-11 23:19:39,739 INFO [backend.app.services.virtual_printer.manager] [-] [VP Bambuddy] Received file: _V2_AM4xS_-_AMS_SLIDING_Stacking_System.gcode.3mf from [IP]
+2026-05-11 23:19:39,780 DEBUG [backend.app.services.archive] [-] Auto-detected 5 parts from 3MF printable objects
+2026-05-11 23:19:39,787 INFO [backend.app.services.virtual_printer.manager] [-] [VP Bambuddy] Archived: 18 - [V2] AM4xS - AMS SLIDING Stacking System - Plate 2
+2026-05-11 23:19:39,792 INFO [backend.app.services.virtual_printer.manager] [-] [VP Bambuddy] Added to queue: 11
+2026-05-11 23:19:39,793 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP <- [IP]: QUIT
+2026-05-11 23:19:39,793 DEBUG [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP -> [IP]: 221 Goodbye
+2026-05-11 23:19:39,793 INFO [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP session cancelled from [IP]
+2026-05-11 23:19:39,794 INFO [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy] FTP session ended from [IP]
+2026-05-11 23:19:39,797 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"print":{"ams_mapping":[-1],"bed_leveling":true,"bed_type":"textured_plate","command":"project_file...
+2026-05-11 23:19:39,797 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT print command: project_file for _V2_AM4xS_-_AMS_SLIDING_Stacking_System
+2026-05-11 23:19:39,797 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent project_file acknowledgment for _V2_AM4xS_-_AMS_SLIDING_Stacking_System.gcode.3mf
+2026-05-11 23:19:39,797 INFO [backend.app.services.virtual_printer.manager] [-] [VP Bambuddy] Print command for: _V2_AM4xS_-_AMS_SLIDING_Stacking_System
+2026-05-11 23:19:42,084 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:19:42,085 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-05-11 23:19:42,393 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Received M-SEARCH from [IP]
+2026-05-11 23:19:42,394 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=[SERIAL])
+2026-05-11 23:19:42,800 DEBUG [backend.app.services.virtual_printer.mqtt_server] [-] MQTT client disconnected: [IP]:37986
+2026-05-11 23:19:42,906 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT TLS connection from ('[IP]', 56658) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-05-11 23:19:42,907 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client connected: [IP]:56658
+2026-05-11 23:19:42,908 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client authenticated successfully
+2026-05-11 23:19:42,910 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-05-11 23:19:42,911 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20004","version":1}} ...
+2026-05-11 23:19:42,912 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-05-11 23:19:42,913 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-05-11 23:19:42,914 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20005"}} ...
+2026-05-11 23:19:42,915 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-05-11 23:19:42,916 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=P1S)
+2026-05-11 23:19:45,432 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(3, None, 17, None), (11, None, 18, None), (4, None, 17, None), (5, None, 17, None), (6, None, 17, None), (7, None, 17, None), (8, None, 17, None), (9, None, 17, None), (10, None, 17, None)]
+2026-05-11 23:19:45,439 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:19:45,444 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:19:45,465 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:19:45,468 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:19:45,470 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:19:45,472 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:19:45,474 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:19:45,476 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:19:45,478 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:19:45,647 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-05-11 23:19:46,093 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:19:47,459 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Received M-SEARCH from [IP]
+2026-05-11 23:19:47,460 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=[SERIAL])
+2026-05-11 23:19:48,102 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:19:48,103 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -53dBm
+2026-05-11 23:19:52,109 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:19:52,384 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Received M-SEARCH from [IP]
+2026-05-11 23:19:52,384 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=[SERIAL])
+2026-05-11 23:19:56,124 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:19:57,544 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Received M-SEARCH from [IP]
+2026-05-11 23:19:57,545 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=[SERIAL])
+2026-05-11 23:20:00,128 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:20:02,370 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Received M-SEARCH from [IP]
+2026-05-11 23:20:02,371 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=[SERIAL])
+2026-05-11 23:20:05,698 DEBUG [backend.app.services.virtual_printer.mqtt_server] [-] MQTT client disconnected: [IP]:56658
+2026-05-11 23:20:05,800 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT TLS connection from ('[IP]', 52296) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-05-11 23:20:05,800 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client connected: [IP]:52296
+2026-05-11 23:20:05,800 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT client authenticated successfully
+2026-05-11 23:20:05,801 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-05-11 23:20:05,801 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20007","version":1}} ...
+2026-05-11 23:20:05,801 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-05-11 23:20:05,802 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-05-11 23:20:05,802 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20008"}} ...
+2026-05-11 23:20:05,802 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-05-11 23:20:05,802 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=P1S)
+2026-05-11 23:20:07,132 DEBUG [backend.app.api.routes.printers] [ff74ddce] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-11 23:20:07,133 DEBUG [backend.app.api.routes.printers] [ff74ddce] Using tray_now directly as global ID: 254
+2026-05-11 23:20:07,503 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Received M-SEARCH from [IP]
+2026-05-11 23:20:07,504 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=[SERIAL])
+2026-05-11 23:20:08,148 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:20:09,603 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20009"}} ...
+2026-05-11 23:20:09,604 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-05-11 23:20:09,605 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=P1S)
+2026-05-11 23:20:09,606 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20010","version":1}} ...
+2026-05-11 23:20:09,607 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-05-11 23:20:09,607 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-05-11 23:20:12,161 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:20:12,162 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-05-11 23:20:12,430 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Received M-SEARCH from [IP]
+2026-05-11 23:20:12,430 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=[SERIAL])
+2026-05-11 23:20:15,493 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(3, None, 17, None), (11, None, 18, None), (4, None, 17, None), (5, None, 17, None), (6, None, 17, None), (7, None, 17, None), (8, None, 17, None), (9, None, 17, None), (10, None, 17, None)]
+2026-05-11 23:20:15,502 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:20:15,507 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:20:15,510 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:20:15,512 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:20:15,514 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:20:15,516 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:20:15,518 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:20:15,520 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:20:15,522 DEBUG [backend.app.services.print_scheduler] [-] Skipping printer 1 ([PRINTER]) - missing filaments: ['PLA']
+2026-05-11 23:20:15,723 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-05-11 23:20:16,174 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:20:16,175 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -53dBm
+2026-05-11 23:20:17,533 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Received M-SEARCH from [IP]
+2026-05-11 23:20:17,533 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=[SERIAL])
+2026-05-11 23:20:18,178 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:20:20,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-11 23:20:22,467 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Received M-SEARCH from [IP]
+2026-05-11 23:20:22,468 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP response to [IP] for 'Bambuddy' (Location=[IP], USN=[SERIAL])

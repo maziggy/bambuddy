@@ -228,10 +228,18 @@ async def test_migration_is_noop_on_fresh_install(engine_with_full_schema):
         await run_migrations(conn)
         await run_migrations(conn)  # second run, still fine
 
+    # Static queries (one per table) instead of an f-string interpolated loop:
+    # Bandit B608 flags f"... FROM {tbl}" as a possible SQL-injection vector
+    # even when ``tbl`` is bound to a tuple of literals. Spelling out each
+    # table name makes the intent clear and silences the false-positive
+    # without resorting to a noqa marker. See PR #1295 CodeQL alert #798.
     async with engine_with_full_schema.begin() as conn:
-        for tbl in ("user_oidc_links", "user_totp", "user_otp_codes"):
-            count = (await conn.execute(text(f"SELECT COUNT(*) FROM {tbl}"))).scalar_one()
-            assert count == 0
+        oidc_count = (await conn.execute(text("SELECT COUNT(*) FROM user_oidc_links"))).scalar_one()
+        totp_count = (await conn.execute(text("SELECT COUNT(*) FROM user_totp"))).scalar_one()
+        otp_count = (await conn.execute(text("SELECT COUNT(*) FROM user_otp_codes"))).scalar_one()
+        assert oidc_count == 0
+        assert totp_count == 0
+        assert otp_count == 0
 
 
 async def test_migration_is_idempotent(engine_with_full_schema):

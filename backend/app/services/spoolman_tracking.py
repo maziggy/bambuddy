@@ -166,8 +166,10 @@ async def store_print_data(
 ):
     """Store Spoolman tracking data at print start (persisted to database).
 
-    Only stores data when Spoolman is enabled and AMS weight sync is disabled
-    (i.e., we're using per-usage tracking instead of AMS percentage estimates).
+    Per-print tracking is the primary weight-update path for Spoolman, mirroring
+    how the internal Filament Inventory works. The legacy AMS-remain%-based sync
+    is no longer used as a weight writer (#1119), so this runs whenever Spoolman
+    is enabled regardless of the deprecated `spoolman_disable_weight_sync` flag.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.models.active_print_spoolman import ActivePrintSpoolman
@@ -181,13 +183,6 @@ async def store_print_data(
     # Check if Spoolman is enabled
     spoolman_enabled = await get_setting(db, "spoolman_enabled")
     if not spoolman_enabled or spoolman_enabled.lower() != "true":
-        return
-
-    # Only store tracking data if "Disable AMS Weight Sync" is enabled
-    disable_weight_sync_str = await get_setting(db, "spoolman_disable_weight_sync")
-    disable_weight_sync = disable_weight_sync_str and disable_weight_sync_str.lower() == "true"
-    if not disable_weight_sync:
-        logger.debug("[SPOOLMAN] Weight sync enabled, skipping per-usage tracking data storage")
         return
 
     # Get 3MF file path

@@ -4566,7 +4566,7 @@ function PrinterCard({
                   >
                     {plugStatus.state || '?'}
                     {plugStatus.state === 'ON' && plugStatus.energy?.power != null && (
-                      <span className="text-yellow-400 ml-1.5">· {plugStatus.energy.power}W</span>
+                      <span className="text-yellow-400 ml-1.5">· {Math.round(plugStatus.energy.power)}W</span>
                     )}
                   </span>
                 )}

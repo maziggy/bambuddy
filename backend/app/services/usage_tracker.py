@@ -448,6 +448,30 @@ async def on_print_complete(
                 ams_raw.get("ams", []) if isinstance(ams_raw, dict) else ams_raw if isinstance(ams_raw, list) else []
             )
 
+            # Build set of trays actually involved in this print (#1269).
+            # Without this guard, swapping a spool in an UNUSED slot mid-print
+            # makes that slot's remain% drop to 0, which the fallback below
+            # would otherwise charge to the originally-assigned spool.
+            def _global_to_ams_key(global_tray_id: int) -> tuple[int, int]:
+                if global_tray_id >= 254:
+                    return (255, global_tray_id - 254)
+                if global_tray_id >= 128:
+                    return (global_tray_id, 0)
+                return (global_tray_id // 4, global_tray_id % 4)
+
+            print_used_keys: set[tuple[int, int]] = set()
+            if ams_mapping:
+                for gid in ams_mapping:
+                    if isinstance(gid, int) and gid >= 0:
+                        print_used_keys.add(_global_to_ams_key(gid))
+            for change in getattr(state, "tray_change_log", None) or []:
+                if isinstance(change, (tuple, list)) and len(change) >= 1:
+                    gid = change[0]
+                    if isinstance(gid, int) and gid >= 0:
+                        print_used_keys.add(_global_to_ams_key(gid))
+            if session.tray_now_at_start is not None and session.tray_now_at_start >= 0:
+                print_used_keys.add(_global_to_ams_key(session.tray_now_at_start))
+
             # Collect all trays to check: AMS trays + VT (external) trays
             # Each entry: (ams_id_for_assignment, tray_id_for_assignment, current_remain, label)
             trays_to_check: list[tuple[int, int, int, str]] = []
@@ -478,6 +502,18 @@ async def on_print_complete(
                     continue  # Already tracked via 3MF
 
                 if key not in session.tray_remain_start:
+                    continue
+
+                # Skip trays the print never touched. Only enforce when we have
+                # evidence of which trays the print used; if print_used_keys is
+                # empty (no mapping, no change log, no tray_now_at_start) keep
+                # the legacy behavior of scanning every tray.
+                if print_used_keys and key not in print_used_keys:
+                    logger.info(
+                        "[UsageTracker] %s: not in print mapping/tray_change_log — skipping fallback for printer %d",
+                        tray_label,
+                        printer_id,
+                    )
                     continue
 
                 if not isinstance(current_remain, int) or current_remain < 0 or current_remain > 100:

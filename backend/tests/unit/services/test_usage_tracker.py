@@ -193,6 +193,64 @@ class TestOnPrintCompleteAMSDelta:
 
         assert results == []
 
+    @pytest.mark.asyncio
+    async def test_skips_fallback_for_trays_outside_print_mapping(self):
+        """#1269: swapping a spool in an UNUSED slot mid-print must NOT charge the old spool.
+
+        Reproduces maugsburger's report: single-color print on AMS0-T3
+        (ams_mapping=[3]). User swaps spools in T1 and T2 during the print —
+        those slots report remain=0 at completion (new spool with no tag).
+        The fallback must skip T1 and T2 because they were never in the
+        print's tray mapping or runtime tray_change_log.
+        """
+        _active_sessions[1] = PrintSession(
+            printer_id=1,
+            print_name="splitter",
+            started_at=datetime.now(timezone.utc),
+            tray_remain_start={(0, 1): 100, (0, 2): 17, (0, 3): 100},
+            tray_now_at_start=3,
+            ams_mapping=[3],
+        )
+
+        # User swapped T1 and T2 mid-print → both report remain=0 now.
+        # T3 was actually used but it's also at 0 now. Without the fix the
+        # fallback would charge the originally-assigned spools at T1 and T2.
+        ams_data = [
+            {
+                "id": 0,
+                "tray": [
+                    {"id": 1, "remain": 0},
+                    {"id": 2, "remain": 0},
+                    {"id": 3, "remain": 0},
+                ],
+            }
+        ]
+        state = _make_printer_state(ams_data, tray_now=3)
+        state.tray_change_log = [(3, 0)]  # only T3 was loaded during the print
+        pm = _make_printer_manager(state)
+
+        # Only T3 should reach the spool lookup; T1 and T2 must be filtered
+        # out before any DB query is issued for them.
+        t3_spool = _make_spool(id=8, label_weight=1000, weight_used=0)
+        t3_assignment = _make_assignment(spool_id=8, ams_id=0, tray_id=3)
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(),  # _find_3mf_by_filename: library search
+                MagicMock(),  # _find_3mf_by_filename: archive search
+                MagicMock(scalar_one_or_none=MagicMock(return_value=t3_assignment)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=t3_spool)),
+            ]
+        )
+
+        results = await on_print_complete(1, {"status": "completed"}, pm, db)
+
+        # Only T3 should be charged. T1 (spool 27 in the report) and T2
+        # (spool 24) must NOT appear in the results.
+        assert len(results) == 1
+        assert results[0]["ams_id"] == 0
+        assert results[0]["tray_id"] == 3
+
 
 class TestTrackFrom3MF:
     """Tests for Path 2: 3MF per-filament fallback tracking."""

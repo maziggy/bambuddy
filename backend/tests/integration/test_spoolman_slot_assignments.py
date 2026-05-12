@@ -107,6 +107,32 @@ class TestAssignSpoolmanSlot:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_assign_accepts_ams_ht_id(self, async_client: AsyncClient, slot_settings, test_printer, mock_client):
+        """#1274: AMS-HT units report ams_id 128+. The pre-fix ck_ams_id_range
+        only allowed 0-7 / 255, so the upsert blew up with `CHECK constraint
+        failed: ck_ams_id_range` and the user couldn't link any spool to the
+        H2C/H2D AMS-HT slot. This guards the widened range from regressing.
+        """
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/slot-assignments",
+            json={
+                "spoolman_spool_id": 51,
+                "printer_id": test_printer.id,
+                "ams_id": 128,  # AMS-HT on the left nozzle (matches issue's failing INSERT)
+                "tray_id": 0,
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        all_resp = await async_client.get(
+            "/api/v1/spoolman/inventory/slot-assignments/all",
+            params={"printer_id": test_printer.id},
+        )
+        rows = all_resp.json()
+        assert any(r["ams_id"] == 128 and r["spoolman_spool_id"] == 51 for r in rows)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_assign_does_not_call_update_spool(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_client
     ):

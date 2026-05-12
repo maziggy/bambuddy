@@ -4584,17 +4584,27 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot set AMS filament setting: not connected", self.serial_number)
             return False
 
-        # Calculate mqtt IDs based on AMS type
+        # Calculate mqtt IDs based on AMS type.
+        # External-spool convention verified against a BambuStudio→X1C packet capture
+        # (issue #1279, May 2026): for `ams_filament_setting` Studio sends the
+        # *global* tray index in `tray_id`, not a local position within the virtual
+        # unit. The printer's response echoes `tray_id: 0` (slot position), which
+        # is what the original code was matching — but the request and response
+        # use different semantics for that field. Sending `tray_id: 0` is what
+        # the P1S in #1279 rejected with `result: "fail"`.
         if ams_id == 255:
             vt_tray = self.state.raw_data.get("vt_tray", []) if self.state.raw_data else []
             if len(vt_tray) > 1:
                 # Dual external slots (H2D): each ext slot is its own virtual AMS unit
-                # (254=ext-L / slot 0, 255=ext-R / slot 1)
+                # (254=ext-L / slot 0, 255=ext-R / slot 1). The dual case is NOT
+                # covered by the X1C capture — left at `mqtt_tray_id = 0` until a
+                # captured Studio→H2D exchange confirms the correct value.
                 mqtt_ams_id = 254 + tray_id
+                mqtt_tray_id = 0
             else:
-                # Single external slot (X1C, P1S, A1): always ams_id=255
+                # Single external slot (X1C, P1S, A1): global tray_id=254.
                 mqtt_ams_id = 255
-            mqtt_tray_id = 0
+                mqtt_tray_id = 254
             slot_id = 0
         elif ams_id <= 3:
             mqtt_ams_id = ams_id
@@ -4649,16 +4659,18 @@ class BambuMQTTClient:
             logger.warning("[%s] Cannot reset AMS slot: not connected", self.serial_number)
             return False
 
-        # Calculate mqtt IDs based on AMS type
+        # Calculate mqtt IDs based on AMS type — same convention as
+        # ams_set_filament_setting above. See its comment for the #1279 capture rationale.
         if ams_id == 255:
             vt_tray = self.state.raw_data.get("vt_tray", []) if self.state.raw_data else []
             if len(vt_tray) > 1:
                 # Dual external slots (H2D): each ext slot is its own virtual AMS unit
                 mqtt_ams_id = 254 + tray_id
+                mqtt_tray_id = 0
             else:
-                # Single external slot (X1C, P1S, A1): always ams_id=255
+                # Single external slot (X1C, P1S, A1): global tray_id=254.
                 mqtt_ams_id = 255
-            mqtt_tray_id = 0
+                mqtt_tray_id = 254
             slot_id = 0
         elif ams_id <= 3:
             mqtt_ams_id = ams_id

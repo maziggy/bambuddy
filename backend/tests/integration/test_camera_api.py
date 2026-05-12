@@ -241,6 +241,35 @@ class TestCameraAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_camera_snapshot_reuses_buffered_frame_when_stream_active(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """#1271: /camera/snapshot must reuse the broadcaster's buffered frame
+        when a live stream is running, instead of opening a second concurrent
+        RTSP socket. On printers with strict single-connection enforcement (e.g.
+        X2D firmware 01.01.00.00) opening a second socket kicks the live stream.
+        """
+        printer = await printer_factory()
+        fake_jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+
+        # Simulate a running broadcaster: one active stream entry + buffered frame.
+        active_streams = {f"{printer.id}-fanout": MagicMock()}
+        last_frames = {printer.id: fake_jpeg}
+
+        with (
+            patch("backend.app.api.routes.camera._active_streams", active_streams),
+            patch("backend.app.api.routes.camera._last_frames", last_frames),
+            patch("backend.app.api.routes.camera.capture_camera_frame", new_callable=AsyncMock) as mock_capture,
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
+
+        assert response.status_code == 200
+        assert response.content == fake_jpeg
+        # The fresh-capture path must NOT have been taken — that's the whole point.
+        mock_capture.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_camera_snapshot_external_camera_success(self, async_client: AsyncClient, printer_factory):
         """Verify snapshot uses external camera when configured."""
         printer = await printer_factory(

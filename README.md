@@ -19,6 +19,7 @@
   <a href="https://github.com/maziggy/bambuddy/issues"><img src="https://img.shields.io/github/issues/maziggy/bambuddy?style=flat-square" alt="Issues"></a>
   <a href="https://discord.gg/aFS3ZfScHM"><img src="https://img.shields.io/discord/1461241694715645994?style=flat-square&logo=discord&logoColor=white&label=Discord&color=5865F2" alt="Discord"></a>
   <a href="https://forum.bambuddy.cool"><img src="https://img.shields.io/badge/Forum-bambuddy.cool-00adef?style=flat-square&logo=discourse&logoColor=white" alt="Forum"></a>
+  <a href="https://github.com/sponsors/maziggy"><img src="https://img.shields.io/badge/GitHub_Sponsors-Sponsor-ea4aaa?style=flat-square&logo=github-sponsors&logoColor=white" alt="GitHub Sponsors"></a>
   <a href="https://ko-fi.com/maziggy"><img src="https://img.shields.io/badge/Ko--fi-Support-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white" alt="Ko-fi" target=_blank></a>
 </p>
 
@@ -94,7 +95,7 @@ You don't need to be a developer for the docs or moderator roles. If you enjoy w
 **Print from anywhere in the world** — Bambuddy's new Proxy Mode acts as a secure relay between your slicer and printer:
 
 - 🔒 **End-to-end TLS encryption** — FTP, file transfer, and camera are transparently proxied with the printer's real TLS certificate
-- 🛡️ **Optional Tailscale integration** — per-VP toggle + Docker socket mount surface the host's Tailscale IP on the VP card, so you know which `100.x.x.x` to paste into the slicer when you want a virtual printer reachable over your tailnet ([setup](https://wiki.bambuddy.cool/features/virtual-printer/)). Bambuddy's self-signed CA import is still required for the slicer side — the Bambu Studio / OrcaSlicer printer-MQTT trust path uses a bundled BBL CA, not the system trust store, so even a publicly-trusted cert wouldn't help. Tailscale's role is the private tunnel (reachability from anywhere, no port forwarding), not cert-import elimination.
+- 🛡️ **Optional Tailscale integration** — per-VP toggle + Docker socket mount surface the host's Tailscale IP on the VP card, so you know which `100.x.x.x` to paste into the slicer when you want a virtual printer reachable over your tailnet ([setup](https://wiki.bambuddy.cool/features/virtual-printer/)). Bambuddy's self-signed CA import is still required on the slicer side: Bambu Studio / OrcaSlicer validate printer TLS against a bundled BBL CA (not the system trust store), **and** their Add Printer dialog is IP-only (no hostname to match an LE cert against), so a publicly-trusted cert can't help on either dimension. Tailscale's role is the private tunnel (reachability from anywhere, no port forwarding), not cert-import elimination.
 - 🌍 **No cloud dependency** — Direct connection through your own Bambuddy server
 - 🔑 **Uses printer's access code** — No additional credentials needed
 - ⚡ **Full-speed printing** — Transparent TCP proxy, only MQTT is decrypted for IP rewriting
@@ -747,7 +748,14 @@ AGPL-3.0 License — see [LICENSE](LICENSE) for details.
 
 ---
 
-If you like Bambuddy and want to support it, you can <a href="https://ko-fi.com/maziggy" target=_blank>buy Martin a coffee</a>.
+## 💖 Support Bambuddy
+
+Bambuddy stays independent because real people support it directly. If Bambuddy makes your printers more useful, please consider:
+
+- **[GitHub Sponsors](https://github.com/sponsors/maziggy)** — five recurring tiers from $5/mo (Backer) to $500/mo (Corporate). Supporter+ ($15/mo) get access to a private sponsors space with a monthly newsletter and early release notes. Patron+ ($35/mo) vote on the quarterly roadmap. Sustaining Sponsor+ ($150/mo) get a direct async email line for technical questions. Corporate ($500/mo) get logo placement on [bambuddy.cool](https://bambuddy.cool) and [press.html](https://bambuddy.cool/press.html).
+- **[Ko-fi](https://ko-fi.com/maziggy)** — one-time tip or recurring.
+
+Sponsors get listed in [BACKERS.md](BACKERS.md). Need commercial support (SLA, multi-printer consulting)? Email `martin@bambuddy.cool`.
 
 ---
 

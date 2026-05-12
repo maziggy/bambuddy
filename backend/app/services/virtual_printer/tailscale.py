@@ -6,11 +6,15 @@ they want to reach a VP over Tailscale.
 
 Historical note: this module previously provisioned Let's Encrypt certs via
 `tailscale cert` so the slicer would not need a manual CA import. That path
-was removed because BambuStudio's printer-MQTT trust path validates only
-against its bundled BBL CA (not the system trust store), so LE-signed certs
-are rejected regardless of hostname/IP. The self-signed CA flow (with one-
-time `bbl_ca.crt` import into the slicer) is the only viable trust mechanism;
-Tailscale's role is now strictly network reach.
+was removed because LE-signed certs can't help on two independent dimensions:
+(1) BambuStudio / OrcaSlicer printer-MQTT trust validates only against the
+bundled BBL CA, not the system trust store, so non-BBL chains are rejected
+at the issuer check; (2) both slicers' Add Printer dialog accepts only an
+IP address (not a hostname), so even if the trust store accepted the LE
+issuer, the cert's hostname (`*.<tailnet>.ts.net`) couldn't match the
+`100.x.x.x` connection target. The self-signed CA flow (one-time `bbl_ca.crt`
+import into the slicer) is the only viable trust mechanism; Tailscale's role
+is now strictly network reach.
 """
 
 import asyncio

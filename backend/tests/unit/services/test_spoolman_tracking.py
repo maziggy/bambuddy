@@ -91,6 +91,35 @@ class TestResolveGlobalTrayId:
         mapping = []
         assert _resolve_global_tray_id(1, mapping) == 0
 
+    def test_minus_one_resolves_to_external_spool_when_present(self):
+        """#1276 (regression of #853): -1 in slot_to_tray is BambuStudio's
+        encoding for "external spool used" — look up the external spool in
+        ams_trays rather than falling through to the position-based default
+        (which would credit an unrelated AMS tray). Reporter ojimpo's H2S
+        had AMS slot 0 occupied with PLA and ran a TPU external-spool print;
+        the bug credited the TPU usage to the PLA spool.
+        """
+        # Single external spool (most common: H2S/X1C/P1S + external)
+        assert _resolve_global_tray_id(1, [-1], ams_trays={254: {}}) == 254
+        # AMS occupied with material AND external in use — fix prevents
+        # crediting AMS slot 0 (the actual bug from #1276)
+        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 1: {}, 2: {}, 3: {}, 254: {}}) == 254
+        # H2D-style deputy nozzle at 255
+        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 255: {}}) == 255
+        # Both external slots present (multi-nozzle) — prefer 254 (main on
+        # single-nozzle, deputy on H2D — matches tray_now reporting)
+        assert _resolve_global_tray_id(1, [-1], ams_trays={254: {}, 255: {}}) == 254
+
+    def test_minus_one_falls_through_when_no_external_in_ams_trays(self):
+        """If -1 is seen but ams_trays has no external spool (254/255),
+        fall through to position-based default (legacy behavior preserved
+        for callers that don't pass ams_trays or pre-fix call sites).
+        """
+        # ams_trays without external — fall through to legacy behavior
+        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 1: {}}) == 0
+        # No ams_trays passed at all — legacy fallback
+        assert _resolve_global_tray_id(1, [-1]) == 0
+
 
 class TestFallbackTagHelpers:
     """Tests for frontend-mirrored fallback tag helpers."""

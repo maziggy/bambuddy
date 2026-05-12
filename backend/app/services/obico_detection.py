@@ -199,6 +199,19 @@ class ObicoDetectionService:
                 timeout=SNAPSHOT_CAPTURE_TIMEOUT,
                 snapshot_url=printer.external_camera_snapshot_url,
             )
+
+        # Reuse the fan-out broadcaster's buffered frame when a viewer is
+        # already watching — avoids opening a second concurrent RTSP socket
+        # on printers that allow only one camera connection (e.g. X2D
+        # firmware 01.01.00.00; see #1271). Buffered frame is <1s old while
+        # a viewer is connected. Returns None when no stream is active, so
+        # we fall through to a fresh socket as before.
+        from backend.app.api.routes.camera import try_get_active_buffered_frame
+
+        buffered = try_get_active_buffered_frame(printer_id)
+        if buffered:
+            return buffered
+
         return await capture_camera_frame_bytes(
             ip_address=printer.ip_address,
             access_code=printer.access_code,

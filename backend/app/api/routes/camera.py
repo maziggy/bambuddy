@@ -79,6 +79,25 @@ def get_buffered_frame(printer_id: int) -> bytes | None:
     return _last_frames.get(printer_id)
 
 
+def try_get_active_buffered_frame(printer_id: int) -> bytes | None:
+    """Return a buffered frame iff a stream is currently running for this printer.
+
+    Snapshot callers (Obico polling, manual /camera/snapshot) tap the fan-out
+    broadcaster's running upstream instead of opening a second concurrent
+    RTSP/chamber-image socket. Critical for printers that allow only one
+    camera connection (e.g. X2D firmware 01.01.00.00; see #1271).
+
+    Returns None when no broadcaster is active for this printer, so callers
+    fall through to their existing fresh-socket path unchanged.
+    """
+    has_stream = any(k.startswith(f"{printer_id}-") for k in _active_streams) or any(
+        k.startswith(f"{printer_id}-") for k in _active_chamber_streams
+    )
+    if not has_stream:
+        return None
+    return _last_frames.get(printer_id)
+
+
 async def get_printer_or_404(printer_id: int, db: AsyncSession) -> Printer:
     """Get printer by ID or raise 404."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -805,6 +824,21 @@ async def camera_snapshot(
             )
         return Response(
             content=frame_data,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Content-Disposition": f'inline; filename="snapshot_{printer_id}.jpg"',
+            },
+        )
+
+    # Reuse the fan-out broadcaster's buffered frame when a viewer is already
+    # watching — avoids opening a second concurrent RTSP socket on printers
+    # that allow only one camera connection (e.g. X2D firmware 01.01.00.00;
+    # see #1271). Buffered frame is <1s old while a viewer is connected.
+    buffered = try_get_active_buffered_frame(printer_id)
+    if buffered:
+        return Response(
+            content=buffered,
             media_type="image/jpeg",
             headers={
                 "Cache-Control": "no-cache, no-store, must-revalidate",

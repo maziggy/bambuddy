@@ -270,6 +270,77 @@ class TestPollOneStateLifecycle:
             assert mock_action.call_count == 1
 
 
+class TestCaptureFrameSharesBroadcasterUpstream:
+    """#1271: Obico's per-poll snapshot must reuse the live-stream broadcaster's
+    buffered frame when a viewer is watching, instead of opening a second RTSP
+    socket. On X2D firmware 01.01.00.00 the second socket kicks the live stream.
+    """
+
+    @pytest.mark.asyncio
+    async def test_returns_buffered_frame_when_stream_active(self):
+        printer = MagicMock(
+            external_camera_enabled=False,
+            external_camera_url=None,
+            ip_address="192.168.1.10",
+            access_code="12345678",
+            model="N6",
+        )
+        mock_session = MagicMock()
+        mock_session.get = AsyncMock(return_value=printer)
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        svc = ObicoDetectionService()
+        with (
+            patch("backend.app.services.obico_detection.async_session", return_value=mock_ctx),
+            patch(
+                "backend.app.api.routes.camera.try_get_active_buffered_frame",
+                return_value=FAKE_JPEG,
+            ),
+            patch(
+                "backend.app.services.camera.capture_camera_frame_bytes",
+                new=AsyncMock(return_value=b"FRESH-CAPTURE-SHOULD-NOT-BE-USED"),
+            ) as mock_fresh,
+        ):
+            result = await svc._capture_frame(printer_id=1)
+
+        assert result == FAKE_JPEG
+        mock_fresh.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_fresh_capture_when_no_stream(self):
+        printer = MagicMock(
+            external_camera_enabled=False,
+            external_camera_url=None,
+            ip_address="192.168.1.10",
+            access_code="12345678",
+            model="N6",
+        )
+        mock_session = MagicMock()
+        mock_session.get = AsyncMock(return_value=printer)
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        svc = ObicoDetectionService()
+        with (
+            patch("backend.app.services.obico_detection.async_session", return_value=mock_ctx),
+            patch(
+                "backend.app.api.routes.camera.try_get_active_buffered_frame",
+                return_value=None,  # No active stream
+            ),
+            patch(
+                "backend.app.services.camera.capture_camera_frame_bytes",
+                new=AsyncMock(return_value=FAKE_JPEG),
+            ) as mock_fresh,
+        ):
+            result = await svc._capture_frame(printer_id=1)
+
+        assert result == FAKE_JPEG
+        mock_fresh.assert_called_once()
+
+
 class TestFrameCache:
     """One-shot JPEG cache that lets us sidestep Obico's 5s read timeout.
 

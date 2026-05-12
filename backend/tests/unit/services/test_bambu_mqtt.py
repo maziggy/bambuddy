@@ -4668,3 +4668,141 @@ class TestAmsLoadFilamentEncoding:
         mqtt_client.state.connected = False
         assert mqtt_client.ams_load_filament(0) is False
         mqtt_client._client.publish.assert_not_called()
+
+
+class TestAmsFilamentSettingExternalSpoolEncoding:
+    """Encoding of `ams_filament_setting` / `reset_ams_slot` for the external spool.
+
+    Regression coverage for #1279. The encoding is verified against a captured
+    BambuStudio → X1C exchange (May 2026):
+
+        REQ {"command":"ams_filament_setting","ams_id":255,"tray_id":254,"slot_id":0,...}
+        REP {"result":"success",...}
+
+    The previous code sent `tray_id: 0` for the single-external case, which the
+    P1S in #1279 rejected with `result: "fail"`.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        client.state.connected = True
+        return client
+
+    def _published(self, mqtt_client):
+        call_args = mqtt_client._client.publish.call_args
+        return json.loads(call_args[0][1])["print"]
+
+    def test_single_external_uses_tray_id_254(self, mqtt_client):
+        """X1C/P1S/A1 (single external slot): ams_id=255, tray_id=254, slot_id=0."""
+        # Simulate a single-external printer: vt_tray is a single-element list.
+        mqtt_client.state.raw_data = {"vt_tray": [{"id": "255"}]}
+
+        assert mqtt_client.ams_set_filament_setting(
+            ams_id=255,
+            tray_id=0,
+            tray_info_idx="GFL99",
+            tray_type="PLA",
+            tray_sub_brands="Generic PLA",
+            tray_color="000000FF",
+            nozzle_temp_min=190,
+            nozzle_temp_max=230,
+        )
+
+        cmd = self._published(mqtt_client)
+        assert cmd["command"] == "ams_filament_setting"
+        assert cmd["ams_id"] == 255
+        assert cmd["tray_id"] == 254, (
+            "Single-external `ams_filament_setting` must send tray_id=254 "
+            "(verified via BambuStudio→X1C capture). Sending tray_id=0 "
+            "is what the P1S in #1279 rejects."
+        )
+        assert cmd["slot_id"] == 0
+
+    def test_single_external_reset_uses_tray_id_254(self, mqtt_client):
+        """reset_ams_slot shares the convention — same encoding."""
+        mqtt_client.state.raw_data = {"vt_tray": [{"id": "255"}]}
+
+        assert mqtt_client.reset_ams_slot(ams_id=255, tray_id=0)
+
+        cmd = self._published(mqtt_client)
+        assert cmd["command"] == "ams_filament_setting"
+        assert cmd["ams_id"] == 255
+        assert cmd["tray_id"] == 254
+        assert cmd["slot_id"] == 0
+        # Reset clears the filament identity
+        assert cmd["tray_info_idx"] == ""
+        assert cmd["tray_type"] == ""
+
+    def test_regular_ams_tray_unchanged(self, mqtt_client):
+        """Regular AMS slots (ams_id <= 3) keep their existing encoding."""
+        mqtt_client.state.raw_data = {"vt_tray": []}
+
+        assert mqtt_client.ams_set_filament_setting(
+            ams_id=0,
+            tray_id=2,
+            tray_info_idx="GFA01",
+            tray_type="PLA",
+            tray_sub_brands="PLA Matte",
+            tray_color="FFFFFFFF",
+            nozzle_temp_min=190,
+            nozzle_temp_max=230,
+        )
+
+        cmd = self._published(mqtt_client)
+        assert cmd["ams_id"] == 0
+        assert cmd["tray_id"] == 2
+        assert cmd["slot_id"] == 2
+
+    def test_ams_ht_unchanged(self, mqtt_client):
+        """AMS-HT (ams_id >= 128) keeps its single-tray-per-unit encoding."""
+        mqtt_client.state.raw_data = {"vt_tray": []}
+
+        assert mqtt_client.ams_set_filament_setting(
+            ams_id=128,
+            tray_id=0,
+            tray_info_idx="GFA01",
+            tray_type="PLA",
+            tray_sub_brands="PLA Matte",
+            tray_color="FFFFFFFF",
+            nozzle_temp_min=190,
+            nozzle_temp_max=230,
+        )
+
+        cmd = self._published(mqtt_client)
+        assert cmd["ams_id"] == 128
+        assert cmd["tray_id"] == 0
+        assert cmd["slot_id"] == 0
+
+    def test_dual_external_left_keeps_legacy_encoding(self, mqtt_client):
+        """H2D dual-external (`vt_tray` length > 1): not in the X1C capture, so
+        left at the legacy `mqtt_tray_id = 0` until verified separately."""
+        mqtt_client.state.raw_data = {"vt_tray": [{"id": "254"}, {"id": "255"}]}
+
+        assert mqtt_client.ams_set_filament_setting(
+            ams_id=255,
+            tray_id=0,  # Ext-L
+            tray_info_idx="GFA01",
+            tray_type="PLA",
+            tray_sub_brands="PLA Matte",
+            tray_color="FFFFFFFF",
+            nozzle_temp_min=190,
+            nozzle_temp_max=230,
+        )
+
+        cmd = self._published(mqtt_client)
+        # Ext-L → mqtt_ams_id = 254
+        assert cmd["ams_id"] == 254
+        # tray_id stays at 0 for dual external; this pins current behavior so
+        # a future capture-driven change shows up in the diff.
+        assert cmd["tray_id"] == 0
+        assert cmd["slot_id"] == 0

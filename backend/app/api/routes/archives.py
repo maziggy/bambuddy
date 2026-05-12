@@ -1,9 +1,10 @@
 import io
 import json
 import logging
+import re as _re
 import zipfile
 from collections import defaultdict
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
@@ -46,6 +47,74 @@ def _safe_filename(filename: str) -> str:
     '..\\\\..\\\\evil.3mf' is correctly stripped to 'evil.3mf' on Linux.
     """
     return Path(filename.replace("\\", "/")).name
+
+
+_TIMELAPSE_FILENAME_TS_RE = _re.compile(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})")
+_DEFAULT_TIMELAPSE_OFFSETS_HOURS: tuple[int, ...] = (0, 8, -8, 7, -7, 1, -1)
+_DEFAULT_TIMELAPSE_TOLERANCE = timedelta(hours=4)
+_DEFAULT_TIMELAPSE_AMBIGUITY_MARGIN = timedelta(minutes=15)
+
+
+def _match_timelapse_by_timestamp(
+    video_files: list[dict],
+    archive_start: datetime | None,
+    *,
+    tolerance: timedelta = _DEFAULT_TIMELAPSE_TOLERANCE,
+    ambiguity_margin: timedelta = _DEFAULT_TIMELAPSE_AMBIGUITY_MARGIN,
+    offsets_hours: tuple[int, ...] = _DEFAULT_TIMELAPSE_OFFSETS_HOURS,
+) -> tuple[dict | None, timedelta | None]:
+    """Pick the timelapse whose filename timestamp best matches the print start time.
+
+    Bambu timelapse filenames embed the printer-local START time (e.g.
+    "video_2026-05-08_09-41-29.mp4"). The printer's clock may be offset from the
+    server's — especially in LAN-Only mode where NTP is unreachable — so we try a
+    small set of common UTC offsets and keep the (video, offset) pair with the
+    smallest absolute distance from archive_start. We deliberately do NOT consider
+    archive_end here: the filename is start time, not end time, so comparing it to
+    completion is not a real signal (Strategy 3 handles end via file mtime).
+
+    Because the offset list densely covers a wide span, an unrelated video's
+    filename can coincidentally land near a later print's start at some offset.
+    To avoid that false positive, we require the best (video, offset) pair to
+    beat the next-best pair *from a different video* by at least `ambiguity_margin`.
+    When the top two candidates from different videos are too close to call,
+    we return None and let the caller fall back to manual selection.
+    """
+    if archive_start is None:
+        return None, None
+
+    # (diff, video) for every (video, offset) pair within tolerance.
+    candidates: list[tuple[timedelta, dict]] = []
+
+    for f in video_files:
+        fname = f.get("name", "")
+        m = _TIMELAPSE_FILENAME_TS_RE.search(fname)
+        if not m:
+            continue
+        try:
+            file_time = datetime.strptime(m.group(1), "%Y-%m-%d_%H-%M-%S")
+        except ValueError:
+            continue
+
+        for hour_offset in offsets_hours:
+            adjusted = file_time - timedelta(hours=hour_offset)
+            diff = abs(adjusted - archive_start)
+            if diff <= tolerance:
+                candidates.append((diff, f))
+
+    if not candidates:
+        return None, None
+
+    candidates.sort(key=lambda c: c[0])
+    best_diff, best_video = candidates[0]
+    best_name = best_video.get("name")
+
+    for diff, video in candidates[1:]:
+        if video.get("name") != best_name and (diff - best_diff) < ambiguity_margin:
+            # Another video matches almost as well — refuse to auto-pick.
+            return None, None
+
+    return best_video, best_diff
 
 
 def _validate_user_filter_permission(current_user: User | None, created_by_id: int | None):
@@ -1721,65 +1790,15 @@ async def scan_timelapse(
             matching_file = f
             break
 
-    # Strategy 2: Match by timestamp proximity
-    # Bambu timelapse filename uses the print START time (when recording began)
-    if not matching_file and (archive.started_at or archive.completed_at or archive.created_at):
-        import re
-        from datetime import datetime, timedelta
-
-        # Prefer started_at since video filename is the print start time
-        # Fall back to completed_at or created_at if started_at is not available
-        archive_start = archive.started_at
-        archive_end = archive.completed_at or archive.created_at
-        best_match = None
-        best_diff = timedelta(hours=24)  # Max 24 hour difference
-
-        for f in video_files:
-            fname = f.get("name", "")
-            # Parse timestamp from filename like "video_2025-11-24_03-17-40.mp4"
-            match = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})", fname)
-            if match:
-                try:
-                    file_time = datetime.strptime(match.group(1), "%Y-%m-%d_%H-%M-%S")
-
-                    # Try multiple timezone offsets since printer timezone can vary
-                    # Common cases: local time (0), CST/UTC+8 (+8), or UTC (-local offset)
-                    for hour_offset in [0, 8, -8, 7, -7, 1, -1]:
-                        adjusted_file_time = file_time - timedelta(hours=hour_offset)
-
-                        # Check against start time (video filename = print start)
-                        if archive_start:
-                            diff = abs(adjusted_file_time - archive_start)
-                            if diff < best_diff:
-                                best_diff = diff
-                                best_match = f
-                                logger.debug(
-                                    f"Timelapse match candidate: {fname} with offset {hour_offset}h, "
-                                    f"diff from start: {diff}"
-                                )
-
-                        # Also check against end time with a buffer
-                        # (video timestamp should be BEFORE completion time)
-                        if archive_end:
-                            # The video timestamp should be within the print duration before completion
-                            if adjusted_file_time < archive_end:
-                                diff = archive_end - adjusted_file_time
-                                # Reasonable print duration: up to 48 hours
-                                if diff < timedelta(hours=48) and diff < best_diff:
-                                    best_diff = diff
-                                    best_match = f
-                                    logger.debug(
-                                        f"Timelapse match candidate (from end): {fname} with offset {hour_offset}h, "
-                                        f"diff: {diff}"
-                                    )
-
-                except ValueError:
-                    continue
-
-        # Accept match within 4 hours (more lenient for timezone issues)
-        if best_match and best_diff < timedelta(hours=4):
-            matching_file = best_match
-            logger.info("Matched timelapse by timestamp: %s (diff: %s)", best_match.get("name"), best_diff)
+    # Strategy 2: Match by timestamp proximity against print START time.
+    # Bambu timelapse filename embeds the print start time in printer-local clock.
+    # See _match_timelapse_by_timestamp for the offset-search rationale and why we
+    # intentionally don't try to match filename against end time here.
+    if not matching_file and archive.started_at:
+        candidate, diff = _match_timelapse_by_timestamp(video_files, archive.started_at)
+        if candidate is not None:
+            matching_file = candidate
+            logger.info("Matched timelapse by timestamp: %s (diff: %s)", candidate.get("name"), diff)
 
     # Strategy 3: Use file modification time from FTP listing
     # This handles cases where printer's filename timestamp is wrong but file mtime is correct

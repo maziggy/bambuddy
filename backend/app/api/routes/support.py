@@ -415,6 +415,314 @@ def _format_bytes(size_bytes: int) -> str:
     return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
 
+async def _collect_auth_info(db: AsyncSession) -> dict:
+    """Auth-related configuration that's stored OUTSIDE the settings table.
+
+    The settings-table passthrough already captures `ldap_*`, `advanced_auth_enabled`,
+    etc. The blocks below come from dedicated tables that the support bundle did
+    not previously surface — every recent SSO / 2FA / group bug needed this data
+    to triage.
+    """
+    from backend.app.models.api_key import APIKey
+    from backend.app.models.group import Group
+    from backend.app.models.long_lived_token import LongLivedToken
+    from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
+    from backend.app.models.user_otp_code import UserOTPCode
+    from backend.app.models.user_totp import UserTOTP
+
+    now = datetime.now(timezone.utc)
+    auth: dict = {}
+
+    # OIDC providers — names are public (login-button labels), no secrets.
+    providers_result = await db.execute(select(OIDCProvider).order_by(OIDCProvider.id))
+    providers = providers_result.scalars().all()
+    oidc_list = []
+    for p in providers:
+        # Count linked users per provider — separate query so failure on one
+        # provider doesn't blank the whole list.
+        try:
+            link_count = (
+                await db.execute(select(func.count(UserOIDCLink.id)).where(UserOIDCLink.provider_id == p.id))
+            ).scalar() or 0
+        except Exception:
+            link_count = None
+        oidc_list.append(
+            {
+                "name": p.name,
+                "is_enabled": p.is_enabled,
+                "scopes": p.scopes,
+                "email_claim": p.email_claim,
+                "require_email_verified": p.require_email_verified,
+                "auto_create_users": p.auto_create_users,
+                "auto_link_existing_accounts": p.auto_link_existing_accounts,
+                "has_default_group": p.default_group_id is not None,
+                "has_icon": bool(p.icon_url),
+                "linked_user_count": link_count,
+            }
+        )
+    auth["oidc_providers"] = oidc_list
+
+    # 2FA enrollment — counts only, no per-user data.
+    totp_enabled = (
+        await db.execute(select(func.count(UserTOTP.id)).where(UserTOTP.is_enabled.is_(True)))
+    ).scalar() or 0
+    auth["users_with_totp"] = totp_enabled
+    # Active (not-yet-expired, not-yet-used) email OTP codes — bounded count;
+    # spikes here would point at someone hammering the email OTP flow.
+    email_otp_pending = (
+        await db.execute(
+            select(func.count(UserOTPCode.id)).where(
+                UserOTPCode.used.is_(False),
+                UserOTPCode.expires_at > now,
+            )
+        )
+    ).scalar() or 0
+    auth["email_otp_codes_pending"] = email_otp_pending
+
+    # API keys
+    api_keys_total = (await db.execute(select(func.count(APIKey.id)))).scalar() or 0
+    api_keys_enabled = (await db.execute(select(func.count(APIKey.id)).where(APIKey.enabled.is_(True)))).scalar() or 0
+    api_keys_expired = (
+        await db.execute(
+            select(func.count(APIKey.id)).where(
+                APIKey.expires_at.is_not(None),
+                APIKey.expires_at < now,
+            )
+        )
+    ).scalar() or 0
+    auth["api_keys_total"] = api_keys_total
+    auth["api_keys_enabled"] = api_keys_enabled
+    auth["api_keys_expired"] = api_keys_expired
+
+    # Long-lived tokens (camera-stream tokens used by kiosks etc.)
+    llt_total = (await db.execute(select(func.count(LongLivedToken.id)))).scalar() or 0
+    llt_active = (
+        await db.execute(
+            select(func.count(LongLivedToken.id)).where(
+                LongLivedToken.revoked_at.is_(None),
+                LongLivedToken.expires_at > now,
+            )
+        )
+    ).scalar() or 0
+    auth["long_lived_tokens_total"] = llt_total
+    auth["long_lived_tokens_active"] = llt_active
+
+    # Groups — system vs custom split matters for permission triage.
+    groups_system = (await db.execute(select(func.count(Group.id)).where(Group.is_system.is_(True)))).scalar() or 0
+    groups_custom = (await db.execute(select(func.count(Group.id)).where(Group.is_system.is_(False)))).scalar() or 0
+    auth["groups_system"] = groups_system
+    auth["groups_custom"] = groups_custom
+
+    return auth
+
+
+async def _collect_library_info(db: AsyncSession) -> dict:
+    """Library file / folder totals, including external-link and trash counts."""
+    from backend.app.models.external_link import ExternalLink
+    from backend.app.models.library import LibraryFile, LibraryFolder
+
+    info: dict = {}
+    info["library_files_total"] = (
+        await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.deleted_at.is_(None)))
+    ).scalar() or 0
+    info["library_files_in_trash"] = (
+        await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.deleted_at.is_not(None)))
+    ).scalar() or 0
+    info["library_folders_total"] = (await db.execute(select(func.count(LibraryFolder.id)))).scalar() or 0
+    info["external_folders_total"] = (
+        await db.execute(select(func.count(LibraryFolder.id)).where(LibraryFolder.is_external.is_(True)))
+    ).scalar() or 0
+    info["external_links_total"] = (await db.execute(select(func.count(ExternalLink.id)))).scalar() or 0
+    # MakerWorld imports — counted here because they're LibraryFile rows with
+    # source_type='makerworld' (the import path doesn't have its own table).
+    info["makerworld_imports_total"] = (
+        await db.execute(
+            select(func.count(LibraryFile.id)).where(
+                LibraryFile.deleted_at.is_(None),
+                LibraryFile.source_type == "makerworld",
+            )
+        )
+    ).scalar() or 0
+    return info
+
+
+async def _collect_inventory_info(db: AsyncSession) -> dict:
+    """Spool / k-profile totals from the inventory feature."""
+    from backend.app.models.spool import Spool
+    from backend.app.models.spool_k_profile import SpoolKProfile
+    from backend.app.models.spoolman_k_profile import SpoolmanKProfile
+
+    info: dict = {}
+    info["spools_internal"] = (await db.execute(select(func.count(Spool.id)))).scalar() or 0
+    info["k_profiles_internal"] = (await db.execute(select(func.count(SpoolKProfile.id)))).scalar() or 0
+    info["k_profiles_spoolman"] = (await db.execute(select(func.count(SpoolmanKProfile.id)))).scalar() or 0
+    return info
+
+
+async def _collect_queue_info(db: AsyncSession) -> dict:
+    """Print-queue health: pending count + oldest pending age."""
+    from backend.app.models.print_queue import PrintQueueItem
+
+    info: dict = {}
+    info["pending_total"] = (
+        await db.execute(select(func.count(PrintQueueItem.id)).where(PrintQueueItem.status == "pending"))
+    ).scalar() or 0
+    info["manual_start_pending"] = (
+        await db.execute(
+            select(func.count(PrintQueueItem.id)).where(
+                PrintQueueItem.status == "pending",
+                PrintQueueItem.manual_start.is_(True),
+            )
+        )
+    ).scalar() or 0
+    # Oldest pending item — derived from created_at to detect items stuck in queue
+    # (target printer offline, missing filament match, etc.).
+    oldest_row = (
+        await db.execute(
+            select(PrintQueueItem.created_at)
+            .where(PrintQueueItem.status == "pending")
+            .order_by(PrintQueueItem.created_at)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if oldest_row is not None:
+        # created_at is naive in this codebase (server_default=func.now()); compare
+        # against naive utc-now to get the actual age without TZ-conversion surprises.
+        age = (datetime.now() - oldest_row).total_seconds()
+        info["oldest_pending_age_seconds"] = int(age)
+    else:
+        info["oldest_pending_age_seconds"] = None
+    return info
+
+
+async def _collect_maintenance_info(db: AsyncSession) -> dict:
+    """Maintenance schedule totals: enabled items count + last-serviced-never count."""
+    from backend.app.models.maintenance import PrinterMaintenance
+
+    info: dict = {}
+    info["items_total"] = (await db.execute(select(func.count(PrinterMaintenance.id)))).scalar() or 0
+    info["items_enabled"] = (
+        await db.execute(select(func.count(PrinterMaintenance.id)).where(PrinterMaintenance.enabled.is_(True)))
+    ).scalar() or 0
+    return info
+
+
+async def _collect_github_backup_info(db: AsyncSession) -> dict:
+    """GitHub-backup configs: count per provider + recent-failure indicator."""
+    from backend.app.models.github_backup import GitHubBackupConfig
+
+    rows = (await db.execute(select(GitHubBackupConfig))).scalars().all()
+    providers_used: dict[str, int] = {}
+    last_failure_count = 0
+    schedule_enabled_count = 0
+    for cfg in rows:
+        providers_used[cfg.provider] = providers_used.get(cfg.provider, 0) + 1
+        if cfg.last_backup_status == "failed":
+            last_failure_count += 1
+        if cfg.schedule_enabled:
+            schedule_enabled_count += 1
+    return {
+        "configs_total": len(rows),
+        "providers_used": providers_used,
+        "schedule_enabled_count": schedule_enabled_count,
+        "last_failure_count": last_failure_count,
+    }
+
+
+async def _check_url_reachable(url: str, timeout: float = 2.0) -> bool | None:
+    """Single HEAD/GET ping with a short timeout. Returns None if URL is empty."""
+    if not url or not url.strip():
+        return None
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # noqa: S501 — local sidecars often use self-signed
+            r = await client.get(url, follow_redirects=False)
+            # Anything that returned a status code counts as reachable, even 404
+            # (the API server is up, just the path was wrong) — separates network
+            # failure from configuration mistakes for the user.
+            return r.status_code is not None
+    except Exception:
+        return False
+
+
+async def _collect_slicer_api_info() -> dict:
+    """Reachability check for configured slicer-API sidecars.
+
+    Mirrors the URL-resolution precedence used by the real slicer routes
+    (``archives.py:_slice_for_archive`` and ``library.py``) — DB setting first,
+    falling back to ``app_settings.bambu_studio_api_url`` / ``slicer_api_url``
+    which themselves respect the ``BAMBU_STUDIO_API_URL`` / ``SLICER_API_URL``
+    env vars and default to ``http://localhost:3001`` / ``http://localhost:3003``.
+    A bundle-time reachability check that only looked at the DB setting would
+    return ``null`` for every user who runs the sidecar via env var or on the
+    default port — i.e. most users.
+
+    Also reads URLs directly from ``Settings.value`` rather than from
+    ``info["settings"]``, which has already been redacted by the time the
+    integrations block runs (``bambu_studio_api_url`` matches the ``url``
+    keyword filter, so its value there is ``"[REDACTED]"`` and pinging that
+    crashes httpx).
+    """
+    async with async_session() as db:
+        keys_we_need = (
+            "use_slicer_api",
+            "preferred_slicer",
+            "bambu_studio_api_url",
+            "orcaslicer_api_url",
+        )
+        rows = (await db.execute(select(Settings).where(Settings.key.in_(keys_we_need)))).scalars().all()
+        raw = {s.key: (s.value or "") for s in rows}
+
+    # Resolve with the same DB-then-env-then-default precedence as the route
+    # that the slicer-API client actually uses, so the bundle reflects what
+    # the running app would resolve at request time.
+    bs_db = raw.get("bambu_studio_api_url", "").strip()
+    oc_db = raw.get("orcaslicer_api_url", "").strip()
+    bs_url = bs_db or (settings.bambu_studio_api_url or "").strip()
+    oc_url = oc_db or (settings.slicer_api_url or "").strip()
+
+    info: dict = {
+        "enabled": (raw.get("use_slicer_api", "false") or "false").lower() == "true",
+        "preferred": raw.get("preferred_slicer", ""),
+        # Layer accounting helps triage: was the URL set in the DB, or are
+        # we falling through to the env-var / default? "Reachable but no
+        # DB setting" is the env-var case.
+        "bambu_studio_url_set_in_db": bool(bs_db),
+        "orcaslicer_url_set_in_db": bool(oc_db),
+        # Effective URL is the resolved one — kept as a host-portion-only
+        # echo so we can confirm it's the expected sidecar without leaking
+        # the full URL (which `url` keyword would have redacted anyway).
+        "bambu_studio_url_source": ("db" if bs_db else ("env_or_default" if bs_url else "unset")),
+        "orcaslicer_url_source": ("db" if oc_db else ("env_or_default" if oc_url else "unset")),
+    }
+    if info["enabled"]:
+        bs_reach, oc_reach = await asyncio.gather(
+            _check_url_reachable(bs_url),
+            _check_url_reachable(oc_url),
+        )
+        info["bambu_studio_reachable"] = bs_reach
+        info["orcaslicer_reachable"] = oc_reach
+    return info
+
+
+def _parse_obico_enabled_printers(raw: str) -> set[int]:
+    """Parse the comma-separated `obico_enabled_printers` setting. Same shape as
+    obico_detection.py uses but tolerant of legacy formats."""
+    if not raw or not raw.strip():
+        return set()
+    result: set[int] = set()
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            result.add(int(token))
+        except ValueError:
+            continue
+    return result
+
+
 async def _collect_support_info() -> dict:
     """Collect all support information."""
     in_docker = is_running_in_docker()
@@ -480,6 +788,19 @@ async def _collect_support_info() -> dict:
         printers = result.scalars().all()
         statuses = printer_manager.get_all_statuses()
 
+        # Pre-load the obico per-printer enabled-list. Settings are loaded later
+        # in this function (and would overwrite this key in info["settings"]),
+        # so do a targeted query here for the per-printer flag below.
+        obico_enabled_set: set[int] = set()
+        try:
+            obico_row = (
+                await db.execute(select(Settings).where(Settings.key == "obico_enabled_printers"))
+            ).scalar_one_or_none()
+            if obico_row is not None:
+                obico_enabled_set = _parse_obico_enabled_printers(obico_row.value)
+        except Exception:
+            logger.debug("Failed to load obico_enabled_printers", exc_info=True)
+
         # Check reachability in parallel
         reachability_tasks = [_check_port(p.ip_address, 8883) for p in printers]
         reachable_results = await asyncio.gather(*reachability_tasks, return_exceptions=True)
@@ -522,6 +843,7 @@ async def _collect_support_info() -> dict:
                     "has_vt_tray": has_vt_tray,
                     "external_camera_configured": bool(printer.external_camera_url),
                     "plate_detection_enabled": printer.plate_detection_enabled,
+                    "obico_enabled": printer.id in obico_enabled_set,
                     "hms_error_count": len(state.hms_errors) if state else 0,
                     "developer_mode": state.developer_mode if state else None,
                     "nozzle_rack_count": len(state.nozzle_rack) if state else 0,
@@ -568,6 +890,7 @@ async def _collect_support_info() -> dict:
             "token",
             "secret",
             "api_key",
+            "auth_key",  # Tailscale auth keys: virtual_printer_tailscale_auth_key
             "installation_id",
             "cloud_token",
             "mqtt_password",
@@ -582,11 +905,20 @@ async def _collect_support_info() -> dict:
             "config",  # URLs may contain IPs, configs may have embedded secrets
             "_ip",  # IP address fields (e.g. virtual_printer_remote_interface_ip)
             "host",
+            "broker",  # MQTT broker hostname / IP — network exposure
             "credential",
         }
+        # Value-based safety net: redact anything whose value carries an
+        # unambiguous secret prefix, even if the key name didn't match.
+        # `tskey-` is the Tailscale auth-key prefix — future Tailscale settings
+        # with unexpected names won't leak just because we forgot to add them.
+        sensitive_value_prefixes = ("tskey-",)
         for s in all_settings:
             key_lower = s.key.lower()
-            if any(sensitive in key_lower for sensitive in sensitive_keys):
+            value = s.value or ""
+            if any(sensitive in key_lower for sensitive in sensitive_keys) or any(
+                value.startswith(prefix) for prefix in sensitive_value_prefixes
+            ):
                 # Preserve shape: mark presence without leaking the value
                 info["settings"][s.key] = "[REDACTED]" if s.value else ""
             else:
@@ -643,6 +975,42 @@ async def _collect_support_info() -> dict:
                 }
         except Exception:
             logger.debug("Failed to collect database health info", exc_info=True)
+
+    # Auth section — OIDC, 2FA, API keys, long-lived tokens, groups.
+    # Stored in dedicated tables that the settings-table passthrough doesn't see.
+    try:
+        async with async_session() as auth_db:
+            info["auth"] = await _collect_auth_info(auth_db)
+    except Exception:
+        logger.debug("Failed to collect auth info", exc_info=True)
+
+    # Library + folder + makerworld import totals
+    try:
+        async with async_session() as lib_db:
+            info["library"] = await _collect_library_info(lib_db)
+    except Exception:
+        logger.debug("Failed to collect library info", exc_info=True)
+
+    # Spool / k-profile totals (inventory feature)
+    try:
+        async with async_session() as inv_db:
+            info["inventory"] = await _collect_inventory_info(inv_db)
+    except Exception:
+        logger.debug("Failed to collect inventory info", exc_info=True)
+
+    # Print queue health
+    try:
+        async with async_session() as q_db:
+            info["queue"] = await _collect_queue_info(q_db)
+    except Exception:
+        logger.debug("Failed to collect queue info", exc_info=True)
+
+    # Maintenance schedules
+    try:
+        async with async_session() as m_db:
+            info["maintenance"] = await _collect_maintenance_info(m_db)
+    except Exception:
+        logger.debug("Failed to collect maintenance info", exc_info=True)
 
     # Integrations (lazy imports to avoid circular dependencies)
     info.setdefault("integrations", {})
@@ -720,6 +1088,19 @@ async def _collect_support_info() -> dict:
         }
     except Exception:
         logger.debug("Failed to collect Home Assistant info", exc_info=True)
+
+    # GitHub backup — providers + recent-failure counts from github_backup_config.
+    try:
+        async with async_session() as gb_db:
+            info["integrations"]["github_backup"] = await _collect_github_backup_info(gb_db)
+    except Exception:
+        logger.debug("Failed to collect GitHub backup info", exc_info=True)
+
+    # Slicer-API sidecar reachability (#X1C-investigation-style triage)
+    try:
+        info["integrations"]["slicer_api"] = await _collect_slicer_api_info()
+    except Exception:
+        logger.debug("Failed to collect slicer-API info", exc_info=True)
 
     # Dependencies
     try:

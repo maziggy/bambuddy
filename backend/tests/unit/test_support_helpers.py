@@ -591,6 +591,16 @@ class TestCollectSupportInfo:
             MagicMock(key="github_webhook", value="https://hooks.example/abc"),
             MagicMock(key="empty_password", value=""),
             MagicMock(key="local_backup_path", value="/data/backups"),
+            # Regression: setting was leaking before the `broker` keyword was added.
+            MagicMock(key="mqtt_broker", value="192.168.255.16"),
+            # Regression: setting was leaking before the `auth_key` keyword was
+            # added — and a value-prefix safety net (`tskey-`) was introduced
+            # so future Tailscale settings auto-redact even if we forget the key.
+            MagicMock(key="virtual_printer_tailscale_auth_key", value="tskey-auth-secrettokenhere"),
+            # Value-prefix safety net standalone: a hypothetical future setting
+            # named without "auth_key" but whose value starts with the Tailscale
+            # prefix must still redact.
+            MagicMock(key="some_future_ts_setting", value="tskey-other-secret"),
         ]
 
         def make_result(rows=None):
@@ -636,3 +646,316 @@ class TestCollectSupportInfo:
         assert s.get("local_backup_path") == "[REDACTED]"
         assert s.get("empty_password") == ""
         assert s.get("benign_flag") == "true"
+        assert s.get("mqtt_broker") == "[REDACTED]"
+        assert s.get("virtual_printer_tailscale_auth_key") == "[REDACTED]"
+        assert s.get("some_future_ts_setting") == "[REDACTED]"
+
+
+class TestParseObicoEnabledPrinters:
+    """Tests for the per-printer obico flag parser used by the bundle."""
+
+    def test_empty_string_returns_empty_set(self):
+        from backend.app.api.routes.support import _parse_obico_enabled_printers
+
+        assert _parse_obico_enabled_printers("") == set()
+        assert _parse_obico_enabled_printers("   ") == set()
+
+    def test_comma_separated_ids(self):
+        from backend.app.api.routes.support import _parse_obico_enabled_printers
+
+        assert _parse_obico_enabled_printers("1,2,3") == {1, 2, 3}
+        # Whitespace around tokens is forgiven (matches obico_detection's parser).
+        assert _parse_obico_enabled_printers("1, 2 ,3") == {1, 2, 3}
+
+    def test_non_integer_tokens_are_skipped(self):
+        # Defensive against legacy/manually-edited setting values.
+        from backend.app.api.routes.support import _parse_obico_enabled_printers
+
+        assert _parse_obico_enabled_printers("1,abc,2") == {1, 2}
+        assert _parse_obico_enabled_printers(",,1,") == {1}
+
+
+class TestCheckUrlReachable:
+    """Tests for the slicer-API reachability ping."""
+
+    @pytest.mark.asyncio
+    async def test_empty_url_returns_none(self):
+        from backend.app.api.routes.support import _check_url_reachable
+
+        assert await _check_url_reachable("") is None
+        assert await _check_url_reachable("   ") is None
+
+    @pytest.mark.asyncio
+    async def test_successful_response_is_reachable_even_on_404(self):
+        # A 404 means the API is up; we want to separate network failure from
+        # configuration mistakes, so non-empty status counts as reachable.
+        from backend.app.api.routes.support import _check_url_reachable
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.status_code = 404
+            mock_client.get = AsyncMock(return_value=mock_response)
+
+            result = await _check_url_reachable("http://localhost:3001/api")
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_connection_error_returns_false(self):
+        from backend.app.api.routes.support import _check_url_reachable
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client_cls.return_value.__aenter__.side_effect = ConnectionError("boom")
+
+            result = await _check_url_reachable("http://nowhere:9999")
+
+        assert result is False
+
+
+class TestCollectSlicerApiInfo:
+    """Tests for the slicer-API info block (configured URLs + reachability).
+
+    The collector reads URLs DIRECTLY from the DB rather than from the
+    already-redacted ``info["settings"]`` dict — the previous version was
+    pinging the literal string "[REDACTED]" (which httpx rejects) and getting
+    ``False`` for any installation that actually had a slicer-API configured.
+    These tests inject the raw URLs via a mocked `async_session` so the
+    collector sees them as if they came from the unredacted Settings table.
+    """
+
+    def _make_settings_session(self, settings_dict):
+        rows = [MagicMock(key=k, value=v) for k, v in settings_dict.items()]
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = rows
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=result)
+        ctx = MagicMock()
+        ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+        return ctx
+
+    @pytest.mark.asyncio
+    async def test_disabled_does_not_run_reachability_check(self):
+        from backend.app.api.routes.support import _collect_slicer_api_info
+
+        session_ctx = self._make_settings_session({"use_slicer_api": "false", "preferred_slicer": "bambu_studio"})
+        with (
+            patch("backend.app.api.routes.support.async_session", session_ctx),
+            patch("backend.app.api.routes.support._check_url_reachable") as mock_check,
+        ):
+            info = await _collect_slicer_api_info()
+
+        mock_check.assert_not_called()
+        assert info["enabled"] is False
+        assert info["preferred"] == "bambu_studio"
+        assert info["bambu_studio_url_set_in_db"] is False
+        assert info["orcaslicer_url_set_in_db"] is False
+        assert "bambu_studio_reachable" not in info
+        assert "orcaslicer_reachable" not in info
+
+    @pytest.mark.asyncio
+    async def test_enabled_runs_reachability_check_for_both_urls(self):
+        from backend.app.api.routes.support import _collect_slicer_api_info
+
+        async def fake_check(url, timeout=2.0):
+            return "orca" in url
+
+        session_ctx = self._make_settings_session(
+            {
+                "use_slicer_api": "true",
+                "preferred_slicer": "orcaslicer",
+                "bambu_studio_api_url": "http://bs:3001",
+                "orcaslicer_api_url": "http://orca:3003",
+            }
+        )
+        with (
+            patch("backend.app.api.routes.support.async_session", session_ctx),
+            patch("backend.app.api.routes.support._check_url_reachable", side_effect=fake_check),
+        ):
+            info = await _collect_slicer_api_info()
+
+        assert info["enabled"] is True
+        assert info["bambu_studio_url_set_in_db"] is True
+        assert info["orcaslicer_url_set_in_db"] is True
+        assert info["bambu_studio_url_source"] == "db"
+        assert info["orcaslicer_url_source"] == "db"
+        assert info["bambu_studio_reachable"] is False
+        assert info["orcaslicer_reachable"] is True
+
+    @pytest.mark.asyncio
+    async def test_env_var_fallback_url_pinged_when_db_setting_empty(self):
+        """Regression for the second pass on #support-bundle audit: the
+        previous version returned `null` for `bambu_studio_reachable` on every
+        installation that ran the sidecar via env var rather than via the DB
+        setting (the common case for the default `http://localhost:3001`).
+        The resolver now mirrors the precedence used by `archives.py:3174-3180`
+        — DB setting first, then `app_settings.bambu_studio_api_url` (which
+        reads the `BAMBU_STUDIO_API_URL` env var or the built-in default).
+        """
+        from backend.app.api.routes.support import _collect_slicer_api_info
+
+        seen_urls: list[str] = []
+
+        async def fake_check(url, timeout=2.0):
+            seen_urls.append(url)
+            return True
+
+        # DB has use_slicer_api=true but NO bambu_studio_api_url row, simulating
+        # a user who set the URL via the BAMBU_STUDIO_API_URL env var.
+        session_ctx = self._make_settings_session({"use_slicer_api": "true", "preferred_slicer": "bambu_studio"})
+        with (
+            patch("backend.app.api.routes.support.async_session", session_ctx),
+            patch("backend.app.api.routes.support._check_url_reachable", side_effect=fake_check),
+            patch("backend.app.api.routes.support.settings") as mock_app_settings,
+        ):
+            # Pydantic-settings would normally do this for us when reading the
+            # env var — we mock the resolved value directly.
+            mock_app_settings.bambu_studio_api_url = "http://my-sidecar:3001"
+            mock_app_settings.slicer_api_url = "http://localhost:3003"
+
+            info = await _collect_slicer_api_info()
+
+        # The env-var URL was the one actually pinged.
+        assert "http://my-sidecar:3001" in seen_urls
+        # And the source-tracking field shows we fell back from the DB to env.
+        assert info["bambu_studio_url_set_in_db"] is False
+        assert info["bambu_studio_url_source"] == "env_or_default"
+        assert info["bambu_studio_reachable"] is True
+
+    @pytest.mark.asyncio
+    async def test_reachability_uses_unredacted_url(self):
+        """Regression: the collector previously pinged the literal '[REDACTED]'
+        from the already-sanitized info["settings"] dict and always returned
+        False. The collector must read the un-redacted URL fresh from the DB.
+        """
+        from backend.app.api.routes.support import _collect_slicer_api_info
+
+        seen_urls: list[str] = []
+
+        async def fake_check(url, timeout=2.0):
+            seen_urls.append(url)
+            return True
+
+        session_ctx = self._make_settings_session(
+            {
+                "use_slicer_api": "true",
+                "bambu_studio_api_url": "http://real-bs-host:3001",
+                "orcaslicer_api_url": "http://real-orca-host:3003",
+            }
+        )
+        with (
+            patch("backend.app.api.routes.support.async_session", session_ctx),
+            patch("backend.app.api.routes.support._check_url_reachable", side_effect=fake_check),
+        ):
+            await _collect_slicer_api_info()
+
+        assert "http://real-bs-host:3001" in seen_urls
+        assert "http://real-orca-host:3003" in seen_urls
+        assert "[REDACTED]" not in seen_urls
+
+
+class TestCollectAuthInfo:
+    """Tests for the OIDC / 2FA / API-key / group bundle block."""
+
+    @pytest.mark.asyncio
+    async def test_empty_database_returns_zero_counts_and_empty_list(self):
+        from backend.app.api.routes.support import _collect_auth_info
+
+        def make_count(value):
+            r = MagicMock()
+            r.scalar.return_value = value
+            r.scalar_one_or_none.return_value = None
+            r.scalars.return_value.all.return_value = []
+            r.all.return_value = []
+            return r
+
+        async def fake_execute(stmt, *_a, **_kw):
+            return make_count(0)
+
+        db = AsyncMock()
+        db.execute = fake_execute
+
+        info = await _collect_auth_info(db)
+
+        assert info["oidc_providers"] == []
+        assert info["users_with_totp"] == 0
+        assert info["email_otp_codes_pending"] == 0
+        assert info["api_keys_total"] == 0
+        assert info["api_keys_enabled"] == 0
+        assert info["api_keys_expired"] == 0
+        assert info["long_lived_tokens_total"] == 0
+        assert info["long_lived_tokens_active"] == 0
+        assert info["groups_system"] == 0
+        assert info["groups_custom"] == 0
+
+    @pytest.mark.asyncio
+    async def test_oidc_provider_names_exported_in_cleartext(self):
+        """Provider names are login-button labels — public, not a secret. Triage
+        for SSO bugs is significantly easier when the provider is identified."""
+        from backend.app.api.routes.support import _collect_auth_info
+
+        provider = MagicMock()
+        provider.id = 1
+        provider.name = "PocketID"
+        provider.is_enabled = True
+        provider.scopes = "openid email profile"
+        provider.email_claim = "email"
+        provider.require_email_verified = True
+        provider.auto_create_users = False
+        provider.auto_link_existing_accounts = False
+        provider.default_group_id = None
+        provider.icon_url = None
+
+        def make_result(rows=None, count=0):
+            r = MagicMock()
+            r.scalar.return_value = count
+            r.scalar_one_or_none.return_value = None
+            r.scalars.return_value.all.return_value = rows or []
+            r.all.return_value = []
+            return r
+
+        async def fake_execute(stmt, *_a, **_kw):
+            sql = str(stmt).lower()
+            if "oidc_providers" in sql and "user_oidc_link" not in sql:
+                return make_result([provider])
+            return make_result(count=0)
+
+        db = AsyncMock()
+        db.execute = fake_execute
+
+        info = await _collect_auth_info(db)
+
+        assert len(info["oidc_providers"]) == 1
+        oidc = info["oidc_providers"][0]
+        assert oidc["name"] == "PocketID"
+        # No secrets leak through — these fields don't exist on the dict.
+        assert "client_id" not in oidc
+        assert "client_secret" not in oidc
+        assert "issuer_url" not in oidc
+
+
+class TestCollectGitHubBackupInfo:
+    """Tests for the GitHub-backup provider/failure-count block."""
+
+    @pytest.mark.asyncio
+    async def test_aggregates_providers_and_recent_failures(self):
+        from backend.app.api.routes.support import _collect_github_backup_info
+
+        c1 = MagicMock(provider="github", last_backup_status="success", schedule_enabled=True)
+        c2 = MagicMock(provider="github", last_backup_status="failed", schedule_enabled=False)
+        c3 = MagicMock(provider="gitea", last_backup_status="failed", schedule_enabled=True)
+
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = [c1, c2, c3]
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=result)
+
+        info = await _collect_github_backup_info(db)
+
+        assert info["configs_total"] == 3
+        assert info["providers_used"] == {"github": 2, "gitea": 1}
+        assert info["schedule_enabled_count"] == 2
+        assert info["last_failure_count"] == 2

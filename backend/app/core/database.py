@@ -2418,31 +2418,39 @@ async def run_migrations(conn):
             conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT false"
         )
 
-    # Migration: Heal orphan OIDC/MFA rows left behind by user-delete on SQLite.
-    # The user_oidc_links, user_totp, and user_otp_codes tables declare
-    # ON DELETE CASCADE on user_id (introduced in PR #933 before the explicit
-    # APIKey-cleanup pattern in PR #1182). PostgreSQL enforces the cascade,
-    # but SQLite ships with FK enforcement off, so rows pointing to a deleted
-    # user persisted — blocking SSO re-login because the OIDC callback finds
-    # the orphan link, fails to resolve the (now missing) user, and falls
-    # through to "account_inactive" instead of triggering auto_create.
-    # See issue #1285. This migration is a no-op on PostgreSQL (cascade
-    # already ran) and idempotent on SQLite (second run finds nothing).
+    # Migration: Heal orphan auth-related rows left behind by user-delete
+    # on SQLite. user_oidc_links, user_totp, user_otp_codes (introduced in
+    # PR #933) and long_lived_tokens (PR #1108) all declare ON DELETE
+    # CASCADE on user_id — both predate the explicit APIKey-cleanup
+    # pattern in PR #1182. PostgreSQL enforces the cascade, but SQLite
+    # ships with FK enforcement off, so rows pointing to a deleted user
+    # persisted — blocking SSO re-login (the OIDC callback finds the
+    # orphan link, fails to resolve the missing user, and falls through
+    # to "account_inactive" instead of triggering auto_create), leaking
+    # MFA secrets, and leaving camera-stream tokens whose secret_hash is
+    # still verify()-able by lookup_prefix. See issue #1285 (#1295 review
+    # extended the cleanup to long_lived_tokens). This migration is a
+    # no-op on PostgreSQL and idempotent on SQLite.
     async with conn.begin_nested():
         oidc_result = await conn.execute(
             text("DELETE FROM user_oidc_links WHERE user_id NOT IN (SELECT id FROM users)")
         )
         totp_result = await conn.execute(text("DELETE FROM user_totp WHERE user_id NOT IN (SELECT id FROM users)"))
         otp_result = await conn.execute(text("DELETE FROM user_otp_codes WHERE user_id NOT IN (SELECT id FROM users)"))
+        llt_result = await conn.execute(
+            text("DELETE FROM long_lived_tokens WHERE user_id NOT IN (SELECT id FROM users)")
+        )
     oidc_n = oidc_result.rowcount or 0
     totp_n = totp_result.rowcount or 0
     otp_n = otp_result.rowcount or 0
-    if oidc_n or totp_n or otp_n:
+    llt_n = llt_result.rowcount or 0
+    if oidc_n or totp_n or otp_n or llt_n:
         logger.info(
-            "Cleaned up orphan auth rows: %d OIDC links, %d TOTP, %d OTP codes",
+            "Cleaned up orphan auth rows: %d OIDC links, %d TOTP, %d OTP codes, %d long-lived tokens",
             oidc_n,
             totp_n,
             otp_n,
+            llt_n,
         )
 
 

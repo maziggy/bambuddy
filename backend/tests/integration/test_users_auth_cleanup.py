@@ -62,14 +62,18 @@ class TestDeleteUserCleansAuthRows:
 
         user_id = await self._create_user(async_client, auth_token, "oidcclean")
 
+        # Use the client_secret property setter (mfa_encrypt) instead of poking
+        # _client_secret_enc directly — keeps the fixture in sync with the real
+        # encryption flow even though nothing decrypts it in this test
+        # (#1295 review nit).
         provider = OIDCProvider(
             name="CleanupProv",
             issuer_url="https://cleanup.example.com",
             client_id="cleanup_client",
-            _client_secret_enc="cleanup_secret",
             scopes="openid email profile",
             is_enabled=True,
         )
+        provider.client_secret = "cleanup_secret"
         db_session.add(provider)
         await db_session.flush()
         db_session.add(
@@ -131,6 +135,51 @@ class TestDeleteUserCleansAuthRows:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_delete_user_removes_long_lived_tokens(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        auth_token: str,
+    ):
+        """Deleting a user must also delete their LongLivedToken rows.
+
+        Camera-stream tokens whose `secret_hash` is still valid would
+        otherwise be matchable by `verify()` via `lookup_prefix` even
+        after the user is gone (#1295 review feedback).
+        """
+        from backend.app.models.long_lived_token import LongLivedToken
+
+        user_id = await self._create_user(async_client, auth_token, "lltclean")
+
+        db_session.add(
+            LongLivedToken(
+                user_id=user_id,
+                name="HA card",
+                lookup_prefix="abcd1234",
+                secret_hash="$2b$12$dummybcrypthashabcdefghij1234567890",
+                scope="camera_stream",
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+            )
+        )
+        await db_session.commit()
+
+        pre = await db_session.execute(select(LongLivedToken).where(LongLivedToken.user_id == user_id))
+        assert pre.scalar_one_or_none() is not None
+
+        resp = await async_client.delete(
+            f"/api/v1/users/{user_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 204
+
+        await db_session.commit()
+        post = await db_session.execute(select(LongLivedToken).where(LongLivedToken.user_id == user_id))
+        assert post.scalar_one_or_none() is None, (
+            "LongLivedToken orphan — camera-stream secret still in DB after user delete"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_user_removes_user_otp_codes(
         self,
         async_client: AsyncClient,
@@ -174,7 +223,8 @@ class TestDeleteUserCleansAuthRows:
         db_session: AsyncSession,
         auth_token: str,
     ):
-        """Combined: one user with OIDC link + TOTP + OTP code — all three cleaned up atomically."""
+        """Combined: one user with OIDC link + TOTP + OTP + long-lived token — all cleaned up atomically."""
+        from backend.app.models.long_lived_token import LongLivedToken
         from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
         from backend.app.models.user_otp_code import UserOTPCode
         from backend.app.models.user_totp import UserTOTP
@@ -185,10 +235,10 @@ class TestDeleteUserCleansAuthRows:
             name="FullAuthProv",
             issuer_url="https://fullauth.example.com",
             client_id="fullauth_client",
-            _client_secret_enc="fullauth_secret",
             scopes="openid email profile",
             is_enabled=True,
         )
+        provider.client_secret = "fullauth_secret"
         db_session.add(provider)
         await db_session.flush()
 
@@ -210,6 +260,16 @@ class TestDeleteUserCleansAuthRows:
                 expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
             )
         )
+        db_session.add(
+            LongLivedToken(
+                user_id=user_id,
+                name="combined-test",
+                lookup_prefix="zz999999",
+                secret_hash="$2b$12$dummybcrypthashabcdefghij1234567890",
+                scope="camera_stream",
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+            )
+        )
         await db_session.commit()
 
         resp = await async_client.delete(
@@ -222,6 +282,8 @@ class TestDeleteUserCleansAuthRows:
         link_post = await db_session.execute(select(UserOIDCLink).where(UserOIDCLink.user_id == user_id))
         totp_post = await db_session.execute(select(UserTOTP).where(UserTOTP.user_id == user_id))
         otp_post = await db_session.execute(select(UserOTPCode).where(UserOTPCode.user_id == user_id))
+        llt_post = await db_session.execute(select(LongLivedToken).where(LongLivedToken.user_id == user_id))
         assert link_post.scalar_one_or_none() is None
         assert totp_post.scalar_one_or_none() is None
         assert otp_post.scalars().all() == []
+        assert llt_post.scalar_one_or_none() is None

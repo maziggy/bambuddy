@@ -435,6 +435,7 @@ class TestUsersAPI:
         from sqlalchemy import select
 
         from backend.app.models.api_key import APIKey
+        from backend.app.models.long_lived_token import LongLivedToken
         from backend.app.models.oidc_provider import UserOIDCLink
         from backend.app.models.user import User
         from backend.app.models.user_otp_code import UserOTPCode
@@ -465,7 +466,7 @@ class TestUsersAPI:
         user_row = await db_session.execute(select(User).where(User.id == user_id))
         assert user_row.scalar_one_or_none() is None, "User row not deleted"
 
-        for model in (UserOIDCLink, UserTOTP, UserOTPCode, APIKey):
+        for model in (UserOIDCLink, UserTOTP, UserOTPCode, APIKey, LongLivedToken):
             rows = await db_session.execute(select(model).where(model.user_id == user_id))
             assert rows.scalars().all() == [], f"Orphan {model.__name__} rows left after user delete"
 

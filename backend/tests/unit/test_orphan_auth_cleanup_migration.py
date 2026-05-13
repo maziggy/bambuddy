@@ -34,44 +34,29 @@ def force_sqlite_dialect(monkeypatch):
 
 
 def _register_all_models():
-    """Import every model so Base.metadata knows about them. run_migrations
-    touches multiple tables; the full schema must exist before calling it."""
+    """Import the models package so every Base.metadata table is registered.
+
+    Previously this listed each submodule by hand and silently drifted from
+    backend/app/models/__init__.py (#1295 review nit). Importing the package
+    triggers __init__.py which covers most of the schema automatically.
+
+    A handful of submodules are NOT re-exported from __init__.py yet but are
+    required by run_migrations (they touch tables that don't appear in any
+    re-exported model). Those are imported by submodule below so the test
+    engine has the full schema available. Keep this list in sync with the
+    set conftest.py imports for test_engine.
+    """
+    import backend.app.models  # noqa: F401
+
+    # Submodules whose tables are touched by run_migrations but which are
+    # not re-exported from __init__.py.
     from backend.app.models import (  # noqa: F401
-        ams_history,
-        ams_label,
-        api_key,
-        archive,
-        auth_ephemeral,
-        color_catalog,
         external_link,
-        filament,
-        group,
-        kprofile_note,
-        long_lived_token,
-        maintenance,
-        notification,
-        notification_template,
-        oidc_provider,
         print_queue,
-        printer,
-        project,
         project_bom,
-        settings,
         slot_preset,
-        smart_plug,
-        smart_plug_energy_snapshot,
-        spool,
-        spool_assignment,
-        spool_catalog,
-        spool_k_profile,
-        spool_usage_history,
-        spoolbuddy_device,
         spoolman_k_profile,
         spoolman_slot_assignment,
-        user,
-        user_email_pref,
-        user_otp_code,
-        user_totp,
         virtual_printer,
     )
 
@@ -216,6 +201,49 @@ async def test_migration_deletes_orphan_user_otp_codes(engine_with_full_schema):
         assert ids == [10], f"Expected only the valid OTP row to survive, got {ids}"
 
 
+async def test_migration_deletes_orphan_long_lived_tokens(engine_with_full_schema):
+    """Orphan rows in long_lived_tokens must be removed; rows for real users must stay.
+
+    Camera-stream tokens whose secret_hash is still valid would otherwise be
+    matchable by verify() via lookup_prefix even after the owning user is gone
+    (#1295 review feedback extended #1285).
+    """
+    exp = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    async with engine_with_full_schema.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO users (id, username, password_hash, is_active, created_at, updated_at, "
+                "role, auth_source) VALUES (1, 'survivor', 'h', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+                "'user', 'local')"
+            )
+        )
+        # Valid token for the real user
+        await conn.execute(
+            text(
+                "INSERT INTO long_lived_tokens (id, user_id, name, lookup_prefix, secret_hash, "
+                "scope, expires_at, created_at) VALUES (10, 1, 'real', 'aaaa1111', '$2b$h', "
+                "'camera_stream', :exp, CURRENT_TIMESTAMP)"
+            ),
+            {"exp": exp},
+        )
+        # Orphan token — user_id=999 does not exist
+        await conn.execute(
+            text(
+                "INSERT INTO long_lived_tokens (id, user_id, name, lookup_prefix, secret_hash, "
+                "scope, expires_at, created_at) VALUES (11, 999, 'orphan', 'bbbb2222', '$2b$h', "
+                "'camera_stream', :exp, CURRENT_TIMESTAMP)"
+            ),
+            {"exp": exp},
+        )
+
+    async with engine_with_full_schema.begin() as conn:
+        await run_migrations(conn)
+
+    async with engine_with_full_schema.begin() as conn:
+        ids = [row[0] for row in (await conn.execute(text("SELECT id FROM long_lived_tokens ORDER BY id"))).all()]
+        assert ids == [10], f"Expected only the valid long-lived token to survive, got {ids}"
+
+
 # -----------------------------------------------------------------------------
 # No-op and idempotency
 # -----------------------------------------------------------------------------
@@ -237,9 +265,11 @@ async def test_migration_is_noop_on_fresh_install(engine_with_full_schema):
         oidc_count = (await conn.execute(text("SELECT COUNT(*) FROM user_oidc_links"))).scalar_one()
         totp_count = (await conn.execute(text("SELECT COUNT(*) FROM user_totp"))).scalar_one()
         otp_count = (await conn.execute(text("SELECT COUNT(*) FROM user_otp_codes"))).scalar_one()
+        llt_count = (await conn.execute(text("SELECT COUNT(*) FROM long_lived_tokens"))).scalar_one()
         assert oidc_count == 0
         assert totp_count == 0
         assert otp_count == 0
+        assert llt_count == 0
 
 
 async def test_migration_is_idempotent(engine_with_full_schema):
@@ -324,6 +354,16 @@ async def test_migration_keeps_rows_for_existing_users(engine_with_full_schema):
             ),
             {"exp": exp},
         )
+        llt_exp = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        await conn.execute(
+            text(
+                "INSERT INTO long_lived_tokens (id, user_id, name, lookup_prefix, secret_hash, "
+                "scope, expires_at, created_at) VALUES (1, 2, 'real', 'aaaa1111', '$h', "
+                "'camera_stream', :exp, CURRENT_TIMESTAMP), (2, 996, 'orphan', 'bbbb2222', '$h', "
+                "'camera_stream', :exp, CURRENT_TIMESTAMP)"
+            ),
+            {"exp": llt_exp},
+        )
 
     async with engine_with_full_schema.begin() as conn:
         await run_migrations(conn)
@@ -336,6 +376,10 @@ async def test_migration_keeps_rows_for_existing_users(engine_with_full_schema):
         otps = [
             row[0] for row in (await conn.execute(text("SELECT user_id FROM user_otp_codes ORDER BY user_id"))).all()
         ]
+        llts = [
+            row[0] for row in (await conn.execute(text("SELECT user_id FROM long_lived_tokens ORDER BY user_id"))).all()
+        ]
         assert links == [1], f"Expected only user_id=1 to survive in user_oidc_links, got {links}"
         assert totps == [2], f"Expected only user_id=2 to survive in user_totp, got {totps}"
         assert otps == [1], f"Expected only user_id=1 to survive in user_otp_codes, got {otps}"
+        assert llts == [2], f"Expected only user_id=2 to survive in long_lived_tokens, got {llts}"

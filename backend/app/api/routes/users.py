@@ -25,7 +25,9 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
+from backend.app.models.long_lived_token import LongLivedToken
 from backend.app.models.oidc_provider import UserOIDCLink
+from backend.app.models.print_batch import PrintBatch
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -398,9 +400,12 @@ async def delete_user(
         await db.execute(delete(PrintArchive).where(PrintArchive.created_by_id == user_id))
         await db.execute(delete(PrintQueueItem).where(PrintQueueItem.created_by_id == user_id))
         await db.execute(delete(LibraryFile).where(LibraryFile.created_by_id == user_id))
+        await db.execute(delete(PrintBatch).where(PrintBatch.created_by_id == user_id))
     else:
         # Explicitly set created_by_id to NULL for all items (ensures consistent behavior
-        # across different database backends, including SQLite without foreign key support)
+        # across different database backends, including SQLite without foreign key support).
+        # PrintBatch carries the same created_by_id FK with ondelete=SET NULL — admin-deleted
+        # users would otherwise leave dangling created_by_id on SQLite (#1295 review nit).
         from sqlalchemy import update
 
         await db.execute(update(PrintArchive).where(PrintArchive.created_by_id == user_id).values(created_by_id=None))
@@ -408,6 +413,7 @@ async def delete_user(
             update(PrintQueueItem).where(PrintQueueItem.created_by_id == user_id).values(created_by_id=None)
         )
         await db.execute(update(LibraryFile).where(LibraryFile.created_by_id == user_id).values(created_by_id=None))
+        await db.execute(update(PrintBatch).where(PrintBatch.created_by_id == user_id).values(created_by_id=None))
 
     # Drop API keys owned by this user. The model declares ON DELETE CASCADE
     # so Postgres handles this automatically, but SQLite ships with FK
@@ -420,17 +426,21 @@ async def delete_user(
     # exactly the orphan-key state the CASCADE was meant to prevent).
     await db.execute(delete(APIKey).where(APIKey.user_id == user_id))
 
-    # Drop OIDC links and MFA state owned by this user. Same SQLite/FK
-    # pattern as APIKey above. Without these, deleting an SSO-linked user
-    # on SQLite blocks re-login: the OIDC callback finds the orphan
-    # UserOIDCLink, fails to resolve the (now missing) user, and falls
-    # through to "account_inactive" instead of triggering auto_create.
-    # See issue #1285. UserTOTP / UserOTPCode would otherwise leave MFA
-    # secrets and pending email codes in the DB after the owning user is
-    # gone.
+    # Drop OIDC links, MFA state, and long-lived camera-stream tokens
+    # owned by this user. Same SQLite/FK pattern as APIKey above. Without
+    # these, deleting a user on SQLite leaves:
+    #   - UserOIDCLink: the OIDC callback finds the orphan link, fails to
+    #     resolve the (now missing) user, and falls through to
+    #     "account_inactive" instead of triggering auto_create (#1285).
+    #   - UserTOTP: MFA secrets persist in the DB after the owning user.
+    #   - UserOTPCode: pending email OTP codes linger.
+    #   - LongLivedToken: per-user camera-stream tokens whose secret_hash
+    #     is still valid — verify() would happily match them by lookup
+    #     prefix even though the user is gone.
     await db.execute(delete(UserOIDCLink).where(UserOIDCLink.user_id == user_id))
     await db.execute(delete(UserTOTP).where(UserTOTP.user_id == user_id))
     await db.execute(delete(UserOTPCode).where(UserOTPCode.user_id == user_id))
+    await db.execute(delete(LongLivedToken).where(LongLivedToken.user_id == user_id))
 
     await db.delete(user)
     await db.commit()

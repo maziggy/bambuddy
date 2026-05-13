@@ -261,6 +261,44 @@ async def get_default_sidebar_order(
     return {"default_sidebar_order": value or ""}
 
 
+# Fields exposed via /ui-preferences without SETTINGS_READ. Each entry MUST be
+# non-sensitive (no credentials, no PII, no secret tokens) — granting SETTINGS_READ
+# also grants visibility of SMTP/LDAP/MQTT passwords and similar, so the goal of
+# this endpoint is exactly to NOT require that permission for UI rendering hints.
+# When adding a field here, confirm it doesn't carry anything sensitive.
+_UI_PREFERENCE_FIELDS: tuple[str, ...] = (
+    "require_plate_clear",
+    "check_printer_firmware",
+    "camera_view_mode",
+    "time_format",
+    "date_format",
+    "drying_presets",
+    "ams_humidity_good",
+    "ams_humidity_fair",
+    "ams_temp_good",
+    "ams_temp_fair",
+    "bed_cooled_threshold",
+)
+
+
+@router.get("/ui-preferences")
+async def get_ui_preferences(db: AsyncSession = Depends(get_db)):
+    """Get the curated subset of settings that any page needs to render correctly.
+
+    Intentionally not gated on SETTINGS_READ — every authenticated user (and
+    every page that loads for them) needs these fields, but granting SETTINGS_READ
+    would also grant visibility of secrets (SMTP/LDAP/MQTT credentials, etc.).
+    Same pattern as /default-sidebar-order (#1293).
+
+    Reuses _build_settings_response so the typed values match what /settings
+    returns for fields with the same name — bool/int/float/str types stay in
+    sync without a separate type-coercion path.
+    """
+    full = await _build_settings_response(db, is_api_key=False)
+    dumped = full.model_dump()
+    return {key: dumped[key] for key in _UI_PREFERENCE_FIELDS if key in dumped}
+
+
 @router.get("/check-ffmpeg")
 async def check_ffmpeg():
     """Check if ffmpeg is installed and available."""

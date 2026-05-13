@@ -516,7 +516,7 @@ class TestBundleRoutes:
         assert exc.value.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_import_bundle_sidecar_400_passes_through(self):
+    async def test_import_bundle_sidecar_400_passes_through(self, caplog):
         from io import BytesIO
 
         from fastapi import HTTPException, UploadFile
@@ -527,6 +527,7 @@ class TestBundleRoutes:
         with (
             patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
             patch.object(sp, "SlicerApiService", return_value=svc),
+            caplog.at_level("WARNING", logger="backend.app.api.routes.slicer_presets"),
             pytest.raises(HTTPException) as exc,
         ):
             await sp.import_slicer_bundle(
@@ -535,6 +536,11 @@ class TestBundleRoutes:
                 _=None,
             )
         assert exc.value.status_code == 400
+        # #1312: the sidecar's reject reason MUST land in the log so it
+        # ends up in support bundles without us having to ask reporters
+        # to copy the FE toast.
+        assert any("bad zip" in r.message for r in caplog.records)
+        assert any("x.bbscfg" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
     async def test_import_bundle_sidecar_unreachable_returns_503(self):

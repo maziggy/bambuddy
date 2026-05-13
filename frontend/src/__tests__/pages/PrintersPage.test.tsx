@@ -96,6 +96,17 @@ describe('PrintersPage', () => {
           require_plate_clear: true,
         });
       }),
+      // PrintersPage now reads UI rendering fields from the public ui-preferences
+      // endpoint instead of /settings (#1293) — admin pages still hit /settings.
+      http.get('/api/v1/settings/ui-preferences', () => {
+        return HttpResponse.json({
+          ams_humidity_good: 40,
+          ams_humidity_fair: 60,
+          ams_temp_good: 30,
+          ams_temp_fair: 35,
+          require_plate_clear: true,
+        });
+      }),
       http.get('/api/v1/queue/', () => {
         return HttpResponse.json([]);
       })
@@ -353,6 +364,15 @@ describe('PrintersPage', () => {
             capture_finish_photo: true,
             default_filament_cost: 25.0,
             currency: 'USD',
+            ams_humidity_good: 40,
+            ams_humidity_fair: 60,
+            ams_temp_good: 30,
+            ams_temp_fair: 35,
+            require_plate_clear: false,
+          });
+        }),
+        http.get('/api/v1/settings/ui-preferences', () => {
+          return HttpResponse.json({
             ams_humidity_good: 40,
             ams_humidity_fair: 60,
             ams_temp_good: 30,

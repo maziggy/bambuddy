@@ -427,11 +427,25 @@ async def import_slicer_bundle(
     except SlicerInputError as e:
         # Sidecar's 4xx — most likely a non-.bbscfg upload, a corrupt zip,
         # or a path-traversal entry that the manifest validator caught.
-        # Surface verbatim so the user sees the actual reason in the toast.
+        # Log the detail so it lands in the support bundle: the FE-only
+        # toast was leaving us blind during triage (#1312).
+        logger.warning(
+            "Bundle import rejected by sidecar (%s, %d bytes): %s",
+            filename,
+            len(contents),
+            e,
+        )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except SlicerApiUnavailableError as e:
+        logger.warning("Bundle import: sidecar unreachable (%s): %s", api_url, e)
         raise HTTPException(status_code=503, detail=str(e)) from e
     except SlicerApiError as e:
+        logger.warning(
+            "Bundle import: sidecar server error (%s, %d bytes): %s",
+            filename,
+            len(contents),
+            e,
+        )
         # 5xx from the sidecar's import path is rare — usually a disk
         # write failure inside DATA_PATH/bundles. 502 (bad gateway) is
         # closer to the truth than 500 here, since we're proxying.

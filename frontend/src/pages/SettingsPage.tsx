@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
+import { checkPasswordComplexity } from '../utils/password';
 import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
@@ -708,8 +709,16 @@ export function SettingsPage() {
         showToast(t('settings.toast.passwordsDoNotMatch'), 'error');
         return;
       }
-      if (userFormData.password.length < 6) {
-        showToast(t('settings.toast.passwordTooShort'), 'error');
+      const complexityIssue = checkPasswordComplexity(userFormData.password);
+      if (complexityIssue) {
+        const issueToKey = {
+          tooShort: 'settings.toast.passwordTooShort',
+          needsUppercase: 'settings.toast.passwordNeedsUppercase',
+          needsLowercase: 'settings.toast.passwordNeedsLowercase',
+          needsDigit: 'settings.toast.passwordNeedsDigit',
+          needsSpecial: 'settings.toast.passwordNeedsSpecial',
+        } as const;
+        showToast(t(issueToKey[complexityIssue]), 'error');
         return;
       }
     }
@@ -729,8 +738,16 @@ export function SettingsPage() {
         showToast(t('settings.toast.passwordsDoNotMatch'), 'error');
         return;
       }
-      if (userFormData.password.length < 6) {
-        showToast(t('settings.toast.passwordTooShort'), 'error');
+      const complexityIssue = checkPasswordComplexity(userFormData.password);
+      if (complexityIssue) {
+        const issueToKey = {
+          tooShort: 'settings.toast.passwordTooShort',
+          needsUppercase: 'settings.toast.passwordNeedsUppercase',
+          needsLowercase: 'settings.toast.passwordNeedsLowercase',
+          needsDigit: 'settings.toast.passwordNeedsDigit',
+          needsSpecial: 'settings.toast.passwordNeedsSpecial',
+        } as const;
+        showToast(t(issueToKey[complexityIssue]), 'error');
         return;
       }
     }
@@ -5308,8 +5325,9 @@ export function SettingsPage() {
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
                     placeholder={t('settings.enterPassword')}
                     autoComplete="new-password"
-                    minLength={6}
+                    minLength={8}
                   />
+                  <p className="text-bambu-gray text-xs mt-1">{t('settings.passwordRequirements')}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">{t('settings.confirmPassword')}</label>
@@ -5368,7 +5386,7 @@ export function SettingsPage() {
                 </Button>
                 <Button
                   onClick={handleCreateUser}
-                  disabled={createUserMutation.isPending || !userFormData.username || !userFormData.password || userFormData.password !== userFormData.confirmPassword || userFormData.password.length < 6}
+                  disabled={createUserMutation.isPending || !userFormData.username || !userFormData.password || userFormData.password !== userFormData.confirmPassword || checkPasswordComplexity(userFormData.password) !== null}
                 >
                   {createUserMutation.isPending ? (
                     <>
@@ -5483,8 +5501,9 @@ export function SettingsPage() {
                         className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
                         placeholder={t('settings.enterNewPassword')}
                         autoComplete="new-password"
-                        minLength={6}
+                        minLength={8}
                       />
+                      <p className="text-bambu-gray text-xs mt-1">{t('settings.passwordRequirements')}</p>
                     </div>
                     {userFormData.password && (
                       <div>
@@ -5579,7 +5598,7 @@ export function SettingsPage() {
                     updateUserMutation.isPending ||
                     !userFormData.username ||
                     (advancedAuthStatus?.advanced_auth_enabled && !userFormData.email) ||
-                    Boolean(!advancedAuthStatus?.advanced_auth_enabled && userFormData.password && (userFormData.password !== userFormData.confirmPassword || userFormData.password.length < 6))
+                    Boolean(!advancedAuthStatus?.advanced_auth_enabled && userFormData.password && (userFormData.password !== userFormData.confirmPassword || checkPasswordComplexity(userFormData.password) !== null))
                   }
                 >
                   {updateUserMutation.isPending ? (

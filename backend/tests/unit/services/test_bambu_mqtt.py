@@ -338,6 +338,9 @@ class TestRealisticMessageFlow:
 
         mqtt_client.on_print_start = on_start
         mqtt_client.on_print_complete = on_complete
+        # Seed a prior state so the first RUNNING push is treated as a real
+        # state transition rather than a Bambuddy-restart catch-up (#1304).
+        mqtt_client._previous_gcode_state = "IDLE"
 
         # 1. Print starts with timelapse
         mqtt_client._process_message(
@@ -1603,6 +1606,9 @@ class TestRequestTopicAmsMapping:
 
         mqtt_client.on_print_start = on_start
         mqtt_client._captured_ams_mapping = [0, 4, -1, -1]
+        # Seed a prior state so the first RUNNING push is treated as a real
+        # state transition rather than a Bambuddy-restart catch-up (#1304).
+        mqtt_client._previous_gcode_state = "IDLE"
 
         # Trigger print start
         mqtt_client._process_message(
@@ -1625,6 +1631,9 @@ class TestRequestTopicAmsMapping:
             start_data.update(data)
 
         mqtt_client.on_print_start = on_start
+        # Seed a prior state so the first RUNNING push is treated as a real
+        # state transition rather than a Bambuddy-restart catch-up (#1304).
+        mqtt_client._previous_gcode_state = "IDLE"
 
         mqtt_client._process_message(
             {
@@ -1638,6 +1647,48 @@ class TestRequestTopicAmsMapping:
 
         assert "ams_mapping" in start_data
         assert start_data["ams_mapping"] is None
+
+    def test_first_running_push_after_bambuddy_restart_does_not_fire_print_start(self, mqtt_client):
+        """Regression for #1304: Bambuddy restart mid-print misfired plate check + archive.
+
+        When Bambuddy restarts while a print is already in progress, the freshly
+        constructed BambuMQTTClient has `_previous_gcode_state = None`. The first
+        push_status the printer sends reports `gcode_state: RUNNING`. Before the
+        fix, the (None → RUNNING) transition satisfied is_new_print's guard and
+        fired on_print_start, which then ran plate detection (objects on plate →
+        paused the live print) AND re-archived the file (duplicate archive).
+
+        With the fix in place the on_print_start callback must NOT be called for
+        this catch-up push, but `_was_running` still tracks the print so
+        completion detection works the same way as before.
+        """
+        start_data = {}
+
+        def on_start(data):
+            start_data.update(data)
+
+        mqtt_client.on_print_start = on_start
+        # Explicit: this simulates a fresh Bambuddy process attaching to a
+        # printer that's already in the middle of a print.
+        mqtt_client._previous_gcode_state = None
+        mqtt_client._was_running = False
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/big_print.gcode",
+                    "subtask_name": "big_print",
+                }
+            }
+        )
+
+        assert start_data == {}, "on_print_start must not fire on Bambuddy-restart catch-up"
+        # Completion detection still needs to know we're tracking a running job.
+        assert mqtt_client._was_running is True
+        # And the state-update bookkeeping ran so the NEXT push won't keep
+        # treating the first RUNNING as fresh.
+        assert mqtt_client._previous_gcode_state == "RUNNING"
 
     def test_print_complete_callback_includes_ams_mapping(self, mqtt_client):
         """on_print_complete callback data includes captured ams_mapping."""

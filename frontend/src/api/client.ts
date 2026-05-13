@@ -104,11 +104,22 @@ async function request<T>(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     const detail = error.detail;
-    const message = typeof detail === 'string'
-      ? detail
-      : Array.isArray(detail)
-        ? detail.map((e: { msg?: string }) => (e.msg ?? '').replace(/^Value error,\s*/i, '')).filter(Boolean).join('; ')
-        : `HTTP ${response.status}`;
+    let message: string;
+    if (typeof detail === 'string') {
+      message = detail;
+    } else if (Array.isArray(detail)) {
+      // FastAPI 422 shape: each entry has `msg` like "Value error, <real msg>".
+      // Strip the prefix and join. Fall back to raw JSON if every entry has an
+      // empty msg (defensive — shouldn't happen with stock Pydantic, but the
+      // previous fallback masked the real cause as a bare "HTTP 422" toast).
+      const joined = detail
+        .map((e: { msg?: string }) => (e.msg ?? '').replace(/^Value error,\s*/i, ''))
+        .filter(Boolean)
+        .join('; ');
+      message = joined || JSON.stringify(detail) || `HTTP ${response.status}`;
+    } else {
+      message = `HTTP ${response.status}`;
+    }
 
     // Handle 401 Unauthorized - only clear token if it's actually invalid
     // Don't clear on "Authentication required" which might be a timing issue
@@ -3990,6 +4001,24 @@ export const api = {
   // Settings
   getSettings: () => request<AppSettings>('/settings/'),
   getDefaultSidebarOrder: () => request<{ default_sidebar_order: string }>('/settings/default-sidebar-order'),
+  // Public subset of settings for UI rendering — no settings:read required.
+  // Used by pages whose users may not have SETTINGS_READ (e.g. operators with
+  // only printers:clear_plate). Keep in sync with _UI_PREFERENCE_FIELDS in
+  // backend/app/api/routes/settings.py.
+  getUiPreferences: () =>
+    request<{
+      require_plate_clear?: boolean;
+      check_printer_firmware?: boolean;
+      camera_view_mode?: 'window' | 'embedded';
+      time_format?: 'system' | '12h' | '24h';
+      date_format?: string;
+      drying_presets?: string;
+      ams_humidity_good?: number;
+      ams_humidity_fair?: number;
+      ams_temp_good?: number;
+      ams_temp_fair?: number;
+      bed_cooled_threshold?: number;
+    }>('/settings/ui-preferences'),
   updateSettings: (data: AppSettingsUpdate) =>
     request<AppSettings>('/settings/', {
       method: 'PUT',

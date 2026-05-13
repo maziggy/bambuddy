@@ -435,7 +435,7 @@ export function MakerworldPage() {
                 </p>
                 <p className="text-amber-800 dark:text-amber-200 mt-1">
                   {t('makerworld.signInRequiredBody')}{' '}
-                  <Link to="/settings?tab=cloud" className="underline">
+                  <Link to="/profiles" className="underline">
                     {t('makerworld.openCloudSettings')}
                   </Link>
                 </p>

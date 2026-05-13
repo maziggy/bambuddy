@@ -6455,10 +6455,12 @@ export function PrintersPage() {
     queryFn: api.getPrinters,
   });
 
-  // Fetch app settings for AMS thresholds
+  // Fetch the UI-rendering subset of settings. Uses /ui-preferences (not /settings)
+  // so users with printers:read but no settings:read still get the values needed
+  // to render the clear-plate button, drying presets, AMS thresholds, etc. (#1293).
   const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
+    queryKey: ['ui-preferences'],
+    queryFn: api.getUiPreferences,
   });
 
   // Compute drying presets: user-configured (from settings) merged over built-in defaults

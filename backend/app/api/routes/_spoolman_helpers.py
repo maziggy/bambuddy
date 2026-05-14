@@ -15,6 +15,8 @@ from urllib.parse import urlparse
 
 from typing_extensions import TypedDict
 
+from backend.app.api.routes._url_safety import CLOUD_METADATA_IPS, NUMERIC_IP_RE, unwrap_ipv4_mapped
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,18 +77,6 @@ class NormalizedFilament(TypedDict):
     vendor: NormalizedVendorRef | None
 
 
-_CLOUD_METADATA_IPS = frozenset(
-    {
-        # AWS / GCP / Azure / Oracle / DigitalOcean IMDS
-        ipaddress.ip_address("169.254.169.254"),
-        # Alibaba Cloud metadata
-        ipaddress.ip_address("100.100.100.200"),
-        # AWS IMDS IPv6
-        ipaddress.ip_address("fd00:ec2::254"),
-    }
-)
-
-
 def assert_safe_spoolman_url(url: str) -> None:
     """Raise ValueError if *url* should be blocked as an SSRF risk.
 
@@ -121,7 +111,7 @@ def assert_safe_spoolman_url(url: str) -> None:
     # Reject decimal- and hex-encoded IPs (e.g. http://2130706433/ or
     # http://0x7f000001/). These slip past ipaddress.ip_address() but libc
     # (and browsers) parse them as IPv4 — an obvious bypass if not caught.
-    if re.match(r"^(0x[0-9a-f]+|[0-9]+)$", hostname, re.I):
+    if NUMERIC_IP_RE.match(hostname):
         raise ValueError("Spoolman URL must not use numeric-encoded IP addresses; use standard dotted-decimal notation")
 
     try:
@@ -136,11 +126,9 @@ def assert_safe_spoolman_url(url: str) -> None:
 
     # Unwrap IPv4-mapped IPv6 (::ffff:169.254.169.254 etc.) so attackers can't
     # encode a blocked IPv4 into an IPv6 literal to bypass the check.
-    effective: ipaddress.IPv4Address | ipaddress.IPv6Address = addr
-    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
-        effective = addr.ipv4_mapped
+    effective = unwrap_ipv4_mapped(addr)
 
-    if effective in _CLOUD_METADATA_IPS:
+    if effective in CLOUD_METADATA_IPS:
         raise ValueError("Spoolman URL must not point to a cloud metadata endpoint")
 
     if effective.is_multicast or effective.is_unspecified:

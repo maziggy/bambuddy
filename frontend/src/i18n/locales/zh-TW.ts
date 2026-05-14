@@ -2257,6 +2257,11 @@ export default {
       created: '提供者已建立。',
       updated: '提供者已更新。',
       deleted: '提供者已刪除。',
+      refreshIcon: '重新整理圖示',
+      removeIcon: '移除圖示',
+      iconRefreshed: '圖示已重新整理。',
+      iconRemoved: '圖示已移除。',
+      iconFetchFailed: '無法從提供者 URL 取得圖示。',
       deleteTitle: '刪除提供者',
       deleteMessage: '刪除"{{name}}"？所有連結帳戶將斷開連線。',
       form: {

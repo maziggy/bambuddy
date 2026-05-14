@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { X, Mail, Shield, Smartphone, Key } from 'lucide-react';
-import { api, type LoginResponse, type TokenPersistence } from '../api/client';
+import { api, type LoginResponse, type OIDCProvider, type TokenPersistence } from '../api/client';
 import { Card, CardHeader, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 
@@ -30,6 +30,49 @@ function consumeSavedRememberMe(): boolean {
     console.warn('consumeSavedRememberMe: sessionStorage unavailable, Remember Me preference lost across OIDC redirect', err);
     return false;
   }
+}
+
+/**
+ * Single OIDC-provider login button. Extracted from the `.map()` body
+ * because hooks can't be used inside a loop callback — the `iconFailed`
+ * state is per-provider and must live in its own component instance.
+ *
+ * On `<img>` load failure (provider deleted between page load and image
+ * fetch, network blip, etc.) we flip to the Shield fallback rather than
+ * showing the browser's broken-image glyph to anonymous users (#1333 review).
+ */
+function OIDCProviderButton({
+  provider,
+  onClick,
+  disabled,
+}: {
+  provider: OIDCProvider;
+  onClick: () => void;
+  disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const [iconFailed, setIconFailed] = useState(false);
+  const showIcon = provider.has_icon && !iconFailed;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary hover:border-bambu-green/50 rounded-lg text-white font-medium transition-colors disabled:opacity-50"
+    >
+      {showIcon ? (
+        <img
+          src={api.oidcProviderIconUrl(provider.id)}
+          alt=""
+          className="w-5 h-5 object-contain"
+          onError={() => setIconFailed(true)}
+        />
+      ) : (
+        <Shield className="w-5 h-5 text-bambu-green" />
+      )}
+      {t('login.twoFA.signInWith', { provider: provider.name })}
+    </button>
+  );
 }
 
 export function LoginPage() {
@@ -656,20 +699,12 @@ export function LoginPage() {
 
             <div className="space-y-2">
               {oidcProviders.map((provider) => (
-                <button
+                <OIDCProviderButton
                   key={provider.id}
-                  type="button"
+                  provider={provider}
                   onClick={() => oidcLoginMutation.mutate(provider.id)}
                   disabled={oidcLoginMutation.isPending}
-                  className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary hover:border-bambu-green/50 rounded-lg text-white font-medium transition-colors disabled:opacity-50"
-                >
-                  {provider.icon_url ? (
-                    <img src={provider.icon_url} alt="" className="w-5 h-5 object-contain" />
-                  ) : (
-                    <Shield className="w-5 h-5 text-bambu-green" />
-                  )}
-                  {t('login.twoFA.signInWith', { provider: provider.name })}
-                </button>
+                />
               ))}
             </div>
           </div>

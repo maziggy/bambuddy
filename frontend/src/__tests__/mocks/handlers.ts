@@ -437,6 +437,29 @@ export const handlers = [
   http.get('/api/v1/archives/', () => HttpResponse.json([])),
   http.get('/api/v1/auth/oidc/providers', () => HttpResponse.json([])),
   http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([])),
+  // OIDC icon proxy (#1333). Default returns a tiny PNG; individual tests
+  // can override via server.use(...).
+  http.get('/api/v1/auth/oidc/providers/:id/icon', () =>
+    HttpResponse.arrayBuffer(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer, {
+      headers: { 'Content-Type': 'image/png' },
+    }),
+  ),
+  http.delete('/api/v1/auth/oidc/providers/:id/icon', () => new HttpResponse(null, { status: 204 })),
+  http.post('/api/v1/auth/oidc/providers/:id/icon/refresh', ({ params }) =>
+    HttpResponse.json({
+      id: Number(params.id),
+      name: 'MockProv',
+      issuer_url: 'https://idp.example.com',
+      client_id: 'c',
+      scopes: 'openid',
+      is_enabled: true,
+      auto_create_users: false,
+      auto_link_existing_accounts: false,
+      email_claim: 'email',
+      require_email_verified: true,
+      has_icon: true,
+    }),
+  ),
   http.get('/api/v1/auth/tokens', () => HttpResponse.json([])),
   http.get('/api/v1/auth/tokens/all', () => HttpResponse.json([])),
   http.get('/api/v1/external-links/', () => HttpResponse.json([])),

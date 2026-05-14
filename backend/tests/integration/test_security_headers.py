@@ -150,6 +150,39 @@ async def test_trusted_origins_applies_to_docs_branch(async_client: AsyncClient,
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_default_block_img_src_excludes_https(async_client: AsyncClient, monkeypatch):
+    """#1333 regression guard: the default SPA CSP must NOT allow img-src https:.
+
+    Bambuddy's policy for external images is a backend proxy (see
+    /api/v1/makerworld/thumbnail and /api/v1/auth/oidc/providers/{id}/icon),
+    not a CSP relaxation. If a future change adds ``https:`` to img-src to
+    "fix" a broken-image, the proxy pattern silently degrades into a
+    do-nothing layer and the entire SPA gains a hot-link surface.
+    """
+    from backend.app import main as main_module
+
+    monkeypatch.setattr(main_module, "_TRUSTED_FRAME_ORIGINS", ())
+
+    resp = await async_client.get("/api/v1/auth/status")
+    csp = resp.headers.get("Content-Security-Policy", "")
+    # Extract the img-src directive — splits on ';' for safety against
+    # neighbouring directives that happen to contain the substring.
+    img_src_directive = next(
+        (d.strip() for d in csp.split(";") if d.strip().startswith("img-src")),
+        "",
+    )
+    assert img_src_directive, f"img-src directive missing from CSP: {csp!r}"
+    assert "https:" not in img_src_directive, (
+        f"img-src must not allow arbitrary https: hosts (proxy external images instead); got: {img_src_directive!r}"
+    )
+    # Sanity: the legitimately allowed scheme sources are still present.
+    assert "'self'" in img_src_directive
+    assert "data:" in img_src_directive
+    assert "blob:" in img_src_directive
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_other_security_headers_unchanged(async_client: AsyncClient, monkeypatch):
     """Other headers (X-Content-Type-Options, Referrer-Policy) are not affected."""
     from backend.app import main as main_module

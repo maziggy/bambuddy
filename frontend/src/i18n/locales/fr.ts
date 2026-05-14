@@ -2214,6 +2214,11 @@ export default {
       created: 'Fournisseur créé.',
       updated: 'Fournisseur mis à jour.',
       deleted: 'Fournisseur supprimé.',
+      refreshIcon: 'Actualiser l\'icône',
+      removeIcon: 'Supprimer l\'icône',
+      iconRefreshed: 'Icône actualisée.',
+      iconRemoved: 'Icône supprimée.',
+      iconFetchFailed: 'Impossible de récupérer l\'icône depuis l\'URL du fournisseur.',
       deleteTitle: 'Supprimer le fournisseur',
       deleteMessage: 'Supprimer "{{name}}" ? Tous les comptes liés seront déconnectés.',
       form: {

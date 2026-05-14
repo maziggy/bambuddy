@@ -2213,6 +2213,11 @@ export default {
       created: 'Provider creato.',
       updated: 'Provider aggiornato.',
       deleted: 'Provider eliminato.',
+      refreshIcon: 'Aggiorna icona',
+      removeIcon: 'Rimuovi icona',
+      iconRefreshed: 'Icona aggiornata.',
+      iconRemoved: 'Icona rimossa.',
+      iconFetchFailed: 'Impossibile recuperare l\'icona dall\'URL del provider.',
       deleteTitle: 'Elimina provider',
       deleteMessage: 'Eliminare "{{name}}"? Tutti gli account collegati verranno disconnessi.',
       form: {

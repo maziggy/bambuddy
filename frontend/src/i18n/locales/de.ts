@@ -2270,6 +2270,11 @@ export default {
       created: 'Anbieter erstellt.',
       updated: 'Anbieter aktualisiert.',
       deleted: 'Anbieter gelöscht.',
+      refreshIcon: 'Icon neu laden',
+      removeIcon: 'Icon entfernen',
+      iconRefreshed: 'Icon aktualisiert.',
+      iconRemoved: 'Icon entfernt.',
+      iconFetchFailed: 'Icon konnte von der Anbieter-URL nicht geladen werden.',
       deleteTitle: 'Anbieter löschen',
       deleteMessage: '"{{name}}" löschen? Alle verknüpften Benutzerkonten werden getrennt.',
       form: {

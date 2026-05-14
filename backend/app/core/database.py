@@ -2031,6 +2031,31 @@ async def run_migrations(conn):
         "ALTER TABLE oidc_providers ADD COLUMN default_group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL",
     )
 
+    # Migration: Add cached-icon columns to oidc_providers (#1333).
+    # SPA's strict CSP (img-src 'self' data: blob:) blocks hotlinking external
+    # icon hosts, so we proxy them: admin sets icon_url, backend fetches and
+    # caches the bytes here, the SPA renders <img src="/api/v1/auth/oidc/providers/{id}/icon">.
+    # Must run AFTER _migrate_update_auto_link_constraint for the same reason as
+    # default_group_id above (SQLite table recreation drops unknown columns).
+    # Dialect-conditional type: BLOB on SQLite, BYTEA on PostgreSQL.
+    _blob_type = "BLOB" if is_sqlite() else "BYTEA"
+    await _safe_execute(conn, f"ALTER TABLE oidc_providers ADD COLUMN icon_data {_blob_type}")
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN icon_content_type VARCHAR(20)")
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN icon_etag VARCHAR(64)")
+
+    # PostgreSQL-only: enforce the all-or-nothing triplet at the DB layer.
+    # SQLite cannot ADD CONSTRAINT to an existing table — fresh SQLite
+    # installs get the CHECK via metadata.create_all (model __table_args__);
+    # stale SQLite installs rely on the application layer, same trade-off
+    # as the default_group_id FK ON DELETE SET NULL above.
+    if not is_sqlite():
+        await _safe_execute(
+            conn,
+            "ALTER TABLE oidc_providers ADD CONSTRAINT ck_oidc_icon_triplet_co_null "
+            "CHECK ((icon_data IS NULL) = (icon_content_type IS NULL) "
+            "AND (icon_content_type IS NULL) = (icon_etag IS NULL))",
+        )
+
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat
     # predates this timestamp are rejected in all six auth validation paths.

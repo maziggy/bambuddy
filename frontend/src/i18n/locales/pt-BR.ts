@@ -2213,6 +2213,11 @@ export default {
       created: 'Provedor criado.',
       updated: 'Provedor atualizado.',
       deleted: 'Provedor excluído.',
+      refreshIcon: 'Atualizar ícone',
+      removeIcon: 'Remover ícone',
+      iconRefreshed: 'Ícone atualizado.',
+      iconRemoved: 'Ícone removido.',
+      iconFetchFailed: 'Não foi possível obter o ícone da URL do provedor.',
       deleteTitle: 'Excluir provedor',
       deleteMessage: 'Excluir "{{name}}"? Todas as contas vinculadas serão desconectadas.',
       form: {

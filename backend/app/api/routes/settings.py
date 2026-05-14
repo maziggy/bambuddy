@@ -34,6 +34,32 @@ _SENSITIVE_FIELDS_FOR_API_KEY = (
 )
 
 
+def _sqlalchemy_type_to_sqlite_type(type_repr: str) -> str:
+    """Map a SQLAlchemy column type's ``str()`` to a SQLite-native column type.
+
+    Used by ``create_backup_zip`` to reconstruct a portable SQLite database
+    file from PostgreSQL data. Falling through to TEXT for binary columns
+    corrupts non-UTF8 bytes — the BLOB branch is the #1333 regression guard
+    for OIDC icon BLOBs.
+
+    Extracted as a pure helper so it can be unit-tested without spinning up
+    the full FastAPI app + backup pipeline.
+    """
+    type_str = type_repr.upper()
+    if "INT" in type_str:
+        return "INTEGER"
+    if "FLOAT" in type_str or "REAL" in type_str or "NUMERIC" in type_str:
+        return "REAL"
+    if "BOOL" in type_str:
+        return "BOOLEAN"
+    if "BLOB" in type_str or "BYTEA" in type_str or "BINARY" in type_str:
+        # OIDC icon BLOB column (#1333) — without this branch the column
+        # was created as TEXT and non-UTF8 bytes were corrupted during the
+        # PG→SQLite-ZIP backup round trip.
+        return "BLOB"
+    return "TEXT"
+
+
 async def get_setting(db: AsyncSession, key: str) -> str | None:
     """Get a single setting value by key."""
     result = await db.execute(select(Settings).where(Settings.key == key))
@@ -452,14 +478,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                 cols = []
                 pk_cols = [col.name for col in table.columns if col.primary_key]
                 for col in table.columns:
-                    col_type = "TEXT"  # Default
-                    type_str = str(col.type).upper()
-                    if "INT" in type_str:
-                        col_type = "INTEGER"
-                    elif "FLOAT" in type_str or "REAL" in type_str or "NUMERIC" in type_str:
-                        col_type = "REAL"
-                    elif "BOOL" in type_str:
-                        col_type = "BOOLEAN"
+                    col_type = _sqlalchemy_type_to_sqlite_type(str(col.type))
                     # Only inline PRIMARY KEY for single-column PKs
                     pk = " PRIMARY KEY" if col.primary_key and len(pk_cols) == 1 else ""
                     cols.append(f"{col.name} {col_type}{pk}")

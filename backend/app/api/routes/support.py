@@ -456,7 +456,11 @@ async def _collect_auth_info(db: AsyncSession) -> dict:
                 "auto_create_users": p.auto_create_users,
                 "auto_link_existing_accounts": p.auto_link_existing_accounts,
                 "has_default_group": p.default_group_id is not None,
-                "has_icon": bool(p.icon_url),
+                # Derive from icon_content_type (non-deferred) rather than
+                # icon_data (deferred BLOB) to avoid an async lazy-load.
+                # Falls back to icon_url for pre-#1333 rows that have a URL
+                # configured but no cached bytes yet.
+                "has_icon": bool(p.icon_content_type) or bool(p.icon_url),
                 "linked_user_count": link_count,
             }
         )

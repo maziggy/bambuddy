@@ -2273,6 +2273,11 @@ export default {
       created: 'Provider created.',
       updated: 'Provider updated.',
       deleted: 'Provider deleted.',
+      refreshIcon: 'Refresh icon',
+      removeIcon: 'Remove icon',
+      iconRefreshed: 'Icon refreshed.',
+      iconRemoved: 'Icon removed.',
+      iconFetchFailed: 'Icon could not be fetched from the provider URL.',
       deleteTitle: 'Delete Provider',
       deleteMessage: 'Delete "{{name}}"? All linked user accounts will be disconnected.',
       form: {

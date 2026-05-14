@@ -2804,6 +2804,20 @@ export interface TwoFAVerifyRequest {
   method: 'totp' | 'email' | 'backup';
 }
 
+/**
+ * A URL that is known to be same-origin (a relative path starting with ``/``).
+ *
+ * Branded so that producers of same-origin URLs (e.g. ``api.oidcProviderIconUrl``)
+ * can be distinguished from arbitrary strings at the type level.  The brand
+ * is compile-time only; at runtime these are plain strings.
+ *
+ * Purpose: CSP-safe image sources for ``<img src=...>``. The strict
+ * ``img-src 'self' data: blob:`` CSP rejects anything that isn't same-origin,
+ * so callers that demand a ``SameOriginUrl`` get a compile-time guarantee
+ * that no external URL slips through.
+ */
+export type SameOriginUrl = string & { readonly __brand: 'SameOriginUrl' };
+
 // OIDC interfaces
 export interface OIDCProvider {
   id: number;
@@ -2818,6 +2832,14 @@ export interface OIDCProvider {
   require_email_verified: boolean;
   icon_url?: string | null;
   default_group_id?: number | null;
+  // True when the backend has cached icon bytes for this provider.
+  // Login page / admin preview consume this via the proxy URL
+  // /api/v1/auth/oidc/providers/{id}/icon (#1333) so the SPA never
+  // hotlinks the external icon URL — that would require loosening
+  // the strict img-src CSP.  Required, not optional: the backend always
+  // includes this field in the response (Pydantic default-False is
+  // populated unconditionally in the route handler).
+  has_icon: boolean;
 }
 
 export interface OIDCProviderCreate {
@@ -3033,6 +3055,17 @@ export const api = {
     }),
   deleteOIDCProvider: (id: number) =>
     request<{ message: string }>(`/auth/oidc/providers/${id}`, { method: 'DELETE' }),
+
+  // OIDC provider icon proxy (#1333) — same-origin path so the strict
+  // img-src CSP stays in force. Returns a SameOriginUrl-branded string
+  // so a future caller can't accidentally substitute an attacker-
+  // controlled URL where this is consumed.
+  oidcProviderIconUrl: (id: number): SameOriginUrl =>
+    `/api/v1/auth/oidc/providers/${id}/icon` as SameOriginUrl,
+  deleteOIDCProviderIcon: (id: number) =>
+    request<void>(`/auth/oidc/providers/${id}/icon`, { method: 'DELETE' }),
+  refreshOIDCProviderIcon: (id: number) =>
+    request<OIDCProvider>(`/auth/oidc/providers/${id}/icon/refresh`, { method: 'POST' }),
 
   // OIDC authorize URL
   getOIDCAuthorizeUrl: (providerId: number) =>

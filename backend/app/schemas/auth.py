@@ -310,11 +310,34 @@ def _validate_email_claim_name(v: str) -> str:
 
 
 def _validate_icon_url(v: str | None) -> str | None:
-    """Reject non-HTTPS icon URLs to prevent SSRF / mixed-content issues."""
+    """Reject non-HTTPS icon URLs and SSRF-unsafe hosts.
+
+    Delegates to the runtime SSRF guard ``assert_safe_public_https_url``
+    so the Pydantic layer enforces the same allowlist as the fetcher —
+    no policy drift between schema validation and SSRF check. Without
+    this delegation the validator covered only ``is_private | is_loopback
+    | is_link_local`` while the runtime additionally rejected numeric-
+    encoded IPs, cloud-metadata endpoints, multicast, unspecified, and
+    IPv4-mapped IPv6.
+
+    Lazy-imported because ``_oidc_helpers`` lives under ``api/routes/``
+    and schemas avoid top-level imports from that layer (matches the
+    existing pattern in ``_validate_issuer_url`` which lazy-imports
+    ``ipaddress``).
+    """
     if v is None:
         return v
     if not v.startswith("https://"):
+        # Surface the same wording the runtime guard would use, but pre-
+        # checked here so the user-facing error doesn't depend on the
+        # runtime call path.
         raise ValueError("icon_url must start with https://")
+    from backend.app.api.routes._oidc_helpers import assert_safe_public_https_url
+
+    try:
+        assert_safe_public_https_url(v)
+    except ValueError as exc:
+        raise ValueError(f"icon_url: {exc}") from exc
     return v
 
 
@@ -474,6 +497,10 @@ class OIDCProviderResponse(BaseModel):
     require_email_verified: bool = True
     icon_url: str | None = None
     default_group_id: int | None = None
+    # Set explicitly in the route handler from `icon_content_type is not None`
+    # rather than `@computed_field` (project policy) or `icon_data is not None`
+    # (would trigger an async lazy-load on the deferred BLOB column).
+    has_icon: bool = False
 
     class Config:
         from_attributes = True

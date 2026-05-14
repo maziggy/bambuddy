@@ -2257,6 +2257,11 @@ export default {
       created: '提供商已创建。',
       updated: '提供商已更新。',
       deleted: '提供商已删除。',
+      refreshIcon: '刷新图标',
+      removeIcon: '移除图标',
+      iconRefreshed: '图标已刷新。',
+      iconRemoved: '图标已移除。',
+      iconFetchFailed: '无法从提供商 URL 获取图标。',
       deleteTitle: '删除提供商',
       deleteMessage: '删除"{{name}}"？所有关联账户将断开连接。',
       form: {

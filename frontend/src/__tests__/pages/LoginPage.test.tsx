@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { LoginPage } from '../../pages/LoginPage';
@@ -587,6 +587,7 @@ describe('LoginPage', () => {
               client_id: 'c',
               is_enabled: true,
               icon_url: null,
+              has_icon: false,
               email_claim: 'email',
               require_email_verified: true,
               auto_create_users: false,
@@ -624,6 +625,155 @@ describe('LoginPage', () => {
 
       await waitFor(() => {
         expect(sessionStorage.getItem('auth_remember_me')).toBe('1');
+      });
+    });
+  });
+
+  // #1333: icon proxy — login page renders <img src> from /icon endpoint
+  // rather than the upstream icon_url, so the strict img-src CSP holds.
+  describe('OIDC icon proxy (#1333)', () => {
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, setup_required: false })
+        ),
+      );
+    });
+
+    it('renders provider icon via the proxy URL when has_icon is true', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 7,
+              name: 'IconProv',
+              issuer_url: 'https://idp.test',
+              client_id: 'c',
+              is_enabled: true,
+              icon_url: 'https://idp.test/icon.png',
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: true,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const button = await screen.findByRole('button', { name: /IconProv/i });
+      const img = button.querySelector('img');
+      expect(img).not.toBeNull();
+      // Same-origin path — never the upstream icon_url. This is the entire
+      // point of the proxy: keep img-src strictly 'self' data: blob:.
+      expect(img!.getAttribute('src')).toBe('/api/v1/auth/oidc/providers/7/icon');
+    });
+
+    it('renders shield fallback when has_icon is false', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 8,
+              name: 'NoIconProv',
+              issuer_url: 'https://idp.test',
+              client_id: 'c',
+              is_enabled: true,
+              icon_url: null,
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: false,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const button = await screen.findByRole('button', { name: /NoIconProv/i });
+      expect(button.querySelector('img')).toBeNull();
+    });
+
+    it('renders mixed has_icon providers without crash', async () => {
+      // N12 — multiple providers on the login page with a mix of
+      // has_icon=true / false. No React-keys-collision warning, both
+      // branches render correctly side by side.
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 10,
+              name: 'WithIcon',
+              issuer_url: 'https://idp.test',
+              client_id: 'c1',
+              is_enabled: true,
+              icon_url: 'https://idp.test/icon.png',
+              has_icon: true,
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+            },
+            {
+              id: 11,
+              name: 'NoIcon',
+              issuer_url: 'https://idp.test',
+              client_id: 'c2',
+              is_enabled: true,
+              icon_url: null,
+              has_icon: false,
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const withIconBtn = await screen.findByRole('button', { name: /WithIcon/i });
+      const noIconBtn = await screen.findByRole('button', { name: /NoIcon/i });
+      expect(withIconBtn.querySelector('img')).not.toBeNull();
+      expect(noIconBtn.querySelector('img')).toBeNull();
+    });
+
+    it('swaps in shield fallback when the icon fails to load', async () => {
+      // I3 (#1333 review): the LoginPage must not show the browser
+      // broken-image glyph to anonymous users. onError must fall back to
+      // the Shield icon.
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 9,
+              name: 'FlakyIcon',
+              issuer_url: 'https://idp.test',
+              client_id: 'c',
+              is_enabled: true,
+              icon_url: 'https://idp.test/icon.png',
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: true,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const img = (await screen.findByRole('button', { name: /FlakyIcon/i })).querySelector('img');
+      expect(img).not.toBeNull();
+      // Fire the image's onError — jsdom doesn't fetch network resources
+      // so we simulate the failure directly.
+      fireEvent.error(img!);
+      // After error, no more <img> in the button; Shield fallback rendered.
+      await waitFor(() => {
+        const button = screen.getByRole('button', { name: /FlakyIcon/i });
+        expect(button.querySelector('img')).toBeNull();
       });
     });
   });

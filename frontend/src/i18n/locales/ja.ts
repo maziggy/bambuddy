@@ -2269,6 +2269,11 @@ export default {
       created: 'プロバイダーが作成されました。',
       updated: 'プロバイダーが更新されました。',
       deleted: 'プロバイダーが削除されました。',
+      refreshIcon: 'アイコンを再取得',
+      removeIcon: 'アイコンを削除',
+      iconRefreshed: 'アイコンを更新しました。',
+      iconRemoved: 'アイコンを削除しました。',
+      iconFetchFailed: 'プロバイダーURLからアイコンを取得できませんでした。',
       deleteTitle: 'プロバイダーを削除',
       deleteMessage: '"{{name}}"を削除しますか？リンクされたすべてのユーザーアカウントが切断されます。',
       form: {

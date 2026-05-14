@@ -1,0 +1,200 @@
+2026-05-13 22:13:58,026 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-13 22:14:01,980 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-13 22:14:01,980 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-13 22:14:01,982 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-13 22:14:02,010 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-13 22:14:02,010 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-13 22:14:02,011 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-13 22:14:51,983 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-13 22:14:52,011 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-13 22:17:54,504 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-13 22:17:54,504 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-13 22:17:54,505 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-13 22:17:54,536 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-13 22:17:54,537 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-13 22:17:54,538 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-13 22:18:44,506 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-13 22:18:44,538 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-13 22:18:58,428 INFO [uvicorn.access] [-] [IP]:65099 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-13 22:19:13,292 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-13 22:19:13,293 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-13 22:19:13,294 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-13 22:19:13,323 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-13 22:19:13,323 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-13 22:19:13,324 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-13 22:39:34,475 INFO [backend.app.api.routes.cloud] [ae1c65cc] get_filament_info called with 1 IDs: ['GFL99']
+2026-05-13 22:39:34,480 INFO [uvicorn.access] [-] [IP]:49559 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-13 22:39:35,035 WARNING [backend.app.services.firmware_check] [2ae96f16] Failed to get Bambu Lab page: 403
+2026-05-13 22:39:47,595 INFO [uvicorn.access] [-] [IP]:49564 - "POST /api/v1/printers/1/home-axes?axes=all HTTP/1.1" 200
+2026-05-13 22:40:01,952 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-05-13 22:40:18,518 INFO [backend.app.services.bambu_mqtt] [cf958483] [[SERIAL]] Set chamber lights on (seq=27)
+2026-05-13 22:40:18,519 INFO [uvicorn.access] [-] [IP]:49573 - "POST /api/v1/printers/1/chamber-light?on=true HTTP/1.1" 200
+2026-05-13 22:40:19,674 INFO [backend.app.services.bambu_mqtt] [fa29217f] [[SERIAL]] Set chamber lights off (seq=29)
+2026-05-13 22:40:19,676 INFO [uvicorn.access] [-] [IP]:49573 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-05-13 22:40:20,611 INFO [backend.app.services.bambu_mqtt] [fb8bf31c] [[SERIAL]] Set chamber lights on (seq=31)
+2026-05-13 22:40:20,612 INFO [uvicorn.access] [-] [IP]:49573 - "POST /api/v1/printers/1/chamber-light?on=true HTTP/1.1" 200
+2026-05-13 22:40:21,062 INFO [backend.app.services.bambu_mqtt] [b3d6c697] [[SERIAL]] Set chamber lights off (seq=33)
+2026-05-13 22:40:21,064 INFO [uvicorn.access] [-] [IP]:49573 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-05-13 22:40:24,615 INFO [backend.app.services.bambu_mqtt] [f0ace0dd] [[SERIAL]] Set chamber lights on (seq=35)
+2026-05-13 22:40:24,616 INFO [uvicorn.access] [-] [IP]:49575 - "POST /api/v1/printers/1/chamber-light?on=true HTTP/1.1" 200
+2026-05-13 22:40:25,229 INFO [backend.app.services.bambu_mqtt] [83bded87] [[SERIAL]] Set chamber lights off (seq=37)
+2026-05-13 22:40:25,230 INFO [uvicorn.access] [-] [IP]:49575 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-05-13 22:40:25,844 INFO [backend.app.services.bambu_mqtt] [b42fc7e7] [[SERIAL]] Set chamber lights on (seq=39)
+2026-05-13 22:40:25,845 INFO [uvicorn.access] [-] [IP]:49575 - "POST /api/v1/printers/1/chamber-light?on=true HTTP/1.1" 200
+2026-05-13 22:40:26,237 INFO [backend.app.services.bambu_mqtt] [cbcec1b2] [[SERIAL]] Set chamber lights off (seq=41)
+2026-05-13 22:40:26,238 INFO [uvicorn.access] [-] [IP]:49575 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-05-13 22:40:28,272 INFO [uvicorn.access] [-] [IP]:49577 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-13 22:40:28,298 INFO [backend.app.api.routes.camera] [ab0771f1] Using chamber image protocol for A1 Mini
+2026-05-13 22:40:28,298 INFO [backend.app.api.routes.camera] [ab0771f1] Camera viewer attached to printer-1 (subscribers=1)
+2026-05-13 22:40:28,298 INFO [backend.app.api.routes.camera] [ab0771f1] Starting chamber image stream for [IP] (stream_id=1-fanout, model=A1 Mini)
+2026-05-13 22:40:28,327 INFO [uvicorn.access] [-] [IP]:49580 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-13 22:40:28,342 INFO [backend.app.api.routes.camera] [5c07c37f] Using chamber image protocol for A1 Mini
+2026-05-13 22:40:28,342 INFO [backend.app.api.routes.camera] [5c07c37f] Camera viewer attached to printer-1 (subscribers=2)
+2026-05-13 22:40:29,080 INFO [backend.app.services.camera] [ab0771f1] Chamber image: connected to [IP]:6000
+2026-05-13 22:40:30,232 INFO [backend.app.api.routes.camera] [5c07c37f] Camera viewer detached from printer-1 (subscribers=1)
+2026-05-13 22:40:30,233 INFO [backend.app.api.routes.camera] [ab0771f1] Camera viewer detached from printer-1 (subscribers=0)
+2026-05-13 22:40:30,239 INFO [backend.app.api.routes.camera] [07dba51b] Using chamber image protocol for A1 Mini
+2026-05-13 22:40:30,239 INFO [backend.app.api.routes.camera] [07dba51b] Camera viewer attached to printer-1 (subscribers=1)
+2026-05-13 22:40:35,273 INFO [backend.app.services.bambu_mqtt] [5f231a5e] [[SERIAL]] Set chamber lights off (seq=43)
+2026-05-13 22:40:35,274 INFO [uvicorn.access] [-] [IP]:49581 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-05-13 22:40:36,634 INFO [backend.app.services.bambu_mqtt] [f7fccf74] [[SERIAL]] Set chamber lights on (seq=45)
+2026-05-13 22:40:36,634 INFO [uvicorn.access] [-] [IP]:49581 - "POST /api/v1/printers/1/chamber-light?on=true HTTP/1.1" 200
+2026-05-13 22:40:44,142 INFO [backend.app.api.routes.camera] [07dba51b] Camera viewer detached from printer-1 (subscribers=0)
+2026-05-13 22:40:44,156 INFO [backend.app.api.routes.camera] [ab0771f1] Chamber image stream cancelled (stream_id=1-fanout)
+2026-05-13 22:40:44,259 INFO [backend.app.services.camera] [62140718] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-05-13 22:40:44,980 INFO [backend.app.api.routes.camera] [ab0771f1] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-05-13 22:40:44,980 INFO [backend.app.api.routes.camera] [e4cf2ec6] Shut down camera fan-out broadcaster for printer 1
+2026-05-13 22:40:44,980 INFO [backend.app.api.routes.camera] [e4cf2ec6] Stopped 0 camera stream(s) for printer 1
+2026-05-13 22:40:44,981 INFO [uvicorn.access] [-] [IP]:49581 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-05-13 22:40:46,816 INFO [backend.app.services.camera] [62140718] Saved camera frame to: /tmp/tmpkp_rae__.jpg
+2026-05-13 22:40:48,436 INFO [backend.app.api.routes.camera] [aad60c90] Using chamber image protocol for A1 Mini
+2026-05-13 22:40:48,436 INFO [backend.app.api.routes.camera] [aad60c90] Camera viewer attached to printer-1 (subscribers=1)
+2026-05-13 22:40:48,436 INFO [backend.app.api.routes.camera] [aad60c90] Starting chamber image stream for [IP] (stream_id=1-fanout, model=A1 Mini)
+2026-05-13 22:40:49,195 INFO [backend.app.services.camera] [aad60c90] Chamber image: connected to [IP]:6000
+2026-05-13 22:40:49,352 INFO [backend.app.services.bambu_mqtt] [eec2a57c] [[SERIAL]] Set chamber lights off (seq=47)
+2026-05-13 22:40:49,353 INFO [uvicorn.access] [-] [IP]:49581 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-05-13 22:40:51,339 INFO [backend.app.services.bambu_mqtt] [05565938] [[SERIAL]] Set chamber lights on (seq=49)
+2026-05-13 22:40:51,340 INFO [uvicorn.access] [-] [IP]:49581 - "POST /api/v1/printers/1/chamber-light?on=true HTTP/1.1" 200
+2026-05-13 22:40:55,237 INFO [backend.app.api.routes.camera] [aad60c90] Camera viewer detached from printer-1 (subscribers=0)
+2026-05-13 22:40:55,237 INFO [backend.app.api.routes.camera] [aad60c90] Chamber image stream cancelled (stream_id=1-fanout)
+2026-05-13 22:40:56,258 INFO [backend.app.api.routes.camera] [aad60c90] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-05-13 22:40:56,258 INFO [backend.app.api.routes.camera] [f5a2b735] Shut down camera fan-out broadcaster for printer 1
+2026-05-13 22:40:56,258 INFO [backend.app.api.routes.camera] [f5a2b735] Stopped 0 camera stream(s) for printer 1
+2026-05-13 22:40:56,259 INFO [uvicorn.access] [-] [IP]:49581 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-05-13 22:40:58,724 INFO [backend.app.services.camera] [21289e24] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-05-13 22:41:01,147 INFO [backend.app.services.camera] [21289e24] Saved camera frame to: /tmp/tmpruhs525f.jpg
+2026-05-13 22:41:02,431 INFO [uvicorn.access] [-] [IP]:49581 - "PATCH /api/v1/printers/1 HTTP/1.1" 200
+2026-05-13 22:41:03,456 INFO [backend.app.services.camera] [23c53c61] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-05-13 22:41:05,864 INFO [backend.app.services.camera] [23c53c61] Saved camera frame to: /tmp/tmpbf8lbf_7.jpg
+2026-05-13 22:41:12,937 INFO [backend.app.services.camera] [65e83f58] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-05-13 22:41:15,373 INFO [backend.app.services.camera] [65e83f58] Saved camera frame to: /tmp/tmpmmbx0enm.jpg
+2026-05-13 22:41:15,446 INFO [backend.app.services.plate_detection] [65e83f58] Saved reference image: /home/[user]/bambuddy/data/plate_calibration/printer_1_ref_0.jpg (203707 bytes)
+2026-05-13 22:41:15,446 INFO [backend.app.services.plate_detection] [65e83f58] Saved plate calibration reference 1/5 for printer 1
+2026-05-13 22:41:15,447 INFO [uvicorn.access] [-] [IP]:49591 - "POST /api/v1/printers/1/camera/plate-detection/calibrate?use_external=false HTTP/1.1" 200
+2026-05-13 22:41:15,489 INFO [backend.app.services.camera] [8c380b9c] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-05-13 22:41:17,874 INFO [backend.app.services.camera] [8c380b9c] Saved camera frame to: /tmp/tmpns35vo9x.jpg
+2026-05-13 22:41:29,428 INFO [uvicorn.access] [-] [IP]:49593 - "POST /api/v1/printers/1/bed-jog?distance=-50&force=true HTTP/1.1" 200
+2026-05-13 22:41:34,952 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-13 22:41:34,953 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-13 22:41:38,320 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-13 22:41:38,320 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-13 22:41:38,321 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-13 22:41:38,357 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-13 22:41:38,357 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-13 22:41:38,358 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-13 22:41:57,962 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-05-13 22:41:58,989 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-05-13 22:42:06,098 INFO [uvicorn.access] [-] [IP]:49632 - "POST /api/v1/printers/1/bed-jog?distance=1&force=true HTTP/1.1" 200
+2026-05-13 22:42:12,112 INFO [uvicorn.access] [-] [IP]:49639 - "POST /api/v1/printers/1/bed-jog?distance=10&force=true HTTP/1.1" 200
+2026-05-13 22:42:17,023 INFO [uvicorn.access] [-] [IP]:49640 - "POST /api/v1/printers/1/bed-jog?distance=10&force=true HTTP/1.1" 200
+2026-05-13 22:42:20,109 INFO [uvicorn.access] [-] [IP]:49640 - "POST /api/v1/printers/1/bed-jog?distance=50&force=true HTTP/1.1" 200
+2026-05-13 22:43:45,980 INFO [backend.app.api.routes.support] [35076a80] Log level changed to DEBUG
+2026-05-13 22:43:45,980 INFO [backend.app.api.routes.bug_report] [35076a80] Bug report: enabled debug logging
+2026-05-13 22:43:45,980 DEBUG [backend.app.services.bambu_mqtt] [35076a80] [[SERIAL]] Requesting status update (pushall)
+2026-05-13 22:43:45,981 INFO [uvicorn.access] [-] [IP]:49665 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-13 22:43:46,849 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-05-13 22:43:46,850 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-05-13 22:43:46,850 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-05-13 22:43:46,850 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 1, 'insert_flag': True, 'power_on_flag': True}
+2026-05-13 22:43:46,850 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-05-13 22:43:46,850 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-05-13 22:43:46,850 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-05-13 22:43:46,850 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:43:46,851 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-05-13 22:43:46,851 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-05-13 22:43:46,851 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-05-13 22:43:46,851 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-05-13 22:43:46,851 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-05-13 22:43:46,851 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-05-13 22:43:46,851 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-05-13 22:43:46,851 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-05-13 22:43:46,852 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-05-13 22:43:48,861 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:43:48,863 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -70dBm
+2026-05-13 22:43:50,882 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:43:50,882 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -66dBm
+2026-05-13 22:43:50,916 DEBUG [backend.app.api.routes.printers] [0f5bbb0d] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-13 22:43:50,916 DEBUG [backend.app.api.routes.printers] [0f5bbb0d] Using tray_now directly as global ID: 255
+2026-05-13 22:43:52,791 DEBUG [backend.app.services.bambu_mqtt] [027ad97c] [[SERIAL]] Sent G-code: M211 S0
+G91
+G1 Z-10.00 F600
+G90
+M211 S1...
+2026-05-13 22:43:52,792 INFO [uvicorn.access] [-] [IP]:49667 - "POST /api/v1/printers/1/bed-jog?distance=-10&force=true HTTP/1.1" 200
+2026-05-13 22:43:52,803 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: gcode_line
+2026-05-13 22:43:52,901 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:43:52,901 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -65dBm
+2026-05-13 22:43:54,914 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:43:54,915 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -71dBm
+2026-05-13 22:43:56,416 DEBUG [backend.app.services.bambu_mqtt] [60f5e0ed] [[SERIAL]] Sent G-code: M211 S0
+G91
+G1 Z-10.00 F600
+G90
+M211 S1...
+2026-05-13 22:43:56,417 INFO [uvicorn.access] [-] [IP]:49667 - "POST /api/v1/printers/1/bed-jog?distance=-10&force=true HTTP/1.1" 200
+2026-05-13 22:43:56,425 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: gcode_line
+2026-05-13 22:43:56,933 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:43:56,933 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-05-13 22:43:58,953 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:43:58,954 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -69dBm
+2026-05-13 22:43:59,606 DEBUG [backend.app.services.bambu_mqtt] [b1984de5] [[SERIAL]] Sent G-code: M211 S0
+G91
+G1 Z10.00 F600
+G90
+M211 S1...
+2026-05-13 22:43:59,607 INFO [uvicorn.access] [-] [IP]:49667 - "POST /api/v1/printers/1/bed-jog?distance=10&force=true HTTP/1.1" 200
+2026-05-13 22:43:59,620 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: gcode_line
+2026-05-13 22:44:00,968 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:44:00,969 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -70dBm
+2026-05-13 22:44:01,694 DEBUG [backend.app.services.bambu_mqtt] [54615f65] [[SERIAL]] Sent G-code: M211 S0
+G91
+G1 Z10.00 F600
+G90
+M211 S1...
+2026-05-13 22:44:01,695 INFO [uvicorn.access] [-] [IP]:49667 - "POST /api/v1/printers/1/bed-jog?distance=10&force=true HTTP/1.1" 200
+2026-05-13 22:44:01,711 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: gcode_line
+2026-05-13 22:44:02,989 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:44:02,990 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -71dBm
+2026-05-13 22:44:04,344 DEBUG [backend.app.services.bambu_mqtt] [18e70f18] [[SERIAL]] Sent G-code: M211 S0
+G91
+G1 Z10.00 F600
+G90
+M211 S1...
+2026-05-13 22:44:04,345 INFO [uvicorn.access] [-] [IP]:49668 - "POST /api/v1/printers/1/bed-jog?distance=10&force=true HTTP/1.1" 200
+2026-05-13 22:44:04,359 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: gcode_line
+2026-05-13 22:44:05,011 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:44:05,011 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -72dBm
+2026-05-13 22:44:07,024 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:44:07,024 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -68dBm
+2026-05-13 22:44:09,043 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:44:09,043 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -62dBm
+2026-05-13 22:44:09,697 INFO [backend.app.services.camera] [210a03e6] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-05-13 22:44:11,066 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:44:11,066 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -66dBm
+2026-05-13 22:44:12,015 DEBUG [backend.app.services.camera] [210a03e6] Chamber image: received 97558 bytes
+2026-05-13 22:44:12,020 INFO [backend.app.services.camera] [210a03e6] Saved camera frame to: /tmp/tmpa0279yx1.jpg
+2026-05-13 22:44:12,020 DEBUG [backend.app.services.plate_detection] [210a03e6] Captured frame from built-in camera for printer 1
+2026-05-13 22:44:13,087 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:44:13,088 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-05-13 22:44:15,097 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-13 22:44:15,097 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -65dBm

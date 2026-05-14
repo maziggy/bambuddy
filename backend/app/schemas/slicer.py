@@ -109,6 +109,17 @@ class SliceRequest(BaseModel):
         default=False,
         description="If true, request a 3MF response with embedded G-code instead of raw G-code.",
     )
+    bed_type: str | None = Field(
+        default=None,
+        max_length=64,
+        description=(
+            "Override the process preset's curr_bed_type for this slice. Canonical "
+            "BambuStudio / OrcaSlicer values: 'Cool Plate', 'Engineering Plate', "
+            "'High Temp Plate', 'Textured PEI Plate', 'Smooth PEI Plate', "
+            "'Cool Plate (SuperTack)', 'Supertack Plate'. None ⇒ inherit from the "
+            "process preset unchanged (#1337)."
+        ),
+    )
 
     @model_validator(mode="after")
     def normalise_preset_refs(self) -> "SliceRequest":

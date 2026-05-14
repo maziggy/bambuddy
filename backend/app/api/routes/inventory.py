@@ -1255,17 +1255,23 @@ async def assign_spool(
     # inserted later, on_ams_change re-fires the full configuration. This is
     # the SpoolBuddy primary workflow: weigh-then-assign before insertion.
     #
-    # Empty-detection: prefer the printer's tray.state when it's reported
-    # (11=loaded, 9=empty, 10=spool present but filament not in feeder).
-    # tray_type alone is wrong post-"Reset slot" — that flow clears tray_type
-    # to "" while leaving filament physically loaded, and the old check
-    # would then mark it as a pending-config SpoolBuddy assignment, skip
-    # MQTT, and the slot would stay unconfigured forever because the
-    # on_ams_change replay only fires on an empty→loaded transition that
-    # never comes (the slot is already loaded). When state is not reported
-    # (older firmware), fall back to the tray_type heuristic.
-    if tray_state is not None:
-        slot_is_empty = tray_state != 11
+    # Empty-detection: priority order is the firmware's explicit signals
+    # first, then a tray_type fallback for firmwares that don't use the full
+    # state enum meaningfully.
+    #   - state == 9  → empty (firmware says "no spool")
+    #   - state == 10 → empty (firmware says "spool present but no feed")
+    #   - state == 11 → loaded (firmware says "filament in extruder")
+    #   - any other state value, including 3 (A1 Mini BMCU / P1S Standard AMS
+    #     always report 3) or None (older firmwares omit the field), falls
+    #     back to tray_type: configured ⇒ loaded, empty ⇒ empty (#1322).
+    # The tray_type fallback for state==3 fixes the reported bug. The 9/10
+    # branch keeps existing behavior intact even if the MQTT relay's
+    # auto-clearing of tray_type ever fails to fire — the firmware's
+    # explicit "empty" signal stays authoritative over stale metadata.
+    if tray_state == 9 or tray_state == 10:
+        slot_is_empty = True
+    elif tray_state == 11:
+        slot_is_empty = False
     else:
         slot_is_empty = not (fingerprint_type and fingerprint_type.strip())
     configured = False

@@ -44,10 +44,31 @@ export function ColorSection({
     return currentHex.toUpperCase() === hex.toUpperCase();
   };
 
-  const selectColor = (hex: string, name: string) => {
+  const selectColor = (
+    hex: string,
+    name: string,
+    // #1340: catalog entries carry an optional gradient + effect. Pass them in
+    // (even as empty strings) to overwrite the spool's existing values — the
+    // catalog entry is a complete preset, the user explicitly chose its look.
+    // Pass `undefined` (the default, used by recent/fallback swatches) to
+    // leave any existing gradient/effect untouched — those buttons are plain
+    // hex pickers, not full presets.
+    extraColors?: string | null,
+    effectType?: string | null,
+  ) => {
     // Store as RRGGBBAA (with FF alpha)
     updateField('rgba', hex.toUpperCase() + 'FF');
     updateField('color_name', name);
+    if (extraColors !== undefined) {
+      const next = extraColors ?? '';
+      setExtraColorsDraft(next);
+      setExtraColorsErrors([]);
+      lastCommittedExtraColorsRef.current = next;
+      updateField('extra_colors', next);
+    }
+    if (effectType !== undefined) {
+      updateField('effect_type', effectType ?? '');
+    }
     onColorUsed({ name, hex });
   };
 
@@ -82,6 +103,8 @@ export function ColorSection({
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
     }
@@ -101,6 +124,8 @@ export function ColorSection({
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
       // Try without trailing "+" (e.g. "PLA Silk+" -> "PLA Silk")
@@ -133,6 +158,8 @@ export function ColorSection({
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
     }
@@ -271,7 +298,7 @@ export function ColorSection({
               <button
                 key={`${color.hex}-${color.name}-${color.manufacturer ?? ''}`}
                 type="button"
-                onClick={() => selectColor(color.hex, color.name)}
+                onClick={() => selectColor(color.hex, color.name, color.extra_colors, color.effect_type)}
                 className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 hover:z-20 relative group ${
                   isSelected(color.hex)
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'

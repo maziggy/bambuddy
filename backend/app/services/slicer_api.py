@@ -435,6 +435,7 @@ class SlicerApiService:
         filament_names: list[str],
         plate: int | None = None,
         export_3mf: bool = False,
+        bed_type: str | None = None,
         request_id: str | None = None,
         on_progress: Callable[[dict], None] | None = None,
     ) -> SliceResult:
@@ -476,6 +477,16 @@ class SlicerApiService:
             data["plate"] = str(plate)
         if export_3mf:
             data["exportType"] = "3mf"
+        if bed_type is not None:
+            # #1337: bed-plate override flows through to the sidecar as a
+            # standalone field. The sidecar wraps this as --curr_bed_type on
+            # the CLI invocation, overriding whatever the bundle's process
+            # JSON specifies. Bambuddy can't patch the bundle's JSON locally
+            # (the sidecar materialises it from disk), so this round-trip is
+            # the only path. Silently no-ops on sidecar versions that don't
+            # yet recognise the field — the user's slice still runs with the
+            # bundle's default plate, no crash.
+            data["bedType"] = bed_type
         if request_id is not None:
             data["requestId"] = request_id
 

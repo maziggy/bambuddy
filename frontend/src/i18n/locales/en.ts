@@ -3391,6 +3391,16 @@ export default {
       expired: 'Bambu Cloud session expired — sign in again to refresh your cloud presets.',
       unreachable: 'Bambu Cloud is unreachable right now. Local and standard presets still work.',
     },
+    bedType: {
+      label: 'Build plate',
+      auto: 'Auto (use process preset)',
+      coolPlate: 'Cool Plate',
+      coolPlateSuperTack: 'Cool Plate SuperTack',
+      engineering: 'Engineering Plate',
+      highTemp: 'High Temp Plate',
+      texturedPEI: 'Textured PEI Plate',
+      smoothPEI: 'Smooth PEI Plate',
+    },
   },
 
   // Spoolman
@@ -3588,8 +3598,8 @@ export default {
     showAll: 'Show all',
     noColorsFound: 'No colors match your search',
     noResults: 'No matches found',
-    // Multi-colour gradient + visual effect (#1154)
-    extraColorsLabel: 'Extra colours',
+    // Multi-color gradient + visual effect (#1154)
+    extraColorsLabel: 'Extra colors',
     extraColorsPlaceholder: 'EC984C,#6CD4BC,A66EB9,D87694',
     extraColorsHint: 'Paste 2 to 8 hex stops, separated by commas. Renders as a gradient.',
     extraColorsInvalid: 'Ignored invalid hex: {{tokens}}',
@@ -3608,7 +3618,7 @@ export default {
       rainbow: 'Rainbow',
       metal: 'Metal',
       translucent: 'Translucent',
-      // Multi-colour structural variants
+      // Multi-color structural variants
       gradient: 'Gradient',
       dualColor: 'Dual Color',
       triColor: 'Tri Color',
@@ -4238,7 +4248,7 @@ export default {
     },
     queueForceColorMatch: {
       title: 'Force color match',
-      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong color loaded.',
     },
     tailscaleDisabled: {
       title: 'Tailscale integration',

@@ -7,7 +7,7 @@ If you'd like to support Bambuddy:
 - **GitHub Sponsors** (recurring, 5 tiers from $5/mo to $500/mo) — https://github.com/sponsors/maziggy
 - **Ko-fi** (one-time or recurring) — https://ko-fi.com/maziggy
 
-If you sponsor and your name isn't here within 48h, please write an email to martin@bambuddy.cool, ping `maziggy` on Discord or open an Issue.
+If you sponsor and your name isn't here within 48h, please write an email to martin@bambuddy.cool or open an Issue on the main repo.
 
 ---
 
@@ -21,15 +21,20 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 
 ## Patrons ($35/mo+)
 
-*None yet.*
+- [@VREmma](https://github.com/VREmma)
 
 ## Supporters ($15/mo+)
 
-*None yet.*
+- [@rewart01](https://github.com/rewart01)
+- [@rstocks](https://github.com/rstocks)
+- [@sixfootseven](https://github.com/sixfootseven)
 
 ## Backers ($5/mo+)
 
-*None yet.*
+- [@aneopsy](https://github.com/aneopsy)
+- [@flom89](https://github.com/flom89)
+- [@grizz0blaw](https://github.com/grizz0blaw)
+- [@NoahTingey](https://github.com/NoahTingey)
 
 ---
 

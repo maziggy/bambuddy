@@ -3388,6 +3388,16 @@ export default {
       expired: 'Bambu Cloud session expired — sign in again to refresh your cloud presets.',
       unreachable: 'Bambu Cloud is unreachable right now. Local and standard presets still work.',
     },
+    bedType: {
+      label: 'Build plate',
+      auto: 'Auto (use process preset)',
+      coolPlate: 'Cool Plate',
+      coolPlateSuperTack: 'Cool Plate SuperTack',
+      engineering: 'Engineering Plate',
+      highTemp: 'High Temp Plate',
+      texturedPEI: 'Textured PEI Plate',
+      smoothPEI: 'Smooth PEI Plate',
+    },
   },
 
   // Spoolman
@@ -3583,8 +3593,8 @@ export default {
     showAll: 'すべて表示',
     noColorsFound: '一致する色がありません',
     noResults: '結果なし',
-    // Multi-colour gradient + visual effect (#1154) — English fallback.
-    extraColorsLabel: 'Extra colours',
+    // Multi-color gradient + visual effect (#1154) — English fallback.
+    extraColorsLabel: 'Extra colors',
     extraColorsPlaceholder: 'EC984C,#6CD4BC,A66EB9,D87694',
     extraColorsHint: 'Paste 2 to 8 hex stops, separated by commas. Renders as a gradient.',
     extraColorsInvalid: 'Ignored invalid hex: {{tokens}}',
@@ -4230,7 +4240,7 @@ export default {
     },
     queueForceColorMatch: {
       title: 'Force color match',
-      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong color loaded.',
     },
     tailscaleDisabled: {
       title: 'Tailscale統合',

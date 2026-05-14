@@ -3388,6 +3388,16 @@ export default {
       expired: 'Bambu-Cloud-Sitzung abgelaufen — erneut anmelden, um die Cloud-Profile zu aktualisieren.',
       unreachable: 'Bambu Cloud ist gerade nicht erreichbar. Lokale und Standard-Profile funktionieren weiterhin.',
     },
+    bedType: {
+      label: 'Druckbett',
+      auto: 'Auto (aus Prozess-Profil)',
+      coolPlate: 'Cool Plate',
+      coolPlateSuperTack: 'Cool Plate SuperTack',
+      engineering: 'Engineering Plate',
+      highTemp: 'High Temp Plate',
+      texturedPEI: 'Textured PEI Plate',
+      smoothPEI: 'Smooth PEI Plate',
+    },
   },
 
   // Spoolman

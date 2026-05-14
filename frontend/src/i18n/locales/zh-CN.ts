@@ -3376,6 +3376,16 @@ export default {
       expired: 'Bambu Cloud session expired — sign in again to refresh your cloud presets.',
       unreachable: 'Bambu Cloud is unreachable right now. Local and standard presets still work.',
     },
+    bedType: {
+      label: 'Build plate',
+      auto: 'Auto (use process preset)',
+      coolPlate: 'Cool Plate',
+      coolPlateSuperTack: 'Cool Plate SuperTack',
+      engineering: 'Engineering Plate',
+      highTemp: 'High Temp Plate',
+      texturedPEI: 'Textured PEI Plate',
+      smoothPEI: 'Smooth PEI Plate',
+    },
   },
 
   // Spoolman
@@ -4218,7 +4228,7 @@ export default {
     },
     queueForceColorMatch: {
       title: 'Force color match',
-      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong color loaded.',
     },
     tailscaleDisabled: {
       title: 'Tailscale 集成',

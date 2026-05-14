@@ -1206,6 +1206,12 @@ export interface SliceRequest {
   bundle?: SliceBundleSpec;
   plate?: number;
   export_3mf?: boolean;
+  // Build-plate override (#1337). When omitted, the slicer uses the process
+  // preset's curr_bed_type as-is. Canonical values match BambuStudio /
+  // OrcaSlicer's enum: "Cool Plate", "Engineering Plate", "High Temp Plate",
+  // "Textured PEI Plate", "Smooth PEI Plate", "Cool Plate (SuperTack)",
+  // "Supertack Plate".
+  bed_type?: string | null;
 }
 
 // GET /api/v1/slicer/bundles — Printer Preset Bundles imported from

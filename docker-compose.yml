@@ -85,8 +85,8 @@ services:
       # Slicer API sidecar (optional — Settings → "Use Slicer API" toggles this on).
       # Default points at the OrcaSlicer sidecar on the docker host; change if you
       # run the sidecar on a different host/port. The matching docker-compose.yml
-      # for the sidecars lives in the orca-slicer-api fork
-      # (https://github.com/maziggy/orca-slicer-api).
+      # for the sidecars lives in the slicer-api folder
+      # (https://github.com/maziggy/bambuddy/blob/main/slicer-api/docker-compose.yml.
       #- SLICER_API_URL=http://localhost:3003
       #
       # MFA at-rest encryption key (#1219). Auto-generated to

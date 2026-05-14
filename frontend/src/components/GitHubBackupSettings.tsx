@@ -1071,6 +1071,7 @@ export function GitHubBackupSettings() {
                 onChange={async (checked) => {
                   try {
                     await api.updateSettings({ local_backup_enabled: checked });
+                    queryClient.invalidateQueries({ queryKey: ['settings'] });
                     showToast(t('backup.settingsSaved'));
                   } catch (e) {
                     showToast(t('backup.failedToSave', { message: e instanceof Error ? e.message : 'Unknown error' }), 'error');

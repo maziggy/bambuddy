@@ -138,11 +138,15 @@ describe('SliceModal', () => {
     await waitFor(() => {
       expect(screen.getByText('My Custom X1C')).toBeDefined();
     });
+    // 4 selects: printer, process, bed-type (#1337), filament. bed-type sits
+    // between process and filament — it overrides curr_bed_type on the
+    // process preset so the related controls cluster — and defaults to "".
     const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects).toHaveLength(3);
+    expect(selects).toHaveLength(4);
     expect(selects[0].value).toBe('local:1');
     expect(selects[1].value).toBe('local:2');
-    expect(selects[2].value).toBe('local:3');
+    expect(selects[2].value).toBe('');
+    expect(selects[3].value).toBe('local:3');
 
     // Slice button is enabled because all three slots auto-defaulted and
     // the preview-slice query has resolved (mock returns immediately).
@@ -238,6 +242,65 @@ describe('SliceModal', () => {
       });
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('includes bed_type in the request when the user picks a non-auto plate (#1337)', async () => {
+    const onClose = vi.fn();
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose,
+    });
+
+    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+
+    const user = userEvent.setup();
+    // Order with the dropdown now sits between Process and Filament:
+    // printer (0), process (1), bed-type (2), filament (3+). Find the
+    // bed-type select by name rather than positional index so this stays
+    // green if the layout adds another control around it.
+    const bedSelect = screen.getAllByRole('combobox').find((el) =>
+      (el as HTMLSelectElement).options[0]?.textContent?.toLowerCase().includes('auto'),
+    ) as HTMLSelectElement;
+    expect(bedSelect).toBeDefined();
+    await user.selectOptions(bedSelect, 'Textured PEI Plate');
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => {
+      expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+        100,
+        expect.objectContaining({ bed_type: 'Textured PEI Plate' }),
+      );
+    });
+  });
+
+  it('omits bed_type when the user leaves it on Auto (no override)', async () => {
+    const onClose = vi.fn();
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose,
+    });
+
+    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => {
+      const [, body] = vi.mocked(mockApi.sliceLibraryFile).mock.calls[0];
+      expect(body).not.toHaveProperty('bed_type');
+    });
   });
 
   it('lets the user override the default and pick a Standard preset', async () => {
@@ -603,8 +666,8 @@ describe('SliceModal', () => {
     });
 
     await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
-    // 1 printer + 1 process + 2 filament = 4 dropdowns.
-    expect(screen.getAllByRole('combobox')).toHaveLength(4);
+    // 1 printer + 1 process + 2 filament + 1 bed-type (#1337) = 5 dropdowns.
+    expect(screen.getAllByRole('combobox')).toHaveLength(5);
   });
 
   it('pre-picks each filament slot by matching colour metadata', async () => {
@@ -686,9 +749,11 @@ describe('SliceModal', () => {
 
     const user = userEvent.setup();
     const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    // Slots 0 (printer) and 1 (process) are auto-picked. Slots 2 and 3 are
-    // the two filament dropdowns. Swap slot-2 (was black) to white.
-    await user.selectOptions(selects[2], 'cloud:F-WHITE');
+    // Order: 0 printer, 1 process, 2 bed-type, 3 filament-1, 4 filament-2
+    // (#1337). Auto-picks land on printer/process/filaments; bed-type
+    // defaults to "". Swap filament-1 (index 3) from the auto-picked black
+    // to white.
+    await user.selectOptions(selects[3], 'cloud:F-WHITE');
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => {
@@ -884,12 +949,14 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
 
-    // Both filament rows render — 1 printer + 1 process + 2 filament = 4.
+    // Both filament rows render — 1 printer + 1 process + 1 bed-type +
+    // 2 filament (#1337) = 5. bed-type sits at index 2, filament slots
+    // follow at 3 and 4.
     const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects).toHaveLength(4);
+    expect(selects).toHaveLength(5);
     // Slot 1 (used) is editable, slot 2 (not used) is disabled.
-    expect(selects[2].disabled).toBe(false);
-    expect(selects[3].disabled).toBe(true);
+    expect(selects[3].disabled).toBe(false);
+    expect(selects[4].disabled).toBe(true);
     // The disabled row's label calls out why it's disabled.
     expect(screen.getByText(/not used by this plate/i)).toBeDefined();
   });

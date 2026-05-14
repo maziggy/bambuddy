@@ -236,6 +236,86 @@ class TestSliceLibraryFile:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_bed_type_override_patches_process_profile(self, async_client: AsyncClient, slice_test_setup):
+        """#1337: when SliceRequest.bed_type is set, the process JSON sent to
+        the sidecar must carry curr_bed_type with that exact value. Without
+        the patch, slicing high-temp filaments on a "Cool Plate" process
+        preset fails inside the slicer CLI with "does not support filament 1"
+        and the user has no way to switch plates from the SliceModal."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = bytes(request.content)
+            return httpx.Response(
+                status_code=200,
+                content=b"PK\x03\x04 fake",
+                headers={
+                    "x-print-time-seconds": "10",
+                    "x-filament-used-g": "0.1",
+                    "x-filament-used-mm": "1.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+                "bed_type": "Textured PEI Plate",
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        # The presetProfile part of the multipart upload now carries the
+        # override. Searching the raw body avoids parsing the multipart by
+        # hand — the substring is unique enough since we control the JSON
+        # being patched.
+        assert b'"curr_bed_type": "Textured PEI Plate"' in captured["body"], (
+            "bed_type override must appear in the process JSON sent to the sidecar"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bed_type_omitted_leaves_process_profile_untouched(self, async_client: AsyncClient, slice_test_setup):
+        """Companion to the override test: the patch must NOT fire when the
+        client omits bed_type, so the process preset's own curr_bed_type
+        (or absence thereof) is forwarded to the sidecar unchanged."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = bytes(request.content)
+            return httpx.Response(
+                status_code=200,
+                content=b"PK\x03\x04 fake",
+                headers={
+                    "x-print-time-seconds": "10",
+                    "x-filament-used-g": "0.1",
+                    "x-filament-used-mm": "1.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+        assert b"curr_bed_type" not in captured["body"], (
+            "bed_type must stay out of the process JSON when no override is set"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_invalid_preset_id_surfaces_as_failed_job_with_status_400(
         self, async_client: AsyncClient, slice_test_setup
     ):
@@ -512,6 +592,84 @@ class TestSliceWithBundle:
         assert b'name="printerProfile"' not in body
         assert b'name="presetProfile"' not in body
         assert b'name="filamentProfile"' not in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bundle_dispatch_forwards_bed_type_when_set(self, async_client: AsyncClient, slice_test_setup):
+        """#1337 follow-up: bed-type override flows through the bundle path
+        as a `bedType` form field so the sidecar can pass
+        `--curr_bed_type` to the CLI. Bambuddy can't patch the bundle's
+        process JSON locally — the sidecar materialises it from the stored
+        .bbscfg — so the form field is the only handle."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = bytes(request.content)
+            return httpx.Response(
+                status_code=200,
+                content=b"PK\x03\x04 fake",
+                headers={
+                    "x-print-time-seconds": "10",
+                    "x-filament-used-g": "0.1",
+                    "x-filament-used-mm": "1.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
+            json={
+                "bundle": {
+                    "bundle_id": "abc",
+                    "printer_name": "# X1C",
+                    "process_name": "# 0.20mm",
+                    "filament_names": ["# Bambu PLA"],
+                },
+                "bed_type": "Engineering Plate",
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+        body = captured["body"]
+        assert b'name="bedType"' in body
+        assert b"Engineering Plate" in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bundle_dispatch_omits_bed_type_when_unset(self, async_client: AsyncClient, slice_test_setup):
+        """Companion test: no bed_type ⇒ no bedType form field, so the
+        bundle's own curr_bed_type is preserved end-to-end."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = bytes(request.content)
+            return httpx.Response(
+                status_code=200,
+                content=b"PK\x03\x04 fake",
+                headers={
+                    "x-print-time-seconds": "10",
+                    "x-filament-used-g": "0.1",
+                    "x-filament-used-mm": "1.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
+            json={
+                "bundle": {
+                    "bundle_id": "abc",
+                    "printer_name": "# X1C",
+                    "process_name": "# 0.20mm",
+                    "filament_names": ["# Bambu PLA"],
+                },
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+        assert b'name="bedType"' not in captured["body"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration

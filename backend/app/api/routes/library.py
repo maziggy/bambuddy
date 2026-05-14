@@ -2806,6 +2806,29 @@ def _sanitize_project_settings_sentinels(zip_bytes: bytes) -> bytes:
         return zip_bytes
 
 
+def _patch_process_bed_type(process_json: str, bed_type: str) -> str:
+    """Overwrite ``curr_bed_type`` in a process-profile JSON before forwarding
+    to the slicer sidecar.
+
+    The slicer CLI reads the build-plate type from the process profile's
+    ``curr_bed_type`` field. When the user picks a non-default plate in the
+    SliceModal (#1337), we patch the resolved JSON in place rather than
+    asking them to clone the preset just to switch a plate. Returns the
+    original string unchanged when the JSON can't be parsed or isn't a
+    dict — the slicer will then run with whatever the preset originally
+    specified, which is the safe fall-back path.
+    """
+    try:
+        profile = json.loads(process_json)
+    except json.JSONDecodeError:
+        logger.warning("Bed-type override skipped: process profile is not valid JSON")
+        return process_json
+    if not isinstance(profile, dict):
+        return process_json
+    profile["curr_bed_type"] = bed_type
+    return json.dumps(profile)
+
+
 async def _run_slicer_with_fallback(
     db: AsyncSession,
     *,
@@ -2871,6 +2894,17 @@ async def _run_slicer_with_fallback(
         for ref in request.filament_presets:
             assert ref is not None, "schema validator guarantees filament list is non-None"
             filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
+
+        # Bed-type override (#1337): patch curr_bed_type onto the resolved
+        # process JSON so the slicer's StaticPrintConfig pass picks up the
+        # user's pick instead of whatever the process preset defaults to.
+        # Without this, slicing an STL of ABS onto a process preset whose
+        # default is "Cool Plate" fails with "Plate 1: Cool Plate does not
+        # support filament 1" — the reporter's exact scenario. Only applies
+        # to the resolved-preset path; bundle mode would need a sidecar-side
+        # mechanism to patch presets it materialises from disk.
+        if request.bed_type:
+            presets["process"] = _patch_process_bed_type(presets["process"], request.bed_type)
 
     # Slicer routing — pick the sidecar URL by preferred_slicer.
     # The per-install URL setting (Settings UI → Slicer card) wins; an
@@ -2951,6 +2985,7 @@ async def _run_slicer_with_fallback(
                     filament_names=request.bundle.filament_names,
                     plate=request.plate,
                     export_3mf=request.export_3mf,
+                    bed_type=request.bed_type,
                     request_id=progress_request_id,
                     on_progress=progress_callback,
                 )

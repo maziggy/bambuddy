@@ -261,6 +261,13 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // and we'll backfill 1 at submit time). Set to a 1-indexed plate number once
   // the user picks one (or implicitly for single-plate sources).
   const [selectedPlate, setSelectedPlate] = useState<number | null>(null);
+  // Build-plate override (#1337). null = inherit from the process preset
+  // (the default). Set to a canonical slicer enum value to patch
+  // curr_bed_type into the resolved process JSON before slicing — needed
+  // because the process preset's default plate (typically "Cool Plate") is
+  // incompatible with high-temp filaments like ABS / ASA / PC, and the
+  // user had no way to switch plates without cloning the preset.
+  const [bedType, setBedType] = useState<string | null>(null);
 
   const platesQuery = useQuery({
     queryKey: ['slicePlates', source.kind, source.id],
@@ -429,6 +436,9 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
         body = {
           bundle: bundleSpec,
           ...(selectedPlate != null ? { plate: selectedPlate } : {}),
+          // Bed-type override (#1337) also flows through the bundle path —
+          // the sidecar forwards `bedType` as --curr_bed_type to the CLI.
+          ...(bedType != null ? { bed_type: bedType } : {}),
         };
       } else {
         if (
@@ -451,6 +461,8 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           // omit otherwise so the backend default applies for STL / single-plate
           // 3MF sources where the concept doesn't apply.
           ...(selectedPlate != null ? { plate: selectedPlate } : {}),
+          // Bed-type override (#1337).
+          ...(bedType != null ? { bed_type: bedType } : {}),
         };
       }
       if (source.kind === 'libraryFile') {
@@ -651,6 +663,17 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                   />
                 </>
               )}
+              {/* Bed-type override (#1337). Always visible, always enabled.
+                  In non-bundle mode the backend patches curr_bed_type on the
+                  resolved process JSON before forwarding to the sidecar; in
+                  bundle mode the same value rides through as a sidecar form
+                  field so the bundle's materialised process JSON gets the
+                  override applied there too. */}
+              <BedTypeDropdown
+                value={bedType}
+                onChange={setBedType}
+                disabled={isEnqueuing}
+              />
               {/* Filament reqs may need a server-side preview-slice for
                   unsliced project files (single-pass, then cached). Show a
                   scoped spinner so the user sees the printer/process
@@ -828,6 +851,56 @@ function CloudStatusBanner({ status }: { status: SlicerCloudStatus }) {
       <Icon className="w-4 h-4 flex-shrink-0 mt-0.5" />
       <span>{t(key, fallback)}</span>
     </div>
+  );
+}
+
+// Build-plate options offered in the SliceModal (#1337). Values are the
+// canonical strings the slicer's StaticPrintConfig validator accepts as
+// `curr_bed_type` — BambuStudio is the default sidecar, so this matches its
+// enum; OrcaSlicer accepts the same set with a Supertack alias that users
+// can target via the same dropdown if they re-import their presets.
+const BED_TYPE_OPTIONS: { value: string; labelKey: string; fallback: string }[] = [
+  { value: 'Cool Plate', labelKey: 'slice.bedType.coolPlate', fallback: 'Cool Plate' },
+  {
+    value: 'Cool Plate (SuperTack)',
+    labelKey: 'slice.bedType.coolPlateSuperTack',
+    fallback: 'Cool Plate SuperTack',
+  },
+  { value: 'Engineering Plate', labelKey: 'slice.bedType.engineering', fallback: 'Engineering Plate' },
+  { value: 'High Temp Plate', labelKey: 'slice.bedType.highTemp', fallback: 'High Temp Plate' },
+  { value: 'Textured PEI Plate', labelKey: 'slice.bedType.texturedPEI', fallback: 'Textured PEI Plate' },
+  { value: 'Smooth PEI Plate', labelKey: 'slice.bedType.smoothPEI', fallback: 'Smooth PEI Plate' },
+];
+
+function BedTypeDropdown({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string | null;
+  onChange: (value: string | null) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <label className="block">
+      <span className="block text-xs text-bambu-gray mb-1">
+        {t('slice.bedType.label', 'Build plate')}
+      </span>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+        disabled={disabled}
+        className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
+      >
+        <option value="">{t('slice.bedType.auto', 'Auto (use process preset)')}</option>
+        {BED_TYPE_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {t(opt.labelKey, opt.fallback)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

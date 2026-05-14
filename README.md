@@ -20,6 +20,7 @@
   <a href="https://discord.gg/aFS3ZfScHM"><img src="https://img.shields.io/discord/1461241694715645994?style=flat-square&logo=discord&logoColor=white&label=Discord&color=5865F2" alt="Discord"></a>
   <a href="https://forum.bambuddy.cool"><img src="https://img.shields.io/badge/Forum-bambuddy.cool-00adef?style=flat-square&logo=discourse&logoColor=white" alt="Forum"></a>
   <a href="https://github.com/sponsors/maziggy"><img src="https://img.shields.io/badge/GitHub_Sponsors-Sponsor-ea4aaa?style=flat-square&logo=github-sponsors&logoColor=white" alt="GitHub Sponsors"></a>
+  <a href="https://sponsors.bambuddy.cool"><img src="https://img.shields.io/badge/Sponsors_Portal-sponsors.bambuddy.cool-2dd4bf?style=flat-square&logo=heart&logoColor=white" alt="Sponsors Portal"></a>
   <a href="https://ko-fi.com/maziggy"><img src="https://img.shields.io/badge/Ko--fi-Support-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white" alt="Ko-fi" target=_blank></a>
 </p>
 

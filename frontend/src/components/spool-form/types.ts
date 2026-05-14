@@ -7,6 +7,11 @@ export interface CatalogDisplayColor {
   hex: string;
   manufacturer?: string;
   material?: string;
+  // #1340: a catalog entry can carry a gradient + visual effect. When the user
+  // picks the entry, we copy these onto the spool's color metadata — the bug
+  // was that they were never propagated past the API layer.
+  extra_colors?: string | null;
+  effect_type?: string | null;
 }
 
 // Form data structure
@@ -117,7 +122,14 @@ export interface FilamentSectionProps extends SectionProps {
 export interface ColorSectionProps extends SectionProps {
   recentColors: ColorPreset[];
   onColorUsed: (color: ColorPreset) => void;
-  catalogColors: { manufacturer: string; color_name: string; hex_color: string; material: string | null }[];
+  catalogColors: {
+    manufacturer: string;
+    color_name: string;
+    hex_color: string;
+    material: string | null;
+    extra_colors?: string | null;
+    effect_type?: string | null;
+  }[];
 }
 
 // Additional section props

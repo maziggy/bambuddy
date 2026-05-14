@@ -4223,7 +4223,7 @@ export default {
     },
     queueForceColorMatch: {
       title: 'Force color match',
-      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong colour loaded.',
+      description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong color loaded.',
     },
     tailscaleDisabled: {
       title: 'Tailscale 整合',

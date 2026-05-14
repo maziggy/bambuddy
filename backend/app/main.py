@@ -1018,12 +1018,18 @@ async def on_ams_change(printer_id: int, ams_data: list):
                     # MQTT was deferred). The moment any filament gets inserted
                     # — Bambu RFID, 3rd-party, or even an existing-but-now-
                     # reconfigured spool — fire the deferred configuration.
-                    # The "loaded" signal is `state == 11` (Bambu's "filament fed
-                    # to extruder" code), NOT tray_type — 3rd-party spools without
-                    # readable RFID report state=11 but tray_type="" because the
-                    # AMS sensor reads no filament metadata. Requiring a non-empty
-                    # tray_type would lock out the exact users this feature targets.
-                    if not fp_type.strip() and cur_state == 11 and assignment.spool:
+                    # The "loaded" signal is state == 11 (Bambu's "filament fed to
+                    # extruder" code) OR, on firmwares that don't use the state
+                    # enum meaningfully, a non-empty tray_type when state is
+                    # NOT one of the firmware's explicit empty signals (9, 10).
+                    # state-only was wrong for firmwares that never set 11 — A1
+                    # Mini BMCU 01.07.02.00 and P1S Standard AMS 00.00.06.75 both
+                    # always report state=3 — so the replay never fired for them
+                    # (#1322). The state ∉ {9,10} guard keeps the firmware's
+                    # explicit "empty" signals authoritative over any stale
+                    # tray_type that might survive the relay's auto-clearing.
+                    loaded = cur_state == 11 or (cur_state not in (9, 10) and cur_type.strip())
+                    if not fp_type.strip() and loaded and assignment.spool:
                         try:
                             from backend.app.api.routes.inventory import (
                                 apply_spool_to_slot_via_mqtt,

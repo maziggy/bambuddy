@@ -73,6 +73,13 @@ describe('spoolMatchesQuery', () => {
     const spool = makeSpool({ brand: null, color_name: null, subtype: null });
     expect(spoolMatchesQuery(spool, 'bambu')).toBe(false);
   });
+
+  it('matches on numeric id (#1336)', () => {
+    const spool = makeSpool({ id: 42, material: 'PLA', brand: null, color_name: null, subtype: null, note: null });
+    expect(spoolMatchesQuery(spool, '42')).toBe(true);
+    expect(spoolMatchesQuery(spool, '4')).toBe(true);
+    expect(spoolMatchesQuery(spool, '99')).toBe(false);
+  });
 });
 
 describe('filterSpoolsByQuery', () => {

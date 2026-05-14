@@ -323,6 +323,42 @@ class TestSpoolmanInventoryCRUD:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_update_with_explicit_null_color_name_clears(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """#1319 follow-up: explicit color_name=null in the PATCH body means
+        "clear" — route translates it to "" so find_or_create_filament patches
+        the matched filament with color_name=None."""
+        payload = {"color_name": None}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        mock_spoolman_client.find_or_create_filament.assert_called_once()
+        kwargs = mock_spoolman_client.find_or_create_filament.call_args.kwargs
+        assert kwargs["color_name"] == ""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_without_color_name_keeps_current(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """#1319 follow-up: when color_name is omitted from the PATCH body the
+        current value is kept — None passed to find_or_create_filament means
+        "don't touch"."""
+        payload = {"note": "only updating note"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        kwargs = mock_spoolman_client.find_or_create_filament.call_args.kwargs
+        # SAMPLE_SPOOLMAN_SPOOL has no color_name field, so cur fallback is None.
+        assert kwargs["color_name"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_spool_not_found(
         self,
         async_client: AsyncClient,

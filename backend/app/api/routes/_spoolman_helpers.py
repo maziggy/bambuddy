@@ -26,6 +26,7 @@ class MappedSpoolFields(TypedDict):
     subtype: str | None
     brand: str | None
     color_name: str | None
+    color_name_is_synthesized: bool
     rgba: str | None
     label_weight: int | None
     core_weight: int | None
@@ -276,7 +277,12 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     # prefix (the same string the `subtype` field already carries — typically
     # "Basic Red" / "PLA+ Black" / etc.) so the user can tell spools apart at
     # a glance even on Spoolman installs that don't fill color_name.
-    color_name: str | None = filament.get("color_name") or subtype or None
+    # color_name_is_synthesized: surfaced so the edit form can avoid prefilling
+    # the synth value back into the input, which would otherwise round-trip the
+    # subtype string as if it were a user-set color_name (#1319).
+    stored_color_name = filament.get("color_name") or None
+    color_name: str | None = stored_color_name or subtype or None
+    color_name_is_synthesized: bool = stored_color_name is None and color_name is not None
 
     nozzle_temp_raw = filament.get("settings_extruder_temp")
     nozzle_temp_min: int | None = _safe_int(nozzle_temp_raw, 0) or None
@@ -286,6 +292,7 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "material": material,
         "subtype": subtype,
         "color_name": color_name,
+        "color_name_is_synthesized": color_name_is_synthesized,
         "rgba": rgba,
         "brand": vendor.get("name") or None,
         "label_weight": label_weight,

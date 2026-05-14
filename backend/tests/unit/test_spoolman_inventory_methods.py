@@ -323,6 +323,81 @@ class TestFindOrCreateFilament:
         assert result == 7
 
     @pytest.mark.asyncio
+    async def test_patches_color_name_on_existing_filament_when_changed(self, client):
+        """#1319: color_name is not part of the match key, so when a caller
+        updates a spool with a new color_name and the material/name/color/vendor
+        still match an existing filament, the existing filament's color_name
+        must be patched — otherwise the user's edit is silently dropped."""
+        existing = {**SAMPLE_FILAMENT, "color_name": None}
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "patch_filament", AsyncMock(return_value={"id": 7})) as mock_patch,
+        ):
+            result = await client.find_or_create_filament(
+                "PLA", "Basic", "Bambu Lab", "FF0000", 1000, color_name="Sunny Yellow"
+            )
+        assert result == 7
+        mock_patch.assert_called_once_with(7, {"color_name": "Sunny Yellow"})
+
+    @pytest.mark.asyncio
+    async def test_does_not_patch_when_color_name_unchanged(self, client):
+        existing = {**SAMPLE_FILAMENT, "color_name": "Sunny Yellow"}
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "patch_filament", AsyncMock()) as mock_patch,
+        ):
+            result = await client.find_or_create_filament(
+                "PLA", "Basic", "Bambu Lab", "FF0000", 1000, color_name="Sunny Yellow"
+            )
+        assert result == 7
+        mock_patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_does_not_patch_when_color_name_empty(self, client):
+        """An empty/None color_name should not clobber an existing value."""
+        existing = {**SAMPLE_FILAMENT, "color_name": "Sunny Yellow"}
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "patch_filament", AsyncMock()) as mock_patch,
+        ):
+            result = await client.find_or_create_filament("PLA", "Basic", "Bambu Lab", "FF0000", 1000, color_name=None)
+        assert result == 7
+        mock_patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_clears_color_name_when_empty_string_passed(self, client):
+        """#1319 follow-up: empty string means "explicit clear" — the route
+        layer translates a wire-level null into "" so the user can blank the
+        field on a previously-set spool."""
+        existing = {**SAMPLE_FILAMENT, "color_name": "Sunny Yellow"}
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "patch_filament", AsyncMock(return_value={"id": 7})) as mock_patch,
+        ):
+            result = await client.find_or_create_filament("PLA", "Basic", "Bambu Lab", "FF0000", 1000, color_name="")
+        assert result == 7
+        mock_patch.assert_called_once_with(7, {"color_name": None})
+
+    @pytest.mark.asyncio
+    async def test_patch_failure_does_not_block_match(self, client):
+        """A patch_filament failure must not prevent returning the matched id —
+        save should still link the spool to the correct filament."""
+        existing = {**SAMPLE_FILAMENT, "color_name": None}
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "patch_filament", AsyncMock(side_effect=SpoolmanUnavailableError("boom"))),
+        ):
+            result = await client.find_or_create_filament(
+                "PLA", "Basic", "Bambu Lab", "FF0000", 1000, color_name="Sunny Yellow"
+            )
+        assert result == 7
+
+    @pytest.mark.asyncio
     async def test_creates_filament_when_no_match(self, client):
         new_filament = {"id": 99, "name": "PETG Pro"}
         with (

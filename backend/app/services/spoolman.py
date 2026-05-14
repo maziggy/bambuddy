@@ -637,6 +637,26 @@ class SpoolmanClient:
             vendor_match = (not brand) or f_vendor_name == (brand or "").strip().lower()
 
             if material_match and name_match and color_match and vendor_match:
+                # #1319: color_name is not part of the match key, but if the
+                # caller passed a value that differs from what's stored, update
+                # the filament — otherwise the user's edit is silently dropped
+                # and the inventory read falls back to subtype, making it look
+                # like color_name "reverts" to the subtype on every save.
+                # Convention: None = "don't touch"; "" = explicit clear; any
+                # other string = set/update.
+                if color_name is not None:
+                    existing = (f.get("color_name") or "").strip()
+                    requested = color_name.strip()
+                    if requested != existing:
+                        payload_value: str | None = requested if requested else None
+                        try:
+                            await self.patch_filament(f["id"], {"color_name": payload_value})
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to update color_name on filament %s: %s",
+                                f["id"],
+                                e,
+                            )
                 return f["id"]
 
         filament = await self.create_filament(

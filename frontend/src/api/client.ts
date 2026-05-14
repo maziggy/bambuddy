@@ -2345,6 +2345,11 @@ export interface InventorySpool {
   material: string;
   subtype: string | null;
   color_name: string | null;
+  // True when color_name was synthesised from subtype because Spoolman has no
+  // stored value (Spoolman-backed inventory only). The edit form uses this to
+  // leave the input blank, so the user doesn't round-trip the synth value
+  // back to Spoolman as if it were a real user-set color_name (#1319).
+  color_name_is_synthesized?: boolean;
   rgba: string | null;
   // Multi-colour gradient stops (#1154): comma-separated 6/8-char hex.
   extra_colors: string | null;

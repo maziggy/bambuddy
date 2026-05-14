@@ -98,6 +98,24 @@ def has_stg_cur_idle_bug(model: str | None) -> bool:
     return model_upper in STG_CUR_IDLE_BUG_MODELS
 
 
+def is_bed_slinger(model: str | None) -> bool:
+    """Whether the printer's Z axis controls the *toolhead*, not the bed.
+
+    Bambu's A1 family (A1, A1 Mini; internal codes N1 / N2S) are open-frame
+    bed-slingers: the bed moves on Y, the toolhead moves on X+Z. On every
+    other current model (X1, P1, H2, H2C, H2D, H2S, P2S, ...) the bed moves
+    on Z and the toolhead is fixed in Z.
+
+    G-code direction is opposite on these two families. `G1 Z-10` reduces
+    the nozzle-bed gap on both, but on bed-on-Z machines it does so by
+    moving the BED up, while on bed-slingers it does so by moving the
+    TOOLHEAD down — which is what crashed the nozzle in #1334.
+    """
+    if not model:
+        return False
+    return model.strip().upper() in A1_MODELS
+
+
 # Minimum firmware versions for AMS drying support (confirmed via capture testing)
 # Keys are exact model names (upper-cased). Do NOT use substring matching — it would
 # incorrectly gate X1E (matched by "X1") and H2D Pro (matched by "H2D").

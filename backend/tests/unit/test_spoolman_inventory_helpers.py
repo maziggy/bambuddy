@@ -179,6 +179,23 @@ class TestMapSpoolmanSpool:
         }
         result = _map_spoolman_spool(spool)
         assert result["color_name"] == "Sunrise Orange"
+        # Real stored value — not synthesised from subtype.
+        assert result["color_name_is_synthesized"] is False
+
+    def test_color_name_flags_synthesized_when_falling_back_to_subtype(self):
+        """#1319: when the read falls back to subtype, the response must flag it
+        so the edit form doesn't round-trip the synth value back to Spoolman."""
+        spool = {
+            **MINIMAL_SPOOL,
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "name": "PLA Basic Red",
+                # No color_name field.
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["color_name"] == "Basic Red"
+        assert result["color_name_is_synthesized"] is True
 
     def test_color_name_falls_back_to_subtype_when_field_missing(self):
         """Spoolman doesn't standardise color_name; the LinkSpoolModal would
@@ -216,6 +233,8 @@ class TestMapSpoolmanSpool:
         result = _map_spoolman_spool(spool)
         assert result["subtype"] is None
         assert result["color_name"] is None
+        # No synth happened — nothing to fall back to.
+        assert result["color_name_is_synthesized"] is False
 
     def test_color_hex_with_hash_prefix_stripped(self):
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "color_hex": "#00FF00"}}

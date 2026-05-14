@@ -303,7 +303,11 @@ export function SpoolFormModal({
           material: spool.material || '',
           subtype: spool.subtype || '',
           brand: spool.brand || '',
-          color_name: spool.color_name || '',
+          // #1319: leave color_name blank when the backend reports it was
+          // synthesised from subtype — otherwise the form would round-trip
+          // the synth value to Spoolman on save as if the user had set it,
+          // which is what produced the "color reverts to subtype" symptom.
+          color_name: spool.color_name_is_synthesized ? '' : (spool.color_name || ''),
           rgba: validRgba,
           extra_colors: spool.extra_colors || '',
           effect_type: spool.effect_type || '',

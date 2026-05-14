@@ -564,7 +564,13 @@ async def update_spool(
     material = data.material if data.material is not None else cur_mat
     subtype = data.subtype if data.subtype is not None else cur_subtype
     brand = data.brand if data.brand is not None else (cur_vendor.get("name") or None)
-    color_name = data.color_name if data.color_name is not None else (cur_filament.get("color_name") or None)
+    # color_name uses model_fields_set so explicit null (clear) is distinguishable
+    # from "field omitted" (don't touch). find_or_create_filament's convention:
+    # None = don't touch, "" = explicit clear, "value" = set.
+    if "color_name" in data.model_fields_set:
+        color_name = data.color_name if data.color_name is not None else ""
+    else:
+        color_name = cur_filament.get("color_name") or None
     cur_color = (cur_filament.get("color_hex") or "808080").upper().removeprefix("#")
     rgba = data.rgba if data.rgba is not None else (cur_color + "FF")
     label_weight = data.label_weight if data.label_weight is not None else int(cur_filament.get("weight") or 1000)

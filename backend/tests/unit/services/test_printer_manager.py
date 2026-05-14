@@ -1143,6 +1143,48 @@ class TestSupportsChamberTemp:
         assert supports_chamber_temp("N1") is False
 
 
+class TestIsBedSlinger:
+    """Tests for is_bed_slinger helper function (#1334)."""
+
+    def test_a1_series_is_bed_slinger(self):
+        """A1 / A1 Mini are open-frame bed-slingers — Z axis is the toolhead."""
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        assert is_bed_slinger("A1") is True
+        assert is_bed_slinger("A1 Mini") is True
+        assert is_bed_slinger("A1MINI") is True
+        assert is_bed_slinger("A1-MINI") is True
+
+    def test_a1_internal_codes_recognised(self):
+        """Internal MQTT/SSDP codes for A1 family must also classify as bed-slinger."""
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        # A1 Mini
+        assert is_bed_slinger("N1") is True
+        # A1
+        assert is_bed_slinger("N2S") is True
+
+    def test_bed_on_z_models_not_bed_slingers(self):
+        """X1 / P1 / H2 / H2C / H2D / H2S / P2S all have the bed on Z."""
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        for model in ("X1", "X1C", "X1E", "P1P", "P1S", "P2S", "H2C", "H2D", "H2DPRO", "H2S"):
+            assert is_bed_slinger(model) is False, f"{model} should NOT be classified as bed-slinger"
+
+    def test_none_model_returns_false(self):
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        assert is_bed_slinger(None) is False
+        assert is_bed_slinger("") is False
+
+    def test_case_insensitive(self):
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        assert is_bed_slinger("a1") is True
+        assert is_bed_slinger("a1 mini") is True
+        assert is_bed_slinger("x1c") is False
+
+
 class TestSupportsDrying:
     """Tests for supports_drying helper function."""
 

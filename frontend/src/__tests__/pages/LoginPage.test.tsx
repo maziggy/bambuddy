@@ -776,5 +776,59 @@ describe('LoginPage', () => {
         expect(button.querySelector('img')).toBeNull();
       });
     });
+
+    it('keeps each provider button\'s iconFailed state independent', async () => {
+      // The OIDCProviderButton sub-component exists specifically so each
+      // provider owns its own iconFailed state. If a future refactor hoists
+      // useState into the parent loop, an error on provider A would also
+      // hide provider B's icon — exactly the regression this test catches.
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 21,
+              name: 'AlphaIdP',
+              issuer_url: 'https://a.test',
+              client_id: 'a',
+              is_enabled: true,
+              icon_url: 'https://a.test/icon.png',
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: true,
+            },
+            {
+              id: 22,
+              name: 'BetaIdP',
+              issuer_url: 'https://b.test',
+              client_id: 'b',
+              is_enabled: true,
+              icon_url: 'https://b.test/icon.png',
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: true,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const alphaImg = (await screen.findByRole('button', { name: /AlphaIdP/i })).querySelector('img');
+      const betaImg = (await screen.findByRole('button', { name: /BetaIdP/i })).querySelector('img');
+      expect(alphaImg).not.toBeNull();
+      expect(betaImg).not.toBeNull();
+
+      fireEvent.error(alphaImg!);
+
+      // Alpha's icon swaps to the Shield fallback…
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /AlphaIdP/i }).querySelector('img')).toBeNull();
+      });
+      // …but Beta's icon stays put. If state leaks to the parent, this fails.
+      expect(screen.getByRole('button', { name: /BetaIdP/i }).querySelector('img')).not.toBeNull();
+    });
   });
 });

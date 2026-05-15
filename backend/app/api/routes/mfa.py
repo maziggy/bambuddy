@@ -89,6 +89,22 @@ from backend.app.services.oidc_icon import OIDCIconError, fetch_icon
 logger = logging.getLogger(__name__)
 
 
+def _redact_url_for_log(url: str) -> str:
+    """Return ``scheme://host/path`` with query string and fragment stripped.
+
+    Admin-supplied icon URLs are usually CDN paths, but nothing stops an
+    admin from pasting a presigned URL whose query string carries an
+    ``X-Amz-Signature`` / OAuth token / etc. Operators need a forensic
+    trail without those secrets ending up in log files.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return "<unparseable>"
+    netloc = parsed.netloc or "<no-host>"
+    return f"{parsed.scheme}://{netloc}{parsed.path}"
+
+
 async def _fetch_icon_or_400(icon_url: str) -> tuple[bytes, str, str]:
     """Validate URL + fetch icon, mapping any failure to HTTPException(400).
 
@@ -103,21 +119,20 @@ async def _fetch_icon_or_400(icon_url: str) -> tuple[bytes, str, str]:
     try:
         assert_safe_public_https_url(icon_url)
     except ValueError as exc:
-        logger.warning("OIDC icon URL rejected by SSRF guard: url=%r reason=%s", icon_url, exc)
+        logger.warning("OIDC icon URL rejected by SSRF guard: url=%s reason=%s", _redact_url_for_log(icon_url), exc)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     try:
         return await fetch_icon(icon_url)
     except OIDCIconError as exc:
-        logger.warning("OIDC icon fetch failed: url=%r reason=%s", icon_url, exc)
+        logger.warning("OIDC icon fetch failed: url=%s reason=%s", _redact_url_for_log(icon_url), exc)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 def _build_provider_response(provider: OIDCProvider) -> OIDCProviderResponse:
-    """Build OIDCProviderResponse with has_icon derived from the non-deferred
-    icon_content_type column — never touches the deferred icon_data BLOB."""
-    response = OIDCProviderResponse.model_validate(provider)
-    response.has_icon = provider.icon_content_type is not None
-    return response
+    """Build OIDCProviderResponse via ``from_attributes``. The required
+    ``has_icon`` field is supplied by ``OIDCProvider.has_icon`` (a property
+    reading the non-deferred ``icon_content_type`` column)."""
+    return OIDCProviderResponse.model_validate(provider)
 
 
 def _etag_matches(if_none_match: str | None, etag_raw: str | None) -> bool:
@@ -1363,9 +1378,27 @@ async def update_oidc_provider(
                 detail="default_group_id references a non-existent group",
             )
 
+    dumped = body.model_dump(exclude_none=True)
+
+    # Decide whether an icon refetch is needed BEFORE mutating the ORM object,
+    # so the comparison sees provider.icon_url / icon_content_type as they are
+    # in the database.
+    new_icon_url = dumped.get("icon_url")
+    needs_icon_refetch = new_icon_url is not None and (
+        new_icon_url != provider.icon_url or provider.icon_content_type is None
+    )
+
+    # Fetch FIRST. If the upstream is unreachable or SSRF-blocked, _fetch_icon_or_400
+    # raises HTTPException(400) here — provider attributes are still untouched, so
+    # the in-memory ORM object stays consistent on the way out (and the DB row is
+    # safe regardless via get_db()'s rollback).
+    fetched_icon: tuple[bytes, str, str] | None = None
+    if needs_icon_refetch:
+        fetched_icon = await _fetch_icon_or_400(new_icon_url)
+
     # Explicit `icon_url: null` in the PUT body means "clear the icon".
-    # The exclude_none=True dump below drops None values, which would
-    # otherwise silently ignore this request.  Check model_fields_set on
+    # The exclude_none=True dump above drops None values, which would
+    # otherwise silently ignore this request. Check model_fields_set on
     # the unfiltered body to distinguish "client cleared it" from "client
     # didn't include this field at all".
     if "icon_url" in body.model_fields_set and body.icon_url is None:
@@ -1374,27 +1407,13 @@ async def update_oidc_provider(
         provider.icon_content_type = None
         provider.icon_etag = None
 
-    dumped = body.model_dump(exclude_none=True)
-
-    # Determine BEFORE the setattr loop whether the icon needs refetching —
-    # we compare against provider.icon_url *before* it gets mutated below.
-    new_icon_url = dumped.get("icon_url")
-    needs_icon_refetch = new_icon_url is not None and (
-        new_icon_url != provider.icon_url or provider.icon_content_type is None
-    )
-
     for field, value in dumped.items():
         if field == "issuer_url" and value:
             value = value.rstrip("/")
         setattr(provider, field, value)
 
-    # Refetch icon AFTER setattr loop. If this raises, the session is rolled
-    # back by get_db() and the cached bytes (if any) survive intact.
-    if needs_icon_refetch:
-        icon_data, icon_content_type, icon_etag = await _fetch_icon_or_400(new_icon_url)
-        provider.icon_data = icon_data
-        provider.icon_content_type = icon_content_type
-        provider.icon_etag = icon_etag
+    if fetched_icon is not None:
+        provider.icon_data, provider.icon_content_type, provider.icon_etag = fetched_icon
 
     # SEC-1 + SEC-6: Combined-State-Guard after setattr loop.
     # Checks the final in-memory state (DB values + newly set values combined) to catch

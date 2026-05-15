@@ -500,7 +500,9 @@ class OIDCProviderResponse(BaseModel):
     # Set explicitly in the route handler from `icon_content_type is not None`
     # rather than `@computed_field` (project policy) or `icon_data is not None`
     # (would trigger an async lazy-load on the deferred BLOB column).
-    has_icon: bool = False
+    # Required (no default) so Pydantic fails loudly if any code path skips
+    # `_build_provider_response` and tries `model_validate(provider)` directly.
+    has_icon: bool
 
     class Config:
         from_attributes = True

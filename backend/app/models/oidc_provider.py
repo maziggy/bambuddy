@@ -121,6 +121,14 @@ class OIDCProvider(Base):
     # SHA-256 hex of icon_data, served as the ETag header so clients can
     # revalidate via If-None-Match and receive 304 Not Modified.
     icon_etag: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+
+    @property
+    def has_icon(self) -> bool:
+        """True when cached icon bytes exist. Reads the non-deferred
+        ``icon_content_type`` column so accessing this never triggers an
+        async lazy-load on the deferred ``icon_data`` BLOB."""
+        return self.icon_content_type is not None
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

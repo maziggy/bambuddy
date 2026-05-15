@@ -333,6 +333,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               </div>
             ))}
             {providerType === 'telegram' && (
+              <>
                 <div className="p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -342,11 +343,11 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                       </p>
                     </div>
                     <Toggle
-                    checked={config.bot_commands_enabled !== 'false'}
-                    onChange={(checked) => {
-                      setConfig({ ...config, bot_commands_enabled: checked ? 'true' : 'false' });
-                      setTestResult(null);
-                    }}
+                      checked={config.bot_commands_enabled !== 'false'}
+                      onChange={(checked) => {
+                        setConfig({ ...config, bot_commands_enabled: checked ? 'true' : 'false' });
+                        setTestResult(null);
+                      }}
                     />
                   </div>
                 </div>
@@ -367,7 +368,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                     />
                   </div>
                 </div>
-              )}
+              </>
+            )}
             </div>
 
           {/* Test Button */}

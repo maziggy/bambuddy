@@ -1316,15 +1316,29 @@ async def rescan_archive(
     if metadata.get("designer"):
         archive.designer = metadata["designer"]
 
-    # Calculate cost: prefer spool-based cost if available, else catalog-based
+    # Calculate cost: prefer spool-based cost if available, else catalog-based.
+    # When spool-based costs exist but don't cover every filament gram used
+    # (#1344), fall back to the global default rate for the untracked weight
+    # so the displayed cost still reflects the whole print.
 
     if archive.filament_used_grams and archive.filament_type:
+        default_cost_setting = await get_setting(db, "default_filament_cost")
+        default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
         usage_result = await db.execute(
-            select(func.sum(SpoolUsageHistory.cost)).where(SpoolUsageHistory.archive_id == archive.id)
+            select(
+                func.sum(SpoolUsageHistory.cost),
+                func.sum(SpoolUsageHistory.weight_used),
+            ).where(SpoolUsageHistory.archive_id == archive.id)
         )
-        usage_cost = usage_result.scalar()
+        usage_cost_row = usage_result.one()
+        usage_cost = usage_cost_row[0]
+        tracked_grams = float(usage_cost_row[1] or 0)
         if usage_cost is not None and usage_cost > 0:
-            archive.cost = float(Decimal(str(usage_cost)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+            total_cost = float(usage_cost)
+            untracked_grams = max(0.0, archive.filament_used_grams - tracked_grams)
+            if untracked_grams > 0 and default_cost_per_kg > 0:
+                total_cost += (untracked_grams / 1000.0) * default_cost_per_kg
+            archive.cost = float(Decimal(str(total_cost)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         else:
             primary_type = archive.filament_type.split(",")[0].strip()
             filament_result = await db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
@@ -1336,9 +1350,6 @@ async def rescan_archive(
                     )
                 )
             else:
-                # Use default filament cost from settings
-                default_cost_setting = await get_setting(db, "default_filament_cost")
-                default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
                 archive.cost = float(
                     Decimal(str((archive.filament_used_grams / 1000) * default_cost_per_kg)).quantize(
                         Decimal("0.01"), rounding=ROUND_HALF_UP
@@ -1370,18 +1381,34 @@ async def recalculate_all_costs(
     default_cost_setting = await get_setting(db, "default_filament_cost")
     default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
 
-    # Pre-fetch all usage costs by archive_id
+    # Pre-fetch all usage costs and tracked weight by archive_id.
+    # Tracked weight is used to top-up the cost at the default rate for any
+    # filament grams not covered by an inventory spool (#1344).
     usage_costs_result = await db.execute(
-        select(SpoolUsageHistory.archive_id, func.sum(SpoolUsageHistory.cost)).group_by(SpoolUsageHistory.archive_id)
+        select(
+            SpoolUsageHistory.archive_id,
+            func.sum(SpoolUsageHistory.cost),
+            func.sum(SpoolUsageHistory.weight_used),
+        ).group_by(SpoolUsageHistory.archive_id)
     )
     usage_costs = usage_costs_result.fetchall()
-    cost_map = {row[0]: row[1] for row in usage_costs if row[0] is not None and row[1] is not None and row[1] > 0}
+    cost_map = {
+        row[0]: (row[1], float(row[2] or 0))
+        for row in usage_costs
+        if row[0] is not None and row[1] is not None and row[1] > 0
+    }
 
     updated = 0
     for archive in archives:
-        usage_cost = cost_map.get(archive.id)
-        if usage_cost is not None:
-            new_cost = round(usage_cost, 2)
+        usage = cost_map.get(archive.id)
+        if usage is not None:
+            usage_cost, tracked_grams = usage
+            total_cost = float(usage_cost)
+            archive_grams = float(archive.filament_used_grams or 0)
+            untracked_grams = max(0.0, archive_grams - tracked_grams)
+            if untracked_grams > 0 and default_cost_per_kg > 0:
+                total_cost += (untracked_grams / 1000.0) * default_cost_per_kg
+            new_cost = round(total_cost, 2)
         else:
             # Fallback: sum costs for old records by print_name
             usage_result = await db.execute(

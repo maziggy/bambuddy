@@ -606,6 +606,14 @@ async def on_print_complete(
         await db.commit()
 
     # --- Update PrintArchive.cost from THIS print session only ---
+    #
+    # Cover any filament weight that wasn't tracked by an inventory spool with
+    # the global default rate (#1344). Without this, a multi-color print where
+    # only some AMS trays are mapped to inventory spools would record only the
+    # mapped slots' share — e.g. $0.01 for a 110g print when 3 of 4 trays had
+    # no spool record. The initial cost set by archive.py (total grams *
+    # primary cost_per_kg) is fine on its own, but this block overwrites it,
+    # so the overwrite must reconstruct the whole-print cost.
 
     if archive_id and results:
         from sqlalchemy import select
@@ -616,6 +624,11 @@ async def on_print_complete(
         archive = archive_result.scalar_one_or_none()
         if archive:
             total_cost = sum(r.get("cost", 0) or 0 for r in results)
+            tracked_grams = sum(r.get("weight_used", 0) or 0 for r in results)
+            archive_grams = archive.filament_used_grams or 0
+            untracked_grams = max(0.0, archive_grams - tracked_grams)
+            if untracked_grams > 0 and default_filament_cost > 0:
+                total_cost += (untracked_grams / 1000.0) * default_filament_cost
             if total_cost > 0:
                 archive.cost = round(total_cost, 2)
                 await db.commit()

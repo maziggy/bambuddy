@@ -707,6 +707,9 @@ class TestSpoolAssignmentSnapshot:
         spool = _make_spool(id=8, label_weight=1000, weight_used=50)
         archive = MagicMock()
         archive.file_path = "archives/big_print.3mf"
+        # Explicit numeric so the #1344 top-up branch doesn't trip a
+        # MagicMock-vs-float comparison.
+        archive.filament_used_grams = 14.2
 
         # Session was created at print start WITH snapshot
         _active_sessions[1] = PrintSession(
@@ -736,9 +739,8 @@ class TestSpoolAssignmentSnapshot:
                 MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
-                # Cost aggregation: sum query (uses .scalar()), archive lookup
-                MagicMock(scalar=MagicMock(return_value=0)),
-                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+                # Cost-update block re-selects the archive to mutate cost.
+                MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
             ]
         )
 

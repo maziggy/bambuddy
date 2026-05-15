@@ -35,8 +35,8 @@ async def _seed_ldap_settings(db: AsyncSession, **overrides) -> None:
     """Write a minimal but valid LDAP config to the settings table."""
     defaults = {
         "ldap_enabled": "true",
-        "ldap_server_url": "ldaps://ldap.test.example:636",
-        "ldap_bind_dn": "cn=admin,dc=test,dc=com",
+        "ldap_server_url": "ldaps://ldap.test.example:636",  # pragma: allowlist secret — test fixture
+        "ldap_bind_dn": "cn=admin,dc=test,dc=com",  # pragma: allowlist secret — test fixture
         "ldap_bind_password": "x",  # pragma: allowlist secret — test fixture
         "ldap_search_base": "dc=test,dc=com",
         "ldap_user_filter": "(uid={username})",
@@ -55,17 +55,19 @@ async def _seed_ldap_settings(db: AsyncSession, **overrides) -> None:
 @pytest.fixture
 async def admin_token(async_client: AsyncClient) -> str:
     """Enable auth, create an admin, return a valid bearer token."""
+    # pragma: allowlist secret — test fixture only, not a real credential
+    test_password = "AdminPass1!"  # noqa: S105
     await async_client.post(
         "/api/v1/auth/setup",
         json={
             "auth_enabled": True,
             "admin_username": "ldapadmin",
-            "admin_password": "AdminPass1!",
+            "admin_password": test_password,
         },
     )
     login = await async_client.post(
         "/api/v1/auth/login",
-        json={"username": "ldapadmin", "password": "AdminPass1!"},
+        json={"username": "ldapadmin", "password": test_password},
     )
     return login.json()["access_token"]
 
@@ -82,7 +84,11 @@ class TestLdapSearchRoute:
         """Anonymous access is rejected when auth is enabled."""
         await async_client.post(
             "/api/v1/auth/setup",
-            json={"auth_enabled": True, "admin_username": "x", "admin_password": "AdminPass1!"},
+            json={
+                "auth_enabled": True,
+                "admin_username": "x",
+                "admin_password": "AdminPass1!",
+            },  # pragma: allowlist secret — test fixture
         )
 
         response = await async_client.get("/api/v1/auth/ldap/search?q=jdoe")
@@ -197,7 +203,11 @@ class TestLdapProvisionRoute:
     async def test_requires_auth(self, async_client: AsyncClient):
         await async_client.post(
             "/api/v1/auth/setup",
-            json={"auth_enabled": True, "admin_username": "x", "admin_password": "AdminPass1!"},
+            json={
+                "auth_enabled": True,
+                "admin_username": "x",
+                "admin_password": "AdminPass1!",
+            },  # pragma: allowlist secret — test fixture
         )
 
         response = await async_client.post(

@@ -4353,6 +4353,8 @@ export default {
     chatId: 'Chat-ID',
     telegramChatCommands: 'Telegram-Chatbefehle',
     telegramChatCommandsDescription: 'Erlaubt diesem Bot, auf /status, /photo, /queue und /printers von der konfigurierten Chat-ID zu antworten.',
+    telegramControlCommands: 'Telegram-Steuerbefehle',
+    telegramControlCommandsDescription: 'Erlaubt Druckersteuerung wie /pause, /resume, /stop, /light, /clearplate und /startqueue. Standardmaessig deaktiviert.',
     smtpServer: 'SMTP-Server',
     smtpPort: 'SMTP-Port',
     security: 'Sicherheit',

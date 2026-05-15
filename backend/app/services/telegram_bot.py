@@ -24,6 +24,7 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.spool import Spool
 from backend.app.services.camera import capture_camera_frame_bytes
 from backend.app.services.external_camera import capture_frame as capture_external_frame
+from backend.app.services.hms_errors import get_error_description
 from backend.app.services.printer_manager import get_derived_status_name, printer_manager, printer_state_to_dict
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class TelegramBotProvider:
     name: str
     bot_token: str
     chat_id: str
+    control_commands_enabled: bool = False
 
 
 def _telegram_html(text: str | None) -> str:
@@ -107,7 +109,9 @@ class TelegramCommandBot:
                 commands_enabled = config.get("bot_commands_enabled", True)
                 if str(commands_enabled).strip().lower() in ("false", "0", "no", "off", "disabled"):
                     continue
-                providers.append(TelegramBotProvider(provider.id, provider.name, bot_token, chat_id))
+                control_commands_enabled = config.get("bot_control_commands_enabled", False)
+                controls_enabled = str(control_commands_enabled).strip().lower() in ("true", "1", "yes", "on", "enabled")
+                providers.append(TelegramBotProvider(provider.id, provider.name, bot_token, chat_id, controls_enabled))
             return providers
 
     async def _run(self) -> None:
@@ -198,7 +202,7 @@ class TelegramCommandBot:
         arg = arg.strip()
 
         if command in ("/help", "/start"):
-            await self._send_message(provider, provider.chat_id, self._help_text())
+            await self._send_message(provider, provider.chat_id, self._help_text(provider))
         elif command in ("/printers", "/drucker"):
             await self._send_message(provider, provider.chat_id, await self._printers_text())
         elif command in ("/dashboard", "/overview", "/uebersicht"):
@@ -221,6 +225,8 @@ class TelegramCommandBot:
             await self._send_photo_command(provider, arg)
         elif command == "/queue":
             await self._send_message(provider, provider.chat_id, await self._queue_text())
+        elif command in ("/pause", "/resume", "/stop", "/light", "/clearplate", "/plateclear", "/startqueue"):
+            await self._send_message(provider, provider.chat_id, await self._control_text(provider, command, arg))
         else:
             await self._send_message(
                 provider,
@@ -228,8 +234,8 @@ class TelegramCommandBot:
                 "Unbekannter Befehl. Sende /help fuer die verfuegbaren Befehle.",
             )
 
-    def _help_text(self) -> str:
-        return (
+    def _help_text(self, provider: TelegramBotProvider) -> str:
+        text = (
             "<b>Bambuddy Telegram-Bot</b>\n\n"
             "/printers - Drucker auflisten\n"
             "/dashboard - kompakte Uebersicht\n"
@@ -245,6 +251,19 @@ class TelegramCommandBot:
             "/queue - Warteschlange anzeigen\n"
             "/help - Hilfe"
         )
+        if provider.control_commands_enabled:
+            text += (
+                "\n\n<b>Steuerung</b>\n"
+                "/pause &lt;drucker&gt; - Druck pausieren\n"
+                "/resume &lt;drucker&gt; - Druck fortsetzen\n"
+                "/stop &lt;drucker&gt; confirm - Druck stoppen\n"
+                "/light &lt;drucker&gt; on|off - Licht schalten\n"
+                "/clearplate &lt;drucker&gt; - Platte als frei markieren\n"
+                "/startqueue &lt;queue-id&gt; - manuellen Queue-Job freigeben"
+            )
+        else:
+            text += "\n\nSteuerbefehle sind fuer diesen Telegram Provider deaktiviert."
+        return text
 
     async def _get_printers(self) -> list[Printer]:
         async with async_session() as db:
@@ -380,10 +399,15 @@ class TelegramCommandBot:
             lines.append("")
             lines.append(f"<b>{_telegram_html(printer.name)}</b>")
             for error in errors[:8]:
-                code = getattr(error, "code", "-")
-                severity = getattr(error, "severity", "-")
+                code = self._hms_short_code(error)
+                raw_code = getattr(error, "code", "-")
+                attr = getattr(error, "attr", 0) or 0
+                severity = self._severity_name(getattr(error, "severity", 0))
                 module = getattr(error, "module", "-")
-                lines.append(f"{_telegram_html(severity)} {_telegram_html(module)}: {_telegram_html(code)}")
+                description = get_error_description(code) or getattr(error, "message", "") or "Keine Beschreibung verfuegbar"
+                lines.append(f"{_telegram_html(severity)} M{_telegram_html(module)} {code}")
+                lines.append(f"Raw: {_telegram_html(raw_code)}, attr: 0x{int(attr):08X}")
+                lines.append(_telegram_html(self._shorten(description, 240)))
             if len(errors) > 8:
                 lines.append(f"... und {len(errors) - 8} weitere")
         if not found:
@@ -518,6 +542,109 @@ class TelegramCommandBot:
                 f"{status} ({since:.0f}/{interval:.0f} h)"
             )
         return "\n".join(lines)
+
+    async def _control_text(self, provider: TelegramBotProvider, command: str, arg: str) -> str:
+        if not provider.control_commands_enabled:
+            return (
+                "Steuerbefehle sind fuer diesen Telegram Provider deaktiviert. "
+                "Aktiviere zuerst 'Telegram control commands' in den Benachrichtigungs-Einstellungen."
+            )
+
+        if command == "/startqueue":
+            queue_id = self._parse_int_arg(arg, default=0, minimum=0, maximum=2_147_483_647)
+            if not queue_id:
+                return "Bitte Queue-ID angeben, z. B. /startqueue 12"
+            return await self._start_queue_item(queue_id)
+
+        if command == "/light":
+            printer_query, action = self._split_last_token(arg)
+            if action not in ("on", "off", "an", "aus"):
+                return "Bitte Lichtbefehl so senden: /light <drucker> on oder /light <drucker> off"
+            printer = await self._find_printer(printer_query)
+            if not printer:
+                return f"Keinen Drucker fuer '{_telegram_html(printer_query)}' gefunden. Sende /printers fuer die Liste."
+            return await self._set_light(printer, action in ("on", "an"))
+
+        confirm = False
+        printer_query = arg
+        if command == "/stop":
+            printer_query, last = self._split_last_token(arg)
+            confirm = last == "confirm"
+            if not confirm:
+                return (
+                    "Stoppen ist absichtlich bestaetigungspflichtig. "
+                    "Sende: /stop <drucker> confirm"
+                )
+
+        printer = await self._find_printer(printer_query)
+        if not printer:
+            return f"Keinen Drucker fuer '{_telegram_html(printer_query)}' gefunden. Sende /printers fuer die Liste."
+
+        if command == "/pause":
+            return await self._send_printer_control(printer, "pause")
+        if command == "/resume":
+            return await self._send_printer_control(printer, "resume")
+        if command == "/stop" and confirm:
+            return await self._send_printer_control(printer, "stop")
+        if command in ("/clearplate", "/plateclear"):
+            printer_manager.set_awaiting_plate_clear(printer.id, False)
+            return f"Platte fuer {_telegram_html(printer.name)} als frei markiert."
+
+        return "Unbekannter Steuerbefehl."
+
+    async def _send_printer_control(self, printer: Printer, action: str) -> str:
+        client = printer_manager.get_client(printer.id)
+        if not client:
+            return f"{_telegram_html(printer.name)} ist nicht verbunden."
+
+        if action == "pause":
+            success = client.pause_print()
+            label = "Pause"
+        elif action == "resume":
+            success = client.resume_print()
+            label = "Resume"
+        elif action == "stop":
+            success = client.stop_print()
+            label = "Stop"
+        else:
+            return "Unbekannte Aktion."
+
+        if success:
+            return f"{label}-Befehl an {_telegram_html(printer.name)} gesendet."
+        return f"{label}-Befehl fuer {_telegram_html(printer.name)} konnte nicht gesendet werden."
+
+    async def _set_light(self, printer: Printer, on: bool) -> str:
+        client = printer_manager.get_client(printer.id)
+        if not client:
+            return f"{_telegram_html(printer.name)} ist nicht verbunden."
+        success = client.set_chamber_light(on)
+        if success:
+            return f"Licht bei {_telegram_html(printer.name)} {'eingeschaltet' if on else 'ausgeschaltet'}."
+        return f"Licht bei {_telegram_html(printer.name)} konnte nicht geschaltet werden."
+
+    async def _start_queue_item(self, queue_id: int) -> str:
+        async with async_session() as db:
+            result = await db.execute(
+                select(PrintQueueItem)
+                .options(
+                    selectinload(PrintQueueItem.archive),
+                    selectinload(PrintQueueItem.library_file),
+                    selectinload(PrintQueueItem.printer),
+                )
+                .where(PrintQueueItem.id == queue_id)
+            )
+            item = result.scalar_one_or_none()
+            if not item:
+                return f"Queue-Job #{queue_id} nicht gefunden."
+            if item.status != "pending":
+                return f"Queue-Job #{queue_id} kann nicht gestartet werden, Status ist '{_telegram_html(item.status)}'."
+
+            item.manual_start = False
+            await db.commit()
+
+            name = self._queue_item_name(item)
+            target = self._queue_target_name(item)
+            return f"Queue-Job #{queue_id} freigegeben: {_telegram_html(name)} -> {_telegram_html(target)}"
 
     def _format_printer_status(self, printer: Printer) -> str:
         state = printer_manager.get_status(printer.id)
@@ -664,6 +791,47 @@ class TelegramCommandBot:
         if not value:
             return "-"
         return value.strftime("%d.%m. %H:%M")
+
+    def _split_last_token(self, value: str) -> tuple[str, str]:
+        parts = (value or "").strip().rsplit(" ", 1)
+        if len(parts) == 1:
+            return parts[0], ""
+        return parts[0].strip(), parts[1].strip().lower()
+
+    def _severity_name(self, severity: int | str | None) -> str:
+        try:
+            value = int(severity or 0)
+        except (TypeError, ValueError):
+            value = 0
+        return {
+            1: "Fatal",
+            2: "Serious",
+            3: "Warning",
+            4: "Info",
+        }.get(value, f"Severity {value}" if value else "Unknown")
+
+    def _hms_short_code(self, error: Any) -> str:
+        raw_code = str(getattr(error, "code", "") or "")
+        if "_" in raw_code:
+            return raw_code.upper()
+
+        try:
+            error_code = int(raw_code.replace("0x", ""), 16)
+        except ValueError:
+            error_code = 0
+
+        attr = int(getattr(error, "attr", 0) or 0)
+        if (attr & 0xFFFF) == error_code:
+            module = (attr >> 16) & 0xFFFF
+        else:
+            module = (int(getattr(error, "module", 0) or 0) & 0xFF) << 8
+        return f"{module:04X}_{error_code:04X}"
+
+    def _shorten(self, value: str, limit: int) -> str:
+        text = " ".join(str(value or "").split())
+        if len(text) <= limit:
+            return text
+        return text[: limit - 3].rstrip() + "..."
 
     async def _send_message(self, provider: TelegramBotProvider, chat_id: str, text: str) -> None:
         client = await self._get_client()

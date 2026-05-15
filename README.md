@@ -18,10 +18,11 @@ Bambuddy-Installation.
 - Wartungsfaelligkeiten je Drucker anzeigen
 - Kamera-Snapshot eines Druckers per Telegram anfordern
 - Warteschlange per Telegram anzeigen
+- Optionale Steuerbefehle fuer Pause, Resume, Stop, Licht, Platte frei und Queue-Start
 - Aktive Drucker auflisten
 - Bestehende Telegram-Benachrichtigungsanbieter in Bambuddy weiterverwenden
 - Zugriff auf die konfigurierte Telegram `chat_id` begrenzen
-- Keine Schreibbefehle: kein Start, Pause, Resume, Abbruch oder Lichtsteuerung
+- Steuerbefehle getrennt und standardmaessig deaktiviert halten
 
 ## Befehle
 
@@ -45,6 +46,18 @@ Bambuddy-Installation.
 /queue
 ```
 
+Optionale Steuerbefehle, nur wenn `Telegram control commands` aktiv ist:
+
+```text
+/pause <drucker>
+/resume <drucker>
+/stop <drucker> confirm
+/light <drucker> on
+/light <drucker> off
+/clearplate <drucker>
+/startqueue <queue-id>
+```
+
 Beispiele:
 
 ```text
@@ -53,6 +66,8 @@ Beispiele:
 /filament 150
 /history 10
 /queue
+/pause rocketman
+/stop rocketman confirm
 ```
 
 ## Voraussetzungen
@@ -165,7 +180,9 @@ Installation in den Docker-Volumes erhalten.
 ## Sicherheit
 
 - Der Bot akzeptiert nur Nachrichten aus der konfigurierten `chat_id`.
-- Der Bot ist absichtlich read-only.
+- Statusbefehle und Steuerbefehle sind getrennt aktivierbar.
+- Steuerbefehle sind standardmaessig deaktiviert.
+- `/stop` ist bestaetigungspflichtig und muss als `/stop <drucker> confirm` gesendet werden.
 - Bot-Token geheim halten.
 - In Telegram-Gruppen koennen alle Mitglieder der Gruppe die lesenden Befehle
   nutzen, wenn die Gruppen-`chat_id` eingetragen ist.

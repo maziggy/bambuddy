@@ -347,11 +347,28 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                       setConfig({ ...config, bot_commands_enabled: checked ? 'true' : 'false' });
                       setTestResult(null);
                     }}
-                  />
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+                <div className="p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-white">{t('notifications.telegramControlCommands')}</p>
+                      <p className="text-xs text-bambu-gray">
+                        {t('notifications.telegramControlCommandsDescription')}
+                      </p>
+                    </div>
+                    <Toggle
+                      checked={config.bot_control_commands_enabled === 'true'}
+                      onChange={(checked) => {
+                        setConfig({ ...config, bot_control_commands_enabled: checked ? 'true' : 'false' });
+                        setTestResult(null);
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
           {/* Test Button */}
           <div className="flex gap-2">

@@ -231,6 +231,10 @@ class TelegramConfig(BaseModel):
         default=True,
         description="Enable read-only Telegram chat commands such as /status, /photo, and /queue",
     )
+    bot_control_commands_enabled: bool = Field(
+        default=False,
+        description="Enable Telegram printer control commands such as /pause, /resume, /stop, and /light",
+    )
 
 
 class EmailConfig(BaseModel):

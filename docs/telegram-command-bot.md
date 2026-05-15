@@ -23,6 +23,8 @@ Only messages from the configured `chat_id` are accepted. Messages from other ch
 
 Existing Telegram providers have commands enabled by default unless `bot_commands_enabled` is set to `false` in the provider config.
 
+Printer control commands are separate and disabled by default. Enable `Telegram control commands` only if the configured chat should be allowed to pause, resume, stop, release queued jobs, switch the chamber light, or acknowledge a cleared build plate.
+
 ## Commands
 
 ### `/help`
@@ -72,6 +74,15 @@ Shows the remaining time for one printer.
 ### `/errors`
 
 Shows current HMS warnings and errors across all printers.
+
+The output includes:
+
+- Severity
+- Module
+- Short HMS code
+- Raw code
+- Attribute value
+- Human-readable description when Bambuddy knows the code
 
 ### `/errors <printer>`
 
@@ -143,12 +154,46 @@ The output includes:
 - Manual-start marker
 - Waiting reason when present
 
+## Optional Control Commands
+
+Control commands are disabled by default and require `Telegram control commands` to be enabled on the Telegram notification provider.
+
+### `/pause <printer>`
+
+Sends a pause command to the printer.
+
+### `/resume <printer>`
+
+Sends a resume command to the printer.
+
+### `/stop <printer> confirm`
+
+Stops/cancels the active print. The `confirm` suffix is required intentionally.
+
+### `/light <printer> on`
+
+Turns the chamber light on.
+
+### `/light <printer> off`
+
+Turns the chamber light off.
+
+### `/clearplate <printer>`
+
+Marks the build plate as cleared in Bambuddy so the queue can continue.
+
+### `/startqueue <queue-id>`
+
+Clears the manual-start hold for a pending queue item so Bambuddy's queue worker can pick it up.
+
 ## Security Notes
 
-- The command bot is read-only.
-- It does not expose pause, resume, cancel, start-print, or light-control commands.
+- By default, the command bot exposes read-only commands only.
+- Read-only commands and control commands can be enabled separately.
+- Control commands are disabled by default.
+- `/stop` requires an explicit `confirm` suffix.
 - Only the configured `chat_id` is accepted.
-- If the bot is used in a group chat, every group member who can write in that group can request the read-only status and photos.
+- If the bot is used in a group chat, every group member who can write in that group can use the enabled commands.
 - Keep the bot token private.
 
 ## Performance Notes

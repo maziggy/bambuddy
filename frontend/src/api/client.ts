@@ -1996,6 +1996,7 @@ export interface TelegramConfig {
   bot_token: string;
   chat_id: string;
   bot_commands_enabled?: boolean | string;
+  bot_control_commands_enabled?: boolean | string;
 }
 
 export interface EmailConfig {

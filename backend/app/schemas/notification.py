@@ -212,14 +212,6 @@ class NtfyConfig(BaseModel):
     server: str = Field(default="https://ntfy.sh", description="ntfy server URL")
     topic: str = Field(..., description="Topic name to publish to")
     auth_token: str | None = Field(default=None, description="Optional authentication token")
-    event_priorities: dict[str, int] | None = Field(
-        default=None,
-        description=(
-            "Per-event priority override. Keys are event names (e.g. 'on_print_failed'); "
-            "values are ntfy priorities 1-5 (1=min, 2=low, 3=default, 4=high, 5=urgent). "
-            "Events without an entry use ntfy's server-side default."
-        ),
-    )
 
 
 class PushoverConfig(BaseModel):
@@ -235,6 +227,10 @@ class TelegramConfig(BaseModel):
 
     bot_token: str = Field(..., description="Bot token from @BotFather")
     chat_id: str = Field(..., description="Chat ID to send messages to")
+    bot_commands_enabled: bool = Field(
+        default=True,
+        description="Enable read-only Telegram chat commands such as /status, /photo, and /queue",
+    )
 
 
 class EmailConfig(BaseModel):

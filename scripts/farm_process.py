@@ -234,6 +234,7 @@ def build_end_sequence(
     # remaining lines complete instantly.
     for i in range(40):
         a("M190 S{} ; wait for bed temp ({}/40)".format(cooldown_temp, i + 1))
+    a("M140 S0 ; clear bed setpoint (M190 leaves it at cooldown_temp, not 0)")
     a("")
     a("M106 P2 S0 ; aux fan off")
     a("M106 P3 S0 ; chamber fan off")
@@ -483,8 +484,8 @@ def main():
     )
     parser.add_argument("input", help="Input .gcode.3mf file")
     parser.add_argument("-o", "--output",        default=None)
-    parser.add_argument("--cooldown-temp",       type=int,   default=25,
-                        help="Bed release temp C (default: 25)")
+    parser.add_argument("--cooldown-temp",       type=int,   default=35,
+                        help="Bed release temp C (default: 35)")
     parser.add_argument("--push-speed",          type=int,   default=300,
                         help="Center push feedrate mm/min (default: 300)")
     parser.add_argument("--push-x",              type=float, default=None,
@@ -673,7 +674,7 @@ def process_inplace(path: Path) -> None:
     end_block = (
         "; FEATURE: Custom\n"
         "; MACHINE_END_GCODE_START\n"
-        + build_end_sequence(max_z=max_z, cooldown_temp=25, push_x=push_x)
+        + build_end_sequence(max_z=max_z, cooldown_temp=35, push_x=push_x)
         + "; EXECUTABLE_BLOCK_END\n"
     )
 

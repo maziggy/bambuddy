@@ -165,12 +165,29 @@ async def apply_spool_to_slot_via_mqtt(
                 lp_result = await db.execute(select(LP).where(LP.id == local_id, LP.preset_type == "filament"))
                 lp = lp_result.scalar_one_or_none()
                 if lp:
-                    mat = (spool.material or lp.filament_type or "").upper().strip()
-                    tray_info_idx = (
-                        _GENERIC_FILAMENT_IDS.get(mat)
-                        or _GENERIC_FILAMENT_IDS.get(mat.split("-")[0].split(" ")[0])
-                        or ""
-                    )
+                    # Local preset's setting JSON carries the printer-recognized
+                    # filament_id (e.g. "P4d64437") — use that directly so the
+                    # slicer can resolve the specific preset. Falls through to
+                    # generic material id only when the JSON doesn't carry one.
+                    lp_filament_id = ""
+                    if lp.setting:
+                        try:
+                            setting_data = json.loads(lp.setting)
+                            raw_fid = setting_data.get("filament_id")
+                            if isinstance(raw_fid, str) and raw_fid:
+                                lp_filament_id = raw_fid
+                        except (json.JSONDecodeError, AttributeError):
+                            pass
+                    if lp_filament_id:
+                        tray_info_idx = lp_filament_id
+                        setting_id = filament_id_to_setting_id(lp_filament_id)
+                    else:
+                        mat = (spool.material or lp.filament_type or "").upper().strip()
+                        tray_info_idx = (
+                            _GENERIC_FILAMENT_IDS.get(mat)
+                            or _GENERIC_FILAMENT_IDS.get(mat.split("-")[0].split(" ")[0])
+                            or ""
+                        )
                     if lp.name:
                         tray_sub_brands = lp.name.split("@")[0].strip()
             except (ValueError, TypeError):
@@ -187,10 +204,32 @@ async def apply_spool_to_slot_via_mqtt(
                     setting_id = filament_id_to_setting_id(fid)
                     break
 
+    # Defend against tray_info_idx values the slicer cannot resolve. Two
+    # shapes leak through and must be discarded so the generic-material
+    # fallback below can rescue the slot:
+    #   1. Literal material names ("PLA", "PETG-CF") that pass through
+    #      normalize_slicer_filament unchanged when the spool's slicer_filament
+    #      is free-text rather than a real preset ID.
+    #   2. PFUS-prefix cloud setting_ids — valid as setting_id but rejected
+    #      by the slicer as tray_info_idx (the printer's calibration table
+    #      indexes by filament_id, and a PFUS isn't one). This normally gets
+    #      realigned to a P-prefix local id via printer_kp lookup, but the
+    #      replay path in main.py.on_ams_change passes current_user=None,
+    #      which skips cloud auth and leaves the raw PFUS in tray_info_idx —
+    #      overwriting the correctly-configured slot from the original assign.
+    # Valid tray_info_idx values: "GF" + letter + digits (Bambu official) or
+    # "P" followed by hex (user/local presets, NOT "PFUS").
+    _known_materials = set(MATERIAL_TEMPS.keys()) | set(_GENERIC_FILAMENT_IDS.keys())
+    if tray_info_idx and (tray_info_idx.upper() in _known_materials or tray_info_idx.startswith("PFUS")):
+        tray_info_idx = ""
+        setting_id = ""
+
     if not tray_info_idx:
         if (
             current_tray_info_idx
             and current_tray_info_idx not in _generic_id_values
+            and not current_tray_info_idx.startswith("PFUS")
+            and current_tray_info_idx.upper() not in _known_materials
             and current_tray_type
             and current_tray_type.upper() == tray_type.upper()
         ):
@@ -204,6 +243,14 @@ async def apply_spool_to_slot_via_mqtt(
             )
             if generic:
                 tray_info_idx = generic
+
+    # Ensure setting_id is always derivable from tray_info_idx. The local-preset
+    # path above sets tray_info_idx to a generic ID (e.g. "GFL99") but leaves
+    # setting_id empty — without this fallback the slicer gets a half-configured
+    # slot (filament id without setting id) and shows empty fields in the slot
+    # detail modal.
+    if tray_info_idx and not setting_id:
+        setting_id = filament_id_to_setting_id(tray_info_idx)
 
     temp_min, temp_max = MATERIAL_TEMPS.get((spool.material or "").upper(), (200, 240))
     if spool.nozzle_temp_min is not None:
@@ -301,48 +348,24 @@ async def apply_spool_to_slot_via_mqtt(
             nozzle_diameter=nozzle_diameter,
         )
     else:
-        # No stored K-profile for this slot — preserve the slot's current live
-        # cali_idx if the printer has one. cali_idx is read from state.raw_data
-        # using the same idiom as the route's `current_tray_info_idx` lookup.
-        # Negative values (e.g. -1) mean "no calibration recorded" and must not
-        # be sent.
-        live_cali_idx: int | None = None
-        if state and getattr(state, "raw_data", None):
-            if ams_id == 255:
-                for vt in state.raw_data.get("vt_tray") or []:
-                    if isinstance(vt, dict) and int(vt.get("id", 254)) == (tray_id + 254):
-                        raw = vt.get("cali_idx")
-                        if isinstance(raw, int):
-                            live_cali_idx = raw
-                        break
-            else:
-                ams_section = state.raw_data.get("ams", {})
-                ams_list = (
-                    ams_section.get("ams", [])
-                    if isinstance(ams_section, dict)
-                    else ams_section
-                    if isinstance(ams_section, list)
-                    else []
-                )
-                tray_dict = _find_tray_in_ams_data(ams_list, ams_id, tray_id)
-                if tray_dict:
-                    raw = tray_dict.get("cali_idx")
-                    if isinstance(raw, int):
-                        live_cali_idx = raw
-        if live_cali_idx is not None and live_cali_idx >= 0:
-            cali_filament_id = spool.slicer_filament or effective_tray_info_idx
-            client.extrusion_cali_sel(
-                ams_id=ams_id,
-                tray_id=tray_id,
-                cali_idx=live_cali_idx,
-                filament_id=cali_filament_id,
-                nozzle_diameter=nozzle_diameter,
-            )
-            logger.info(
-                "No stored K-profile for spool %d — preserved live cali_idx=%d",
-                spool.id,
-                live_cali_idx,
-            )
+        # No stored K-profile for this spool — always reset the slot to Default
+        # K (cali_idx=-1). The live cali_idx on the slot belongs to whatever
+        # filament was there before, so preserving it would apply the wrong
+        # filament's calibration to the new spool. Default K is the firmware's
+        # documented "no specific profile" value (see BambuClient.extrusion_cali_sel
+        # docstring).
+        cali_filament_id = spool.slicer_filament or effective_tray_info_idx
+        client.extrusion_cali_sel(
+            ams_id=ams_id,
+            tray_id=tray_id,
+            cali_idx=-1,
+            filament_id=cali_filament_id,
+            nozzle_diameter=nozzle_diameter,
+        )
+        logger.info(
+            "No stored K-profile for spool %d — reset slot to Default K (cali_idx=-1)",
+            spool.id,
+        )
 
     # Persist slot preset mapping for UI display (preset_name on hover card).
     try:

@@ -60,8 +60,13 @@ class TestAssignSpoolTrayInfoIdx:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_pfus_slicer_filament_used_directly(self, async_client: AsyncClient, printer_factory, spool_factory):
-        """PFUS* cloud-synced custom preset IDs are sent to the printer."""
+    async def test_pfus_slicer_filament_falls_back_to_generic(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """PFUS* cloud setting_ids are rejected by the slicer as tray_info_idx, so the
+        no-kp path falls back to the generic material id (PLA → GFL99). The K-profile
+        realignment path translates PFUS → P-prefix when a stored kp exists; that's
+        covered separately."""
         printer = await printer_factory(name="H2D")
         spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PLA")
 
@@ -82,14 +87,14 @@ class TestAssignSpoolTrayInfoIdx:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spool_preset_takes_priority_over_slot(
-        self, async_client: AsyncClient, printer_factory, spool_factory
-    ):
-        """Spool's own slicer_filament takes priority over slot's existing preset."""
+    async def test_pfus_spool_reuses_valid_slot_preset(self, async_client: AsyncClient, printer_factory, spool_factory):
+        """When the spool's PFUS gets discarded as slicer-invalid, the slot's existing
+        valid P-prefix preset is reused if it matches the spool's material — preserves
+        the printer's calibration context rather than resetting to generic."""
         printer = await printer_factory(name="H2D")
         spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PLA")
 
@@ -113,15 +118,15 @@ class TestAssignSpoolTrayInfoIdx:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            # Spool's own preset wins over slot's existing one
-            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
+            assert call_kwargs.kwargs["tray_info_idx"] == "P4d64437"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_spool_preset_used_even_if_different_material_on_slot(
         self, async_client: AsyncClient, printer_factory, spool_factory
     ):
-        """Spool's own slicer_filament is used regardless of what's on the slot."""
+        """Spool's material drives the fallback generic id. Slot's existing PLA preset
+        is overridden because the spool is PETG → GFG99."""
         printer = await printer_factory(name="H2D")
         spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PETG")
 
@@ -145,7 +150,7 @@ class TestAssignSpoolTrayInfoIdx:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFG99"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -201,8 +206,11 @@ class TestAssignSpoolTrayInfoIdx:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_spool_pfus_used_over_slot_pfus(self, async_client: AsyncClient, printer_factory, spool_factory):
-        """Spool's own PFUS preset is used even when slot has a different PFUS."""
+    async def test_spool_pfus_falls_back_to_generic_over_slot_pfus(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Both spool and slot have PFUS values — both rejected as tray_info_idx —
+        falls back to generic material id (PLA → GFL99)."""
         printer = await printer_factory(name="H2D")
         spool = await spool_factory(slicer_filament="PFUS1111111111", material="PLA")
 
@@ -226,15 +234,17 @@ class TestAssignSpoolTrayInfoIdx:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            # Spool's own preset wins
-            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS1111111111"
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_generic_on_slot_not_reused_over_spool_preset(
+    async def test_generic_on_slot_falls_back_to_material_generic(
         self, async_client: AsyncClient, printer_factory, spool_factory
     ):
-        """Generic ID on slot (e.g. GFB99) must not override spool's own preset."""
+        """When spool's PFUS is discarded and slot only has a generic ID, the result
+        comes from the spool's material (ABS → GFB99) — not from the slot. Important
+        because the generic-id check (`not in _generic_id_values`) prevents stale
+        generic reuse and routes the decision through the material fallback."""
         printer = await printer_factory(name="P2S")
         spool = await spool_factory(slicer_filament="PFUScda4c46fc9031", material="ABS")
 
@@ -258,8 +268,7 @@ class TestAssignSpoolTrayInfoIdx:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            # Spool's preset wins — generic on slot must not be sticky
-            assert call_kwargs.kwargs["tray_info_idx"] == "PFUScda4c46fc9031"
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFB99"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -471,18 +480,21 @@ class TestAssignSpoolPresetMapping:
 
 
 class TestAssignSpoolLiveCaliIdx:
-    """P9-TEST-BE-3: assign_spool falls back to live tray cali_idx when no K-profile stored."""
+    """assign_spool always resets the slot to Default K when the spool has no stored K-profile."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_no_kprofile_uses_live_cali_idx(self, async_client: AsyncClient, printer_factory, spool_factory):
-        """When no KProfile row exists, live tray cali_idx is sent via extrusion_cali_sel."""
+    async def test_no_kprofile_resets_to_default_k(self, async_client: AsyncClient, printer_factory, spool_factory):
+        """When no KProfile row exists, slot resets to cali_idx=-1 (Default K) regardless of live value."""
         printer = await printer_factory()
         spool = await spool_factory()
 
         mock_client = MagicMock()
         mock_client.ams_set_filament_setting.return_value = True
         mock_client.extrusion_cali_sel.return_value = True
+        # Live cali_idx=42 belongs to whatever filament was previously calibrated
+        # in this slot. Applying it to a different spool would use the wrong K
+        # value, so the assign flow must override it with Default K (-1).
         tray_data = {
             "id": 1,
             "cali_idx": 42,
@@ -504,15 +516,14 @@ class TestAssignSpoolLiveCaliIdx:
 
         assert response.status_code == 200
         mock_client.extrusion_cali_sel.assert_called_once()
-        call_kwargs = mock_client.extrusion_cali_sel.call_args[1]
-        assert call_kwargs["cali_idx"] == 42
+        assert mock_client.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_no_kprofile_no_live_cali_idx_nothing_sent(
+    async def test_no_kprofile_no_live_cali_idx_sends_default(
         self, async_client: AsyncClient, printer_factory, spool_factory
     ):
-        """When tray has no cali_idx, extrusion_cali_sel is not called."""
+        """When tray has no cali_idx, extrusion_cali_sel is sent with cali_idx=-1 (Default)."""
         printer = await printer_factory()
         spool = await spool_factory()
 
@@ -539,12 +550,15 @@ class TestAssignSpoolLiveCaliIdx:
             )
 
         assert response.status_code == 200
-        mock_client.extrusion_cali_sel.assert_not_called()
+        mock_client.extrusion_cali_sel.assert_called_once()
+        assert mock_client.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_negative_live_cali_idx_not_sent(self, async_client: AsyncClient, printer_factory, spool_factory):
-        """A negative live cali_idx (-1) is invalid and must not be sent."""
+    async def test_negative_live_cali_idx_sends_default(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """A negative live cali_idx (-1) falls through and is sent as Default (cali_idx=-1)."""
         printer = await printer_factory()
         spool = await spool_factory()
 
@@ -571,7 +585,8 @@ class TestAssignSpoolLiveCaliIdx:
             )
 
         assert response.status_code == 200
-        mock_client.extrusion_cali_sel.assert_not_called()
+        mock_client.extrusion_cali_sel.assert_called_once()
+        assert mock_client.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
 
 class TestAssignSpoolEmptySlotPreConfig:

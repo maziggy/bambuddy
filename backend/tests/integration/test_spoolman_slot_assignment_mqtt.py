@@ -203,10 +203,10 @@ class TestAssignSlotMqtt:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_extrusion_cali_sel_not_called_on_nozzle_mismatch(
+    async def test_extrusion_cali_sel_resets_default_on_nozzle_mismatch(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client, db_session
     ):
-        """extrusion_cali_sel is NOT called when nozzle diameter does not match K-profile."""
+        """When nozzle diameter doesn't match K-profile (no usable kp), slot resets to Default K."""
         from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 
         kp = SpoolmanKProfile(
@@ -257,14 +257,15 @@ class TestAssignSlotMqtt:
             )
 
         assert response.status_code == 200
-        mqtt_mock.extrusion_cali_sel.assert_not_called()
+        mqtt_mock.extrusion_cali_sel.assert_called_once()
+        assert mqtt_mock.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_extrusion_cali_sel_not_called_when_cali_idx_none(
+    async def test_extrusion_cali_sel_resets_default_when_cali_idx_none(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client, db_session
     ):
-        """extrusion_cali_sel is NOT called when K-profile has cali_idx=None."""
+        """When stored K-profile has cali_idx=None (unusable), slot resets to Default K."""
         from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 
         kp = SpoolmanKProfile(
@@ -315,7 +316,8 @@ class TestAssignSlotMqtt:
             )
 
         assert response.status_code == 200
-        mqtt_mock.extrusion_cali_sel.assert_not_called()
+        mqtt_mock.extrusion_cali_sel.assert_called_once()
+        assert mqtt_mock.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
 
 # ---------------------------------------------------------------------------
@@ -474,10 +476,10 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_no_kprofile_uses_live_cali_idx(
+    async def test_no_kprofile_resets_to_default_k(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
     ):
-        """When no K-profile exists, live tray cali_idx is sent via extrusion_cali_sel."""
+        """When no K-profile exists, slot resets to cali_idx=-1 (Default K) regardless of live value."""
         printer_state = self._make_printer_state(ams_id=0, tray_id=1, cali_idx=42)
 
         mqtt_mock = MagicMock()
@@ -514,16 +516,16 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
         assert resp.status_code == 200
         mqtt_mock.extrusion_cali_sel.assert_called_once()
         call_kwargs = mqtt_mock.extrusion_cali_sel.call_args[1]
-        assert call_kwargs["cali_idx"] == 42
+        assert call_kwargs["cali_idx"] == -1
         assert call_kwargs["ams_id"] == 0
         assert call_kwargs["tray_id"] == 1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_no_kprofile_no_live_cali_idx_nothing_sent(
+    async def test_no_kprofile_no_live_cali_idx_sends_default(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
     ):
-        """When no K-profile and tray has no cali_idx, extrusion_cali_sel is not called."""
+        """When no K-profile and tray has no cali_idx, extrusion_cali_sel is sent with cali_idx=-1 (Default)."""
         printer_state = self._make_printer_state(ams_id=0, tray_id=2, cali_idx=None)
 
         mqtt_mock = MagicMock()
@@ -558,7 +560,8 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
             )
 
         assert resp.status_code == 200
-        mqtt_mock.extrusion_cali_sel.assert_not_called()
+        mqtt_mock.extrusion_cali_sel.assert_called_once()
+        assert mqtt_mock.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -622,10 +625,10 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_live_cali_idx_not_used_if_negative(
+    async def test_live_cali_idx_negative_falls_back_to_default(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
     ):
-        """A negative live cali_idx is invalid and must not be sent."""
+        """A negative live cali_idx falls through and is sent as Default (cali_idx=-1)."""
         printer_state = self._make_printer_state(ams_id=0, tray_id=0, cali_idx=-1)
 
         mqtt_mock = MagicMock()
@@ -660,7 +663,8 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
             )
 
         assert resp.status_code == 200
-        mqtt_mock.extrusion_cali_sel.assert_not_called()
+        mqtt_mock.extrusion_cali_sel.assert_called_once()
+        assert mqtt_mock.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
 
 # ---------------------------------------------------------------------------

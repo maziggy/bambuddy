@@ -1207,29 +1207,21 @@ async def assign_spoolman_slot(
                     body.tray_id,
                 )
             else:
-                # No stored K-profile: preserve the slot's current live cali_idx
-                from backend.app.api.routes.inventory import _find_tray_in_ams_data
-
-                live_tray = None
-                if state and state.raw_data:
-                    ams_raw = state.raw_data.get("ams", [])
-                    if isinstance(ams_raw, dict):
-                        ams_raw = ams_raw.get("ams", [])
-                    live_tray = _find_tray_in_ams_data(ams_raw, body.ams_id, body.tray_id)
-                live_cali_idx = (live_tray or {}).get("cali_idx")
-                if live_cali_idx is not None and live_cali_idx >= 0:
-                    mqtt_client.extrusion_cali_sel(
-                        ams_id=body.ams_id,
-                        tray_id=body.tray_id,
-                        cali_idx=live_cali_idx,
-                        filament_id=effective_tray_info_idx,
-                        nozzle_diameter=nozzle_diameter,
-                    )
-                    logger.info(
-                        "No stored K-profile for Spoolman spool %d — preserved live cali_idx=%d",
-                        body.spoolman_spool_id,
-                        live_cali_idx,
-                    )
+                # No stored K-profile for this spool — always reset the slot to
+                # Default K (cali_idx=-1). The live cali_idx belongs to whatever
+                # filament was there before, so preserving it would apply the
+                # wrong filament's calibration to the new spool.
+                mqtt_client.extrusion_cali_sel(
+                    ams_id=body.ams_id,
+                    tray_id=body.tray_id,
+                    cali_idx=-1,
+                    filament_id=effective_tray_info_idx,
+                    nozzle_diameter=nozzle_diameter,
+                )
+                logger.info(
+                    "No stored K-profile for Spoolman spool %d — reset slot to Default K (cali_idx=-1)",
+                    body.spoolman_spool_id,
+                )
 
             logger.info(
                 "Auto-configured AMS slot ams=%d tray=%d for Spoolman spool %d on printer %d",

@@ -131,11 +131,17 @@ function buildLocalFilamentOptions(localPresets: LocalPreset[]): FilamentOption[
   if (filamentPresets.length === 0) return [];
 
   const options: FilamentOption[] = filamentPresets.map(preset => {
-    const code = preset.filament_type || String(preset.id);
-    // allCodes carries every shape an existing saved spool might have stored
-    // for this preset (filament_type and the row id), so findPresetOption
-    // resolves both old and new picks.
-    const allCodes = Array.from(new Set([code, String(preset.id)]));
+    // Use the unique preset.id (stringified) as the code so each local preset
+    // has its own identity. Earlier this was preset.filament_type (e.g. "PLA")
+    // which collapsed every PLA local preset onto the same code — picking any
+    // of them saved slicer_filament="PLA", a material name the backend cannot
+    // resolve back to a specific preset row. The backend handler at
+    // inventory.py expects numeric IDs for local-preset slicer_filament values.
+    // allCodes still carries the legacy filament_type so findPresetOption
+    // resolves existing saved spools that have the old material-name code.
+    const code = String(preset.id);
+    const legacyCode = preset.filament_type || code;
+    const allCodes = Array.from(new Set([code, legacyCode]));
     return {
       code,
       name: preset.name,

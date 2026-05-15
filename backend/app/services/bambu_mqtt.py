@@ -2584,18 +2584,19 @@ class BambuMQTTClient:
             )
 
         # Detect print completion (FINISH = success, FAILED = error, IDLE = aborted)
-        # Use _was_running flag in addition to _previous_gcode_state for more robust detection
-        # This handles cases where server restarts during a print
+        # Fire whenever we first see a terminal state — the DB-side callback only acts on
+        # "printing" queue items, so spurious fires (e.g. on service startup when printer is
+        # already in FINISH from a prior job) are safe no-ops.  The old _was_running /
+        # _previous_gcode_state gate was too strict: on a P1S (delta MQTT updates) the RUNNING
+        # update is sometimes missed after a service restart, leaving _was_running=False and
+        # completion never firing, which permanently stuck queue items in "printing" status.
         should_trigger_completion = (
             self.state.state in ("FINISH", "FAILED")
             and not self._completion_triggered
             and self.on_print_complete
-            and (
-                self._previous_gcode_state == "RUNNING"  # Normal transition
-                or (self._was_running and self._previous_gcode_state != self.state.state)  # After server restart
-            )
         )
-        # For IDLE, only trigger if we just came from RUNNING (explicit abort/cancel)
+        # For IDLE, only trigger if we just came from RUNNING (explicit abort/cancel).
+        # IDLE is the normal resting state so we must guard against spurious fires here.
         if (
             self.state.state == "IDLE"
             and self._previous_gcode_state == "RUNNING"
@@ -2603,21 +2604,6 @@ class BambuMQTTClient:
             and self.on_print_complete
         ):
             should_trigger_completion = True
-
-        # Log when we FIRST see a terminal state but DON'T trigger completion (diagnostics)
-        # Only log on the transition (prev != current) to avoid flooding logs every MQTT update
-        if (
-            not should_trigger_completion
-            and self.state.state in ("FINISH", "FAILED")
-            and self._previous_gcode_state != self.state.state
-        ):
-            logger.info(
-                f"[{self.serial_number}] State is {self.state.state} but completion NOT triggered: "
-                f"prev={self._previous_gcode_state}, was_running={self._was_running}, "
-                f"already_triggered={self._completion_triggered}, has_callback={bool(self.on_print_complete)}"
-            )
-            # Mark as triggered so state is clean for the next print cycle
-            self._completion_triggered = True
 
         if should_trigger_completion:
             if self.state.state == "FINISH":

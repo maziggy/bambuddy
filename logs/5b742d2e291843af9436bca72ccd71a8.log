@@ -1,0 +1,55 @@
+2026-05-15 12:15:43,677 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-05-15 12:15:43,677 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-05-15 12:15:44,521 INFO [backend.app.core.encryption] [-] Generated new MFA encryption key and saved to /app/data/.mfa_encryption_key
+2026-05-15 12:15:44,580 INFO [backend.app.core.database] [-] Created default group: Administrators
+2026-05-15 12:15:44,580 INFO [backend.app.core.database] [-] Created default group: Operators
+2026-05-15 12:15:44,580 INFO [backend.app.core.database] [-] Created default group: Viewers
+2026-05-15 12:15:44,621 INFO [backend.app.core.database] [-] Seeded 91 default spool catalog entries
+2026-05-15 12:15:44,814 INFO [backend.app.core.database] [-] Seeded 638 default color catalog entries
+2026-05-15 12:15:44,837 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-05-15 12:15:44,839 INFO [backend.app.services.background_dispatch] [-] Background dispatch dispatcher started
+2026-05-15 12:15:44,840 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-05-15 12:15:44,840 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-05-15 12:15:44,841 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-05-15 12:15:44,843 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-05-15 12:15:44,844 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-05-15 12:15:44,844 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-05-15 12:15:44,846 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-05-15 12:15:44,846 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-05-15 12:15:44,846 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-05-15 12:15:44,846 INFO [backend.app.main] [-] AMS history recording started
+2026-05-15 12:15:44,846 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-05-15 12:15:44,846 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-05-15 12:15:44,846 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-05-15 12:15:44,846 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-05-15 12:15:44,846 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-05-15 12:15:44,852 INFO [root] [-] Virtual printer manager synced from database
+2026-05-15 12:16:25,820 INFO [uvicorn.access] [-] [IP]:29998 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-15 12:16:25,843 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-15 12:16:25,843 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-15 12:16:25,843 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-05-15 12:16:25,883 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-15 12:16:25,939 INFO [uvicorn.access] [-] [IP]:19229 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-15 12:16:27,279 INFO [backend.app.api.routes.auth] [8799107f] Setup completed: auth_enabled=False, admin_created=False
+2026-05-15 12:16:27,280 INFO [uvicorn.access] [-] [IP]:64910 - "POST /api/v1/auth/setup HTTP/1.1" 200
+2026-05-15 12:16:27,321 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-15 12:16:27,321 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-15 12:16:27,321 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-05-15 12:16:32,858 WARNING [backend.app.services.discovery] [d49a962a] Subnet [IP]/16 has 65534 hosts, limiting to /22 (1024 hosts)
+2026-05-15 12:16:32,860 INFO [backend.app.services.discovery] [d49a962a] Starting subnet scan of [IP]/16 (1024 hosts)
+2026-05-15 12:16:32,873 INFO [uvicorn.access] [-] [IP]:43011 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-05-15 12:16:54,029 INFO [backend.app.services.discovery] [d49a962a] Subnet scan complete. Found 0 printers.
+2026-05-15 12:17:52,513 INFO [uvicorn.access] [-] [IP]:54168 - "POST /api/v1/printers/ HTTP/1.1" 200
+2026-05-15 12:17:52,561 INFO [uvicorn.access] [-] [IP]:54168 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-05-15 12:17:52,565 INFO [uvicorn.access] [-] [IP]:61763 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-05-15 12:17:53,819 INFO [backend.app.services.firmware_check] [20523d55] Got Bambu Lab build ID: DGVvLxp_mb7yePrzlGQYu
+2026-05-15 12:18:20,123 INFO [uvicorn.access] [-] [IP]:23371 - "POST /api/v1/cloud/login HTTP/1.1" 200
+2026-05-15 12:18:45,722 INFO [uvicorn.access] [-] [IP]:60523 - "POST /api/v1/cloud/verify HTTP/1.1" 200
+2026-05-15 12:20:35,304 INFO [uvicorn.access] [-] [IP]:40725 - "POST /api/v1/printers/1/connect HTTP/1.1" 200
+2026-05-15 12:24:54,478 INFO [backend.app.api.routes.support] [daedce83] Log level changed to DEBUG
+2026-05-15 12:24:54,478 INFO [backend.app.api.routes.bug_report] [daedce83] Bug report: enabled debug logging
+2026-05-15 12:24:54,478 WARNING [backend.app.services.bambu_mqtt] [daedce83] [[SERIAL]] request_status_update: not connected
+2026-05-15 12:24:54,478 INFO [uvicorn.access] [-] [IP]:16313 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-15 12:25:00,063 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-05-15 12:25:05,508 DEBUG [backend.app.api.routes.printers] [a487b8f3] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-15 12:25:05,509 DEBUG [backend.app.api.routes.printers] [a487b8f3] Using tray_now directly as global ID: 255

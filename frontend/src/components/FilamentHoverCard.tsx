@@ -371,6 +371,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         {inventory.assignedSpool.material}
                         {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
                       </p>
+                      <p className="text-[10px] font-mono text-bambu-gray">#{inventory.assignedSpool.id}</p>
                       {(!spoolman?.linkedSpoolId || inventory.assignedSpool!.id !== spoolman.linkedSpoolId) && (
                         <button
                           onClick={(e) => {

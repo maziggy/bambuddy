@@ -745,8 +745,11 @@ export function SpoolFormModal({
       <div className="relative w-full max-w-xl mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary flex-shrink-0">
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-lg font-semibold text-white flex items-baseline gap-2">
             {isEditing ? t('inventory.editSpool') : isCopying ? t('inventory.copySpool') : t('inventory.addSpool')}
+            {isEditing && spool && (
+              <span className="text-sm font-mono text-bambu-gray">#{spool.id}</span>
+            )}
           </h2>
           <button
             onClick={onClose}

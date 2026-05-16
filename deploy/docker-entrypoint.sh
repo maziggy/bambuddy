@@ -65,17 +65,26 @@ fi
 # If requested, update and use the system trust store inside the container.
 # Users can set USE_SYSTEM_TRUST_STORE to any non-empty value to enable.
 if [ -n "${USE_SYSTEM_TRUST_STORE:-}" ]; then
-    echo "[entrypoint] USE_SYSTEM_TRUST_STORE is set; checking for update-ca-certificates"
+    echo "[entrypoint] USE_SYSTEM_TRUST_STORE is set"
+    # Check if we have any certificates to process. Error is directory is empty
+    if ls -1 /usr/local/share/ca-certificates/*.crt >/dev/null 2>&1; then
+        echo "[entrypoint] .crt files found in /usr/local/share/ca-certificates"
+    else
+        echo "[entrypoint] no .crt files in /usr/local/share/ca-certificates"
+        exit 1
+    fi
     if command -v update-ca-certificates >/dev/null 2>&1; then
         echo "[entrypoint] update-ca-certificates found; updating system trust store"
-        if update-ca-certificates; then
+        if update-ca-certificates --fresh 2>/dev/null; then
             echo "[entrypoint] update-ca-certificates succeeded; exporting SSL_CERT_DIR=/etc/ssl/certs"
             export SSL_CERT_DIR="/etc/ssl/certs"
         else
             echo "[entrypoint] warning: update-ca-certificates failed"
+            exit 1
         fi
     else
         echo "[entrypoint] error: update-ca-certificates not found; cannot update trust store"
+        exit 1
     fi
 else
     echo "[entrypoint] USE_SYSTEM_TRUST_STORE not set; skipping system trust store update"

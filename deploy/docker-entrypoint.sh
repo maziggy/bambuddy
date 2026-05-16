@@ -62,6 +62,25 @@ if [ -d /app/data/virtual_printer ]; then
     chown_if_needed /app/data/virtual_printer
 fi
 
+# If requested, update and use the system trust store inside the container.
+# Users can set USE_SYSTEM_TRUST_STORE to any non-empty value to enable.
+if [ -n "${USE_SYSTEM_TRUST_STORE:-}" ]; then
+    echo "[entrypoint] USE_SYSTEM_TRUST_STORE is set; checking for update-ca-certificates"
+    if command -v update-ca-certificates >/dev/null 2>&1; then
+        echo "[entrypoint] update-ca-certificates found; updating system trust store"
+        if update-ca-certificates; then
+            echo "[entrypoint] update-ca-certificates succeeded; exporting SSL_CERT_DIR=/etc/ssl/certs"
+            export SSL_CERT_DIR="/etc/ssl/certs"
+        else
+            echo "[entrypoint] warning: update-ca-certificates failed"
+        fi
+    else
+        echo "[entrypoint] error: update-ca-certificates not found; cannot update trust store"
+    fi
+else
+    echo "[entrypoint] USE_SYSTEM_TRUST_STORE not set; skipping system trust store update"
+fi
+
 # Drop privileges and run the application. python's file capabilities
 # (cap_net_bind_service=+ep, set in the Dockerfile) survive the uid
 # switch, so binding to :322 / :990 still works post-drop.

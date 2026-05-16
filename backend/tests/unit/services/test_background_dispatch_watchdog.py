@@ -100,6 +100,68 @@ class TestReturnsFalseOnTimeout:
         client.force_reconnect_stale_session.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_returns_false_on_finish_to_idle_user_dismissed_prompt(self):
+        """Regression for #1370 in the direct-dispatch path: when pre_state is
+        FINISH and the printer transitions to IDLE during the verifier window,
+        that's the user dismissing a post-print prompt — NOT acceptance of our
+        project_file. The original ``state != pre_state`` check incorrectly
+        returned True on this transition, so the dispatch job was marked
+        successful even though no print was running. Must now report failure
+        so the caller raises RuntimeError and the user sees the actual error.
+        """
+        get_status = MagicMock(return_value=_status("IDLE", "OLD_SUBTASK"))
+        client = MagicMock()
+        get_client = MagicMock(return_value=client)
+
+        with (
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_status",
+                get_status,
+            ),
+            patch(
+                "backend.app.services.background_dispatch.printer_manager.get_client",
+                get_client,
+            ),
+        ):
+            result = await BackgroundDispatchService._verify_print_response(
+                printer_id=42,
+                printer_name="P1S",
+                pre_state="FINISH",
+                pre_subtask_id="OLD_SUBTASK",
+                timeout=0.2,
+                poll_interval=0.05,
+            )
+
+        assert result is False, (
+            "FINISH -> IDLE is the user dismissing a screen prompt, not the "
+            "printer accepting project_file — verifier must report failure (#1370)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_each_active_print_state(self):
+        """Counterpart to the #1370 fix: transitions into the active-print
+        state set ARE valid "command landed" signals. PREPARE / SLICING /
+        RUNNING / PAUSE all return True.
+        """
+        for active_state in ("PREPARE", "SLICING", "RUNNING", "PAUSE"):
+            get_status = MagicMock(return_value=_status(active_state, "OLD_SUBTASK"))
+            with patch(
+                "backend.app.services.background_dispatch.printer_manager.get_status",
+                get_status,
+            ):
+                result = await BackgroundDispatchService._verify_print_response(
+                    printer_id=42,
+                    printer_name="P1S",
+                    pre_state="IDLE",
+                    pre_subtask_id="OLD_SUBTASK",
+                    timeout=0.2,
+                    poll_interval=0.05,
+                )
+            assert result is True, (
+                f"transition IDLE -> {active_state} must be treated as a valid 'command landed' signal"
+            )
+
+    @pytest.mark.asyncio
     async def test_returns_false_when_pre_subtask_id_none_and_state_unchanged(self):
         """Backward-compat: callers without a captured pre_subtask_id (e.g. the
         printer never reported one) must still get the timeout failure path

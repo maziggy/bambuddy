@@ -873,6 +873,68 @@ class TestAMSDataMerging:
             "Without power_on_flag, clearing should proceed (defaults to True)"
         )
 
+    def test_idle_printer_with_power_off_and_nonzero_bits_clears_removed_slot(self, mqtt_client):
+        """Spool removal on an idle X1C must be detected even when power_on_flag=False (#1365).
+
+        On some X1C firmware (e.g. 01.08.02.00 reported by an3k) the AMS keeps
+        publishing push_status with `power_on_flag: False` while the printer
+        sits idle between prints — but `tray_exist_bits` continues to reflect
+        the real slot inventory. The original #765 guard skipped clearing
+        whenever power_on_flag was false, so the bit transition that would
+        mark a slot empty was discarded and the only way to refresh state
+        was a manual reconnect (pushall). The guard now skips clearing only
+        on the exact shutdown pattern (zero bits + power_on_flag=False).
+        """
+        # Initial state: two AMS units, slot 1 of AMS 0 loaded (the one
+        # we'll later remove).
+        initial_ams = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF", "remain": 80},
+                        {"id": 1, "tray_type": "PETG", "tray_color": "00FF00FF", "remain": 60},
+                    ],
+                },
+                {
+                    "id": 1,
+                    "tray": [
+                        {"id": 0, "tray_type": "PETG", "tray_color": "DBDDD9FF", "remain": 90},
+                    ],
+                },
+            ],
+            "tray_exist_bits": "13",  # 0b00010011 — AMS0 slots 0+1, AMS1 slot 0
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(initial_ams)
+        assert mqtt_client.state.raw_data["ams"][0]["tray"][1]["tray_type"] == "PETG"
+
+        # Spool pulled from AMS 0 slot 1 while the printer is idle.
+        # tray_exist_bits goes from 0x13 -> 0x11, but firmware still reports
+        # power_on_flag=False because the printer is between prints. The real
+        # push_status payloads on the affected X1C still carry the full `ams`
+        # list (matches the bug-report log) — the slot inventory shrinks via
+        # the bitfield rather than via per-tray content updates.
+        removal_ams = {
+            "ams": [
+                {"id": 0, "tray": [{"id": 0}, {"id": 1}]},
+                {"id": 1, "tray": [{"id": 0}]},
+            ],
+            "tray_exist_bits": "11",  # 0b00010001 — slot 1 now empty
+            "power_on_flag": False,
+            "insert_flag": True,
+        }
+        mqtt_client._handle_ams_data(removal_ams)
+
+        ams_data = mqtt_client.state.raw_data["ams"]
+        assert ams_data[0]["tray"][1]["tray_type"] == "", (
+            "Removal must be detected even with power_on_flag=False when bits are non-zero (#1365)"
+        )
+        assert ams_data[0]["tray"][1]["tray_color"] == "", "Removed slot color must be cleared"
+        # Other slots untouched.
+        assert ams_data[0]["tray"][0]["tray_type"] == "PLA", "AMS0 slot 0 preserved"
+        assert ams_data[1]["tray"][0]["tray_type"] == "PETG", "AMS1 slot 0 preserved"
+
 
 class TestAMSTrayStateClearning:
     """Tests for AMS tray state-based clearing (#784).

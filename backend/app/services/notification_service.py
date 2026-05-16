@@ -418,7 +418,10 @@ class NotificationService:
         if not webhook_url:
             return False, "Webhook URL is required"
 
-        if not webhook_url.startswith("https://discord.com/api/webhooks/"):
+        if not (
+            webhook_url.startswith("https://discord.com/api/webhooks/")
+            or webhook_url.startswith("https://discordapp.com/api/webhooks/")
+        ):
             return False, "Invalid Discord webhook URL"
 
         # Discord embed format for nicer messages

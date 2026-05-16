@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
-from backend.app.core.database import async_session
+from backend.app.core.database import async_session, run_with_retry
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
@@ -31,6 +31,15 @@ from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.utils.printer_models import normalize_printer_model
 
 logger = logging.getLogger(__name__)
+
+# Bambu firmware states that mean the project_file has actually been accepted
+# and the printer is now processing / running / paused mid-print. Used by the
+# dispatch watchdog (#1370): a transition into one of these states means the
+# print landed, anything else (e.g. FINISH -> IDLE after the user dismisses
+# a post-print prompt) is NOT a valid "command landed" signal even though the
+# state value did change. SLICING is included because some firmwares park
+# briefly in SLICING between PREPARE and RUNNING while parsing the g-code.
+_ACTIVE_PRINT_STATES: frozenset[str] = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
 
 # Filament type equivalence groups — types within the same group are
 # interchangeable on the printer side (Bambu Lab firmware treats them as compatible).
@@ -2029,27 +2038,66 @@ class PrintScheduler:
                 scheduler._release_dispatch_hold(printer_id)
                 return
             last_status = status
-            if status.state != pre_state:
-                # Printer picked up the job (state transition) — release the
+            if status.state in _ACTIVE_PRINT_STATES:
+                # Printer is actively processing the job — release the
                 # post-dispatch hold so the next pending item for this printer
-                # can be evaluated normally.
+                # can be evaluated normally. We do NOT accept arbitrary state
+                # transitions: a printer going FINISH -> IDLE (user dismissed
+                # the post-print prompt without accepting our project_file)
+                # would otherwise look like "command landed" and leave the
+                # queue item stuck in 'printing' forever (#1370).
                 scheduler._release_dispatch_hold(printer_id)
                 return
             if pre_subtask_id is not None and status.subtask_id is not None and status.subtask_id != pre_subtask_id:
-                # Printer picked up the job (subtask_id advanced)
+                # Printer picked up the job (subtask_id advanced). H2D can
+                # sit at FINISH for ~50 s after accepting project_file
+                # before transitioning to PREPARE, but the subtask_id flips
+                # to our submission_id almost immediately (#1078).
                 scheduler._release_dispatch_hold(printer_id)
                 return
 
         # No transition. Revert the item so the scheduler can retry.
         # Drop the in-memory hold so the retry isn't blocked by it.
         scheduler._release_dispatch_hold(printer_id)
-        async with async_session() as db:
+
+        # Three outcomes from the revert attempt, each routed differently:
+        #   "reverted":          row flipped from printing -> pending, run recovery
+        #   "already_moved_on":  item.status != 'printing' (completed/cancelled by
+        #                        on_print_complete or user). Skip recovery entirely
+        #                        — the print clearly landed somewhere even if the
+        #                        watchdog didn't see the active-state transition.
+        #   "revert_failed":     SQLite contention exhausted retries. Still run
+        #                        recovery so the MQTT session gets a fresh client_id
+        #                        on the half-broken-session path.
+        async def _do_revert(db):
             item = await db.get(PrintQueueItem, queue_item_id)
             if not item or item.status != "printing":
-                return  # Already moved on (completed/cancelled/etc.)
+                return "already_moved_on"
             item.status = "pending"
             item.started_at = None
             await db.commit()
+            return "reverted"
+
+        try:
+            revert_outcome = await run_with_retry(_do_revert, label=f"watchdog revert item={queue_item_id}")
+        except Exception as e:
+            logger.warning(
+                "Queue item %s: failed to revert to 'pending' (printer %d): %s — "
+                "scheduler may keep treating this item as in-flight",
+                queue_item_id,
+                printer_id,
+                e,
+            )
+            revert_outcome = "revert_failed"
+
+        if revert_outcome == "already_moved_on":
+            # Preserves the pre-#1370 early-return: if on_print_complete (or any
+            # other path) already moved the item past 'printing', don't run the
+            # MQTT session-recovery logic below — a forced reconnect on a healthy
+            # session breaks ongoing prints on the same printer.
+            return
+
+        if revert_outcome == "reverted":
             logger.warning(
                 "Queue item %s: printer %d did not respond to print command within "
                 "%.0fs (state still %s, subtask_id still %s) — reverted to 'pending' "

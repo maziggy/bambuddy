@@ -827,6 +827,48 @@ class ProjectPageParser:
             return False
 
 
+async def _null_print_log_thumbnail_paths(db: AsyncSession, archive_id: int) -> None:
+    """NULL thumbnail_path on PrintLogEntry rows linked to *archive_id*.
+
+    Called from both soft- and hard-delete paths before the archive's files
+    leave disk. The FK on PrintLogEntry.archive_id is ON DELETE SET NULL so
+    log rows survive the archive — without this clear, their cached
+    thumbnail_path would still point at a deleted file and the print-log
+    view would 404-storm on every render (#1348 follow-up). Lazy-NULL on
+    the GET route self-heals stragglers (e.g. failed prints that never had
+    a thumbnail written), but eager clear here avoids the one-time storm.
+    """
+    from sqlalchemy import update as sa_update
+
+    from backend.app.models.print_log import PrintLogEntry
+
+    await db.execute(sa_update(PrintLogEntry).where(PrintLogEntry.archive_id == archive_id).values(thumbnail_path=None))
+
+
+async def _cancel_pending_queue_items(db: AsyncSession, archive_id: int) -> None:
+    """Cancel pending queue items pointing at *archive_id* (#1348 follow-up).
+
+    Called from ``soft_delete_archive`` only — hard-delete is covered by the
+    ``ON DELETE CASCADE`` on ``print_queue.archive_id``.  A queue item
+    pointing at an archive whose 3MF has been removed from disk can never
+    actually dispatch, so cancelling at delete time both (a) tells the user
+    why the item disappeared from the pending list, and (b) stops the queue
+    page from 404-storming the archive thumbnail / plates / plate-thumbnail
+    endpoints when the row is rendered. Only ``pending`` items are touched;
+    ``printing`` is a rare race the printer-side fail-path catches, and
+    completed / failed / cancelled rows are historical and untouched.
+    """
+    from sqlalchemy import update as sa_update
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    await db.execute(
+        sa_update(PrintQueueItem)
+        .where(PrintQueueItem.archive_id == archive_id, PrintQueueItem.status == "pending")
+        .values(status="cancelled", waiting_reason="Source archive deleted")
+    )
+
+
 class ArchiveService:
     """Service for archiving print jobs."""
 
@@ -1252,6 +1294,8 @@ class ArchiveService:
 
         dir_to_delete = self._resolve_archive_dir_for_delete(archive)
 
+        await _null_print_log_thumbnail_paths(self.db, archive_id)
+        await _cancel_pending_queue_items(self.db, archive_id)
         archive.deleted_at = datetime.now(timezone.utc)
         await self.db.commit()
 
@@ -1341,6 +1385,13 @@ class ArchiveService:
                 f"SECURITY: Refusing to delete files for archive {archive_id} - "
                 f"file_path is empty or invalid: '{archive.file_path}'"
             )
+
+        # NULL stale thumbnail_path on linked PrintLogEntries before the FK
+        # SET-NULL cascade fires. The on-disk file is about to be removed by
+        # the rmtree below, so the path on any surviving log entry (archive_id
+        # gets SET NULL by the FK) would otherwise point at a missing file
+        # and produce 404 storms in the print-log view (#1348-followup).
+        await _null_print_log_thumbnail_paths(self.db, archive_id)
 
         # Delete database record FIRST — if the commit fails (e.g. database locked
         # during concurrent bulk deletes), the files stay on disk and nothing is lost.

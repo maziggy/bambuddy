@@ -127,6 +127,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - Plate thumbnail browsing for multi-plate archives (hover to navigate between plates)
 - Archive comparison (side-by-side diff)
 - Tag management (rename/delete across all archives)
+- **Per-archive print history** — Each archive card shows an `N prints` badge whenever a model has been printed more than once (reprint + failed retries all counted). Click the badge for the full per-archive Print Log — every individual run with date, status, duration, filament used, cost, and failure reason. Reprints contribute new rows so a failed retry never overwrites the source archive's data — the original 100 g successful print stays visible alongside the 10 g failed reprint, and Quick Stats add up to 110 g across both events.
 - **Print Log** — Chronological table view of all print activity with columns for date/time, print name, printer, user, status, duration, and filament. Filterable by search, printer, user, status, and date range. Pagination with configurable page size. Clear button removes log entries without affecting archives.
 
 ### 📊 Monitoring & Control

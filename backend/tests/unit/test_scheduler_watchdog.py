@@ -118,6 +118,7 @@ class TestWatchdogRevertsWhenStuck:
             patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
             patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
             patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
         ):
             await PrintScheduler._watchdog_print_start(
                 queue_item_id=1,
@@ -134,6 +135,87 @@ class TestWatchdogRevertsWhenStuck:
             assert item.started_at is None
 
         client.force_reconnect_stale_session.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reverts_on_finish_to_idle_user_dismissed_prompt(self, db_session):
+        """Regression for #1370: when pre_state is FINISH and the printer
+        transitions to IDLE during the watchdog window, that's the user
+        dismissing a post-print prompt — NOT acceptance of our project_file.
+
+        The bundle in #1370 showed exactly this: queue item dispatched while
+        printer was in FINISH (residual from a previous print), command sent
+        but silently rejected by firmware, then the user manually cleared
+        the screen prompt so the printer moved to IDLE. The original
+        ``state != pre_state`` check returned early on this transition and
+        the queue row was left stuck in 'printing' indefinitely, blocking
+        all future dispatches to that printer.
+
+        The watchdog now only treats transitions into the active-print
+        state set (PREPARE / SLICING / RUNNING / PAUSE) as a valid "command
+        landed" signal.
+        """
+        get_status = MagicMock(return_value=_status("IDLE", "OLD_SUBTASK"))
+        client = MagicMock()
+        get_client = MagicMock(return_value=client)
+
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
+            patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
+            patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
+        ):
+            await PrintScheduler._watchdog_print_start(
+                queue_item_id=1,
+                printer_id=42,
+                pre_state="FINISH",
+                pre_subtask_id="OLD_SUBTASK",
+                timeout=0.2,
+                poll_interval=0.05,
+            )
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "pending", (
+                "FINISH -> IDLE is the user dismissing a screen prompt, not "
+                "the printer accepting project_file — item must be reverted "
+                "to 'pending' so the scheduler can retry (#1370)"
+            )
+            assert item.started_at is None
+
+    @pytest.mark.asyncio
+    async def test_does_not_revert_on_pickup_via_active_state(self, db_session):
+        """Counterpart to the #1370 fix: transitions into the active-print
+        state set ARE a valid "command landed" signal. PREPARE / SLICING /
+        RUNNING / PAUSE all keep the item in 'printing'.
+        """
+        for active_state in ("PREPARE", "SLICING", "RUNNING", "PAUSE"):
+            async with db_session() as db:
+                item = await db.get(PrintQueueItem, 1)
+                item.status = "printing"
+                item.started_at = None
+                await db.commit()
+
+            get_status = MagicMock(return_value=_status(active_state, "OLD_SUBTASK"))
+            with (
+                patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
+                patch("backend.app.services.print_scheduler.async_session", db_session),
+                patch("backend.app.core.database.async_session", db_session),
+            ):
+                await PrintScheduler._watchdog_print_start(
+                    queue_item_id=1,
+                    printer_id=42,
+                    pre_state="IDLE",
+                    pre_subtask_id="OLD_SUBTASK",
+                    timeout=0.2,
+                    poll_interval=0.05,
+                )
+
+            async with db_session() as db:
+                item = await db.get(PrintQueueItem, 1)
+                assert item.status == "printing", (
+                    f"transition IDLE -> {active_state} must be treated as a "
+                    f"valid 'command landed' signal — watchdog must not revert"
+                )
 
     @pytest.mark.asyncio
     async def test_default_timeout_is_90_seconds(self):
@@ -163,6 +245,7 @@ class TestWatchdogFallbackBehaviour:
             patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
             patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
             patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
         ):
             await PrintScheduler._watchdog_print_start(
                 queue_item_id=1,
@@ -190,6 +273,7 @@ class TestWatchdogFallbackBehaviour:
             patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
             patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
             patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
         ):
             await PrintScheduler._watchdog_print_start(
                 queue_item_id=1,
@@ -231,7 +315,12 @@ class TestWatchdogFallbackBehaviour:
     async def test_no_revert_if_item_already_completed(self, db_session):
         """If the print completed between watchdog arm-time and timeout (item is
         no longer "printing"), the watchdog must not clobber whatever status it
-        ended up in — #967 race guard."""
+        ended up in — #967 race guard. Additionally it must NOT run the MQTT
+        session-recovery path (forced reconnect): when on_print_complete has
+        already moved the row, the print clearly landed on the printer and a
+        forced reconnect on a healthy session would break ongoing prints on
+        the same printer.
+        """
         # Move item on to "completed" before the watchdog fires.
         async with db_session() as db:
             item = await db.get(PrintQueueItem, 1)
@@ -239,12 +328,14 @@ class TestWatchdogFallbackBehaviour:
             await db.commit()
 
         get_status = MagicMock(return_value=_status("FINISH", "OLD_SUBTASK"))
-        get_client = MagicMock(return_value=None)
+        client = MagicMock()  # NOT None — must verify reconnect isn't called
+        get_client = MagicMock(return_value=client)
 
         with (
             patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
             patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
             patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
         ):
             await PrintScheduler._watchdog_print_start(
                 queue_item_id=1,
@@ -258,6 +349,8 @@ class TestWatchdogFallbackBehaviour:
         async with db_session() as db:
             item = await db.get(PrintQueueItem, 1)
             assert item.status == "completed"  # untouched
+
+        client.force_reconnect_stale_session.assert_not_called()
 
 
 class TestGcodeFileDiscriminator:
@@ -278,6 +371,7 @@ class TestGcodeFileDiscriminator:
             patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
             patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
             patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
         ):
             await PrintScheduler._watchdog_print_start(
                 queue_item_id=1,
@@ -308,6 +402,7 @@ class TestGcodeFileDiscriminator:
             patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
             patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
             patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
         ):
             await PrintScheduler._watchdog_print_start(
                 queue_item_id=1,

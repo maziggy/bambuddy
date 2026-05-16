@@ -55,6 +55,7 @@ import {
   Zap,
   Cog,
   Archive as ArchiveIcon,
+  History,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { SliceModal } from '../components/SliceModal';
@@ -71,6 +72,7 @@ import { UploadModal } from '../components/UploadModal';
 import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { EditArchiveModal } from '../components/EditArchiveModal';
+import { PrintLogModal } from '../components/PrintLogModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { BatchTagModal } from '../components/BatchTagModal';
 import { BatchProjectModal } from '../components/BatchProjectModal';
@@ -185,6 +187,7 @@ function ArchiveCard({
   // off — soft delete preserves the archive's filament/time/cost contribution.
   const [deletePurgeStats, setDeletePurgeStats] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showPrintLog, setShowPrintLog] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
   const [showTimelapseSelect, setShowTimelapseSelect] = useState(false);
   const [availableTimelapses, setAvailableTimelapses] = useState<Array<{ name: string; path: string; size: number; mtime: string | null }>>([]);
@@ -583,6 +586,11 @@ function ArchiveCard({
       disabled: !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
     },
+    {
+      label: t('archives.menu.printLog'),
+      icon: <History className="w-4 h-4" />,
+      onClick: () => setShowPrintLog(true),
+    },
     ...(archive.project_id && archive.project_name ? [{
       label: t('archives.menu.goToProject', { name: archive.project_name }),
       icon: <FolderKanban className="w-4 h-4 text-bambu-green" />,
@@ -973,6 +981,22 @@ function ArchiveCard({
               {archive.project_name}
             </span>
           )}
+          {archive.run_count > 1 && (
+            <button
+              className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-bambu-orange/20 text-bambu-orange hover:bg-bambu-orange/30 transition-colors cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowPrintLog(true);
+              }}
+              title={t('archives.card.runsBadgeTitle', {
+                count: archive.run_count,
+                successful: archive.successful_run_count,
+                failed: archive.failed_run_count,
+              })}
+            >
+              {t('archives.card.runsBadge', { count: archive.run_count })}
+            </button>
+          )}
         </div>
 
         {/* Stats */}
@@ -1214,6 +1238,15 @@ function ArchiveCard({
         <EditArchiveModal
           archive={archive}
           onClose={() => setShowEdit(false)}
+        />
+      )}
+
+      {/* Print Log Modal — opened from the "N prints" badge or context menu (#1378) */}
+      {showPrintLog && (
+        <PrintLogModal
+          archiveId={archive.id}
+          archiveName={archive.print_name || archive.filename}
+          onClose={() => setShowPrintLog(false)}
         />
       )}
 
@@ -1525,6 +1558,7 @@ function ArchiveListRow({
   const { showToast } = useToast();
   const { hasPermission, canModify } = useAuth();
   const [showEdit, setShowEdit] = useState(false);
+  const [showPrintLog, setShowPrintLog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   // #1343: opt-in "Also remove from statistics" checkbox state. Default off
   // — soft delete keeps the archive's contribution to Quick Stats.
@@ -1905,6 +1939,11 @@ function ArchiveListRow({
       disabled: !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
     },
+    {
+      label: t('archives.menu.printLog'),
+      icon: <History className="w-4 h-4" />,
+      onClick: () => setShowPrintLog(true),
+    },
     ...(archive.project_id && archive.project_name ? [{
       label: t('archives.menu.goToProject', { name: archive.project_name }),
       icon: <FolderKanban className="w-4 h-4 text-bambu-green" />,
@@ -2185,6 +2224,15 @@ function ArchiveListRow({
         <EditArchiveModal
           archive={archive}
           onClose={() => setShowEdit(false)}
+        />
+      )}
+
+      {/* Print Log Modal — opened from the "N prints" badge or context menu (#1378) */}
+      {showPrintLog && (
+        <PrintLogModal
+          archiveId={archive.id}
+          archiveName={archive.print_name || archive.filename}
+          onClose={() => setShowPrintLog(false)}
         />
       )}
 

@@ -269,14 +269,16 @@ class PrinterManager:
             )
 
     async def _persist_awaiting_plate_clear(self, printer_id: int, awaiting: bool):
-        from backend.app.core.database import async_session
+        from backend.app.core.database import run_with_retry
+
+        async def _do(db):
+            printer = await db.get(Printer, printer_id)
+            if printer is not None:
+                printer.awaiting_plate_clear = awaiting
+                await db.commit()
 
         try:
-            async with async_session() as db:
-                printer = await db.get(Printer, printer_id)
-                if printer is not None:
-                    printer.awaiting_plate_clear = awaiting
-                    await db.commit()
+            await run_with_retry(_do, label=f"persist awaiting_plate_clear printer={printer_id}")
         except Exception as e:
             logger.warning("Failed to persist awaiting_plate_clear for printer %d: %s", printer_id, e)
 

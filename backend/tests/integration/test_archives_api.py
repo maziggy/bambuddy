@@ -245,6 +245,115 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_soft_delete_clears_thumbnail_path_on_linked_log_entries(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1348 follow-up: soft-deleting an archive removes its files from disk;
+        the cached thumbnail_path on linked PrintLogEntry rows must be NULLed
+        in the same transaction so the print-log view doesn't 404-storm on the
+        now-deleted thumbnail file."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            status="completed",
+            thumbnail_path="archives/test/test_print/thumbnail.png",
+        )
+        # The factory's auto-PrintLogEntry doesn't copy thumbnail_path; set it
+        # manually to mirror what the production write_log_entry path stores.
+        run_query = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        run = run_query.scalar_one()
+        run.thumbnail_path = "archives/test/test_print/thumbnail.png"
+        await db_session.commit()
+        assert run.thumbnail_path is not None
+
+        resp = await async_client.delete(f"/api/v1/archives/{archive.id}")
+        assert resp.status_code == 200
+        assert resp.json()["purged_from_stats"] is False
+
+        await db_session.refresh(run)
+        assert run.thumbnail_path is None, "soft-delete must NULL thumbnail_path on linked log entry"
+        # The log entry itself survives the soft delete (its filament/cost
+        # contribution still needs to flow into stats per #1343).
+        assert run.id is not None
+        assert run.archive_id == archive.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_hard_delete_clears_thumbnail_path_before_fk_cascade(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1348 follow-up: the auto-purge sweeper (and any caller of
+        ArchiveService.delete_archive) hard-deletes the archive row but leaves
+        PrintLogEntry rows alive via ON DELETE SET NULL. The eager
+        thumbnail_path clear must run inside delete_archive so even orphaned
+        log entries don't surface stale paths."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+        from backend.app.services.archive import ArchiveService
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            status="completed",
+            thumbnail_path="archives/test/test_print/thumbnail.png",
+        )
+        run_query = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        run = run_query.scalar_one()
+        run.thumbnail_path = "archives/test/test_print/thumbnail.png"
+        await db_session.commit()
+        run_id = run.id
+
+        service = ArchiveService(db_session)
+        assert await service.delete_archive(archive.id) is True
+
+        # Log entry survives the hard-delete (the FK is ON DELETE SET NULL
+        # in production; SQLite test config doesn't enable foreign_keys=ON
+        # by default so archive_id may still be set, but the row itself
+        # remains for audit). The thumbnail_path was cleared eagerly by
+        # _null_print_log_thumbnail_paths before db.delete(archive).
+        refetch = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.id == run_id))
+        survivor = refetch.scalar_one()
+        assert survivor.thumbnail_path is None, (
+            "delete_archive must NULL thumbnail_path before removing the archive row"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_print_log_thumbnail_route_lazy_nulls_missing_file(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1348 follow-up: GET /print-log/{id}/thumbnail self-heals when the
+        thumbnail_path on a log entry points at a missing file (failed print
+        whose thumbnail was never written, or a stale path that escaped the
+        delete-time cleanup)."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="failed")
+        run_query = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        run = run_query.scalar_one()
+        # Path points at a file that never existed (failed-print case where
+        # archive.thumbnail_path was set but the extractor never produced one).
+        run.thumbnail_path = "archives/missing/never_written/thumbnail.png"
+        await db_session.commit()
+
+        # Auth is disabled in the integration test config, so the stream-token
+        # guard is bypassed — the route runs the lazy-NULL branch directly.
+        resp = await async_client.get(f"/api/v1/print-log/{run.id}/thumbnail")
+        assert resp.status_code == 404
+
+        await db_session.refresh(run)
+        assert run.thumbnail_path is None, "missing file must self-heal to NULL"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_purge_stats_drops_archive_from_quick_stats(
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):

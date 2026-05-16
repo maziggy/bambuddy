@@ -61,6 +61,12 @@ pyotp>=2.9.0
 # HTTP client (used for OIDC token exchange)
 httpx>=0.26.0
 
+# Transitive pin: urllib3 2.6.3 has CVE-2026-44431 and CVE-2026-44432;
+# 2.7.0+ is the fixed release. Direct pin here because none of our
+# top-level deps require >=2.7.0 yet, so without this the resolver
+# would silently keep installing the vulnerable 2.6.x line.
+urllib3>=2.7.0
+
 # Plate Detection (optional - enables build plate empty detection)
 opencv-python-headless>=4.8.0
 numpy>=1.24.0

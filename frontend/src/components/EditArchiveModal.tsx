@@ -5,6 +5,7 @@ import { X, Save, Tag, Camera, Trash2, Loader2, Plus, FolderKanban, Hash, Link }
 import { api } from '../api/client';
 import type { Archive } from '../api/client';
 import { Button } from './Button';
+import { PrintLogTable } from './PrintLogTable';
 
 // Keys for failure reasons - translated at render time
 const FAILURE_REASON_KEYS = [
@@ -217,6 +218,13 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
+          {/* Print Log — per-run history pulled from PrintLogEntry (#1378). Shown
+              first so users can see which runs contributed to the aggregate stats. */}
+          <div>
+            <label className="block text-sm text-bambu-gray mb-1">{t('archives.runLog.title')}</label>
+            <PrintLogTable archiveId={archive.id} />
+          </div>
+
           {/* Print Name */}
           <div>
             <label className="block text-sm text-bambu-gray mb-1">{t('editArchive.name')}</label>

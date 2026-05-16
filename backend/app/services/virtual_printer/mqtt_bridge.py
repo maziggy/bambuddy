@@ -48,6 +48,25 @@ logger = logging.getLogger(__name__)
 
 REFRESH_INTERVAL_SECONDS = 30.0
 
+# Top-level push_status fields that Bambu firmware sends in FULL pushall
+# responses (on `pushall` request / printer reconnect) but typically OMITS
+# from 1 Hz incremental push_status updates. Without preserving these
+# fields across incremental updates, the bridge cache would lose AMS info
+# (and friends) between pushalls — slicers reading the cache would see a
+# stripped-down state and the fix would only re-appear on a manual printer
+# power-cycle (#1371). Mirrors the same set Bambuddy itself preserves in
+# bambu_mqtt.py:2686-2711 for its own internal raw_data, with a few more
+# entries that the slicer cares about (net, ipcam, lights_report).
+_SLICER_VISIBLE_STICKY_KEYS: tuple[str, ...] = (
+    "ams",
+    "vt_tray",
+    "ams_extruder_map",
+    "mapping",
+    "net",
+    "ipcam",
+    "lights_report",
+)
+
 
 def _ip_to_uint32_le(ip_str: str) -> int:
     """Encode dotted-quad IPv4 as little-endian uint32 (Bambu MQTT's `net.info[].ip` shape)."""
@@ -261,7 +280,25 @@ class MQTTBridge:
                                 entry["ip"] = self._vp_ip_uint32_le
             # Defensive deep copy on store so the cache is fully decoupled from
             # the freshly-parsed tree and from any reader's reference.
-            self._latest_print_state = copy.deepcopy(print_data)
+            new_state = copy.deepcopy(print_data)
+            # Bambu firmware sends two kinds of push_status: full pushall
+            # responses (on `pushall` requests / printer reconnect) which
+            # include AMS, vt_tray, net, etc. — and ~1 Hz incremental
+            # updates with just the fields that changed (typically temps,
+            # fan, wifi). Without preserving sticky fields from the previous
+            # cache, the first incremental push after a pushall would wipe
+            # AMS info from the bridge cache, and slicers reading the cache
+            # between pushalls would see a stripped-down printer state with
+            # no AMS visible until the next pushall — typically only when
+            # the user power-cycles the printer (#1371). Mirror the same
+            # preservation pattern Bambuddy uses for its own internal state
+            # in bambu_mqtt.py (see _SLICER_VISIBLE_STICKY_KEYS below).
+            prev = self._latest_print_state
+            if prev is not None:
+                for sticky_key in _SLICER_VISIBLE_STICKY_KEYS:
+                    if sticky_key not in new_state and sticky_key in prev:
+                        new_state[sticky_key] = prev[sticky_key]
+            self._latest_print_state = new_state
             return
 
         # info.get_version responses → cache the module list so the synthetic

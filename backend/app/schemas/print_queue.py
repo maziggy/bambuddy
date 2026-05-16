@@ -104,6 +104,13 @@ class PrintQueueItemResponse(BaseModel):
     # Nested info for UI (populated in route)
     archive_name: str | None = None
     archive_thumbnail: str | None = None
+    # True when the linked archive has been soft-deleted (its files are gone
+    # from disk). In that case the *archive_name* / *archive_thumbnail* /
+    # downstream metadata fields are intentionally left None so the frontend
+    # doesn't 404-storm the now-missing thumbnail / plates / plate-thumbnail
+    # endpoints (#1348 follow-up). Frontends can render a "source deleted"
+    # badge based on this flag.
+    archive_deleted: bool = False
     library_file_name: str | None = None  # Name of library file (if library_file_id is set)
     library_file_thumbnail: str | None = None  # Thumbnail of library file
     printer_name: str | None = None

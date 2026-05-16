@@ -97,6 +97,13 @@ async def get_print_log_thumbnail(
     """Get the thumbnail for a print log entry.
 
     Requires a stream token query param (?token=xxx) when auth is enabled.
+
+    Self-heals stale entries: when thumbnail_path points to a file that no
+    longer exists on disk (archive was deleted, or print failed before the
+    thumbnail was ever written), NULL the path on the entry so subsequent
+    page renders skip the request entirely. The frontend's <img> tag is
+    gated on entry.thumbnail_path being truthy, so the next fetch of the
+    log list will simply not request this thumbnail again.
     """
     entry = await db.get(PrintLogEntry, entry_id)
     if not entry or not entry.thumbnail_path:
@@ -104,6 +111,8 @@ async def get_print_log_thumbnail(
 
     thumb_path = settings.base_dir / entry.thumbnail_path
     if not thumb_path.exists():
+        entry.thumbnail_path = None
+        await db.commit()
         raise HTTPException(404, "Thumbnail file not found")
 
     return FileResponse(

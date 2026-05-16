@@ -1714,13 +1714,23 @@ class BambuMQTTClient:
         # Check tray_exist_bits to clear empty slots (Issue #147)
         # New AMS models don't send empty tray data - they just update tray_exist_bits
         # Each bit in tray_exist_bits represents a slot: bit=0 means empty, bit=1 means has spool
-        # Skip when power_on_flag=False: printer shutdown sends all-zero bits which would
-        # wipe all slot data and cause auto-unlink to remove spool assignments (#765)
+        # Skip ONLY the printer-shutdown pattern: all-zero bits paired with
+        # power_on_flag=False (#765). On shutdown that combination would wipe all
+        # slot data and cause auto-unlink to remove spool assignments. Non-zero
+        # bits with power_on_flag=False are valid AMS state from an idle printer
+        # (#1365 — X1C reports power_on_flag=False between prints while the AMS
+        # keeps reporting its actual slot inventory); the update MUST be applied
+        # so spool removal is detected without requiring a manual reconnect.
         tray_exist_bits_str = ams_data.get("tray_exist_bits") if isinstance(ams_data, dict) else None
         power_on = ams_data.get("power_on_flag", True) if isinstance(ams_data, dict) else True
-        if tray_exist_bits_str and power_on:
+        if tray_exist_bits_str:
             try:
                 tray_exist_bits = int(tray_exist_bits_str, 16)
+            except (ValueError, TypeError) as e:
+                logger.debug("[%s] Could not parse tray_exist_bits: %s", self.serial_number, e)
+                tray_exist_bits = None
+
+            if tray_exist_bits is not None and not (tray_exist_bits == 0 and not power_on):
                 for ams_unit in merged_ams:
                     ams_id_raw = ams_unit.get("id")
                     if ams_id_raw is None:
@@ -1752,8 +1762,6 @@ class BambuMQTTClient:
                             tray["tray_uuid"] = "00000000000000000000000000000000"
                             tray["tray_info_idx"] = ""
                             tray["remain"] = 0
-            except (ValueError, TypeError) as e:
-                logger.debug("[%s] Could not parse tray_exist_bits: %s", self.serial_number, e)
 
         self.state.raw_data["ams"] = merged_ams
 

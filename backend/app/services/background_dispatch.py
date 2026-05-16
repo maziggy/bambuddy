@@ -35,6 +35,16 @@ from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
 
+# Bambu firmware states that mean the project_file has actually been accepted
+# and the printer is now processing / running / paused mid-print. Used by the
+# direct-dispatch verifier (#1370): a transition into one of these states means
+# the print landed, anything else (e.g. FINISH -> IDLE after the user dismisses
+# a post-print prompt) is NOT a valid "command landed" signal even though the
+# state value did change. Mirrors the same constant in print_scheduler.py —
+# kept duplicated rather than imported to avoid coupling the two services and
+# to keep the value at the point of use.
+_ACTIVE_PRINT_STATES: frozenset[str] = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
+
 
 class DispatchJobCancelled(Exception):
     """Raised when a dispatch job is cancelled by the user."""
@@ -990,9 +1000,19 @@ class BackgroundDispatchService:
                 # within the remaining timeout and still surface a transition.
                 continue
             last_status = state
-            if state.state != pre_state:
+            if state.state in _ACTIVE_PRINT_STATES:
+                # Printer is actively processing the job. We do NOT accept
+                # arbitrary state transitions: a printer going FINISH -> IDLE
+                # (user dismissed the post-print prompt without accepting our
+                # project_file) would otherwise look like "command landed"
+                # and the dispatch job would be marked successful even though
+                # no print is running (#1370).
                 return True
             if pre_subtask_id is not None and state.subtask_id is not None and state.subtask_id != pre_subtask_id:
+                # Printer picked up the job (subtask_id advanced). H2D can
+                # sit at FINISH for ~50 s after accepting project_file before
+                # transitioning to PREPARE, but the subtask_id flips to our
+                # submission_id almost immediately (#1078).
                 return True
         logger.warning(
             "Printer %s (%d) did not respond to print command within %.0fs "

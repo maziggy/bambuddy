@@ -2498,6 +2498,27 @@ async def run_migrations(conn):
             llt_n,
         )
 
+    # Migration: extend print_log_entries with archive_id, cost, energy, failure_reason,
+    # created_by_id (#1378). Statistics queries shift from PrintArchive to PrintLogEntry
+    # so reprints contribute new rows instead of overwriting the source archive's data.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN archive_id INTEGER")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN cost REAL")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN energy_kwh REAL")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN energy_cost REAL")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN failure_reason VARCHAR(100)")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN created_by_id INTEGER")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS archive_id INTEGER")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS cost DOUBLE PRECISION")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS energy_kwh DOUBLE PRECISION")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS energy_cost DOUBLE PRECISION")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS failure_reason VARCHAR(100)")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS created_by_id INTEGER")
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_print_log_entries_archive_id ON print_log_entries (archive_id)"
+    )
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

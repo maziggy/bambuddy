@@ -233,6 +233,124 @@ class TestPushStatusCache:
         assert bridge.get_latest_print_state() is None
         await bridge.stop()
 
+    @pytest.mark.asyncio
+    async def test_incremental_push_preserves_ams_from_previous_cache(self):
+        """Regression for #1371: Bambu firmware sends FULL push_status on
+        pushall (with AMS/vt_tray/net/etc.) but typically OMITS those fields
+        from 1 Hz incremental push_status updates. Without preserving the
+        sticky keys across pushes, the cache forgets AMS info after the first
+        incremental update, and BambuStudio (which reads the cache via the
+        VP's 1 Hz status push) sees no AMS info until the user power-cycles
+        the printer (forcing a fresh pushall).
+        """
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        # 1. Initial pushall response with full state, AMS included.
+        full_push = json.dumps(
+            {
+                "print": {
+                    "command": "push_status",
+                    "gcode_state": "IDLE",
+                    "wifi_signal": "-50dBm",
+                    "ams": {
+                        "ams": [
+                            {
+                                "id": "0",
+                                "tray": [
+                                    {"id": "0", "tray_type": "PLA", "tray_color": "FF0000FF"},
+                                    {"id": "1", "tray_type": "PETG", "tray_color": "00FF00FF"},
+                                ],
+                            }
+                        ],
+                        "tray_exist_bits": "3",
+                    },
+                    "vt_tray": {"id": "254", "tray_type": ""},
+                    "lights_report": [{"node": "chamber_light", "mode": "on"}],
+                }
+            }
+        ).encode()
+        bridge._on_printer_raw(f"device/{H2D_SERIAL}/report", full_push)
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        assert cached["ams"]["ams"][0]["tray"][0]["tray_type"] == "PLA"
+        assert cached["vt_tray"]["id"] == "254"
+        assert cached["lights_report"][0]["mode"] == "on"
+
+        # 2. Incremental push with only temp/wifi changes — NO ams field.
+        # This is what the printer sends every ~1 s between full pushalls.
+        incremental_push = json.dumps(
+            {
+                "print": {
+                    "command": "push_status",
+                    "wifi_signal": "-55dBm",
+                    "chamber_temper": 26.0,
+                }
+            }
+        ).encode()
+        bridge._on_printer_raw(f"device/{H2D_SERIAL}/report", incremental_push)
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        # New fields take effect.
+        assert cached["wifi_signal"] == "-55dBm"
+        assert cached["chamber_temper"] == 26.0
+        # Sticky fields preserved from the previous cache (the #1371 fix).
+        assert "ams" in cached, "AMS field must be preserved across incremental pushes (#1371)"
+        assert cached["ams"]["ams"][0]["tray"][0]["tray_type"] == "PLA"
+        assert cached["ams"]["tray_exist_bits"] == "3"
+        assert cached["vt_tray"]["id"] == "254"
+        assert cached["lights_report"][0]["mode"] == "on"
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_incoming_ams_update_replaces_cached_ams(self):
+        """Counterpart to the #1371 fix: preservation only kicks in when the
+        incoming push OMITS a sticky key. When the printer DOES send a fresh
+        `ams` value (e.g. on a pushall, or when AMS state genuinely changes),
+        that value must take effect — the preservation must not shadow real
+        updates.
+        """
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        # 1. Initial state: PLA in tray 0.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {"ams": [{"id": "0", "tray": [{"id": "0", "tray_type": "PLA"}]}]},
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        # 2. Fresh push with PETG — must replace, not get shadowed by the old PLA.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {"ams": [{"id": "0", "tray": [{"id": "0", "tray_type": "PETG"}]}]},
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        assert cached["ams"]["ams"][0]["tray"][0]["tray_type"] == "PETG"
+
+        await bridge.stop()
+
 
 # ---------------------------------------------------------------------------
 # Caching: get_version response

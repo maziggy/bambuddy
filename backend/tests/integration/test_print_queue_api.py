@@ -1833,3 +1833,85 @@ class TestAbortedStatusNormalisation:
         """Verify 404 for non-existent batch."""
         response = await async_client.get("/api/v1/queue/batches/9999")
         assert response.status_code == 404
+
+    # ========================================================================
+    # Soft-deleted archive handling (#1348 follow-up)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_soft_delete_archive_cancels_pending_queue_items(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Soft-deleting an archive cancels its pending queue items with a
+        clear reason. The 3MF is gone from disk so the item can never
+        dispatch — leaving it in 'pending' would 404-storm the queue page
+        and confuse the user about why nothing prints."""
+        from backend.app.services.archive import ArchiveService
+
+        printer = await printer_factory()
+        archive = await archive_factory(thumbnail_path="archives/test/test/thumbnail.png")
+        pending = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+        completed = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="completed")
+
+        service = ArchiveService(db_session)
+        assert await service.soft_delete_archive(archive.id) is True
+
+        await db_session.refresh(pending)
+        await db_session.refresh(completed)
+        assert pending.status == "cancelled"
+        assert pending.waiting_reason == "Source archive deleted"
+        # Historical rows untouched — they're audit-trail.
+        assert completed.status == "completed"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_api_hides_archive_surface_when_soft_deleted(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Queue serializer must NOT populate archive_thumbnail / archive_name
+        when the archive is soft-deleted — otherwise the frontend renders a
+        broken <img> and 404-storms the thumbnail / plates / plate-thumbnail
+        endpoints. archive_deleted=True signals the soft-deleted state so
+        the UI can render a 'source deleted' badge."""
+        from datetime import datetime, timezone
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            print_name="Test Print",
+            thumbnail_path="archives/test/test/thumbnail.png",
+            deleted_at=datetime.now(timezone.utc),  # Pre-soft-deleted
+        )
+        item = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="cancelled")
+
+        resp = await async_client.get("/api/v1/queue/")
+        assert resp.status_code == 200
+        body = resp.json()
+        row = next((r for r in body if r["id"] == item.id), None)
+        assert row is not None
+        assert row["archive_deleted"] is True
+        assert row["archive_thumbnail"] is None, "must not expose stale thumbnail path for soft-deleted archive"
+        assert row["archive_name"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_api_still_exposes_archive_surface_when_live(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Sanity guard: the soft-delete suppression must not affect live
+        archives. archive_name / archive_thumbnail still flow through and
+        archive_deleted stays False."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            print_name="Live Archive",
+            thumbnail_path="archives/test/live/thumbnail.png",
+        )
+        item = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+
+        resp = await async_client.get("/api/v1/queue/")
+        assert resp.status_code == 200
+        row = next((r for r in resp.json() if r["id"] == item.id), None)
+        assert row is not None
+        assert row["archive_deleted"] is False
+        assert row["archive_name"] == "Live Archive"
+        assert row["archive_thumbnail"] == "archives/test/live/thumbnail.png"

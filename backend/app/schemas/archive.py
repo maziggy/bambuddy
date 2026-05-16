@@ -100,6 +100,15 @@ class ArchiveResponse(BaseModel):
     created_by_id: int | None = None
     created_by_username: str | None = None
 
+    # Per-archive run aggregates (#1378). Computed from PrintLogEntry — one
+    # row per actual print event — so reprints contribute to these counters
+    # without overwriting the source archive's first-run data.
+    run_count: int = 0
+    last_run_at: datetime | None = None
+    total_filament_actual_grams: float | None = None
+    successful_run_count: int = 0
+    failed_run_count: int = 0
+
     @model_validator(mode="after")
     def compute_object_count(self) -> "ArchiveResponse":
         """Compute object_count from extra_data.printable_objects if not set."""

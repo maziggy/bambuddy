@@ -325,11 +325,13 @@ function SortableQueueItem({
 
   // Determine if we're printing a library file
   const isLibraryFile = !!item.library_file_id && !item.archive_id;
-  // Fetch archive plate details
+  // Fetch archive plate details. Skip when the linked archive has been
+  // soft-deleted (#1348 follow-up): its 3MF is gone from disk so the
+  // /plates endpoint just 404-storms the queue page.
   const { data: archivePlatesData } = useQuery({
     queryKey: ['archive-plates', item.archive_id],
     queryFn: () => api.getArchivePlates(item.archive_id!),
-    enabled: !!item.archive_id && !isLibraryFile,
+    enabled: !!item.archive_id && !isLibraryFile && !item.archive_deleted,
   });
 
   // Fetch library file plate details

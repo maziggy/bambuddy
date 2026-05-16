@@ -222,24 +222,36 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     }
     response = PrintQueueItemResponse(**item_dict)
     if item.archive:
-        response.archive_name = item.archive.print_name or item.archive.filename
-        response.archive_thumbnail = item.archive.thumbnail_path
-        response.print_time_seconds = item.archive.print_time_seconds
-        response.filament_used_grams = item.archive.filament_used_grams
-        response.filament_type = item.archive.filament_type
-        response.filament_color = item.archive.filament_color
-        response.layer_height = item.archive.layer_height
-        response.nozzle_diameter = item.archive.nozzle_diameter
-        response.sliced_for_model = item.archive.sliced_for_model
-        if item.plate_id:
-            archive_path = settings.base_dir / item.archive.file_path
-            if archive_path.exists():
-                plate_time = _extract_print_time_from_3mf(archive_path, item.plate_id)
-                plate_weight = sum(f["used_g"] for f in extract_filament_usage_from_3mf(archive_path, item.plate_id))
-                if plate_time is not None:
-                    response.print_time_seconds = plate_time
-                if plate_weight > 0:
-                    response.filament_used_grams = plate_weight
+        # Soft-deleted archive: files are gone from disk but the row stays
+        # (its filament/cost contribution still flows into stats per #1343).
+        # Suppress the archive-derived UI surface so the queue page doesn't
+        # 404-storm the thumbnail / plates / plate-thumbnail endpoints — the
+        # frontend's existing truthy gate on archive_thumbnail covers it
+        # (#1348 follow-up). The archive_deleted flag lets the UI render a
+        # "source deleted" badge on these rows.
+        if item.archive.deleted_at is not None:
+            response.archive_deleted = True
+        else:
+            response.archive_name = item.archive.print_name or item.archive.filename
+            response.archive_thumbnail = item.archive.thumbnail_path
+            response.print_time_seconds = item.archive.print_time_seconds
+            response.filament_used_grams = item.archive.filament_used_grams
+            response.filament_type = item.archive.filament_type
+            response.filament_color = item.archive.filament_color
+            response.layer_height = item.archive.layer_height
+            response.nozzle_diameter = item.archive.nozzle_diameter
+            response.sliced_for_model = item.archive.sliced_for_model
+            if item.plate_id:
+                archive_path = settings.base_dir / item.archive.file_path
+                if archive_path.exists():
+                    plate_time = _extract_print_time_from_3mf(archive_path, item.plate_id)
+                    plate_weight = sum(
+                        f["used_g"] for f in extract_filament_usage_from_3mf(archive_path, item.plate_id)
+                    )
+                    if plate_time is not None:
+                        response.print_time_seconds = plate_time
+                    if plate_weight > 0:
+                        response.filament_used_grams = plate_weight
     if item.library_file:
         response.library_file_name = (
             item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None

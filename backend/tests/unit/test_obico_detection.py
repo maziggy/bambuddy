@@ -295,6 +295,10 @@ class TestCaptureFrameSharesBroadcasterUpstream:
         with (
             patch("backend.app.services.obico_detection.async_session", return_value=mock_ctx),
             patch(
+                "backend.app.api.routes.camera.is_stream_active",
+                return_value=True,
+            ),
+            patch(
                 "backend.app.api.routes.camera.try_get_active_buffered_frame",
                 return_value=FAKE_JPEG,
             ),
@@ -306,6 +310,43 @@ class TestCaptureFrameSharesBroadcasterUpstream:
             result = await svc._capture_frame(printer_id=1)
 
         assert result == FAKE_JPEG
+        mock_fresh.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_poll_when_stream_active_but_buffer_empty(self):
+        """#1348: viewer attached + buffer empty must NOT open a competing socket."""
+        printer = MagicMock(
+            external_camera_enabled=False,
+            external_camera_url=None,
+            ip_address="192.168.1.10",
+            access_code="12345678",
+            model="X1C",
+        )
+        mock_session = MagicMock()
+        mock_session.get = AsyncMock(return_value=printer)
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        svc = ObicoDetectionService()
+        with (
+            patch("backend.app.services.obico_detection.async_session", return_value=mock_ctx),
+            patch(
+                "backend.app.api.routes.camera.is_stream_active",
+                return_value=True,
+            ),
+            patch(
+                "backend.app.api.routes.camera.try_get_active_buffered_frame",
+                return_value=None,  # Stream active, but first frame not buffered yet
+            ),
+            patch(
+                "backend.app.services.camera.capture_camera_frame_bytes",
+                new=AsyncMock(return_value=b"FRESH-CAPTURE-WOULD-KICK-VIEWER"),
+            ) as mock_fresh,
+        ):
+            result = await svc._capture_frame(printer_id=1)
+
+        assert result is None, "must skip this poll cycle, not open a competing socket"
         mock_fresh.assert_not_called()
 
     @pytest.mark.asyncio
@@ -327,8 +368,8 @@ class TestCaptureFrameSharesBroadcasterUpstream:
         with (
             patch("backend.app.services.obico_detection.async_session", return_value=mock_ctx),
             patch(
-                "backend.app.api.routes.camera.try_get_active_buffered_frame",
-                return_value=None,  # No active stream
+                "backend.app.api.routes.camera.is_stream_active",
+                return_value=False,
             ),
             patch(
                 "backend.app.services.camera.capture_camera_frame_bytes",

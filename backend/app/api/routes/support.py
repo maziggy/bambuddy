@@ -640,7 +640,7 @@ async def _check_url_reachable(url: str, timeout: float = 2.0) -> bool | None:
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # noqa: S501 — local sidecars often use self-signed
+        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # nosec B501 — local sidecars often use self-signed; this is a reachability/health probe only, no secrets are sent
             r = await client.get(url, follow_redirects=False)
             # Anything that returned a status code counts as reachable, even 404
             # (the API server is up, just the path was wrong) — separates network
@@ -668,7 +668,7 @@ async def _fetch_slicer_health(url: str, timeout: float = 2.0) -> dict | None:
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # noqa: S501 — local sidecars often use self-signed
+        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # nosec B501 — local sidecars often use self-signed; this is a reachability/health probe only, no secrets are sent
             r = await client.get(health_url, follow_redirects=False)
             if r.status_code != 200:
                 return {"reachable": True, "version": None}

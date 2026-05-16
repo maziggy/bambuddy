@@ -121,6 +121,16 @@ ENV HOME=/app
 ENV USER=bambuddy
 ENV LOGNAME=bambuddy
 
+# Matplotlib (imported lazily by the STL thumbnail generator) tries to create
+# its font/style cache at $HOME/.config/matplotlib on first import. /app is
+# root-owned and not writable by the PUID:PGID the entrypoint drops to,
+# which trips an EPERM warning in everyone's logs and forces matplotlib
+# to fall back to a per-restart temp dir (paying the font-scan cost on
+# every container restart). Pinning the cache dir to /tmp/matplotlib
+# silences the warning and keeps the cache alive for the container's
+# lifetime. /tmp is writable by any uid, so this works regardless of PUID.
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
 EXPOSE 322
 EXPOSE 990
 EXPOSE 3000

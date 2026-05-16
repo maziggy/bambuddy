@@ -17,6 +17,7 @@ async def write_log_entry(
     db: AsyncSession,
     *,
     status: str,
+    archive_id: int | None = None,
     print_name: str | None = None,
     printer_name: str | None = None,
     printer_id: int | None = None,
@@ -25,7 +26,12 @@ async def write_log_entry(
     filament_type: str | None = None,
     filament_color: str | None = None,
     filament_used_grams: float | None = None,
+    cost: float | None = None,
+    energy_kwh: float | None = None,
+    energy_cost: float | None = None,
+    failure_reason: str | None = None,
     thumbnail_path: str | None = None,
+    created_by_id: int | None = None,
     created_by_username: str | None = None,
 ) -> PrintLogEntry:
     """Write a print log entry."""
@@ -34,6 +40,7 @@ async def write_log_entry(
         duration = int((completed_at - started_at).total_seconds())
 
     entry = PrintLogEntry(
+        archive_id=archive_id,
         print_name=print_name,
         printer_name=printer_name,
         printer_id=printer_id,
@@ -44,7 +51,12 @@ async def write_log_entry(
         filament_type=filament_type,
         filament_color=filament_color,
         filament_used_grams=filament_used_grams,
+        cost=cost,
+        energy_kwh=energy_kwh,
+        energy_cost=energy_cost,
+        failure_reason=failure_reason,
         thumbnail_path=thumbnail_path,
+        created_by_id=created_by_id,
         created_by_username=created_by_username,
     )
     db.add(entry)

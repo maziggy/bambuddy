@@ -79,6 +79,25 @@ def get_buffered_frame(printer_id: int) -> bytes | None:
     return _last_frames.get(printer_id)
 
 
+def is_stream_active(printer_id: int) -> bool:
+    """Return True iff a fan-out camera stream is currently registered for this printer.
+
+    Snapshot callers (Obico polling, manual /camera/snapshot) MUST NOT open a
+    second concurrent RTSP/chamber-image socket while a viewer is attached:
+    most Bambu firmwares allow only one camera connection, so the competing
+    socket either kicks the live viewer off or gets refused itself, and the
+    resulting reconnect storm tears down the fan-out broadcaster (see #1348).
+
+    Callers should consult this BEFORE trying to open a fresh socket and skip
+    the capture cycle when it returns True — even if try_get_active_buffered_frame
+    returns None (the stream may be running but the first frame hasn't landed
+    in the buffer yet, or the upstream is mid-reconnect).
+    """
+    return any(k.startswith(f"{printer_id}-") for k in _active_streams) or any(
+        k.startswith(f"{printer_id}-") for k in _active_chamber_streams
+    )
+
+
 def try_get_active_buffered_frame(printer_id: int) -> bytes | None:
     """Return a buffered frame iff a stream is currently running for this printer.
 
@@ -89,11 +108,13 @@ def try_get_active_buffered_frame(printer_id: int) -> bytes | None:
 
     Returns None when no broadcaster is active for this printer, so callers
     fall through to their existing fresh-socket path unchanged.
+
+    NB: returning None does NOT mean "safe to open a fresh socket" — it also
+    fires when the stream is registered but no frame has been buffered yet
+    (startup race, mid-reconnect). Callers that must avoid competing sockets
+    should consult is_stream_active() first; see #1348.
     """
-    has_stream = any(k.startswith(f"{printer_id}-") for k in _active_streams) or any(
-        k.startswith(f"{printer_id}-") for k in _active_chamber_streams
-    )
-    if not has_stream:
+    if not is_stream_active(printer_id):
         return None
     return _last_frames.get(printer_id)
 

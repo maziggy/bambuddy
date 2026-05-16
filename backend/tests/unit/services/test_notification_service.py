@@ -670,6 +670,58 @@ class TestNotificationProviderTypes:
             assert "image" not in payload
 
 
+class TestDiscordProvider:
+    """Discord webhook URL host validation (#1363)."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.mark.asyncio
+    async def test_discord_accepts_discord_com_url(self, service):
+        config = {"webhook_url": "https://discord.com/api/webhooks/123/abc"}
+        mock_response = MagicMock()
+        mock_response.status_code = 204
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, _ = await service._send_discord(config, "Title", "Body")
+
+        assert success is True
+        mock_client.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_discord_accepts_legacy_discordapp_com_url(self, service):
+        """Discord's 'Copy Webhook URL' button emits discordapp.com URLs (#1363)."""
+        config = {"webhook_url": "https://discordapp.com/api/webhooks/123/abc"}
+        mock_response = MagicMock()
+        mock_response.status_code = 204
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, _ = await service._send_discord(config, "Title", "Body")
+
+        assert success is True
+        mock_client.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_discord_rejects_non_discord_host(self, service):
+        config = {"webhook_url": "https://evil.example.com/api/webhooks/123/abc"}
+        success, message = await service._send_discord(config, "Title", "Body")
+        assert success is False
+        assert "Invalid Discord webhook URL" in message
+
+    @pytest.mark.asyncio
+    async def test_discord_rejects_empty_url(self, service):
+        success, message = await service._send_discord({"webhook_url": ""}, "Title", "Body")
+        assert success is False
+        assert "required" in message.lower()
+
+
 class TestNtfyPriority:
     """Per-event ntfy Priority header (#990)."""
 

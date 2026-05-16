@@ -204,13 +204,25 @@ class ObicoDetectionService:
         # already watching — avoids opening a second concurrent RTSP socket
         # on printers that allow only one camera connection (e.g. X2D
         # firmware 01.01.00.00; see #1271). Buffered frame is <1s old while
-        # a viewer is connected. Returns None when no stream is active, so
-        # we fall through to a fresh socket as before.
-        from backend.app.api.routes.camera import try_get_active_buffered_frame
+        # a viewer is connected.
+        #
+        # When a viewer is attached but no frame is buffered yet (startup
+        # race, mid-reconnect), we DELIBERATELY skip this poll cycle instead
+        # of falling through to capture_camera_frame_bytes. Opening a fresh
+        # RTSP/chamber socket would compete with the live viewer and kick
+        # the fan-out connection on most firmwares — exactly the freeze
+        # reported in #1348. The poll loop retries in ~10s.
+        from backend.app.api.routes.camera import is_stream_active, try_get_active_buffered_frame
 
-        buffered = try_get_active_buffered_frame(printer_id)
-        if buffered:
-            return buffered
+        if is_stream_active(printer_id):
+            buffered = try_get_active_buffered_frame(printer_id)
+            if buffered:
+                return buffered
+            logger.info(
+                "Obico: viewer attached for printer %s but buffer empty; skipping this poll to avoid competing camera socket (#1348)",
+                printer_id,
+            )
+            return None
 
         return await capture_camera_frame_bytes(
             ip_address=printer.ip_address,

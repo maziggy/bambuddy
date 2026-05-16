@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
@@ -26,6 +26,7 @@ from backend.app.models.filament import Filament
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ReprintRequest
+from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
 from backend.app.utils.http import build_content_disposition
@@ -136,6 +137,17 @@ def _apply_user_filter(conditions: list, created_by_id: int | None):
             conditions.append(PrintArchive.created_by_id == created_by_id)
 
 
+def _apply_run_user_filter(conditions: list, created_by_id: int | None):
+    """Append created_by_id filter scoped to PrintLogEntry rows."""
+    from backend.app.models.print_log import PrintLogEntry
+
+    if created_by_id is not None:
+        if created_by_id == -1:
+            conditions.append(PrintLogEntry.created_by_id.is_(None))
+        else:
+            conditions.append(PrintLogEntry.created_by_id == created_by_id)
+
+
 def compute_time_accuracy(archive: PrintArchive) -> dict:
     """Compute actual print time and accuracy for an archive.
 
@@ -163,12 +175,48 @@ def compute_time_accuracy(archive: PrintArchive) -> dict:
     return result
 
 
+async def _load_run_aggregates(db: AsyncSession, archive_ids: list[int]) -> dict[int, dict]:
+    """Batch-load per-archive run aggregates from PrintLogEntry.
+
+    Returns ``{archive_id: {run_count, last_run_at, total_filament_actual_grams,
+    successful_run_count, failed_run_count}}``. Archives with no logged runs are
+    absent from the map; callers should treat that as zero/none.
+    """
+    from backend.app.models.print_log import PrintLogEntry
+
+    if not archive_ids:
+        return {}
+    rows = await db.execute(
+        select(
+            PrintLogEntry.archive_id,
+            func.count(PrintLogEntry.id).label("run_count"),
+            func.max(PrintLogEntry.started_at).label("last_run_at"),
+            func.coalesce(func.sum(PrintLogEntry.filament_used_grams), 0).label("total_filament"),
+            func.sum(case((PrintLogEntry.status == "completed", 1), else_=0)).label("successful"),
+            func.sum(case((PrintLogEntry.status == "failed", 1), else_=0)).label("failed"),
+        )
+        .where(PrintLogEntry.archive_id.in_(archive_ids))
+        .group_by(PrintLogEntry.archive_id)
+    )
+    aggregates: dict[int, dict] = {}
+    for archive_id, run_count, last_run_at, total_filament, successful, failed in rows.all():
+        aggregates[archive_id] = {
+            "run_count": int(run_count or 0),
+            "last_run_at": last_run_at,
+            "total_filament_actual_grams": float(total_filament) if total_filament else None,
+            "successful_run_count": int(successful or 0),
+            "failed_run_count": int(failed or 0),
+        }
+    return aggregates
+
+
 def archive_to_response(
     archive: PrintArchive,
     duplicates: list[dict] | None = None,
     duplicate_count: int = 0,
     duplicate_sequence: int = 0,
     original_archive_id: int | None = None,
+    run_aggregate: dict | None = None,
 ) -> dict:
     """Convert archive model to response dict with computed fields."""
     data = {
@@ -225,6 +273,13 @@ def archive_to_response(
     # Add computed time accuracy fields
     accuracy_data = compute_time_accuracy(archive)
     data.update(accuracy_data)
+
+    if run_aggregate:
+        data["run_count"] = run_aggregate.get("run_count", 0)
+        data["last_run_at"] = run_aggregate.get("last_run_at")
+        data["total_filament_actual_grams"] = run_aggregate.get("total_filament_actual_grams")
+        data["successful_run_count"] = run_aggregate.get("successful_run_count", 0)
+        data["failed_run_count"] = run_aggregate.get("failed_run_count", 0)
 
     return data
 
@@ -318,6 +373,8 @@ async def list_archives(
             for sequence, (archive_id, _) in enumerate(group):
                 duplicate_meta_by_archive_id.setdefault(archive_id, (sequence, original_id, duplicate_count))
 
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
+
     # Build response with duplicate sequence and original archive ID pre-computed
     result = []
     for a in archives:
@@ -342,6 +399,7 @@ async def list_archives(
                 duplicate_count=duplicate_count,
                 duplicate_sequence=duplicate_sequence,
                 original_archive_id=original_archive_id,
+                run_aggregate=run_aggregates.get(a.id),
             )
         )
     return result
@@ -762,69 +820,75 @@ async def get_archive_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.STATS_READ),
 ):
-    """Get statistics across all archives."""
+    """Get statistics across all archives.
+
+    Stats aggregate over PrintLogEntry (one row per print event), not over
+    PrintArchive (one row per file). A reprint contributes a new PrintLogEntry
+    so its filament/cost/time/energy add to the totals instead of overwriting
+    the source archive's first-run values (#1378).
+    """
+    from backend.app.models.print_log import PrintLogEntry
+
     _validate_user_filter_permission(current_user, created_by_id)
 
-    # Build date filter conditions
+    # Build date filter conditions scoped to PrintLogEntry (event-time).
     base_conditions = []
     if date_from:
         dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
-        base_conditions.append(PrintArchive.created_at >= dt_from)
+        base_conditions.append(PrintLogEntry.created_at >= dt_from)
     if date_to:
         dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
-        base_conditions.append(PrintArchive.created_at <= dt_to)
-    _apply_user_filter(base_conditions, created_by_id)
+        base_conditions.append(PrintLogEntry.created_at <= dt_to)
+    _apply_run_user_filter(base_conditions, created_by_id)
 
-    # Total counts
-    total_result = await db.execute(select(func.count(PrintArchive.id)).where(*base_conditions))
+    # Total counts (one row per print event).
+    total_result = await db.execute(select(func.count(PrintLogEntry.id)).where(*base_conditions))
     total_prints = total_result.scalar() or 0
 
     successful_result = await db.execute(
-        select(func.count(PrintArchive.id)).where(PrintArchive.status == "completed", *base_conditions)
+        select(func.count(PrintLogEntry.id)).where(PrintLogEntry.status == "completed", *base_conditions)
     )
     successful_prints = successful_result.scalar() or 0
 
     failed_result = await db.execute(
-        select(func.count(PrintArchive.id)).where(PrintArchive.status == "failed", *base_conditions)
+        select(func.count(PrintLogEntry.id)).where(PrintLogEntry.status == "failed", *base_conditions)
     )
     failed_prints = failed_result.scalar() or 0
 
-    # Totals - use actual print time from timestamps (not slicer estimates)
-    # For archives with both started_at and completed_at, calculate actual duration
-    # Fall back to print_time_seconds only for archives without timestamps
-    archives_for_time = await db.execute(
-        select(PrintArchive.started_at, PrintArchive.completed_at, PrintArchive.print_time_seconds).where(
-            *base_conditions
-        )
+    # Total elapsed time — PrintLogEntry stores duration_seconds directly so we
+    # can sum it server-side. Rows missing duration fall back to the slicer
+    # estimate from the archive (joined for that case only).
+    time_rows = await db.execute(
+        select(
+            PrintLogEntry.duration_seconds,
+            PrintLogEntry.started_at,
+            PrintLogEntry.completed_at,
+        ).where(*base_conditions)
     )
     total_seconds = 0
-    for started_at, completed_at, print_time_seconds in archives_for_time.all():
-        if started_at and completed_at:
-            # Use actual elapsed time
-            actual_seconds = (completed_at - started_at).total_seconds()
-            if actual_seconds > 0:
-                total_seconds += actual_seconds
-        elif print_time_seconds:
-            # Fallback to estimate only if no timestamps
-            total_seconds += print_time_seconds
+    for duration_seconds, started_at, completed_at in time_rows.all():
+        if duration_seconds:
+            total_seconds += duration_seconds
+        elif started_at and completed_at:
+            elapsed = (completed_at - started_at).total_seconds()
+            if elapsed > 0:
+                total_seconds += int(elapsed)
     total_time = total_seconds / 3600  # Convert to hours
 
-    # Sum filament directly - filament_used_grams already contains the total for the print job
     filament_result = await db.execute(
-        select(func.coalesce(func.sum(PrintArchive.filament_used_grams), 0)).where(*base_conditions)
+        select(func.coalesce(func.sum(PrintLogEntry.filament_used_grams), 0)).where(*base_conditions)
     )
     total_filament = filament_result.scalar() or 0
 
-    cost_result = await db.execute(select(func.sum(PrintArchive.cost)).where(*base_conditions))
+    cost_result = await db.execute(select(func.sum(PrintLogEntry.cost)).where(*base_conditions))
     total_cost = cost_result.scalar() or 0
 
     # By filament type (split comma-separated values for multi-material prints)
     filament_type_result = await db.execute(
-        select(PrintArchive.filament_type).where(PrintArchive.filament_type.isnot(None), *base_conditions)
+        select(PrintLogEntry.filament_type).where(PrintLogEntry.filament_type.isnot(None), *base_conditions)
     )
     prints_by_filament: dict[str, int] = {}
     for (filament_types,) in filament_type_result.all():
-        # Split by comma and count each type
         for ftype in filament_types.split(","):
             ftype = ftype.strip()
             if ftype:
@@ -832,47 +896,49 @@ async def get_archive_stats(
 
     # By printer
     printer_result = await db.execute(
-        select(PrintArchive.printer_id, func.count(PrintArchive.id))
+        select(PrintLogEntry.printer_id, func.count(PrintLogEntry.id))
         .where(*base_conditions)
-        .group_by(PrintArchive.printer_id)
+        .group_by(PrintLogEntry.printer_id)
     )
     prints_by_printer = {str(k): v for k, v in printer_result.all()}
 
-    # Time accuracy statistics
-    # Get all completed archives with both estimated and actual times
-    accuracy_result = await db.execute(
-        select(PrintArchive)
-        .where(PrintArchive.status == "completed", *base_conditions)
-        .where(PrintArchive.print_time_seconds.isnot(None))
-        .where(PrintArchive.started_at.isnot(None))
-        .where(PrintArchive.completed_at.isnot(None))
+    # Time accuracy — compare each completed run's actual duration to the
+    # slicer's estimate on the linked archive. Runs without a linked archive
+    # (NULL archive_id) or without an estimate are excluded.
+    accuracy_rows = await db.execute(
+        select(
+            PrintLogEntry.duration_seconds,
+            PrintLogEntry.started_at,
+            PrintLogEntry.completed_at,
+            PrintLogEntry.printer_id,
+            PrintArchive.print_time_seconds,
+        )
+        .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
+        .where(
+            PrintLogEntry.status == "completed",
+            PrintArchive.print_time_seconds.isnot(None),
+            *base_conditions,
+        )
     )
-    archives_with_times = list(accuracy_result.scalars().all())
-
     average_accuracy = None
     accuracy_by_printer: dict[str, float] = {}
-
-    if archives_with_times:
-        accuracies = []
-        printer_accuracies: dict[str, list[float]] = {}
-
-        for archive in archives_with_times:
-            acc_data = compute_time_accuracy(archive)
-            if acc_data["time_accuracy"] is not None:
-                accuracies.append(acc_data["time_accuracy"])
-
-                # Group by printer
-                printer_key = str(archive.printer_id) if archive.printer_id else "unknown"
-                if printer_key not in printer_accuracies:
-                    printer_accuracies[printer_key] = []
-                printer_accuracies[printer_key].append(acc_data["time_accuracy"])
-
-        if accuracies:
-            average_accuracy = round(sum(accuracies) / len(accuracies), 1)
-
-        # Calculate per-printer averages
-        for printer_key, accs in printer_accuracies.items():
-            accuracy_by_printer[printer_key] = round(sum(accs) / len(accs), 1)
+    accuracies: list[float] = []
+    printer_accuracies: dict[str, list[float]] = {}
+    for duration_seconds, started_at, completed_at, run_printer_id, estimate_seconds in accuracy_rows.all():
+        actual_seconds = duration_seconds
+        if not actual_seconds and started_at and completed_at:
+            elapsed = (completed_at - started_at).total_seconds()
+            actual_seconds = int(elapsed) if elapsed > 0 else None
+        if not actual_seconds or not estimate_seconds:
+            continue
+        accuracy = (estimate_seconds / actual_seconds) * 100
+        accuracies.append(accuracy)
+        printer_key = str(run_printer_id) if run_printer_id else "unknown"
+        printer_accuracies.setdefault(printer_key, []).append(accuracy)
+    if accuracies:
+        average_accuracy = round(sum(accuracies) / len(accuracies), 1)
+    for printer_key, accs in printer_accuracies.items():
+        accuracy_by_printer[printer_key] = round(sum(accs) / len(accs), 1)
 
     # Energy totals - check which mode to use
     from backend.app.api.routes.settings import get_setting
@@ -899,11 +965,11 @@ async def get_archive_stats(
         )
         total_energy_cost = total_energy_kwh * energy_cost_per_kwh
     else:
-        # Per-print mode: sum the per-print energy column directly.
-        energy_kwh_result = await db.execute(select(func.sum(PrintArchive.energy_kwh)).where(*base_conditions))
+        # Per-print mode: sum the per-run energy column from PrintLogEntry.
+        energy_kwh_result = await db.execute(select(func.sum(PrintLogEntry.energy_kwh)).where(*base_conditions))
         total_energy_kwh = energy_kwh_result.scalar() or 0
 
-        energy_cost_result = await db.execute(select(func.sum(PrintArchive.energy_cost)).where(*base_conditions))
+        energy_cost_result = await db.execute(select(func.sum(PrintLogEntry.energy_cost)).where(*base_conditions))
         total_energy_cost = energy_cost_result.scalar() or 0
 
     return ArchiveStats(
@@ -1178,7 +1244,35 @@ async def get_archive(
         print_name=archive.print_name,
         makerworld_model_id=makerworld_id,
     )
-    return archive_to_response(archive, duplicates)
+    run_aggregates = await _load_run_aggregates(db, [archive.id])
+    return archive_to_response(archive, duplicates, run_aggregate=run_aggregates.get(archive.id))
+
+
+@router.get("/{archive_id}/runs", response_model=PrintLogResponse)
+async def list_archive_runs(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
+    """List PrintLogEntry rows for this archive — one per print event.
+
+    Newest first. Drives the per-archive "Print Log" view (#1378).
+    """
+    from backend.app.models.print_log import PrintLogEntry
+    from backend.app.schemas.print_log import PrintLogEntrySchema
+
+    archive = await db.get(PrintArchive, archive_id)
+    if not archive or archive.deleted_at is not None:
+        raise HTTPException(404, "Archive not found")
+
+    rows = await db.execute(
+        select(PrintLogEntry)
+        .where(PrintLogEntry.archive_id == archive_id)
+        .order_by(PrintLogEntry.started_at.desc().nulls_last(), PrintLogEntry.id.desc())
+    )
+    entries = list(rows.scalars().all())
+    items = [PrintLogEntrySchema.model_validate(e, from_attributes=True) for e in entries]
+    return PrintLogResponse(items=items, total=len(items))
 
 
 @router.get("/{archive_id}/similar")
@@ -1571,6 +1665,17 @@ async def delete_archive(
 
     service = ArchiveService(db)
     if purge_stats:
+        # Hard-delete the linked PrintLogEntry rows first so their filament /
+        # cost / count contributions disappear from /archives/stats. The FK is
+        # ON DELETE SET NULL, so without this delete the runs would survive
+        # the archive row and keep showing up in totals (#1343 / #1378).
+        from sqlalchemy import delete as sa_delete
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        await db.execute(sa_delete(PrintLogEntry).where(PrintLogEntry.archive_id == archive_id))
+        await db.commit()
+
         if not await service.delete_archive(archive_id):
             raise HTTPException(404, "Archive not found")
         return {"status": "deleted", "purged_from_stats": True}

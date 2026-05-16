@@ -381,6 +381,16 @@ class TestUpdatesAPI:
             "for tag-based updates) are resolvable for the subsequent reset. "
             f"Captured fetch call: {fetch_calls[0]['args']}"
         )
+        # Fetch must include --force so a re-pointed tag on the remote
+        # (common after re-tagging a release post-release-notes edit) doesn't
+        # surface as "Failed to fetch updates" to the user just because their
+        # local copy of the moved tag would be clobbered. The relevant target
+        # ref is fetched fine; we only want git's tag-clobber to be silent.
+        assert "--force" in fetch_calls[0]["args"], (
+            "Fetch must use --force so re-pointed tags on the remote don't "
+            "fail the whole fetch (the rest of the refs update cleanly). "
+            f"Captured fetch call: {fetch_calls[0]['args']}"
+        )
 
     @pytest.mark.asyncio
     async def test_apply_update_passes_discovered_release_to_perform_update(self, async_client: AsyncClient):

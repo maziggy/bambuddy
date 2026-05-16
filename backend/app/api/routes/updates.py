@@ -523,12 +523,21 @@ async def _perform_update(target_ref: str):
         # locally resolvable for the reset below. `--tags` is required —
         # plain `git fetch origin` doesn't bring tags by default, so a
         # release tag would not be resolvable.
+        #
+        # `--force` lets a moved tag on the remote overwrite the local copy.
+        # Without it, any tag that was re-tagged upstream (e.g. v0.2.1 being
+        # re-pointed after a hotfix re-tag) makes `git fetch --tags` return
+        # a non-zero exit even though every other ref fetched cleanly —
+        # which we'd then surface as "Failed to fetch updates" to the user.
+        # The in-app updater's contract is "sync me to the remote"; force-
+        # overwriting a stale local tag matches that intent.
         process = await asyncio.create_subprocess_exec(
             git_path,
             *git_config,
             "fetch",
             "--prune",
             "--tags",
+            "--force",
             "origin",
             cwd=str(base_dir),
             stdout=asyncio.subprocess.PIPE,

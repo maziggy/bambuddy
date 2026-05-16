@@ -11,6 +11,8 @@ greenlet>=3.0.0
 # Pydantic
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+# Transitive of pydantic-settings, floor-pinned to patch CVE-2026-28684 (dotenv 1.2.1)
+python-dotenv>=1.2.2
 
 # Bambu Lab Printer Communication
 paho-mqtt>=2.0.0

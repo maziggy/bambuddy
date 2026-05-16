@@ -625,6 +625,31 @@ def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | No
     return stored_ams_mapping
 
 
+def _maybe_start_layer_timelapse(printer, printer_id: int, archive_id: int) -> bool:
+    """Start a layer-timelapse session for *archive_id* when the printer has
+    an external camera configured. Returns True if a session was started.
+
+    Three call sites in on_print_start (expected-archive promotion, fallback
+    archive creation, fresh-archive creation) used to inline this same
+    if-block; the inline copies kept drifting (#1353 fixed only one of them
+    on the first pass). Centralising the conditional + call here makes the
+    contract testable in isolation and keeps the three sites locked in step.
+    """
+    if not (printer.external_camera_enabled and printer.external_camera_url):
+        return False
+    from backend.app.services.layer_timelapse import start_session
+
+    start_session(
+        printer_id,
+        archive_id,
+        printer.external_camera_url,
+        printer.external_camera_type or "mjpeg",
+        snapshot_url=printer.external_camera_snapshot_url,
+    )
+    logging.getLogger(__name__).info("Started layer timelapse for printer %s, archive %s", printer_id, archive_id)
+    return True
+
+
 def _format_hms_error_summary(hms_errors: list[dict]) -> str | None:
     """Build a human-readable failure reason from MQTT hms_errors for PrintQueueItem.error_message.
 
@@ -2022,22 +2047,10 @@ async def on_print_start(printer_id: int, data: dict):
                     _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
 
                 # Start timelapse session if external camera is enabled (#1353).
-                # The two new-archive paths below also call start_session, but
-                # queue / VP-dispatched prints land here in the expected-archive
-                # branch and used to skip it entirely — so the timelapse session
-                # never started, no frames were captured, and the post-print
-                # stitch silently returned None.
-                if printer.external_camera_enabled and printer.external_camera_url:
-                    from backend.app.services.layer_timelapse import start_session
-
-                    start_session(
-                        printer_id,
-                        archive.id,
-                        printer.external_camera_url,
-                        printer.external_camera_type or "mjpeg",
-                        snapshot_url=printer.external_camera_snapshot_url,
-                    )
-                    logger.info("Started layer timelapse for printer %s, expected archive %s", printer_id, archive.id)
+                # Queue / VP-dispatched prints land here in the expected-archive
+                # branch and used to skip start_session entirely — frames were
+                # never captured and the post-print stitch silently returned None.
+                _maybe_start_layer_timelapse(printer, printer_id, archive.id)
 
                 # Inject ams_mapping into usage tracker session — the session was created
                 # before expected-print promotion, so it may have ams_mapping=None when
@@ -2551,18 +2564,7 @@ async def on_print_start(printer_id: int, data: dict):
 
                 logger.info("Created fallback archive %s for %s (no 3MF available)", fallback_archive.id, print_name)
 
-                # Start timelapse session if external camera is enabled
-                if printer.external_camera_enabled and printer.external_camera_url:
-                    from backend.app.services.layer_timelapse import start_session
-
-                    start_session(
-                        printer_id,
-                        fallback_archive.id,
-                        printer.external_camera_url,
-                        printer.external_camera_type or "mjpeg",
-                        snapshot_url=printer.external_camera_snapshot_url,
-                    )
-                    logger.info("Started layer timelapse for printer %s, archive %s", printer_id, fallback_archive.id)
+                _maybe_start_layer_timelapse(printer, printer_id, fallback_archive.id)
 
                 # Track as active print
                 _active_prints[(printer_id, fallback_archive.filename)] = fallback_archive.id
@@ -2641,18 +2643,7 @@ async def on_print_start(printer_id: int, data: dict):
 
                 logger.info("Created archive %s for %s", archive.id, downloaded_filename)
 
-                # Start timelapse session if external camera is enabled
-                if printer.external_camera_enabled and printer.external_camera_url:
-                    from backend.app.services.layer_timelapse import start_session
-
-                    start_session(
-                        printer_id,
-                        archive.id,
-                        printer.external_camera_url,
-                        printer.external_camera_type or "mjpeg",
-                        snapshot_url=printer.external_camera_snapshot_url,
-                    )
-                    logger.info("Started layer timelapse for printer %s, archive %s", printer_id, archive.id)
+                _maybe_start_layer_timelapse(printer, printer_id, archive.id)
 
                 # Record starting energy from smart plug if available (#941: persisted column)
                 await _record_energy_start(archive, printer_id, db, context="auto-archive")

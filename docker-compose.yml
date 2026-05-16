@@ -64,11 +64,11 @@ services:
       #- /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
       #
       # Using a self signed certificate for Home Assistant
-      # Add your certifictae to the certs directory and mount it to the container.
+      # Add your certificate to certs directory and mount it to the container.
       # The certificate will be added to the system trust store on container startup.
       # Enable the system trust store with the USE_SYSTEM_TRUST_STORE env var to
       # have Bambuddy trust the certificate.
-      # - /certs:/usr/local/share/ca-certificates
+      # - /path/to/certs:/usr/local/share/ca-certificates
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # User/group the container drops to after the entrypoint normalises

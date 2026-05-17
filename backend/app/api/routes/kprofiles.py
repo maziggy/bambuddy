@@ -113,14 +113,17 @@ async def set_kprofile(
     if not client or not client.state.connected:
         raise HTTPException(400, "Printer not connected")
 
-    # Detect dual-nozzle families by serial number prefix.
-    # H2 series: legacy "094"; post-2026 H2C batches ship with "31B8B" (#1105).
-    # X2D series: "20P9".
-    is_h2d = printer.serial_number.startswith(("094", "20P9", "31B8B"))
+    # Detect dual-nozzle for the in-place edit format. Runtime detection from
+    # device.extruder.info beats serial-prefix heuristics — H2S shares prefix
+    # "094" with H2D but is single-nozzle (#1386). Model name is the fallback
+    # for the brief window after connect before push data arrives.
+    is_dual_nozzle = client._is_dual_nozzle or (
+        printer.model and printer.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "X2D")
+    )
 
-    if is_edit and is_h2d:
-        # H2D in-place edit: use cali_idx with slot_id=0 and empty setting_id
-        logger.info("[API] H2D in-place edit: cali_idx=%s", profile.slot_id)
+    if is_edit and is_dual_nozzle:
+        # Dual-nozzle in-place edit: use cali_idx with slot_id=0 and empty setting_id
+        logger.info("[API] Dual-nozzle in-place edit: cali_idx=%s", profile.slot_id)
         success = client.set_kprofile(
             filament_id=profile.filament_id,
             name=profile.name,
@@ -133,7 +136,7 @@ async def set_kprofile(
             cali_idx=profile.slot_id,  # Pass the original slot for in-place edit
         )
     elif is_edit:
-        # Non-H2D edit: use delete + add approach
+        # Single-nozzle edit: use delete + add approach
         logger.info("[API] Edit: deleting existing profile slot_id=%s", profile.slot_id)
         delete_success = client.delete_kprofile(
             cali_idx=profile.slot_id,

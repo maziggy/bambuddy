@@ -3161,11 +3161,31 @@ class BambuMQTTClient:
         """
         if self._client and self.state.connected:
             # Bambu print command format - matches Bambu Studio's format
-            # H2D series requires integer values (0/1) for calibration/leveling fields
-            # but use_ams MUST remain boolean — H2D Pro firmware interprets integer
-            # values as nozzle index (1 = deputy nozzle), causing wrong extruder routing
-            # Other printers (X1C, P1S, A1, etc.) require actual booleans for all fields
-            is_h2d = self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "H2S", "X2D")
+            # H2-family firmware (H2D, H2D Pro, H2C, H2S, X2D) requires integer
+            # values (0/1) for calibration/leveling fields. X1C/P1S/A1/P2S need
+            # actual booleans. use_ams stays boolean across the board — H2D Pro
+            # firmware interprets integer use_ams as nozzle index (1 = deputy),
+            # causing wrong extruder routing (#1386 root cause was here too: the
+            # old flag conflated firmware-format with dual-nozzle routing).
+            is_h_family = self.model and self.model.upper().strip() in (
+                "H2D",
+                "H2D PRO",
+                "H2DPRO",
+                "H2C",
+                "H2S",
+                "X2D",
+            )
+            # Dual-nozzle routing for external spool (254 = deputy/left,
+            # 255 = main/right) and the use_ams=False fallback. H2S is in the
+            # H2 firmware family but is single-nozzle, despite sharing serial
+            # prefix "094" with H2D. Prefer runtime detection from
+            # device.extruder.info (set in _handle_push_status); fall back to
+            # model name for the brief window after connect before push data
+            # arrives. _is_dual_nozzle only ever flips False→True, so it's safe
+            # as the primary signal.
+            is_dual_nozzle = self._is_dual_nozzle or (
+                self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "X2D")
+            )
 
             # Build ams_mapping2 from ams_mapping (detailed format with ams_id/slot_id)
             ams_mapping2 = []
@@ -3194,7 +3214,7 @@ class BambuMQTTClient:
                         # to 07FF_8012 "Failed to get AMS mapping table" or stuck prints.
                         # Only H2D dual-nozzle printers use 254 (deputy/left nozzle).
                         flat_ams_mapping.append(-1)
-                        ext_ams_id = tray_id if is_h2d else 255
+                        ext_ams_id = tray_id if is_dual_nozzle else 255
                         ams_mapping2.append({"ams_id": ext_ams_id, "slot_id": 0})
                     elif tray_id >= 128:
                         # AMS-HT: global tray ID IS the ams_id (single tray per unit)
@@ -3209,8 +3229,11 @@ class BambuMQTTClient:
 
             # If all mapped slots are external spool (no real AMS trays), force use_ams=False.
             # P1S/P1P with no AMS rejects use_ams=True with "Failed to get AMS mapping table".
-            # Skip for H2D series — use_ams controls nozzle routing on those printers.
-            if ams_mapping and use_ams and not is_h2d:
+            # Skip for dual-nozzle printers — use_ams controls nozzle routing there.
+            # H2S falls through this gate now (#1386): it is single-nozzle and was
+            # hitting the dual-nozzle bypass, which caused 07FF_8012 when printing
+            # without an AMS attached.
+            if ams_mapping and use_ams and not is_dual_nozzle:
                 if all(t is None or int(t) < 0 or int(t) >= 254 for t in ams_mapping):
                     use_ams = False
                     logger.info(
@@ -3247,12 +3270,12 @@ class BambuMQTTClient:
                     "file": filename,
                     "md5": "",
                     "bed_type": "auto",
-                    "timelapse": (1 if timelapse else 0) if is_h2d else timelapse,
-                    "bed_leveling": (1 if bed_levelling else 0) if is_h2d else bed_levelling,
+                    "timelapse": (1 if timelapse else 0) if is_h_family else timelapse,
+                    "bed_leveling": (1 if bed_levelling else 0) if is_h_family else bed_levelling,
                     "auto_bed_leveling": 1 if bed_levelling else 0,
-                    "flow_cali": (1 if flow_cali else 0) if is_h2d else flow_cali,
-                    "vibration_cali": (1 if vibration_cali else 0) if is_h2d else vibration_cali,
-                    "layer_inspect": (1 if layer_inspect else 0) if is_h2d else layer_inspect,
+                    "flow_cali": (1 if flow_cali else 0) if is_h_family else flow_cali,
+                    "vibration_cali": (1 if vibration_cali else 0) if is_h_family else vibration_cali,
+                    "layer_inspect": (1 if layer_inspect else 0) if is_h_family else layer_inspect,
                     "use_ams": use_ams,
                     "cfg": "0",
                     "extrude_cali_flag": 0,
@@ -3266,9 +3289,9 @@ class BambuMQTTClient:
                 }
             }
 
-            if is_h2d:
+            if is_h_family:
                 logger.debug(
-                    "[%s] H2D series detected: using integer format for calibration fields (use_ams stays boolean)",
+                    "[%s] H-family firmware detected: using integer format for calibration fields (use_ams stays boolean)",
                     self.serial_number,
                 )
 
@@ -3980,11 +4003,14 @@ class BambuMQTTClient:
 
         self._sequence_id += 1
 
-        # Detect printer type by serial number prefix
-        # Dual-nozzle families:
-        #   H2 series: legacy "094"; post-2026 H2C batches ship with "31B8B" (#1105)
-        #   X2D series: "20P9"
-        is_dual_nozzle = self.serial_number.startswith(("094", "20P9", "31B8B"))
+        # Dual-nozzle K-profile delete uses the extruder_id/nozzle_id format;
+        # single-nozzle printers (X1C/P1/A1/P2S/H2S) need the setting_id form.
+        # Prefer runtime detection from device.extruder.info; fall back to
+        # model name. H2S is single-nozzle but shares serial prefix "094" with
+        # H2D, so a prefix-only check misclassified it (#1386).
+        is_dual_nozzle = self._is_dual_nozzle or (
+            self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "X2D")
+        )
 
         if is_dual_nozzle:
             # H2D format: uses extruder_id, nozzle_id, nozzle_diameter

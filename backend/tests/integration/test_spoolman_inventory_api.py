@@ -66,6 +66,7 @@ def mock_spoolman_client():
     mock_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
     mock_client.merge_spool_extra = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
     mock_client.find_or_create_filament = AsyncMock(return_value=7)
+    mock_client.ensure_extra_field = AsyncMock(return_value=True)
 
     with (
         patch(
@@ -323,39 +324,50 @@ class TestSpoolmanInventoryCRUD:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_with_explicit_null_color_name_clears(
+    async def test_update_with_explicit_null_color_name_clears_extra(
         self,
         async_client: AsyncClient,
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """#1319 follow-up: explicit color_name=null in the PATCH body means
-        "clear" — route translates it to "" so find_or_create_filament patches
-        the matched filament with color_name=None."""
+        """#1357: explicit color_name=null means "clear". The route writes a
+        JSON-encoded empty string to spool.extra.bambu_color_name so the read
+        path falls back to the synth value next time."""
         payload = {"color_name": None}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 200
-        mock_spoolman_client.find_or_create_filament.assert_called_once()
-        kwargs = mock_spoolman_client.find_or_create_filament.call_args.kwargs
-        assert kwargs["color_name"] == ""
+        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_color_name")
+        mock_spoolman_client.merge_spool_extra.assert_called_once()
+        _, kwargs = mock_spoolman_client.merge_spool_extra.call_args
+        # First positional arg is spool_id; second is the extra-dict patch.
+        args = mock_spoolman_client.merge_spool_extra.call_args.args
+        extra_patch = args[1] if len(args) > 1 else kwargs.get("new_fields", {})
+        import json as _json
+
+        assert _json.loads(extra_patch["bambu_color_name"]) == ""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_without_color_name_keeps_current(
+    async def test_update_without_color_name_skips_extra_write(
         self,
         async_client: AsyncClient,
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """#1319 follow-up: when color_name is omitted from the PATCH body the
-        current value is kept — None passed to find_or_create_filament means
-        "don't touch"."""
+        """#1357: when color_name is omitted from the PATCH body the extra
+        write is skipped entirely — no merge_spool_extra call, no ensure_extra
+        call for bambu_color_name. Only fields the request explicitly set go
+        through the extra round-trip."""
         payload = {"note": "only updating note"}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 200
-        kwargs = mock_spoolman_client.find_or_create_filament.call_args.kwargs
-        # SAMPLE_SPOOLMAN_SPOOL has no color_name field, so cur fallback is None.
-        assert kwargs["color_name"] is None
+        # No call should target bambu_color_name when color_name wasn't in the body.
+        color_name_calls = [
+            c
+            for c in mock_spoolman_client.ensure_extra_field.call_args_list
+            if c.args and c.args[0] == "bambu_color_name"
+        ]
+        assert color_name_calls == []
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1117,17 +1129,26 @@ class TestStorageLocationPassthrough:
 
 
 class TestColorNamePassthrough:
-    """color_name is forwarded to find_or_create_filament on create and update (B6 / T5)."""
+    """color_name persistence via spool.extra.bambu_color_name (#1357).
+
+    Spoolman 0.23.1 has no `color_name` field on Filament, so Bambuddy owns
+    the round-trip via the spool's extra dict — same shape as the existing
+    bambu_slicer_filament storage. These tests pin that the create/update
+    routes register the extra field and write to merge_spool_extra, NOT to
+    find_or_create_filament's color_name parameter.
+    """
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_create_passes_color_name_to_filament(
+    async def test_create_writes_color_name_to_spool_extra(
         self,
         async_client: AsyncClient,
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """color_name from the create payload is forwarded to find_or_create_filament."""
+        """color_name from create payload lands in spool.extra.bambu_color_name."""
+        import json as _json
+
         payload = {
             "material": "PLA",
             "label_weight": 1000,
@@ -1136,41 +1157,53 @@ class TestColorNamePassthrough:
         }
         response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
         assert response.status_code == 200
-        mock_spoolman_client.find_or_create_filament.assert_called_once()
-        _, kwargs = mock_spoolman_client.find_or_create_filament.call_args
-        assert kwargs.get("color_name") == "Bambu Green"
+        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_color_name")
+        mock_spoolman_client.merge_spool_extra.assert_called_once()
+        args = mock_spoolman_client.merge_spool_extra.call_args.args
+        extra_patch = args[1]
+        assert _json.loads(extra_patch["bambu_color_name"]) == "Bambu Green"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_passes_color_name_to_filament(
+    async def test_update_writes_color_name_to_spool_extra(
         self,
         async_client: AsyncClient,
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """color_name from the update payload is forwarded to find_or_create_filament."""
+        """color_name from update payload lands in spool.extra.bambu_color_name —
+        this is the #1357 reproduction: previously the value went to
+        filament.color_name which Spoolman silently dropped."""
+        import json as _json
+
         payload = {"color_name": "Jade White"}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 200
-        mock_spoolman_client.find_or_create_filament.assert_called_once()
-        _, kwargs = mock_spoolman_client.find_or_create_filament.call_args
-        assert kwargs.get("color_name") == "Jade White"
+        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_color_name")
+        mock_spoolman_client.merge_spool_extra.assert_called_once()
+        args = mock_spoolman_client.merge_spool_extra.call_args.args
+        extra_patch = args[1]
+        assert _json.loads(extra_patch["bambu_color_name"]) == "Jade White"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_omits_color_name_when_not_provided(
+    async def test_update_omits_color_name_skips_extra_write(
         self,
         async_client: AsyncClient,
         spoolman_settings,
         mock_spoolman_client,
     ):
-        """When color_name is not in the PATCH payload, the existing filament color_name is used."""
+        """When color_name is absent from the PATCH body, the route must not
+        write to spool.extra at all (preserves any existing value)."""
         payload = {"note": "no color_name here"}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 200
-        _, kwargs = mock_spoolman_client.find_or_create_filament.call_args
-        # color_name falls back to current filament's color_name (which is None in test fixture)
-        assert kwargs.get("color_name") is None
+        color_name_calls = [
+            c
+            for c in mock_spoolman_client.ensure_extra_field.call_args_list
+            if c.args and c.args[0] == "bambu_color_name"
+        ]
+        assert color_name_calls == []
 
 
 class TestSpoolmanInventoryAuth:

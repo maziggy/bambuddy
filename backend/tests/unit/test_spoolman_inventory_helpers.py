@@ -218,6 +218,59 @@ class TestMapSpoolmanSpool:
         # color_name falls back to subtype.
         assert result["color_name"] == "Basic Red"
 
+    def test_color_name_read_from_spool_extra_first(self):
+        """#1357: the canonical store for color_name is
+        spool.extra.bambu_color_name (JSON-encoded). Read priority is
+        extra > filament.color_name > subtype-synth. The user's
+        Bambuddy-saved value MUST win even when Spoolman's own
+        filament.color_name happens to be populated from some other source.
+        """
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {"bambu_color_name": '"Galaxy Black"'},
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "name": "PLA Glow",
+                "color_name": "Glow",  # would be picked up if extra weren't preferred
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["color_name"] == "Galaxy Black"
+        assert result["color_name_is_synthesized"] is False
+
+    def test_color_name_empty_extra_falls_through_to_filament(self):
+        """An explicit empty string in spool.extra.bambu_color_name (the
+        "user cleared the field" shape) must NOT mask Spoolman's own
+        filament.color_name if one exists — it falls through to the next
+        layer instead of suppressing it."""
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {"bambu_color_name": '""'},
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "color_name": "Sunset",
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["color_name"] == "Sunset"
+        assert result["color_name_is_synthesized"] is False
+
+    def test_color_name_empty_extra_falls_through_to_synth(self):
+        """When extra is cleared and filament has no color_name either,
+        fall all the way through to the subtype synth — same UX as a fresh
+        Spoolman install."""
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {"bambu_color_name": '""'},
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "name": "PLA Basic Red",
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["color_name"] == "Basic Red"
+        assert result["color_name_is_synthesized"] is True
+
     def test_color_name_none_when_both_fields_empty(self):
         """If neither color_name nor a usable subtype exists, return None — UI
         falls back to its own 'Unknown color' string rather than showing a

@@ -440,18 +440,24 @@ async def create_spool(
 
     spool, price_warnings = await _apply_price_if_set(client, spool, data.cost_per_kg)
 
-    # Persist slicer_filament under the spool's extra dict (mirror update_spool).
-    if data.slicer_filament is not None or data.slicer_filament_name is not None:
+    # Persist slicer_filament AND color_name under the spool's extra dict
+    # (mirror update_spool). Spoolman has no `color_name` field on filament
+    # (#1357) so we own the round-trip ourselves.
+    if data.slicer_filament is not None or data.slicer_filament_name is not None or data.color_name is not None:
         # Ensure extra fields are registered before write.
         if data.slicer_filament is not None:
             await client.ensure_extra_field("bambu_slicer_filament")
         if data.slicer_filament_name is not None:
             await client.ensure_extra_field("bambu_slicer_filament_name")
+        if data.color_name is not None:
+            await client.ensure_extra_field("bambu_color_name")
         new_extra: dict = {}
         if data.slicer_filament is not None:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament)
         if data.slicer_filament_name is not None:
             new_extra["bambu_slicer_filament_name"] = json.dumps(data.slicer_filament_name)
+        if data.color_name is not None:
+            new_extra["bambu_color_name"] = json.dumps(data.color_name)
         if new_extra:
             try:
                 async with _translate_spoolman_errors():
@@ -459,7 +465,7 @@ async def create_spool(
             except HTTPException:
                 # Best-effort — the spool already exists, log and continue.
                 logger.warning(
-                    "Failed to persist slicer_filament for spool %s",
+                    "Failed to persist slicer_filament/color_name for spool %s",
                     spool.get("id"),
                 )
 
@@ -633,25 +639,33 @@ async def update_spool(
                 clear_location=storage_location_changed and not storage_location,
             )
 
-    # Persist BambuStudio slicer preset under the spool's extra dict.
-    # Spoolman doesn't have a native field for this, so we round-trip via
-    # extra and unpack in _map_spoolman_spool. Only writes when the request
+    # Persist BambuStudio slicer preset AND color_name under spool.extra.
+    # Spoolman has no native fields for these — color_name was confirmed
+    # absent from the FilamentUpdateParameters schema in 0.23.1 (#1357), so
+    # writing `filament.color_name` was a silent no-op that left every
+    # edit looking "not saved". They all round-trip via extra and get
+    # unpacked in _map_spoolman_spool. Only writes when the request
     # explicitly set the field — passing null/omitting leaves the existing
     # extra entry untouched (write empty string to clear).
     sf_set = "slicer_filament" in data.model_fields_set
     sfn_set = "slicer_filament_name" in data.model_fields_set
-    if sf_set or sfn_set:
+    cn_set = "color_name" in data.model_fields_set
+    if sf_set or sfn_set or cn_set:
         # Ensure extra fields are registered (Spoolman rejects PATCHes with
         # unknown keys with HTTP 400). Idempotent if startup already ran this.
         if sf_set:
             await client.ensure_extra_field("bambu_slicer_filament")
         if sfn_set:
             await client.ensure_extra_field("bambu_slicer_filament_name")
+        if cn_set:
+            await client.ensure_extra_field("bambu_color_name")
         new_extra: dict = {}
         if sf_set:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament or "")
         if sfn_set:
             new_extra["bambu_slicer_filament_name"] = json.dumps(data.slicer_filament_name or "")
+        if cn_set:
+            new_extra["bambu_color_name"] = json.dumps(data.color_name or "")
         async with _translate_spoolman_errors():
             updated = await client.merge_spool_extra(spool_id, new_extra)
 

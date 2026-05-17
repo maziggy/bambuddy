@@ -76,6 +76,110 @@ def _ip_to_uint32_le(ip_str: str) -> int:
     return parts[0] | (parts[1] << 8) | (parts[2] << 16) | (parts[3] << 24)
 
 
+def _merge_ams_dict(prev_ams: dict, new_ams: dict) -> dict:
+    """Merge a new ``ams`` blob from an incremental push onto the previous one.
+
+    Bambu firmware sends three shapes for the ``ams`` field on push_status:
+
+    1. Full pushall (after a printer reconnect or explicit pushall request):
+       ``{ams: [{id, tray: [{id, tray_type, ...}, ...]}, ...], ams_status, ams_exist_bits, ...}``
+       — every unit + every tray populated.
+
+    2. Status-only incremental: ``{ams_status: 1}`` or ``{humidity: 30}`` —
+       no ``ams`` array at all. Bambuddy logs these as "AMS partial update
+       (no tray data)" (#784 vintage).
+
+    3. Tray-targeted incremental during a print: ``{ams: [{id: 0, tray:
+       [{id: 0, state: 11}]}]}`` — only the units / trays whose state
+       changed.
+
+    Replacing the cached ``ams`` wholesale on shapes (2) and (3) is what
+    made the slicer "lose" AMS between pushalls and trip the symptom in
+    #1387: the slicer would see a stripped ``ams_status``-only blob and
+    fall back to its "no AMS" default render. This merge mirrors the
+    deep-merge logic in ``bambu_mqtt.py::_handle_ams_data`` at the bridge
+    layer so the slicer-facing cache always carries the latest known
+    coherent state.
+
+    Strategy:
+      - Shallow-merge top-level scalars: keys in ``new`` win; keys only
+        in ``prev`` are preserved.
+      - For the ``ams`` array (list of units): match by ``id``. Units
+        only in ``prev`` survive. Units in ``new`` overlay onto their
+        ``prev`` counterpart; same recursion applies to each unit's
+        ``tray`` array by tray ``id``.
+    """
+    merged = dict(prev_ams)
+    for k, v in new_ams.items():
+        if k != "ams":
+            merged[k] = v
+
+    prev_units = prev_ams.get("ams") if isinstance(prev_ams.get("ams"), list) else []
+    new_units = new_ams.get("ams") if isinstance(new_ams.get("ams"), list) else None
+    if new_units is None:
+        # Shape (2): no ``ams`` array in the incremental — keep prev's units.
+        if prev_units:
+            merged["ams"] = prev_units
+        return merged
+
+    prev_by_id = {u.get("id"): u for u in prev_units if isinstance(u, dict) and u.get("id") is not None}
+    merged_units: list = []
+    seen_ids: set = set()
+    for new_unit in new_units:
+        if not isinstance(new_unit, dict):
+            merged_units.append(new_unit)
+            continue
+        uid = new_unit.get("id")
+        prev_unit = prev_by_id.get(uid) if uid is not None else None
+        if prev_unit is None:
+            merged_units.append(new_unit)
+            if uid is not None:
+                seen_ids.add(uid)
+            continue
+        # Shallow-merge unit fields; preserve prev's trays not present in new.
+        merged_unit = dict(prev_unit)
+        for k, v in new_unit.items():
+            if k != "tray":
+                merged_unit[k] = v
+        new_trays = new_unit.get("tray") if isinstance(new_unit.get("tray"), list) else None
+        if new_trays is None:
+            # Unit-level partial — keep prev's tray list intact.
+            pass
+        else:
+            prev_trays = prev_unit.get("tray") if isinstance(prev_unit.get("tray"), list) else []
+            prev_trays_by_id = {t.get("id"): t for t in prev_trays if isinstance(t, dict) and t.get("id") is not None}
+            merged_trays: list = []
+            seen_tray_ids: set = set()
+            for new_tray in new_trays:
+                if not isinstance(new_tray, dict):
+                    merged_trays.append(new_tray)
+                    continue
+                tid = new_tray.get("id")
+                prev_tray = prev_trays_by_id.get(tid) if tid is not None else None
+                if prev_tray is None:
+                    merged_trays.append(new_tray)
+                else:
+                    merged_tray = dict(prev_tray)
+                    merged_tray.update(new_tray)
+                    merged_trays.append(merged_tray)
+                if tid is not None:
+                    seen_tray_ids.add(tid)
+            # Preserve prev trays not mentioned in the incremental.
+            for tid, prev_tray in prev_trays_by_id.items():
+                if tid not in seen_tray_ids:
+                    merged_trays.append(prev_tray)
+            merged_unit["tray"] = merged_trays
+        merged_units.append(merged_unit)
+        if uid is not None:
+            seen_ids.add(uid)
+    # Preserve prev units not mentioned in the incremental.
+    for uid, prev_unit in prev_by_id.items():
+        if uid not in seen_ids:
+            merged_units.append(prev_unit)
+    merged["ams"] = merged_units
+    return merged
+
+
 class MQTTBridge:
     """Per-VP MQTT fan-out between a real printer and slicers connected to a VP."""
 
@@ -296,8 +400,22 @@ class MQTTBridge:
             prev = self._latest_print_state
             if prev is not None:
                 for sticky_key in _SLICER_VISIBLE_STICKY_KEYS:
-                    if sticky_key not in new_state and sticky_key in prev:
-                        new_state[sticky_key] = prev[sticky_key]
+                    if sticky_key not in new_state:
+                        if sticky_key in prev:
+                            new_state[sticky_key] = prev[sticky_key]
+                        continue
+                    # Key IS in new_state — but firmware sends partial blobs
+                    # (status-only / tray-targeted) under the same key on
+                    # incremental updates, which would overwrite the cached
+                    # full blob and break the slicer's AMS render (#1387).
+                    # For `ams` specifically the deep-merge mirrors what
+                    # Bambuddy already does internally in `_handle_ams_data`.
+                    if (
+                        sticky_key == "ams"
+                        and isinstance(new_state.get("ams"), dict)
+                        and isinstance(prev.get("ams"), dict)
+                    ):
+                        new_state["ams"] = _merge_ams_dict(prev["ams"], new_state["ams"])
             self._latest_print_state = new_state
             return
 

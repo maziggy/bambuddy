@@ -75,6 +75,25 @@ class SpoolmanClientError(Exception):
         self.response_text = response_text
 
 
+def _filament_subtype_part(name: str, material: str) -> str:
+    """Return the subtype portion of a filament name, lowercased.
+
+    Mirrors the read-side derivation in
+    ``backend/app/api/routes/_spoolman_helpers.py::_map_spoolman_spool``:
+    if the filament name starts with the material prefix (e.g. ``"PLA Glow"``
+    when material is ``"PLA"``), strip it; otherwise return the name as-is.
+
+    Used by ``find_or_create_filament`` so that an existing filament saved by
+    the AMS-sync path with name ``"Glow"`` still matches a user-driven edit
+    that composes ``"PLA Glow"`` (#1357).
+    """
+    s = (name or "").strip()
+    m = (material or "").strip()
+    if m and s.upper().startswith(m.upper() + " "):
+        return s[len(m) + 1 :].strip().lower()
+    return s.lower()
+
+
 class SpoolmanClient:
     """Client for interacting with Spoolman API."""
 
@@ -623,48 +642,58 @@ class SpoolmanClient:
         if brand:
             vendor_id = await self.find_or_create_vendor(brand)
 
+        # Normalised match keys (case-insensitive). Computed once outside the
+        # loop so the inner comparison stays simple.
+        composed_subtype = _filament_subtype_part(name, material)
+        material_norm = material.upper()
+        brand_norm = (brand or "").strip().lower()
+
         filaments = await self.get_filaments()
         for f in filaments:
             f_material = (f.get("material") or "").upper()
-            f_name = (f.get("name") or "").strip()
             f_color = (f.get("color_hex") or "").upper()[:6]
             f_vendor = f.get("vendor") or {}
             f_vendor_name = (f_vendor.get("name") or "").strip().lower()
 
-            material_match = f_material == material.upper()
-            name_match = f_name.lower() == name.lower()
+            material_match = f_material == material_norm
+            # Match on the subtype portion of the filament name. AMS-sync
+            # auto-create (the underscore-prefixed `_find_or_create_filament`
+            # used during MQTT tray import) stores the filament as just
+            # ``tray.tray_sub_brands`` — e.g. ``"Glow"`` — while the
+            # user-driven edit path here composes ``"<material> <subtype>"``
+            # — ``"PLA Glow"``. The old literal equality `f_name == name`
+            # failed to bridge the two shapes, so every edit fell through to
+            # `create_filament`, leaving a trail of duplicate filaments AND
+            # leaving the spool either still pointed at the old filament
+            # whose `color_name` never got patched, or pointed at a new
+            # filament with the colour while the inventory list kept
+            # showing the synth fallback from the old one (#1357).
+            f_subtype_part = _filament_subtype_part(f.get("name") or "", material)
+            name_match = f_subtype_part == composed_subtype
             color_match = f_color == color
-            vendor_match = (not brand) or f_vendor_name == (brand or "").strip().lower()
+            vendor_match = (not brand) or f_vendor_name == brand_norm
 
             if material_match and name_match and color_match and vendor_match:
-                # #1319: color_name is not part of the match key, but if the
-                # caller passed a value that differs from what's stored, update
-                # the filament — otherwise the user's edit is silently dropped
-                # and the inventory read falls back to subtype, making it look
-                # like color_name "reverts" to the subtype on every save.
-                # Convention: None = "don't touch"; "" = explicit clear; any
-                # other string = set/update.
-                if color_name is not None:
-                    existing = (f.get("color_name") or "").strip()
-                    requested = color_name.strip()
-                    if requested != existing:
-                        payload_value: str | None = requested if requested else None
-                        try:
-                            await self.patch_filament(f["id"], {"color_name": payload_value})
-                        except Exception as e:
-                            logger.warning(
-                                "Failed to update color_name on filament %s: %s",
-                                f["id"],
-                                e,
-                            )
+                # color_name is intentionally not part of the match key and
+                # is no longer patched onto the filament here: Spoolman 0.23.1
+                # has no `color_name` field on Filament (#1357 — confirmed
+                # against the FilamentUpdateParameters schema). The earlier
+                # #1319 fix tried to patch it and Spoolman silently dropped
+                # the key, which is exactly why the user's edit looked "not
+                # saved". The route now persists color_name via
+                # spool.extra.bambu_color_name (see _map_spoolman_spool for
+                # the read side); find_or_create_filament's only job is to
+                # resolve the right filament_id for the spool link.
                 return f["id"]
 
+        # color_name omitted: Spoolman has no such field on Filament (#1357);
+        # the user's color_name lands in spool.extra.bambu_color_name via the
+        # route after find_or_create_filament returns the new id.
         filament = await self.create_filament(
             name=name,
             vendor_id=vendor_id,
             material=material,
             color_hex=color,
-            color_name=color_name,
             weight=float(label_weight),
         )
         filament_id = filament.get("id")

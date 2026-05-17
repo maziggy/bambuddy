@@ -1890,16 +1890,12 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         onSave={handleColumnConfigSave}
       />
 
-      {/* Label printing (#809) — local-mode only on dev. The Spoolman path
-          on this branch hands users an iframe straight to Spoolman, so the
-          per-spool button never shows in that context. The Spoolman label
-          endpoint is wired and tested for when the inventory UI lands. */}
       <LabelTemplatePickerModal
         isOpen={labelPickerSpoolIds !== null}
         onClose={() => setLabelPickerSpoolIds(null)}
         availableSpools={filteredSpools}
         initialSelectedIds={labelPickerSpoolIds ?? []}
-        spoolmanMode={false}
+        spoolmanMode={spoolmanMode}
       />
     </div>
   );

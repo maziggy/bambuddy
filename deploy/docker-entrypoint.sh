@@ -39,7 +39,7 @@ if [ -n "${USE_SYSTEM_TRUST_STORE:-}" ]; then
         echo "[entrypoint] error: USE_SYSTEM_TRUST_STORE is set but not running as root; cannot update trust store"
         exit 1
     fi
-    # Check if we have any certificates to process. Error is directory is empty
+    # Check if we have any certificates to process. Error if directory is empty
     if ls -1 /usr/local/share/ca-certificates/*.crt >/dev/null 2>&1; then
         echo "[entrypoint] .crt files found in /usr/local/share/ca-certificates"
     else

@@ -366,12 +366,14 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                           {t('inventory.assigned')}
                         </span>
                       </div>
-                      <p className="text-xs text-white truncate">
-                        {inventory.assignedSpool.brand ? `${inventory.assignedSpool.brand} ` : ''}
-                        {inventory.assignedSpool.material}
-                        {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
-                      </p>
-                      <p className="text-[10px] font-mono text-bambu-gray">#{inventory.assignedSpool.id}</p>
+                      <div className="flex items-baseline gap-1.5 min-w-0 mb-1">
+                        <p className="text-xs text-white truncate">
+                          {inventory.assignedSpool.brand ? `${inventory.assignedSpool.brand} ` : ''}
+                          {inventory.assignedSpool.material}
+                          {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
+                        </p>
+                        <span className="text-[10px] font-mono text-bambu-gray shrink-0">#{inventory.assignedSpool.id}</span>
+                      </div>
                       {(!spoolman?.linkedSpoolId || inventory.assignedSpool!.id !== spoolman.linkedSpoolId) && (
                         <button
                           onClick={(e) => {

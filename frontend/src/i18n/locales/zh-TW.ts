@@ -3560,6 +3560,7 @@ export default {
     category: '類別',
     categoryPlaceholder: '例如：生產、原型、客戶A',
     categoryNone: '未分類',
+    storageLocationNone: '未設定位置',
     lowStockThresholdOverride: '低庫存閾值（此料盤）',
     lowStockThresholdOverrideHelp: '留空以使用全域閾值（{{global}}%）。',
     clearRfid: '清除 RFID 標籤',

@@ -3560,6 +3560,7 @@ export default {
     category: 'Categoria',
     categoryPlaceholder: 'es. Produzione, Prototipo, Cliente A',
     categoryNone: 'Senza categoria',
+    storageLocationNone: 'Nessuna posizione impostata',
     lowStockThresholdOverride: 'Soglia scorte basse (questa bobina)',
     lowStockThresholdOverrideHelp: 'Lascia vuoto per usare la soglia globale ({{global}}%).',
     clearRfid: 'Cancella tag RFID',

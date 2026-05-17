@@ -3561,6 +3561,7 @@ export default {
     category: 'Catégorie',
     categoryPlaceholder: 'ex. Production, Prototype, Client A',
     categoryNone: 'Sans catégorie',
+    storageLocationNone: 'Aucun emplacement défini',
     lowStockThresholdOverride: 'Seuil bas (cette bobine)',
     lowStockThresholdOverrideHelp: 'Laisser vide pour utiliser le seuil global ({{global}} %).',
     clearRfid: 'Effacer le tag RFID',

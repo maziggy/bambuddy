@@ -3572,6 +3572,7 @@ export default {
     category: 'カテゴリ',
     categoryPlaceholder: '例：本番、試作、クライアントA',
     categoryNone: 'カテゴリなし',
+    storageLocationNone: '保管場所未設定',
     lowStockThresholdOverride: '在庫低下のしきい値（このスプール）',
     lowStockThresholdOverrideHelp: '空欄の場合、グローバル設定（{{global}}%）を使用します。',
     clearRfid: 'RFIDタグをクリア',

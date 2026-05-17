@@ -3575,6 +3575,11 @@ export default {
     category: 'Category',
     categoryPlaceholder: 'e.g. Production, Prototype, Client A',
     categoryNone: 'Uncategorized',
+    // #1400: storage-location filter chip — `storageLocation` label is
+    // already defined above for the spool-edit field, reused here for the
+    // dropdown header. `storageLocationNone` is new (the "no location set"
+    // group, mirrors `categoryNone`).
+    storageLocationNone: 'No location set',
     lowStockThresholdOverride: 'Low-stock threshold (this spool)',
     lowStockThresholdOverrideHelp: 'Leave blank to use the global threshold ({{global}}%).',
     // RFID button rename (was "Delete Tag" — confusing because it sounds like a

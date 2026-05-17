@@ -3560,6 +3560,7 @@ export default {
     category: 'Categoria',
     categoryPlaceholder: 'ex. Produção, Protótipo, Cliente A',
     categoryNone: 'Sem categoria',
+    storageLocationNone: 'Sem local definido',
     lowStockThresholdOverride: 'Limite de estoque baixo (este carretel)',
     lowStockThresholdOverrideHelp: 'Deixe em branco para usar o limite global ({{global}}%).',
     clearRfid: 'Limpar tag RFID',

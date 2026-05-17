@@ -3572,6 +3572,7 @@ export default {
     category: 'Kategorie',
     categoryPlaceholder: 'z. B. Produktion, Prototyp, Kunde A',
     categoryNone: 'Ohne Kategorie',
+    storageLocationNone: 'Kein Lagerort',
     lowStockThresholdOverride: 'Niedrigbestandsschwelle (diese Spule)',
     lowStockThresholdOverrideHelp: 'Leer lassen, um den globalen Schwellenwert ({{global}}%) zu verwenden.',
     // RFID button rename (was "Tag löschen")

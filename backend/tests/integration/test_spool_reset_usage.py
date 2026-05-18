@@ -1,10 +1,15 @@
 """Reset-usage endpoint regressions (#1390 follow-up).
 
-The per-spool and bulk reset endpoints zero `weight_used` without touching
-`weight_locked`. They exist because PATCH /spools/{id} auto-locks the spool
-when weight_used is set explicitly, and that's wrong for the "clean-slate
-my Total Consumed stat" workflow — the user wants the spool to keep
-receiving AMS auto-sync updates from the next print onward.
+The per-spool and bulk reset endpoints stamp `weight_used_baseline =
+weight_used` instead of zeroing `weight_used` directly. This decouples
+the resettable "Total Consumed" display (computed as
+`weight_used - weight_used_baseline`) from remaining
+(`label_weight - weight_used`), so resetting the counter does NOT
+inflate remaining back to label_weight (which is what the previous
+implementation did — see the report at the end of #1390).
+
+`weight_locked` is left alone in both modes; the spool keeps receiving
+AMS auto-sync updates from the next print onward.
 """
 
 import pytest
@@ -28,6 +33,7 @@ async def spool_factory(db_session: AsyncSession):
             "rgba": "FF0000FF",
             "label_weight": 1000,
             "weight_used": 0,
+            "weight_used_baseline": 0,
             "weight_locked": False,
         }
         defaults.update(kwargs)
@@ -43,16 +49,31 @@ async def spool_factory(db_session: AsyncSession):
 class TestResetSpoolUsage:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_reset_zeroes_weight_used(self, async_client: AsyncClient, spool_factory, db_session):
-        """Endpoint sets weight_used to 0."""
-        spool = await spool_factory(weight_used=234.5)
+    async def test_reset_stamps_baseline_without_touching_weight_used(
+        self, async_client: AsyncClient, spool_factory, db_session
+    ):
+        """Reset stamps baseline = weight_used; remaining stays the same.
+
+        Pre-bug behaviour zeroed weight_used and made
+        `label_weight - weight_used` (the displayed remaining) jump back
+        to label_weight — a 456 g spool would suddenly read 1000 g.
+        """
+        spool = await spool_factory(label_weight=1000, weight_used=456.0)
 
         response = await async_client.post(f"/api/v1/inventory/spools/{spool.id}/reset-usage")
 
         assert response.status_code == 200
-        assert response.json()["weight_used"] == 0
+        body = response.json()
+        assert body["weight_used"] == 456.0, "weight_used must NOT be zeroed (drives remaining)"
+        assert body["weight_used_baseline"] == 456.0, "baseline must equal pre-reset weight_used"
+        # Displayed consumed = weight_used - baseline = 0
+        assert body["weight_used"] - body["weight_used_baseline"] == 0
+        # Displayed remaining = label_weight - weight_used = 544 (unchanged)
+        assert body["label_weight"] - body["weight_used"] == 544
+
         await db_session.refresh(spool)
-        assert spool.weight_used == 0
+        assert spool.weight_used == 456.0
+        assert spool.weight_used_baseline == 456.0
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -69,7 +90,8 @@ class TestResetSpoolUsage:
 
         assert response.status_code == 200
         await db_session.refresh(spool)
-        assert spool.weight_used == 0
+        assert spool.weight_used == 100.0
+        assert spool.weight_used_baseline == 100.0
         assert spool.weight_locked is False, "Reset must not auto-lock the spool"
 
     @pytest.mark.asyncio
@@ -82,8 +104,31 @@ class TestResetSpoolUsage:
 
         assert response.status_code == 200
         await db_session.refresh(spool)
-        assert spool.weight_used == 0
+        assert spool.weight_used == 500.0
+        assert spool.weight_used_baseline == 500.0
         assert spool.weight_locked is True, "Pre-existing lock must be preserved"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reset_then_print_advances_only_the_counter(
+        self, async_client: AsyncClient, spool_factory, db_session
+    ):
+        """After reset, a subsequent print delta shows up in the consumed
+        counter while remaining keeps decrementing normally.
+        """
+        spool = await spool_factory(label_weight=1000, weight_used=456.0)
+        await async_client.post(f"/api/v1/inventory/spools/{spool.id}/reset-usage")
+
+        # Simulate a 50g print (usage_tracker increments weight_used).
+        await db_session.refresh(spool)
+        spool.weight_used = (spool.weight_used or 0) + 50.0
+        await db_session.commit()
+
+        await db_session.refresh(spool)
+        consumed = spool.weight_used - spool.weight_used_baseline
+        remaining = spool.label_weight - spool.weight_used
+        assert consumed == 50.0, "Consumed counter reflects only post-reset usage"
+        assert remaining == 494, "Remaining tracks physical depletion across reset"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -95,7 +140,9 @@ class TestResetSpoolUsage:
 class TestBulkResetSpoolUsage:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_bulk_reset_zeroes_only_listed_spools(self, async_client: AsyncClient, spool_factory, db_session):
+    async def test_bulk_reset_stamps_baseline_only_for_listed_spools(
+        self, async_client: AsyncClient, spool_factory, db_session
+    ):
         """Only spools in the request are reset; others are untouched."""
         target1 = await spool_factory(weight_used=100.0)
         target2 = await spool_factory(weight_used=200.0)
@@ -114,9 +161,12 @@ class TestBulkResetSpoolUsage:
         db_session.expire_all()
         spools = (await db_session.execute(select(Spool))).scalars().all()
         by_id = {s.id: s for s in spools}
-        assert by_id[target1.id].weight_used == 0
-        assert by_id[target2.id].weight_used == 0
+        assert by_id[target1.id].weight_used == 100.0
+        assert by_id[target1.id].weight_used_baseline == 100.0
+        assert by_id[target2.id].weight_used == 200.0
+        assert by_id[target2.id].weight_used_baseline == 200.0
         assert by_id[untouched.id].weight_used == 300.0, "Spool not in request must keep its usage"
+        assert by_id[untouched.id].weight_used_baseline == 0, "Untouched baseline must stay at 0"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -153,5 +203,7 @@ class TestBulkResetSpoolUsage:
         assert response.status_code == 200
         await db_session.refresh(unlocked)
         await db_session.refresh(locked)
-        assert unlocked.weight_used == 0 and unlocked.weight_locked is False
-        assert locked.weight_used == 0 and locked.weight_locked is True
+        assert (
+            unlocked.weight_used == 100.0 and unlocked.weight_used_baseline == 100.0 and unlocked.weight_locked is False
+        )
+        assert locked.weight_used == 200.0 and locked.weight_used_baseline == 200.0 and locked.weight_locked is True

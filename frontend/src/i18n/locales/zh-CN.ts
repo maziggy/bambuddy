@@ -2626,6 +2626,32 @@ export default {
     startRecording: '开始录制',
     stopRecording: '停止录制',
     chamberLight: '切换腔室灯',
+    unavailable: '摄像头不可用',
+    diagnose: {
+      button: '诊断',
+      modalTitle: '摄像头诊断',
+      running: '正在运行诊断...',
+      runFailed: '无法运行诊断: {{error}}',
+      retry: '重新运行',
+      stage: {
+        tcp_reachable: '网络可达性',
+        first_frame: '画面捕获',
+        live_stream_active: '直播流正在进行',
+      },
+      summary: {
+        all_ok: '摄像头工作正常。诊断已成功完成所有阶段。',
+        live_stream_active_healthy: '摄像头正在传输最新画面 — 无需测试。',
+        printer_unreachable: '无法访问打印机。请检查 IP 地址、网络连接以及打印机是否已开机。',
+        camera_port_closed: '打印机可访问，但摄像头端口已关闭。请确保打印机设置中已启用仅 LAN 模式和开发者模式。',
+        no_frame: '已连接到摄像头，但未收到画面。请重试或检查打印机设置中摄像头是否已启用。',
+        unknown_failure: '摄像头诊断因未知原因失败。请查看支持日志了解详情。',
+      },
+      meta: {
+        protocol: '协议',
+        port: '端口',
+        profile: '配置',
+      },
+    },
   },
 
   // Groups management

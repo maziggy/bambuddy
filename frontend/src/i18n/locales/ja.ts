@@ -2638,6 +2638,32 @@ export default {
     startRecording: '録画開始',
     stopRecording: '録画停止',
     chamberLight: 'チャンバーライト切替',
+    unavailable: 'カメラは利用できません',
+    diagnose: {
+      button: '診断',
+      modalTitle: 'カメラ診断',
+      running: '診断を実行中...',
+      runFailed: '診断を実行できませんでした: {{error}}',
+      retry: '再実行',
+      stage: {
+        tcp_reachable: 'ネットワーク到達性',
+        first_frame: 'フレーム取得',
+        live_stream_active: 'ライブストリーム動作中',
+      },
+      summary: {
+        all_ok: 'カメラは正常に動作しています。診断のすべての段階が成功しました。',
+        live_stream_active_healthy: 'カメラは現在新しいフレームを配信しています — テストは不要です。',
+        printer_unreachable: 'プリンターに到達できません。IPアドレス、ネットワーク接続、プリンターの電源が入っていることを確認してください。',
+        camera_port_closed: 'プリンターには到達できますが、カメラポートが閉じています。プリンター設定でLANのみモードと開発者モードが有効になっていることを確認してください。',
+        no_frame: 'カメラに接続できましたがフレームを受信できませんでした。再試行するか、プリンター設定でカメラが有効になっていることを確認してください。',
+        unknown_failure: 'カメラ診断が不明な理由で失敗しました。詳細はサポートログを確認してください。',
+      },
+      meta: {
+        protocol: 'プロトコル',
+        port: 'ポート',
+        profile: 'プロファイル',
+      },
+    },
   },
 
   // Groups management

@@ -2626,6 +2626,32 @@ export default {
     startRecording: 'Avvia registrazione',
     stopRecording: 'Ferma registrazione',
     chamberLight: 'Accendi/Spegni luce camera',
+    unavailable: 'Telecamera non disponibile',
+    diagnose: {
+      button: 'Diagnostica',
+      modalTitle: 'Diagnostica telecamera',
+      running: 'Diagnostica in corso...',
+      runFailed: 'Impossibile eseguire la diagnostica: {{error}}',
+      retry: 'Riesegui',
+      stage: {
+        tcp_reachable: 'Raggiungibilità di rete',
+        first_frame: 'Acquisizione frame',
+        live_stream_active: 'Stream live attivo',
+      },
+      summary: {
+        all_ok: 'La telecamera funziona. La diagnostica ha completato tutte le fasi con successo.',
+        live_stream_active_healthy: 'La telecamera sta trasmettendo con frame recenti — nessun test necessario.',
+        printer_unreachable: 'La stampante non è raggiungibile. Verifica l\'indirizzo IP, la connessione di rete e che la stampante sia accesa.',
+        camera_port_closed: 'La stampante risponde ma la porta della telecamera è chiusa. Assicurati che la modalità LAN e la modalità sviluppatore siano attive nelle impostazioni della stampante.',
+        no_frame: 'Connessione alla telecamera riuscita ma nessun frame ricevuto. Riprova o verifica che la telecamera sia abilitata nelle impostazioni della stampante.',
+        unknown_failure: 'Diagnostica della telecamera fallita per motivo sconosciuto. Controlla il log di supporto per i dettagli.',
+      },
+      meta: {
+        protocol: 'Protocollo',
+        port: 'Porta',
+        profile: 'Profilo',
+      },
+    },
   },
 
   // Groups management

@@ -2626,6 +2626,32 @@ export default {
     startRecording: 'Iniciar gravação',
     stopRecording: 'Parar gravação',
     chamberLight: 'Alternar luz da câmara',
+    unavailable: 'Câmera indisponível',
+    diagnose: {
+      button: 'Diagnóstico',
+      modalTitle: 'Diagnóstico da câmera',
+      running: 'Executando diagnóstico...',
+      runFailed: 'Não foi possível executar o diagnóstico: {{error}}',
+      retry: 'Executar novamente',
+      stage: {
+        tcp_reachable: 'Conectividade de rede',
+        first_frame: 'Captura de frame',
+        live_stream_active: 'Transmissão ao vivo ativa',
+      },
+      summary: {
+        all_ok: 'A câmera está funcionando. O diagnóstico concluiu todas as etapas com sucesso.',
+        live_stream_active_healthy: 'A câmera está transmitindo com frames recentes — nenhum teste necessário.',
+        printer_unreachable: 'Impressora inacessível. Verifique o endereço IP, a conexão de rede e se a impressora está ligada.',
+        camera_port_closed: 'A impressora responde mas a porta da câmera está fechada. Verifique se o modo LAN e o modo desenvolvedor estão ativados nas configurações da impressora.',
+        no_frame: 'Conexão com a câmera estabelecida mas nenhum frame recebido. Tente novamente ou verifique se a câmera está habilitada nas configurações da impressora.',
+        unknown_failure: 'Diagnóstico da câmera falhou por motivo desconhecido. Consulte o log de suporte para mais detalhes.',
+      },
+      meta: {
+        protocol: 'Protocolo',
+        port: 'Porta',
+        profile: 'Perfil',
+      },
+    },
   },
 
   // Groups management

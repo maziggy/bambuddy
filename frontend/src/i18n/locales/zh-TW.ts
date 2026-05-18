@@ -2626,6 +2626,32 @@ export default {
     startRecording: '開始錄製',
     stopRecording: '停止錄製',
     chamberLight: '切換腔室燈',
+    unavailable: '攝影機無法使用',
+    diagnose: {
+      button: '診斷',
+      modalTitle: '攝影機診斷',
+      running: '正在執行診斷...',
+      runFailed: '無法執行診斷: {{error}}',
+      retry: '重新執行',
+      stage: {
+        tcp_reachable: '網路可達性',
+        first_frame: '畫面擷取',
+        live_stream_active: '直播串流進行中',
+      },
+      summary: {
+        all_ok: '攝影機運作正常。診斷已成功完成所有階段。',
+        live_stream_active_healthy: '攝影機正在傳輸最新畫面 — 無需測試。',
+        printer_unreachable: '無法存取印表機。請檢查 IP 位址、網路連線以及印表機是否已開機。',
+        camera_port_closed: '印表機可存取，但攝影機連接埠已關閉。請確認印表機設定中已啟用僅 LAN 模式與開發者模式。',
+        no_frame: '已連線到攝影機，但未收到畫面。請重試或檢查印表機設定中攝影機是否已啟用。',
+        unknown_failure: '攝影機診斷因不明原因失敗。請查看支援日誌了解詳情。',
+      },
+      meta: {
+        protocol: '協定',
+        port: '連接埠',
+        profile: '設定檔',
+      },
+    },
   },
 
   // Groups management

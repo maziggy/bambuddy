@@ -2638,6 +2638,32 @@ export default {
     startRecording: 'Aufnahme starten',
     stopRecording: 'Aufnahme stoppen',
     chamberLight: 'Kammerbeleuchtung umschalten',
+    unavailable: 'Kamera nicht verfügbar',
+    diagnose: {
+      button: 'Diagnose',
+      modalTitle: 'Kamera-Diagnose',
+      running: 'Diagnose läuft...',
+      runFailed: 'Diagnose konnte nicht ausgeführt werden: {{error}}',
+      retry: 'Erneut ausführen',
+      stage: {
+        tcp_reachable: 'Netzwerk-Erreichbarkeit',
+        first_frame: 'Bilderfassung',
+        live_stream_active: 'Live-Stream aktiv',
+      },
+      summary: {
+        all_ok: 'Kamera funktioniert. Die Diagnose hat alle Phasen erfolgreich abgeschlossen.',
+        live_stream_active_healthy: 'Kamera streamt gerade mit aktuellen Bildern — kein Test nötig.',
+        printer_unreachable: 'Drucker ist nicht erreichbar. Prüfe IP-Adresse, Netzwerkverbindung und ob der Drucker eingeschaltet ist.',
+        camera_port_closed: 'Drucker ist erreichbar, aber der Kamera-Port ist geschlossen. Stelle sicher, dass LAN-Modus und Entwicklermodus in den Druckereinstellungen aktiviert sind.',
+        no_frame: 'Verbindung zur Kamera hergestellt, aber keine Bilder empfangen. Versuche es erneut oder prüfe, ob die Kamera in den Druckereinstellungen aktiviert ist.',
+        unknown_failure: 'Kamera-Diagnose aus unbekanntem Grund fehlgeschlagen. Prüfe das Support-Log für Details.',
+      },
+      meta: {
+        protocol: 'Protokoll',
+        port: 'Port',
+        profile: 'Profil',
+      },
+    },
   },
 
   // Groups management

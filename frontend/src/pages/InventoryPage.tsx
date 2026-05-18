@@ -772,7 +772,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       activeCount++;
       const remaining = Math.max(0, s.label_weight - s.weight_used);
       totalWeight += remaining;
-      totalConsumed += s.weight_used;
+      // "Total Consumed" is the resettable counter (weight_used - baseline)
+      // rather than raw weight_used so the per-spool / bulk eraser zeroes
+      // the stat without inflating remaining back to label_weight (#1390).
+      totalConsumed += Math.max(0, s.weight_used - (s.weight_used_baseline ?? 0));
       const pct = s.label_weight > 0 ? (remaining / s.label_weight) * 100 : 0;
       const threshold = s.low_stock_threshold_pct ?? lowStockThreshold;
       if (pct < threshold) lowStock++;

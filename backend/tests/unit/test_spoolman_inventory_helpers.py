@@ -102,8 +102,35 @@ class TestMapSpoolmanSpool:
         assert result["material"] == "PLA"
         assert result["rgba"] == "FF0000FF"
         assert result["label_weight"] == 1000
+        # No remaining_weight set → fallback path: weight_used = used_weight, baseline = 0.
         assert result["weight_used"] == pytest.approx(250.0)
+        assert result["weight_used_baseline"] == pytest.approx(0.0)
         assert result["data_origin"] == "spoolman"
+
+    def test_remaining_weight_drives_synthetic_used_for_parity(self):
+        """When remaining_weight is set, weight_used = label - remaining and
+        the baseline absorbs the used_weight delta. This mirrors the internal
+        Spool model's split between consumed counter and physical depletion
+        so the frontend computes the same display in both modes (#1390).
+        """
+        spool = {**MINIMAL_SPOOL, "used_weight": 250.0, "remaining_weight": 544.0}
+        result = _map_spoolman_spool(spool)
+        # Remaining = label - weight_used must equal real remaining_weight.
+        assert result["label_weight"] - result["weight_used"] == pytest.approx(544.0)
+        # Consumed = weight_used - baseline must equal real used_weight.
+        assert result["weight_used"] - result["weight_used_baseline"] == pytest.approx(250.0)
+
+    def test_remaining_weight_after_reset(self):
+        """Spoolman reset: used_weight=0, remaining_weight unchanged. The
+        mapper produces baseline = weight_used so the displayed consumed
+        counter reads 0 while remaining stays at the real value.
+        """
+        spool = {**MINIMAL_SPOOL, "used_weight": 0.0, "remaining_weight": 544.0}
+        result = _map_spoolman_spool(spool)
+        assert result["weight_used"] == pytest.approx(456.0)
+        assert result["weight_used_baseline"] == pytest.approx(456.0)
+        assert result["weight_used"] - result["weight_used_baseline"] == pytest.approx(0.0)
+        assert result["label_weight"] - result["weight_used"] == pytest.approx(544.0)
 
     def test_missing_id_raises(self):
         spool = {k: v for k, v in MINIMAL_SPOOL.items() if k != "id"}

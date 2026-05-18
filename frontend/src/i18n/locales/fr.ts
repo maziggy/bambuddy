@@ -2627,6 +2627,32 @@ export default {
     startRecording: 'Démarrer l\'enregistrement',
     stopRecording: 'Arrêter l\'enregistrement',
     chamberLight: 'Basculer lumière chambre',
+    unavailable: 'Caméra indisponible',
+    diagnose: {
+      button: 'Diagnostic',
+      modalTitle: 'Diagnostic de la caméra',
+      running: 'Diagnostic en cours...',
+      runFailed: 'Impossible d\'exécuter le diagnostic : {{error}}',
+      retry: 'Relancer',
+      stage: {
+        tcp_reachable: 'Accessibilité réseau',
+        first_frame: 'Capture d\'image',
+        live_stream_active: 'Flux en direct actif',
+      },
+      summary: {
+        all_ok: 'La caméra fonctionne. Toutes les étapes du diagnostic ont réussi.',
+        live_stream_active_healthy: 'La caméra diffuse actuellement avec des images récentes — aucun test nécessaire.',
+        printer_unreachable: 'L\'imprimante n\'est pas joignable. Vérifiez l\'adresse IP, la connexion réseau et que l\'imprimante est allumée.',
+        camera_port_closed: 'L\'imprimante répond mais le port de la caméra est fermé. Assurez-vous que le mode LAN et le mode développeur sont activés dans les paramètres de l\'imprimante.',
+        no_frame: 'Connexion à la caméra établie mais aucune image reçue. Réessayez ou vérifiez que la caméra est activée dans les paramètres de l\'imprimante.',
+        unknown_failure: 'Le diagnostic de la caméra a échoué pour une raison inconnue. Consultez le journal de support pour plus de détails.',
+      },
+      meta: {
+        protocol: 'Protocole',
+        port: 'Port',
+        profile: 'Profil',
+      },
+    },
   },
 
   // Groups management

@@ -1547,6 +1547,11 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN low_stock_threshold_pct INTEGER")
     # Migration: Add user-editable storage location to spool table
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN storage_location VARCHAR(255)")
+    # Migration: Add weight_used_baseline anchor for the resettable "Total
+    # Consumed" stat (#1390). Existing spools default to 0 (no baseline),
+    # so the counter starts unaffected; pressing "Reset usage to 0" now
+    # stamps baseline = weight_used without touching remaining.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN weight_used_baseline REAL DEFAULT 0")
     # Migration: Widen tag_uid column from VARCHAR(16) to VARCHAR(32) to accommodate 7-byte NFC
     # UIDs (14 hex chars) in addition to 8-byte Bambu Lab UIDs (16 hex chars).
     # ALTER COLUMN ... TYPE is PostgreSQL-only syntax; SQLite ignores VARCHAR sizes so no-op there.

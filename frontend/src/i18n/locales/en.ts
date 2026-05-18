@@ -2641,6 +2641,32 @@ export default {
     startRecording: 'Start Recording',
     stopRecording: 'Stop Recording',
     chamberLight: 'Toggle chamber light',
+    unavailable: 'Camera unavailable',
+    diagnose: {
+      button: 'Diagnose',
+      modalTitle: 'Camera diagnostic',
+      running: 'Running diagnostic...',
+      runFailed: 'Diagnostic could not run: {{error}}',
+      retry: 'Run again',
+      stage: {
+        tcp_reachable: 'Network reachability',
+        first_frame: 'Frame capture',
+        live_stream_active: 'Live stream active',
+      },
+      summary: {
+        all_ok: 'Camera is working. The diagnostic completed all stages successfully.',
+        live_stream_active_healthy: 'Camera is currently streaming with recent frames — no test needed.',
+        printer_unreachable: 'Printer is not reachable. Check the IP address, network connection, and that the printer is powered on.',
+        camera_port_closed: 'Printer is reachable but the camera port is closed. Make sure LAN-only mode and Developer Mode are enabled in the printer settings.',
+        no_frame: 'Connected to the camera but no frames were received. Try again, or check that the camera is enabled in the printer settings.',
+        unknown_failure: 'Camera diagnostic failed for an unknown reason. Check the support log for details.',
+      },
+      meta: {
+        protocol: 'Protocol',
+        port: 'Port',
+        profile: 'Profile',
+      },
+    },
   },
 
   // Groups management

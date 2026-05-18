@@ -191,6 +191,56 @@ class TestCameraAPI:
         assert result["success"] is False
 
     # ========================================================================
+    # Camera Diagnose Endpoint (#1395 follow-up)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_diagnose_printer_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/camera/diagnose")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_diagnose_returns_structured_result(self, async_client: AsyncClient, printer_factory):
+        """Endpoint returns the per-stage shape the frontend modal renders."""
+        from backend.app.services.camera_diagnose import (
+            CameraDiagnoseResult,
+            CameraDiagnoseStage,
+        )
+
+        printer = await printer_factory()
+
+        fake = CameraDiagnoseResult(
+            printer_id=printer.id,
+            protocol="rtsp",
+            port=322,
+            profile="P2S",
+            overall_status="failed",
+            stages=[
+                CameraDiagnoseStage(name="tcp_reachable", status="ok", duration_ms=12),
+                CameraDiagnoseStage(name="first_frame", status="failed", duration_ms=15123, code="no_frame"),
+            ],
+            summary_code="no_frame",
+        )
+        with patch(
+            "backend.app.services.camera_diagnose.diagnose_camera",
+            new_callable=AsyncMock,
+            return_value=fake,
+        ):
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/diagnose")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["printer_id"] == printer.id
+        assert body["protocol"] == "rtsp"
+        assert body["profile"] == "P2S"
+        assert body["overall_status"] == "failed"
+        assert body["summary_code"] == "no_frame"
+        assert [s["name"] for s in body["stages"]] == ["tcp_reachable", "first_frame"]
+        assert body["stages"][1]["code"] == "no_frame"
+
+    # ========================================================================
     # Camera Snapshot Endpoint
     # ========================================================================
 

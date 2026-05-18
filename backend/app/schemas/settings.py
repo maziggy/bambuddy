@@ -248,6 +248,26 @@ class AppSettings(BaseModel):
         default=5, ge=1, le=60, description="Minutes between staggered printer groups"
     )
 
+    # Finance budget window settings
+    billing_enabled: bool = Field(
+        default=False,
+        description="Enable cost-center billing enforcement for print and queue operations",
+    )
+    printer_kill_switch_enabled: bool = Field(
+        default=False,
+        description="Immediately stop printer jobs that start without Bambuddy authorization",
+    )
+    finance_budget_reset_day: int = Field(
+        default=1,
+        ge=1,
+        le=31,
+        description="Day of month when monthly finance budget window resets (1-31, clamped for short months)",
+    )
+    finance_budget_reset_timezone: str = Field(
+        default="UTC",
+        description="IANA timezone for finance monthly budget reset calculation (e.g., Europe/Berlin)",
+    )
+
     # Plate-clear confirmation for queue scheduling
     require_plate_clear: bool = Field(
         default=False,
@@ -400,6 +420,10 @@ class AppSettingsUpdate(BaseModel):
     default_timelapse: bool | None = None
     stagger_group_size: int | None = Field(default=None, ge=1, le=50)
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
+    billing_enabled: bool | None = None
+    printer_kill_switch_enabled: bool | None = None
+    finance_budget_reset_day: int | None = Field(default=None, ge=1, le=31)
+    finance_budget_reset_timezone: str | None = None
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
     gcode_snippets: str | None = None

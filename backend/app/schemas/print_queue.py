@@ -46,6 +46,8 @@ class PrintQueueItemCreate(BaseModel):
     quantity: int = 1
     # Project to associate the resulting archive with
     project_id: int | None = None
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
 
 
 class PrintQueueItemUpdate(BaseModel):
@@ -69,6 +71,8 @@ class PrintQueueItemUpdate(BaseModel):
     use_ams: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
 
 
 class PrintQueueItemResponse(BaseModel):
@@ -81,6 +85,8 @@ class PrintQueueItemResponse(BaseModel):
     waiting_reason: str | None = None  # Why a model-based job hasn't started yet
     archive_id: int | None  # None if library_file_id is set (archive created at print start)
     library_file_id: int | None  # For queue items from library files
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
     position: int
     scheduled_time: UTCDatetime
     require_previous_success: bool
@@ -168,6 +174,8 @@ class PrintQueueBulkUpdate(BaseModel):
     use_ams: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
 
 
 class PrintQueueBulkUpdateResponse(BaseModel):

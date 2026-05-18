@@ -208,6 +208,8 @@ class FilePrintRequest(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
     # Project to associate the resulting archive with
     project_id: int | None = None
     # When true, delete the LibraryFile row + disk file after the archive has

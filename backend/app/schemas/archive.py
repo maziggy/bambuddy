@@ -236,3 +236,5 @@ class ReprintRequest(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True  # Not exposed in UI, but needed for API
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None

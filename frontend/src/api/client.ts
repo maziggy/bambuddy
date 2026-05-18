@@ -85,6 +85,11 @@ function parseContentDispositionFilename(header: string | null): string | null {
   return standardMatch?.[1] || null;
 }
 
+function buildSlicerUrlFilename(filename: string): string {
+  const safe = filename.replace(/[/\\?#]/g, '_');
+  return safe.toLowerCase().endsWith('.3mf') ? safe : `${safe}.3mf`;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -5405,7 +5410,7 @@ export const api = {
   createLibrarySlicerToken: (fileId: number) =>
     request<{ token: string }>(`/library/files/${fileId}/slicer-token`, { method: 'POST' }),
   getLibrarySlicerDownloadUrl: (fileId: number, token: string, filename: string) =>
-    `${API_BASE}/library/files/${fileId}/dl/${token}/${encodeURIComponent(filename)}`,
+    `${API_BASE}/library/files/${fileId}/dl/${token}/${encodeURIComponent(buildSlicerUrlFilename(filename))}`,
   downloadLibraryFile: async (id: number, filename?: string): Promise<void> => {
     const headers: Record<string, string> = {};
     if (authToken) {

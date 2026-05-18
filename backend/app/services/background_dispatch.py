@@ -21,8 +21,10 @@ from sqlalchemy import select
 from backend.app.core.config import settings
 from backend.app.core.database import async_session
 from backend.app.core.websocket import ws_manager
+from backend.app.models.finance import BudgetReservation, CostCenter
 from backend.app.models.library import LibraryFile
 from backend.app.models.printer import Printer
+from backend.app.models.user import User
 from backend.app.services.archive import ArchiveService
 from backend.app.services.bambu_ftp import (
     cache_3mf_download,
@@ -31,6 +33,7 @@ from backend.app.services.bambu_ftp import (
     upload_file_async,
     with_ftp_retry,
 )
+from backend.app.services.finance_budget import create_budget_reservation, release_budget_reservation
 from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
@@ -114,11 +117,15 @@ class BackgroundDispatchService:
             dispatcher = self._dispatcher_task
             self._dispatcher_task = None
             running_tasks = list(self._running_tasks.values())
+            jobs_to_release = [*self._queued_jobs, *(state.job for state in self._active_jobs.values())]
             self._running_tasks.clear()
             self._active_jobs.clear()
             self._queued_jobs.clear()
             self._cancel_requested_job_ids.clear()
             self._job_event.set()
+
+        for job in jobs_to_release:
+            await self._release_budget_reservation(job, status="released")
 
         if dispatcher:
             dispatcher.cancel()
@@ -288,8 +295,22 @@ class BackgroundDispatchService:
                 raise DispatchEnqueueRejected(f"Printer {printer_name} is currently busy printing")
 
             dispatch_position = len(self._queued_jobs) + len(self._active_jobs) + 1
+            job_id = self._next_job_id
+            async with async_session() as db:
+                requested_by = await db.get(User, requested_by_user_id) if requested_by_user_id is not None else None
+                await create_budget_reservation(
+                    db,
+                    cost_center_id=options.get("cost_center_id"),
+                    estimated_cost=options.get("estimated_cost"),
+                    current_user=requested_by,
+                    source_type="background_dispatch",
+                    source_id=job_id,
+                    print_archive_id=source_id if kind == "reprint_archive" else None,
+                )
+                await db.commit()
+
             job = PrintDispatchJob(
-                id=self._next_job_id,
+                id=job_id,
                 kind=kind,
                 source_id=source_id,
                 source_name=source_name,
@@ -429,6 +450,9 @@ class BackgroundDispatchService:
         await ws_manager.broadcast({"type": "background_dispatch", "data": payload})
 
     async def _mark_job_finished(self, job: PrintDispatchJob, *, failed: bool, message: str):
+        if failed:
+            await self._release_budget_reservation(job, status="released")
+
         async with self._lock:
             if failed:
                 self._batch_failed += 1
@@ -461,6 +485,8 @@ class BackgroundDispatchService:
                     self._batch_failed = 0
 
     async def _mark_job_cancelled(self, job: PrintDispatchJob):
+        await self._release_budget_reservation(job, status="released")
+
         async with self._lock:
             self._active_jobs.pop(job.id, None)
             self._running_tasks.pop(job.id, None)
@@ -490,6 +516,19 @@ class BackgroundDispatchService:
     def _raise_if_cancel_requested(self, job: PrintDispatchJob):
         if self._is_cancel_requested(job.id):
             raise DispatchJobCancelled(f"Dispatch job {job.id} cancelled")
+
+    @staticmethod
+    async def _release_budget_reservation(job: PrintDispatchJob, *, status: str):
+        if job.options.get("cost_center_id") is None:
+            return
+        async with async_session() as db:
+            await release_budget_reservation(
+                db,
+                source_type="background_dispatch",
+                source_id=job.id,
+                status=status,
+            )
+            await db.commit()
 
     def _build_state_payload_unlocked(self, recent_event: dict[str, Any] | None = None) -> dict[str, Any]:
         processing = len(self._active_jobs)
@@ -562,6 +601,12 @@ class BackgroundDispatchService:
             archive = await service.get_archive(job.source_id)
             if not archive:
                 raise RuntimeError("Archive not found")
+
+            cost_center_id = job.options.get("cost_center_id")
+            if cost_center_id is not None:
+                cost_center = await db.scalar(select(CostCenter).where(CostCenter.id == cost_center_id))
+                if not cost_center:
+                    raise RuntimeError("Cost center not found")
 
             printer = await db.scalar(select(Printer).where(Printer.id == job.printer_id))
             if not printer:
@@ -666,6 +711,7 @@ class BackgroundDispatchService:
                     remote_filename,
                     job.source_id,
                     ams_mapping=job.options.get("ams_mapping"),
+                    cost_center_id=job.options.get("cost_center_id"),
                 )
 
                 plate_id = self._resolve_plate_id(file_path, job.options.get("plate_id"))
@@ -778,11 +824,21 @@ class BackgroundDispatchService:
                 original_filename=lib_file.filename,
                 project_id=job.project_id,
                 created_by_id=job.requested_by_user_id,
+                cost_center_id=job.options.get("cost_center_id"),
             )
             if not archive:
                 raise RuntimeError("Failed to create archive")
-
-            await db.flush()
+            if job.options.get("cost_center_id") is not None:
+                reservation = await db.scalar(
+                    select(BudgetReservation).where(
+                        BudgetReservation.source_type == "background_dispatch",
+                        BudgetReservation.source_id == job.id,
+                        BudgetReservation.status == "active",
+                    )
+                )
+                if reservation:
+                    reservation.print_archive_id = archive.id
+                    await db.flush()
 
             base_name = lib_file.filename
             if base_name.endswith(".gcode.3mf"):
@@ -871,6 +927,7 @@ class BackgroundDispatchService:
                     remote_filename,
                     archive.id,
                     ams_mapping=job.options.get("ams_mapping"),
+                    cost_center_id=job.options.get("cost_center_id"),
                 )
 
                 plate_id = self._resolve_plate_id(file_path, job.options.get("plate_id"))

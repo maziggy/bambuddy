@@ -63,6 +63,7 @@ from backend.app.schemas.library import (
 )
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
+from backend.app.services.finance_budget import validate_print_budget
 from backend.app.services.stl_thumbnail import generate_stl_thumbnail
 from backend.app.utils.threemf_tools import (
     extract_nozzle_mapping_from_3mf,
@@ -3481,6 +3482,13 @@ async def print_library_file(
         project_result = await db.execute(select(Project).where(Project.id == body.project_id))
         if not project_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Project not found")
+
+    await validate_print_budget(
+        db,
+        cost_center_id=body.cost_center_id,
+        estimated_cost=body.estimated_cost,
+        current_user=current_user,
+    )
 
     plate_name = body.plate_name
     if not plate_name and body.plate_id is not None:

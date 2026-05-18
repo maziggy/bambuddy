@@ -1022,6 +1022,7 @@ class ArchiveService:
         created_by_id: int | None = None,
         original_filename: str | None = None,
         project_id: int | None = None,
+        cost_center_id: int | None = None,
         subtask_id: str | None = None,
         prefer_filename_for_name: bool = False,
     ) -> PrintArchive | None:
@@ -1193,6 +1194,7 @@ class ArchiveService:
             extra_data=metadata,
             created_by_id=created_by_id,
             project_id=project_id,
+            cost_center_id=cost_center_id,
             subtask_id=subtask_id,
         )
 

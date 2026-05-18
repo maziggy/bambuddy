@@ -27,6 +27,7 @@ from backend.app.api.routes import (
     discovery,
     external_links,
     filaments,
+    finance,
     firmware,
     github_backup,
     groups,
@@ -337,12 +338,18 @@ _expected_prints: dict[tuple[int, str], int] = {}
 # Used by usage tracker to map 3MF slots to physical AMS trays
 _print_ams_mappings: dict[int, list[int]] = {}
 
+# Track cost center selection for the current print run: {archive_id: cost_center_id}
+_print_cost_center_ids: dict[int, int] = {}
+
 # Track progress milestones for notifications: {printer_id: last_milestone_notified}
 # Milestones are 25, 50, 75. Value of 0 means no milestone notified yet for current print.
 _last_progress_milestone: dict[int, int] = {}
 
 # Track whether first layer complete notification has been sent for current print
 _first_layer_notified: dict[int, bool] = {}
+
+# Track whether we already sent a kill-switch stop for the current unauthorized print
+_unauthorized_print_kill_sent: set[int] = set()
 
 # Track HMS errors that have been notified: {printer_id: set of error codes}
 # This prevents sending duplicate notifications for the same error
@@ -483,6 +490,54 @@ _expected_print_registered_at: dict[tuple[int, str], float] = {}
 _EXPECTED_PRINT_CLEANUP_INTERVAL: int = 15 * 60  # 15 minutes
 _expected_prints_cleanup_task: asyncio.Task | None = None
 
+_ACTIVE_PRINT_STATES: set[str] = {"RUNNING", "PRINTING", "PAUSE"}
+
+
+def _build_status_print_keys(printer_id: int, state: PrinterState) -> list[tuple[int, str]]:
+    """Build filename keys for matching a printer status update to Bambuddy-owned jobs."""
+
+    possible_keys: list[tuple[int, str]] = []
+    filename = (state.gcode_file or state.current_print or "").strip()
+    subtask_name = (state.subtask_name or "").strip()
+
+    if subtask_name:
+        possible_keys.append((printer_id, subtask_name))
+        possible_keys.append((printer_id, f"{subtask_name}.3mf"))
+        possible_keys.append((printer_id, f"{subtask_name}.gcode.3mf"))
+
+    if filename:
+        base_name = filename.rsplit("/", 1)[-1]
+        if base_name.endswith(".gcode.3mf"):
+            root_name = base_name[: -len(".gcode.3mf")]
+            possible_keys.append((printer_id, root_name))
+            possible_keys.append((printer_id, base_name))
+            possible_keys.append((printer_id, f"{root_name}.gcode"))
+            possible_keys.append((printer_id, f"{root_name}.3mf"))
+        elif base_name.endswith(".3mf"):
+            root_name = base_name[: -len(".3mf")]
+            possible_keys.append((printer_id, root_name))
+            possible_keys.append((printer_id, base_name))
+        elif base_name.endswith(".gcode"):
+            root_name = base_name[: -len(".gcode")]
+            possible_keys.append((printer_id, root_name))
+            possible_keys.append((printer_id, f"{root_name}.3mf"))
+            possible_keys.append((printer_id, base_name))
+        else:
+            possible_keys.append((printer_id, base_name))
+            possible_keys.append((printer_id, f"{base_name}.3mf"))
+
+    return possible_keys
+
+
+def _is_bambuddy_authorized_print(printer_id: int, state: PrinterState) -> bool:
+    """Return True when the current status belongs to a print started by Bambuddy."""
+
+    if printer_manager.get_current_print_user(printer_id):
+        return True
+
+    possible_keys = _build_status_print_keys(printer_id, state)
+    return any(key in _expected_prints or key in _active_prints for key in possible_keys)
+
 
 async def _get_plug_energy(plug, db) -> dict | None:
     """Get energy from plug regardless of type (Tasmota, Home Assistant, MQTT, or REST).
@@ -555,6 +610,7 @@ def register_expected_print(
     archive_id: int,
     ams_mapping: list[int] | None = None,
     created_by_id: int | None = None,
+    cost_center_id: int | None = None,
 ):
     """Register an expected print from reprint/scheduled so we don't create duplicate archives."""
     # Store with multiple filename variations to catch different naming patterns
@@ -567,6 +623,8 @@ def register_expected_print(
     # Store AMS mapping for usage tracking at print completion
     if ams_mapping is not None:
         _print_ams_mappings[archive_id] = ams_mapping
+    if cost_center_id is not None:
+        _print_cost_center_ids[archive_id] = cost_center_id
     # Store created_by_id so the user start email can be sent even when the archive
     # itself has no created_by_id (e.g. library-file-based queue prints)
     if created_by_id is not None:
@@ -737,6 +795,45 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}:"
         f"{ams_dry_key}:{ams_tray_key}:{state.door_open}"
     )
+
+    is_active_print = state.state in _ACTIVE_PRINT_STATES
+    if not is_active_print:
+        _unauthorized_print_kill_sent.discard(printer_id)
+    else:
+        kill_switch_enabled = False
+        status_logger = logging.getLogger(__name__)
+        try:
+            async with async_session() as db:
+                from backend.app.services.finance_budget import is_printer_kill_switch_enabled
+
+                kill_switch_enabled = await is_printer_kill_switch_enabled(db)
+        except Exception as e:
+            status_logger.warning("[KILL SWITCH] Failed to read kill-switch setting for printer %s: %s", printer_id, e)
+
+        if not kill_switch_enabled or _is_bambuddy_authorized_print(printer_id, state):
+            _unauthorized_print_kill_sent.discard(printer_id)
+        elif printer_id in _unauthorized_print_kill_sent:
+            pass
+        else:
+            try:
+                stopped = printer_manager.stop_print(printer_id)
+                if stopped:
+                    _unauthorized_print_kill_sent.add(printer_id)
+                    status_logger.warning(
+                        "[KILL SWITCH] Stopped unauthorized print on printer %s (state=%s)",
+                        printer_id,
+                        state.state,
+                    )
+                else:
+                    status_logger.warning(
+                        "[KILL SWITCH] Could not stop unauthorized print on printer %s (state=%s)",
+                        printer_id,
+                        state.state,
+                    )
+            except Exception as e:
+                status_logger.warning(
+                    "[KILL SWITCH] Failed to stop unauthorized print on printer %s: %s", printer_id, e
+                )
 
     # MQTT relay - publish status (before dedup check - always publish to MQTT)
     try:
@@ -2012,7 +2109,7 @@ async def on_print_start(printer_id: int, data: dict):
                 # Update archive status to printing
                 archive.status = "printing"
                 archive.started_at = datetime.now(timezone.utc)
-                if subtask_id and not archive.subtask_id:
+                if subtask_id:
                     archive.subtask_id = subtask_id
                 await db.commit()
 
@@ -3555,6 +3652,29 @@ async def on_print_complete(printer_id: int, data: dict):
 
     log_timing("Archive status update")
 
+    # Apply finance wallet charge or release reservations once
+    try:
+        if data.get("status") in ("completed", "failed", "aborted", "cancelled"):
+            async with async_session() as db:
+                from backend.app.models.archive import PrintArchive
+                from backend.app.services.finance_billing import apply_print_charge_for_archive
+
+                archive = await db.get(PrintArchive, archive_id)
+                cost_center_id = _print_cost_center_ids.pop(archive_id, None)
+                charged = await apply_print_charge_for_archive(
+                    db,
+                    archive_id,
+                    cost_center_id=cost_center_id,
+                    print_run_id=archive.subtask_id if archive else None,
+                )
+                await db.commit()
+                if charged:
+                    logger.info("[FINANCE] Applied print charge for archive %s", archive_id)
+    except Exception as e:
+        logger.warning("[FINANCE] Failed to apply print charge for archive %s: %s", archive_id, e)
+
+    log_timing("Finance charge update")
+
     # Write independent print log entry (separate table, never touches archives)
     try:
         async with async_session() as db:
@@ -4482,6 +4602,7 @@ def _evict_stale_expected_prints() -> None:
     for archive_id in evicted_archive_ids:
         if archive_id not in live_archive_ids:
             _print_ams_mappings.pop(archive_id, None)
+            _print_cost_center_ids.pop(archive_id, None)
 
     logging.getLogger(__name__).info(
         "Evicted %d stale expected-print entries (TTL=%ds)", len(stale_keys), _EXPECTED_PRINT_TTL_SECONDS
@@ -5331,6 +5452,7 @@ app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(printers.router, prefix=app_settings.api_prefix)
 app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
+app.include_router(finance.router, prefix=app_settings.api_prefix)
 app.include_router(inventory.router, prefix=app_settings.api_prefix)
 app.include_router(labels.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)

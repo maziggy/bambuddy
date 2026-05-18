@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, Wallet, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -31,6 +31,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'archives', to: '/archives', icon: Archive, labelKey: 'nav.archives' },
   { id: 'queue', to: '/queue', icon: ListOrdered, labelKey: 'nav.queue' },
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
+  { id: 'finance', to: '/finance', icon: Wallet, labelKey: 'nav.finance' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
   { id: 'makerworld', to: '/makerworld', icon: Globe, labelKey: 'nav.makerworld' },
   { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
@@ -282,6 +283,7 @@ export function Layout() {
       maintenance: 'maintenance:read',
       projects: 'projects:read',
       inventory: 'inventory:read',
+      finance: 'cost_centers:read_own',
       files: 'library:read',
       makerworld: 'makerworld:view',
       settings: 'settings:read',
@@ -289,7 +291,10 @@ export function Layout() {
     };
 
     const isHidden = (id: string) => {
+
       if (authEnabled && id in navPermissions && !hasPermission(navPermissions[id])) return true;
+      // finance nav item requires billing to be enabled
+      if (id === 'finance' && !settings?.billing_enabled) return true;
       // notifications nav item also requires advanced auth to be enabled and user_notifications_enabled setting
       if (id === 'notifications' && (!authEnabled || !advancedAuthStatus?.advanced_auth_enabled || (settings?.user_notifications_enabled === false))) return true;
       return false;

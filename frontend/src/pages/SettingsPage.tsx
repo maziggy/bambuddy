@@ -173,6 +173,8 @@ export function SettingsPage() {
   const [templateFilter, setTemplateFilter] = useState('');
   const [settingsSearch, setSettingsSearch] = useState('');
   const [showLogViewer, setShowLogViewer] = useState(false);
+  const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
+  const [isRebuildLoading, setIsRebuildLoading] = useState(false);
   const [defaultView, setDefaultViewState] = useState<string>(getDefaultView());
 
   // Initialize tab from URL params (handle legacy ?tab=email → users tab + email sub-tab)
@@ -1007,7 +1009,11 @@ export function SettingsPage() {
       (settings.default_timelapse ?? false) !== (localSettings.default_timelapse ?? false) ||
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
-      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false);
+      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.billing_enabled ?? false) !== (localSettings.billing_enabled ?? false) ||
+      (settings.printer_kill_switch_enabled ?? false) !== (localSettings.printer_kill_switch_enabled ?? false) ||
+      (settings.finance_budget_reset_day ?? 1) !== (localSettings.finance_budget_reset_day ?? 1) ||
+      (settings.finance_budget_reset_timezone ?? 'UTC') !== (localSettings.finance_budget_reset_timezone ?? 'UTC');
 
     if (!hasChanges) {
       return;
@@ -1092,6 +1098,10 @@ export function SettingsPage() {
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        billing_enabled: localSettings.billing_enabled,
+        printer_kill_switch_enabled: localSettings.printer_kill_switch_enabled,
+        finance_budget_reset_day: localSettings.finance_budget_reset_day,
+        finance_budget_reset_timezone: localSettings.finance_budget_reset_timezone,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -2115,6 +2125,151 @@ export function SettingsPage() {
                     ? t('settings.energyModePrintDescription')
                     : t('settings.energyModeTotalDescription')}
                 </p>
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.billingEnabled')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.billingEnabledDescription')}</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.billing_enabled ?? false}
+                      onChange={(e) => updateSetting('billing_enabled', e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                  </label>
+                </div>
+                {localSettings.billing_enabled && (
+                  <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-4 py-3">
+                    <div className="flex-1">
+                      <p className="text-white">
+                        {t('settings.printerKillSwitch', 'Unauthorized print kill switch')}
+                      </p>
+                      <p className="text-xs text-bambu-gray mt-1">
+                        {t(
+                          'settings.printerKillSwitchDescription',
+                          'Immediately stop prints that start without authorization.'
+                        )}
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={localSettings.printer_kill_switch_enabled ?? false}
+                        onChange={(e) => updateSetting('printer_kill_switch_enabled', e.target.checked)}
+                        className="peer sr-only"
+                      />
+                      <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                    </label>
+                  </div>
+                )}
+                {localSettings.billing_enabled && (
+                  <div className="mt-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-4">
+                    <div className="mb-3">
+                      <h4 className="text-base font-medium text-white flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-bambu-green" />
+                        {t('settings.financeBudgetReset', 'Finance Monthly Budget Reset')}
+                      </h4>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="block text-xs text-bambu-gray mb-1">
+                          {t('settings.financeBudgetResetDay', 'Reset Day')}
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          value={localSettings.finance_budget_reset_day ?? 1}
+                          onChange={(e) =>
+                            updateSetting(
+                              'finance_budget_reset_day',
+                              Math.max(1, Math.min(31, parseInt(e.target.value, 10) || 1))
+                            )
+                          }
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                        />
+                        <p className="text-xs text-bambu-gray mt-1">
+                          {t('settings.financeBudgetResetDayHelp', 'For short months, reset uses the last day of the month.')}
+                        </p>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs text-bambu-gray mb-1">
+                          {t('settings.financeBudgetResetTimezone', 'Reset timezone')}
+                        </label>
+                        <select
+                          value={localSettings.finance_budget_reset_timezone ?? 'UTC'}
+                          onChange={(e) => updateSetting('finance_budget_reset_timezone', e.target.value)}
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                        >
+                          <option value="UTC">UTC</option>
+                          <option value="Europe/Berlin">Europe/Berlin</option>
+                          <option value="Europe/Vienna">Europe/Vienna</option>
+                          <option value="Europe/Zurich">Europe/Zurich</option>
+                          <option value="America/New_York">America/New_York</option>
+                          <option value="America/Chicago">America/Chicago</option>
+                          <option value="America/Denver">America/Denver</option>
+                          <option value="America/Los_Angeles">America/Los_Angeles</option>
+                          <option value="Asia/Tokyo">Asia/Tokyo</option>
+                          <option value="Asia/Singapore">Asia/Singapore</option>
+                          <option value="Australia/Sydney">Australia/Sydney</option>
+                        </select>
+                        <p className="text-xs text-bambu-gray mt-1">
+                          {t('settings.financeBudgetResetTimezoneHelp', 'Budget window start is calculated in this timezone.')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {localSettings.billing_enabled && isAdmin && (
+                  <div className="mt-3">
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowRebuildConfirm(true)}
+                      disabled={isRebuildLoading}
+                    >
+                      {isRebuildLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          {t('settings.rebuildLedgerInProgress', 'Starting...')}
+                        </>
+                      ) : (
+                        t('settings.rebuildLedger', 'Rebuild wallet ledger')
+                      )}
+                    </Button>
+
+                    {showRebuildConfirm && (
+                      <ConfirmModal
+                        title={t('settings.rebuildLedgerConfirmTitle', 'Rebuild wallet ledger?')}
+                        message={t(
+                          'settings.rebuildLedgerConfirmMessage',
+                          'This will rebuild the wallet ledger to repair historical balance values. Run this only if you know what you are doing.'
+                        )}
+                        confirmText={t('common.run', 'Run')}
+                        cancelText={t('common.cancel', 'Cancel')}
+                        isLoading={isRebuildLoading}
+                        loadingText={t('common.running', 'Running')}
+                        variant="warning"
+                        onCancel={() => setShowRebuildConfirm(false)}
+                        onConfirm={async () => {
+                          setIsRebuildLoading(true);
+                          try {
+                            await api.rebuildBalanceLedger();
+                            showToast(t('settings.rebuildLedgerStarted', 'Ledger rebuild started'), 'success');
+                            setShowRebuildConfirm(false);
+                          } catch (err) {
+                            showToast((err as Error).message || 'Failed to start ledger rebuild', 'error');
+                          } finally {
+                            setIsRebuildLoading(false);
+                          }
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

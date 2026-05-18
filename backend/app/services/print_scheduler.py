@@ -1729,6 +1729,7 @@ class PrintScheduler:
                         proc = await asyncio.create_subprocess_exec(
                             script_path.strip(),
                             str(script_out_path),
+                            str(item.plate_id or 1),
                             stdout=asyncio.subprocess.PIPE,
                             stderr=asyncio.subprocess.PIPE,
                         )

@@ -365,12 +365,13 @@ def build_test_gcode(lines, max_z, push_x, cooldown_temp, push_speed, lane_offse
 # 3MF packaging
 # ---------------------------------------------------------------------------
 
-def write_3mf(output_path, gcode_bytes, source_3mf_path):
+def write_3mf(output_path, gcode_bytes, source_3mf_path, plate_id=1):
     """
     Repack a .gcode.3mf, replacing only the gcode and its MD5.
     All other files are copied verbatim from the source with their
     original compression intact, preserving file order and structure.
     Required: Bambu firmware parser is strict about zip internals.
+    plate_id: which plate's gcode to replace (1-based, matches Bambu plate numbering).
     """
     if isinstance(gcode_bytes, str):
         gcode_bytes = gcode_bytes.encode("utf-8")
@@ -379,8 +380,8 @@ def write_3mf(output_path, gcode_bytes, source_3mf_path):
     md5 = hashlib.md5(gcode_bytes).hexdigest().upper().encode("ascii")
 
     REPLACE = {
-        "Metadata/plate_1.gcode":     (gcode_bytes,  zipfile.ZIP_DEFLATED),
-        "Metadata/plate_1.gcode.md5": (md5,          zipfile.ZIP_DEFLATED),
+        "Metadata/plate_{}.gcode".format(plate_id):     (gcode_bytes,  zipfile.ZIP_DEFLATED),
+        "Metadata/plate_{}.gcode.md5".format(plate_id): (md5,          zipfile.ZIP_DEFLATED),
     }
 
     with zipfile.ZipFile(source_3mf_path, "r") as src, \
@@ -405,26 +406,33 @@ def write_3mf(output_path, gcode_bytes, source_3mf_path):
 # Read input file
 # ---------------------------------------------------------------------------
 
-def read_input_3mf(path):
+def read_input_3mf(path, plate_id=1):
     """
     Read a .gcode.3mf and return (gcode_lines, plate_json_dict).
     plate_json_dict contains bbox info for accurate push_x detection.
-    Returns (lines, None) if plate_1.json is missing or unparseable.
+    plate_id: which plate's gcode to read (1-based). Falls back to first gcode found.
     """
     with zipfile.ZipFile(path, "r") as zf:
         names = zf.namelist()
 
-        gcode_name = next(
-            (n for n in names if n.endswith(".gcode") and not n.endswith(".md5")),
-            None,
-        )
+        preferred = "Metadata/plate_{}.gcode".format(plate_id)
+        if preferred in names:
+            gcode_name = preferred
+        else:
+            gcode_name = next(
+                (n for n in names if n.endswith(".gcode") and not n.endswith(".md5")),
+                None,
+            )
         if gcode_name is None:
             raise ValueError("No .gcode file found inside the 3MF archive.")
         with zf.open(gcode_name) as f:
             lines = f.read().decode("utf-8", errors="replace").splitlines(keepends=True)
 
         plate_json = None
-        plate_json_name = next((n for n in names if n.endswith("plate_1.json")), None)
+        plate_json_name = next(
+            (n for n in names if n.endswith("plate_{}.json".format(plate_id))),
+            next((n for n in names if n.endswith("plate_1.json")), None),
+        )
         if plate_json_name:
             try:
                 with zf.open(plate_json_name) as f:
@@ -642,16 +650,15 @@ def main():
     print("Open in BambuStudio and click 'Print Plate'. Do NOT re-slice.")
 
 
-def process_inplace(path: Path) -> None:
+def process_inplace(path: Path, plate_id: int = 1) -> None:
     """
     BambuBuddy scheduler entry point.
 
     Called with a single argument: path to a temp 3MF copy.
+    Optional second argument: plate number (1-based, default 1).
     Modifies the file in-place using default settings, exits 0 on success.
-    All options use the same defaults as the CLI (cooldown 25C, push-speed 300,
-    push-x auto, lane-offset 60, flex-cycles 3, flex-z 204, flex-drop 20).
     """
-    lines, plate_json = read_input_3mf(path)
+    lines, plate_json = read_input_3mf(path, plate_id=plate_id)
 
     header = parse_header(lines)
 
@@ -685,7 +692,7 @@ def process_inplace(path: Path) -> None:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".3mf", dir=path.parent) as tmp:
         tmp_path = Path(tmp.name)
     try:
-        write_3mf(tmp_path, final_gcode, path)
+        write_3mf(tmp_path, final_gcode, path, plate_id=plate_id)
         shutil.move(tmp_path, path)
     except Exception:
         tmp_path.unlink(missing_ok=True)
@@ -693,12 +700,15 @@ def process_inplace(path: Path) -> None:
 
 
 if __name__ == "__main__":
-    # BambuBuddy calling convention: single positional arg, no flags
-    if len(sys.argv) == 2 and not sys.argv[1].startswith("-"):
+    # BambuBuddy calling convention: path [plate_id]
+    # Single positional arg (no flags) triggers in-place mode.
+    # Optional second arg is the plate number (1-based, default 1).
+    if len(sys.argv) >= 2 and not sys.argv[1].startswith("-"):
         p = Path(sys.argv[1])
         if not p.exists():
             print("ERROR: not found: {}".format(p), file=sys.stderr)
             sys.exit(1)
-        process_inplace(p)
+        plate_id = int(sys.argv[2]) if len(sys.argv) >= 3 else 1
+        process_inplace(p, plate_id=plate_id)
     else:
         main()

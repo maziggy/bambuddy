@@ -2,6 +2,19 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+
+from backend.app.models.finance import CostCenter
+from backend.app.models.settings import Settings
+
+
+async def enable_billing(db_session):
+    setting = await db_session.scalar(select(Settings).where(Settings.key == "billing_enabled"))
+    if setting is None:
+        db_session.add(Settings(key="billing_enabled", value="true"))
+    else:
+        setting.value = "true"
+    await db_session.commit()
 
 
 class TestPrintQueueAPI:
@@ -127,6 +140,149 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_to_queue_with_cost_center_id(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Verify item can be added to queue with cost_center_id."""
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        archive = await archive_factory()
+        cost_center = CostCenter(name="Queue CC", is_active=True, is_private=False)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+                "cost_center_id": cost_center.id,
+                "estimated_cost": 1.25,
+            },
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["cost_center_id"] == cost_center.id
+        assert result["estimated_cost"] == 1.25
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        row = await db_session.scalar(select(PrintQueueItem).where(PrintQueueItem.id == result["id"]))
+        assert row is not None
+        assert row.cost_center_id == cost_center.id
+        assert row.estimated_cost == 1.25
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_with_cost_center_requires_estimated_cost(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Cost-center queue items require an estimated cost for budget checks."""
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        archive = await archive_factory()
+        cost_center = CostCenter(name="Budget CC", is_active=True, is_private=False, monthly_budget=10.0)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+                "cost_center_id": cost_center.id,
+            },
+        )
+
+        assert response.status_code == 400
+        assert "Estimated cost is required" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_rejects_when_estimated_cost_exceeds_budget(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Queue creation is rejected if the estimated cost exceeds remaining budget."""
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        archive = await archive_factory()
+        cost_center = CostCenter(name="Tiny Budget CC", is_active=True, is_private=False, monthly_budget=1.0)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+                "cost_center_id": cost_center.id,
+                "estimated_cost": 2.0,
+            },
+        )
+
+        assert response.status_code == 400
+        assert "exceeds available cost center budget" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_requires_cost_center_when_billing_enabled(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Billing enforcement rejects queue jobs that omit cost center."""
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+            },
+        )
+
+        assert response.status_code == 400
+        assert "Cost center is required" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_counts_pending_queue_reservations_against_budget(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Open queue items reserve budget until they leave pending/printing states."""
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        archive = await archive_factory()
+        cost_center = CostCenter(name="Reserved Budget CC", is_active=True, is_private=False, monthly_budget=10.0)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+        await queue_item_factory(
+            printer_id=printer.id,
+            archive_id=archive.id,
+            cost_center_id=cost_center.id,
+            estimated_cost=8.0,
+            status="pending",
+        )
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+                "cost_center_id": cost_center.id,
+                "estimated_cost": 3.0,
+            },
+        )
+
+        assert response.status_code == 400
+        assert "exceeds available cost center budget" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_with_manual_start(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):
@@ -146,6 +302,30 @@ class TestPrintQueueAPI:
         assert result["archive_id"] == archive.id
         assert result["status"] == "pending"
         assert result["manual_start"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_queue_item_cost_center_id(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Verify a pending queue item can be updated with cost_center_id."""
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        archive = await archive_factory()
+        item = await queue_item_factory(printer_id=printer.id, archive_id=archive.id)
+        cost_center = CostCenter(name="Update CC", is_active=True, is_private=False)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+
+        response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={"cost_center_id": cost_center.id, "estimated_cost": 1.25},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["cost_center_id"] == cost_center.id
+        assert response.json()["estimated_cost"] == 1.25
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -346,6 +526,54 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_delete_queue_item_releases_reserved_budget(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Deleting a pending cost-center queue item releases its reserved budget."""
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        archive = await archive_factory()
+        cost_center = CostCenter(
+            name="Delete Releases Budget CC", is_active=True, is_private=False, monthly_budget=10.0
+        )
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+        item = await queue_item_factory(
+            printer_id=printer.id,
+            archive_id=archive.id,
+            cost_center_id=cost_center.id,
+            estimated_cost=8.0,
+            status="pending",
+        )
+
+        blocked = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+                "cost_center_id": cost_center.id,
+                "estimated_cost": 3.0,
+            },
+        )
+        assert blocked.status_code == 400
+
+        deleted = await async_client.delete(f"/api/v1/queue/{item.id}")
+        assert deleted.status_code == 200
+
+        allowed = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+                "cost_center_id": cost_center.id,
+                "estimated_cost": 3.0,
+            },
+        )
+        assert allowed.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_queue_item_not_found(self, async_client: AsyncClient):
         """Verify 404 for deleting non-existent queue item."""
         response = await async_client.delete("/api/v1/queue/9999")
@@ -469,6 +697,24 @@ class TestQueueStartEndpoint:
         assert response.status_code == 200
         result = response.json()
         assert result["manual_start"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_queue_item_with_cost_center_requires_estimated_cost(
+        self, async_client: AsyncClient, queue_item_factory, db_session
+    ):
+        """Starting a cost-center queue item requires a stored estimate."""
+        await enable_billing(db_session)
+        cost_center = CostCenter(name="Start Budget CC", is_active=True, is_private=False, monthly_budget=10.0)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+        item = await queue_item_factory(manual_start=True, cost_center_id=cost_center.id, estimated_cost=None)
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start")
+
+        assert response.status_code == 400
+        assert "Estimated cost is required" in response.json()["detail"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1019,6 +1265,57 @@ class TestBulkUpdateEndpoint:
         )
         assert response.status_code == 400
         assert "printer not found" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_cost_center_requires_estimated_cost(
+        self, async_client: AsyncClient, queue_item_factory, db_session
+    ):
+        """Bulk assigning a cost center requires an estimate, same as single-item updates."""
+        await enable_billing(db_session)
+        item = await queue_item_factory()
+        cost_center = CostCenter(name="Bulk Budget CC", is_active=True, is_private=False, monthly_budget=10.0)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+
+        response = await async_client.patch(
+            "/api/v1/queue/bulk",
+            json={"item_ids": [item.id], "cost_center_id": cost_center.id},
+        )
+
+        assert response.status_code == 400
+        assert "Estimated cost is required" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_cost_center_counts_pending_reservations(
+        self, async_client: AsyncClient, queue_item_factory, db_session
+    ):
+        """Bulk updates cannot reserve more than the available cost-center budget."""
+        await enable_billing(db_session)
+        item = await queue_item_factory()
+        existing = await queue_item_factory()
+        cost_center = CostCenter(name="Bulk Reserved CC", is_active=True, is_private=False, monthly_budget=10.0)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+
+        existing.cost_center_id = cost_center.id
+        existing.estimated_cost = 8.0
+        await db_session.commit()
+
+        response = await async_client.patch(
+            "/api/v1/queue/bulk",
+            json={"item_ids": [item.id], "cost_center_id": cost_center.id, "estimated_cost": 3.0},
+        )
+
+        assert response.status_code == 400
+        assert "exceeds available cost center budget" in response.json()["detail"]
+
+        await db_session.refresh(item)
+        assert item.cost_center_id is None
+        assert item.estimated_cost is None
 
 
 class TestTargetLocationFeature:

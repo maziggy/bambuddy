@@ -3,9 +3,23 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from backend.app.services.background_dispatch import DispatchEnqueueRejected
+from backend.app.models.finance import BudgetReservation, CostCenter
+from backend.app.models.settings import Settings
+from backend.app.services.background_dispatch import BackgroundDispatchService, DispatchEnqueueRejected
+
+
+async def enable_billing(db_session):
+    setting = await db_session.scalar(select(Settings).where(Settings.key == "billing_enabled"))
+    if setting is None:
+        db_session.add(Settings(key="billing_enabled", value="true"))
+    else:
+        setting.value = "true"
+    await db_session.commit()
 
 
 class TestBackgroundDispatchArchivesAPI:
@@ -52,6 +66,80 @@ class TestBackgroundDispatchArchivesAPI:
         kwargs = mock_dispatch.await_args.kwargs
         assert kwargs["archive_name"].endswith("• Plate 2")
         assert kwargs["options"]["plate_id"] == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reprint_forwards_cost_center_id(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session, tmp_path
+    ):
+        """Reprint endpoint forwards cost_center_id into the dispatch options."""
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            filename="widget-cost.gcode.3mf",
+            file_path="archives/test/widget-cost.gcode.3mf",
+        )
+
+        archive_file = tmp_path / archive.file_path
+        archive_file.parent.mkdir(parents=True, exist_ok=True)
+        archive_file.write_bytes(b"3mf-data")
+        cost_center = CostCenter(name="Reprint Cost Center", is_active=True, is_private=False, monthly_budget=10.0)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+
+        with (
+            patch("backend.app.api.routes.archives.settings.base_dir", tmp_path),
+            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
+            patch(
+                "backend.app.services.background_dispatch.background_dispatch.dispatch_reprint_archive",
+                new=AsyncMock(return_value={"dispatch_job_id": 16, "dispatch_position": 1}),
+            ) as mock_dispatch,
+        ):
+            response = await async_client.post(
+                f"/api/v1/archives/{archive.id}/reprint?printer_id={printer.id}",
+                json={"plate_id": 2, "cost_center_id": cost_center.id, "estimated_cost": 1.25},
+            )
+
+        assert response.status_code == 200
+        mock_dispatch.assert_awaited_once()
+        assert mock_dispatch.await_args.kwargs["options"]["cost_center_id"] == cost_center.id
+        assert mock_dispatch.await_args.kwargs["options"]["estimated_cost"] == 1.25
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reprint_requires_cost_center_when_billing_enabled(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session, tmp_path
+    ):
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            filename="widget-missing-cost-center.gcode.3mf",
+            file_path="archives/test/widget-missing-cost-center.gcode.3mf",
+        )
+
+        archive_file = tmp_path / archive.file_path
+        archive_file.parent.mkdir(parents=True, exist_ok=True)
+        archive_file.write_bytes(b"3mf-data")
+
+        with (
+            patch("backend.app.api.routes.archives.settings.base_dir", tmp_path),
+            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
+            patch(
+                "backend.app.services.background_dispatch.background_dispatch.dispatch_reprint_archive",
+                new=AsyncMock(return_value={"dispatch_job_id": 17, "dispatch_position": 1}),
+            ) as mock_dispatch,
+        ):
+            response = await async_client.post(
+                f"/api/v1/archives/{archive.id}/reprint?printer_id={printer.id}",
+                json={"plate_id": 2, "estimated_cost": 1.25},
+            )
+
+        assert response.status_code == 400
+        assert "Cost center is required" in response.json()["detail"]
+        mock_dispatch.assert_not_awaited()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -149,6 +237,42 @@ class TestBackgroundDispatchLibraryAPI:
         kwargs = mock_dispatch.await_args.kwargs
         assert kwargs["filename"].endswith("• Plate 4")
         assert kwargs["options"]["plate_id"] == 4
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_print_forwards_cost_center_id(
+        self, async_client: AsyncClient, library_file_factory, printer_factory, db_session, tmp_path
+    ):
+        """Library print endpoint forwards cost_center_id into the dispatch options."""
+        await enable_billing(db_session)
+        printer = await printer_factory()
+        lib_file = await library_file_factory(filename="library-cost.gcode.3mf")
+
+        disk_path = tmp_path / lib_file.file_path
+        disk_path.parent.mkdir(parents=True, exist_ok=True)
+        disk_path.write_bytes(b"library data")
+        cost_center = CostCenter(name="Library Cost Center", is_active=True, is_private=False, monthly_budget=10.0)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+
+        with (
+            patch("backend.app.api.routes.library.app_settings.base_dir", tmp_path),
+            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
+            patch(
+                "backend.app.services.background_dispatch.background_dispatch.dispatch_print_library_file",
+                new=AsyncMock(return_value={"dispatch_job_id": 22, "dispatch_position": 2}),
+            ) as mock_dispatch,
+        ):
+            response = await async_client.post(
+                f"/api/v1/library/files/{lib_file.id}/print?printer_id={printer.id}",
+                json={"plate_id": 4, "cost_center_id": cost_center.id, "estimated_cost": 1.5},
+            )
+
+        assert response.status_code == 200
+        mock_dispatch.assert_awaited_once()
+        assert mock_dispatch.await_args.kwargs["options"]["cost_center_id"] == cost_center.id
+        assert mock_dispatch.await_args.kwargs["options"]["estimated_cost"] == 1.5
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -304,3 +428,62 @@ class TestBackgroundDispatchCancelAPI:
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Dispatch job not found"
+
+
+class TestBackgroundDispatchBudgetReservations:
+    """Tests for persisted budget reservations on background dispatch enqueue."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_background_dispatch_persists_budget_reservation_and_blocks_oversubscribe(
+        self, printer_factory, db_session, test_engine
+    ):
+        await enable_billing(db_session)
+        printer_one = await printer_factory()
+        printer_two = await printer_factory()
+        cost_center = CostCenter(name="Dispatch Reservation CC", is_active=True, is_private=False, monthly_budget=2.0)
+        db_session.add(cost_center)
+        await db_session.commit()
+        await db_session.refresh(cost_center)
+
+        service = BackgroundDispatchService()
+        test_async_session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        with (
+            patch("backend.app.services.background_dispatch.async_session", test_async_session),
+            patch("backend.app.services.printer_manager.printer_manager.get_status", return_value=None),
+        ):
+            first = await service.dispatch_reprint_archive(
+                archive_id=100,
+                archive_name="first.gcode.3mf",
+                printer_id=printer_one.id,
+                printer_name=printer_one.name,
+                options={"cost_center_id": cost_center.id, "estimated_cost": 1.5},
+                requested_by_user_id=None,
+                requested_by_username=None,
+            )
+
+            with pytest.raises(HTTPException) as exc:
+                await service.dispatch_reprint_archive(
+                    archive_id=101,
+                    archive_name="second.gcode.3mf",
+                    printer_id=printer_two.id,
+                    printer_name=printer_two.name,
+                    options={"cost_center_id": cost_center.id, "estimated_cost": 1.0},
+                    requested_by_user_id=None,
+                    requested_by_username=None,
+                )
+
+        assert exc.value.status_code == 400
+        assert "exceeds available cost center budget" in exc.value.detail
+
+        reservation = await db_session.scalar(
+            select(BudgetReservation).where(
+                BudgetReservation.source_type == "background_dispatch",
+                BudgetReservation.source_id == first["dispatch_job_id"],
+            )
+        )
+        assert reservation is not None
+        assert reservation.status == "active"
+        assert reservation.cost_center_id == cost_center.id
+        assert reservation.amount == 1.5
+        assert reservation.print_archive_id == 100

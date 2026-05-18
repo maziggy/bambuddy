@@ -173,6 +173,7 @@ class PrinterManager:
         self._on_ams_change: Callable[[int, list], None] | None = None
         self._on_layer_change: Callable[[int, int], None] | None = None
         self._on_bed_temp_update: Callable[[int, float], None] | None = None
+        self._on_drying_complete: Callable[[int, int], None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         # Track who started the current print (Issue #206)
         self._current_print_user: dict[int, dict] = {}  # {printer_id: {"user_id": int, "username": str}}
@@ -324,6 +325,14 @@ class PrinterManager:
         """Set callback for bed temperature updates. Receives (printer_id, bed_temp)."""
         self._on_bed_temp_update = callback
 
+    def set_drying_complete_callback(self, callback: Callable[[int, int], None]):
+        """Set callback for AMS drying completion events (#1349).
+
+        Receives ``(printer_id, ams_id)``. Fires once per falling edge of
+        ``dry_time`` (>0 → 0) for each AMS unit.
+        """
+        self._on_drying_complete = callback
+
     def _schedule_async(self, coro):
         """Schedule an async coroutine from a sync context.
 
@@ -375,6 +384,10 @@ class PrinterManager:
             if self._on_bed_temp_update:
                 self._schedule_async(self._on_bed_temp_update(printer_id, bed_temp))
 
+        def on_drying_complete(ams_id: int):
+            if self._on_drying_complete:
+                self._schedule_async(self._on_drying_complete(printer_id, ams_id))
+
         client = BambuMQTTClient(
             ip_address=printer.ip_address,
             serial_number=printer.serial_number,
@@ -386,6 +399,7 @@ class PrinterManager:
             on_ams_change=on_ams_change,
             on_layer_change=on_layer_change,
             on_bed_temp_update=on_bed_temp_update,
+            on_drying_complete=on_drying_complete,
         )
 
         client.connect()

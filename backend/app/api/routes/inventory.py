@@ -1065,6 +1065,60 @@ async def restore_spool(
     return result.scalar_one()
 
 
+@router.post("/spools/{spool_id}/reset-usage", response_model=SpoolResponse)
+async def reset_spool_usage(
+    spool_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Zero the displayed "Total Consumed" counter without touching remaining.
+
+    Stamps `weight_used_baseline = weight_used` so the Inventory page's
+    `weight_used - baseline` display reads 0, while `label_weight -
+    weight_used` (remaining) is unchanged. weight_locked is also left
+    alone — the spool keeps receiving AMS auto-sync updates. Matches
+    Spoolman's split between used_weight and remaining_weight (#1390).
+    """
+    result = await db.execute(select(Spool).where(Spool.id == spool_id))
+    spool = result.scalar_one_or_none()
+    if not spool:
+        raise HTTPException(404, "Spool not found")
+
+    spool.weight_used_baseline = spool.weight_used or 0
+    await db.commit()
+    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return result.scalar_one()
+
+
+@router.post("/spools/reset-usage-bulk")
+async def bulk_reset_spool_usage(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Bulk-stamp baseline = weight_used across the given spool IDs.
+
+    Caller passes an explicit list of IDs — no "reset all" shortcut, since
+    a typo on a wildcard would wipe the entire inventory's tracking.
+    Same semantics as the per-spool endpoint: remaining is preserved,
+    weight_locked is left alone.
+    """
+    spool_ids = payload.get("spool_ids")
+    if not isinstance(spool_ids, list) or not spool_ids:
+        raise HTTPException(400, "spool_ids must be a non-empty list")
+    if not all(isinstance(sid, int) for sid in spool_ids):
+        raise HTTPException(400, "spool_ids must contain integers")
+
+    result = await db.execute(select(Spool).where(Spool.id.in_(spool_ids)))
+    spools = list(result.scalars().all())
+    for spool in spools:
+        spool.weight_used_baseline = spool.weight_used or 0
+    await db.commit()
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"reset": len(spools)}
+
+
 # ── K-Profiles ───────────────────────────────────────────────────────────────
 
 

@@ -31,6 +31,12 @@ class Spool(Base):
         Integer
     )  # Reference to spool_catalog entry for core weight
     weight_used: Mapped[float] = mapped_column(Float, default=0)  # Consumed grams
+    # Anchor for the resettable "Total Consumed" stat. The displayed counter
+    # is `weight_used - weight_used_baseline`; the Inventory page's "Reset
+    # usage to 0" action stamps baseline = weight_used so the counter zeroes
+    # without disturbing remaining (= label_weight - weight_used). Matches
+    # Spoolman's split between used_weight and remaining_weight (#1390).
+    weight_used_baseline: Mapped[float] = mapped_column(Float, default=0)
     weight_locked: Mapped[bool] = mapped_column(Boolean, default=False)  # Lock weight from AMS auto-sync
     last_scale_weight: Mapped[int | None] = mapped_column(Integer)  # Last gross weight from scale (g)
     last_weighed_at: Mapped[datetime | None] = mapped_column(DateTime)  # When last weighed

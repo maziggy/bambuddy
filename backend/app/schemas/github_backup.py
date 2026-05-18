@@ -176,6 +176,11 @@ class GitHubTestConnectionResponse(BaseModel):
     message: str
     repo_name: str | None = None
     permissions: dict | None = None
+    # True = confirmed private. False = confirmed public (or non-private such
+    # as GitLab "internal"). None = could not be determined (older self-hosted
+    # API, non-2xx response). The backup config endpoints refuse anything that
+    # isn't an explicit True.
+    is_private: bool | None = None
 
 
 class GitHubBackupTriggerResponse(BaseModel):

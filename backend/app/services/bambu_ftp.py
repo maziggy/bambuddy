@@ -447,9 +447,24 @@ class BambuFTPClient:
                     logger.info("FTP STOR confirmed for %s: %s", remote_path, resp.strip())
                 finally:
                     self._ftp.sock.settimeout(old_timeout)
+            except ftplib.Error as e:
+                # The printer's FTP server explicitly told us the transfer
+                # failed (e.g. 426 "Failure reading network stream" seen on
+                # some P2S firmware revisions). The file on the SD card is
+                # truncated — never report success or send a print command
+                # for it. Re-raise so the outer handler returns False.
+                logger.error(
+                    "FTP STOR rejected by printer for %s: %s (%s)",
+                    remote_path,
+                    e,
+                    type(e).__name__,
+                )
+                raise
             except Exception as e:
-                # Timeout or error reading 226 — log but proceed, the data
-                # was fully sent so the file is likely on the SD card.
+                # Timeout or socket-level error reading 226 — the data was sent
+                # on our side and the printer may still have written the file.
+                # H2D can take 30+ seconds to send 226 after the data channel
+                # closes, so we proceed with a warning rather than failing here.
                 logger.warning(
                     "FTP STOR confirmation not received for %s (proceeding): %s (%s)",
                     remote_path,
@@ -527,7 +542,10 @@ class BambuFTPClient:
                     conn.close()
                 except OSError:
                     pass
-            # Wait for 226 confirmation (see upload_file for rationale)
+            # Wait for 226 confirmation (see upload_file for rationale).
+            # ftplib.Error subclasses (e.g. 426 error_temp) mean the server
+            # rejected the transfer and the file is partial — fail. Other
+            # exceptions (timeout, socket-level) are tolerated as in upload_file.
             try:
                 old_timeout = self._ftp.sock.gettimeout()
                 self._ftp.sock.settimeout(max(self.timeout, 60))
@@ -535,8 +553,16 @@ class BambuFTPClient:
                     self._ftp.voidresp()
                 finally:
                     self._ftp.sock.settimeout(old_timeout)
+            except ftplib.Error as e:
+                logger.error(
+                    "FTP STOR rejected by printer for %s: %s (%s)",
+                    remote_path,
+                    e,
+                    type(e).__name__,
+                )
+                return False
             except Exception:
-                pass  # Best-effort — data was sent, proceed
+                pass  # Timeout / socket-level — proceed, data was sent.
             return True
         except (OSError, ftplib.Error):
             return False

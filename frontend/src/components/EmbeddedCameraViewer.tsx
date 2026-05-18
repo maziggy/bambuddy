@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize } from 'lucide-react';
+import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize, Stethoscope } from 'lucide-react';
 import { api, getAuthToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from './icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from './SkipObjectsModal';
+import { CameraDiagnoseModal } from './CameraDiagnoseModal';
 
 interface EmbeddedCameraViewerProps {
   printerId: number;
@@ -98,6 +99,10 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
+  // Modal opens from the error-state "Diagnose" button when the user
+  // hits "Camera unavailable" — saves a round trip through "open a
+  // ticket → wait for response → check setting". See #1395 follow-up.
+  const [showDiagnoseModal, setShowDiagnoseModal] = useState(false);
 
   // Fetch printer info
   const { data: printer } = useQuery({
@@ -606,6 +611,13 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             <RefreshCw className={`w-3.5 h-3.5 text-bambu-gray ${streamLoading ? 'animate-spin' : ''}`} />
           </button>
           <button
+            onClick={() => setShowDiagnoseModal(true)}
+            className="p-1 hover:bg-bambu-dark-tertiary rounded"
+            title={t('camera.diagnose.button')}
+          >
+            <Stethoscope className="w-3.5 h-3.5 text-bambu-gray" />
+          </button>
+          <button
             onClick={toggleFullscreen}
             className="p-1 hover:bg-bambu-dark-tertiary rounded"
             title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
@@ -669,13 +681,21 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
               <div className="text-center p-2">
                 <AlertTriangle className="w-6 h-6 text-orange-400 mx-auto mb-2" />
-                <p className="text-xs text-bambu-gray mb-2">Camera unavailable</p>
-                <button
-                  onClick={refresh}
-                  className="px-2 py-1 text-xs bg-bambu-green text-white rounded hover:bg-bambu-green/80"
-                >
-                  Retry
-                </button>
+                <p className="text-xs text-bambu-gray mb-2">{t('camera.unavailable')}</p>
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={refresh}
+                    className="px-2 py-1 text-xs bg-bambu-green text-white rounded hover:bg-bambu-green/80"
+                  >
+                    {t('camera.retry')}
+                  </button>
+                  <button
+                    onClick={() => setShowDiagnoseModal(true)}
+                    className="px-2 py-1 text-xs bg-bambu-dark border border-bambu-dark-tertiary text-bambu-gray hover:text-white rounded transition-colors"
+                  >
+                    {t('camera.diagnose.button')}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -748,6 +768,14 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         isOpen={showSkipObjectsModal}
         onClose={() => setShowSkipObjectsModal(false)}
       />
+      {/* Camera diagnostic modal — opens from the error-state Diagnose button (#1395 follow-up) */}
+      {showDiagnoseModal && (
+        <CameraDiagnoseModal
+          printerId={printerId}
+          printerName={printer?.name || null}
+          onClose={() => setShowDiagnoseModal(false)}
+        />
+      )}
     </div>
   );
 }

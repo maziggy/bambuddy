@@ -248,7 +248,17 @@ export function GitHubBackupSettings() {
 
   // Test connection state
   const [testLoading, setTestLoading] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+    isPrivate: boolean | null;
+  } | null>(null);
+  // Inline save-error banner — backend rejection messages (e.g. the
+  // "repository is not private" guard) are far too long for a toast.
+  // Cleared on success, on the next save attempt, and when the user starts
+  // editing the repo URL / token / provider so the banner doesn't persist
+  // after the user has already addressed the cause.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Auto-save debounce
   const settingsAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -388,6 +398,7 @@ export function GitHubBackupSettings() {
           access_token: accessToken,
         });
         setAccessToken(''); // Clear after save
+        setSaveError(null);
         showToast(t('backup.tokenUpdated'));
         lastTokenScheduledForSaveRef.current = '';
       } else {
@@ -396,13 +407,14 @@ export function GitHubBackupSettings() {
           autoSaveState,
           lastSavedAutosaveStateRef.current
         ));
+        setSaveError(null);
         showToast(t('backup.settingsSaved'));
       }
       lastSavedAutosaveStateRef.current = autoSaveState;
       queryClient.invalidateQueries({ queryKey: ['github-backup-config'] });
       queryClient.invalidateQueries({ queryKey: ['github-backup-status'] });
     } catch (error) {
-      showToast(t('backup.failedToSave', { message: (error as Error).message }), 'error');
+      setSaveError((error as Error).message);
     }
   }, [config, accessToken, autoSaveState, queryClient, showToast, t]);
 
@@ -459,6 +471,9 @@ export function GitHubBackupSettings() {
   // Mutations
   const saveConfigMutation = useMutation({
     mutationFn: (data: GitHubBackupConfigCreate) => api.saveGitHubBackupConfig(data),
+    onMutate: () => {
+      setSaveError(null);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['github-backup-config'] });
       queryClient.invalidateQueries({ queryKey: ['github-backup-status'] });
@@ -467,7 +482,7 @@ export function GitHubBackupSettings() {
       setIsInitialized(true);
     },
     onError: (error: Error) => {
-      showToast(t('backup.failedToSave', { message: error.message }), 'error');
+      setSaveError(error.message);
     },
   });
 
@@ -523,9 +538,13 @@ export function GitHubBackupSettings() {
         setTestLoading(false);
         return;
       }
-      setTestResult({ success: result.success, message: result.message });
+      setTestResult({
+        success: result.success,
+        message: result.message,
+        isPrivate: result.is_private,
+      });
     } catch (error) {
-      setTestResult({ success: false, message: (error as Error).message });
+      setTestResult({ success: false, message: (error as Error).message, isPrivate: null });
     } finally {
       setTestLoading(false);
     }
@@ -600,7 +619,7 @@ export function GitHubBackupSettings() {
               <select
                 id="git-provider-select"
                 value={provider}
-                onChange={(e) => { setProvider(e.target.value as GitProviderType); setTestResult(null); }}
+                onChange={(e) => { setProvider(e.target.value as GitProviderType); setTestResult(null); setSaveError(null); }}
                 className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
               >
                 <option value="github">{t('backup.providerGitHub')}</option>
@@ -618,7 +637,7 @@ export function GitHubBackupSettings() {
                   <input
                     type="text"
                     value={repoUrl}
-                    onChange={(e) => { setRepoUrl(e.target.value); setTestResult(null); }}
+                    onChange={(e) => { setRepoUrl(e.target.value); setTestResult(null); setSaveError(null); }}
                     placeholder={t(PROVIDER_REPO_URL_I18N_KEY[provider])}
                     className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
@@ -644,7 +663,7 @@ export function GitHubBackupSettings() {
                   <input
                     type="password"
                     value={accessToken}
-                    onChange={(e) => { setAccessToken(e.target.value); setTestResult(null); }}
+                    onChange={(e) => { setAccessToken(e.target.value); setTestResult(null); setSaveError(null); }}
                     placeholder={config?.has_token ? t('backup.enterNewToken') : PROVIDER_TOKEN_PLACEHOLDER[provider]}
                     className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
@@ -802,11 +821,59 @@ export function GitHubBackupSettings() {
                 </div>
               )}
 
+              {/* Save error — inline banner. Keeps long backend rejection
+                  messages (e.g. the "repository is not private" guard)
+                  readable instead of clipped to a toast. */}
+              {saveError && (
+                <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded p-3 flex items-start gap-2">
+                  <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div className="flex-1 leading-relaxed whitespace-pre-wrap break-words">{saveError}</div>
+                  <button
+                    type="button"
+                    onClick={() => setSaveError(null)}
+                    className="text-bambu-gray hover:text-white shrink-0"
+                    aria-label={t('common.dismiss', 'Dismiss')}
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               {/* Test result */}
               {testResult && (
-                <div className={`text-sm flex items-center gap-1 ${testResult.success ? 'text-green-400' : 'text-red-400'}`}>
-                  {testResult.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                  {testResult.message}
+                <div className="space-y-1.5">
+                  <div className={`text-sm flex items-center gap-1 ${testResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                    {testResult.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                    {testResult.message}
+                  </div>
+                  {testResult.success && testResult.isPrivate === true && (
+                    <div className="text-xs flex items-center gap-1 text-green-400">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      {t('backup.repoIsPrivate', 'Repository is private — safe to back up to.')}
+                    </div>
+                  )}
+                  {testResult.success && testResult.isPrivate === false && (
+                    <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded p-2 flex items-start gap-1.5">
+                      <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      <span>
+                        {t(
+                          'backup.repoIsPublicWarning',
+                          'Repository is PUBLIC. Bambuddy backups include MQTT credentials, Home Assistant tokens, Prometheus tokens, your Bambu Cloud email, and printer access codes via K-profiles. Saving is blocked until you make the repository private in your provider\'s settings.',
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {testResult.success && testResult.isPrivate === null && (
+                    <div className="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 rounded p-2 flex items-start gap-1.5">
+                      <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      <span>
+                        {t(
+                          'backup.repoVisibilityUnknown',
+                          'Could not determine repository visibility. Bambuddy refuses to back up to anything not confirmed private; saving will be blocked.',
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 

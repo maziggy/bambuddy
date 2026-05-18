@@ -34,6 +34,7 @@ class MappedSpoolFields(TypedDict):
     core_weight: int | None
     core_weight_catalog_id: None
     weight_used: float | None
+    weight_used_baseline: float | None
     weight_locked: bool
     last_scale_weight: None
     last_weighed_at: None
@@ -247,7 +248,24 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     rgba: str = color_hex + "FF"
 
     label_weight: int = _safe_int(filament.get("weight"), 1000)
-    used_weight: float = _safe_float(spool.get("used_weight"), 0.0)
+    real_used_weight: float = _safe_float(spool.get("used_weight"), 0.0)
+    # Parity with internal mode (#1390): the InventorySpool shape lets the
+    # frontend compute `remaining = label_weight - weight_used` and
+    # `consumed = weight_used - weight_used_baseline`. Map Spoolman's two
+    # independent fields (used_weight, remaining_weight) onto that shape:
+    #   weight_used = label_weight - remaining_weight  (so remaining matches)
+    #   baseline    = weight_used - used_weight        (so consumed matches)
+    # When remaining_weight is unset (legacy spools, or filament linked but
+    # never primed), fall back to the old behaviour: weight_used =
+    # used_weight, baseline = 0.
+    remaining_raw = spool.get("remaining_weight")
+    if remaining_raw is not None:
+        remaining_weight: float = _safe_float(remaining_raw, 0.0)
+        used_weight: float = max(0.0, float(label_weight) - remaining_weight)
+        weight_used_baseline: float = max(0.0, used_weight - real_used_weight)
+    else:
+        used_weight = real_used_weight
+        weight_used_baseline = 0.0
 
     # Archived state – Spoolman uses a boolean ``archived`` field
     archived: bool = spool.get("archived", False)
@@ -299,6 +317,7 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         ),
         "core_weight_catalog_id": None,
         "weight_used": used_weight,
+        "weight_used_baseline": weight_used_baseline,
         "weight_locked": False,
         "last_scale_weight": None,
         "last_weighed_at": None,

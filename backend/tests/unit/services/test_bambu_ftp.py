@@ -386,6 +386,49 @@ class TestUpload:
         assert result is False
         client.disconnect()
 
+    def test_upload_426_data_stream_failure_returns_false(self, ftp_client_factory, ftp_server, tmp_path):
+        """426 'Failure reading network stream' from voidresp() must fail.
+
+        Regression for #1401: P2S firmware 01.02.00.00 (and possibly other
+        Bambu firmware revisions) returns 426 after the data channel closes,
+        indicating the printer received only a partial file. Previously the
+        client logged a warning and returned True, so the dispatcher sent a
+        print command for a truncated 3MF and the printer surfaced a
+        confusing 'unable to parse 3mf file' error. The 426 must instead
+        cause the upload to return False.
+        """
+        import ftplib
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        client._ftp.voidresp = raise_426
+
+        result = client.upload_file(local, "/cache/test.bin")
+        assert result is False, "Upload must fail on 426 to prevent dispatching a truncated file"
+        client.disconnect()
+
+    def test_upload_bytes_426_data_stream_failure_returns_false(self, ftp_client_factory, ftp_server):
+        """upload_bytes() also fails on 426 (same root cause as upload_file)."""
+        import ftplib
+
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        client._ftp.voidresp = raise_426
+
+        result = client.upload_bytes(b"x" * 1024, "/cache/bytes.bin")
+        assert result is False
+        client.disconnect()
+
     def test_upload_bytes_success(self, ftp_client_factory, ftp_server):
         """upload_bytes() writes data to server."""
         data = b"Bytes upload content"

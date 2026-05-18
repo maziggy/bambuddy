@@ -612,6 +612,159 @@ class TestVirtualPrinterInstance:
         assert queue_item.timelapse is False
 
     @pytest.mark.asyncio
+    async def test_add_to_print_queue_inherits_slicer_print_options(self, tmp_path):
+        """#1403: VP-queue items used to fall back to `default_timelapse` even
+        though the slicer's MQTT `project_file` command carries the user's
+        actual choice. Capture-via-`on_print_command` flow lets the user's
+        slicer toggle reach the queue item.
+
+        Settings here have timelapse OFF; the slicer's MQTT capture has it ON.
+        After the fix the queue item must reflect the slicer's choice.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=24,
+            name="SlicerInherits",
+            mode="print_queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800024",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        # Pre-populate the capture as if MQTT `project_file` arrived already.
+        # Settings (below) deliberately have timelapse OFF — only the slicer
+        # capture should drive the resulting queue item.
+        await inst.on_print_command(
+            file_path.name,
+            {
+                "command": "project_file",
+                "timelapse": True,
+                "bed_leveling": False,  # Note: MQTT field is single-L `bed_leveling`
+                "flow_cali": True,
+                "vibration_cali": False,
+                "layer_inspect": True,
+            },
+        )
+
+        settings_map = {
+            "virtual_printer_archive_name_source": None,
+            "default_bed_levelling": "true",
+            "default_flow_cali": "false",
+            "default_vibration_cali": "true",
+            "default_layer_inspect": "false",
+            "default_timelapse": "false",
+        }
+
+        async def fake_get_setting(_db, key):
+            return settings_map.get(key)
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new=fake_get_setting,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.timelapse is True, "Slicer's timelapse=True must override settings.default_timelapse=False"
+        assert queue_item.bed_levelling is False, "Slicer's bed_leveling=False must override default_bed_levelling=True"
+        assert queue_item.flow_cali is True
+        assert queue_item.vibration_cali is False
+        assert queue_item.layer_inspect is True
+        # Capture is consumed — no lingering state for the next print of the same name.
+        assert file_path.name not in inst._slicer_print_options
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_coerces_slicer_integer_zero_one(self, tmp_path):
+        """#1403: H-family firmwares carry calibration flags as integers
+        (0/1) rather than booleans. The capture must coerce both shapes so
+        H-family-sliced jobs through the VP queue work the same as P1/X1.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=25,
+            name="SlicerIntegers",
+            mode="print_queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800025",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        await inst.on_print_command(
+            file_path.name,
+            {"command": "project_file", "timelapse": 1, "bed_leveling": 0, "flow_cali": 1},
+        )
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.timelapse is True, "integer 1 must coerce to True"
+        assert queue_item.bed_levelling is False, "integer 0 must coerce to False"
+        assert queue_item.flow_cali is True
+
+    @pytest.mark.asyncio
     async def test_add_to_print_queue_populates_required_filament_types(self, tmp_path):
         """#1188: VP queue-mode used to create PrintQueueItems with no
         filament fields, so the scheduler fell through to model-only matching

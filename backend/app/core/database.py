@@ -1547,6 +1547,11 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN low_stock_threshold_pct INTEGER")
     # Migration: Add user-editable storage location to spool table
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN storage_location VARCHAR(255)")
+    # Migration: Add weight_used_baseline anchor for the resettable "Total
+    # Consumed" stat (#1390). Existing spools default to 0 (no baseline),
+    # so the counter starts unaffected; pressing "Reset usage to 0" now
+    # stamps baseline = weight_used without touching remaining.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN weight_used_baseline REAL DEFAULT 0")
     # Migration: Widen tag_uid column from VARCHAR(16) to VARCHAR(32) to accommodate 7-byte NFC
     # UIDs (14 hex chars) in addition to 8-byte Bambu Lab UIDs (16 hex chars).
     # ALTER COLUMN ... TYPE is PostgreSQL-only syntax; SQLite ignores VARCHAR sizes so no-op there.
@@ -2589,6 +2594,25 @@ async def run_migrations(conn):
                 HAVING SUM(CASE WHEN cost IS NOT NULL THEN 1 ELSE 0 END) = 0
             )
             """)
+        )
+
+    # Migration: smart_plugs gets per-plug auto-off-after-drying toggle and
+    # delay (#1349). Fires whenever any AMS attached to the linked printer
+    # finishes a dry cycle. Plain ANSI ALTER TABLE works on both SQLite and
+    # Postgres for INTEGER/BOOLEAN with simple defaults.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN auto_off_after_drying BOOLEAN DEFAULT 0")
+        await _safe_execute(
+            conn, "ALTER TABLE smart_plugs ADD COLUMN off_delay_after_drying_minutes INTEGER DEFAULT 10"
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS auto_off_after_drying BOOLEAN DEFAULT false",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS off_delay_after_drying_minutes INTEGER DEFAULT 10",
         )
 
 

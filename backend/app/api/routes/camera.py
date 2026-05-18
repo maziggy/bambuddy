@@ -37,6 +37,7 @@ from backend.app.services.camera_fanout import (
     iter_subscriber,
     shutdown_broadcaster,
 )
+from backend.app.services.camera_profiles import get_camera_profile
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
@@ -291,13 +292,6 @@ async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None
         return None
 
 
-# Max consecutive RTSP reconnections before giving up.
-# Some printer firmwares (notably P2S) drop RTSP sessions after a few seconds,
-# so we transparently respawn ffmpeg to keep the MJPEG stream alive.
-_RTSP_MAX_RECONNECTS = 30
-_RTSP_RECONNECT_DELAY = 0.2  # seconds between respawns
-
-
 async def generate_rtsp_mjpeg_stream(
     ip_address: str,
     access_code: str,
@@ -311,12 +305,17 @@ async def generate_rtsp_mjpeg_stream(
 
     This is for X1/H2/P2 models that support RTSP streaming.
     Auto-reconnects when the printer drops the RTSP session (common on P2S).
+    Per-model knobs (probesize, analyzeduration, reconnect cadence) come from
+    :func:`camera_profiles.get_camera_profile` so quirky firmwares can be
+    handled by adding a profile entry rather than tuning a global constant.
     """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - camera streaming requires ffmpeg")
         yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
         return
+
+    profile = get_camera_profile(model)
 
     port = get_camera_port(model)
 
@@ -341,13 +340,14 @@ async def generate_rtsp_mjpeg_stream(
         "-max_delay",
         "500000",  # 0.5 seconds max delay
         "-probesize",
-        "32",  # Minimal probing for faster startup
+        str(profile.probesize),
         "-analyzeduration",
-        "0",  # Skip format analysis for faster startup
+        str(profile.analyzeduration),
         "-fflags",
         "nobuffer",  # Reduce internal buffering
         "-flags",
         "low_delay",  # Minimize decode latency
+        *profile.extra_ffmpeg_input_args,
         "-i",
         camera_url,
         "-f",
@@ -382,7 +382,7 @@ async def generate_rtsp_mjpeg_stream(
     got_any_frames = False
 
     try:
-        while reconnect_count <= _RTSP_MAX_RECONNECTS:
+        while reconnect_count <= profile.rtsp_reconnect_max:
             # Check for client disconnect before (re)connecting
             if disconnect_event and disconnect_event.is_set():
                 break
@@ -391,11 +391,11 @@ async def generate_rtsp_mjpeg_stream(
                 logger.info(
                     "RTSP reconnecting (%d/%d) for %s (stream_id=%s)",
                     reconnect_count,
-                    _RTSP_MAX_RECONNECTS,
+                    profile.rtsp_reconnect_max,
                     ip_address,
                     stream_id,
                 )
-                await asyncio.sleep(_RTSP_RECONNECT_DELAY)
+                await asyncio.sleep(profile.rtsp_reconnect_delay)
                 if disconnect_event and disconnect_event.is_set():
                     break
 
@@ -523,10 +523,10 @@ async def generate_rtsp_mjpeg_stream(
             # Normal exit (shouldn't reach here, but be safe)
             break
 
-        if reconnect_count > _RTSP_MAX_RECONNECTS:
+        if reconnect_count > profile.rtsp_reconnect_max:
             logger.error(
                 "RTSP max reconnects (%d) reached for %s (stream_id=%s)",
-                _RTSP_MAX_RECONNECTS,
+                profile.rtsp_reconnect_max,
                 ip_address,
                 stream_id,
             )
@@ -925,6 +925,41 @@ async def test_camera(
     )
 
     return result
+
+
+@router.post("/{printer_id}/camera/diagnose")
+async def diagnose_camera_route(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+):
+    """Run staged diagnostics for a printer's camera path.
+
+    Returns a structured result the frontend renders inline so users can
+    self-diagnose "connection lost" before opening a ticket. See
+    ``camera_diagnose`` for stage details and the live-stream shortcut.
+    """
+    import time
+
+    from backend.app.services.camera_diagnose import diagnose_camera
+
+    printer = await get_printer_or_404(printer_id, db)
+
+    # Look up live-stream evidence so the diagnostic can short-circuit
+    # instead of fighting a viewer for the printer's single camera slot.
+    has_live = is_stream_active(printer_id)
+    last_ts = _last_frame_times.get(printer_id) if has_live else None
+    live_age = (time.time() - last_ts) if (has_live and last_ts) else None
+
+    result = await diagnose_camera(
+        ip_address=printer.ip_address,
+        access_code=printer.access_code,
+        model=printer.model,
+        printer_id=printer_id,
+        has_live_stream=has_live,
+        live_frame_age_seconds=live_age,
+    )
+    return result.to_dict()
 
 
 @router.get("/{printer_id}/camera/status")

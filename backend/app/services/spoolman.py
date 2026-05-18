@@ -548,6 +548,23 @@ class SpoolmanClient:
         """Delete a spool from Spoolman."""
         await self._request_spool("DELETE", spool_id, operation="delete")
 
+    async def is_filament_shared(self, filament_id: int, exclude_spool_id: int) -> bool:
+        """True if any spool other than ``exclude_spool_id`` is linked to ``filament_id``.
+
+        Used by the spool-edit path to decide between PATCHing the existing
+        filament in place (singleton) and falling back to find_or_create
+        (shared — re-linking the spool is the only safe option). Includes
+        archived spools so a shared link doesn't suddenly look singleton just
+        because the sibling spool was archived.
+        """
+        spools = await self.get_all_spools(allow_archived=True)
+        for s in spools:
+            if s.get("id") == exclude_spool_id:
+                continue
+            if ((s.get("filament") or {}).get("id")) == filament_id:
+                return True
+        return False
+
     async def set_spool_archived(self, spool_id: int, archived: bool) -> dict:
         """Archive or restore a spool in Spoolman."""
         response = await self._request_spool(
@@ -555,6 +572,21 @@ class SpoolmanClient:
             spool_id,
             json_body={"archived": archived},
             operation="archive/restore",
+        )
+        return response.json()
+
+    async def reset_spool_usage(self, spool_id: int) -> dict:
+        """Reset a spool's used_weight to 0 in Spoolman.
+
+        Used by the per-spool / bulk "Reset usage to 0" actions on the
+        Inventory page so the Total Consumed stat can be cleared without
+        touching the rest of the spool's data.
+        """
+        response = await self._request_spool(
+            "PATCH",
+            spool_id,
+            json_body={"used_weight": 0},
+            operation="reset-usage",
         )
         return response.json()
 

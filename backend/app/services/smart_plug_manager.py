@@ -293,6 +293,45 @@ class SmartPlugManager:
             elif plug.off_delay_mode == "temperature":
                 self._schedule_temp_based_off(plug, printer_id, plug.off_temp_threshold)
 
+    async def on_drying_complete(self, printer_id: int, db: AsyncSession):
+        """Schedule turn-off for plugs flagged ``auto_off_after_drying`` when
+        an AMS drying cycle finishes on this printer (#1349).
+
+        Mirrors :meth:`on_print_complete` but uses the drying-specific
+        toggle and delay. Iterates every plug linked to the printer and
+        fires only on the ones the user has opted-in via the per-plug
+        toggle. Always uses the time-delay branch — temperature-based
+        cooldown is about the printer's hotend, which isn't meaningful
+        after a drying cycle (AMS chamber is the thing that's hot, and
+        Bambuddy doesn't track its temperature).
+        """
+        plugs = await self._get_plugs_for_printer(printer_id, db)
+        if not plugs:
+            return
+
+        for plug in plugs:
+            if not plug.enabled:
+                logger.debug("Smart plug '%s' is disabled, skipping drying auto-off", plug.name)
+                continue
+
+            if not plug.auto_off_after_drying:
+                logger.debug("Smart plug '%s' auto_off_after_drying is disabled, skipping", plug.name)
+                continue
+
+            # HA script entities can only be triggered, not turned off — same
+            # guard the print-finish path uses.
+            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
+                logger.debug("Smart plug '%s' is a HA script entity, skipping drying auto-off", plug.name)
+                continue
+
+            logger.info(
+                "Drying completed on printer %s, scheduling turn-off for plug '%s' in %d min",
+                printer_id,
+                plug.name,
+                plug.off_delay_after_drying_minutes,
+            )
+            self._schedule_delayed_off(plug, printer_id, plug.off_delay_after_drying_minutes * 60)
+
     def _schedule_delayed_off(self, plug: "SmartPlug", printer_id: int, delay_seconds: int):
         """Schedule turn-off after delay."""
         # Cancel any existing task for this plug

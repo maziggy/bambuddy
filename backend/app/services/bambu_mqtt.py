@@ -332,6 +332,7 @@ class BambuMQTTClient:
         on_ams_change: Callable[[list], None] | None = None,
         on_layer_change: Callable[[int], None] | None = None,
         on_bed_temp_update: Callable[[float], None] | None = None,
+        on_drying_complete: Callable[[int], None] | None = None,
     ):
         self.ip_address = ip_address
         self.serial_number = serial_number
@@ -343,6 +344,13 @@ class BambuMQTTClient:
         self.on_ams_change = on_ams_change
         self.on_layer_change = on_layer_change
         self.on_bed_temp_update = on_bed_temp_update
+        # #1349: fired when an AMS unit's dry_time falls from >0 to 0 — i.e.
+        # the drying cycle just finished (auto- or manually-triggered).
+        # Receives the AMS id of the unit that finished drying.
+        self.on_drying_complete = on_drying_complete
+        # Per-AMS previous dry_time, used to detect the falling edge above.
+        # Seeded lazily as we observe each AMS unit.
+        self._previous_dry_times: dict[int, int] = {}
 
         self.state = PrinterState()
         self._client: mqtt.Client | None = None
@@ -1828,6 +1836,34 @@ class BambuMQTTClient:
 
         # Persist updated drying fields back to raw_data
         self.state.raw_data["ams"] = merged_ams
+
+        # Detect AMS drying-complete falling edge per-unit (#1349). When an
+        # AMS's `dry_time` transitions from >0 to 0 the cycle just finished
+        # — fire the callback so smart-plug auto-off-after-drying can run.
+        # Works identically for queue-triggered, ambient, and manual drying
+        # because we observe the firmware-reported state, not our own intent.
+        if self.on_drying_complete:
+            for ams_unit in merged_ams:
+                try:
+                    ams_id = int(ams_unit.get("id", -1))
+                except (TypeError, ValueError):
+                    continue
+                if ams_id < 0:
+                    continue
+                try:
+                    current = int(ams_unit.get("dry_time") or 0)
+                except (TypeError, ValueError):
+                    current = 0
+                previous = self._previous_dry_times.get(ams_id, 0)
+                self._previous_dry_times[ams_id] = current
+                if previous > 0 and current == 0:
+                    logger.info(
+                        "[%s] AMS %d drying complete (dry_time %d → 0)",
+                        self.serial_number,
+                        ams_id,
+                        previous,
+                    )
+                    self.on_drying_complete(ams_id)
 
         # Create a hash of relevant AMS data to detect changes
         ams_hash_data = []

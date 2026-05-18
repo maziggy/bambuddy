@@ -69,6 +69,7 @@ class ForgejoBackend(GiteaBackend):
 
             data = repo_resp.json()
             permissions = data.get("permissions", {})
+            is_private = bool(data.get("private", False))
 
             if not permissions.get("push", False):
                 return {
@@ -76,6 +77,7 @@ class ForgejoBackend(GiteaBackend):
                     "message": "Token does not have push permission to this repository",
                     "repo_name": data.get("full_name"),
                     "permissions": permissions,
+                    "is_private": is_private,
                 }
 
             return {
@@ -83,6 +85,7 @@ class ForgejoBackend(GiteaBackend):
                 "message": "Connection successful",
                 "repo_name": data.get("full_name"),
                 "permissions": permissions,
+                "is_private": is_private,
             }
 
         except Exception as e:
@@ -98,4 +101,5 @@ class ForgejoBackend(GiteaBackend):
                 "message": message,
                 "repo_name": None,
                 "permissions": None,
+                "is_private": None,
             }

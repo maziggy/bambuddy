@@ -139,6 +139,55 @@ def calculate_file_hash(file_path: Path) -> str:
     return sha256_hash.hexdigest()
 
 
+def validate_print_file_upload(filename: str, content: bytes) -> None:
+    """Reject obviously-unprintable uploads early so the printer doesn't see them (#1401).
+
+    Bambu printers in network mode only parse ``.gcode.3mf`` zip containers
+    — raw ``.gcode`` and corrupt/non-zip ``.3mf`` uploads cascade into a
+    confusing "Printing stopped because the printer was unable to parse the
+    3mf file" rejection 30 seconds after the user clicks Print. The
+    background dispatcher (``background_dispatch.py``) appends ``.3mf`` to
+    a raw-gcode filename when constructing the FTP destination, which is
+    how the printer ends up with a file named ``.gcode.3mf`` whose body is
+    raw gcode — exactly the shape that triggers the firmware parse
+    failure. Catching both classes here gives an actionable error at the
+    upload itself.
+
+    Compares the filename suffix rather than ``os.path.splitext`` because
+    compound extensions like ``.gcode.3mf`` show up as just ``.3mf`` after
+    ``splitext`` — same content validation needs to fire for both
+    single-``.3mf`` and ``.gcode.3mf`` uploads.
+
+    Raises ``HTTPException(400, ...)`` with a human-readable message on
+    rejection; returns ``None`` for valid (or irrelevant — e.g. STL,
+    image) uploads.
+    """
+    lower_filename = filename.lower()
+    is_3mf_upload = lower_filename.endswith(".3mf")
+    is_raw_gcode_upload = lower_filename.endswith(".gcode") and not lower_filename.endswith(".gcode.3mf")
+
+    if is_raw_gcode_upload:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Raw .gcode files can't be printed on Bambu printers in network mode — "
+                "they need a .gcode.3mf zip container (gcode plus metadata). Re-export from "
+                "your slicer and make sure the file ends in '.gcode.3mf', not just '.gcode'. "
+                "If your OS hides extensions, double-check the file with the extension visible."
+            ),
+        )
+
+    if is_3mf_upload and not content.startswith(b"PK\x03\x04"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This .3mf file isn't a valid ZIP container. 3MF files are ZIP archives — "
+                "either the file is corrupted or it's raw gcode renamed to .3mf. Re-export "
+                "from your slicer using its 'Export Plate Sliced File' action."
+            ),
+        )
+
+
 def _resolve_upload_destination(target_folder: LibraryFolder | None, filename: str) -> tuple[Path, bool]:
     """Resolve the on-disk destination for an uploaded file.
 
@@ -1508,11 +1557,19 @@ async def upload_file(
 
         # Writable external folders write through to the mount so the file is
         # visible outside Bambuddy (#1112); everything else lands under the
-        # internal library dir with a UUID-scoped filename.
+        # internal library dir with a UUID-scoped filename. Resolved BEFORE
+        # the content validation below so folder-permission rejections
+        # (403 read-only, 400 missing path, 409 collision) still surface
+        # before any "bad file format" 400 — preserves existing error
+        # ordering / tests.
         file_path, is_external_upload = _resolve_upload_destination(target_folder, filename)
 
-        # Save file
+        # Read upload now so the validation can sniff magic bytes; the file
+        # is written to disk only after the checks. #1401.
         content = await file.read()
+        validate_print_file_upload(filename, content)
+
+        # Save file
         with open(file_path, "wb") as f:
             f.write(content)
 

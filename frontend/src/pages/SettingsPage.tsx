@@ -517,7 +517,8 @@ export function SettingsPage() {
   });
 
   const updateArchivePurgeSettingsMutation = useMutation({
-    mutationFn: (body: { enabled: boolean; days: number }) => api.updateArchivePurgeSettings(body),
+    mutationFn: (body: { enabled: boolean; days: number; purge_stats: boolean }) =>
+      api.updateArchivePurgeSettings(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['archive-purge-settings'] });
       showToast(t('settings.toast.settingsSaved'), 'success');
@@ -525,11 +526,14 @@ export function SettingsPage() {
     onError: (e: Error) => showToast(e.message || t('archiveAutoPurge.saveFailed'), 'error'),
   });
 
-  const saveArchivePurgeSettings = (patch: Partial<{ enabled: boolean; days: number }>) => {
+  const saveArchivePurgeSettings = (
+    patch: Partial<{ enabled: boolean; days: number; purge_stats: boolean }>,
+  ) => {
     if (!archivePurgeSettings) return;
     updateArchivePurgeSettingsMutation.mutate({
       enabled: archivePurgeSettings.enabled,
       days: archivePurgeSettings.days,
+      purge_stats: archivePurgeSettings.purge_stats,
       ...patch,
     });
   };
@@ -1854,6 +1858,22 @@ export function SettingsPage() {
                       {t('archiveAutoPurge.ageDescription')}
                     </p>
                   </div>
+
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      disabled={!archivePurgeSettings.enabled}
+                      checked={archivePurgeSettings.purge_stats}
+                      onChange={(e) => saveArchivePurgeSettings({ purge_stats: e.target.checked })}
+                      className="mt-0.5 shrink-0 disabled:opacity-50"
+                    />
+                    <span className="text-sm">
+                      <span className="text-white block">{t('archiveAutoPurge.purgeStatsLabel')}</span>
+                      <span className="text-xs text-bambu-gray block mt-0.5">
+                        {t('archiveAutoPurge.purgeStatsDescription')}
+                      </span>
+                    </span>
+                  </label>
 
                 </div>
               )}

@@ -63,9 +63,16 @@ def mock_spoolman_client():
     mock_client.set_spool_archived = AsyncMock(
         side_effect=lambda spool_id, archived: {**SAMPLE_SPOOLMAN_SPOOL, "archived": archived}
     )
+    mock_client.reset_spool_usage = AsyncMock(return_value={**SAMPLE_SPOOLMAN_SPOOL, "used_weight": 0})
     mock_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
     mock_client.merge_spool_extra = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
     mock_client.find_or_create_filament = AsyncMock(return_value=7)
+    mock_client.find_or_create_vendor = AsyncMock(return_value=3)
+    mock_client.patch_filament = AsyncMock(return_value={"id": 7})
+    # Default to singleton (only this spool uses the filament) so edits
+    # exercise the new in-place-PATCH path; tests that need the shared
+    # branch override this on the fly.
+    mock_client.is_filament_shared = AsyncMock(return_value=False)
     mock_client.ensure_extra_field = AsyncMock(return_value=True)
 
     with (
@@ -324,6 +331,70 @@ class TestSpoolmanInventoryCRUD:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_update_noop_metadata_reuses_filament(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """#1357 follow-up: an edit that doesn't touch any filament-shaping
+        field (only weight_used / note / color_name) must NOT hit
+        find_or_create_filament OR patch_filament — the link stays put and
+        the filament catalogue is left alone."""
+        payload = {"note": "just a note change", "weight_used": 50.0}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        mock_spoolman_client.find_or_create_filament.assert_not_called()
+        mock_spoolman_client.patch_filament.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_singleton_filament_patches_in_place(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """#1357 follow-up: when the linked filament is only used by the
+        spool being edited (singleton), changing the subtype must PATCH that
+        filament in place — NOT create a new filament and orphan the old
+        one. This is the exact failure the reporter showed: editing Subtype
+        "Red" → "Basic" minted a new "PETG Basic" filament every time.
+        """
+        # Sample filament is "PLA Basic"; flip to "Matte" so the metadata
+        # actually changes and the singleton path engages.
+        payload = {"subtype": "Matte"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        # Singleton path: PATCH the existing filament, do NOT find_or_create.
+        mock_spoolman_client.patch_filament.assert_called_once()
+        mock_spoolman_client.find_or_create_filament.assert_not_called()
+        # PATCH targets the spool's current filament (id=7) with the new name.
+        call_args = mock_spoolman_client.patch_filament.call_args
+        assert call_args.args[0] == 7
+        assert call_args.args[1]["name"] == "PLA Matte"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_shared_filament_falls_back_to_find_or_create(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """#1357 follow-up: when the linked filament is shared with another
+        spool, PATCHing in place would silently rewrite the sibling's
+        metadata too. Fall back to find_or_create — only this spool's
+        filament_id moves."""
+        mock_spoolman_client.is_filament_shared.return_value = True
+        payload = {"subtype": "Matte"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        mock_spoolman_client.find_or_create_filament.assert_called_once()
+        mock_spoolman_client.patch_filament.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_with_explicit_null_color_name_clears_extra(
         self,
         async_client: AsyncClient,
@@ -486,6 +557,69 @@ class TestSpoolmanInventoryCRUD:
 
         assert response.status_code == 200
         mock_spoolman_client.set_spool_archived.assert_called_once_with(42, archived=False)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reset_spool_usage(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """POST /spoolman/inventory/spools/{id}/reset-usage zeroes used_weight in Spoolman.
+
+        Parity with internal mode (#1390): the InventorySpool response
+        carries `weight_used = label - remaining` and
+        `weight_used_baseline = weight_used - real_used_weight`, so the
+        displayed consumed counter (weight_used - baseline) reads 0
+        while remaining (= label - weight_used) preserves Spoolman's
+        independent remaining_weight field.
+        """
+        response = await async_client.post("/api/v1/spoolman/inventory/spools/42/reset-usage")
+
+        assert response.status_code == 200
+        body = response.json()
+        # Sample spool: label=1000, remaining=750, used_weight=0 after Spoolman reset.
+        assert body["weight_used"] == 250.0, "synthetic weight_used = label - remaining"
+        assert body["weight_used_baseline"] == 250.0, "baseline absorbs the reset"
+        assert body["weight_used"] - body["weight_used_baseline"] == 0, "displayed consumed = 0"
+        assert body["label_weight"] - body["weight_used"] == 750, "remaining unchanged"
+        mock_spoolman_client.reset_spool_usage.assert_called_once_with(42)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_reset_spool_usage(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """Bulk endpoint resets each listed spool and returns the count."""
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/spools/reset-usage-bulk",
+            json={"spool_ids": [1, 2, 3]},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"reset": 3}
+        assert mock_spoolman_client.reset_spool_usage.call_count == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_reset_rejects_empty_list(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """Empty list must be rejected — guards against accidental wildcard wipes."""
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/spools/reset-usage-bulk",
+            json={"spool_ids": []},
+        )
+
+        assert response.status_code == 400
+        mock_spoolman_client.reset_spool_usage.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.integration

@@ -681,7 +681,7 @@ class BackgroundDispatchService:
                     timelapse=job.options.get("timelapse", False),
                     bed_levelling=job.options.get("bed_levelling", True),
                     flow_cali=job.options.get("flow_cali", False),
-                    vibration_cali=job.options.get("vibration_cali", False),
+                    vibration_cali=job.options.get("vibration_cali", True),
                     layer_inspect=job.options.get("layer_inspect", False),
                     use_ams=job.options.get("use_ams", True),
                 )
@@ -886,7 +886,7 @@ class BackgroundDispatchService:
                     timelapse=job.options.get("timelapse", False),
                     bed_levelling=job.options.get("bed_levelling", True),
                     flow_cali=job.options.get("flow_cali", False),
-                    vibration_cali=job.options.get("vibration_cali", False),
+                    vibration_cali=job.options.get("vibration_cali", True),
                     layer_inspect=job.options.get("layer_inspect", False),
                     use_ams=job.options.get("use_ams", True),
                 )

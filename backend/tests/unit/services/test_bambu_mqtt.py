@@ -4998,3 +4998,77 @@ class TestAmsFilamentSettingExternalSpoolEncoding:
         # a future capture-driven change shows up in the diff.
         assert cmd["tray_id"] == 0
         assert cmd["slot_id"] == 0
+
+
+class TestDryingCompleteCallback:
+    """#1349 — fires ``on_drying_complete(ams_id)`` on a dry_time falling edge."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        events: list[int] = []
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST-DRYING",
+            access_code="12345678",
+            on_drying_complete=events.append,
+        )
+        client._drying_events = events  # Expose for assertions
+        return client
+
+    def test_falling_edge_fires_callback(self, mqtt_client):
+        """First push reports drying active, second reports drying done."""
+        # Push 1: AMS 0 drying with 60 minutes remaining.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 60, "tray": []}]})
+        assert mqtt_client._drying_events == []
+
+        # Push 2: dry_time hits 0 → callback fires with the AMS id.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert mqtt_client._drying_events == [0]
+
+    def test_no_fire_when_dry_time_never_started(self, mqtt_client):
+        """dry_time = 0 across consecutive pushes does NOT fire — there was
+        no drying cycle to finish. Guards against the seed-from-zero false
+        positive on startup."""
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert mqtt_client._drying_events == []
+
+    def test_falling_edge_fires_once(self, mqtt_client):
+        """Subsequent zero-pushes after the edge don't refire the callback."""
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 30, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert mqtt_client._drying_events == [0]
+
+    def test_per_ams_tracking(self, mqtt_client):
+        """Two AMS units finishing drying at different times each fire once
+        — the falling-edge state is keyed per AMS id."""
+        # Both start drying.
+        mqtt_client._handle_ams_data(
+            {"ams": [{"id": "0", "dry_time": 30, "tray": []}, {"id": "1", "dry_time": 30, "tray": []}]}
+        )
+        # AMS 0 finishes, AMS 1 still drying.
+        mqtt_client._handle_ams_data(
+            {"ams": [{"id": "0", "dry_time": 0, "tray": []}, {"id": "1", "dry_time": 15, "tray": []}]}
+        )
+        assert mqtt_client._drying_events == [0]
+        # AMS 1 finishes.
+        mqtt_client._handle_ams_data(
+            {"ams": [{"id": "0", "dry_time": 0, "tray": []}, {"id": "1", "dry_time": 0, "tray": []}]}
+        )
+        assert mqtt_client._drying_events == [0, 1]
+
+    def test_restart_drying_after_completion_refires_callback(self, mqtt_client):
+        """A new drying cycle after the previous one finished fires the
+        callback again on its own falling edge — covers the user manually
+        starting a second dry from the UI."""
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 30, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        # New cycle starts.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 45, "tray": []}]})
+        # And finishes.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert mqtt_client._drying_events == [0, 0]

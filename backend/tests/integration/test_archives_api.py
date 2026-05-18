@@ -483,7 +483,10 @@ class TestArchivesSlimAPI:
         assert item["filament_used_grams"] == 50.0
         assert item["print_time_seconds"] == 3600
         assert item["cost"] == 1.50
-        assert item["quantity"] == 2
+        # quantity is per-event semantics now (each PrintLogEntry = one run);
+        # the archive's quantity field is no longer surfaced through this
+        # endpoint after the #1390 per-event migration.
+        assert item["quantity"] == 1
         assert "created_at" in item
 
         # Full archive fields must NOT be present
@@ -584,6 +587,144 @@ class TestArchivesSlimAPI:
 
         assert response.status_code == 200
         assert len(response.json()) == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_slim_counts_reprints_as_separate_rows(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Reprints add events even though the archive row is overwritten (#1390).
+
+        Before the per-event migration, /archives/slim returned one row per
+        archive — so an archive that had been reprinted three times appeared
+        once and undercounted Filament Used / Cost / Time. The endpoint must
+        now return one row per logged event.
+        """
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Reprinted Model",
+            filament_used_grams=50.0,
+            cost=1.50,
+        )
+        # archive_factory synthesizes one event; add two more to simulate
+        # the same archive being reprinted twice more.
+        for _ in range(2):
+            db_session.add(
+                PrintLogEntry(
+                    archive_id=archive.id,
+                    printer_id=archive.printer_id,
+                    status="completed",
+                    filament_type=archive.filament_type,
+                    filament_used_grams=archive.filament_used_grams,
+                    cost=archive.cost,
+                    print_name=archive.print_name,
+                )
+            )
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/archives/slim")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 3, "Each reprint must contribute one row"
+        total_filament = sum(item["filament_used_grams"] or 0 for item in data)
+        assert total_filament == 150.0, "Sum across events must reflect all three runs"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_slim_includes_orphan_events(self, async_client: AsyncClient, printer_factory, db_session):
+        """Events whose archive was hard-deleted still appear (#1390).
+
+        After ON DELETE SET NULL the event row survives with archive_id=NULL.
+        The slim endpoint must keep counting it so Quick Stats and the
+        archive-iterating widgets stay aligned.
+        """
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        db_session.add(
+            PrintLogEntry(
+                archive_id=None,
+                printer_id=printer.id,
+                status="completed",
+                filament_type="PETG",
+                filament_used_grams=25.0,
+                cost=0.75,
+                print_name="Orphaned Print",
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/archives/slim")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["print_name"] == "Orphaned Print"
+        assert data[0]["filament_used_grams"] == 25.0
+        # print_time_seconds (sliced estimate) comes from the archive table,
+        # which orphans no longer have — must surface as null gracefully.
+        assert data[0]["print_time_seconds"] is None
+
+
+class TestFailureAnalysisAPI:
+    """Per-event failure analysis (#1390)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_failure_analysis_counts_reprints_and_orphans(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Failure analysis aggregates per event, not per archive.
+
+        Verifies the dual fix for #1390: a reprint that adds a second failed
+        event must count twice, and an orphan failed event (archive deleted)
+        must still appear in the totals.
+        """
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Failing Model",
+            status="failed",
+            failure_reason="filament_runout",
+        )
+        # Add a second failed event for the same archive (a reprint that also
+        # failed) and one orphan failed event (archive was deleted).
+        db_session.add(
+            PrintLogEntry(
+                archive_id=archive.id,
+                printer_id=printer.id,
+                status="failed",
+                failure_reason="filament_runout",
+                filament_type=archive.filament_type,
+                print_name=archive.print_name,
+            )
+        )
+        db_session.add(
+            PrintLogEntry(
+                archive_id=None,
+                printer_id=printer.id,
+                status="failed",
+                failure_reason="bed_adhesion",
+                filament_type="PETG",
+                print_name="Orphaned Failed Print",
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/archives/analysis/failures")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["total_prints"] == 3
+        assert result["failed_prints"] == 3
+        assert result["failures_by_reason"]["filament_runout"] == 2
+        assert result["failures_by_reason"]["bed_adhesion"] == 1
 
 
 class TestArchiveDataIntegrity:

@@ -35,7 +35,8 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@flom89](https://github.com/flom89)
 - [@grizz0blaw](https://github.com/grizz0blaw)
 - [@NoahTingey](https://github.com/NoahTingey)
-
+- [@sentinel-center](https://github.com/sentinel-center)
+- [@pwostran](https://github.com/pwostran)
 ---
 
 ## One-time and historical supporters

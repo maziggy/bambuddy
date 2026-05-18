@@ -164,6 +164,7 @@ const DE_COGNATES = [
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'China', 'Proxy', 'Start',
+  'Diagnose',  // DE: same spelling/meaning as EN — camera diagnostic button label
 ];
 
 // French cognates — many UI labels overlap with English exactly.

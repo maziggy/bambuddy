@@ -11,6 +11,23 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 
+@pytest.fixture(autouse=True)
+def _mock_printer_test_connection():
+    """Default mock: connection test returns success.
+
+    POST /printers/ now refuses to persist a printer when the MQTT
+    connection probe fails (would otherwise leave an empty card in the
+    dashboard for a mistyped access code). Existing tests assume the
+    save succeeds, so we mock the probe green by default; the failure
+    branch is exercised by a dedicated test below.
+    """
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.test_connection",
+        new=AsyncMock(return_value={"success": True, "state": "IDLE", "model": "X1C"}),
+    ) as m:
+        yield m
+
+
 class TestPrintersAPI:
     """Integration tests for /api/v1/printers/ endpoints."""
 
@@ -134,6 +151,44 @@ class TestPrintersAPI:
 
         # Should fail due to duplicate serial
         assert response.status_code in [400, 409, 422, 500]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_printer_rejects_when_mqtt_probe_fails(self, async_client: AsyncClient, db_session):
+        """Wrong access code / unreachable IP must NOT persist the printer.
+
+        Regression: users were reporting empty / never-connecting printer
+        cards that traced back to a mistyped access code. The create route
+        now runs an MQTT probe up front and returns 400 if it fails — the
+        row is never written.
+        """
+        data = {
+            "name": "Bad Code Printer",
+            "serial_number": "00M09A999999999",
+            "ip_address": "192.168.1.250",
+            "access_code": "WRONG-CODE",
+            "is_active": True,
+            "model": "X1C",
+        }
+
+        with patch(
+            "backend.app.services.printer_manager.printer_manager.test_connection",
+            new=AsyncMock(return_value={"success": False, "state": None, "model": None}),
+        ):
+            response = await async_client.post("/api/v1/printers/", json=data)
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        # Backend returns a stable code for the frontend i18n layer to map;
+        # the message field is an English fallback for non-UI clients.
+        assert detail["code"] == "printer_connection_failed"
+        assert "connect" in detail["message"].lower()
+
+        # And critically: the printer row was never persisted.
+        from backend.app.models.printer import Printer
+
+        result = await db_session.execute(select(Printer).where(Printer.serial_number == "00M09A999999999"))
+        assert result.scalar_one_or_none() is None, "Failed-probe printer must not be persisted"
 
     # ========================================================================
     # Get single endpoint

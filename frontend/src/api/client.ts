@@ -4,10 +4,15 @@ const API_BASE = '/api/v1';
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Stable error code from a structured backend detail (`{code, message}`).
+   *  Frontend uses this to look up an i18n key instead of showing the raw
+   *  English fallback. Null when the backend returned a plain-string detail. */
+  code: string | null;
+  constructor(message: string, status: number, code: string | null = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -105,6 +110,7 @@ async function request<T>(
     const error = await response.json().catch(() => ({}));
     const detail = error.detail;
     let message: string;
+    let code: string | null = null;
     if (typeof detail === 'string') {
       message = detail;
     } else if (Array.isArray(detail)) {
@@ -117,6 +123,11 @@ async function request<T>(
         .filter(Boolean)
         .join('; ');
       message = joined || JSON.stringify(detail) || `HTTP ${response.status}`;
+    } else if (detail && typeof detail === 'object') {
+      // Structured detail `{code, message}` — frontend uses the code to
+      // pick an i18n key, message is the English fallback.
+      code = typeof detail.code === 'string' ? detail.code : null;
+      message = typeof detail.message === 'string' ? detail.message : `HTTP ${response.status}`;
     } else {
       message = `HTTP ${response.status}`;
     }
@@ -136,7 +147,7 @@ async function request<T>(
       }
     }
 
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, code);
   }
 
   // Handle empty responses (204 No Content, etc.)
@@ -146,6 +157,30 @@ async function request<T>(
   }
 
   return await response.json();
+}
+
+// Camera diagnostic result (#1395 follow-up). Returned by
+// POST /printers/{id}/camera/diagnose; the frontend modal renders one
+// row per stage and looks up the summary code in i18n for the user-
+// facing remediation hint.
+export interface CameraDiagnoseStage {
+  name: 'tcp_reachable' | 'first_frame' | 'live_stream_active';
+  status: 'ok' | 'failed' | 'skipped';
+  duration_ms: number;
+  code: string | null;
+}
+
+export interface CameraDiagnoseResult {
+  printer_id: number;
+  protocol: 'rtsp' | 'chamber_image';
+  port: number;
+  // 'default' = historical X1/H2 tuning. Anything else = this model has
+  // an override entry in backend/app/services/camera_profiles.py.
+  profile: string;
+  overall_status: 'ok' | 'failed';
+  stages: CameraDiagnoseStage[];
+  // i18n key under `camera.diagnose.summary.*`.
+  summary_code: string;
 }
 
 // Long-lived camera-stream tokens (#1108). The `token` field is populated
@@ -1447,6 +1482,9 @@ export interface SmartPlug {
   off_delay_mode: 'time' | 'temperature';
   off_delay_minutes: number;
   off_temp_threshold: number;
+  // #1349: auto-off after AMS drying completes.
+  auto_off_after_drying: boolean;
+  off_delay_after_drying_minutes: number;
   username: string | null;
   password: string | null;
   // Power alerts
@@ -1518,6 +1556,9 @@ export interface SmartPlugCreate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #1349
+  auto_off_after_drying?: boolean;
+  off_delay_after_drying_minutes?: number;
   username?: string | null;
   password?: string | null;
   // Power alerts
@@ -1581,6 +1622,9 @@ export interface SmartPlugUpdate {
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
+  // #1349
+  auto_off_after_drying?: boolean;
+  off_delay_after_drying_minutes?: number;
   username?: string | null;
   password?: string | null;
   // Power alerts
@@ -2183,6 +2227,9 @@ export interface GitHubTestConnectionResponse {
   message: string;
   repo_name: string | null;
   permissions: Record<string, boolean> | null;
+  // true = confirmed private, false = confirmed public/internal,
+  // null = could not determine. Backend rejects save unless true.
+  is_private: boolean | null;
 }
 
 export interface GitHubBackupTriggerResponse {
@@ -2385,6 +2432,12 @@ export interface InventorySpool {
   core_weight: number;
   core_weight_catalog_id: number | null;
   weight_used: number;
+  // Anchor for the resettable "Total Consumed" display (#1390). The
+  // counter shown on the Inventory page is `weight_used - weight_used_baseline`;
+  // remaining is still `label_weight - weight_used`, so "Reset usage to 0"
+  // zeroes the counter without disturbing remaining. Optional for back-compat
+  // with rows from a pre-migration DB snapshot — default to 0.
+  weight_used_baseline?: number;
   slicer_filament: string | null;
   slicer_filament_name: string | null;
   nozzle_temp_min: number | null;
@@ -3506,12 +3559,18 @@ export const api = {
     request<void>(`/archives/${id}${purgeStats ? '?purge_stats=true' : ''}`, { method: 'DELETE' }),
 
   // ========== Archive auto-purge (#1008 follow-up) ==========
-  previewArchivePurge: (olderThanDays: number) =>
-    request<ArchivePurgePreview>(`/archives/purge/preview?older_than_days=${olderThanDays}`),
-  executeArchivePurge: (olderThanDays: number) =>
-    request<{ deleted: number }>('/archives/purge', {
+  previewArchivePurge: (olderThanDays: number, purgeStats: boolean = false) =>
+    request<ArchivePurgePreview>(
+      `/archives/purge/preview?older_than_days=${olderThanDays}&purge_stats=${purgeStats}`,
+    ),
+  // #1390: purgeStats=false (default) soft-deletes each old archive — Quick Stats
+  // preserved, files removed from disk, row hidden via deleted_at. true matches
+  // the single-archive delete's `?purge_stats=true` semantics (hard-deletes the
+  // linked PrintLogEntry rows so the contribution drops from /stats too).
+  executeArchivePurge: (olderThanDays: number, purgeStats: boolean = false) =>
+    request<{ deleted: number; purge_stats: boolean }>('/archives/purge', {
       method: 'POST',
-      body: JSON.stringify({ older_than_days: olderThanDays }),
+      body: JSON.stringify({ older_than_days: olderThanDays, purge_stats: purgeStats }),
     }),
   getArchivePurgeSettings: () =>
     request<ArchivePurgeSettings>('/archives/purge/settings'),
@@ -4636,6 +4695,13 @@ export const api = {
     request<InventorySpool>(`/inventory/spools/${id}/archive`, { method: 'POST' }),
   restoreSpool: (id: number) =>
     request<InventorySpool>(`/inventory/spools/${id}/restore`, { method: 'POST' }),
+  resetSpoolUsage: (id: number) =>
+    request<InventorySpool>(`/inventory/spools/${id}/reset-usage`, { method: 'POST' }),
+  bulkResetSpoolUsage: (spoolIds: number[]) =>
+    request<{ reset: number }>(`/inventory/spools/reset-usage-bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ spool_ids: spoolIds }),
+    }),
   getSpoolKProfiles: (spoolId: number) =>
     request<SpoolKProfile[]>(`/inventory/spools/${spoolId}/k-profiles`),
   saveSpoolKProfiles: (spoolId: number, profiles: SpoolKProfileInput[]) =>
@@ -4800,6 +4866,13 @@ export const api = {
     request<InventorySpool>(`/spoolman/inventory/spools/${id}/archive`, { method: 'POST' }),
   restoreSpoolmanInventorySpool: (id: number) =>
     request<InventorySpool>(`/spoolman/inventory/spools/${id}/restore`, { method: 'POST' }),
+  resetSpoolmanInventorySpoolUsage: (id: number) =>
+    request<InventorySpool>(`/spoolman/inventory/spools/${id}/reset-usage`, { method: 'POST' }),
+  bulkResetSpoolmanInventorySpoolUsage: (spoolIds: number[]) =>
+    request<{ reset: number }>(`/spoolman/inventory/spools/reset-usage-bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ spool_ids: spoolIds }),
+    }),
   linkTagToSpoolmanSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string }) =>
     request<InventorySpool>(`/spoolman/inventory/spools/${spoolId}/tag`, {
       method: 'PATCH',
@@ -4927,6 +5000,8 @@ export const api = {
     request<{ success: boolean; message?: string; error?: string }>(`/printers/${printerId}/camera/test`),
   getCameraStatus: (printerId: number) =>
     request<{ active: boolean; stalled: boolean }>(`/printers/${printerId}/camera/status`),
+  diagnoseCamera: (printerId: number) =>
+    request<CameraDiagnoseResult>(`/printers/${printerId}/camera/diagnose`, { method: 'POST' }),
 
   // Plate Detection - Multi-reference calibration (stores up to 5 references per printer)
   checkPlateEmpty: (printerId: number, options?: { useExternal?: boolean; includeDebugImage?: boolean }) => {
@@ -5950,6 +6025,10 @@ export interface ArchivePurgePreview {
 export interface ArchivePurgeSettings {
   enabled: boolean;
   days: number;
+  // #1390: when true, bulk-deletes the linked PrintLogEntry rows so the
+  // contribution drops from Quick Stats too. Default false — soft-delete,
+  // Quick Stats preserved.
+  purge_stats: boolean;
 }
 
 export interface LibraryFileUploadResponse {

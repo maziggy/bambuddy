@@ -593,12 +593,22 @@ class TestExternalFolderWritableUpload:
         """DB row must have ``is_external=True`` and ``file_path`` = absolute external path,
         so scan-dedupe and deletion behaviour match scanned files."""
         import io
+        import zipfile
 
         from backend.app.models.library import LibraryFile
 
+        # #1401 hardened the library upload route to reject .3mf files that
+        # aren't valid ZIP containers. This test asserts external-folder
+        # DB shape, not the upload validator, so feed it a minimal real zip
+        # rather than placeholder bytes.
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("placeholder.txt", "")
+        zip_buf.seek(0)
+
         response = await async_client.post(
             f"/api/v1/library/files?folder_id={writable_folder['id']}",
-            files={"file": ("model.3mf", io.BytesIO(b"x"), "application/octet-stream")},
+            files={"file": ("model.3mf", zip_buf, "application/octet-stream")},
         )
         assert response.status_code == 200
         file_id = response.json()["id"]

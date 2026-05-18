@@ -160,6 +160,18 @@ class VirtualPrinterInstance:
         # Pending files for MQTT correlation
         self._pending_files: dict[str, Path] = {}
 
+        # Slicer-side print options captured from the MQTT `project_file`
+        # command, keyed by filename. Used by `_add_to_print_queue` so the
+        # queue item inherits the user's slicer-chosen timelapse / bed_leveling
+        # / flow_cali / vibration_cali / layer_inspect / use_ams toggles rather
+        # than falling back to the global `default_*` settings (#1403). FTP
+        # completes a few hundred ms before the slicer's MQTT `project_file`
+        # arrives, so the queue-add path waits briefly on the event below
+        # before reading the dict. Events are popped along with the options
+        # so the dict stays bounded.
+        self._slicer_print_options: dict[str, dict] = {}
+        self._slicer_print_options_events: dict[str, asyncio.Event] = {}
+
         # Per-instance services
         self._proxy: SlicerProxyManager | None = None
         self._ftp: VirtualPrinterFTPServer | None = None
@@ -231,8 +243,24 @@ class VirtualPrinterInstance:
             self._mqtt.set_gcode_state("FINISH", filename=file_path.name, prepare_percent="100")
 
     async def on_print_command(self, filename: str, data: dict) -> None:
-        """Handle print command from MQTT."""
+        """Handle print command from MQTT.
+
+        Captures the slicer's project_file options (`timelapse`, `bed_leveling`,
+        `flow_cali`, `vibration_cali`, `layer_inspect`, `use_ams`) so the
+        VP-queue path can inherit them when adding the item to the queue,
+        rather than falling back to the global default settings (#1403).
+        Only queue mode consumes the capture; immediate / review / proxy
+        modes ignore the print command, so we skip the stash there to keep
+        the dict from accumulating one entry per print over the VP's
+        uptime.
+        """
         logger.info("[VP %s] Print command for: %s", self.name, filename)
+        if self.mode != "print_queue":
+            return
+        self._slicer_print_options[filename] = dict(data)
+        event = self._slicer_print_options_events.get(filename)
+        if event:
+            event.set()
 
     async def _archive_file(self, file_path: Path, source_ip: str) -> None:
         """Archive file immediately."""
@@ -344,6 +372,29 @@ class VirtualPrinterInstance:
                 pass
             return
 
+        # Wait briefly for the slicer's MQTT `project_file` command so the
+        # queue item can inherit the slicer-side print options the user
+        # picked (timelapse, bed_leveling, etc). Slicers send the FTP upload
+        # first and the MQTT command immediately after, so the typical lag
+        # is a few hundred ms; 2 s is conservative without making every
+        # VP-queue add visibly slow. Falls back to the global default_*
+        # settings if MQTT doesn't arrive in time (legacy behaviour for
+        # users on a slicer that doesn't send a print command). #1403.
+        # The wait is skipped when there's no MQTT server attached — covers
+        # unit tests that invoke `_add_to_print_queue` directly without
+        # going through `on_print_command`, so they don't pay the 2 s tax.
+        slicer_opts = self._slicer_print_options.pop(file_path.name, None)
+        if slicer_opts is None and self._mqtt is not None:
+            event = asyncio.Event()
+            self._slicer_print_options_events[file_path.name] = event
+            try:
+                await asyncio.wait_for(event.wait(), timeout=2.0)
+                slicer_opts = self._slicer_print_options.pop(file_path.name, None)
+            except asyncio.TimeoutError:
+                slicer_opts = None
+            finally:
+                self._slicer_print_options_events.pop(file_path.name, None)
+
         try:
             import json
 
@@ -360,14 +411,36 @@ class VirtualPrinterInstance:
                 # PrintQueueItem below would fall back to the column-level
                 # defaults and ignore the user's workflow preferences (#1235).
                 # Fallbacks match AppSettings defaults in schemas/settings.py.
+                # The slicer-side options captured above (if any) take
+                # precedence per-field over these defaults.
                 def _bool_setting(value: str | None, default: bool) -> bool:
                     return value.lower() == "true" if value is not None else default
 
-                bed_levelling = _bool_setting(await get_setting(db, "default_bed_levelling"), True)
-                flow_cali = _bool_setting(await get_setting(db, "default_flow_cali"), False)
-                vibration_cali = _bool_setting(await get_setting(db, "default_vibration_cali"), True)
-                layer_inspect = _bool_setting(await get_setting(db, "default_layer_inspect"), False)
-                timelapse = _bool_setting(await get_setting(db, "default_timelapse"), False)
+                def _slicer_or(field_mqtt: str, settings_default: bool) -> bool:
+                    """Slicer's MQTT value if present, else the settings default.
+
+                    Slicer payloads carry both bool and int (0/1) shapes
+                    depending on firmware family — coerce via bool() so
+                    `0`/`False` and `1`/`True` both work.
+                    """
+                    if slicer_opts is not None and field_mqtt in slicer_opts:
+                        return bool(slicer_opts[field_mqtt])
+                    return settings_default
+
+                # Note the MQTT field names differ from Bambuddy's column
+                # names: MQTT uses `bed_leveling` (single L) while the
+                # column / settings key use `bed_levelling` (double L).
+                bed_levelling = _slicer_or(
+                    "bed_leveling", _bool_setting(await get_setting(db, "default_bed_levelling"), True)
+                )
+                flow_cali = _slicer_or("flow_cali", _bool_setting(await get_setting(db, "default_flow_cali"), False))
+                vibration_cali = _slicer_or(
+                    "vibration_cali", _bool_setting(await get_setting(db, "default_vibration_cali"), True)
+                )
+                layer_inspect = _slicer_or(
+                    "layer_inspect", _bool_setting(await get_setting(db, "default_layer_inspect"), False)
+                )
+                timelapse = _slicer_or("timelapse", _bool_setting(await get_setting(db, "default_timelapse"), False))
 
                 service = ArchiveService(db)
                 archive = await service.archive_print(

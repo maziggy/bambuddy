@@ -58,7 +58,8 @@ function parseConfig(params: URLSearchParams): OverlayConfig {
 }
 
 function getStatusText(status: PrinterStatus, t: TFunction): string {
-  if (status.stg_cur_name) return status.stg_cur_name;
+  const isActive = status.state === 'RUNNING' || status.state === 'PREPARE' || status.state === 'PAUSE';
+  if (status.stg_cur_name && isActive) return status.stg_cur_name;
 
   switch (status.state) {
     case 'RUNNING': return t('streamOverlay.status.printing');

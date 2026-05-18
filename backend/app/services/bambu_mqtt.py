@@ -1662,6 +1662,15 @@ class BambuMQTTClient:
         # Update state fields
         if "gcode_state" in data:
             self.state.state = data["gcode_state"]
+            # P1S sends delta MQTT updates so stg_cur is never explicitly cleared
+            # when a print ends. Reset it when reaching a terminal/idle state so
+            # stale stage names (e.g. "Auto bed leveling") don't persist in the UI.
+            if self.state.state in ("IDLE", "FINISH", "FAILED") and self.state.stg_cur not in (-1, 0):
+                logger.debug(
+                    f"[{self.serial_number}] Resetting stg_cur {self.state.stg_cur} -> -1 on {self.state.state}"
+                )
+                self.state.stg_cur = -1
+                self.state.stg = []
         if "gcode_file" in data:
             self.state.gcode_file = data["gcode_file"]
             self.state.current_print = data["gcode_file"]

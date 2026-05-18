@@ -1244,8 +1244,11 @@ type ViewMode = 'expanded' | 'compact';
  * otherwise formats the gcode_state nicely.
  */
 function getStatusDisplay(state: string | null | undefined, stg_cur_name: string | null | undefined): string {
-  // If we have a specific stage name (calibration, heating, etc.), use it
-  if (stg_cur_name) {
+  // Only show stage name (calibration, heating, etc.) when the printer is actively
+  // doing something. P1S sends delta MQTT updates so stg_cur can be stale after a
+  // print ends — showing "Auto bed leveling" on an idle printer is misleading.
+  const isActive = state === 'RUNNING' || state === 'PREPARE' || state === 'PAUSE';
+  if (stg_cur_name && isActive) {
     return stg_cur_name;
   }
 

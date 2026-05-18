@@ -136,7 +136,16 @@ async def webhook_start_print(
     api_key: APIKey = Depends(get_api_key),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start the next queued print on a printer.
+    """Trigger the next manual-start queue item on a printer.
+
+    Mirrors `POST /print-queue/{item_id}/start`: clears `manual_start` on
+    the next pending item so the scheduler picks it up — which handles
+    FTP upload, AMS mapping, and all print options (timelapse,
+    bed_levelling, etc.) correctly via the queue's stored fields. The
+    previous implementation called `printer_manager.start_print()`
+    directly with `archive_id` as the filename arg and no print options,
+    bypassing the upload step entirely and discarding the user's
+    workflow choices — it 500'd before ever reaching the printer.
 
     Requires 'can_control_printer' permission.
     """
@@ -163,25 +172,14 @@ async def webhook_start_print(
     if not queue_item:
         raise HTTPException(status_code=404, detail="No pending prints in queue")
 
-    # Check if printer is ready
-    status = printer_manager.get_status(printer_id)
-    if not status or not status.get("connected"):
-        raise HTTPException(status_code=503, detail="Printer not connected")
+    # Clear manual_start so the scheduler will dispatch. If the item was
+    # already auto-dispatchable this is a no-op; the scheduler will still
+    # pick it up on its next tick.
+    queue_item.manual_start = False
+    await db.commit()
+    await db.refresh(queue_item)
 
-    if status.get("state") not in ["IDLE", "FINISH", "FAILED"]:
-        raise HTTPException(status_code=409, detail=f"Printer is busy (state: {status.get('state')})")
-
-    # Start the print with plate_id if available
-    try:
-        await printer_manager.start_print(
-            printer_id,
-            queue_item.archive_id,
-            plate_id=queue_item.plate_id or 1,
-        )
-    except Exception as e:
-        logger.error("Failed to start print: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
-
+    logger.info("Webhook started queue item %s on printer %s", queue_item.id, printer_id)
     return {"message": "Print started", "queue_item_id": queue_item.id}
 
 

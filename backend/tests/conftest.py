@@ -559,6 +559,9 @@ def archive_factory(db_session):
                 failure_reason=archive.failure_reason,
                 print_name=archive.print_name,
                 created_by_id=archive.created_by_id,
+                # Sync the event's created_at with the archive's so date-range
+                # filtered tests that backdate an archive still find its event.
+                created_at=archive.created_at,
             )
             db_session.add(run)
             await db_session.commit()

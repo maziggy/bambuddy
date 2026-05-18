@@ -3696,9 +3696,9 @@ class TestStartPrintAmsMapping:
         assert cmd["layer_inspect"] == 1
 
     def test_p2s_still_uses_boolean_format(self, mqtt_client):
-        """Regression guard: P2S is NOT in the is_h2d gate — must still use booleans.
+        """Regression guard: P2S is NOT in the H-family firmware gate — must still use booleans.
 
-        Adding X2D to the is_h2d set must not accidentally affect P2S, which
+        Adding X2D to the H-family set must not accidentally affect P2S, which
         is single-nozzle and uses boolean format like X1C/A1/P1.
         """
         mqtt_client.model = "P2S"
@@ -3707,6 +3707,58 @@ class TestStartPrintAmsMapping:
         cmd = self._get_published_command(mqtt_client)
         assert cmd["timelapse"] is True
         assert cmd["flow_cali"] is False
+
+    def test_h2s_single_external_spool_uses_main_id(self, mqtt_client):
+        """H2S is single-nozzle (#1386): external spool (254) → ams_id=255.
+
+        H2S shares serial prefix "094" and the H-family firmware-format
+        quirks with H2D, but it has a single extruder (nozzle_count=1
+        confirmed across 9+ support bundles). Routing the deputy-nozzle
+        sentinel (254) through to firmware on a single-nozzle printer
+        causes 07FF_8012 "Failed to get AMS mapping table" — exactly the
+        symptom reporter krootstijn hit when printing without an AMS.
+        """
+        mqtt_client.model = "H2S"
+        mqtt_client.start_print("test.3mf", ams_mapping=[254])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [-1]
+        assert cmd["ams_mapping2"] == [{"ams_id": 255, "slot_id": 0}]
+
+    def test_h2s_no_ams_forces_use_ams_false(self, mqtt_client):
+        """H2S with only external spool must drop into the use_ams=False
+        fallback, like P1S/P1P. The dual-nozzle bypass kept this path
+        unreachable before #1386 — the firmware then rejected the print
+        with 07FF_8012 because there was no AMS mapping table.
+        """
+        mqtt_client.model = "H2S"
+        mqtt_client.start_print("test.3mf", ams_mapping=[254], use_ams=True)
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["use_ams"] is False
+
+    def test_h2s_keeps_integer_format_for_calibration_fields(self, mqtt_client):
+        """H2S shares the H-family firmware (int 0/1 for calibration fields)
+        even though it's single-nozzle. Verified empirically against H2S
+        bundles: the print command structure was always accepted, only the
+        AMS routing failed (#1386).
+        """
+        mqtt_client.model = "H2S"
+        mqtt_client.start_print(
+            "test.3mf",
+            timelapse=True,
+            bed_levelling=False,
+            flow_cali=True,
+            vibration_cali=False,
+            layer_inspect=True,
+        )
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["timelapse"] == 1
+        assert cmd["bed_leveling"] == 0
+        assert cmd["flow_cali"] == 1
+        assert cmd["vibration_cali"] == 0
+        assert cmd["layer_inspect"] == 1
 
 
 class TestStartPrintUniqueIdentityFields:
@@ -3818,15 +3870,16 @@ class TestStartPrintUniqueIdentityFields:
 
 
 class TestDeleteKProfileDualNozzleDetection:
-    """Regression guard: dual-nozzle detection by serial prefix (#988).
+    """Regression guard: dual-nozzle detection for K-profile delete.
 
-    delete_kprofile branches on serial-prefix-derived dual-nozzle status.
-    H2D serials start with "094"; X2D serials start with "20P9". Non-dual
-    families (X1C "00M", P1S "01P", P2S "22E", A1 "039", etc.) must take
-    the single-nozzle branch.
+    delete_kprofile branches on dual-nozzle status to pick the wire format.
+    Source of truth is the runtime `_is_dual_nozzle` flag (set from
+    device.extruder.info); model name is the fallback used before push
+    data arrives. Serial-prefix detection alone is wrong — H2S shares
+    prefix "094" with H2D but is single-nozzle (#1386).
     """
 
-    def _make_client(self, serial: str):
+    def _make_client(self, *, serial: str = "TEST", model: str | None = None, dual_runtime: bool = False):
         from unittest.mock import MagicMock
 
         from backend.app.services.bambu_mqtt import BambuMQTTClient
@@ -3838,37 +3891,63 @@ class TestDeleteKProfileDualNozzleDetection:
         )
         client._client = MagicMock()
         client.state.connected = True
+        client.model = model
+        client._is_dual_nozzle = dual_runtime
         return client
 
     def _published(self, client):
         return json.loads(client._client.publish.call_args[0][1])["print"]
 
-    def test_h2d_serial_uses_dual_nozzle_format(self):
-        client = self._make_client("09400A000000001")
+    def test_h2d_model_uses_dual_nozzle_format(self):
+        client = self._make_client(serial="09400A000000001", model="H2D")
         client.delete_kprofile(cali_idx=1, filament_id="GFA00", nozzle_id="HH00-0.4")
         cmd = self._published(client)
         # Dual-nozzle command omits setting_id.
         assert "setting_id" not in cmd
         assert cmd["extruder_id"] == 0
 
-    def test_x2d_serial_uses_dual_nozzle_format(self):
-        client = self._make_client("20P90A000000001")
+    def test_x2d_model_uses_dual_nozzle_format(self):
+        client = self._make_client(serial="20P90A000000001", model="X2D")
         client.delete_kprofile(cali_idx=1, filament_id="GFA00", nozzle_id="HH00-0.4")
         cmd = self._published(client)
         assert "setting_id" not in cmd
         assert cmd["extruder_id"] == 0
 
-    def test_h2c_new_prefix_uses_dual_nozzle_format(self):
-        """Post-2026 H2C batches ship with '31B8B' prefix instead of '094' (#1105)."""
-        client = self._make_client("31B8BP000000001")
+    def test_h2c_model_uses_dual_nozzle_format(self):
+        """Post-2026 H2C batches ship with '31B8B' prefix instead of '094' (#1105).
+        Model-name detection works regardless of serial prefix."""
+        client = self._make_client(serial="31B8BP000000001", model="H2C")
         client.delete_kprofile(cali_idx=1, filament_id="GFA00", nozzle_id="HH00-0.4")
         cmd = self._published(client)
         assert "setting_id" not in cmd
         assert cmd["extruder_id"] == 0
 
-    def test_p2s_serial_uses_single_nozzle_format(self):
+    def test_runtime_dual_nozzle_flag_uses_dual_format(self):
+        """When _is_dual_nozzle is set from device.extruder.info, the model
+        fallback isn't needed (covers future dual-nozzle models we haven't
+        seen yet)."""
+        client = self._make_client(serial="UNKNOWN", model=None, dual_runtime=True)
+        client.delete_kprofile(cali_idx=1, filament_id="GFA00", nozzle_id="HH00-0.4")
+        cmd = self._published(client)
+        assert "setting_id" not in cmd
+
+    def test_h2s_uses_single_nozzle_format(self):
+        """H2S shares serial prefix "094" with H2D but is single-nozzle (#1386).
+        Must take the single-nozzle branch with setting_id included.
+        """
+        client = self._make_client(serial="09400S000000001", model="H2S")
+        client.delete_kprofile(
+            cali_idx=1,
+            filament_id="GFA00",
+            nozzle_id="HH00-0.4",
+            setting_id="PFB123",
+        )
+        cmd = self._published(client)
+        assert cmd["setting_id"] == "PFB123"
+
+    def test_p2s_uses_single_nozzle_format(self):
         """P2S is single-nozzle — must NOT take the dual-nozzle branch."""
-        client = self._make_client("22E00A000000001")
+        client = self._make_client(serial="22E00A000000001", model="P2S")
         client.delete_kprofile(
             cali_idx=1,
             filament_id="GFA00",
@@ -3879,8 +3958,8 @@ class TestDeleteKProfileDualNozzleDetection:
         # Single-nozzle command includes setting_id.
         assert cmd["setting_id"] == "PFB123"
 
-    def test_x1c_serial_uses_single_nozzle_format(self):
-        client = self._make_client("00M00A000000001")
+    def test_x1c_uses_single_nozzle_format(self):
+        client = self._make_client(serial="00M00A000000001", model="X1C")
         client.delete_kprofile(
             cali_idx=1,
             filament_id="GFA00",
@@ -4919,3 +4998,77 @@ class TestAmsFilamentSettingExternalSpoolEncoding:
         # a future capture-driven change shows up in the diff.
         assert cmd["tray_id"] == 0
         assert cmd["slot_id"] == 0
+
+
+class TestDryingCompleteCallback:
+    """#1349 — fires ``on_drying_complete(ams_id)`` on a dry_time falling edge."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        events: list[int] = []
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST-DRYING",
+            access_code="12345678",
+            on_drying_complete=events.append,
+        )
+        client._drying_events = events  # Expose for assertions
+        return client
+
+    def test_falling_edge_fires_callback(self, mqtt_client):
+        """First push reports drying active, second reports drying done."""
+        # Push 1: AMS 0 drying with 60 minutes remaining.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 60, "tray": []}]})
+        assert mqtt_client._drying_events == []
+
+        # Push 2: dry_time hits 0 → callback fires with the AMS id.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert mqtt_client._drying_events == [0]
+
+    def test_no_fire_when_dry_time_never_started(self, mqtt_client):
+        """dry_time = 0 across consecutive pushes does NOT fire — there was
+        no drying cycle to finish. Guards against the seed-from-zero false
+        positive on startup."""
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert mqtt_client._drying_events == []
+
+    def test_falling_edge_fires_once(self, mqtt_client):
+        """Subsequent zero-pushes after the edge don't refire the callback."""
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 30, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert mqtt_client._drying_events == [0]
+
+    def test_per_ams_tracking(self, mqtt_client):
+        """Two AMS units finishing drying at different times each fire once
+        — the falling-edge state is keyed per AMS id."""
+        # Both start drying.
+        mqtt_client._handle_ams_data(
+            {"ams": [{"id": "0", "dry_time": 30, "tray": []}, {"id": "1", "dry_time": 30, "tray": []}]}
+        )
+        # AMS 0 finishes, AMS 1 still drying.
+        mqtt_client._handle_ams_data(
+            {"ams": [{"id": "0", "dry_time": 0, "tray": []}, {"id": "1", "dry_time": 15, "tray": []}]}
+        )
+        assert mqtt_client._drying_events == [0]
+        # AMS 1 finishes.
+        mqtt_client._handle_ams_data(
+            {"ams": [{"id": "0", "dry_time": 0, "tray": []}, {"id": "1", "dry_time": 0, "tray": []}]}
+        )
+        assert mqtt_client._drying_events == [0, 1]
+
+    def test_restart_drying_after_completion_refires_callback(self, mqtt_client):
+        """A new drying cycle after the previous one finished fires the
+        callback again on its own falling edge — covers the user manually
+        starting a second dry from the UI."""
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 30, "tray": []}]})
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        # New cycle starts.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 45, "tray": []}]})
+        # And finishes.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert mqtt_client._drying_events == [0, 0]

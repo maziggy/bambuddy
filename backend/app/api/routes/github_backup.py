@@ -28,6 +28,39 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/github-backup", tags=["github-backup"])
 
 
+_PUBLIC_REPO_ERROR = (
+    "Refusing to save: the target repository is not private. Bambuddy backups "
+    "include MQTT credentials, Home Assistant tokens, Prometheus tokens, your "
+    "Bambu Cloud email, the printer access codes via K-profiles, and other "
+    "settings that must not be exposed publicly. Make the repository private "
+    "in your provider's UI and try again."
+)
+_UNKNOWN_VISIBILITY_ERROR = (
+    "Refusing to save: could not confirm the target repository is private. "
+    "Bambuddy backups contain credentials and must never go to a public or "
+    "internal-visibility repository. Verify the URL, the access token's scope, "
+    "and that your provider exposes the 'private' / 'visibility' field on its "
+    "repo API."
+)
+
+
+async def _enforce_private_repo(repo_url: str, token: str, provider: str) -> None:
+    """Run a test_connection and refuse if the repo is not confirmed private.
+
+    Used by POST and PATCH /config so a backup configuration can never be
+    saved against a public repository.
+    """
+    result = await github_backup_service.test_connection(repo_url, token, provider=provider)
+    if not result.get("success"):
+        message = result.get("message") or "Connection test failed"
+        raise HTTPException(status_code=400, detail=f"Cannot verify repository: {message}")
+    is_private = result.get("is_private")
+    if is_private is None:
+        raise HTTPException(status_code=400, detail=_UNKNOWN_VISIBILITY_ERROR)
+    if is_private is False:
+        raise HTTPException(status_code=400, detail=_PUBLIC_REPO_ERROR)
+
+
 def _config_to_response(config: GitHubBackupConfig) -> dict:
     """Convert config model to response dict."""
     return {
@@ -79,7 +112,16 @@ async def save_config(
     """Create or update GitHub backup configuration.
 
     Only one configuration is supported. If one exists, it will be updated.
+    The target repository must be private — Bambuddy backups carry MQTT
+    credentials, HA/Prometheus tokens, the Bambu Cloud email, and printer
+    access codes (via K-profiles), so a public repo is a hard reject.
     """
+    await _enforce_private_repo(
+        config_data.repository_url,
+        config_data.access_token,
+        config_data.provider.value,
+    )
+
     # Check for existing config
     result = await db.execute(select(GitHubBackupConfig).limit(1))
     config = result.scalar_one_or_none()
@@ -162,6 +204,21 @@ async def update_config(
                 status_code=422,
                 detail="This URL uses HTTP instead of HTTPS. Enable 'Allow insecure HTTP' if your instance does not use TLS.",
             )
+
+    # Re-verify the repo is private whenever the target changes — new URL,
+    # new token, or new provider. We DON'T re-test on every unrelated PATCH
+    # (e.g. toggling backup_archives) so flipping schedule settings doesn't
+    # round-trip a live API call.
+    target_changed = "repository_url" in update_dict or "access_token" in update_dict or "provider" in update_dict
+    if target_changed:
+        provider_value = update_dict.get("provider", config.provider)
+        if hasattr(provider_value, "value"):
+            provider_value = provider_value.value
+        await _enforce_private_repo(
+            update_dict.get("repository_url", config.repository_url),
+            update_dict.get("access_token", config.access_token),
+            provider_value,
+        )
 
     for key, value in update_dict.items():
         if key in ("schedule_type", "provider") and value is not None:

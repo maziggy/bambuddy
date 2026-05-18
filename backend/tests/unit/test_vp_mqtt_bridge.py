@@ -307,6 +307,189 @@ class TestPushStatusCache:
         await bridge.stop()
 
     @pytest.mark.asyncio
+    async def test_partial_ams_status_update_preserves_unit_list(self):
+        """#1387: Bambu firmware also sends `ams` updates where the key is
+        present but the inner `ams` array is missing — e.g. just
+        ``{ams_status: 1}`` or a humidity change. Before the deep-merge fix
+        the bridge would overwrite the cached AMS with this stripped blob,
+        the slicer would read it on the next 1 Hz push, and BambuStudio
+        would drop the unit list and fall back to its "no AMS" render
+        (only the external spool visible — the reporter's exact symptom).
+        Now the partial update only mutates the fields it carries; the
+        cached unit list survives.
+        """
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        # 1. Pushall with full AMS state.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {
+                            "ams": [
+                                {
+                                    "id": "0",
+                                    "humidity": "1",
+                                    "tray": [{"id": "0", "tray_type": "PLA", "tray_color": "FF0000FF"}],
+                                }
+                            ],
+                            "tray_exist_bits": "1",
+                            "ams_status": "0",
+                        },
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        # 2. Partial AMS update — only `ams_status` and `humidity` changed.
+        # No `ams.ams` array, so prev's unit list must be preserved.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {"ams_status": "1", "humidity": "2"},
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        # Scalar fields take the new values.
+        assert cached["ams"]["ams_status"] == "1"
+        assert cached["ams"]["humidity"] == "2"
+        # Unit + tray data preserved from the pushall.
+        assert cached["ams"]["tray_exist_bits"] == "1"
+        assert len(cached["ams"]["ams"]) == 1
+        assert cached["ams"]["ams"][0]["tray"][0]["tray_type"] == "PLA"
+        assert cached["ams"]["ams"][0]["tray"][0]["tray_color"] == "FF0000FF"
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_partial_ams_unit_update_preserves_other_units(self):
+        """#1387: when multiple AMS units are configured (e.g. H2D with two
+        AMS), an incremental push during a print typically only carries the
+        unit / tray that changed state. Naive replacement of `ams.ams` wipes
+        the other unit. The bridge merges unit-by-unit by id, preserving
+        units the incremental doesn't mention.
+        """
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        # 1. Pushall with two AMS units configured.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {
+                            "ams": [
+                                {"id": "0", "tray": [{"id": "0", "tray_type": "PLA"}]},
+                                {"id": "1", "tray": [{"id": "0", "tray_type": "PETG"}]},
+                            ],
+                            "tray_exist_bits": "3",
+                        },
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        # 2. Tray-targeted incremental: unit 0 / tray 0 state changed.
+        # Unit 1 is not in the update — must survive.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {"ams": [{"id": "0", "tray": [{"id": "0", "state": "11"}]}]},
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        units = {u["id"]: u for u in cached["ams"]["ams"]}
+        # Unit 0 keeps its tray_type from the pushall + picks up the new state.
+        assert units["0"]["tray"][0]["tray_type"] == "PLA"
+        assert units["0"]["tray"][0]["state"] == "11"
+        # Unit 1 survives the incremental.
+        assert "1" in units
+        assert units["1"]["tray"][0]["tray_type"] == "PETG"
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_partial_ams_tray_update_preserves_other_trays(self):
+        """Same shape as the unit-level test but at the tray level. AMS
+        unit 0 has four trays; the incremental only mentions tray 0.
+        Trays 1-3 must survive intact."""
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {
+                            "ams": [
+                                {
+                                    "id": "0",
+                                    "tray": [
+                                        {"id": "0", "tray_type": "PLA", "tray_color": "FF0000FF"},
+                                        {"id": "1", "tray_type": "PETG", "tray_color": "00FF00FF"},
+                                        {"id": "2", "tray_type": "ABS", "tray_color": "0000FFFF"},
+                                        {"id": "3", "tray_type": "TPU", "tray_color": "FFFF00FF"},
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {"ams": [{"id": "0", "tray": [{"id": "0", "state": "11"}]}]},
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        trays = {t["id"]: t for t in cached["ams"]["ams"][0]["tray"]}
+        assert trays["0"]["tray_type"] == "PLA"
+        assert trays["0"]["state"] == "11"
+        # Trays not mentioned in the incremental survive intact.
+        assert trays["1"]["tray_type"] == "PETG"
+        assert trays["2"]["tray_type"] == "ABS"
+        assert trays["3"]["tray_type"] == "TPU"
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
     async def test_incoming_ams_update_replaces_cached_ams(self):
         """Counterpart to the #1371 fix: preservation only kicks in when the
         incoming push OMITS a sticky key. When the printer DOES send a fresh

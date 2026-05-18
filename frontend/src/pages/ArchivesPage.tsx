@@ -3763,7 +3763,7 @@ export function ArchivesPage() {
                                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                 />
                               )}
-                              <span className="text-white truncate max-w-[200px]">
+                              <span className="text-white break-words" title={entry.print_name || ''}>
                                 {entry.print_name || '—'}
                               </span>
                             </div>

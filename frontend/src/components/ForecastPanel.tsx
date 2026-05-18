@@ -130,7 +130,10 @@ function computeHistoryRate(records: SpoolUsageRecord[]): { rate: number; stdDev
 }
 
 function computeDeltaRate(spools: InventorySpool[]): number | null {
-  const totalUsed = spools.reduce((s, sp) => s + sp.weight_used, 0);
+  // Use weight_used - baseline so "Reset usage to 0" on the Inventory page
+  // makes forecast restart from zero rather than carrying stale lifetime
+  // consumption across the reset (#1390).
+  const totalUsed = spools.reduce((s, sp) => s + Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0)), 0);
   if (totalUsed === 0) return null;
   const now = Date.now();
   const oldestMs = spools.reduce((min, sp) => {
@@ -228,7 +231,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
 
       const totalRemainingG = group.spools.reduce((s, sp) => s + Math.max(0, sp.label_weight - sp.weight_used), 0);
       const totalLabelG = group.spools.reduce((s, sp) => s + sp.label_weight, 0);
-      const totalUsedG = group.spools.reduce((s, sp) => s + sp.weight_used, 0);
+      // Consumed since baseline (post-reset); see InventoryPage stats calc (#1390).
+      const totalUsedG = group.spools.reduce((s, sp) => s + Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0)), 0);
 
       const groupHistory: SpoolUsageRecord[] = [];
       for (const s of group.spools) groupHistory.push(...(usageBySpoolId.get(s.id) ?? []));
@@ -1012,7 +1016,7 @@ function ForecastRow({
                                 </div>
                               </td>
                               <td className="px-4 py-2">
-                                <span className="text-sm text-bambu-gray">{Math.round(s.weight_used)}g</span>
+                                <span className="text-sm text-bambu-gray">{Math.round(Math.max(0, s.weight_used - (s.weight_used_baseline ?? 0)))}g</span>
                               </td>
                               <td className="px-4 py-2">
                                 <span className="text-sm text-bambu-gray">{s.label_weight}g</span>

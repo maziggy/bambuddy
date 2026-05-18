@@ -86,6 +86,15 @@ class SmartPlug(Base):
     off_delay_minutes: Mapped[int] = mapped_column(Integer, default=5)  # For time mode
     off_temp_threshold: Mapped[int] = mapped_column(Integer, default=70)  # For temp mode (°C)
 
+    # Auto-off after AMS drying completes (#1349). Independent of `auto_off`
+    # (which only fires after a print finishes). Uses its own delay because
+    # the AMS is hot after a drying cycle and users may want longer cooldown
+    # than the print-finish default. Fires whenever any AMS attached to the
+    # linked printer finishes a dry cycle — Bambuddy doesn't model per-AMS
+    # plug routing, the trigger is plug-vs-printer-level.
+    auto_off_after_drying: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    off_delay_after_drying_minutes: Mapped[int] = mapped_column(Integer, default=10, server_default="10")
+
     # Optional auth (some Tasmota configs require it)
     username: Mapped[str | None] = mapped_column(String(50), nullable=True)
     password: Mapped[str | None] = mapped_column(String(100), nullable=True)

@@ -198,6 +198,22 @@ describe('API Client Auth Header', () => {
   });
 });
 
+describe('Slicer download URLs', () => {
+  it('keeps library slicer URLs ending in .3mf when the display name has no extension', () => {
+    const path = api.getLibrarySlicerDownloadUrl(12, 'token-abc', 'Mecha Mewtwo No AMS Multi Color Parted Statue');
+
+    expect(path).toBe(
+      '/api/v1/library/files/12/dl/token-abc/Mecha%20Mewtwo%20No%20AMS%20Multi%20Color%20Parted%20Statue.3mf'
+    );
+  });
+
+  it('sanitizes library slicer URL filenames before encoding them', () => {
+    const path = api.getLibrarySlicerDownloadUrl(12, 'token-abc', 'folder/model?bad#name.3mf');
+
+    expect(path).toBe('/api/v1/library/files/12/dl/token-abc/folder_model_bad_name.3mf');
+  });
+});
+
 describe('FormData requests include auth header', () => {
   it('importProjectFile includes Authorization header', async () => {
     // Mock fetch directly for FormData requests (MSW can be flaky with multipart in some environments)

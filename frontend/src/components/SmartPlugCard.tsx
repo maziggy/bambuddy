@@ -209,6 +209,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
             </div>
           )}
 
+
           {/* Feature Badges */}
           {(plug.power_alert_enabled || plug.schedule_enabled || plug.plug_type === 'mqtt') && (
             <div className="flex flex-wrap gap-1.5 mb-3">
@@ -446,6 +447,42 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                       <p className="text-xs text-bambu-gray mt-1">{t('smartPlugs.tempThresholdDescription')}</p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Auto Off After Drying (#1349) — independent of the
+                  print-finish auto-off above. Uses its own delay because
+                  the AMS chamber is hot post-cycle and users often want
+                  more cooldown than the print-finish default. Fires when
+                  any AMS attached to the linked printer finishes a dry
+                  cycle. */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-white">{t('smartPlugs.autoOffAfterDrying')}</p>
+                  <p className="text-xs text-bambu-gray">{t('smartPlugs.autoOffAfterDryingDescription')}</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={plug.auto_off_after_drying}
+                    onChange={(e) => updateMutation.mutate({ auto_off_after_drying: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+
+              {plug.auto_off_after_drying && (
+                <div className="pl-4 border-l-2 border-bambu-dark-tertiary">
+                  <label className="block text-xs text-bambu-gray mb-1">{t('smartPlugs.delayAfterDryingMinutes')}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="120"
+                    value={plug.off_delay_after_drying_minutes}
+                    onChange={(e) => updateMutation.mutate({ off_delay_after_drying_minutes: parseInt(e.target.value) || 10 })}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
+                  />
                 </div>
               )}
                 </>

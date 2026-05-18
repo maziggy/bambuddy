@@ -80,6 +80,7 @@ class GitHubBackend(GitProviderBackend):
 
             data = response.json()
             permissions = data.get("permissions", {})
+            is_private = bool(data.get("private", False))
 
             if not permissions.get("push", False):
                 return {
@@ -87,6 +88,7 @@ class GitHubBackend(GitProviderBackend):
                     "message": "Token does not have push permission to this repository",
                     "repo_name": data.get("full_name"),
                     "permissions": permissions,
+                    "is_private": is_private,
                 }
 
             return {
@@ -94,6 +96,7 @@ class GitHubBackend(GitProviderBackend):
                 "message": "Connection successful",
                 "repo_name": data.get("full_name"),
                 "permissions": permissions,
+                "is_private": is_private,
             }
 
         except Exception as e:
@@ -109,6 +112,7 @@ class GitHubBackend(GitProviderBackend):
                 "message": message,
                 "repo_name": None,
                 "permissions": None,
+                "is_private": None,
             }
 
     async def push_files(

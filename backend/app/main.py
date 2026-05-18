@@ -4741,6 +4741,31 @@ async def lifespan(app: FastAPI):
 
     printer_manager.set_bed_temp_update_callback(on_bed_temp_update)
 
+    async def on_drying_complete(printer_id: int, ams_id: int):
+        """Smart-plug auto-off-after-drying trigger (#1349).
+
+        Fires once per AMS unit when ``dry_time`` falls from >0 to 0. The
+        manager walks all plugs linked to this printer and turns off only
+        the ones with ``auto_off_after_drying`` enabled, after their
+        per-plug delay. Multiple AMS units finishing close together (e.g. a
+        dual-AMS dry that ends within the same MQTT push) call this once
+        per unit — the manager's ``_cancel_pending_off`` collapses
+        repeated scheduling on the same plug to one timer, so duplicate
+        fires are safe.
+        """
+        try:
+            async with async_session() as db:
+                await smart_plug_manager.on_drying_complete(printer_id, db)
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                "Failed to schedule auto-off-after-drying for printer %d (AMS %d): %s",
+                printer_id,
+                ams_id,
+                e,
+            )
+
+    printer_manager.set_drying_complete_callback(on_drying_complete)
+
     # Initialize MQTT relay from settings
     async with async_session() as db:
         from backend.app.api.routes.settings import get_setting

@@ -1547,6 +1547,11 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN low_stock_threshold_pct INTEGER")
     # Migration: Add user-editable storage location to spool table
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN storage_location VARCHAR(255)")
+    # Migration: Add weight_used_baseline anchor for the resettable "Total
+    # Consumed" stat (#1390). Existing spools default to 0 (no baseline),
+    # so the counter starts unaffected; pressing "Reset usage to 0" now
+    # stamps baseline = weight_used without touching remaining.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN weight_used_baseline REAL DEFAULT 0")
     # Migration: Widen tag_uid column from VARCHAR(16) to VARCHAR(32) to accommodate 7-byte NFC
     # UIDs (14 hex chars) in addition to 8-byte Bambu Lab UIDs (16 hex chars).
     # ALTER COLUMN ... TYPE is PostgreSQL-only syntax; SQLite ignores VARCHAR sizes so no-op there.
@@ -2518,6 +2523,97 @@ async def run_migrations(conn):
     await _safe_execute(
         conn, "CREATE INDEX IF NOT EXISTS ix_print_log_entries_archive_id ON print_log_entries (archive_id)"
     )
+
+    # Backfill PrintLogEntry → PrintArchive linkage and per-event cost/energy
+    # for pre-#1378 rows the column-add migration left NULL (#1390).
+    #
+    # Without this backfill the user's Quick Stats show Filament Cost = 0 and
+    # Time Accuracy empty even though their archives carry both, because:
+    #
+    #   - the new stats queries SUM PrintLogEntry.cost (NULL for old rows)
+    #   - the time-accuracy query JOINs PrintArchive ON archive_id (NULL for
+    #     old rows, so old runs get excluded from the average)
+    #
+    # Pre-#1378, archive.cost / energy_kwh / energy_cost were overwritten by
+    # each rerun, so the current archive values represent the *latest* run.
+    # Backfilling them onto the latest matching PrintLogEntry per archive
+    # reconstructs the pre-fix total exactly (sum across archives stays
+    # unchanged), and leaves earlier reprints with NULL cost so they
+    # contribute zero — matching the "first/latest writes, rest stay NULL"
+    # convention #1378 introduced for new prints.
+    #
+    # DML, not DDL — use conn.execute() inside a savepoint per _safe_execute's
+    # own docstring. SQL is plain ANSI (correlated UPDATE, MAX/GROUP BY/HAVING,
+    # CASE in HAVING) and runs unchanged on SQLite + PostgreSQL; verified
+    # against postgres:16-alpine + asyncpg.
+    #
+    # Step 1: link old log entries to their archive via print_name + printer_id.
+    # Picks the highest-id matching archive when multiple share the same key
+    # (newest archive wins — closest to the log's overwrite-then-leave shape).
+    from sqlalchemy import text as _text
+
+    async with conn.begin_nested():
+        await conn.execute(
+            _text("""
+            UPDATE print_log_entries
+            SET archive_id = (
+                SELECT a.id
+                FROM print_archives a
+                WHERE a.print_name = print_log_entries.print_name
+                  AND (
+                      a.printer_id = print_log_entries.printer_id
+                      OR (a.printer_id IS NULL AND print_log_entries.printer_id IS NULL)
+                  )
+                ORDER BY a.id DESC
+                LIMIT 1
+            )
+            WHERE archive_id IS NULL AND print_name IS NOT NULL
+            """)
+        )
+
+    # Step 2: backfill cost / energy_kwh / energy_cost onto the latest linked
+    # log entry per archive — the row whose creation time best matches the
+    # value currently stored on the archive (overwrite-on-reprint semantics
+    # under the old design). Only fires for archives where NO log entry has
+    # cost set yet, which gives the migration a clean idempotency property:
+    # the second pass sees the archive already has a cost-bearing run and
+    # leaves the rest of its history NULL (instead of marching up the
+    # ID-ordered list of NULL runs on every pass).
+    async with conn.begin_nested():
+        await conn.execute(
+            _text("""
+            UPDATE print_log_entries
+            SET cost = (SELECT cost FROM print_archives WHERE id = print_log_entries.archive_id),
+                energy_kwh = (SELECT energy_kwh FROM print_archives WHERE id = print_log_entries.archive_id),
+                energy_cost = (SELECT energy_cost FROM print_archives WHERE id = print_log_entries.archive_id)
+            WHERE id IN (
+                SELECT MAX(id)
+                FROM print_log_entries
+                WHERE archive_id IS NOT NULL
+                GROUP BY archive_id
+                HAVING SUM(CASE WHEN cost IS NOT NULL THEN 1 ELSE 0 END) = 0
+            )
+            """)
+        )
+
+    # Migration: smart_plugs gets per-plug auto-off-after-drying toggle and
+    # delay (#1349). Fires whenever any AMS attached to the linked printer
+    # finishes a dry cycle. Plain ANSI ALTER TABLE works on both SQLite and
+    # Postgres for INTEGER/BOOLEAN with simple defaults.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN auto_off_after_drying BOOLEAN DEFAULT 0")
+        await _safe_execute(
+            conn, "ALTER TABLE smart_plugs ADD COLUMN off_delay_after_drying_minutes INTEGER DEFAULT 10"
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS auto_off_after_drying BOOLEAN DEFAULT false",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS off_delay_after_drying_minutes INTEGER DEFAULT 10",
+        )
 
 
 async def seed_notification_templates():

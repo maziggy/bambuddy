@@ -34,6 +34,7 @@ class MappedSpoolFields(TypedDict):
     core_weight: int | None
     core_weight_catalog_id: None
     weight_used: float | None
+    weight_used_baseline: float | None
     weight_locked: bool
     last_scale_weight: None
     last_weighed_at: None
@@ -247,7 +248,24 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     rgba: str = color_hex + "FF"
 
     label_weight: int = _safe_int(filament.get("weight"), 1000)
-    used_weight: float = _safe_float(spool.get("used_weight"), 0.0)
+    real_used_weight: float = _safe_float(spool.get("used_weight"), 0.0)
+    # Parity with internal mode (#1390): the InventorySpool shape lets the
+    # frontend compute `remaining = label_weight - weight_used` and
+    # `consumed = weight_used - weight_used_baseline`. Map Spoolman's two
+    # independent fields (used_weight, remaining_weight) onto that shape:
+    #   weight_used = label_weight - remaining_weight  (so remaining matches)
+    #   baseline    = weight_used - used_weight        (so consumed matches)
+    # When remaining_weight is unset (legacy spools, or filament linked but
+    # never primed), fall back to the old behaviour: weight_used =
+    # used_weight, baseline = 0.
+    remaining_raw = spool.get("remaining_weight")
+    if remaining_raw is not None:
+        remaining_weight: float = _safe_float(remaining_raw, 0.0)
+        used_weight: float = max(0.0, float(label_weight) - remaining_weight)
+        weight_used_baseline: float = max(0.0, used_weight - real_used_weight)
+    else:
+        used_weight = real_used_weight
+        weight_used_baseline = 0.0
 
     # Archived state – Spoolman uses a boolean ``archived`` field
     archived: bool = spool.get("archived", False)
@@ -257,18 +275,28 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
 
     created_at: str | None = spool.get("registered") or None
 
-    # Spoolman doesn't standardise a `color_name` field — most installs only
-    # populate `color_hex` (the swatch) and the filament's `name` (which often
-    # carries the colour, e.g. "PLA Basic Red"). Without a fallback the
-    # frontend lists a sea of "Unknown color" entries that all look identical
-    # except for the swatch. Fall back to the filament name minus material
-    # prefix (the same string the `subtype` field already carries — typically
-    # "Basic Red" / "PLA+ Black" / etc.) so the user can tell spools apart at
-    # a glance even on Spoolman installs that don't fill color_name.
-    # color_name_is_synthesized: surfaced so the edit form can avoid prefilling
-    # the synth value back into the input, which would otherwise round-trip the
-    # subtype string as if it were a user-set color_name (#1319).
-    stored_color_name = filament.get("color_name") or None
+    # Spoolman has no `color_name` field on Filament — confirmed against the
+    # FilamentUpdateParameters schema in 0.23.1: name/vendor_id/material/price/
+    # density/diameter/weight/spool_weight/article_number/comment/extruder_temp/
+    # bed_temp/color_hex/multi_color_hexes/multi_color_direction/external_id/
+    # extra, no color_name (#1357). The previous attempt (b8e350c3) was
+    # PATCHing a key Spoolman silently discards, which is why color_name
+    # never actually persisted from the user's edits.
+    #
+    # We persist it ourselves under spool.extra.bambu_color_name (JSON-encoded
+    # string, same pattern as bambu_slicer_filament). Read order:
+    #   1. spool.extra.bambu_color_name (the canonical store)
+    #   2. filament.color_name (forward-compat — picks up the value if a
+    #      future Spoolman release adds the field, or if an admin populated
+    #      it via a custom extra-field they registered themselves)
+    #   3. subtype (synth fallback so the inventory list isn't a sea of
+    #      "Unknown color" entries on installs with neither field set)
+    #
+    # color_name_is_synthesized = True only when we fell back to subtype.
+    # The edit form uses it to leave the input blank, so the user doesn't
+    # round-trip the synth value back as if they had set it.
+    extra_color_name = _extract_extra_str(extra, "bambu_color_name") or None
+    stored_color_name = extra_color_name or (filament.get("color_name") or None)
     color_name: str | None = stored_color_name or subtype or None
     color_name_is_synthesized: bool = stored_color_name is None and color_name is not None
 
@@ -289,6 +317,7 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         ),
         "core_weight_catalog_id": None,
         "weight_used": used_weight,
+        "weight_used_baseline": weight_used_baseline,
         "weight_locked": False,
         "last_scale_weight": None,
         "last_weighed_at": None,

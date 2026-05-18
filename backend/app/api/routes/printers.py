@@ -67,11 +67,38 @@ async def create_printer(
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE),
     db: AsyncSession = Depends(get_db),
 ):
-    """Add a new printer."""
+    """Add a new printer.
+
+    Verifies the MQTT connection succeeds before persisting. A wrong access
+    code or unreachable IP would otherwise create a printer row that shows
+    as an empty / never-connecting card on the dashboard — those reports
+    were turning into support tickets that all traced back to a mistyped
+    access code.
+    """
     # Check if serial number already exists
     result = await db.execute(select(Printer).where(Printer.serial_number == printer_data.serial_number))
     if result.scalar_one_or_none():
         raise HTTPException(400, "Printer with this serial number already exists")
+
+    test_result = await printer_manager.test_connection(
+        ip_address=printer_data.ip_address,
+        serial_number=printer_data.serial_number,
+        access_code=printer_data.access_code,
+    )
+    if not test_result.get("success"):
+        # The frontend renders the user-facing message via i18n on `code`;
+        # `message` is an English fallback for non-UI clients (curl / scripts).
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "printer_connection_failed",
+                "message": (
+                    "Could not connect to the printer. Verify IP address, serial number, "
+                    "and access code, and confirm LAN-only mode is enabled. "
+                    "The printer was not added."
+                ),
+            },
+        )
 
     printer = Printer(**printer_data.model_dump())
     db.add(printer)

@@ -100,6 +100,11 @@ class SpoolBase(BaseModel):
     core_weight: int = 250
     core_weight_catalog_id: int | None = None
     weight_used: float = 0
+    # Anchor for the resettable "Total Consumed" display. The Inventory
+    # page shows `weight_used - weight_used_baseline`; the per-spool /
+    # bulk "Reset usage to 0" action sets baseline = weight_used so the
+    # counter zeroes without touching remaining (#1390).
+    weight_used_baseline: float = 0
     slicer_filament: str | None = None
     slicer_filament_name: str | None = None
     nozzle_temp_min: int | None = None

@@ -63,7 +63,7 @@ import {
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
-import { api, discoveryApi, firmwareApi, withStreamToken } from '../api/client';
+import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -6607,7 +6607,15 @@ export function PrintersPage() {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       setShowAddModal(false);
     },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToAdd'), 'error'),
+    onError: (error: Error) => {
+      // Localized message when the backend returns a stable error code;
+      // the raw message is an English fallback for non-UI clients.
+      if (error instanceof ApiError && error.code === 'printer_connection_failed') {
+        showToast(t('printers.toast.connectionFailedNotAdded'), 'error');
+        return;
+      }
+      showToast(error.message || t('printers.toast.failedToAdd'), 'error');
+    },
   });
 
   const powerOnMutation = useMutation({

@@ -1117,3 +1117,67 @@ describe('SpoolFormModal copy mode', () => {
     expect((payload as Record<string, unknown>).weight_used).toBe(0);
   });
 });
+
+// The "#<id>" affordance in the modal header (#1385) is only meaningful when
+// editing an existing spool — there's no ID yet on create, and the copy path
+// is producing a new spool too. Guard all three cases so a future refactor
+// can't quietly start leaking the source spool's ID into the Copy modal.
+describe('SpoolFormModal header spool ID (#1385)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows #<id> next to the title when editing an existing spool', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={existingSpool}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+    // existingSpool.id is 1; render as "#1" in the modal header.
+    expect(screen.getByText('#1')).toBeInTheDocument();
+  });
+
+  it('does not show an ID when creating a new spool', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+    // No spool exists yet → header carries no "#..." token.
+    expect(screen.queryByText(/^#\d+$/)).not.toBeInTheDocument();
+  });
+
+  it('does not leak the source spool ID when copying', async () => {
+    // Copying produces a fresh spool — surfacing the source ID in the
+    // "Copy Spool" header would mislead the user into thinking the new
+    // spool inherits it.
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={existingSpool}
+        mode="copy"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Copy Spool' })).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^#\d+$/)).not.toBeInTheDocument();
+  });
+});

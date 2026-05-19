@@ -22,8 +22,11 @@
 
 > **NSS:** We use GPIO23 for manual chip-select instead of the default SPI CE0
 > (GPIO8) because the kernel SPI driver's automatic CS timing does not meet the
-> PN5180's requirements (5µs setup, 100µs hold). Manual CS via GPIO23 with
-> `spidev.no_cs = True` resolves this.
+> PN5180's requirements (5µs setup, 100µs hold). The reader's NSS line is wired
+> to GPIO23 only, so whether the kernel auto-toggles CE0 is electrically
+> invisible to the PN5180. Pi 4 and Pi 5 are both supported — the code asks
+> the driver to disable CE0 toggling but tolerates Pi 5's RP1 driver rejecting
+> that request (#1424).
 
 ### Setup Steps
 

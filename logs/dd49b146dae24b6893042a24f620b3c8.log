@@ -1,0 +1,200 @@
+2026-05-19 20:04:29,801 INFO [backend.app.services.bambu_mqtt] [217ff46b] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:04:29,803 INFO [uvicorn.access] [-] [IP]:9426 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:04:29,976 INFO [backend.app.services.bambu_mqtt] [1f326c87] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:04:29,977 INFO [uvicorn.access] [-] [IP]:9426 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:04:30,150 INFO [backend.app.services.bambu_mqtt] [e4401f95] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:04:30,152 INFO [uvicorn.access] [-] [IP]:9426 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:04:30,533 INFO [backend.app.services.bambu_mqtt] [85939217] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:04:30,534 INFO [uvicorn.access] [-] [IP]:9426 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:04:30,693 INFO [backend.app.services.bambu_mqtt] [38292173] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:04:30,695 INFO [uvicorn.access] [-] [IP]:9426 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:04:31,297 INFO [backend.app.services.bambu_mqtt] [d0e3c18f] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:04:31,300 INFO [uvicorn.access] [-] [IP]:9426 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:04:31,482 INFO [backend.app.services.bambu_mqtt] [5162ec35] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:04:31,485 INFO [uvicorn.access] [-] [IP]:9426 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:04:31,673 INFO [backend.app.services.bambu_mqtt] [7af28646] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:04:31,676 INFO [uvicorn.access] [-] [IP]:9426 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:08:10,408 INFO [backend.app.main] [-] Evicted 1 stale expected-print entries (TTL=7200s)
+2026-05-19 20:08:24,895 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-19 20:13:20,453 INFO [backend.app.api.routes.cloud] [5a9ea278] get_filament_info called with 5 IDs: ['GFSNL03', 'GFA01', 'GFS05', 'GFB00', 'GFSNL08']
+2026-05-19 20:13:20,469 INFO [uvicorn.access] [-] [IP]:10258 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-19 20:13:24,180 INFO [backend.app.services.bambu_mqtt] [7ddfb1ef] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:24,182 INFO [uvicorn.access] [-] [IP]:10258 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:24,868 INFO [backend.app.services.bambu_mqtt] [98156c58] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:24,870 INFO [uvicorn.access] [-] [IP]:10258 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:24,920 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-19 20:13:25,074 INFO [backend.app.services.bambu_mqtt] [5a270691] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:25,075 INFO [uvicorn.access] [-] [IP]:10258 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:25,282 INFO [backend.app.services.bambu_mqtt] [98251472] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:25,284 INFO [uvicorn.access] [-] [IP]:10258 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:25,546 INFO [backend.app.services.bambu_mqtt] [a5a4bd70] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:25,549 INFO [uvicorn.access] [-] [IP]:10258 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:25,691 INFO [backend.app.services.bambu_mqtt] [0de14b15] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:25,693 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:26,759 INFO [backend.app.services.bambu_mqtt] [9c8483be] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:26,761 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:27,194 INFO [backend.app.services.bambu_mqtt] [1bcb20bd] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:27,195 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:27,413 INFO [backend.app.services.bambu_mqtt] [4ca40ec3] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:27,415 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:27,587 INFO [backend.app.services.bambu_mqtt] [1021696a] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:27,588 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:27,772 INFO [backend.app.services.bambu_mqtt] [17ed805a] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:27,773 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:27,913 INFO [backend.app.services.bambu_mqtt] [a61a00bb] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:27,915 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:28,082 INFO [backend.app.services.bambu_mqtt] [cd42b6da] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:28,083 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:28,264 INFO [backend.app.services.bambu_mqtt] [8e956dc1] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:28,266 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:28,525 INFO [backend.app.services.bambu_mqtt] [412c9d98] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:28,526 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:35,516 INFO [backend.app.services.bambu_mqtt] [e8a11c93] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:35,518 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:36,940 INFO [backend.app.services.bambu_mqtt] [3f757d0f] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:36,944 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:37,159 INFO [backend.app.services.bambu_mqtt] [1cf3c355] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:37,162 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:37,517 INFO [backend.app.services.bambu_mqtt] [94055d19] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:37,520 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:37,768 INFO [backend.app.services.bambu_mqtt] [2820f9f7] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:37,771 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:38,066 INFO [backend.app.services.bambu_mqtt] [957d3130] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:38,070 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:38,670 INFO [backend.app.services.bambu_mqtt] [0719ddb0] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:38,672 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:38,843 INFO [backend.app.services.bambu_mqtt] [154251b4] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:38,844 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:39,071 INFO [backend.app.services.bambu_mqtt] [ca571c86] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:39,073 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:39,260 INFO [backend.app.services.bambu_mqtt] [2c56762d] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:39,262 INFO [uvicorn.access] [-] [IP]:10261 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:52,827 INFO [backend.app.services.bambu_mqtt] [b110d739] [[SERIAL]] Publishing ams_filament_setting: AMS 128, tray 0, tray_info_idx=GFNLS08, setting_id=GFSNLS08
+2026-05-19 20:13:52,828 INFO [backend.app.services.bambu_mqtt] [b110d739] [[SERIAL]] Publishing extrusion_cali_sel: AMS 128, tray 0, cali_idx=-1
+2026-05-19 20:13:52,829 INFO [backend.app.api.routes.inventory] [b110d739] No stored K-profile for spool 4 — reset slot to Default K (cali_idx=-1)
+2026-05-19 20:13:52,838 INFO [backend.app.api.routes.inventory] [b110d739] Auto-configured AMS slot ams=128 tray=0 for spool 4 on printer 1
+2026-05-19 20:13:52,856 INFO [uvicorn.access] [-] [IP]:10314 - "POST /api/v1/inventory/assignments HTTP/1.1" 200
+2026-05-19 20:13:52,930 INFO [uvicorn.access] [-] [IP]:10288 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-05-19 20:13:58,966 INFO [backend.app.services.bambu_mqtt] [95006a05] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:58,970 INFO [uvicorn.access] [-] [IP]:10315 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:13:59,952 INFO [backend.app.services.bambu_mqtt] [c6dc715f] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:13:59,956 INFO [uvicorn.access] [-] [IP]:10315 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:00,594 INFO [backend.app.services.bambu_mqtt] [fba51ae7] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:00,595 INFO [uvicorn.access] [-] [IP]:10315 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:00,887 INFO [backend.app.services.bambu_mqtt] [9257998a] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:00,889 INFO [uvicorn.access] [-] [IP]:10315 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:01,099 INFO [backend.app.services.bambu_mqtt] [e7aaa774] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:01,101 INFO [uvicorn.access] [-] [IP]:10316 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:01,240 INFO [backend.app.services.bambu_mqtt] [46042f84] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:01,242 INFO [uvicorn.access] [-] [IP]:10316 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:01,411 INFO [backend.app.services.bambu_mqtt] [71fc0fd8] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:01,413 INFO [uvicorn.access] [-] [IP]:10316 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:11,278 INFO [backend.app.services.bambu_mqtt] [234ed282] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:11,280 INFO [uvicorn.access] [-] [IP]:10327 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:11,542 INFO [backend.app.services.bambu_mqtt] [80714a9c] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:11,544 INFO [uvicorn.access] [-] [IP]:10327 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:11,704 INFO [backend.app.services.bambu_mqtt] [7c14764f] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:11,706 INFO [uvicorn.access] [-] [IP]:10327 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:11,877 INFO [backend.app.services.bambu_mqtt] [05314a6d] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:11,879 INFO [uvicorn.access] [-] [IP]:10327 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:14:12,053 INFO [backend.app.services.bambu_mqtt] [5026449d] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:14:12,055 INFO [uvicorn.access] [-] [IP]:10327 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:02,065 INFO [backend.app.api.routes.support] [65101cf9] Log level changed to DEBUG
+2026-05-19 20:15:02,065 INFO [backend.app.api.routes.bug_report] [65101cf9] Bug report: enabled debug logging
+2026-05-19 20:15:02,065 DEBUG [backend.app.services.bambu_mqtt] [65101cf9] [[SERIAL]] Requesting status update (pushall)
+2026-05-19 20:15:02,067 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-19 20:15:02,594 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: anello_aspirazione_sacchetto_filamento_sottovuoto.3mf, subtask_name: iuglòkgui
+2026-05-19 20:15:02,595 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '11', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 2, 'insert_flag': True, 'power_on_flag': False}
+2026-05-19 20:15:02,595 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-05-19 20:15:02,596 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-05-19 20:15:02,597 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-05-19 20:15:02,597 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x142024 -> extruder 0
+2026-05-19 20:15:02,598 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:02,598 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-05-19 20:15:02,599 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-19 20:15:02,600 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-05-19 20:15:02,600 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-05-19 20:15:02,601 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-05-19 20:15:02,602 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-05-19 20:15:02,602 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-05-19 20:15:02,603 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-05-19 20:15:02,604 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-05-19 20:15:02,604 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-05-19 20:15:02,605 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: anello_aspirazione_sacchetto_filamento_sottovuoto.3mf, subtask: iuglòkgui
+2026-05-19 20:15:04,204 INFO [backend.app.services.bambu_mqtt] [92b3ebff] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:04,208 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:04,244 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:04,252 DEBUG [backend.app.api.routes.printers] [38d372ce] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:04,253 DEBUG [backend.app.api.routes.printers] [38d372ce] Using tray_now directly as global ID: 255
+2026-05-19 20:15:04,610 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-05-19 20:15:04,610 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-05-19 20:15:04,610 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x142024 -> extruder 0
+2026-05-19 20:15:04,610 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:04,611 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-19 20:15:04,988 INFO [backend.app.services.bambu_mqtt] [542cb266] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:04,990 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:05,021 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:05,025 DEBUG [backend.app.api.routes.printers] [9c1ca9e8] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:05,025 DEBUG [backend.app.api.routes.printers] [9c1ca9e8] Using tray_now directly as global ID: 255
+2026-05-19 20:15:05,139 DEBUG [backend.app.services.virtual_printer.ssdp_server] [1b89d096] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-05-19 20:15:05,170 INFO [backend.app.services.bambu_mqtt] [8ed13ec3] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:05,172 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:05,199 DEBUG [backend.app.api.routes.printers] [2fc62632] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:05,200 DEBUG [backend.app.api.routes.printers] [2fc62632] Using tray_now directly as global ID: 255
+2026-05-19 20:15:05,207 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:05,340 INFO [backend.app.services.bambu_mqtt] [9160e286] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:05,342 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:05,453 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:05,456 DEBUG [backend.app.api.routes.printers] [b0f0205f] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:05,456 DEBUG [backend.app.api.routes.printers] [b0f0205f] Using tray_now directly as global ID: 255
+2026-05-19 20:15:05,528 INFO [backend.app.services.bambu_mqtt] [5e0ef888] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:05,530 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:05,569 DEBUG [backend.app.api.routes.printers] [dbba46cb] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:05,569 DEBUG [backend.app.api.routes.printers] [dbba46cb] Using tray_now directly as global ID: 255
+2026-05-19 20:15:05,577 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:05,652 INFO [backend.app.services.bambu_mqtt] [e470e1aa] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:05,654 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:05,697 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:05,707 DEBUG [backend.app.api.routes.printers] [cfb9b8de] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:05,708 DEBUG [backend.app.api.routes.printers] [cfb9b8de] Using tray_now directly as global ID: 255
+2026-05-19 20:15:05,838 INFO [backend.app.services.bambu_mqtt] [6d468217] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:05,839 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:05,874 DEBUG [backend.app.api.routes.printers] [65a9fe0b] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:05,874 DEBUG [backend.app.api.routes.printers] [65a9fe0b] Using tray_now directly as global ID: 255
+2026-05-19 20:15:05,882 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:06,683 INFO [backend.app.services.bambu_mqtt] [ddc37ccc] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:06,685 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:06,715 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-05-19 20:15:06,716 DEBUG [backend.app.api.routes.printers] [753b5e7a] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:06,717 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-05-19 20:15:06,717 DEBUG [backend.app.api.routes.printers] [753b5e7a] Using tray_now directly as global ID: 255
+2026-05-19 20:15:06,717 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x142024 -> extruder 0
+2026-05-19 20:15:06,720 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:06,721 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-19 20:15:06,723 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:06,846 INFO [backend.app.services.bambu_mqtt] [a907fdac] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:06,847 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:06,878 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:06,889 DEBUG [backend.app.api.routes.printers] [6591810e] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:06,889 DEBUG [backend.app.api.routes.printers] [6591810e] Using tray_now directly as global ID: 255
+2026-05-19 20:15:07,014 INFO [backend.app.services.bambu_mqtt] [06f48aff] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:07,016 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:07,042 DEBUG [backend.app.api.routes.printers] [e0b2ec7c] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:07,042 DEBUG [backend.app.api.routes.printers] [e0b2ec7c] Using tray_now directly as global ID: 255
+2026-05-19 20:15:07,057 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:07,179 INFO [backend.app.services.bambu_mqtt] [5661a2e0] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:07,181 INFO [uvicorn.access] [-] [IP]:10401 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:07,227 DEBUG [backend.app.api.routes.printers] [efdc9a13] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:07,227 DEBUG [backend.app.api.routes.printers] [efdc9a13] Using tray_now directly as global ID: 255
+2026-05-19 20:15:07,244 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:07,323 INFO [backend.app.services.bambu_mqtt] [abe0ce58] [[SERIAL]] Sent drying command: ams_id=128, temp=0, duration=0, mode=0
+2026-05-19 20:15:07,326 INFO [uvicorn.access] [-] [IP]:10408 - "POST /api/v1/printers/1/drying/stop?ams_id=128 HTTP/1.1" 200
+2026-05-19 20:15:07,354 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_drying
+2026-05-19 20:15:07,363 DEBUG [backend.app.api.routes.printers] [78225d51] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:07,363 DEBUG [backend.app.api.routes.printers] [78225d51] Using tray_now directly as global ID: 255
+2026-05-19 20:15:08,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-05-19 20:15:08,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-05-19 20:15:08,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x142024 -> extruder 0
+2026-05-19 20:15:08,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 0}
+2026-05-19 20:15:08,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-19 20:15:08,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm

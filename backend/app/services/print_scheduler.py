@@ -792,6 +792,22 @@ class PrintScheduler:
         # Get filament requirements from source file
         filament_reqs = await self._get_filament_requirements(db, item)
         if not filament_reqs:
+            # When the 3MF can't be read but force-color overrides are present, build a
+            # direct mapping from the overrides so the printer uses the correct AMS slot.
+            if item.filament_overrides:
+                try:
+                    overrides = json.loads(item.filament_overrides)
+                    force_overrides = [o for o in overrides if o.get("force_color_match")]
+                    if force_overrides:
+                        logger.info(
+                            "Queue item %s: No filament reqs from 3MF; building AMS mapping from %d "
+                            "force-color override(s)",
+                            item.id,
+                            len(force_overrides),
+                        )
+                        return self._build_override_direct_mapping(force_overrides, status)
+                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                    logger.warning("Queue item %s: Force-color fallback mapping failed: %s", item.id, e)
             logger.debug("No filament requirements found for queue item %s", item.id)
             return None
 
@@ -829,6 +845,33 @@ class PrintScheduler:
 
         # Compute mapping: match required filaments to available slots
         return self._match_filaments_to_slots(filament_reqs, loaded_filaments, prefer_lowest)
+
+    def _build_override_direct_mapping(self, force_overrides: list[dict], status) -> list[int] | None:
+        """Build an AMS mapping directly from force-color overrides without a 3MF.
+
+        Used when ``_get_filament_requirements`` returns nothing (e.g. the 3MF's
+        slice_info is missing or unreadable) but ``force_color_match`` overrides
+        are present. Each override's ``slot_id``, ``type``, and ``color`` are
+        treated as the filament requirement for that slot and matched against the
+        current AMS state of the printer.
+
+        Returns the same format as ``_match_filaments_to_slots``, or None when
+        the AMS has no loaded filaments.
+        """
+        loaded = self._build_loaded_filaments(status)
+        if not loaded:
+            return None
+
+        reqs = [
+            {
+                "slot_id": o["slot_id"],
+                "type": o.get("type", ""),
+                "color": o.get("color", ""),
+                "tray_info_idx": "",
+            }
+            for o in force_overrides
+        ]
+        return self._match_filaments_to_slots(reqs, loaded)
 
     async def _get_filament_requirements(self, db: AsyncSession, item: PrintQueueItem) -> list[dict] | None:
         """Resolve the queue item's source 3MF and parse the per-slot

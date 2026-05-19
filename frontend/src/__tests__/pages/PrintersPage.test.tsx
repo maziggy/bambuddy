@@ -1041,6 +1041,42 @@ describe('PrintersPage Phase 13 — EmptySlotHoverCard onAssignSpool wiring', ()
     }, { timeout: 3000 });
   });
 
+  it('#1322: empty slot kind is "physical" when state=9 and "reset" otherwise', async () => {
+    // Bambuddy now distinguishes a firmware-confirmed empty slot (state=9
+    // via tray_exist_bits) from a slot the user reset but where the
+    // firmware still has a spool registered. The kind prop drives both
+    // the inline label ("Empty" vs "Reset") and the hover card label.
+    server.use(
+      http.get('/api/v1/spoolman/settings', () => HttpResponse.json({
+        spoolman_enabled: 'false', spoolman_url: '',
+      })),
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 0,
+          tray: [
+            { id: 0, tray_type: '', state: 9 },   // physically empty
+            { id: 1, tray_type: '', state: 3 },   // reset / unloading
+            { id: 2, tray_type: '', state: null }, // unknown empty
+            { id: 3, tray_type: 'PLA', state: 11 }, // loaded — no card here
+          ],
+        }],
+      })),
+    );
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(phase13EmptySlotProps.filter(p => p.kind === 'physical').length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
+
+    const physical = phase13EmptySlotProps.filter(p => p.kind === 'physical');
+    const reset = phase13EmptySlotProps.filter(p => p.kind === 'reset');
+    expect(physical.length).toBeGreaterThan(0);
+    expect(reset.length).toBeGreaterThan(0);
+    // state=null falls back to 'reset' too — the helper only returns
+    // 'physical' for the canonical 9/10 firmware codes.
+  });
+
   it('P13-1 (spoolman mode): EmptySlotHoverCard still receives onAssignSpool callback', async () => {
     server.use(
       http.get('/api/v1/spoolman/settings', () => HttpResponse.json({

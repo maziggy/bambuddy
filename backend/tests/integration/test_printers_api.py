@@ -495,6 +495,51 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_cover_negative_cache_skips_repeat_ftp_fanout(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """#1420: when every FTP path returns 550 for the current subtask, the
+        next request for the same subtask must short-circuit to 404 instead of
+        replaying the 8-path FTP fan-out (which starves the printer's single
+        FTP socket and flooded the user's logs)."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from backend.app.api.routes.printers import _cover_404_cache, _cover_cache
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        _cover_cache.pop(printer.id, None)
+        _cover_404_cache.pop(printer.id, None)
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.subtask_name = "OrphanPrint"
+        state.gcode_file = "OrphanPrint.3mf"
+
+        ftp_mock = AsyncMock(return_value=False)
+
+        with (
+            patch("backend.app.api.routes.printers.printer_manager") as mock_pm,
+            patch("backend.app.api.routes.printers.download_file_try_paths_async", ftp_mock),
+        ):
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            r1 = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+            r2 = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert r1.status_code == 404
+        assert r2.status_code == 404
+        # First call retries internally; second call must short-circuit before FTP.
+        first_call_count = ftp_mock.await_count
+        assert first_call_count >= 1
+        # Second request didn't add to the count: the negative cache held.
+        assert ftp_mock.await_count == first_call_count
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_printer_status_omits_fila_switch_when_not_installed(
         self, async_client: AsyncClient, printer_factory, db_session
     ):

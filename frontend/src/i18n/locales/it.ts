@@ -3530,9 +3530,13 @@ export default {
         color: 'Per colore',
       },
       templates: {
-        ams: {
-          label: 'AMS holder (30 × 15 mm)',
-          hint: 'Una etichetta per pagina; adatta al popolare portaetichette AMS.',
+        amsHolderSmall: {
+          label: 'Supporto AMS — piccolo (74 × 33 mm)',
+          hint: 'Un\'etichetta per pagina; corrisponde all\'etichetta stampabile del modello MakerWorld 752566 (Porta-etichette filamento AMS).',
+        },
+        amsHolderLarge: {
+          label: 'Supporto AMS — grande (75 × 55 mm)',
+          hint: 'Un\'etichetta per pagina; si adatta alla variante cartoncino del porta-etichette filamento AMS. Spazio sufficiente per campione colore, marca, materiale, ID e codice QR.',
         },
         box40x30: {
           label: 'Etichetta scatola (40 × 30 mm)',
@@ -3810,6 +3814,8 @@ export default {
     slot: 'Slot',
     empty: 'Vuoto',
     emptySlot: 'Slot vuoto',
+    slotEmpty: 'Vuoto',
+    emptySlotReset: 'Nessuna bobina assegnata',
     unknown: 'Sconosciuto',
     humidity: 'Umidità',
     temperature: 'Temperatura',

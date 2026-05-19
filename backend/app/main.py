@@ -593,21 +593,23 @@ def _compute_run_filament_grams(
     progress: float | int | None,
     usage_results: list[dict] | None,
 ) -> float | None:
-    """Per-run filament for PrintLogEntry, partial-aware (#1378).
+    """Per-run filament for PrintLogEntry, partial- and tracker-aware (#1378, #1390).
 
-    For ``completed``: returns the archive's slicer estimate (which approximates
-    actual since the print finished). For failed / cancelled / stopped:
-        1. Sum of tracked spool deltas in ``usage_results`` (most accurate
-           when inventory is configured for the print).
-        2. ``estimate * progress%`` (when no inventory delta available).
-        3. ``None`` (no signal at all — e.g. progress=0 and no spool data).
+    Priority for every status:
+        1. Sum of tracked spool deltas in ``usage_results`` (AMS-measured
+           weight delta — same source that drives "Total Consumed" on the
+           Inventory page, so Stats and Inventory totals stay aligned).
+        2. For ``completed``: the slicer estimate (no tracker available, fall
+           back to the canonical "this print used X" value).
+        3. For partial statuses: ``estimate * progress%``.
+        4. ``None`` if nothing is known.
     """
-    if status == "completed":
-        return archive_filament_used_grams
-
     tracked_grams = sum(r.get("weight_used") or 0 for r in (usage_results or []))
     if tracked_grams > 0:
         return round(tracked_grams, 1)
+
+    if status == "completed":
+        return archive_filament_used_grams
 
     if archive_filament_used_grams:
         scale = max(0.0, min(((progress or 0) / 100.0), 1.0))
@@ -2014,6 +2016,15 @@ async def on_print_start(printer_id: int, data: dict):
                 archive.started_at = datetime.now(timezone.utc)
                 if subtask_id and not archive.subtask_id:
                     archive.subtask_id = subtask_id
+                # #1403 follow-up: VP-queue archives are created with
+                # printer_id=None at queue-add time (we don't know which
+                # printer will run the job yet). When the print actually
+                # starts on a specific printer the expected-archive lookup
+                # used to skip this assignment, leaving printer_id=None
+                # forever — which then disables the "Scan for timelapse"
+                # button in ArchivesPage (gated on !archive.printer_id).
+                if archive.printer_id != printer_id:
+                    archive.printer_id = printer_id
                 await db.commit()
 
                 # Track as active print

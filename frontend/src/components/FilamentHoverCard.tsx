@@ -499,9 +499,14 @@ interface EmptySlotHoverCardProps {
   className?: string;
   configureSlot?: ConfigureSlotConfig;
   onAssignSpool?: () => void;
+  // #1322 follow-up: distinguish firmware-confirmed empty (state 9/10) from
+  // a user reset where the firmware still has a spool registered. "reset"
+  // surfaces the user-cleared label; undefined / "physical" keeps the
+  // historical "Empty slot" wording.
+  kind?: 'physical' | 'reset';
 }
 
-export function EmptySlotHoverCard({ children, className = '', configureSlot, onAssignSpool }: EmptySlotHoverCardProps) {
+export function EmptySlotHoverCard({ children, className = '', configureSlot, onAssignSpool, kind }: EmptySlotHoverCardProps) {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   // Screen-space coords for the portaled card — same pattern as
@@ -579,7 +584,7 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
             rounded-md shadow-lg overflow-hidden
           ">
             <div className="px-3 py-1.5 text-xs text-bambu-gray whitespace-nowrap">
-              {t('ams.emptySlot')}
+              {kind === 'reset' ? t('ams.emptySlotReset') : t('ams.emptySlot')}
             </div>
             {/* Configure slot button */}
             {(configureSlot?.enabled || onAssignSpool) && (

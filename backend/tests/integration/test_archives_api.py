@@ -529,10 +529,13 @@ class TestArchivesSlimAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_slim_actual_time_null_for_failed(
+    async def test_slim_actual_time_for_failed_includes_elapsed(
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):
-        """Verify actual_time_seconds is null for non-completed prints."""
+        """Failed prints report measured elapsed time so Printer Stats By Time
+        matches Quick Stats Print Time (#1390). Previously this returned null
+        and the frontend fell back to the slicer estimate, double-counting the
+        unfinished portion of the print."""
         from datetime import datetime, timezone
 
         printer = await printer_factory()
@@ -547,7 +550,7 @@ class TestArchivesSlimAPI:
 
         assert response.status_code == 200
         item = response.json()[0]
-        assert item["actual_time_seconds"] is None
+        assert item["actual_time_seconds"] == 3600
 
     @pytest.mark.asyncio
     @pytest.mark.integration

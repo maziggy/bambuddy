@@ -386,16 +386,71 @@ class TestUpload:
         assert result is False
         client.disconnect()
 
-    def test_upload_426_data_stream_failure_returns_false(self, ftp_client_factory, ftp_server, tmp_path):
-        """426 'Failure reading network stream' from voidresp() must fail.
+    def test_upload_426_with_intact_file_proceeds(self, ftp_client_factory, ftp_server, tmp_path):
+        """Some P2S firmware revisions return 426 on voidresp() even when the
+        file landed fully (TLS data-channel close races the 226). #1417
+        follow-up — verify via SIZE: when server size matches, proceed with
+        a warning instead of failing the dispatch.
 
-        Regression for #1401: P2S firmware 01.02.00.00 (and possibly other
-        Bambu firmware revisions) returns 426 after the data channel closes,
-        indicating the printer received only a partial file. Previously the
-        client logged a warning and returned True, so the dispatcher sent a
-        print command for a truncated 3MF and the printer surfaced a
-        confusing 'unable to parse 3mf file' error. The 426 must instead
-        cause the upload to return False.
+        Pre-#1417 the catch raised unconditionally and the reporter saw 11
+        retries fail in a row even though every upload was actually
+        succeeding on the printer side (v0.2.4.1 worked because the prior
+        proceed-with-warning branch tolerated the noise).
+        """
+        import ftplib
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)  # 1024 bytes
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def fake_size(_path):
+            # Real P2S firmware: voidresp returns 426 but the file IS on
+            # the SD card at its full size. Mock can't reproduce both
+            # halves naturally because pyftpdlib only flushes on a clean
+            # voidresp, so we inject SIZE explicitly to model the
+            # printer-side state the user observes.
+            return 1024
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_file(local, "/cache/test.bin")
+        assert result is True, "intact file (SIZE match) tolerates 426 noise"
+        client.disconnect()
+
+    def test_upload_426_with_truncated_file_returns_false(self, ftp_client_factory, ftp_server, tmp_path):
+        """The original #1401 fix is preserved: when SIZE confirms the file
+        isn't on the server at full size (or SIZE itself fails), the upload
+        must fail so the dispatcher doesn't send a print command for a
+        partial 3MF."""
+        import ftplib
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        # Make SIZE report a smaller value — file is genuinely truncated.
+        def fake_size(_path):
+            return 100
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_file(local, "/cache/test.bin")
+        assert result is False, "truncated file (SIZE mismatch) must fail"
+        client.disconnect()
+
+    def test_upload_426_with_size_check_failing_returns_false(self, ftp_client_factory, ftp_server, tmp_path):
+        """If SIZE itself fails (e.g. server too broken to answer), assume
+        the worst and fail — better a retry than a print on a partial file.
         """
         import ftplib
 
@@ -407,25 +462,55 @@ class TestUpload:
         def raise_426():
             raise ftplib.error_temp("426 Failure reading network stream.")
 
+        def raise_size(_path):
+            raise ftplib.error_perm("550 File not found.")
+
         client._ftp.voidresp = raise_426
+        client._ftp.size = raise_size
 
         result = client.upload_file(local, "/cache/test.bin")
-        assert result is False, "Upload must fail on 426 to prevent dispatching a truncated file"
+        assert result is False
         client.disconnect()
 
-    def test_upload_bytes_426_data_stream_failure_returns_false(self, ftp_client_factory, ftp_server):
-        """upload_bytes() also fails on 426 (same root cause as upload_file)."""
+    def test_upload_bytes_426_with_intact_file_proceeds(self, ftp_client_factory, ftp_server):
+        """upload_bytes() mirrors the same SIZE-verify logic as upload_file."""
         import ftplib
 
         client = ftp_client_factory()
         client.connect()
+        data = b"x" * 1024
 
         def raise_426():
             raise ftplib.error_temp("426 Failure reading network stream.")
 
-        client._ftp.voidresp = raise_426
+        def fake_size(_path):
+            return 1024  # printer-side file matches expected size
 
-        result = client.upload_bytes(b"x" * 1024, "/cache/bytes.bin")
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_bytes(data, "/cache/bytes.bin")
+        assert result is True
+        client.disconnect()
+
+    def test_upload_bytes_426_with_truncated_file_returns_false(self, ftp_client_factory, ftp_server):
+        """The truncated branch for upload_bytes()."""
+        import ftplib
+
+        client = ftp_client_factory()
+        client.connect()
+        data = b"x" * 1024
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def fake_size(_path):
+            return 100
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_bytes(data, "/cache/bytes.bin")
         assert result is False
         client.disconnect()
 

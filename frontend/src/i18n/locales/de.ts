@@ -3542,9 +3542,13 @@ export default {
         color: 'Nach Farbe',
       },
       templates: {
-        ams: {
-          label: 'AMS holder (30 × 15 mm)',
-          hint: 'Ein Etikett pro Seite; passt in den beliebten AMS-Filament-Etikettenhalter.',
+        amsHolderSmall: {
+          label: 'AMS-Halter — klein (74 × 33 mm)',
+          hint: 'Ein Etikett pro Seite; passt zum druckbaren Etikett aus dem MakerWorld-Modell 752566 (AMS-Filament-Etikettenhalter).',
+        },
+        amsHolderLarge: {
+          label: 'AMS-Halter — groß (75 × 55 mm)',
+          hint: 'Ein Etikett pro Seite; passt zur Kartoneinleger-Variante des AMS-Filament-Etikettenhalters. Genug Platz für Farbprobe, Marke, Material, ID und QR-Code.',
         },
         box40x30: {
           label: 'Boxetikett (40 × 30 mm)',
@@ -3822,6 +3826,8 @@ export default {
     slot: 'Slot',
     empty: 'Leer',
     emptySlot: 'Leerer Slot',
+    slotEmpty: 'Leer',
+    emptySlotReset: 'Keine Spule zugewiesen',
     unknown: 'Unbekannt',
     humidity: 'Luftfeuchtigkeit',
     temperature: 'Temperatur',

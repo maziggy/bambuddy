@@ -3530,9 +3530,13 @@ export default {
         color: '按颜色',
       },
       templates: {
-        ams: {
-          label: 'AMS holder (30 × 15 mm)',
-          hint: '每页一个标签；适用于流行的 AMS 耗材标签托架。',
+        amsHolderSmall: {
+          label: 'AMS 支架 — 小 (74 × 33 mm)',
+          hint: '每页一个标签；适配 MakerWorld 模型 752566 (AMS 耗材标签支架) 中可打印的标签。',
+        },
+        amsHolderLarge: {
+          label: 'AMS 支架 — 大 (75 × 55 mm)',
+          hint: '每页一个标签；适配 AMS 耗材标签支架的卡片插入款。空间充足，可放置色板、品牌、材料、ID 与二维码。',
         },
         box40x30: {
           label: '盒标签 (40 × 30 mm)',
@@ -3810,6 +3814,8 @@ export default {
     slot: '槽位',
     empty: '空',
     emptySlot: '空槽位',
+    slotEmpty: '空',
+    emptySlotReset: '未分配料盘',
     unknown: '未知',
     humidity: '湿度',
     temperature: '温度',

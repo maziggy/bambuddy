@@ -33,10 +33,16 @@ interface TemplateOption {
 
 const TEMPLATE_OPTIONS: TemplateOption[] = [
   {
-    value: 'ams_30x15',
-    i18nKey: 'ams',
-    fallbackLabel: 'AMS holder (30 × 15 mm)',
-    fallbackHint: 'Single label per page; fits the popular AMS filament label holder.',
+    value: 'ams_holder_74x33',
+    i18nKey: 'amsHolderSmall',
+    fallbackLabel: 'AMS holder — small (74 × 33 mm)',
+    fallbackHint: 'Single label per page; matches the printable label from MakerWorld model 752566 (AMS Filament Label Holder).',
+  },
+  {
+    value: 'ams_holder_75x55',
+    i18nKey: 'amsHolderLarge',
+    fallbackLabel: 'AMS holder — large (75 × 55 mm)',
+    fallbackHint: 'Single label per page; fits the cardstock-insert variant of the AMS Filament Label Holder. Roomy enough for swatch, brand, material, ID, and QR code.',
   },
   {
     value: 'box_40x30',

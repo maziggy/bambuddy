@@ -466,14 +466,17 @@ async def list_archives_slim(
             "print_name": r.print_name,
             "print_time_seconds": r.print_time_seconds,
             "actual_time_seconds": (
+                # Measured elapsed time for every status (#1390): failed /
+                # cancelled prints still ran for some duration, and Quick
+                # Stats already counts that. Widgets that fall back to
+                # print_time_seconds (slicer estimate) for non-completed
+                # events would diverge from Quick Stats — so expose the
+                # measured value here unconditionally.
                 r.duration_seconds
-                if r.duration_seconds and r.duration_seconds > 0 and r.status == "completed"
+                if r.duration_seconds and r.duration_seconds > 0
                 else (
                     int((r.completed_at - r.started_at).total_seconds())
-                    if r.started_at
-                    and r.completed_at
-                    and r.status == "completed"
-                    and (r.completed_at - r.started_at).total_seconds() > 0
+                    if r.started_at and r.completed_at and (r.completed_at - r.started_at).total_seconds() > 0
                     else None
                 )
             ),

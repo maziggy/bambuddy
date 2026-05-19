@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sys
+import time
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends
@@ -30,6 +31,61 @@ _update_status = {
     "message": "",
     "error": None,
 }
+
+# GitHub rate-limit backoff (#1420): when api.github.com returns 403 with
+# X-RateLimit-Remaining=0, refuse to retry until X-RateLimit-Reset (epoch
+# seconds). Falls back to a 1-hour pause if the header is absent. Prevents
+# the update checker from hammering GitHub once the unauthenticated quota
+# (60 req/hr per source IP) is exhausted.
+_GITHUB_RATE_LIMIT_FALLBACK_SECONDS = 3600
+_github_rate_limit_until: float = 0.0
+
+
+def _seconds_until_github_unblocked() -> float:
+    """Return seconds remaining until GitHub backoff lifts, or 0 if unblocked."""
+    remaining = _github_rate_limit_until - time.time()
+    return remaining if remaining > 0 else 0.0
+
+
+def _record_github_rate_limit(response: httpx.Response) -> None:
+    """Set the backoff window from a GitHub 403 response's headers."""
+    global _github_rate_limit_until
+    reset_header = response.headers.get("X-RateLimit-Reset")
+    reset_at: float | None = None
+    if reset_header:
+        try:
+            reset_at = float(reset_header)
+        except ValueError:
+            reset_at = None
+    if reset_at is None:
+        reset_at = time.time() + _GITHUB_RATE_LIMIT_FALLBACK_SECONDS
+    # Floor at a 60s minimum: protects against clock skew between the container
+    # and GitHub (parsed reset epoch in the past would otherwise leave us with
+    # no real backoff and we'd hammer GitHub again immediately).
+    reset_at = max(reset_at, time.time() + 60)
+    # Only extend the window — never shorten it via an out-of-order response.
+    if reset_at > _github_rate_limit_until:
+        _github_rate_limit_until = reset_at
+    logger.warning(
+        "GitHub rate limit hit; suppressing update checks for %.0fs (reset header=%s)",
+        _seconds_until_github_unblocked(),
+        reset_header,
+    )
+
+
+def _is_github_rate_limit_response(response: httpx.Response) -> bool:
+    """Detect a rate-limit response from GitHub (403/429 with Remaining=0)."""
+    if response.status_code not in (403, 429):
+        return False
+    remaining = response.headers.get("X-RateLimit-Remaining")
+    if remaining == "0":
+        return True
+    # Some proxies strip the header; fall back to body inspection.
+    try:
+        body = response.text or ""
+    except Exception:
+        body = ""
+    return "rate limit" in body.lower() or "API rate limit exceeded" in body
 
 
 def _is_docker_environment() -> bool:
@@ -287,6 +343,23 @@ async def check_for_updates(
     beta_setting = result.scalar_one_or_none()
     include_beta = beta_setting and beta_setting.value.lower() == "true"
 
+    # Short-circuit if we're still inside a GitHub rate-limit backoff window (#1420).
+    backoff_remaining = _seconds_until_github_unblocked()
+    if backoff_remaining > 0:
+        _update_status = {
+            "status": "error",
+            "progress": 0,
+            "message": "GitHub rate limit reached",
+            "error": "GitHub rate limit reached; retry later",
+        }
+        return {
+            "update_available": False,
+            "current_version": APP_VERSION,
+            "latest_version": None,
+            "error": "GitHub rate limit reached; retry later",
+            "retry_after_seconds": int(backoff_remaining),
+        }
+
     _update_status = {
         "status": "checking",
         "progress": 0,
@@ -301,6 +374,22 @@ async def check_for_updates(
                 headers={"Accept": "application/vnd.github.v3+json"},
                 timeout=10.0,
             )
+
+            if _is_github_rate_limit_response(response):
+                _record_github_rate_limit(response)
+                _update_status = {
+                    "status": "error",
+                    "progress": 0,
+                    "message": "GitHub rate limit reached",
+                    "error": "GitHub rate limit reached; retry later",
+                }
+                return {
+                    "update_available": False,
+                    "current_version": APP_VERSION,
+                    "latest_version": None,
+                    "error": "GitHub rate limit reached; retry later",
+                    "retry_after_seconds": int(_seconds_until_github_unblocked()),
+                }
 
             if response.status_code == 404:
                 # No releases yet
@@ -419,6 +508,10 @@ async def _discover_target_release(db: AsyncSession) -> str | None:
     beta_setting = result.scalar_one_or_none()
     include_beta = beta_setting and beta_setting.value.lower() == "true"
 
+    if _seconds_until_github_unblocked() > 0:
+        logger.warning("Skipping update target discovery: GitHub rate-limit backoff still active")
+        return None
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -426,6 +519,9 @@ async def _discover_target_release(db: AsyncSession) -> str | None:
                 headers={"Accept": "application/vnd.github.v3+json"},
                 timeout=10.0,
             )
+            if _is_github_rate_limit_response(response):
+                _record_github_rate_limit(response)
+                return None
             response.raise_for_status()
             releases = response.json()
     except (httpx.HTTPError, ValueError) as exc:

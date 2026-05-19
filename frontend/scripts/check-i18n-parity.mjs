@@ -160,7 +160,7 @@ const DE_COGNATES = [
   'Hex', 'Warm', 'Neutral', 'Navigation', 'Screenshot', 'Architecture',
   'Backend & Auth', 'Stream Overlay', 'Bambuddy Backend URL',
   'Material (optional)', 'Custom Headers (JSON)', '({{count}}/8)',
-  'AMS holder (30 × 15 mm)', 'Box label (62 × 29 mm)',
+  'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'China', 'Proxy', 'Start',
@@ -192,7 +192,7 @@ const FR_COGNATES = [
   '{{count}} filament', '{{count}} filaments', '{{count}} permissions',
   '{{count}} downloads', '{{count}} item', '{{count}} selected',
   '({{count}} item)', 'Provisioning...', 'Pressure Advance',
-  'AMS holder (30 × 15 mm)', 'Box label (62 × 29 mm)',
+  'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   '({{count}}/8)', 'Custom Headers (JSON)', 'Permissions',
@@ -223,7 +223,7 @@ const IT_COGNATES = [
   '{{name}} - Timelapse', 'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
-  'AMS holder (30 × 15 mm)', 'Hex: #{{hex}}',
+  'Hex: #{{hex}}',
   'EC984C,#6CD4BC,A66EB9,D87694',
   'Proxy', 'Designer',
 ];
@@ -234,7 +234,7 @@ const JA_COGNATES = [
   'OK', 'Bambu', 'Code',
   'EU (DD/MM/YYYY)', 'US (MM/DD/YYYY)', 'ON, true, 1',
   '({{count}}/8)', 'Custom Headers (JSON)',
-  'AMS holder (30 × 15 mm)', 'Box label (62 × 29 mm)',
+  'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
@@ -257,7 +257,7 @@ const PT_BR_COGNATES = [
   'Base: {{name}}', 'ETA {{minutes}} min', '{{count}} item',
   '{{count}} downloads', '({{count}} item)', '(25%, 50%, 75%)',
   '({{count}}/8)', 'Custom Headers (JSON)', '{{name}} - Timelapse',
-  'AMS holder (30 × 15 mm)', 'Box label (62 × 29 mm)',
+  'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'Cancelling upload...', 'EC984C,#6CD4BC,A66EB9,D87694',
@@ -269,7 +269,7 @@ const PT_BR_COGNATES = [
 // Chinese (Simplified): very few cognates beyond brand names.
 const ZH_CN_COGNATES = [
   'OK', 'Bambu',
-  '({{count}}/8)', 'Custom Headers (JSON)', 'AMS holder (30 × 15 mm)',
+  '({{count}}/8)', 'Custom Headers (JSON)',
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
@@ -278,7 +278,7 @@ const ZH_CN_COGNATES = [
 
 const ZH_TW_COGNATES = [
   'OK', 'Bambu',
-  '({{count}}/8)', 'Custom Headers (JSON)', 'AMS holder (30 × 15 mm)',
+  '({{count}}/8)', 'Custom Headers (JSON)',
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',

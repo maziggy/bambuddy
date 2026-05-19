@@ -197,9 +197,8 @@ function SuccessRateWidget({
   size?: 1 | 2 | 4;
 }) {
   const { t } = useTranslation();
-  const completedAndFailed = (stats?.successful_prints || 0) + (stats?.failed_prints || 0);
-  const successRate = completedAndFailed
-    ? Math.round((stats!.successful_prints / completedAndFailed) * 100)
+  const successRate = stats?.total_prints
+    ? Math.round(((stats.successful_prints || 0) / stats.total_prints) * 100)
     : 0;
 
   // Scale gauge size based on widget size
@@ -845,7 +844,13 @@ function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; curren
       return { archive: best, value: bestVal };
     };
 
-    const longest = findMax(a => a.actual_time_seconds);
+    // Only completed prints qualify as the "longest" record. Pre-#1390 this
+    // happened implicitly because the slim endpoint returned null
+    // actual_time_seconds for non-completed rows; that gate moved up to the
+    // backend so failed/cancelled prints now carry their elapsed duration
+    // (Quick Stats Print Time needs that), but a partially-completed 20-hour
+    // run shouldn't outrank a successful 18-hour print here.
+    const longest = findMax(a => (a.status === 'completed' ? a.actual_time_seconds : null));
     if (longest.archive) {
       result.push({
         icon: Clock, iconColor: 'text-blue-400', label: t('stats.longestPrint'),

@@ -746,6 +746,66 @@ class TestAMSDataMerging:
         assert ams_data[0]["tray"][0]["tray_type"] == "PLA", "A1 should still have PLA"
         assert ams_data[1]["tray"][0]["tray_type"] == "PLA", "B1 should still have PLA"
 
+    def test_tray_exist_bits_promotes_empty_slot_to_state_9(self, mqtt_client):
+        """#1322 follow-up by @RosdasHH: the previous fix only caught the bare
+        {"id": N} payload firmware sends right after a printer restart. In
+        steady-state operation firmware sends a populated payload and signals
+        emptiness via tray_exist_bits — the canonical BambuStudio detection.
+        The bitmask handler now promotes empty slots to state=9 so the rest
+        of the app (API serializer, inventory short-circuit, AMS card) sees
+        one signal instead of guessing from payload shape.
+
+        State must be int 9, not "9" — `tray_state in {9, 10}` downstream
+        uses `==` comparison and would silently miss a string.
+        """
+        initial_ams = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "tray_type": "PLA", "tray_color": "FF0000", "state": 11, "remain": 80},
+                        {"id": 1, "tray_type": "PETG", "tray_color": "00FF00", "state": 11, "remain": 60},
+                    ],
+                }
+            ],
+            "tray_exist_bits": "3",  # both slots occupied (0b11)
+        }
+        mqtt_client._handle_ams_data(initial_ams)
+
+        # Slot 1 goes empty — populated payload, only the bitmask says so.
+        update_ams = {
+            "ams": [{"id": 0, "tray": [{"id": 0}, {"id": 1}]}],
+            "tray_exist_bits": "1",  # slot 1 now empty (0b01)
+        }
+        mqtt_client._handle_ams_data(update_ams)
+
+        slot1 = mqtt_client.state.raw_data["ams"][0]["tray"][1]
+        assert slot1["state"] == 9, "empty-by-bitmask slot must report state=9"
+        assert isinstance(slot1["state"], int), "state must be int for downstream == comparison"
+        # Loaded slot keeps its firmware state unchanged.
+        slot0 = mqtt_client.state.raw_data["ams"][0]["tray"][0]
+        assert slot0["state"] == 11, "loaded slot must keep its firmware state"
+
+    def test_tray_exist_bits_does_not_change_state_on_loaded_slots(self, mqtt_client):
+        """Belt and suspenders for the negative path: the new state=9
+        promotion must fire ONLY when the bitmask bit is 0. A loaded slot
+        with state=3 (or any other non-9 firmware value) must pass through
+        untouched, or we'd corrupt every printer that sends transitional
+        states like 'unloading'."""
+        initial_ams = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "tray_type": "PLA", "tray_color": "FF0000", "state": 3, "remain": 80},
+                    ],
+                }
+            ],
+            "tray_exist_bits": "1",  # slot occupied
+        }
+        mqtt_client._handle_ams_data(initial_ams)
+        assert mqtt_client.state.raw_data["ams"][0]["tray"][0]["state"] == 3
+
     def test_shutdown_message_preserves_ams_data(self, mqtt_client):
         """Printer shutdown (power_on_flag=False) must not wipe AMS slot data (#765).
 

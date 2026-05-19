@@ -3530,9 +3530,13 @@ export default {
         color: '按顏色',
       },
       templates: {
-        ams: {
-          label: 'AMS holder (30 × 15 mm)',
-          hint: '每頁一個標籤；適用於熱門的 AMS 耗材標籤托架。',
+        amsHolderSmall: {
+          label: 'AMS 支架 — 小 (74 × 33 mm)',
+          hint: '每頁一個標籤；對應 MakerWorld 模型 752566 (AMS 耗材標籤支架) 中可列印的標籤。',
+        },
+        amsHolderLarge: {
+          label: 'AMS 支架 — 大 (75 × 55 mm)',
+          hint: '每頁一個標籤；對應 AMS 耗材標籤支架的紙卡插入款。空間足夠放置色塊、品牌、材質、ID 與 QR 碼。',
         },
         box40x30: {
           label: '盒標籤 (40 × 30 mm)',
@@ -3810,6 +3814,8 @@ export default {
     slot: '槽位',
     empty: '空',
     emptySlot: '空槽位',
+    slotEmpty: '空',
+    emptySlotReset: '未指派線材',
     unknown: '未知',
     humidity: '濕度',
     temperature: '溫度',

@@ -3542,9 +3542,13 @@ export default {
         color: '色順',
       },
       templates: {
-        ams: {
-          label: 'AMS holder (30 × 15 mm)',
-          hint: '1ページに1ラベル、人気のAMSフィラメントラベルホルダーに適合。',
+        amsHolderSmall: {
+          label: 'AMS ホルダー — 小 (74 × 33 mm)',
+          hint: '1ページにつき1枚；MakerWorld モデル 752566 (AMS フィラメントラベルホルダー) の印刷可能なラベルに対応します。',
+        },
+        amsHolderLarge: {
+          label: 'AMS ホルダー — 大 (75 × 55 mm)',
+          hint: '1ページにつき1枚；AMS フィラメントラベルホルダーのカード紙挿入バージョンに対応します。色見本、ブランド、素材、ID、QR コードを表示できる広さです。',
         },
         box40x30: {
           label: 'ボックスラベル (40 × 30 mm)',
@@ -3822,6 +3826,8 @@ export default {
     slot: 'スロット',
     empty: '<空>',
     emptySlot: '空のスロット',
+    slotEmpty: '空',
+    emptySlotReset: 'スプール未割当',
     unknown: '不明',
     humidity: '湿度',
     temperature: '温度',

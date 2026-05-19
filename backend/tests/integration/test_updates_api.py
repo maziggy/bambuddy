@@ -181,6 +181,68 @@ class TestUpdatesAPI:
         assert body["is_docker"] is True
         assert body["update_method"] == "docker"
 
+    @pytest.mark.asyncio
+    async def test_check_backs_off_after_github_rate_limit(self, async_client: AsyncClient):
+        """#1420: once GitHub returns 403 with X-RateLimit-Remaining=0, the
+        next call must short-circuit on the backoff window instead of hitting
+        api.github.com again. Otherwise the user's logs flood with rate-limit
+        errors and Bambuddy keeps adding to whatever throttle GitHub applies."""
+        import time
+
+        import httpx as _httpx
+
+        import backend.app.api.routes.updates as updates_module
+
+        # Reset module-level backoff state between tests.
+        updates_module._github_rate_limit_until = 0.0
+
+        # Future reset time, ~10 minutes ahead — the backoff window we expect.
+        future_reset = time.time() + 600
+
+        class _RateLimitedResp:
+            status_code = 403
+            headers = {
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(int(future_reset)),
+            }
+            text = "API rate limit exceeded"
+
+            def raise_for_status(self):
+                raise _httpx.HTTPStatusError("403", request=None, response=self)
+
+            def json(self):
+                return {"message": "API rate limit exceeded"}
+
+        call_counter = {"n": 0}
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def get(self, *_, **__):
+                call_counter["n"] += 1
+                return _RateLimitedResp()
+
+        try:
+            with patch.object(_httpx, "AsyncClient", _FakeClient):
+                first = await async_client.get("/api/v1/updates/check")
+                second = await async_client.get("/api/v1/updates/check")
+        finally:
+            updates_module._github_rate_limit_until = 0.0
+
+        # First request reached httpx; second short-circuited on the backoff.
+        assert call_counter["n"] == 1
+
+        first_body = first.json()
+        second_body = second.json()
+        assert "rate limit" in (first_body.get("error") or "").lower()
+        assert "rate limit" in (second_body.get("error") or "").lower()
+        # Backoff window roughly matches the X-RateLimit-Reset header.
+        assert second_body.get("retry_after_seconds", 0) > 0
+
     def test_parse_version(self):
         from backend.app.api.routes.updates import parse_version
 

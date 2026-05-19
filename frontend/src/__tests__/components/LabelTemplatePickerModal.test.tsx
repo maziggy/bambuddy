@@ -176,7 +176,13 @@ describe('LabelTemplatePickerModal', () => {
         spoolmanMode={false}
       />,
     );
-    expect(screen.getByText(/AMS holder/i).closest('button')).toBeDisabled();
+    // Two AMS holder variants exist (#1426). Both must be disabled when no
+    // spools are selected — the empty-selection guard is global, not per-template.
+    const amsButtons = screen.getAllByText(/AMS holder/i).map((el) => el.closest('button'));
+    expect(amsButtons).toHaveLength(2);
+    for (const btn of amsButtons) {
+      expect(btn).toBeDisabled();
+    }
   });
 
   it('sends only the currently checked IDs to the local endpoint', async () => {
@@ -218,12 +224,14 @@ describe('LabelTemplatePickerModal', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText(/AMS holder/i));
+    // Pick the larger AMS holder variant explicitly (#1426: two AMS templates
+     // exist now — pin which one the test sends so the assertion stays meaningful).
+    fireEvent.click(screen.getByText(/AMS holder — large \(75 × 55 mm\)/i));
 
     await waitFor(() => {
       expect(api.printSpoolmanSpoolLabels).toHaveBeenCalledWith({
         spool_ids: [1],
-        template: 'ams_30x15',
+        template: 'ams_holder_75x55',
       });
     });
     expect(api.printSpoolLabels).not.toHaveBeenCalled();
@@ -296,9 +304,10 @@ describe('LabelTemplatePickerModal', () => {
       />,
     );
 
-    // All five templates must be in the DOM. Use the dimension suffix to
-    // disambiguate the two "Box label …" entries.
-    expect(screen.getByText(/AMS holder/i)).toBeInTheDocument();
+    // All six templates must be in the DOM (#1426 added two AMS variants).
+    // Use the dimension suffix to disambiguate same-family entries.
+    expect(screen.getByText(/AMS holder — small \(74 × 33 mm\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/AMS holder — large \(75 × 55 mm\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Box label \(40 × 30 mm\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Box label \(62 × 29 mm\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Avery L7160/i)).toBeInTheDocument();
@@ -311,7 +320,7 @@ describe('LabelTemplatePickerModal', () => {
     const templatesSection = container.querySelector('div.grid.sm\\:grid-cols-2');
     expect(templatesSection).not.toBeNull();
     expect(templatesSection!.className).toContain('grid-cols-1');
-    expect(templatesSection!.querySelectorAll('button').length).toBe(5);
+    expect(templatesSection!.querySelectorAll('button').length).toBe(6);
 
     // Spool list still uses min-h-0 so it can yield further on very tight viewports.
     const spoolListScroller = container.querySelector('div.flex-1.overflow-y-auto');

@@ -786,6 +786,25 @@ function getAmsLabel(amsId: number | string, trayCount: number): string {
   return isHt ? `HT-${letter}` : `AMS-${letter}`;
 }
 
+/** Classify an empty AMS slot for UI rendering (#1322 follow-up).
+ *
+ *  "physical" — firmware positively confirmed no spool (state 9 or 10). The
+ *  bambu_mqtt handler now promotes tray_exist_bits=0 slots to state=9, so
+ *  every empty-by-bitmask slot lands here regardless of firmware payload
+ *  shape.
+ *
+ *  "reset" — tray_type is missing/empty but firmware hasn't confirmed
+ *  emptiness (state is null, 3, or any non-9/10 value). Typically a slot
+ *  the user cleared with "Reset Slot" where a physical spool may still be
+ *  loaded but unassigned.
+ *
+ *  Returns null when the slot is loaded (tray_type is present).
+ */
+function getEmptySlotKind(tray: { tray_type?: string | null; state?: number | null } | null | undefined): 'physical' | 'reset' | null {
+  if (tray?.tray_type) return null;
+  return (tray?.state === 9 || tray?.state === 10) ? 'physical' : 'reset';
+}
+
 
 function CoverImage({ url, printName }: { url: string | null; printName?: string }) {
   const { t } = useTranslation();
@@ -3515,6 +3534,7 @@ function PrinterCard({
                                 const tray = ams.tray[slotIdx] || ams.tray.find(t => t.id === slotIdx);
                                 const hasFillLevel = tray?.tray_type && tray.remain >= 0;
                                 const isEmpty = !tray?.tray_type;
+                                const emptyKind = getEmptySlotKind(tray);
                                 // Check if this is the currently loaded tray
                                 // Global tray ID = ams.id * 4 + slot index (for standard AMS)
                                 const globalTrayId = ams.id * 4 + slotIdx;
@@ -3592,10 +3612,11 @@ function PrinterCard({
                                       trayColor={tray?.tray_color}
                                       trayType={tray?.tray_type}
                                       isEmpty={isEmpty}
+                                      emptyKind={emptyKind}
                                       slotNumber={slotIdx + 1}
                                     />
                                     <div className="text-[9px] text-white font-bold truncate">
-                                      {tray?.tray_type || '—'}
+                                      {tray?.tray_type || t('ams.slotEmpty')}
                                     </div>
                                     {/* Fill bar */}
                                     <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
@@ -3799,6 +3820,7 @@ function PrinterCard({
                                       </FilamentHoverCard>
                                     ) : (
                                       <EmptySlotHoverCard
+                                        kind={emptyKind ?? undefined}
                                         configureSlot={{
                                           enabled: hasPermission('printers:control'),
                                           onConfigure: () => setConfigureSlotModal({
@@ -3847,6 +3869,7 @@ function PrinterCard({
                         const tray = ams.tray[0];
                         const hasFillLevel = tray?.tray_type && tray.remain >= 0;
                         const isEmpty = !tray?.tray_type;
+                        const emptyKind = getEmptySlotKind(tray);
                         // Check if this is the currently loaded tray
                         const globalTrayId = getGlobalTrayId(ams.id, tray?.id ?? 0, false);
                         const isActive = effectiveTrayNow === globalTrayId;
@@ -3914,10 +3937,11 @@ function PrinterCard({
                               trayColor={tray?.tray_color}
                               trayType={tray?.tray_type}
                               isEmpty={isEmpty}
+                              emptyKind={emptyKind}
                               slotNumber={1}
                             />
                             <div className="text-[9px] text-white font-bold truncate">
-                              {tray?.tray_type || '—'}
+                              {tray?.tray_type || t('ams.slotEmpty')}
                             </div>
                             {/* Fill bar */}
                             <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
@@ -4194,6 +4218,7 @@ function PrinterCard({
                                   </FilamentHoverCard>
                                 ) : (
                                   <EmptySlotHoverCard
+                                    kind={emptyKind ?? undefined}
                                     configureSlot={{
                                       enabled: hasPermission('printers:control'),
                                       onConfigure: () => setConfigureSlotModal({
@@ -4322,6 +4347,7 @@ function PrinterCard({
                               };
 
                               const isEmpty = !extTray.tray_type;
+                              const emptyKind = getEmptySlotKind(extTray);
                               const extSlotContent = (
                                 <div className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
                                   {/* Filament color circle with 1-based slot number centered inside */}
@@ -4329,10 +4355,11 @@ function PrinterCard({
                                     trayColor={extTray.tray_color}
                                     trayType={extTray.tray_type}
                                     isEmpty={isEmpty}
+                                    emptyKind={emptyKind}
                                     slotNumber={slotTrayId + 1}
                                   />
                                   <div className={`text-[9px] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
-                                    {extTray.tray_type || '—'}
+                                    {extTray.tray_type || t('ams.slotEmpty')}
                                   </div>
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                     {extEffectiveFill !== null && extEffectiveFill >= 0 && !isEmpty && (
@@ -4506,6 +4533,7 @@ function PrinterCard({
                                     </FilamentHoverCard>
                                   ) : (
                                     <EmptySlotHoverCard
+                                      kind={emptyKind ?? undefined}
                                       configureSlot={{
                                         enabled: hasPermission('printers:control'),
                                         onConfigure: () => setConfigureSlotModal({

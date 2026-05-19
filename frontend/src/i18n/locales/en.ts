@@ -3545,9 +3545,13 @@ export default {
         color: 'By colour',
       },
       templates: {
-        ams: {
-          label: 'AMS holder (30 × 15 mm)',
-          hint: 'Single label per page; fits the popular AMS filament label holder.',
+        amsHolderSmall: {
+          label: 'AMS holder — small (74 × 33 mm)',
+          hint: 'Single label per page; matches the printable label from MakerWorld model 752566 (AMS Filament Label Holder).',
+        },
+        amsHolderLarge: {
+          label: 'AMS holder — large (75 × 55 mm)',
+          hint: 'Single label per page; fits the cardstock-insert variant of the AMS Filament Label Holder. Roomy enough for swatch, brand, material, ID, and QR code.',
         },
         box40x30: {
           label: 'Box label (40 × 30 mm)',
@@ -3834,6 +3838,8 @@ export default {
     slot: 'Slot',
     empty: 'Empty',
     emptySlot: 'Empty slot',
+    slotEmpty: 'Empty',
+    emptySlotReset: 'No filament assigned',
     unknown: 'Unknown',
     humidity: 'Humidity',
     temperature: 'Temperature',

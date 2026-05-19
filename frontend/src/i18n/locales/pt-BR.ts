@@ -3530,9 +3530,13 @@ export default {
         color: 'Por cor',
       },
       templates: {
-        ams: {
-          label: 'AMS holder (30 × 15 mm)',
-          hint: 'Uma etiqueta por página; serve no porta-etiquetas AMS popular.',
+        amsHolderSmall: {
+          label: 'Suporte AMS — pequeno (74 × 33 mm)',
+          hint: 'Uma etiqueta por página; corresponde à etiqueta imprimível do modelo MakerWorld 752566 (Suporte de etiquetas de filamento AMS).',
+        },
+        amsHolderLarge: {
+          label: 'Suporte AMS — grande (75 × 55 mm)',
+          hint: 'Uma etiqueta por página; encaixa na variante com inserto em cartão do Suporte de etiquetas de filamento AMS. Espaço suficiente para amostra de cor, marca, material, ID e QR code.',
         },
         box40x30: {
           label: 'Etiqueta de caixa (40 × 30 mm)',
@@ -3810,6 +3814,8 @@ export default {
     slot: 'Slot',
     empty: 'Vazio',
     emptySlot: 'Slot vazio',
+    slotEmpty: 'Vazio',
+    emptySlotReset: 'Nenhum carretel atribuído',
     unknown: 'Desconhecido',
     humidity: 'Umidade',
     temperature: 'Temperatura',

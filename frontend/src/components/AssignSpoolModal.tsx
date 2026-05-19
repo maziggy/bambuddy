@@ -113,6 +113,20 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     );
   }, [allSpoolmanAssignments, printerId, amsId, trayId]);
 
+  // #1414: nudge the printer to republish its state after we assign a
+  // spool. The backend assign-spool path already issues an MQTT command,
+  // but firmware (especially A1 mini external slots and any non-RFID
+  // assignment) doesn't always echo the new tray state back on its own,
+  // so the printer card sits on stale data and the user has to press
+  // Force-refresh to see the assignment. Calling /refresh-status forces
+  // a pushall the way the Force-refresh button does. Failures are
+  // intentionally swallowed — the assignment itself succeeded; if the
+  // refresh is offline the next poll / websocket update will catch up.
+  const nudgePrinterRepublish = () => {
+    api.refreshPrinterStatus(printerId).catch(() => {});
+    queryClient.invalidateQueries({ queryKey: ['printerStatus', printerId] });
+  };
+
   const assignMutation = useMutation({
     mutationFn: (spoolId: number) =>
       api.assignSpool({ spool_id: spoolId, printer_id: printerId, ams_id: amsId, tray_id: trayId }),
@@ -126,6 +140,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
         return filtered;
       });
       queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
+      nudgePrinterRepublish();
       showToast(t('inventory.assignSuccess'), 'success');
       setShowMismatchConfirm(false);
       setPendingAssignId(null);
@@ -148,6 +163,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
       queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
+      nudgePrinterRepublish();
       showToast(t('inventory.assignSuccess'), 'success');
       onClose();
     },

@@ -3,7 +3,7 @@ const FNV1A_32_PRIME = 0x01000193;
 
 /**
  * Computes a fast 32-bit FNV-1a hash for deterministic, non-security tasks.
- * Accepts any number of string/nullable-string inputs, takes measurements 
+ * Accepts any number of string/nullable-string inputs, takes measurements
  * to avoid collisions, and combines them into a 32-bit hash.
  * Not cryptographically secure; use only for non-security-related use cases.
 */
@@ -38,7 +38,7 @@ export interface Mulberry32Sequence {
 
 /**
  * Creates a fast deterministic PRNG sequence using Mulberry32.
- * Same seed will always produce the same sequence. 
+ * Same seed will always produce the same sequence.
  * Not cryptographically secure; use only for non-security-related use cases.
  */
 export function random_mulberry32(seed: number): Mulberry32Sequence {

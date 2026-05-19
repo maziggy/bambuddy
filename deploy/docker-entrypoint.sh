@@ -52,7 +52,7 @@ if [ -n "${USE_SYSTEM_TRUST_STORE:-}" ]; then
             echo "[entrypoint] update-ca-certificates succeeded; exporting SSL_CERT_DIR=/etc/ssl/certs"
             export SSL_CERT_DIR="/etc/ssl/certs"
         else
-            echo "[entrypoint] warning: update-ca-certificates failed:"
+            echo "[entrypoint] error: update-ca-certificates failed"
             exit 1
         fi
     else

@@ -584,11 +584,125 @@ class TestPrinterManager:
             mock_instance.state.connected = False
             MockClient.return_value = mock_instance
 
-            result = await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
+            # Shorten the probe budget so the test doesn't burn the full
+            # 8-second production timeout while polling a failing connection.
+            with (
+                patch.object(manager, "PROBE_TIMEOUT_SECONDS", 0.4),
+                patch.object(manager, "PROBE_POLL_INTERVAL_SECONDS", 0.1),
+            ):
+                result = await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
 
             assert result["success"] is False
             assert result["state"] is None
             mock_instance.disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_test_connection_polls_and_returns_early_on_connect(self, manager):
+        """#1445: a slow printer that finishes its handshake mid-probe must
+        not be reported as a failure. Previously a fixed 2s sleep meant P1S
+        TLS / CONNACK that took 3-5s got falsely rejected; now we poll and
+        early-return as soon as connected flips True.
+        """
+        import asyncio
+        import time
+
+        with patch("backend.app.services.printer_manager.BambuMQTTClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.state = MagicMock()
+            mock_instance.state.connected = False  # not connected at probe start
+            mock_instance.state.state = "IDLE"
+            mock_instance.state.raw_data = {"device_model": "P1S"}
+            MockClient.return_value = mock_instance
+
+            async def flip_connected_after(delay: float):
+                await asyncio.sleep(delay)
+                mock_instance.state.connected = True
+
+            # Simulates the P1S broker finishing its slow handshake ~0.5s in,
+            # well past the old 2s-or-fail boundary's natural variance.
+            with (
+                patch.object(manager, "PROBE_TIMEOUT_SECONDS", 3.0),
+                patch.object(manager, "PROBE_POLL_INTERVAL_SECONDS", 0.05),
+            ):
+                start = time.monotonic()
+                flip_task = asyncio.create_task(flip_connected_after(0.5))
+                try:
+                    result = await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
+                finally:
+                    await flip_task
+                elapsed = time.monotonic() - start
+
+            assert result["success"] is True
+            assert result["state"] == "IDLE"
+            # Early-return guarantee: must come back well before the configured
+            # timeout once connected flips. ~0.5s + one poll interval is plenty.
+            assert elapsed < 1.5, f"probe should have early-returned shortly after 0.5s, took {elapsed:.2f}s"
+
+    @pytest.mark.asyncio
+    async def test_test_connection_disconnect_runs_off_loop(self, manager):
+        """#1445: the root cause of the "Docker container hangs" symptom was
+        `client.disconnect()` running on the asyncio thread — paho's
+        `loop_stop()` does a thread-join that blocks until its network
+        thread exits, which on a slow P1S TLS handshake could take many
+        seconds. This test pins the off-loop teardown so a regression that
+        reintroduces sync disconnect breaks CI immediately.
+        """
+        import asyncio
+        import threading
+        import time
+
+        with patch("backend.app.services.printer_manager.BambuMQTTClient") as MockClient:
+            asyncio_thread_id = threading.get_ident()
+            disconnect_thread_ids: list[int] = []
+            disconnect_blocked_for: list[float] = []
+
+            def slow_blocking_disconnect():
+                # Mirrors paho.Client.loop_stop()'s thread-join semantics —
+                # if this runs on the asyncio thread the event loop stalls.
+                disconnect_thread_ids.append(threading.get_ident())
+                start = time.monotonic()
+                time.sleep(0.4)
+                disconnect_blocked_for.append(time.monotonic() - start)
+
+            mock_instance = MagicMock()
+            mock_instance.state = MagicMock()
+            mock_instance.state.connected = True
+            mock_instance.state.state = "IDLE"
+            mock_instance.state.raw_data = {"device_model": "P1S"}
+            mock_instance.disconnect = slow_blocking_disconnect
+            MockClient.return_value = mock_instance
+
+            # Another coroutine must keep making progress while disconnect()
+            # runs — proves the event loop was not blocked.
+            event_loop_alive_ticks = 0
+
+            async def heartbeat():
+                nonlocal event_loop_alive_ticks
+                while True:
+                    await asyncio.sleep(0.05)
+                    event_loop_alive_ticks += 1
+
+            heartbeat_task = asyncio.create_task(heartbeat())
+            try:
+                await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
+            finally:
+                heartbeat_task.cancel()
+                try:
+                    await heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+
+            # disconnect ran on a different thread than asyncio's
+            assert disconnect_thread_ids, "disconnect was never called"
+            assert disconnect_thread_ids[0] != asyncio_thread_id, (
+                "disconnect ran on the asyncio thread — this blocks the event loop (#1445)"
+            )
+            # Heartbeat made progress while the 0.4s disconnect was blocking
+            # the worker thread (proves the loop wasn't stalled).
+            assert event_loop_alive_ticks >= 3, (
+                f"event loop appears to have stalled during disconnect "
+                f"(only {event_loop_alive_ticks} heartbeats; expected >=3)"
+            )
 
     # ========================================================================
     # Tests for current print user tracking (Issue #206)

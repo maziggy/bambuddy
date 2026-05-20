@@ -616,13 +616,31 @@ class PrinterManager:
             return self._clients[printer_id].request_status_update()
         return False
 
+    # Probe budget for test_connection (#1445). Was a fixed 2s sleep, which was
+    # too short for P1S firmware whose broker / TLS handshake routinely takes
+    # 3–5s to surface a CONNACK on a cold MQTT session. We now poll up to
+    # PROBE_TIMEOUT_SECONDS and early-return the moment we see connected=True,
+    # so happy-path connections still finish in ~1–2s and slow brokers get the
+    # headroom they need instead of getting falsely rejected.
+    PROBE_TIMEOUT_SECONDS = 8.0
+    PROBE_POLL_INTERVAL_SECONDS = 0.2
+
     async def test_connection(
         self,
         ip_address: str,
         serial_number: str,
         access_code: str,
     ) -> dict:
-        """Test connection to a printer without persisting."""
+        """Test connection to a printer without persisting.
+
+        Polls for up to PROBE_TIMEOUT_SECONDS and tears the probe client down
+        off-loop. The teardown matters: `client.disconnect()` ends in paho's
+        `loop_stop()` which `join()`s the network thread — if the thread is
+        still mid-TLS-handshake to a slow printer, that join blocks the
+        asyncio event loop and every other HTTP request queues behind it. The
+        original synchronous teardown produced the #1445 "Docker container
+        hangs" symptom on P1S when called from POST /printers/.
+        """
         client = BambuMQTTClient(
             ip_address=ip_address,
             serial_number=serial_number,
@@ -631,7 +649,9 @@ class PrinterManager:
 
         try:
             client.connect()
-            await asyncio.sleep(2)
+            deadline = asyncio.get_running_loop().time() + self.PROBE_TIMEOUT_SECONDS
+            while not client.state.connected and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(self.PROBE_POLL_INTERVAL_SECONDS)
 
             result = {
                 "success": client.state.connected,
@@ -639,7 +659,9 @@ class PrinterManager:
                 "model": client.state.raw_data.get("device_model"),
             }
         finally:
-            client.disconnect()
+            # Off-loop teardown — see docstring. paho's loop_stop() joins the
+            # network thread which may still be in a slow TLS handshake.
+            await asyncio.to_thread(client.disconnect)
 
         return result
 

@@ -67,6 +67,17 @@ def _get_fallback_spool_tag(printer_serial: str, global_tray_id: int) -> str:
     if not printer_serial:
         return ""
     ams_id, tray_id = _global_tray_id_to_ams_slot(global_tray_id)
+    return get_fallback_spool_tag_for_slot(printer_serial, ams_id, tray_id)
+
+
+def get_fallback_spool_tag_for_slot(printer_serial: str, ams_id: int, tray_id: int) -> str:
+    """Public helper matching frontend getFallbackSpoolTag(serial, amsId, trayId).
+
+    Used by stale-tag cleanup (#1457) to detect Spoolman spools still holding
+    this slot's deterministic fallback tag in extra.tag.
+    """
+    if not printer_serial:
+        return ""
     return f"{_hash_serial_to_hex32(printer_serial)}{_to_fixed_hex(ams_id, 4)}{_to_fixed_hex(tray_id, 4)}"
 
 
@@ -344,6 +355,28 @@ async def _get_spoolman_client_with_fallback():
     return client
 
 
+async def _resolve_spool_id_via_slot_assignment(printer_id: int, ams_id: int, tray_id: int) -> int | None:
+    """Look up the Spoolman spool ID locally bound to (printer, ams, tray).
+
+    Fallback path for #1459: when a tag-less spool was assigned via the
+    Bambuddy UI, the user's deterministic fallback tag is intentionally NOT
+    written to Spoolman's extra.tag (kept clean per #1457), so
+    find_spool_by_tag misses. The local spoolman_slot_assignments table is
+    the authoritative binding for those spools.
+    """
+    from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(SpoolmanSlotAssignment.spoolman_spool_id).where(
+                SpoolmanSlotAssignment.printer_id == printer_id,
+                SpoolmanSlotAssignment.ams_id == ams_id,
+                SpoolmanSlotAssignment.tray_id == tray_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+
 async def _report_spool_usage_for_slots(
     client,
     filament_usage_items: list[tuple[int, float]],
@@ -351,8 +384,16 @@ async def _report_spool_usage_for_slots(
     slot_to_tray: list | None,
     method_label: str,
     printer_serial: str = "",
+    printer_id: int | None = None,
 ) -> int:
     """Report usage to Spoolman for a list of (slot_id, grams) pairs.
+
+    Resolution order per slot: (1) Spoolman extra.tag match against the
+    tray's RFID or deterministic fallback tag, (2) #1459 fallback —
+    local spoolman_slot_assignments table keyed by (printer_id, ams_id,
+    tray_id). Without (2), tag-less spools assigned via the Bambuddy UI
+    never get their weight decremented because their extra.tag is empty
+    on the Spoolman side.
 
     Returns number of spools successfully updated.
     """
@@ -377,22 +418,43 @@ async def _report_spool_usage_for_slots(
             is_external,
         )
 
-        spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id)
-        if not spool_tag:
-            logger.debug("[SPOOLMAN] Slot %s: no identifier for tray %s", slot_id, global_tray_id)
-            continue
+        spool_id_to_use: int | None = None
+        resolution_path = ""
 
-        spool = await client.find_spool_by_tag(spool_tag)
-        if not spool:
-            logger.debug("[SPOOLMAN] Slot %s: no spool for tag %s...", slot_id, spool_tag[:16])
+        spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id)
+        if spool_tag:
+            spool = await client.find_spool_by_tag(spool_tag)
+            if spool:
+                spool_id_to_use = spool["id"]
+                resolution_path = "tag"
+
+        if spool_id_to_use is None and printer_id is not None:
+            ams_id, tray_id = _global_tray_id_to_ams_slot(global_tray_id)
+            spool_id_to_use = await _resolve_spool_id_via_slot_assignment(printer_id, ams_id, tray_id)
+            if spool_id_to_use is not None:
+                resolution_path = "slot-assignment"
+
+        if spool_id_to_use is None:
+            logger.debug(
+                "[SPOOLMAN] Slot %s: no spool resolved (tag=%s, no slot-assignment)",
+                slot_id,
+                spool_tag[:16] if spool_tag else "none",
+            )
             continue
 
         try:
-            await client.use_spool(spool["id"], grams_used)
-            logger.info("[SPOOLMAN] %s: slot %s: %sg -> spool %s", method_label, slot_id, grams_used, spool["id"])
+            await client.use_spool(spool_id_to_use, grams_used)
+            logger.info(
+                "[SPOOLMAN] %s: slot %s: %sg -> spool %s (via %s)",
+                method_label,
+                slot_id,
+                grams_used,
+                spool_id_to_use,
+                resolution_path,
+            )
             spools_updated += 1
         except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
-            logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", spool["id"], exc)
+            logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", spool_id_to_use, exc)
 
     return spools_updated
 
@@ -515,7 +577,13 @@ async def _report_partial_usage(
                 usage_items.append((slot_id, grams_used))
 
             spools_updated = await _report_spool_usage_for_slots(
-                client, usage_items, ams_trays, slot_to_tray, "Partial (G-code)", printer_serial
+                client,
+                usage_items,
+                ams_trays,
+                slot_to_tray,
+                "Partial (G-code)",
+                printer_serial,
+                printer_id=printer_id,
             )
             if spools_updated > 0:
                 logger.info("[SPOOLMAN] Reported partial usage to %s spool(s) using G-code data", spools_updated)
@@ -547,7 +615,13 @@ async def _report_partial_usage(
             usage_items.append((slot_id, partial_used_g))
 
     spools_updated = await _report_spool_usage_for_slots(
-        client, usage_items, ams_trays, slot_to_tray, "Partial (linear)", printer_serial
+        client,
+        usage_items,
+        ams_trays,
+        slot_to_tray,
+        "Partial (linear)",
+        printer_serial,
+        printer_id=printer_id,
     )
     if spools_updated > 0:
         logger.info("[SPOOLMAN] Reported partial usage to %s spool(s) using linear interpolation", spools_updated)
@@ -602,7 +676,13 @@ async def report_usage(printer_id: int, archive_id: int):
 
         usage_items = [(u.get("slot_id", 0), u.get("used_g", 0)) for u in filament_usage]
         spools_updated = await _report_spool_usage_for_slots(
-            client, usage_items, ams_trays, slot_to_tray, f"Archive {archive_id}", printer_serial
+            client,
+            usage_items,
+            ams_trays,
+            slot_to_tray,
+            f"Archive {archive_id}",
+            printer_serial,
+            printer_id=printer_id,
         )
 
         if spools_updated == 0:

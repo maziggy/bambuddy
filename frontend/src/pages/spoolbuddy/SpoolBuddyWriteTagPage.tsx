@@ -48,11 +48,30 @@ export function SpoolBuddyWriteTagPage() {
   const [tagOnReader, setTagOnReader] = useState(false);
   const [tagUid, setTagUid] = useState<string | null>(null);
 
+  // Detect Spoolman mode — when the user has Spoolman as their inventory
+  // backend, every read/write on this page must go to /spoolman/inventory/*
+  // routes instead of /inventory/*. Without this branching, the picker
+  // shows internal spools (which the user never created in Spoolman mode)
+  // and the write-tag write path lands at the wrong backend (#1439).
+  const { data: spoolmanSettings } = useQuery({
+    queryKey: ['spoolman-settings'],
+    queryFn: api.getSpoolmanSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const spoolmanModeReady = spoolmanSettings !== undefined;
+  const spoolmanMode =
+    spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
 
   const { data: spools = [], refetch: refetchSpools } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(false),
+    queryKey: [spoolmanMode ? 'spoolman-inventory-spools' : 'inventory-spools', 'write-tag'],
+    queryFn: () =>
+      spoolmanMode ? api.getSpoolmanInventorySpools(false) : api.getSpools(false),
     refetchInterval: 10000,
+    // Wait until we know which backend to talk to — otherwise the first
+    // render fires getSpools (default spoolmanMode=false) and getSpoolman*
+    // (after settings resolve), wasting one request and briefly showing
+    // the wrong inventory.
+    enabled: spoolmanModeReady,
   });
 
   const { data: devices = [] } = useQuery({
@@ -193,11 +212,19 @@ export function SpoolBuddyWriteTagPage() {
     setWriteStatus('idle');
     setWriteMessage('');
     try {
-      await api.linkTagToSpool(selectedSpool.id, {
-        tag_uid: '',
-        tray_uuid: '',
-        data_origin: 'manual',
-      });
+      if (spoolmanMode) {
+        // Spoolman variant doesn't accept data_origin (managed Spoolman-side).
+        await api.linkTagToSpoolmanSpool(selectedSpool.id, {
+          tag_uid: '',
+          tray_uuid: '',
+        });
+      } else {
+        await api.linkTagToSpool(selectedSpool.id, {
+          tag_uid: '',
+          tray_uuid: '',
+          data_origin: 'manual',
+        });
+      }
       await refetchSpools();
       setSelectedSpool(null);
       setWriteStatus('success');
@@ -255,6 +282,7 @@ export function SpoolBuddyWriteTagPage() {
               currencySymbol={currencySymbol}
               onCreated={handleSpoolCreated}
               selectedSpool={selectedSpool}
+              spoolmanMode={spoolmanMode}
               t={t}
             />
           ) : (
@@ -359,6 +387,7 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
           <span className="text-sm font-medium text-white truncate">
             {spool.brand ? `${spool.brand} ` : ''}{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
           </span>
+          <span className="text-[10px] font-mono text-zinc-500 shrink-0">#{spool.id}</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           {spool.color_name && <span>{spool.color_name}</span>}
@@ -383,17 +412,20 @@ type NewSpoolSubTab = 'filament' | 'pa-profile';
 type NewSpoolViewMode = 'simple' | 'full';
 
 // --- New spool touch form (mirrors Add Spool fields/options in kiosk-friendly layout) ---
-function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
+function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanMode, t }: {
   currencySymbol: string;
   onCreated: (spool: InventorySpool) => void;
   selectedSpool: InventorySpool | null;
+  spoolmanMode: boolean;
   t: (key: string, fallback: string) => string;
 }) {
   // Read inventory + settings from the shared react-query cache to drive the
   // category autocomplete and low-stock-threshold placeholder. #729
+  // Spoolman-mode branched: see comment on the parent page's spools query.
   const { data: allSpoolsForForm = [] } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(true),
+    queryKey: [spoolmanMode ? 'spoolman-inventory-spools' : 'inventory-spools', 'write-tag-form'],
+    queryFn: () =>
+      spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
   });
   const { data: settingsForForm } = useQuery({
     queryKey: ['settings'],
@@ -593,9 +625,10 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
   };
 
   const saveKProfiles = async (spoolId: number) => {
+    const save = spoolmanMode ? api.saveSpoolmanKProfiles : api.saveSpoolKProfiles;
     if (selectedProfiles.size === 0) {
       try {
-        await api.saveSpoolKProfiles(spoolId, []);
+        await save(spoolId, []);
       } catch {
         // ignore
       }
@@ -627,7 +660,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
     }
 
     if (profiles.length > 0) {
-      await api.saveSpoolKProfiles(spoolId, profiles);
+      await save(spoolId, profiles);
     }
   };
 
@@ -675,13 +708,24 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
     setCreating(true);
     try {
       if (quantity > 1) {
-        const created = await api.bulkCreateSpools(payload, quantity);
+        // Spoolman bulk returns SpoolmanBulkCreateResult (207-style envelope);
+        // internal bulk returns InventorySpool[]. Mirrors SpoolFormModal's
+        // duck-typed handling so partial failures surface as a warning toast.
+        const raw = spoolmanMode
+          ? await api.bulkCreateSpoolmanInventorySpools(payload, quantity)
+          : await api.bulkCreateSpools(payload, quantity);
+        const created: InventorySpool[] =
+          spoolmanMode && raw && typeof raw === 'object' && 'created' in raw
+            ? (raw as { created: InventorySpool[] }).created
+            : (raw as InventorySpool[]);
         for (const spool of created) {
           await saveKProfiles(spool.id);
         }
         if (created.length > 0) onCreated(created[0]);
       } else {
-        const created = await api.createSpool(payload);
+        const created = spoolmanMode
+          ? await api.createSpoolmanInventorySpool(payload)
+          : await api.createSpool(payload);
         await saveKProfiles(created.id);
         onCreated(created);
       }

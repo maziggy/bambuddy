@@ -168,6 +168,102 @@ class TestArchivesAPI:
         assert response.status_code == 200
         assert response.json()["external_url"] is None
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_archive_failure_reason_mirrors_to_print_log_entry(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1444: PATCH /archives/{id} with failure_reason must mirror to the
+        latest PrintLogEntry so the Stats page Failure Analysis widget
+        (which reads PrintLogEntry.failure_reason) reflects the user's
+        reclassification instead of showing "Unknown" forever.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        # archive_factory auto-creates a matching PrintLogEntry (failure_reason
+        # carried from the archive, which is NULL here — same shape as the bug
+        # repro: print completed → log entry written with NULL → user goes to
+        # classify the failure afterwards).
+        archive = await archive_factory(printer.id, print_name="Failed Print", status="failed", run_status="failed")
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"failure_reason": "Adhesion failure"},
+        )
+        assert response.status_code == 200
+
+        result = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        mirrored = result.scalar_one()
+        assert mirrored.failure_reason == "Adhesion failure"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_archive_status_mirrors_to_print_log_entry(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1444: PATCH /archives/{id} with status must mirror to the latest
+        PrintLogEntry so stats that filter on PrintLogEntry.status see the
+        user's reclassification.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, run_status="completed")
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"status": "failed"},
+        )
+        assert response.status_code == 200
+
+        result = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        mirrored = result.scalar_one()
+        assert mirrored.status == "failed"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_archive_failure_reason_only_touches_latest_entry(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1444: For an archive with multiple runs (reprints), only the
+        latest PrintLogEntry should receive the reclassification. Earlier
+        runs were classified at their own time and must not be retroactively
+        overwritten.
+        """
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        # First run — created by the factory's auto-run with its own reason.
+        archive = await archive_factory(printer.id, status="failed", run_status="failed")
+        from sqlalchemy import select
+
+        first_run = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        first_run.failure_reason = "Filament tangle"
+        await db_session.commit()
+
+        # Second run — the reprint that just finished with NULL classification.
+        latest_run = PrintLogEntry(archive_id=archive.id, status="failed", failure_reason=None)
+        db_session.add(latest_run)
+        await db_session.commit()
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"failure_reason": "Adhesion failure"},
+        )
+        assert response.status_code == 200
+
+        await db_session.refresh(first_run)
+        await db_session.refresh(latest_run)
+        assert first_run.failure_reason == "Filament tangle"
+        assert latest_run.failure_reason == "Adhesion failure"
+
     # ========================================================================
     # Delete endpoints
     # ========================================================================

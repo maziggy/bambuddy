@@ -35,15 +35,20 @@ class ImplicitFTP_TLS(FTP_TLS):
     A1/A1 Mini printers have issues with SSL on the data channel entirely and
     timeout waiting for transfer completion. Set skip_session_reuse=True for A1
     printers to skip SSL on the data channel (control channel remains encrypted).
+
+    Optionally caps the SSL context's maximum TLS version to v1.2 (P2S firmware
+    01.02.00.00 needs this — see :mod:`ftp_profiles` and #1401).
     """
 
-    def __init__(self, *args, skip_session_reuse: bool = False, **kwargs):
+    def __init__(self, *args, skip_session_reuse: bool = False, cap_tls_v1_2: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self._sock = None
         self.skip_session_reuse = skip_session_reuse
         self.ssl_context = ssl.create_default_context()
         self.ssl_context.check_hostname = False
         self.ssl_context.verify_mode = ssl.CERT_NONE
+        if cap_tls_v1_2:
+            self.ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
 
     def connect(self, host="", port=990, timeout=-999, source_address=None):
         """Connect to host, wrapping socket in TLS immediately (implicit FTPS)."""
@@ -150,11 +155,18 @@ class BambuFTPClient:
         """Connect to the printer FTP server (implicit FTPS on port 990)."""
         try:
             use_prot_c = self._should_use_prot_c()
+            from backend.app.services.ftp_profiles import get_ftp_profile
+
+            profile = get_ftp_profile(self.printer_model)
             logger.debug(
                 f"FTP connecting to {self.ip_address}:{self.FTP_PORT} "
-                f"(timeout={self.timeout}s, model={self.printer_model}, prot_c={use_prot_c})"
+                f"(timeout={self.timeout}s, model={self.printer_model}, prot_c={use_prot_c}, "
+                f"cap_tls_v1_2={profile.cap_tls_v1_2})"
             )
-            self._ftp = ImplicitFTP_TLS(skip_session_reuse=use_prot_c)
+            self._ftp = ImplicitFTP_TLS(
+                skip_session_reuse=use_prot_c,
+                cap_tls_v1_2=profile.cap_tls_v1_2,
+            )
             self._ftp.connect(self.ip_address, self.FTP_PORT, timeout=self.timeout)
             logger.debug("FTP connected, logging in as bblp")
             self._ftp.login("bblp", self.access_code)

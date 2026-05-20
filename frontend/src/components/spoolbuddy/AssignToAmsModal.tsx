@@ -367,6 +367,7 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId, spoolmanMo
               <span className="font-normal text-zinc-500 ml-2">
                 {spool.color_name || 'Unknown'} &bull; {spool.brand} {spool.material}{spool.subtype && ` ${spool.subtype}`}
               </span>
+              <span className="text-[10px] font-mono text-zinc-500 ml-2 shrink-0">#{spool.id}</span>
             </h2>
           </div>
         </div>

@@ -16,6 +16,7 @@ import {
   formatETA,
   formatDuration,
   formatRelativeTime,
+  localDateKey,
 } from '../../utils/date';
 
 describe('getDatePlaceholder', () => {
@@ -434,5 +435,54 @@ describe('formatRelativeTime', () => {
 
     expect(formatRelativeTime('2025-06-15T11:55:00Z', 'system', t)).toBe('5 minutes ago');
     expect(formatRelativeTime('2025-06-15T12:05:00Z', 'system', t)).toBe('in 5 minutes');
+  });
+});
+
+describe('localDateKey (#1446 — Print Activity heatmap bucketing)', () => {
+  // We can't change Node's process.env.TZ at runtime (it's resolved once),
+  // but localDateKey's whole point is to use the *local* tz getters on the
+  // Date. So we feed it a Date object whose local components we control via
+  // the Date constructor's local-time form — that's equivalent to "the user
+  // is in tz X and the UTC timestamp lands on day Y locally."
+
+  it('keys a Date by its local-tz date, not UTC', () => {
+    // A Date whose local-tz representation is May 17, 2026 at 22:00. In CDT
+    // (UTC-5) the UTC representation would be May 18 03:00 — but the bucket
+    // key must follow the local view, which is what the heatmap renders.
+    const localEvening = new Date(2026, 4, 17, 22, 0, 0); // months are 0-indexed
+    expect(localDateKey(localEvening)).toBe('2026-05-17');
+  });
+
+  it('reproduces the #1446 repro: a UTC string that is "tomorrow UTC" but "today local" keys to today local', () => {
+    // Reporter's row 30: stored as 2026-05-18 03:39:07 UTC, local was
+    // 22:39 CDT May 17. The heatmap key must be 2026-05-17 in any local tz
+    // whose offset puts that UTC moment back into May 17. We construct the
+    // equivalent moment via a local-time Date object so the test is
+    // independent of which tz the CI runner is in.
+    const localMoment = new Date(2026, 4, 17, 22, 39, 7);
+    expect(localDateKey(localMoment)).toBe('2026-05-17');
+  });
+
+  it('returns an empty string for null / undefined / empty input', () => {
+    expect(localDateKey('')).toBe('');
+    // null and undefined typed via the string overload are still defensively
+    // handled by parseUTCDate, which returns null and we shortcut to ''.
+    expect(localDateKey(null as unknown as string)).toBe('');
+    expect(localDateKey(undefined as unknown as string)).toBe('');
+  });
+
+  it('pads single-digit month and day to two digits', () => {
+    const jan3 = new Date(2026, 0, 3, 10, 0, 0);
+    expect(localDateKey(jan3)).toBe('2026-01-03');
+  });
+
+  it('accepts an ISO string and parses it via parseUTCDate', () => {
+    // parseUTCDate treats naked ISO as UTC and converts to local. Verify
+    // the chain works end-to-end — a UTC-anchored input becomes a local
+    // YYYY-MM-DD bucket key.
+    const key = localDateKey('2026-05-17T16:27:23');
+    // The exact local date depends on the CI runner's tz, but the result
+    // must always be a well-formed YYYY-MM-DD (10 chars, two dashes).
+    expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });

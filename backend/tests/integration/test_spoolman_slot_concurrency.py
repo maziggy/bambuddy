@@ -61,6 +61,9 @@ def mock_client():
     client.base_url = "http://localhost:7912"
     client.health_check = AsyncMock(return_value=True)
     client.get_spool = AsyncMock(return_value=SAMPLE_SPOOL)
+    # #1457: assign route enumerates spools to clear stale fallback-tag links.
+    client.get_spools = AsyncMock(return_value=[])
+    client.merge_spool_extra = AsyncMock(return_value={"id": 0, "extra": {}})
 
     with patch(
         "backend.app.api.routes.spoolman_inventory._get_client",

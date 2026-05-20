@@ -1159,6 +1159,8 @@ class TestLinkSpoolMqttConfigure:
         mock_client.merge_spool_extra = AsyncMock(
             return_value={"id": 5, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
         )
+        # #1457 stale-tag cleanup enumerates spools; default to empty so it's a no-op.
+        mock_client.get_spools = AsyncMock(return_value=[])
         mock_client.get_spool = AsyncMock(
             return_value={
                 "id": 5,

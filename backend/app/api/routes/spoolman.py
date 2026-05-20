@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -841,6 +842,21 @@ async def link_spool(
             ) from e
 
     logger.info("Linked Spoolman spool %s to tag %s", spool_id, spool_tag)
+
+    # #1457: clear stale tag links on OTHER spools still claiming this exact tag.
+    # A given AMS-slot tag (RFID or deterministic fallback) belongs to one
+    # physical spool; without this cleanup the previous holder's extra.tag
+    # keeps it visible in the hover card / fill-level lookup.
+    await _clear_stale_tag_links(
+        client,
+        tag=spool_tag,
+        keep_spool_id=spool_id,
+        log_context=(
+            f"printer={printer_context[0]} ams={printer_context[1]} tray={printer_context[2]}"
+            if printer_context
+            else "via /spools/{id}/link"
+        ),
+    )
 
     # Auto-configure AMS slot via MQTT (best-effort; tag link and slot assignment already persisted)
     if printer_context:

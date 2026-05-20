@@ -75,6 +75,11 @@ import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors } from '../components/HMSErrorModal';
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
+import {
+  FanControlButton,
+  TemperatureControlButton,
+  usePrinterControlLimits,
+} from '../components/printers/TemperatureFanControls';
 import { AMSHistoryModal } from '../components/AMSHistoryModal';
 import { FilamentHoverCard, EmptySlotHoverCard } from '../components/FilamentHoverCard';
 import { LinkSpoolModal } from '../components/LinkSpoolModal';
@@ -1570,6 +1575,8 @@ function PrinterCard({
     refetchInterval: 30000, // Fallback polling, WebSocket handles real-time
   });
 
+  const { data: controlLimits } = usePrinterControlLimits(printer.id, !!status?.connected);
+
   // Check for firmware updates (cached for 5 minutes, can be disabled in settings)
   const { data: firmwareInfo } = useQuery({
     queryKey: ['firmwareUpdate', printer.id],
@@ -2975,6 +2982,13 @@ function PrinterCard({
 
             {/* Temperatures */}
             {status.temperatures && viewMode === 'expanded' && (() => {
+              const canControlTemp = hasPermission('printers:control');
+              const bedMin = controlLimits?.bed_min ?? 0;
+              const bedMax = controlLimits?.bed_max ?? 100;
+              const nozzleMin = controlLimits?.nozzle_min ?? 0;
+              const nozzleMax = controlLimits?.nozzle_max ?? 300;
+              const chamberMin = controlLimits?.chamber_min ?? 0;
+              const chamberMax = controlLimits?.chamber_max ?? 0;
               // Use actual heater states from MQTT stream
               const nozzleHeating = status.temperatures.nozzle_heating || status.temperatures.nozzle_2_heating || false;
               const bedHeating = status.temperatures.bed_heating || false;
@@ -2992,48 +3006,113 @@ function PrinterCard({
               return (
                 <div className="flex items-stretch gap-1.5 flex-wrap">
                   {/* Nozzle temp - combined for dual nozzle */}
-                  <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center">
-                    <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-orange-400" isHeating={nozzleHeating} />
-                    {status.temperatures.nozzle_2 !== undefined ? (
-                      <>
-                        <p className="text-[9px] text-bambu-gray">L / R</p>
-                        <p className="text-[11px] text-white">
-                          {Math.round(status.temperatures.nozzle || 0)}° / {Math.round(status.temperatures.nozzle_2 || 0)}°
-                        </p>
-                      </>
-                    ) : singleNozzleSlot ? (
-                      <NozzleSlotHoverCard slot={singleNozzleSlot} index={0} activeStatus filamentName={singleNozzleSlot.filament_id ? filamentInfo?.[singleNozzleSlot.filament_id]?.name : undefined}>
-                        <div className="cursor-default">
-                          <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.nozzle')}</p>
-                          <p className="text-[11px] text-white">
-                            {Math.round(status.temperatures.nozzle || 0)}°C
-                          </p>
+                  {status.temperatures.nozzle_2 !== undefined ? (
+                    <div className="flex gap-1 flex-1 min-w-0">
+                      <TemperatureControlButton
+                        printerId={printer.id}
+                        kind={{ nozzle: 1 }}
+                        label={`${t('printers.temperatures.nozzle')} (${t('common.left')})`}
+                        current={status.temperatures.nozzle || 0}
+                        target={status.temperatures.nozzle_target || 0}
+                        min={nozzleMin}
+                        max={nozzleMax}
+                        connected={!!status.connected}
+                        canControl={canControlTemp}
+                        className="flex-1 min-w-0"
+                      >
+                        <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg h-full flex flex-col justify-center items-center">
+                          <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-orange-400" isHeating={nozzleHeating} />
+                          <p className="text-[9px] text-bambu-gray">L</p>
+                          <p className="text-[11px] text-white">{Math.round(status.temperatures.nozzle || 0)}°C</p>
                         </div>
-                      </NozzleSlotHoverCard>
-                    ) : (
-                      <>
-                        <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.nozzle')}</p>
-                        <p className="text-[11px] text-white">
-                          {Math.round(status.temperatures.nozzle || 0)}°C
-                        </p>
-                      </>
-                    )}
-                  </div>
-                  <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center">
-                    <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-blue-400" isHeating={bedHeating} />
-                    <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.bed')}</p>
-                    <p className="text-[11px] text-white">
-                      {Math.round(status.temperatures.bed || 0)}°C
-                    </p>
-                  </div>
-                  {status.temperatures.chamber !== undefined && (
-                    <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center">
-                      <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-green-400" isHeating={chamberHeating} />
-                      <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.chamber')}</p>
-                      <p className="text-[11px] text-white">
-                        {Math.round(status.temperatures.chamber || 0)}°C
-                      </p>
+                      </TemperatureControlButton>
+                      <TemperatureControlButton
+                        printerId={printer.id}
+                        kind={{ nozzle: 0 }}
+                        label={`${t('printers.temperatures.nozzle')} (${t('common.right')})`}
+                        current={status.temperatures.nozzle_2 || 0}
+                        target={status.temperatures.nozzle_2_target || 0}
+                        min={nozzleMin}
+                        max={nozzleMax}
+                        connected={!!status.connected}
+                        canControl={canControlTemp}
+                        className="flex-1 min-w-0"
+                      >
+                        <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg h-full flex flex-col justify-center items-center">
+                          <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-orange-400" isHeating={status.temperatures.nozzle_2_heating} />
+                          <p className="text-[9px] text-bambu-gray">R</p>
+                          <p className="text-[11px] text-white">{Math.round(status.temperatures.nozzle_2 || 0)}°C</p>
+                        </div>
+                      </TemperatureControlButton>
                     </div>
+                  ) : (
+                    <TemperatureControlButton
+                      printerId={printer.id}
+                      kind="nozzle"
+                      label={t('printers.temperatures.nozzle')}
+                      current={status.temperatures.nozzle || 0}
+                      target={status.temperatures.nozzle_target || 0}
+                      min={nozzleMin}
+                      max={nozzleMax}
+                      connected={!!status.connected}
+                      canControl={canControlTemp}
+                      className="flex-1"
+                    >
+                      <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg h-full flex flex-col justify-center items-center">
+                        <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-orange-400" isHeating={nozzleHeating} />
+                        {singleNozzleSlot ? (
+                          <NozzleSlotHoverCard slot={singleNozzleSlot} index={0} activeStatus filamentName={singleNozzleSlot.filament_id ? filamentInfo?.[singleNozzleSlot.filament_id]?.name : undefined}>
+                            <div className="cursor-default">
+                              <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.nozzle')}</p>
+                              <p className="text-[11px] text-white">{Math.round(status.temperatures.nozzle || 0)}°C</p>
+                            </div>
+                          </NozzleSlotHoverCard>
+                        ) : (
+                          <>
+                            <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.nozzle')}</p>
+                            <p className="text-[11px] text-white">{Math.round(status.temperatures.nozzle || 0)}°C</p>
+                          </>
+                        )}
+                      </div>
+                    </TemperatureControlButton>
+                  )}
+                  <TemperatureControlButton
+                    printerId={printer.id}
+                    kind="bed"
+                    label={t('printers.temperatures.bed')}
+                    current={status.temperatures.bed || 0}
+                    target={status.temperatures.bed_target || 0}
+                    min={bedMin}
+                    max={bedMax}
+                    connected={!!status.connected}
+                    canControl={canControlTemp}
+                    className="flex-1"
+                  >
+                    <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg h-full flex flex-col justify-center items-center">
+                      <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-blue-400" isHeating={bedHeating} />
+                      <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.bed')}</p>
+                      <p className="text-[11px] text-white">{Math.round(status.temperatures.bed || 0)}°C</p>
+                    </div>
+                  </TemperatureControlButton>
+                  {status.temperatures.chamber !== undefined && chamberMax > 0 && (
+                    <TemperatureControlButton
+                      printerId={printer.id}
+                      kind="chamber"
+                      label={t('printers.temperatures.chamber')}
+                      current={status.temperatures.chamber || 0}
+                      target={status.temperatures.chamber_target || 0}
+                      min={chamberMin}
+                      max={chamberMax}
+                      connected={!!status.connected}
+                      canControl={canControlTemp}
+                      className="flex-1"
+                    >
+                      <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg h-full flex flex-col justify-center items-center">
+                        <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-green-400" isHeating={chamberHeating} />
+                        <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.chamber')}</p>
+                        <p className="text-[11px] text-white">{Math.round(status.temperatures.chamber || 0)}°C</p>
+                      </div>
+                    </TemperatureControlButton>
                   )}
                   {/* Active nozzle indicator for dual-nozzle printers */}
                   {isDualNozzle && (
@@ -3095,6 +3174,8 @@ function PrinterCard({
               const partFan = status.cooling_fan_speed;
               const auxFan = status.big_fan1_speed;
               const chamberFan = status.big_fan2_speed;
+              const canControlFans = hasPermission('printers:control');
+              const supportedFans = controlLimits?.fans ?? [1];
 
               return (
                 <div className="mt-3">
@@ -3110,37 +3191,55 @@ function PrinterCard({
                     {/* Left: Fan Status - always visible, dynamic coloring */}
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
                       {/* Part Cooling Fan */}
-                      <div
-                        className={`flex items-center gap-1 px-1.5 py-1 rounded ${partFan && partFan > 0 ? 'bg-cyan-500/10' : 'bg-bambu-dark'}`}
-                        title={t('printers.fans.partCooling')}
+                      <FanControlButton
+                        printerId={printer.id}
+                        fan={1}
+                        label={t('printers.fans.partCooling')}
+                        currentPercent={partFan ?? 0}
+                        connected={!!status.connected}
+                        canControl={canControlFans}
+                        supported={supportedFans.includes(1)}
+                        className={partFan && partFan > 0 ? 'bg-cyan-500/10 rounded' : 'bg-bambu-dark rounded'}
                       >
                         <Fan className={`w-3.5 h-3.5 ${partFan && partFan > 0 ? 'text-cyan-400' : 'text-bambu-gray/50'}`} />
                         <span className={`text-[10px] ${partFan && partFan > 0 ? 'text-cyan-400' : 'text-bambu-gray/50'}`}>
                           {partFan ?? 0}%
                         </span>
-                      </div>
+                      </FanControlButton>
 
                       {/* Auxiliary Fan */}
-                      <div
-                        className={`flex items-center gap-1 px-1.5 py-1 rounded ${auxFan && auxFan > 0 ? 'bg-blue-500/10' : 'bg-bambu-dark'}`}
-                        title={t('printers.fans.auxiliary')}
+                      <FanControlButton
+                        printerId={printer.id}
+                        fan={2}
+                        label={t('printers.fans.auxiliary')}
+                        currentPercent={auxFan ?? 0}
+                        connected={!!status.connected}
+                        canControl={canControlFans}
+                        supported={supportedFans.includes(2)}
+                        className={auxFan && auxFan > 0 ? 'bg-blue-500/10 rounded' : 'bg-bambu-dark rounded'}
                       >
                         <Wind className={`w-3.5 h-3.5 ${auxFan && auxFan > 0 ? 'text-blue-400' : 'text-bambu-gray/50'}`} />
                         <span className={`text-[10px] ${auxFan && auxFan > 0 ? 'text-blue-400' : 'text-bambu-gray/50'}`}>
                           {auxFan ?? 0}%
                         </span>
-                      </div>
+                      </FanControlButton>
 
                       {/* Chamber Fan */}
-                      <div
-                        className={`flex items-center gap-1 px-1.5 py-1 rounded ${chamberFan && chamberFan > 0 ? 'bg-green-500/10' : 'bg-bambu-dark'}`}
-                        title={t('printers.fans.chamber')}
+                      <FanControlButton
+                        printerId={printer.id}
+                        fan={3}
+                        label={t('printers.fans.chamber')}
+                        currentPercent={chamberFan ?? 0}
+                        connected={!!status.connected}
+                        canControl={canControlFans}
+                        supported={supportedFans.includes(3)}
+                        className={chamberFan && chamberFan > 0 ? 'bg-green-500/10 rounded' : 'bg-bambu-dark rounded'}
                       >
                         <AirVent className={`w-3.5 h-3.5 ${chamberFan && chamberFan > 0 ? 'text-green-400' : 'text-bambu-gray/50'}`} />
                         <span className={`text-[10px] ${chamberFan && chamberFan > 0 ? 'text-green-400' : 'text-bambu-gray/50'}`}>
                           {chamberFan ?? 0}%
                         </span>
-                      </div>
+                      </FanControlButton>
 
                       {/* Separator */}
                       <div className="w-px h-5 bg-bambu-gray/30" />

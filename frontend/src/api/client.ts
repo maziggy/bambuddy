@@ -3321,6 +3321,43 @@ export const api = {
       method: 'POST',
     }),
 
+  getPrinterControlLimits: (printerId: number) =>
+    request<{
+      success: boolean;
+      bed_min: number;
+      bed_max: number;
+      nozzle_min: number;
+      nozzle_max: number;
+      chamber_min: number;
+      chamber_max: number;
+      fans: number[];
+      dual_nozzle: boolean;
+    }>(`/printers/${printerId}/control-limits`),
+
+  setBedTemperature: (printerId: number, target: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/bed-temperature?target=${target}`,
+      { method: 'POST' }
+    ),
+
+  setNozzleTemperature: (printerId: number, target: number, nozzle: number = 0) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/nozzle-temperature?target=${target}&nozzle=${nozzle}`,
+      { method: 'POST' }
+    ),
+
+  setChamberTemperature: (printerId: number, target: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/chamber-temperature?target=${target}`,
+      { method: 'POST' }
+    ),
+
+  setFanSpeed: (printerId: number, fan: number, speedPercent: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/fan-speed?fan=${fan}&speed_percent=${speedPercent}`,
+      { method: 'POST' }
+    ),
+
   setAirductMode: (printerId: number, mode: 'cooling' | 'heating') =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/airduct-mode?mode=${mode}`, {
       method: 'POST',

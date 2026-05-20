@@ -2699,6 +2699,175 @@ async def set_print_speed(
     return {"success": True, "message": f"Print speed set to {speed_names.get(mode, 'Unknown')}"}
 
 
+@router.get("/{printer_id}/control-limits")
+async def get_printer_control_limits(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return per-model temperature and fan control limits for the printer UI."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    from backend.app.utils.printer_control_limits import get_printer_control_limits as resolve_limits
+
+    limits = resolve_limits(printer.model, nozzle_count=printer.nozzle_count)
+    return {"success": True, **limits.as_dict()}
+
+
+@router.post("/{printer_id}/bed-temperature")
+async def set_bed_temperature(
+    printer_id: int,
+    target: int = Query(..., description="Target bed temperature in °C (0 to turn off)"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the heated bed target temperature."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    from backend.app.utils.printer_control_limits import (
+        get_printer_control_limits as resolve_limits,
+        validate_bed_target,
+    )
+
+    limits = resolve_limits(printer.model, nozzle_count=printer.nozzle_count)
+    try:
+        validate_bed_target(target, limits)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    if not client.set_bed_temperature(target):
+        raise HTTPException(500, "Failed to set bed temperature")
+
+    msg = "Bed heater off" if target == 0 else f"Bed temperature set to {target}°C"
+    return {"success": True, "message": msg}
+
+
+@router.post("/{printer_id}/nozzle-temperature")
+async def set_nozzle_temperature(
+    printer_id: int,
+    target: int = Query(..., description="Target nozzle temperature in °C (0 to turn off)"),
+    nozzle: int = Query(0, description="Nozzle index: 0=right/default, 1=left on dual-nozzle printers"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a hotend target temperature."""
+    if nozzle not in (0, 1):
+        raise HTTPException(400, "nozzle must be 0 or 1")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    from backend.app.utils.printer_control_limits import (
+        get_printer_control_limits as resolve_limits,
+        validate_nozzle_target,
+    )
+
+    limits = resolve_limits(printer.model, nozzle_count=printer.nozzle_count)
+    if nozzle == 1 and not limits.dual_nozzle:
+        raise HTTPException(400, "This printer does not have a second nozzle")
+
+    try:
+        validate_nozzle_target(target, limits)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    if not client.set_nozzle_temperature(target, nozzle=nozzle):
+        raise HTTPException(500, "Failed to set nozzle temperature")
+
+    label = "off" if target == 0 else f"{target}°C"
+    side = " (left)" if nozzle == 1 else (" (right)" if limits.dual_nozzle else "")
+    return {"success": True, "message": f"Nozzle temperature set to {label}{side}"}
+
+
+@router.post("/{printer_id}/chamber-temperature")
+async def set_chamber_temperature(
+    printer_id: int,
+    target: int = Query(..., description="Target chamber temperature in °C (0 to turn off)"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the chamber heater target on enclosed printers."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    from backend.app.utils.printer_control_limits import (
+        get_printer_control_limits as resolve_limits,
+        validate_chamber_target,
+    )
+
+    limits = resolve_limits(printer.model, nozzle_count=printer.nozzle_count)
+    try:
+        validate_chamber_target(target, limits)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    if not client.set_chamber_temperature(target):
+        raise HTTPException(500, "Failed to set chamber temperature")
+
+    msg = "Chamber heater off" if target == 0 else f"Chamber temperature set to {target}°C"
+    return {"success": True, "message": msg}
+
+
+@router.post("/{printer_id}/fan-speed")
+async def set_fan_speed(
+    printer_id: int,
+    fan: int = Query(..., description="Fan index: 1=part cooling, 2=auxiliary, 3=chamber"),
+    speed_percent: int = Query(..., description="Fan speed 0–100%"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a fan speed (percentage mapped to the printer's 0–255 PWM range)."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    from backend.app.utils.printer_control_limits import (
+        fan_percent_to_pwm,
+        get_printer_control_limits as resolve_limits,
+        validate_fan,
+    )
+
+    limits = resolve_limits(printer.model, nozzle_count=printer.nozzle_count)
+    try:
+        validate_fan(fan, speed_percent, limits)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    if not client.set_fan_speed(fan, fan_percent_to_pwm(speed_percent)):
+        raise HTTPException(500, "Failed to set fan speed")
+
+    fan_names = {1: "Part cooling", 2: "Auxiliary", 3: "Chamber"}
+    name = fan_names.get(fan, f"Fan {fan}")
+    return {"success": True, "message": f"{name} fan set to {speed_percent}%"}
+
+
 @router.post("/{printer_id}/airduct-mode")
 async def set_airduct_mode(
     printer_id: int,

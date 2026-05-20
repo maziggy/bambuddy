@@ -3039,7 +3039,7 @@ function PrinterCard({
                         className="flex-1 min-w-0"
                       >
                         <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg h-full flex flex-col justify-center items-center">
-                          <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-orange-400" isHeating={status.temperatures.nozzle_2_heating} />
+                          <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-orange-400" isHeating={!!status.temperatures.nozzle_2_heating} />
                           <p className="text-[9px] text-bambu-gray">R</p>
                           <p className="text-[11px] text-white">{Math.round(status.temperatures.nozzle_2 || 0)}°C</p>
                         </div>

@@ -22,30 +22,6 @@ export interface PrinterControlLimits {
 
 type TempPopoverKind = 'bed' | 'nozzle' | 'chamber' | { nozzle: 0 | 1 };
 
-interface TemperatureFanControlsProps {
-  printerId: number;
-  connected: boolean;
-  canControl: boolean;
-  limits: PrinterControlLimits | undefined;
-  limitsLoading?: boolean;
-  /** Current bed °C */
-  bedCurrent?: number;
-  bedTarget?: number;
-  /** Single or right nozzle */
-  nozzleCurrent?: number;
-  nozzleTarget?: number;
-  /** Left nozzle on dual */
-  nozzle2Current?: number;
-  nozzle2Target?: number;
-  chamberCurrent?: number;
-  chamberTarget?: number;
-  showChamber?: boolean;
-  dualNozzle?: boolean;
-  partFan?: number | null;
-  auxFan?: number | null;
-  chamberFan?: number | null;
-}
-
 function TempPopover({
   label,
   current,

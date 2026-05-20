@@ -1,0 +1,200 @@
+2026-05-20 15:55:15,020 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 15:56:37,375 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 82.4s, forcing reconnect
+2026-05-20 15:56:37,376 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 15:56:37,522 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 15:57:44,880 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 67.4s, forcing reconnect
+2026-05-20 15:57:44,880 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 15:57:45,028 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 15:59:14,891 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 15:59:14,892 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 15:59:15,037 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:00:44,902 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:00:44,903 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:00:45,050 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:02:14,914 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:02:14,915 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:02:15,089 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:03:44,926 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.8s, forcing reconnect
+2026-05-20 16:03:44,927 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:03:45,089 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:05:14,941 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:05:14,942 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:05:15,100 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:06:37,366 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 82.3s, forcing reconnect
+2026-05-20 16:06:37,367 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:06:37,561 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:07:44,957 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 67.4s, forcing reconnect
+2026-05-20 16:07:44,958 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:07:45,112 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:09:14,970 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:09:14,971 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:09:15,138 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:10:44,982 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.8s, forcing reconnect
+2026-05-20 16:10:44,983 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:10:45,188 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:12:14,994 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.8s, forcing reconnect
+2026-05-20 16:12:14,995 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:12:15,151 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:13:45,006 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:13:45,006 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:13:45,163 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:14:44,128 INFO [uvicorn.access] [-] [IP]:46234 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-20 16:14:44,181 INFO [backend.app.api.routes.cloud] [4bc25017] get_filament_info called with 1 IDs: ['P30aae37']
+2026-05-20 16:14:44,318 WARNING [backend.app.api.routes.cloud] [4bc25017] Failed to get cloud preset P30aae37 (API ID: P30aae37): Failed to get setting detail: 400
+2026-05-20 16:14:44,328 INFO [uvicorn.access] [-] [IP]:46232 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-20 16:14:54,800 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-20 16:14:55,206 INFO [uvicorn.access] [-] [IP]:46250 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-20 16:14:55,260 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-20 16:14:55,261 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-20 16:14:55,261 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 70.1s, forcing reconnect
+2026-05-20 16:14:55,261 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:14:55,273 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-20 16:14:55,345 INFO [uvicorn.access] [-] [IP]:50818 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-20 16:14:55,493 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:14:55,538 INFO [backend.app.api.routes.cloud] [2401c639] get_filament_info called with 1 IDs: ['P30aae37']
+2026-05-20 16:14:55,544 INFO [uvicorn.access] [-] [IP]:50802 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-20 16:15:02,888 INFO [uvicorn.access] [-] [IP]:46250 - "POST /api/v1/library/files?generate_stl_thumbnails=true HTTP/1.1" 200
+2026-05-20 16:15:08,020 INFO [uvicorn.access] [e194a360] [IP]:46250 - "POST /api/v1/printers/2/refresh-status HTTP/1.1" 200
+2026-05-20 16:15:10,880 INFO [uvicorn.access] [e194a360] [IP]:46250 - "POST /api/v1/printers/2/refresh-status HTTP/1.1" 200
+2026-05-20 16:15:12,347 INFO [uvicorn.access] [e194a360] [IP]:46250 - "POST /api/v1/printers/2/refresh-status HTTP/1.1" 200
+2026-05-20 16:16:15,020 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 62.7s, forcing reconnect
+2026-05-20 16:16:15,021 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:16:15,182 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:17:45,033 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:17:45,034 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:17:45,189 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:19:15,044 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:19:15,045 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:19:15,203 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:20:45,056 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:20:45,057 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:20:45,207 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:21:33,673 INFO [backend.app.api.routes.cloud] [b995a06b] get_filament_info called with 1 IDs: ['P30aae37']
+2026-05-20 16:21:33,824 WARNING [backend.app.api.routes.cloud] [b995a06b] Failed to get cloud preset P30aae37 (API ID: P30aae37): Failed to get setting detail: 400
+2026-05-20 16:21:33,834 INFO [uvicorn.access] [-] [IP]:40664 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-20 16:21:35,542 INFO [uvicorn.access] [-] [IP]:40664 - "POST /api/v1/printers/2/refresh-status HTTP/1.1" 200
+2026-05-20 16:21:37,544 INFO [uvicorn.access] [-] [IP]:40664 - "POST /api/v1/printers/2/refresh-status HTTP/1.1" 200
+2026-05-20 16:22:45,069 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 67.5s, forcing reconnect
+2026-05-20 16:22:45,070 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:22:45,223 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:24:15,081 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:24:15,082 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:24:15,239 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:25:45,093 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:25:45,093 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:25:45,235 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:27:15,104 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:27:15,105 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:27:15,239 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:28:45,117 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:28:45,118 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:28:45,261 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:30:15,129 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 89.9s, forcing reconnect
+2026-05-20 16:30:15,130 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:30:15,279 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:31:37,328 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 82.0s, forcing reconnect
+2026-05-20 16:31:37,329 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:31:37,508 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:32:45,144 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 67.6s, forcing reconnect
+2026-05-20 16:32:45,145 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:32:45,300 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:33:16,385 INFO [backend.app.api.routes.cloud] [f1753ccc] get_filament_info called with 1 IDs: ['P30aae37']
+2026-05-20 16:33:16,530 WARNING [backend.app.api.routes.cloud] [f1753ccc] Failed to get cloud preset P30aae37 (API ID: P30aae37): Failed to get setting detail: 400
+2026-05-20 16:33:16,539 INFO [uvicorn.access] [-] [IP]:38128 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-20 16:33:46,867 WARNING [backend.app.services.bambu_mqtt] [1507e274] [[SERIAL]] Connection stale - no message for 61.6s, forcing reconnect
+2026-05-20 16:33:46,868 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:33:47,031 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:34:47,582 WARNING [backend.app.services.bambu_mqtt] [da6d66a0] [[SERIAL]] Connection stale - no message for 60.6s, forcing reconnect
+2026-05-20 16:34:47,582 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:34:47,756 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:35:52,760 INFO [backend.app.api.routes.support] [85073760] Log level changed to DEBUG
+2026-05-20 16:35:52,760 INFO [backend.app.api.routes.bug_report] [85073760] Bug report: enabled debug logging
+2026-05-20 16:35:52,760 DEBUG [backend.app.services.bambu_mqtt] [85073760] [[SERIAL]] Requesting status update (pushall)
+2026-05-20 16:35:52,761 DEBUG [backend.app.services.bambu_mqtt] [85073760] [[SERIAL]] Requesting status update (pushall)
+2026-05-20 16:35:52,762 INFO [uvicorn.access] [-] [IP]:57504 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-20 16:35:52,843 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-05-20 16:35:52,843 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 1, 'insert_flag': True, 'power_on_flag': True}
+2026-05-20 16:35:52,843 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-05-20 16:35:52,843 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-05-20 16:35:52,843 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-05-20 16:35:52,843 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:35:52,844 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-05-20 16:35:52,844 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-05-20 16:35:52,844 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-05-20 16:35:52,844 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-05-20 16:35:52,844 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-05-20 16:35:52,845 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-05-20 16:35:52,845 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-20 16:35:52,845 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-05-20 16:35:52,845 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-05-20 16:35:54,786 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:35:54,787 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-20 16:36:00,799 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:00,800 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-05-20 16:36:02,785 DEBUG [backend.app.services.bambu_mqtt] [74dca6e8] [[SERIAL]] Requesting status update (pushall)
+2026-05-20 16:36:02,786 INFO [uvicorn.access] [-] [IP]:33398 - "POST /api/v1/printers/2/refresh-status HTTP/1.1" 200
+2026-05-20 16:36:02,805 DEBUG [backend.app.api.routes.printers] [96edbb00] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-20 16:36:02,806 DEBUG [backend.app.api.routes.printers] [96edbb00] Using tray_now directly as global ID: 255
+2026-05-20 16:36:02,808 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:02,808 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-05-20 16:36:06,816 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:06,816 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-20 16:36:08,823 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:12,836 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:12,837 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-20 16:36:16,850 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:16,850 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-05-20 16:36:17,755 DEBUG [backend.app.api.routes.printers] [c96336b8] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-20 16:36:17,755 DEBUG [backend.app.api.routes.printers] [c96336b8] Using tray_now directly as global ID: 255
+2026-05-20 16:36:22,860 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:22,860 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-20 16:36:24,869 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:26,887 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:26,888 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-05-20 16:36:30,883 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:30,883 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-20 16:36:32,839 DEBUG [backend.app.api.routes.printers] [0fc7c341] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-20 16:36:32,839 DEBUG [backend.app.api.routes.printers] [0fc7c341] Using tray_now directly as global ID: 255
+2026-05-20 16:36:32,891 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:32,891 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-05-20 16:36:34,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:34,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-20 16:36:38,907 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:38,907 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-05-20 16:36:42,921 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:42,922 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-20 16:36:46,926 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:46,927 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-20 16:36:48,023 DEBUG [backend.app.api.routes.printers] [4c82623e] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-20 16:36:48,023 DEBUG [backend.app.api.routes.printers] [4c82623e] Using tray_now directly as global ID: 255
+2026-05-20 16:36:48,937 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:50,949 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:50,949 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-05-20 16:36:54,957 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:36:54,957 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-20 16:36:56,964 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:37:00,985 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:37:00,985 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-20 16:37:02,863 WARNING [backend.app.services.bambu_mqtt] [dbe58455] [[SERIAL]] Connection stale - no message for 60.1s, forcing reconnect
+2026-05-20 16:37:02,864 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-05-20 16:37:02,872 DEBUG [backend.app.api.routes.printers] [dbe58455] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-20 16:37:02,872 DEBUG [backend.app.api.routes.printers] [dbe58455] Using tray_now directly as global ID: 255
+2026-05-20 16:37:02,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-05-20 16:37:02,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-05-20 16:37:03,024 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-05-20 16:37:04,985 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:37:04,986 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-05-20 16:37:08,997 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:37:08,997 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-20 16:37:11,004 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:37:11,004 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-20 16:37:13,014 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:37:13,014 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-20 16:37:17,021 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:37:17,022 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-05-20 16:37:18,068 DEBUG [backend.app.api.routes.printers] [bc2fc606] API returning ams_mapping: [], ams_extruder_map: {}
+2026-05-20 16:37:18,068 DEBUG [backend.app.api.routes.printers] [bc2fc606] Using tray_now directly as global ID: 255
+2026-05-20 16:37:19,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:37:19,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-20 16:37:25,049 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-20 16:37:25,050 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm

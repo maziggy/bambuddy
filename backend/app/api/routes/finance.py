@@ -551,7 +551,7 @@ async def _rebuild_wallet_ledger_for_user(db: AsyncSession, user_id: int) -> Non
 async def delete_transaction(
     transaction_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_READ_ALL),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Delete a wallet transaction and rebuild the user's ledger to keep balances consistent."""
     await _require_authenticated_user(current_user)
@@ -583,7 +583,7 @@ async def edit_transaction(
     transaction_id: int,
     request: TransactionEditRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_READ_ALL),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Edit a wallet transaction (user_id, cost_center_id, amount, description) and rebuild ledger."""
     await _require_authenticated_user(current_user)
@@ -625,7 +625,7 @@ async def edit_transaction(
 async def create_manual_print(
     request: ManualPrintRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_READ_ALL),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Create a manual print charge transaction (for admin purposes)."""
     await _require_authenticated_user(current_user)

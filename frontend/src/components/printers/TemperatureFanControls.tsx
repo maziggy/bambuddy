@@ -319,22 +319,29 @@ export function FanControlButton({
     onError: (err: Error) => showToast(err.message, 'error'),
   });
 
+  const badgeClass = `flex items-center gap-1 px-1.5 py-1 rounded ${className}`;
+
+  // Read-only status badge (same layout as before fan controls were added)
   if (!supported) {
-    return <div className={className}>{children}</div>;
+    return (
+      <div className={badgeClass} title={label}>
+        {children}
+      </div>
+    );
   }
 
   const disabled = !connected || !canControl;
 
   return (
-    <div className={`relative ${className}`}>
+    <div className="relative">
       <button
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
-          disabled ? '' : 'hover:ring-1 hover:ring-white/15'
+        className={`${badgeClass} transition-colors ${
+          disabled ? 'cursor-not-allowed' : 'hover:ring-1 hover:ring-white/15'
         }`}
-        title={disabled ? undefined : t('printers.fanControl.adjust')}
+        title={disabled ? label : t('printers.fanControl.adjust')}
       >
         {children}
       </button>

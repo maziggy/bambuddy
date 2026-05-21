@@ -74,6 +74,22 @@ class TestGetStatus:
         assert s["history"] == []
         assert "low" in s["thresholds"] and "high" in s["thresholds"]
 
+    def test_thresholds_reflect_configured_sensitivity(self):
+        """#1469 — get_status() reports the thresholds for the passed
+        sensitivity, not a hardcoded 'medium'. Each level must be distinct so
+        the Status panel changes when the user changes the setting."""
+        svc = ObicoDetectionService()
+        low = svc.get_status("low")["thresholds"]
+        medium = svc.get_status("medium")["thresholds"]
+        high = svc.get_status("high")["thresholds"]
+
+        # Higher sensitivity → lower thresholds (easier to trigger).
+        assert low["low"] > medium["low"] > high["low"]
+        assert low["high"] > medium["high"] > high["high"]
+        # Default and unknown values fall back to medium.
+        assert svc.get_status()["thresholds"] == medium
+        assert svc.get_status("bogus")["thresholds"] == medium
+
 
 class TestTestConnection:
     @pytest.mark.asyncio

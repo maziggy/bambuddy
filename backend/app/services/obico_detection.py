@@ -320,8 +320,12 @@ class ObicoDetectionService:
 
     # ---- queries ----
 
-    def get_status(self) -> dict:
-        low, high = thresholds("medium")
+    def get_status(self, sensitivity: str = "medium") -> dict:
+        # Report the thresholds for the configured sensitivity, not a hardcoded
+        # "medium" — otherwise the Status panel always shows the medium row
+        # regardless of the user's selection (#1469). thresholds() falls back
+        # to the medium multiplier for any unrecognized value.
+        low, high = thresholds(sensitivity)
         return {
             "is_running": self._task is not None and not self._task.done(),
             "last_error": self._last_error,

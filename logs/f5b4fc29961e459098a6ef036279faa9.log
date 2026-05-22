@@ -1,0 +1,200 @@
+2026-05-22 08:28:37,454 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-05-22 08:28:37,454 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-05-22 08:28:37,455 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 2 spool assignments for printer 1: {'0-2': 3, '0-3': 4}
+2026-05-22 08:28:37,455 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (3 trays): {'0-2': 100, '0-3': 100, '255-0': 0}
+2026-05-22 08:28:37,460 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-05-22 08:28:37,460 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: Filament_spool_gauge.gcode.3mf, subtask: Filament_spool_gauge
+2026-05-22 08:28:37,464 INFO [backend.app.main] [-] Skipping duplicate - already have printing archive 74 for Filament_spool_gauge
+2026-05-22 08:28:37,466 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 74)
+2026-05-22 08:28:37,470 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-05-22 08:28:37,470 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-05-22 08:28:38,193 INFO [backend.app.main] [-] [Printer 2] Broadcasting AMS change via WebSocket
+2026-05-22 08:28:38,198 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 2
+2026-05-22 08:28:38,198 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-05-22 08:28:38,199 INFO [backend.app.main] [-] Auto-unlink: spool 6 AMS255-T0 — fingerprint mismatch but tray matches spool, updating fp
+2026-05-22 08:28:38,208 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.07.00.00
+2026-05-22 08:28:38,992 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-22 08:28:38,993 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-22 08:28:38,993 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-22 08:28:40,538 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 130217 bytes
+2026-05-22 08:28:40,544 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 130217 bytes
+2026-05-22 08:28:40,544 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 (A1)
+2026-05-22 08:28:40,545 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-05-22 08:28:40,546 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-05-22 08:28:40,614 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 114667 bytes
+2026-05-22 08:28:40,618 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 2
+2026-05-22 08:28:40,618 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-05-22 08:28:43,068 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 126199 bytes
+2026-05-22 08:28:43,302 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=5)
+2026-05-22 08:28:43,316 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-05-22 08:28:43,526 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=5)
+2026-05-22 08:28:43,550 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-05-22 08:28:46,478 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-22 08:28:53,583 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-22 08:28:53,913 INFO [uvicorn.access] [-] [IP]:46716 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-22 08:28:53,990 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-22 08:28:53,991 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-22 08:28:53,992 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-22 08:28:54,013 INFO [uvicorn.access] [-] [IP]:46728 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-22 08:28:54,200 INFO [backend.app.services.camera] [bcffc21c] Found ffmpeg at: /usr/bin/ffmpeg
+2026-05-22 08:28:59,005 INFO [backend.app.api.routes.printers] [c7dfbf7c] Trying to download cover for 'Round_Honeycomb_Coaster.gcode.3mf' from [IP] (trying 4 paths)
+2026-05-22 08:28:59,008 INFO [backend.app.api.routes.printers] [0ad69b18] Trying to download cover for 'Filament_spool_gauge' from [IP] (trying 8 paths)
+2026-05-22 08:28:59,020 INFO [backend.app.api.routes.printers] [29fe6c88] Trying to download cover for 'Filament_spool_gauge' from [IP] (trying 8 paths)
+2026-05-22 08:28:59,023 INFO [backend.app.api.routes.printers] [eeee8da3] Trying to download cover for 'Round_Honeycomb_Coaster.gcode.3mf' from [IP] (trying 4 paths)
+2026-05-22 08:28:59,080 INFO [backend.app.api.routes.cloud] [d06bba7a] get_filament_info called with 1 IDs: ['GFA01']
+2026-05-22 08:28:59,173 INFO [backend.app.api.routes.cloud] [fb4180de] get_filament_info called with 3 IDs: ['GFA01', 'GFG99', 'PFUSe984']
+2026-05-22 08:28:59,301 INFO [uvicorn.access] [-] [IP]:46728 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-22 08:28:59,724 WARNING [backend.app.api.routes.cloud] [fb4180de] Failed to get cloud preset PFUSe984 (API ID: PFUSe984): Failed to get setting detail: 400
+2026-05-22 08:28:59,728 INFO [uvicorn.access] [-] [IP]:34542 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-22 08:28:59,736 INFO [backend.app.services.firmware_check] [d962bf5a] Got Bambu Lab build ID: lKH6NenxjmuBxWz8K1bm_
+2026-05-22 08:29:00,539 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-05-22 08:29:00,546 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-05-22 08:29:00,700 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-05-22 08:29:00,738 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-05-22 08:29:02,847 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Filament_spool_gauge.gcode.3mf to /app/data/archive/temp/cover_1_Filament_spool_gauge.gcode.3mf (230220 bytes)
+2026-05-22 08:29:02,870 INFO [backend.app.api.routes.printers] [0ad69b18] Downloaded file size: 230220 bytes
+2026-05-22 08:29:02,870 INFO [backend.app.api.routes.printers] [0ad69b18] Cover: detected plate 1 from 3MF contents
+2026-05-22 08:29:02,955 WARNING [backend.app.services.bambu_ftp] [-] FTP download returned 0 bytes for /Filament_spool_gauge.gcode.3mf
+2026-05-22 08:29:02,999 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /cache/Filament_spool_gauge.gcode.3mf: 550  (not on printer)
+2026-05-22 08:29:03,050 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /model/Filament_spool_gauge.gcode.3mf: 550  (not on printer)
+2026-05-22 08:29:03,095 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /data/Filament_spool_gauge.gcode.3mf: 550  (not on printer)
+2026-05-22 08:29:03,150 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /Filament_spool_gauge.3mf: 550  (not on printer)
+2026-05-22 08:29:03,208 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /cache/Filament_spool_gauge.3mf: 550  (not on printer)
+2026-05-22 08:29:03,258 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /model/Filament_spool_gauge.3mf: 550  (not on printer)
+2026-05-22 08:29:03,380 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /data/Filament_spool_gauge.3mf: 550  (not on printer)
+2026-05-22 08:29:04,237 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-05-22 08:29:05,593 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Filament_spool_gauge.gcode.3mf to /app/data/archive/temp/cover_1_Filament_spool_gauge.gcode.3mf (230220 bytes)
+2026-05-22 08:29:05,600 INFO [backend.app.api.routes.printers] [29fe6c88] Downloaded file size: 230220 bytes
+2026-05-22 08:29:05,601 INFO [backend.app.api.routes.printers] [29fe6c88] Cover: detected plate 1 from 3MF contents
+2026-05-22 08:29:09,741 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Round_Honeycomb_Coaster.gcode.3mf to /app/data/archive/temp/cover_2_Round_Honeycomb_Coaster.gcode.3mf (1013151 bytes)
+2026-05-22 08:29:09,764 INFO [backend.app.api.routes.printers] [c7dfbf7c] Downloaded file size: 1013151 bytes
+2026-05-22 08:29:09,764 INFO [backend.app.api.routes.printers] [c7dfbf7c] Cover: detected plate 1 from 3MF contents
+2026-05-22 08:29:09,869 WARNING [backend.app.services.bambu_ftp] [-] FTP download returned 0 bytes for /Round_Honeycomb_Coaster.gcode.3mf
+2026-05-22 08:29:09,920 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /cache/Round_Honeycomb_Coaster.gcode.3mf: 550  (not on printer)
+2026-05-22 08:29:09,964 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /model/Round_Honeycomb_Coaster.gcode.3mf: 550  (not on printer)
+2026-05-22 08:29:10,018 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /data/Round_Honeycomb_Coaster.gcode.3mf: 550  (not on printer)
+2026-05-22 08:29:10,891 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1 Mini, prot_c=False)
+2026-05-22 08:29:16,193 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Round_Honeycomb_Coaster.gcode.3mf to /app/data/archive/temp/cover_2_Round_Honeycomb_Coaster.gcode.3mf (1013151 bytes)
+2026-05-22 08:29:16,201 INFO [backend.app.api.routes.printers] [eeee8da3] Downloaded file size: 1013151 bytes
+2026-05-22 08:29:16,201 INFO [backend.app.api.routes.printers] [eeee8da3] Cover: detected plate 1 from 3MF contents
+2026-05-22 08:32:08,911 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-05-22 08:32:08,912 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-05-22 08:32:11,448 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 138224 bytes
+2026-05-22 08:32:27,851 INFO [backend.app.services.mqtt_relay] [558b83e7] MQTT relay disabled
+2026-05-22 08:32:27,854 INFO [uvicorn.access] [-] [IP]:33214 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-05-22 08:33:46,472 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-22 08:33:47,267 INFO [backend.app.services.mqtt_relay] [b5fcaaf6] MQTT relay disabled
+2026-05-22 08:33:47,270 INFO [uvicorn.access] [-] [IP]:53654 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-05-22 08:33:49,047 INFO [backend.app.services.mqtt_relay] [6f773a8a] MQTT relay disabled
+2026-05-22 08:33:49,050 INFO [uvicorn.access] [-] [IP]:53654 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-05-22 08:33:49,863 INFO [backend.app.services.mqtt_relay] [395b1e6e] MQTT relay disabled
+2026-05-22 08:33:49,867 INFO [uvicorn.access] [-] [IP]:53654 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-05-22 08:34:00,705 INFO [backend.app.services.mqtt_relay] [4af9f88e] MQTT relay disabled
+2026-05-22 08:34:00,708 INFO [uvicorn.access] [-] [IP]:53272 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-05-22 08:34:20,881 INFO [uvicorn.access] [-] [IP]:54198 - "POST /api/v1/archives/recalculate-costs HTTP/1.1" 200
+2026-05-22 08:37:07,129 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=3 at layer=12
+2026-05-22 08:38:46,460 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-22 08:39:27,022 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-22 08:39:27,352 INFO [uvicorn.access] [-] [IP]:55694 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-22 08:39:27,426 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-22 08:39:27,426 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-22 08:39:27,428 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-22 08:39:27,445 INFO [uvicorn.access] [-] [IP]:55730 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-22 08:39:46,187 INFO [backend.app.api.routes.cloud] [346836b9] get_filament_info called with 1 IDs: ['GFA01']
+2026-05-22 08:39:46,333 INFO [backend.app.api.routes.cloud] [b5599a2d] get_filament_info called with 3 IDs: ['GFA01', 'GFG99', 'PFUSe984']
+2026-05-22 08:39:46,415 INFO [uvicorn.access] [-] [IP]:59986 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-22 08:39:46,890 WARNING [backend.app.api.routes.cloud] [b5599a2d] Failed to get cloud preset PFUSe984 (API ID: PFUSe984): Failed to get setting detail: 400
+2026-05-22 08:39:46,892 INFO [uvicorn.access] [-] [IP]:59996 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-22 08:41:16,565 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-05-22 08:41:16,565 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-05-22 08:41:19,152 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 137770 bytes
+2026-05-22 08:43:46,456 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-22 08:46:39,278 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=2 at layer=16
+2026-05-22 08:47:29,026 INFO [backend.app.api.routes.support] [e4dee9b7] Log level changed to DEBUG
+2026-05-22 08:47:29,027 INFO [backend.app.api.routes.bug_report] [e4dee9b7] Bug report: enabled debug logging
+2026-05-22 08:47:29,027 DEBUG [backend.app.services.bambu_mqtt] [e4dee9b7] [[SERIAL]] Requesting status update (pushall)
+2026-05-22 08:47:29,027 DEBUG [backend.app.services.bambu_mqtt] [e4dee9b7] [[SERIAL]] Requesting status update (pushall)
+2026-05-22 08:47:29,027 INFO [uvicorn.access] [-] [IP]:35544 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-22 08:47:29,073 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': False}
+2026-05-22 08:47:29,073 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Round_Honeycomb_Coaster.gcode.3mf, subtask_name: Round_Honeycomb_Coaster.gcode.3mf
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'a', 'tray_is_bbl_bits': 'a', 'tray_tar': '3', 'tray_now': '3', 'tray_pre': '3', 'tray_read_done_bits': 'a', 'tray_reading_bits': '0', 'version': 23, 'insert_flag': False, 'power_on_flag': False}
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 3
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-05-22 08:47:29,074 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-05-22 08:47:29,075 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-05-22 08:47:29,075 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887104, 'code': 65604, 'action': 0, 'timestamp': 1779343002}]
+2026-05-22 08:47:29,075 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-05-22 08:47:29,075 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-05-22 08:47:29,075 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-05-22 08:47:29,075 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Round_Honeycomb_Coaster.gcode.3mf, subtask: Round_Honeycomb_Coaster.gcode.3mf
+2026-05-22 08:47:29,214 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': False}
+2026-05-22 08:47:29,214 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-05-22 08:47:29,214 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Filament_spool_gauge.gcode.3mf, subtask_name: Filament_spool_gauge
+2026-05-22 08:47:29,214 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'c', 'tray_is_bbl_bits': 'c', 'tray_tar': '2', 'tray_now': '2', 'tray_pre': '3', 'tray_read_done_bits': 'c', 'tray_reading_bits': '0', 'version': 112, 'insert_flag': True, 'power_on_flag': True}
+2026-05-22 08:47:29,214 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 2
+2026-05-22 08:47:29,214 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-05-22 08:47:29,214 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-05-22 08:47:29,214 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-05-22 08:47:29,215 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 263 (main=1, sub=7)
+2026-05-22 08:47:29,215 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:29,215 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-05-22 08:47:29,215 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-05-22 08:47:29,215 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-05-22 08:47:29,215 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-05-22 08:47:29,215 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-05-22 08:47:29,215 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-05-22 08:47:29,216 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-22 08:47:29,216 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-05-22 08:47:29,216 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Filament_spool_gauge.gcode.3mf, subtask: Filament_spool_gauge
+2026-05-22 08:47:31,261 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:33,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:33,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-22 08:47:33,295 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:35,124 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:35,124 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -44dBm
+2026-05-22 08:47:35,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:35,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-22 08:47:37,150 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:37,357 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:37,357 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-05-22 08:47:39,170 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:39,394 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:39,394 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-22 08:47:41,185 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:41,185 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-05-22 08:47:43,458 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:43,496 DEBUG [backend.app.services.mqtt_smart_plug] [96845db6] MQTT smart plug service disabled (MQTT relay not enabled)
+2026-05-22 08:47:43,496 INFO [backend.app.services.mqtt_relay] [96845db6] MQTT relay disabled
+2026-05-22 08:47:43,499 INFO [uvicorn.access] [-] [IP]:40136 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-05-22 08:47:45,217 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:45,217 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-05-22 08:47:45,494 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:45,494 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] mc_print_sub_stage changed: 4 -> 2
+2026-05-22 08:47:45,494 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-05-22 08:47:47,234 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:47,234 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -43dBm
+2026-05-22 08:47:47,537 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:49,259 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:49,562 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:51,276 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:51,277 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-05-22 08:47:51,598 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:51,598 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-22 08:47:51,668 DEBUG [backend.app.main] [-] [A1] Runtime tracking: added 30s, total=241605s (67.11h)
+2026-05-22 08:47:51,671 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: added 30s, total=72285s (20.08h)
+2026-05-22 08:47:51,673 DEBUG [backend.app.main] [-] Updated runtime for 2 printer(s)
+2026-05-22 08:47:53,305 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:53,305 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -44dBm
+2026-05-22 08:47:53,376 INFO [uvicorn.access] [-] [IP]:34266 - "POST /api/v1/archives/recalculate-costs HTTP/1.1" 200
+2026-05-22 08:47:53,646 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:55,323 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:55,324 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-05-22 08:47:55,672 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-22 08:47:55,672 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] mc_print_sub_stage changed: 2 -> 0

@@ -169,6 +169,7 @@ class PrinterManager:
         self._printer_info: dict[int, PrinterInfo] = {}  # Cache printer name/serial for callbacks
         self._on_print_start: Callable[[int, dict], None] | None = None
         self._on_print_complete: Callable[[int, dict], None] | None = None
+        self._on_print_running_observed: Callable[[int, dict], None] | None = None
         self._on_status_change: Callable[[int, PrinterState], None] | None = None
         self._on_ams_change: Callable[[int, list], None] | None = None
         self._on_layer_change: Callable[[int, int], None] | None = None
@@ -309,6 +310,15 @@ class PrinterManager:
         """Set callback for print completion events."""
         self._on_print_complete = callback
 
+    def set_print_running_observed_callback(self, callback: Callable[[int, dict], None]):
+        """Set callback for restart-recovery RUNNING-state observations (#1485
+        follow-up). Fires the first time we see ``state == RUNNING`` for a
+        printer that started its print before Bambuddy came up — the #1304
+        guard suppresses ``on_print_start`` for these, so anything that
+        normally hangs off it (e.g. timelapse baseline capture) needs this
+        hook to recover."""
+        self._on_print_running_observed = callback
+
     def set_status_change_callback(self, callback: Callable[[int, PrinterState], None]):
         """Set callback for status change events."""
         self._on_status_change = callback
@@ -372,6 +382,10 @@ class PrinterManager:
             if self._on_print_complete:
                 self._schedule_async(self._on_print_complete(printer_id, data))
 
+        def on_print_running_observed(data: dict):
+            if self._on_print_running_observed:
+                self._schedule_async(self._on_print_running_observed(printer_id, data))
+
         def on_ams_change(ams_data: list):
             if self._on_ams_change:
                 self._schedule_async(self._on_ams_change(printer_id, ams_data))
@@ -400,6 +414,7 @@ class PrinterManager:
             on_layer_change=on_layer_change,
             on_bed_temp_update=on_bed_temp_update,
             on_drying_complete=on_drying_complete,
+            on_print_running_observed=on_print_running_observed,
         )
 
         client.connect()

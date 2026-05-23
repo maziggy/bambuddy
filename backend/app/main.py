@@ -3024,6 +3024,52 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
     logger.warning("[TIMELAPSE] All attempts exhausted for archive %s, giving up", archive_id)
 
 
+async def on_print_running_observed(printer_id: int, data: dict):
+    """Restart-recovery: capture a fresh timelapse baseline for a print that
+    started before Bambuddy came up.
+
+    bambu_mqtt.py suppresses ``on_print_start`` on the first RUNNING push
+    after Bambuddy startup (#1304 guard, prevents duplicate archive
+    creation). Without that path, ``_capture_timelapse_baseline_at_start``
+    never runs and ``_scan_for_timelapse_with_retries`` falls into its
+    "take baseline now" fallback at completion time — but by then the
+    printer has already uploaded the in-flight MP4, so the baseline
+    includes it and no diff ever matches (#1485 follow-up).
+
+    Fires once per session, in lieu of on_print_start when restart-recovery
+    kicks in. The printer doesn't upload the timelapse until after PRINT
+    COMPLETE, so a baseline captured any time during the print is still
+    pre-upload.
+    """
+    logger = logging.getLogger(__name__)
+
+    # Avoid double-capture: on_print_start may have run earlier in this
+    # Bambuddy process if the print started AFTER startup and we crashed
+    # later in the same session. (Realistically this can't happen — the
+    # MQTT client object would have been recreated — but the cheap guard
+    # is correct regardless.)
+    if printer_id in _timelapse_baselines:
+        logger.debug(
+            "[TIMELAPSE] on_print_running_observed: baseline already present for printer %s, skipping",
+            printer_id,
+        )
+        return
+
+    async with async_session() as db:
+        from backend.app.models.printer import Printer
+
+        result = await db.execute(select(Printer).where(Printer.id == printer_id))
+        printer = result.scalar_one_or_none()
+        if not printer:
+            logger.warning(
+                "[TIMELAPSE] on_print_running_observed: printer %s not found in DB, skipping baseline",
+                printer_id,
+            )
+            return
+
+    await _capture_timelapse_baseline_at_start(printer, printer_id, logger)
+
+
 async def on_print_complete(printer_id: int, data: dict):
     """Handle print completion - update the archive status."""
     import time
@@ -4721,6 +4767,7 @@ async def lifespan(app: FastAPI):
     printer_manager.set_status_change_callback(on_printer_status_change)
     printer_manager.set_print_start_callback(on_print_start)
     printer_manager.set_print_complete_callback(on_print_complete)
+    printer_manager.set_print_running_observed_callback(on_print_running_observed)
     printer_manager.set_ams_change_callback(on_ams_change)
 
     # Rehydrate persisted awaiting-plate-clear gate (#961) so prompts survive restarts

@@ -3453,6 +3453,9 @@ export default {
   slice: {
     title: 'Slice model',
     action: 'Slice',
+    actionAll: 'Slice all {{count}} plates',
+    actionAllTitle: 'Slice every plate into one multi-plate output (single archive). Filament selection covers every slot the project defines.',
+    allPlatesToggle: 'Slice all {{count}} plates',
     slicing: 'Slicing…',
     printer: 'Printer profile',
     process: 'Process profile',
@@ -3479,6 +3482,7 @@ export default {
     queuedToast: 'Queued: {{name}} — {{elapsed}}',
     runningToast: 'Slicing {{name}} — {{elapsed}}',
     runningWithProgress: '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+    runningWithProgressMultiPlate: 'Plate {{plateIndex}} of {{plateCount}} • {{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
     completedToast: 'Sliced {{name}}',
     failedTitle: 'Slicing failed',
     failedToast: 'Slicing {{name}} failed: {{detail}}',

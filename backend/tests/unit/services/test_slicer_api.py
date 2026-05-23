@@ -254,6 +254,62 @@ class TestSliceWithProfiles:
         assert b"3mf" in body
 
     @pytest.mark.asyncio
+    async def test_arrange_true_emits_form_field(self):
+        """#1493: cross-class re-slices set arrange=True so BambuStudio
+        repositions objects for the target bed. The flag must arrive as
+        a multipart form field the sidecar's SlicingSettings parses."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=b"3MF",
+                headers={"x-print-time-seconds": "0", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        await service.slice_with_profiles(
+            model_bytes=b"x",
+            model_filename="Cube.3mf",
+            printer_profile_json="{}",
+            process_profile_json="{}",
+            filament_profile_jsons=["{}"],
+            arrange=True,
+        )
+
+        body = captured["body"]
+        assert b'name="arrange"' in body
+        # Sidecar treats non-empty strings as truthy, so "true" suffices.
+        assert b"true" in body
+
+    @pytest.mark.asyncio
+    async def test_arrange_false_omits_form_field(self):
+        """Default arrange=False keeps the wire payload identical to the
+        pre-#1493 shape — no spurious form field that downstream sidecar
+        versions might mis-parse."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=b"3MF",
+                headers={"x-print-time-seconds": "0", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        await service.slice_with_profiles(
+            model_bytes=b"x",
+            model_filename="Cube.3mf",
+            printer_profile_json="{}",
+            process_profile_json="{}",
+            filament_profile_jsons=["{}"],
+        )
+
+        assert b'name="arrange"' not in captured["body"]
+
+    @pytest.mark.asyncio
     async def test_multi_filament_sends_one_part_per_profile(self):
         # Multi-color slicing requires N filament profiles, in plate-slot
         # order, sent as N repeated multipart `filamentProfile` parts (NOT a
@@ -682,6 +738,34 @@ class TestSliceWithBundle:
         assert b'name="filamentNames"' in body
         # Bundle id round-trips on the wire.
         assert b"2bd8722dd20a837e" in body
+
+    @pytest.mark.asyncio
+    async def test_arrange_true_emits_form_field(self):
+        """#1493: bundle dispatch also forwards arrange=True so cross-class
+        slices via .bbscfg bundles get the same BS auto-arrange behaviour
+        as the preset path."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=b"3MF",
+                headers={"x-print-time-seconds": "0", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        await service.slice_with_bundle(
+            model_bytes=b"x",
+            model_filename="Cube.3mf",
+            bundle_id="abc",
+            printer_name="p",
+            process_name="pr",
+            filament_names=["f"],
+            arrange=True,
+        )
+
+        assert b'name="arrange"' in captured["body"]
 
     @pytest.mark.asyncio
     async def test_404_unknown_preset_maps_to_input_error(self):

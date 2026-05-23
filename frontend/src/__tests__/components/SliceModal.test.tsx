@@ -543,6 +543,68 @@ describe('SliceModal', () => {
     });
   });
 
+  it('"Slice all plates" toggle sends plate=0 sentinel to the backend (#1493)', async () => {
+    mockApi.getLibraryFilePlates.mockResolvedValue(makeMultiPlateLibraryResponse());
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Multi.3mf' },
+      onClose: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    const plate1Button = await screen.findByRole('button', { name: /Plate 1.*Cube/ });
+    await user.click(plate1Button);
+
+    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+
+    // The "Slice all plates" checkbox only appears for multi-plate sources.
+    const toggle = await screen.findByRole('checkbox', { name: /Slice all 2 plates/i });
+    await user.click(toggle);
+
+    // The action button's label flips to the "Slice all" form. Click it.
+    await user.click(screen.getByRole('button', { name: /Slice all 2 plates/i }));
+
+    await waitFor(() => {
+      expect(mockApi.sliceLibraryFile).toHaveBeenCalledTimes(1);
+    });
+    const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
+    // ``plate=0`` is the BS CLI's all-plates sentinel — one slice call,
+    // one output 3MF with every plate's gcode inside, one archive.
+    expect((body as { plate?: number }).plate).toBe(0);
+  });
+
+  it('"Slice all plates" toggle is hidden for single-plate sources', async () => {
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Single.3mf',
+      is_multi_plate: false,
+      plates: [
+        {
+          index: 1,
+          name: 'Plate 1',
+          objects: [],
+          has_thumbnail: false,
+          thumbnail_url: null,
+          print_time_seconds: null,
+          filament_used_grams: null,
+          filaments: [],
+        },
+      ],
+    });
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Single.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    expect(screen.queryByRole('checkbox', { name: /Slice all/i })).toBeNull();
+  });
+
   it('routes the plate fetch through getArchivePlates for archive sources', async () => {
     mockApi.getArchivePlates.mockResolvedValue({
       ...makeMultiPlateLibraryResponse(),

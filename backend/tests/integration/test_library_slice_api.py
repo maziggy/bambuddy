@@ -783,18 +783,190 @@ class TestSliceJobs:
 # ---------------------------------------------------------------------------
 
 
-def _make_sliced_3mf(printer_model_id: str) -> bytes:
+def _make_sliced_3mf(printer_model_id: str, bed_type: str | None = None) -> bytes:
     """A minimal sliced-output 3MF that embeds a printer_model_id in
     slice_info.config, the way a real Bambu Studio / OrcaSlicer export does.
-    ThreeMFParser reads this into metadata['sliced_for_model']."""
+    ThreeMFParser reads this into metadata['sliced_for_model']. When
+    ``bed_type`` is set, also embed ``curr_bed_type`` so the parser surfaces
+    ``metadata['bed_type']`` — needed for the bed-type lift assertion in
+    TestSliceArchiveReslicedBedType."""
+    extra_meta = f"<metadata key='curr_bed_type' value='{bed_type}'/>" if bed_type else ""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("3D/3dmodel.model", "<model/>")
         zf.writestr(
             "Metadata/slice_info.config",
-            f"<config><plate><metadata key='printer_model_id' value='{printer_model_id}'/></plate></config>",
+            (
+                "<config><plate>"
+                f"<metadata key='printer_model_id' value='{printer_model_id}'/>"
+                f"{extra_meta}"
+                "</plate></config>"
+            ),
         )
     return buf.getvalue()
+
+
+class TestCrossClassSliceAllLoop:
+    """#1493: when the user picks "Slice all plates" on a cross-class source
+    (X1C → H2D), Bambuddy must NOT send a single ``--slice 0 --arrange 1``
+    call — that consolidates every plate's objects onto one bed via BS's
+    project-wide arrange. Instead it loops per plate (``plate=N, arrange=true``)
+    and merges the N single-plate outputs into one multi-plate 3MF locally.
+    This test mocks the sidecar to assert (a) N calls happen, one per plate,
+    each with arrange=true, and (b) the resulting archive's stored 3MF
+    contains plate_1..plate_N.gcode entries."""
+
+    @staticmethod
+    def _make_multi_plate_x1c_source(plate_count: int = 3) -> bytes:
+        """Source 3MF: X1C-stamped, N plates declared via model_settings."""
+        plate_blocks = "\n".join(
+            f'<plate><metadata key="plater_id" value="{i}"/></plate>' for i in range(1, plate_count + 1)
+        )
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/project_settings.config",
+                json.dumps({"printer_model": "Bambu Lab X1 Carbon"}),
+            )
+            zf.writestr(
+                "Metadata/model_settings.config",
+                f"<?xml version='1.0'?>\n<config>\n{plate_blocks}\n</config>\n",
+            )
+        return buf.getvalue()
+
+    @staticmethod
+    def _make_single_plate_sliced_output(plate_num: int) -> bytes:
+        """Mock per-plate output: looks like what BS CLI returns for
+        --slice N. Carries an H2D project_settings (target), a one-line
+        slice_info <plate> block, and a per-plate gcode + thumbnail."""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/project_settings.config",
+                json.dumps({"printer_model": "Bambu Lab H2D"}),
+            )
+            zf.writestr("Metadata/model_settings.config", "<config/>")
+            zf.writestr(
+                "Metadata/slice_info.config",
+                f"<config><plate><metadata key='index' value='{plate_num}'/>"
+                f"<metadata key='printer_model_id' value='O1D'/></plate></config>",
+            )
+            zf.writestr(f"Metadata/plate_{plate_num}.gcode", f"G{plate_num}".encode())
+            zf.writestr(f"Metadata/plate_{plate_num}.gcode.md5", b"deadbeef")
+            zf.writestr(f"Metadata/plate_{plate_num}.json", b"{}")
+            zf.writestr(f"Metadata/plate_{plate_num}.png", f"P{plate_num}".encode())
+        return buf.getvalue()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_loops_per_plate_when_cross_class_with_plate_zero(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        src_dir = tmp_path / "archives" / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "mewtwo.3mf"
+        src_3mf.write_bytes(self._make_multi_plate_x1c_source(plate_count=3))
+        printer = await printer_factory()
+        source = await archive_factory(
+            printer.id,
+            filename="mewtwo.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            with_run=False,
+        )
+
+        # H2D target preset — the cross-class detector reads the
+        # ``printer_model`` field off the resolved JSON.
+        h2d = LocalPreset(
+            name="# Bambu Lab H2D 0.4 nozzle",
+            preset_type="printer",
+            source="orcaslicer",
+            setting=json.dumps({"name": "Bambu Lab H2D 0.4 nozzle", "printer_model": "Bambu Lab H2D"}),
+        )
+        db_session.add(h2d)
+        await db_session.commit()
+        await db_session.refresh(h2d)
+
+        # Mock sidecar: capture every request and respond with that
+        # plate's single-plate output. We expect one request per plate
+        # in the source (3 here).
+        captured_requests: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            # Multipart bodies aren't trivially parseable here; pull
+            # the plate field by string search since the helper sends
+            # ``name="plate"`` immediately followed by the value.
+            body = request.content
+            plate = None
+            marker = b'name="plate"\r\n\r\n'
+            idx = body.find(marker)
+            if idx != -1:
+                # Find the next CRLF after the value start.
+                start = idx + len(marker)
+                end = body.find(b"\r\n", start)
+                try:
+                    plate = int(body[start:end].decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    plate = None
+            arrange_in_body = b'name="arrange"' in body
+            captured_requests.append({"plate": plate, "arrange": arrange_in_body})
+
+            return httpx.Response(
+                status_code=200,
+                content=self._make_single_plate_sliced_output(plate or 1),
+                headers={
+                    "x-print-time-seconds": "600",
+                    "x-filament-used-g": "5.0",
+                    "x-filament-used-mm": "1600.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+
+        # plate=0 + cross-class triplet → backend should enter the
+        # per-plate loop, slice each of the 3 plates with arrange=True,
+        # and merge into one archive.
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset": {"source": "local", "id": str(h2d.id)},
+                "process_preset": {"source": "local", "id": str(slice_test_setup["process_id"])},
+                "filament_presets": [{"source": "local", "id": str(slice_test_setup["filament_id"])}],
+                "plate": 0,
+            },
+        )
+        assert resp.status_code == 202, resp.text
+
+        final = await _wait_for_job(async_client, resp.json()["job_id"], timeout=15.0)
+        assert final["status"] == "completed", final
+
+        # Exactly one sidecar call per plate, in plate order. The
+        # ``--arrange 1`` flag travels with every per-plate sub-slice
+        # (it's what fixes the cross-class boundary error).
+        plates_called = [c["plate"] for c in captured_requests]
+        arrange_used = [c["arrange"] for c in captured_requests]
+        assert plates_called == [1, 2, 3], plates_called
+        assert all(arrange_used), arrange_used
+
+        # The merged archive has plate_1..plate_3.gcode inside its one
+        # output 3MF (single Bambuddy archive, three plates).
+        new_archive = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        archive_path = tmp_path / new_archive.file_path
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            entries = set(zf.namelist())
+        assert "Metadata/plate_1.gcode" in entries
+        assert "Metadata/plate_2.gcode" in entries
+        assert "Metadata/plate_3.gcode" in entries
+        # Per-plate-result totals are summed onto the merged archive.
+        assert new_archive.print_time_seconds == 600 * 3
+        assert new_archive.filament_used_grams == pytest.approx(5.0 * 3)
 
 
 class TestSliceArchiveResliceModel:
@@ -866,6 +1038,270 @@ class TestSliceArchiveResliceModel:
         # Source archive is untouched.
         source_reloaded = await db_session.get(PrintArchive, source_id)
         assert source_reloaded.sliced_for_model == "X1C"
+
+
+class TestSliceArchiveReslicedThumbnail:
+    """#1493 follow-up: the re-sliced archive's cover image preference order is
+    source's per-plate render > sliced output's per-plate render >
+    Auxiliaries marketing thumbnail. BS CLI rarely writes a fresh
+    ``Metadata/plate_N.png`` on the sliced output, so the source's render
+    of the same plate (closer to what's actually printing) wins over the
+    project-wide marketing image."""
+
+    @staticmethod
+    def _make_source_with_plate_png(plate_png_bytes: bytes) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr("Metadata/plate_1.png", plate_png_bytes)
+            # Project-wide marketing image — the unwanted fallback target.
+            zf.writestr("Auxiliaries/.thumbnails/thumbnail_middle.png", b"COVER_ART")
+        return buf.getvalue()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_uses_source_plate_png_when_sliced_output_lacks_one(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        """Sliced output has no per-plate PNG (typical of BS CLI output
+        with --arrange). The source's plate_1.png must win over the
+        sliced output's Auxiliaries fallback."""
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        # Source has its own plate_1.png AND a project-wide cover.
+        source_plate_marker = b"SOURCE_PLATE_RENDER"
+        src_dir = tmp_path / "archives" / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "cube.3mf"
+        src_3mf.write_bytes(self._make_source_with_plate_png(source_plate_marker))
+        printer = await printer_factory()
+        source = await archive_factory(
+            printer.id,
+            filename="cube.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            with_run=False,
+        )
+
+        # Mock slicer returns a 3MF with NO Metadata/plate_1.png — only
+        # the Auxiliaries cover, mimicking BS CLI output with --arrange.
+        def handler(request: httpx.Request) -> httpx.Response:
+            sliced_buf = io.BytesIO()
+            with zipfile.ZipFile(sliced_buf, "w") as zf:
+                zf.writestr("3D/3dmodel.model", "<model/>")
+                zf.writestr("Metadata/slice_info.config", "<config/>")
+                zf.writestr("Auxiliaries/.thumbnails/thumbnail_middle.png", b"SLICED_COVER_ART")
+            return httpx.Response(
+                status_code=200,
+                content=sliced_buf.getvalue(),
+                headers={"x-print-time-seconds": "60", "x-filament-used-g": "1", "x-filament-used-mm": "100"},
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        final = await _wait_for_job(async_client, resp.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        new = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        assert new.thumbnail_path is not None
+        thumb_full = tmp_path / new.thumbnail_path
+        assert thumb_full.read_bytes() == source_plate_marker, (
+            "Re-sliced archive's thumbnail should be the source's per-plate render, not the Auxiliaries cover art."
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_falls_back_to_auxiliaries_when_source_lacks_plate_png(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        """When the source has no per-plate render (unsliced library upload),
+        the Auxiliaries marketing image from the sliced output is the
+        next-best preview — better than no card thumbnail at all."""
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        # Source has no Metadata/plate_1.png at all.
+        bare_buf = io.BytesIO()
+        with zipfile.ZipFile(bare_buf, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+        src_dir = tmp_path / "archives" / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "bare.3mf"
+        src_3mf.write_bytes(bare_buf.getvalue())
+        printer = await printer_factory()
+        source = await archive_factory(
+            printer.id,
+            filename="bare.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            with_run=False,
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sliced_buf = io.BytesIO()
+            with zipfile.ZipFile(sliced_buf, "w") as zf:
+                zf.writestr("3D/3dmodel.model", "<model/>")
+                zf.writestr("Metadata/slice_info.config", "<config/>")
+                zf.writestr("Auxiliaries/.thumbnails/thumbnail_middle.png", b"COVER_ART_FALLBACK")
+            return httpx.Response(
+                status_code=200,
+                content=sliced_buf.getvalue(),
+                headers={"x-print-time-seconds": "60", "x-filament-used-g": "1", "x-filament-used-mm": "100"},
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        final = await _wait_for_job(async_client, resp.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        new = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        assert new.thumbnail_path is not None
+        thumb_full = tmp_path / new.thumbnail_path
+        assert thumb_full.read_bytes() == b"COVER_ART_FALLBACK"
+
+
+class TestSliceArchiveReslicedBedType:
+    """#1493 follow-up: the re-sliced archive's ``bed_type`` column must be
+    set from the produced 3MF's ``curr_bed_type`` so the frontend's archive
+    card shows the right build-plate badge (the card reads the column, not
+    extra_data, so the value was previously invisible after a re-slice)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bed_type_lifted_from_sliced_output(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        src_dir = tmp_path / "archives" / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "cube.3mf"
+        src_3mf.write_bytes(_make_3mf_with_settings())
+        printer = await printer_factory()
+        source = await archive_factory(
+            printer.id,
+            filename="cube.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            bed_type="Cool Plate",
+            with_run=False,
+        )
+
+        # Mock slicer: produced 3MF declares a different plate type than
+        # the source archive's ``Cool Plate``. The new column must reflect
+        # the slicer's value (the user picked a different plate in the
+        # SliceModal) instead of inheriting the source's.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code=200,
+                content=_make_sliced_3mf("O1D", bed_type="Textured PEI Plate"),
+                headers={
+                    "x-print-time-seconds": "600",
+                    "x-filament-used-g": "5.0",
+                    "x-filament-used-mm": "1600.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+        assert resp.status_code == 202, resp.text
+
+        final = await _wait_for_job(async_client, resp.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        new = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        assert new.bed_type == "Textured PEI Plate"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bed_type_falls_back_to_source_when_missing_from_output(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        """An older sidecar or sparse slice profile may produce a 3MF without
+        ``curr_bed_type``. The source archive's ``bed_type`` is the right
+        default in that case — better than leaving the badge blank."""
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        src_dir = tmp_path / "archives" / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "cube.3mf"
+        src_3mf.write_bytes(_make_3mf_with_settings())
+        printer = await printer_factory()
+        source = await archive_factory(
+            printer.id,
+            filename="cube.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            bed_type="Cool Plate",
+            with_run=False,
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code=200,
+                # No bed_type embedded — simulates a sidecar that drops it.
+                content=_make_sliced_3mf("O1D"),
+                headers={
+                    "x-print-time-seconds": "600",
+                    "x-filament-used-g": "5.0",
+                    "x-filament-used-mm": "1600.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+        assert resp.status_code == 202, resp.text
+
+        final = await _wait_for_job(async_client, resp.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        new = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        assert new.bed_type == "Cool Plate"
 
 
 # ---------------------------------------------------------------------------
@@ -988,32 +1424,54 @@ class TestCanonicalPrinterModel:
 
 
 class TestNozzleClassGuard:
-    """guard_nozzle_class_reslice blocks a re-slice that crosses the
-    single-nozzle <-> dual-nozzle boundary."""
+    """guard_nozzle_class_reslice is now a no-op (#1493). Cross-class re-slicing
+    is handled by the two-pass conversion in _run_slicer_with_fallback for
+    both preset and bundle dispatch — so the guard never blocks. The function
+    is kept (and these tests with it) so external forks / pinned versions
+    that call it still link, and so a future regression that re-introduces a
+    raise inside the helper gets caught here."""
+
+    @staticmethod
+    def _bundle_request() -> object:
+        return type("_Req", (), {"bundle": object()})()
+
+    @staticmethod
+    def _preset_request() -> object:
+        return type("_Req", (), {"bundle": None})()
 
     @pytest.mark.asyncio
-    async def test_single_to_dual_is_blocked(self, monkeypatch):
+    async def test_single_to_dual_bundle_is_allowed(self, monkeypatch):
+        """Bundle-mode cross-class: handled by the two-pass converter via
+        slice_with_bundle on the cube, so the guard does NOT raise."""
         import backend.app.api.routes.library as lib
 
         async def _target(_db, _user, _request):
             return "H2D"
 
         monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
-        with pytest.raises(HTTPException) as exc:
-            await guard_nozzle_class_reslice(None, None, None, "X1C")
-        assert exc.value.status_code == 400
-        assert "H2D" in exc.value.detail and "X1C" in exc.value.detail
+        # No raise — the converter handles this case now.
+        await guard_nozzle_class_reslice(None, None, self._bundle_request(), "X1C")
 
     @pytest.mark.asyncio
-    async def test_dual_to_single_is_blocked(self, monkeypatch):
+    async def test_dual_to_single_bundle_is_allowed(self, monkeypatch):
         import backend.app.api.routes.library as lib
 
         async def _target(_db, _user, _request):
             return "X1C"
 
         monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
-        with pytest.raises(HTTPException):
-            await guard_nozzle_class_reslice(None, None, None, "H2D")
+        await guard_nozzle_class_reslice(None, None, self._bundle_request(), "H2D")
+
+    @pytest.mark.asyncio
+    async def test_preset_path_is_not_blocked(self, monkeypatch):
+        """Preset path cross-class is also handled by the two-pass converter."""
+        import backend.app.api.routes.library as lib
+
+        async def _target(_db, _user, _request):
+            return "H2D"
+
+        monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
+        await guard_nozzle_class_reslice(None, None, self._preset_request(), "X1C")
 
     @pytest.mark.asyncio
     async def test_same_nozzle_class_is_allowed(self, monkeypatch):
@@ -1023,8 +1481,7 @@ class TestNozzleClassGuard:
             return "P1S"
 
         monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
-        # X1C -> P1S: both single-nozzle — no raise.
-        await guard_nozzle_class_reslice(None, None, None, "X1C")
+        await guard_nozzle_class_reslice(None, None, self._bundle_request(), "X1C")
 
     @pytest.mark.asyncio
     async def test_no_source_model_is_a_noop(self, monkeypatch):
@@ -1034,16 +1491,21 @@ class TestNozzleClassGuard:
             return "H2D"
 
         monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
-        # Un-sliced source (no sliced_for_model) — first-time slice, never blocked.
-        await guard_nozzle_class_reslice(None, None, None, None)
+        await guard_nozzle_class_reslice(None, None, self._bundle_request(), None)
+
+    @pytest.mark.asyncio
+    async def test_null_request_is_a_noop(self):
+        await guard_nozzle_class_reslice(None, None, None, "X1C")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_archive_reslice_x1c_to_h2d_returns_400(
+    async def test_archive_reslice_x1c_to_h2d_preset_path_is_not_400(
         self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
     ):
-        """End to end: re-slicing an X1C archive for an H2D printer preset is
-        rejected synchronously with a 400 — before any job is enqueued."""
+        """End to end: the preset-driven archive re-slice from X1C to H2D no
+        longer gets a synchronous 400 from the guard. It may still fail
+        downstream (no sidecar in test env), but it must not be rejected by
+        the nozzle-class guard's old "isn't supported yet" message."""
         tmp_path = slice_test_setup["tmp_path"]
         monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
 
@@ -1060,7 +1522,6 @@ class TestNozzleClassGuard:
             with_run=False,
         )
 
-        # A printer preset whose resolved JSON is an H2D — dual-nozzle.
         h2d = LocalPreset(
             name="# Bambu Lab H2D 0.4 nozzle",
             preset_type="printer",
@@ -1079,6 +1540,6 @@ class TestNozzleClassGuard:
                 "filament_presets": [{"source": "local", "id": str(slice_test_setup["filament_id"])}],
             },
         )
-        assert resp.status_code == 400, resp.text
-        detail = resp.json()["detail"]
-        assert "H2D" in detail and "X1C" in detail
+        if resp.status_code == 400:
+            detail = resp.json().get("detail", "")
+            assert "isn't supported" not in detail, f"guard still firing on preset path: {detail!r}"

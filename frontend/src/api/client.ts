@@ -1420,6 +1420,12 @@ export interface SliceJobProgress {
   plate_index: number;
   plate_count: number;
   updated_at: number;
+  /** When the backend is in the cross-class slice-all loop (#1493), each
+   *  per-plate sub-slice's progress is augmented with the loop position
+   *  so the toast can show "Plate 2 of 5 — Generating G-code 47%". The
+   *  fields are absent on a single-plate slice. */
+  multi_plate_index?: number;
+  multi_plate_count?: number;
 }
 
 export interface SliceJobState {
@@ -5779,6 +5785,13 @@ export const api = {
   // backend/app/api/routes/slicer_presets.py for the priority rules.
   getSlicerPresets: () =>
     request<UnifiedPresetsResponse>('/slicer/presets'),
+
+  // Canonical Bambu printer-model registry — "Bambu Lab <model>" → short code.
+  // Single source of truth shared with backend (PRINTER_MODEL_MAP); the
+  // SliceModal uses this to classify cloud / standard presets by their
+  // `@BBL <code>` suffix against the selected printer-preset name (#1325).
+  getSlicerPrinterModels: () =>
+    request<Record<string, string>>('/slicer/printer-models'),
 
   // Slicer Bundles (.bbscfg) — Printer Preset Bundles imported from BambuStudio.
   // Settings → Slicer Bundles uploads/lists/deletes; the SliceModal picks

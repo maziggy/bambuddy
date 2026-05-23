@@ -3450,6 +3450,9 @@ export default {
   slice: {
     title: 'モデルをスライス',
     action: 'スライス',
+    actionAll: '{{count}} プレートすべてをスライス',
+    actionAllTitle: 'すべてのプレートを 1 つのマルチプレート出力としてスライスします（アーカイブは 1 件）。フィラメントの選択はプロジェクトで定義されたすべてのスロットを対象とします。',
+    allPlatesToggle: '{{count}} プレートすべてをスライス',
     slicing: 'スライス中…',
     printer: 'プリンタープロファイル',
     process: 'プロセスプロファイル',
@@ -3476,6 +3479,7 @@ export default {
     queuedToast: '待機中: {{name}} – {{elapsed}}',
     runningToast: '{{name}}をスライス中 – {{elapsed}}',
     runningWithProgress: '{{name}} – {{stage}} ({{percent}}%) – {{elapsed}}',
+    runningWithProgressMultiPlate: 'プレート {{plateIndex}} / {{plateCount}} • {{name}} – {{stage}} ({{percent}}%) – {{elapsed}}',
     completedToast: '{{name}}をスライス済み',
     failedTitle: 'スライスに失敗しました',
     failedToast: '{{name}}のスライスに失敗: {{detail}}',

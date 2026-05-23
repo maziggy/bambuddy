@@ -3438,6 +3438,9 @@ export default {
   slice: {
     title: '切片模型',
     action: '切片',
+    actionAll: '切片全部 {{count}} 个盘面',
+    actionAllTitle: '将所有盘面切片为单个多盘面输出（一个归档）。耗材选择覆盖项目定义的每个槽位。',
+    allPlatesToggle: '切片全部 {{count}} 个盘面',
     slicing: '切片中…',
     printer: '打印机配置',
     process: '工艺配置',
@@ -3464,6 +3467,7 @@ export default {
     queuedToast: '已排队：{{name}} — {{elapsed}}',
     runningToast: '切片 {{name}} — {{elapsed}}',
     runningWithProgress: '{{name}} – {{stage}} ({{percent}}%) – {{elapsed}}',
+    runningWithProgressMultiPlate: '盘面 {{plateIndex}} / {{plateCount}} • {{name}} – {{stage}} ({{percent}}%) – {{elapsed}}',
     completedToast: '已切片 {{name}}',
     failedTitle: '切片失败',
     failedToast: '切片 {{name}} 失败：{{detail}}',

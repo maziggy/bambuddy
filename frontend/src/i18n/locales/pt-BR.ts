@@ -3438,6 +3438,9 @@ export default {
   slice: {
     title: 'Fatiar modelo',
     action: 'Fatiar',
+    actionAll: 'Fatiar todas as {{count}} bandejas',
+    actionAllTitle: 'Fatiar todas as bandejas em uma saída multi-bandeja única (um único arquivo). A seleção de filamento cobre cada slot definido pelo projeto.',
+    allPlatesToggle: 'Fatiar todas as {{count}} bandejas',
     slicing: 'Fatiando…',
     printer: 'Perfil de impressora',
     process: 'Perfil de processo',
@@ -3464,6 +3467,7 @@ export default {
     queuedToast: 'Na fila: {{name}} – {{elapsed}}',
     runningToast: 'Fatiando {{name}} – {{elapsed}}',
     runningWithProgress: '{{name}} – {{stage}} ({{percent}}%) – {{elapsed}}',
+    runningWithProgressMultiPlate: 'Bandeja {{plateIndex}} de {{plateCount}} • {{name}} – {{stage}} ({{percent}}%) – {{elapsed}}',
     completedToast: '{{name}} fatiado',
     failedTitle: 'Falha ao fatiar',
     failedToast: 'Falha ao fatiar {{name}}: {{detail}}',

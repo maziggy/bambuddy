@@ -670,3 +670,30 @@ class TestParseCompatiblePrinters:
             "X1C",
             "A1",
         ]
+
+
+class TestListPrinterModels:
+    """``GET /slicer/printer-models`` exposes ``PRINTER_MODEL_MAP`` so the
+    frontend doesn't duplicate the Bambu model registry (#1325 follow-up)."""
+
+    def test_returns_canonical_printer_model_map(self):
+        from backend.app.utils.printer_models import PRINTER_MODEL_MAP
+
+        result = sp.list_printer_models()
+        # Same shape - mapping from "Bambu Lab <model>" to short code.
+        assert result == PRINTER_MODEL_MAP
+        # Spot-check a few entries: the SliceModal name-fallback (#1325)
+        # specifically depends on these resolving.
+        assert result["Bambu Lab X1 Carbon"] == "X1C"
+        assert result["Bambu Lab P2S"] == "P2S"
+        assert result["Bambu Lab A1 mini"] == "A1 Mini"
+        assert result["Bambu Lab H2D Pro"] == "H2D Pro"
+
+    def test_returns_a_copy_not_the_module_dict(self):
+        # A response handler must never hand out the live module-level dict —
+        # accidental mutation by middleware / serialisers would silently
+        # corrupt the registry for every subsequent request.
+        from backend.app.utils.printer_models import PRINTER_MODEL_MAP
+
+        result = sp.list_printer_models()
+        assert result is not PRINTER_MODEL_MAP

@@ -523,6 +523,18 @@ class ThreeMFParser:
                 "Metadata/plate_1.png",
                 "Metadata/thumbnail.png",
                 "Metadata/model_thumbnail.png",
+                # Project-wide thumbnail BambuStudio embeds at upload time. We
+                # only reach this when BS hasn't written a per-plate
+                # ``Metadata/plate_N.png`` — most notably the #1493 cross-class
+                # re-slice path where ``--arrange`` rearranges objects but the
+                # CLI then doesn't emit a fresh per-plate preview. The
+                # ``_middle`` size is the editor-quality variant (~500 KB);
+                # ``_small`` and ``_3mf`` are smaller alternates if it's not
+                # present. Without this fallback the re-sliced archive cards
+                # render without a cover image.
+                "Auxiliaries/.thumbnails/thumbnail_middle.png",
+                "Auxiliaries/.thumbnails/thumbnail_small.png",
+                "Auxiliaries/.thumbnails/thumbnail_3mf.png",
             ]
         )
 

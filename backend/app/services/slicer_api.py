@@ -337,6 +337,7 @@ class SlicerApiService:
         filament_profile_jsons: list[str],
         plate: int | None = None,
         export_3mf: bool = False,
+        arrange: bool = False,
         request_id: str | None = None,
         on_progress: Callable[[dict], None] | None = None,
     ) -> SliceResult:
@@ -348,6 +349,14 @@ class SlicerApiService:
         field — the sidecar's route declares ``maxCount: 16`` and the
         slicing service joins them as semicolon-separated
         ``--load-filaments`` for the OrcaSlicer / BambuStudio CLI.
+
+        ``arrange`` forwards the sidecar's ``--arrange`` flag to BambuStudio.
+        When True the slicer auto-repositions objects on the target bed,
+        which Bambuddy uses for cross-nozzle-class re-slices (#1493) where
+        the source's X1C-coordinate layout would otherwise drop into an H2D
+        dead zone or trigger the multi-extruder geometry pipeline's polygon
+        clipping crash. Default off so single-printer slices preserve the
+        user's deliberate layout.
 
         ``request_id``: when supplied, the sidecar wires --pipe to a
         per-request FIFO and publishes structured JSON progress events to
@@ -380,6 +389,11 @@ class SlicerApiService:
             data["plate"] = str(plate)
         if export_3mf:
             data["exportType"] = "3mf"
+        if arrange:
+            # Sidecar reads non-empty truthy strings as True; only send the
+            # field when we want the flag on, so default-off callers exactly
+            # match the previous wire payload.
+            data["arrange"] = "true"
         if request_id is not None:
             data["requestId"] = request_id
 
@@ -435,6 +449,7 @@ class SlicerApiService:
         filament_names: list[str],
         plate: int | None = None,
         export_3mf: bool = False,
+        arrange: bool = False,
         bed_type: str | None = None,
         request_id: str | None = None,
         on_progress: Callable[[dict], None] | None = None,
@@ -477,6 +492,11 @@ class SlicerApiService:
             data["plate"] = str(plate)
         if export_3mf:
             data["exportType"] = "3mf"
+        if arrange:
+            # See slice_with_profiles for the rationale: cross-class re-slices
+            # (#1493) need --arrange so BS repositions objects for the target
+            # bed instead of inheriting the source printer's coordinate layout.
+            data["arrange"] = "true"
         if bed_type is not None:
             # #1337: bed-plate override flows through to the sidecar as a
             # standalone field. The sidecar wraps this as --curr_bed_type on

@@ -3450,6 +3450,9 @@ export default {
   slice: {
     title: 'Modell slicen',
     action: 'Slicen',
+    actionAll: 'Alle {{count}} Plates slicen',
+    actionAllTitle: 'Alle Plates in eine einzelne Multi-Plate-Ausgabe slicen (ein Archiv). Die Filamentauswahl gilt für jeden Slot des Projekts.',
+    allPlatesToggle: 'Alle {{count}} Plates slicen',
     slicing: 'Slicen…',
     printer: 'Drucker-Profil',
     process: 'Prozess-Profil',
@@ -3476,6 +3479,7 @@ export default {
     queuedToast: 'Warteschlange: {{name}} — {{elapsed}}',
     runningToast: '{{name}} wird gesliced — {{elapsed}}',
     runningWithProgress: '{{name}} – {{stage}} ({{percent}} %) – {{elapsed}}',
+    runningWithProgressMultiPlate: 'Plate {{plateIndex}} von {{plateCount}} • {{name}} – {{stage}} ({{percent}} %) – {{elapsed}}',
     completedToast: '{{name}} wurde gesliced',
     failedTitle: 'Slicen fehlgeschlagen',
     failedToast: 'Slicen von {{name}} fehlgeschlagen: {{detail}}',

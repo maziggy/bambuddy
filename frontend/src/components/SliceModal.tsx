@@ -333,6 +333,15 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // and we'll backfill 1 at submit time). Set to a 1-indexed plate number once
   // the user picks one (or implicitly for single-plate sources).
   const [selectedPlate, setSelectedPlate] = useState<number | null>(null);
+  // "Slice all plates" mode: sends ``plate=0`` to the backend which forwards
+  // ``--slice 0`` to the BS CLI, producing a single output 3MF whose
+  // ``Metadata/plate_N.gcode`` entries are *all* plates sliced together —
+  // one archive, one file, all plates. Distinct from the per-plate
+  // ``selectedPlate`` mode (which slices just that one plate). Filament
+  // selection in this mode covers every slot the project defines, not
+  // just the slots the currently-visible plate happens to use — see
+  // ``allProjectFilamentSlots`` below.
+  const [sliceAllPlates, setSliceAllPlates] = useState(false);
   // Build-plate override (#1337). null = inherit from the process preset
   // (the default). Set to a canonical slicer enum value to patch
   // curr_bed_type into the resolved process JSON before slicing — needed
@@ -393,14 +402,25 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
 
   // Filament slot list for the active plate. Falls back to one synthetic slot
   // for STL/STEP and any "no metadata available" case so the modal still
-  // works (single dropdown, mono-color slice).
+  // works (single dropdown, mono-color slice). In ``sliceAllPlates`` mode
+  // we keep the same slot list (the backend already returns every project
+  // slot via ``extract_project_filaments_from_3mf``'s fallback path when
+  // slice_info doesn't carry per-plate filaments) but override every
+  // slot's ``used_in_plate`` flag to ``true`` so the dropdown labels
+  // drop the "— not used by this plate" suffix and the dropdowns become
+  // selectable. Across the whole project, every defined slot IS used by
+  // at least one plate, so this is correct in slice-all mode.
   const filamentSlots = useMemo<PlateFilament[]>(() => {
     const reqs = filamentReqsQuery.data?.filaments ?? [];
-    if (reqs.length > 0) return reqs as PlateFilament[];
-    return [
-      { slot_id: 1, type: '', color: '', used_grams: 0, used_meters: 0 },
-    ];
-  }, [filamentReqsQuery.data]);
+    const base: PlateFilament[] =
+      reqs.length > 0
+        ? (reqs as PlateFilament[])
+        : [{ slot_id: 1, type: '', color: '', used_grams: 0, used_meters: 0 }];
+    if (sliceAllPlates) {
+      return base.map((slot) => ({ ...slot, used_in_plate: true }));
+    }
+    return base;
+  }, [sliceAllPlates, filamentReqsQuery.data]);
 
   const presetsQuery = useQuery({
     queryKey: ['slicerPresets'],
@@ -423,6 +443,15 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     // retry tight loops in that case.
     retry: false,
   });
+  // Canonical Bambu printer-model registry — drives the @BBL <code> name
+  // fallback in slicerPrinterMatch when no slicer bundle covers a cloud /
+  // standard preset (#1325 follow-up). Long staleTime: the registry only
+  // changes across backend releases.
+  const printerModelsQuery = useQuery({
+    queryKey: ['slicerPrinterModels'],
+    queryFn: api.getSlicerPrinterModels,
+    staleTime: Infinity,
+  });
   const selectedBundle: SlicerBundle | null = useMemo(() => {
     if (!selectedBundleId || !bundlesQuery.data) return null;
     return bundlesQuery.data.find((b) => b.id === selectedBundleId) ?? null;
@@ -434,12 +463,14 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     if (!presetsQuery.data || !printerPreset) return null;
     return findPreset(presetsQuery.data, printerPreset, 'printer')?.name ?? null;
   }, [presetsQuery.data, printerPreset]);
-  // Compatibility ground truth, derived from the user's uploaded Slicer
-  // Bundles (#1325) — empty until at least one bundle is imported, in which
-  // case no process / filament gets filtered (nothing to filter against).
+  // Compatibility ground truth: the user's uploaded Slicer Bundles plus the
+  // backend Bambu printer-model registry (#1325 + follow-up). The bundle
+  // path handles imported / custom presets; the registry-driven @BBL name
+  // fallback inside slicerPrinterMatch picks up cloud / standard presets
+  // for users who haven't uploaded bundles yet.
   const compatIndex = useMemo<PrinterCompatibilityIndex>(
-    () => buildCompatibilityIndex(bundlesQuery.data ?? []),
-    [bundlesQuery.data],
+    () => buildCompatibilityIndex(bundlesQuery.data ?? [], printerModelsQuery.data ?? {}),
+    [bundlesQuery.data, printerModelsQuery.data],
   );
 
   // Printer / process preset names the source 3MF was prepared with. The
@@ -537,57 +568,8 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   }, [selectedBundle, filamentSlots]);
 
   const enqueueMutation = useMutation({
-    mutationFn: async () => {
-      let body: SliceRequest;
-      if (isBundleMode) {
-        // Bundle dispatch path. The selected bundle's first printer is the
-        // implicit printer choice (every .bbscfg carries exactly one).
-        if (
-          !selectedBundle ||
-          !bundleProcessName ||
-          bundleFilamentNames.length === 0 ||
-          bundleFilamentNames.some((n) => n == null)
-        ) {
-          throw new Error(t('slice.bundleAllRequired'));
-        }
-        const bundleSpec: SliceBundleSpec = {
-          bundle_id: selectedBundle.id,
-          printer_name: selectedBundle.printer[0] ?? selectedBundle.printer_preset_name,
-          process_name: bundleProcessName,
-          filament_names: bundleFilamentNames as string[],
-        };
-        body = {
-          bundle: bundleSpec,
-          ...(selectedPlate != null ? { plate: selectedPlate } : {}),
-          // Bed-type override (#1337) also flows through the bundle path —
-          // the sidecar forwards `bedType` as --curr_bed_type to the CLI.
-          ...(bedType != null ? { bed_type: bedType } : {}),
-        };
-      } else {
-        if (
-          !printerPreset ||
-          !processPreset ||
-          filamentPresets.length === 0 ||
-          filamentPresets.some((r) => r == null)
-        ) {
-          throw new Error(t('slice.allPresetsRequired'));
-        }
-        body = {
-          printer_preset: printerPreset,
-          process_preset: processPreset,
-          // The first slot also goes into the legacy singular field so the
-          // backend's older callers / clients keep behaving the same — the
-          // backend validator prefers `filament_presets` when both are set.
-          filament_preset: filamentPresets[0] as PresetRef,
-          filament_presets: filamentPresets as PresetRef[],
-          // Always send a concrete plate number when the source is multi-plate;
-          // omit otherwise so the backend default applies for STL / single-plate
-          // 3MF sources where the concept doesn't apply.
-          ...(selectedPlate != null ? { plate: selectedPlate } : {}),
-          // Bed-type override (#1337).
-          ...(bedType != null ? { bed_type: bedType } : {}),
-        };
-      }
+    mutationFn: async (plate: number | null) => {
+      const body = buildSliceBody(plate);
       if (source.kind === 'libraryFile') {
         return api.sliceLibraryFile(source.id, body);
       }
@@ -602,6 +584,52 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
       setErrorMessage(msg);
     },
   });
+
+  // Body builder shared by the single-plate and slice-all paths. ``plate``
+  // is the 1-indexed plate number to slice, or ``null`` for STL / single-
+  // plate 3MF sources where the field is omitted entirely.
+  function buildSliceBody(plate: number | null): SliceRequest {
+    if (isBundleMode) {
+      if (
+        !selectedBundle ||
+        !bundleProcessName ||
+        bundleFilamentNames.length === 0 ||
+        bundleFilamentNames.some((n) => n == null)
+      ) {
+        throw new Error(t('slice.bundleAllRequired'));
+      }
+      const bundleSpec: SliceBundleSpec = {
+        bundle_id: selectedBundle.id,
+        printer_name: selectedBundle.printer[0] ?? selectedBundle.printer_preset_name,
+        process_name: bundleProcessName,
+        filament_names: bundleFilamentNames as string[],
+      };
+      return {
+        bundle: bundleSpec,
+        ...(plate != null ? { plate } : {}),
+        // Bed-type override (#1337) also flows through the bundle path —
+        // the sidecar forwards `bedType` as --curr_bed_type to the CLI.
+        ...(bedType != null ? { bed_type: bedType } : {}),
+      };
+    }
+    if (
+      !printerPreset ||
+      !processPreset ||
+      filamentPresets.length === 0 ||
+      filamentPresets.some((r) => r == null)
+    ) {
+      throw new Error(t('slice.allPresetsRequired'));
+    }
+    return {
+      printer_preset: printerPreset,
+      process_preset: processPreset,
+      filament_preset: filamentPresets[0] as PresetRef,
+      filament_presets: filamentPresets as PresetRef[],
+      ...(plate != null ? { plate } : {}),
+      ...(bedType != null ? { bed_type: bedType } : {}),
+    };
+  }
+
 
   // Slice button stays disabled until the preview slice / embedded-metadata
   // read has succeeded (filamentReqsQuery.isSuccess) and every filament slot
@@ -618,6 +646,8 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
       filamentPresets.length > 0 &&
       filamentPresets.every((r) => r != null);
   const isEnqueuing = enqueueMutation.isPending;
+  const totalPlateCount = platesQuery.data?.plates?.length ?? 0;
+  const canSliceAll = isMultiPlate && totalPlateCount > 1 && !needsPlatePicker;
 
   // Step 1: plate picker for multi-plate 3MF sources. Cancelling closes the
   // entire flow (matches the existing PlatePickerModal contract used by the
@@ -870,11 +900,30 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           >
             {t('common.cancel')}
           </button>
+          {canSliceAll && (
+            <label
+              className="flex items-center gap-2 mr-auto text-sm text-bambu-gray cursor-pointer select-none"
+              title={t('slice.actionAllTitle', { count: totalPlateCount })}
+            >
+              <input
+                type="checkbox"
+                checked={sliceAllPlates}
+                onChange={(e) => setSliceAllPlates(e.target.checked)}
+                disabled={isEnqueuing}
+                className="cursor-pointer"
+              />
+              {t('slice.allPlatesToggle', { count: totalPlateCount })}
+            </label>
+          )}
           <button
             type="button"
             onClick={() => {
               setErrorMessage(null);
-              enqueueMutation.mutate();
+              // ``plate=0`` is the sidecar's "all plates" sentinel — passes
+              // ``--slice 0`` to the BS CLI which produces a single 3MF
+              // with one ``Metadata/plate_N.gcode`` entry per plate.
+              const platePayload = sliceAllPlates ? 0 : selectedPlate;
+              enqueueMutation.mutate(platePayload);
             }}
             disabled={!isReady || isEnqueuing}
             className="px-3 py-1.5 text-sm rounded-md bg-bambu-green hover:bg-bambu-green/90 text-bambu-dark font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -884,6 +933,8 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                 <Loader2 className="w-4 h-4 animate-spin" />
                 {t('slice.enqueuing')}
               </>
+            ) : sliceAllPlates ? (
+              t('slice.actionAll', { count: totalPlateCount })
             ) : (
               t('slice.action')
             )}

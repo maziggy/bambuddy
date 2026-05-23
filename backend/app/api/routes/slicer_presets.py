@@ -45,6 +45,7 @@ from backend.app.services.slicer_api import (
     SlicerApiUnavailableError,
     SlicerInputError,
 )
+from backend.app.utils.printer_models import PRINTER_MODEL_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +359,23 @@ def _dedupe_by_name(
             deduped_standard[slot].append(p)
             seen.add(p.name)
     return cloud, deduped_local, deduped_standard
+
+
+@router.get("/printer-models")
+def list_printer_models() -> dict[str, str]:
+    """Canonical Bambu printer-model registry, surfaced for the SliceModal.
+
+    Returns the backend's ``PRINTER_MODEL_MAP`` unmodified: keys are the long
+    "Bambu Lab <model>" form that appears in 3MF metadata and in slicer
+    printer-preset names, values are the normalized short codes used in
+    BambuStudio's `@BBL <code>` cloud-preset filenames. The frontend uses this
+    mapping to classify cloud / standard presets against the selected printer
+    when no slicer bundle has been uploaded that covers the preset (#1325
+    follow-up) - avoiding a second, manually-maintained model table on the
+    frontend. No auth gate: this is a static reference dictionary, not
+    user data.
+    """
+    return dict(PRINTER_MODEL_MAP)
 
 
 @router.get("/presets", response_model=UnifiedPresetsResponse)

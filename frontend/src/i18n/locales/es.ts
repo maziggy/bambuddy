@@ -3453,6 +3453,9 @@ export default {
   slice: {
     title: 'Laminar modelo',
     action: 'Laminar',
+    actionAll: 'Laminar las {{count}} bandejas',
+    actionAllTitle: 'Laminar todas las bandejas en una salida única de varias bandejas (un solo archivo). La selección de filamento cubre cada hueco que defina el proyecto.',
+    allPlatesToggle: 'Laminar las {{count}} bandejas',
     slicing: 'Laminando…',
     printer: 'Perfil de impresora',
     process: 'Perfil de proceso',
@@ -3479,6 +3482,7 @@ export default {
     queuedToast: 'En cola: {{name}} — {{elapsed}}',
     runningToast: 'Laminando {{name}} — {{elapsed}}',
     runningWithProgress: '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+    runningWithProgressMultiPlate: 'Bandeja {{plateIndex}} de {{plateCount}} • {{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
     completedToast: '{{name}} laminado',
     failedTitle: 'Error al laminar',
     failedToast: 'Error al laminar {{name}}: {{detail}}',

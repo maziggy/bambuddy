@@ -212,6 +212,48 @@ class TestArchiveThumbnails:
         for path in expected_thumbnail_paths:
             assert "png" in path.lower()
 
+    def test_extract_thumbnail_falls_back_to_auxiliaries(self, tmp_path):
+        """#1493 follow-up: when BambuStudio's CLI runs with --arrange it
+        rearranges objects but doesn't always emit a fresh
+        ``Metadata/plate_N.png`` for the rearranged plate. The project-wide
+        thumbnail under ``Auxiliaries/.thumbnails/`` survives though, and
+        we use it as a cover-image fallback so re-sliced archive cards
+        still render with a thumbnail."""
+        import zipfile
+
+        from backend.app.services.archive import ThreeMFParser
+
+        threemf_path = tmp_path / "sliced.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            # No Metadata/plate_1.png / thumbnail.png — only the
+            # Auxiliaries project-wide thumbnail (what arranged slices
+            # carry in practice).
+            zf.writestr("Auxiliaries/.thumbnails/thumbnail_middle.png", b"PNGMIDDLE")
+
+        parser = ThreeMFParser(str(threemf_path), plate_number=1)
+        parsed = parser.parse()
+        assert parsed.get("_thumbnail_data") == b"PNGMIDDLE"
+        assert parsed.get("_thumbnail_ext") == ".png"
+
+    def test_per_plate_png_wins_over_auxiliaries_fallback(self, tmp_path):
+        """Order matters: when BOTH the per-plate preview and the
+        Auxiliaries fallback are present, the per-plate one wins because
+        it reflects the actual sliced layout."""
+        import zipfile
+
+        from backend.app.services.archive import ThreeMFParser
+
+        threemf_path = tmp_path / "sliced.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr("Metadata/plate_1.png", b"PLATE1")
+            zf.writestr("Auxiliaries/.thumbnails/thumbnail_middle.png", b"PROJECT_WIDE")
+
+        parser = ThreeMFParser(str(threemf_path), plate_number=1)
+        parsed = parser.parse()
+        assert parsed.get("_thumbnail_data") == b"PLATE1"
+
 
 class TestPrintableObjectsExtraction:
     """Tests for extracting printable objects count from 3MF files."""

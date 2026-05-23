@@ -3438,6 +3438,9 @@ export default {
   slice: {
     title: '切片模型',
     action: '切片',
+    actionAll: '切片全部 {{count}} 個盤面',
+    actionAllTitle: '將所有盤面切片為單一的多盤面輸出（單一封存）。線材選擇涵蓋專案定義的每個槽位。',
+    allPlatesToggle: '切片全部 {{count}} 個盤面',
     slicing: '切片中…',
     printer: '印表機設定檔',
     process: '製程設定檔',
@@ -3464,6 +3467,7 @@ export default {
     queuedToast: '已排隊：{{name}} — {{elapsed}}',
     runningToast: '切片 {{name}} — {{elapsed}}',
     runningWithProgress: '{{name}} – {{stage}} ({{percent}}%) – {{elapsed}}',
+    runningWithProgressMultiPlate: '盤面 {{plateIndex}} / {{plateCount}} • {{name}} – {{stage}} ({{percent}}%) – {{elapsed}}',
     completedToast: '已切片 {{name}}',
     failedTitle: '切片失敗',
     failedToast: '切片 {{name}} 失敗：{{detail}}',

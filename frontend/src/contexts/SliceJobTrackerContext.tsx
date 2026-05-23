@@ -102,20 +102,36 @@ export function SliceJobTrackerProvider({ children }: { children: ReactNode }) {
       // --pipe support.
       const hasUseful = progress && progress.stage && progress.total_percent > 0;
       if (phase === 'running' && hasUseful) {
-        showPersistentToast(
-          toastIdFor(job.id),
-          t(
-            'slice.runningWithProgress',
-            '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
-            {
-              name: prettifyFilename(job.sourceName),
-              stage: progress.stage,
-              percent: Math.min(100, Math.max(0, Math.round(progress.total_percent))),
-              elapsed: elapsedStr,
-            },
-          ),
-          'loading',
-        );
+        const name = prettifyFilename(job.sourceName);
+        const stage = progress.stage;
+        const percent = Math.min(100, Math.max(0, Math.round(progress.total_percent)));
+        // Cross-class slice-all (#1493) feeds the same toast through N
+        // sequential per-plate slices; the augmented snapshot tells us
+        // which plate is currently running so the user sees the loop
+        // progress, not just a single repeating bar.
+        const isMultiPlateLoop =
+          typeof progress.multi_plate_index === 'number' &&
+          typeof progress.multi_plate_count === 'number' &&
+          progress.multi_plate_count > 1;
+        const message = isMultiPlateLoop
+          ? t(
+              'slice.runningWithProgressMultiPlate',
+              'Plate {{plateIndex}} of {{plateCount}} • {{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+              {
+                plateIndex: progress.multi_plate_index,
+                plateCount: progress.multi_plate_count,
+                name,
+                stage,
+                percent,
+                elapsed: elapsedStr,
+              },
+            )
+          : t(
+              'slice.runningWithProgress',
+              '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+              { name, stage, percent, elapsed: elapsedStr },
+            );
+        showPersistentToast(toastIdFor(job.id), message, 'loading');
         return;
       }
       const messageKey = phase === 'pending' ? 'slice.queuedToast' : 'slice.runningToast';

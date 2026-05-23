@@ -3701,6 +3701,29 @@ export default {
     reportPartialUsageDesc: 'When a print fails or is cancelled, report the estimated filament used up to that point based on layer progress.',
   },
 
+  locations: {
+    title: 'Storage Locations',
+    subtitle: 'Manage shelves, drawers, and other physical storage spots for your spools',
+    add: 'Add Location',
+    addShort: 'Add',
+    edit: 'Edit Location',
+    name: 'Name',
+    spools: 'Spools',
+    empty: 'No storage locations yet. Create your first shelf or drawer.',
+    manage: 'Locations',
+    backToInventory: 'Back to Inventory',
+    createPlaceholder: 'e.g. Shelf A, Drawer 1',
+    nameRequired: 'Location name is required',
+    created: 'Location created',
+    updated: 'Location updated',
+    deleted: 'Location deleted',
+    saveFailed: 'Failed to save location',
+    deleteFailed: 'Failed to delete location',
+    deleteBlocked: 'Remove all spools from this location before deleting',
+    confirmDelete: 'Delete "{{name}}"?',
+    confirmDeleteMessage: 'This location will be removed from the catalog. Spools must be moved first.',
+  },
+
   // Inventory
   inventory: {
     title: 'Spool Inventory',

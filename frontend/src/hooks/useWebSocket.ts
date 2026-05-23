@@ -288,6 +288,8 @@ export function useWebSocket() {
       case 'inventory_changed':
         // Spool created/updated/deleted/archived/restored - refresh inventory across all tabs
         debouncedInvalidate('inventory-spools');
+        debouncedInvalidate('spoolman-inventory-spools');
+        debouncedInvalidate('inventory-locations');
         break;
 
       case 'spool_assignment_changed':

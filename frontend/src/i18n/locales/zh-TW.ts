@@ -3678,6 +3678,29 @@ export default {
     reportPartialUsageDesc: '當列印失敗或被取消時，根據層進度報告估計的耗材使用量。',
   },
 
+  locations: {
+    title: '儲存位置',
+    subtitle: '管理貨架、抽屜等線軸實體存放位置',
+    add: '新增位置',
+    addShort: '新增',
+    edit: '編輯位置',
+    name: '名稱',
+    spools: '線軸',
+    empty: '尚無儲存位置。建立第一個貨架或抽屜。',
+    manage: '位置',
+    backToInventory: '返回庫存',
+    createPlaceholder: '例如：A 架、抽屜 1',
+    nameRequired: '位置名稱為必填',
+    created: '位置已建立',
+    updated: '位置已更新',
+    deleted: '位置已刪除',
+    saveFailed: '儲存位置失敗',
+    deleteFailed: '刪除位置失敗',
+    deleteBlocked: '刪除前請移走此位置上的所有線軸',
+    confirmDelete: '刪除「{{name}}」？',
+    confirmDeleteMessage: '此位置將從目錄中移除。請先移走線軸。',
+  },
+
   // Inventory
   inventory: {
     title: '耗材庫存',

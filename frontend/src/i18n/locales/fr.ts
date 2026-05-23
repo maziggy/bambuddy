@@ -3679,6 +3679,29 @@ export default {
     reportPartialUsageDesc: 'Si l\'impression échoue, rapporte le filament consommé selon les couches.',
   },
 
+  locations: {
+    title: 'Emplacements de stockage',
+    subtitle: 'Gérez étagères, tiroirs et autres emplacements physiques pour vos bobines',
+    add: 'Ajouter un emplacement',
+    addShort: 'Ajouter',
+    edit: 'Modifier l\'emplacement',
+    name: 'Nom',
+    spools: 'Bobines',
+    empty: 'Aucun emplacement de stockage. Créez votre première étagère ou tiroir.',
+    manage: 'Emplacements',
+    backToInventory: 'Retour à l\'inventaire',
+    createPlaceholder: 'ex. Étagère A, Tiroir 1',
+    nameRequired: 'Le nom de l\'emplacement est requis',
+    created: 'Emplacement créé',
+    updated: 'Emplacement mis à jour',
+    deleted: 'Emplacement supprimé',
+    saveFailed: 'Échec de l\'enregistrement de l\'emplacement',
+    deleteFailed: 'Échec de la suppression de l\'emplacement',
+    deleteBlocked: 'Retirez d\'abord toutes les bobines de cet emplacement',
+    confirmDelete: 'Supprimer « {{name}} » ?',
+    confirmDeleteMessage: 'Cet emplacement sera retiré du catalogue. Déplacez d\'abord les bobines.',
+  },
+
   // Inventory
   inventory: {
     title: 'Inventaire de Bobines',

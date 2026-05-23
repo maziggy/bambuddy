@@ -3693,6 +3693,29 @@ export default {
     reportPartialUsageDesc: 'Cuando una impresión falla o se cancela, informar del filamento estimado usado hasta ese punto según el progreso de las capas.',
   },
 
+  locations: {
+    title: 'Ubicaciones de almacenamiento',
+    subtitle: 'Gestione estantes, cajones y otros lugares físicos para sus bobinas',
+    add: 'Añadir ubicación',
+    addShort: 'Añadir',
+    edit: 'Editar ubicación',
+    name: 'Nombre',
+    spools: 'Bobinas',
+    empty: 'Aún no hay ubicaciones de almacenamiento. Cree su primer estante o cajón.',
+    manage: 'Ubicaciones',
+    backToInventory: 'Volver al inventario',
+    createPlaceholder: 'p. ej. Estante A, Cajón 1',
+    nameRequired: 'El nombre de la ubicación es obligatorio',
+    created: 'Ubicación creada',
+    updated: 'Ubicación actualizada',
+    deleted: 'Ubicación eliminada',
+    saveFailed: 'No se pudo guardar la ubicación',
+    deleteFailed: 'No se pudo eliminar la ubicación',
+    deleteBlocked: 'Retire todas las bobinas de esta ubicación antes de eliminarla',
+    confirmDelete: '¿Eliminar «{{name}}»?',
+    confirmDeleteMessage: 'Esta ubicación se eliminará del catálogo. Mueva las bobinas primero.',
+  },
+
   // Inventory
   inventory: {
     title: 'Inventario de bobinas',

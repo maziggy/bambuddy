@@ -3690,6 +3690,29 @@ export default {
     reportPartialUsageDesc: '印刷が失敗またはキャンセルされた場合、レイヤー進捗に基づいてその時点までの推定フィラメント使用量を報告します。',
   },
 
+  locations: {
+    title: '保管場所',
+    subtitle: '棚・引き出しなど、スプールの物理的な保管場所を管理',
+    add: '場所を追加',
+    addShort: '追加',
+    edit: '場所を編集',
+    name: '名前',
+    spools: 'スプール',
+    empty: '保管場所がありません。最初の棚または引き出しを作成してください。',
+    manage: '保管場所',
+    backToInventory: '在庫に戻る',
+    createPlaceholder: '例: 棚A、引き出し1',
+    nameRequired: '場所名が必要です',
+    created: '場所を作成しました',
+    updated: '場所を更新しました',
+    deleted: '場所を削除しました',
+    saveFailed: '場所の保存に失敗しました',
+    deleteFailed: '場所の削除に失敗しました',
+    deleteBlocked: '削除前にこの場所のスプールをすべて移動してください',
+    confirmDelete: '「{{name}}」を削除しますか？',
+    confirmDeleteMessage: 'この場所はカタログから削除されます。先にスプールを移動してください。',
+  },
+
   // Inventory
   inventory: {
     title: 'スプール在庫管理',

@@ -3690,6 +3690,29 @@ export default {
     reportPartialUsageDesc: 'Wenn ein Druck fehlschlägt oder abgebrochen wird, den geschätzten Filamentverbrauch bis zu diesem Zeitpunkt basierend auf dem Schichtfortschritt melden.',
   },
 
+  locations: {
+    title: 'Lagerorte',
+    subtitle: 'Regale, Schubladen und andere physische Lagerplätze für Spulen verwalten',
+    add: 'Lagerort hinzufügen',
+    addShort: 'Hinzufügen',
+    edit: 'Lagerort bearbeiten',
+    name: 'Name',
+    spools: 'Spulen',
+    empty: 'Noch keine Lagerorte. Erstellen Sie Ihr erstes Regal oder Ihre erste Schublade.',
+    manage: 'Lagerorte',
+    backToInventory: 'Zurück zum Inventar',
+    createPlaceholder: 'z. B. Regal A, Schublade 1',
+    nameRequired: 'Name des Lagerorts ist erforderlich',
+    created: 'Lagerort erstellt',
+    updated: 'Lagerort aktualisiert',
+    deleted: 'Lagerort gelöscht',
+    saveFailed: 'Lagerort konnte nicht gespeichert werden',
+    deleteFailed: 'Lagerort konnte nicht gelöscht werden',
+    deleteBlocked: 'Entfernen Sie zuerst alle Spulen von diesem Lagerort',
+    confirmDelete: '„{{name}}“ löschen?',
+    confirmDeleteMessage: 'Dieser Lagerort wird aus dem Katalog entfernt. Spulen müssen zuerst verschoben werden.',
+  },
+
   // Inventar
   inventory: {
     title: 'Spulen-Inventar',

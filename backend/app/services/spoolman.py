@@ -544,6 +544,23 @@ class SpoolmanClient:
             params["allow_archived"] = "true"
         return await self._get_with_retry("/spool", params=params or None)
 
+    async def get_distinct_locations(self) -> list[str]:
+        """Return distinct location strings currently assigned to Spoolman spools."""
+        return await self._get_with_retry("/location")
+
+    async def rename_location(self, current_name: str, new_name: str) -> str:
+        """Bulk-rename a location string on all Spoolman spools."""
+        from urllib.parse import quote
+
+        encoded = quote(current_name, safe="")
+        client = await self._get_client()
+        response = await client.patch(
+            f"{self.api_url}/location/{encoded}",
+            json={"name": new_name},
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def delete_spool(self, spool_id: int) -> None:
         """Delete a spool from Spoolman."""
         await self._request_spool("DELETE", spool_id, operation="delete")

@@ -3678,6 +3678,29 @@ export default {
     reportPartialUsageDesc: '当打印失败或被取消时，根据层进度报告估计的耗材使用量。',
   },
 
+  locations: {
+    title: '存储位置',
+    subtitle: '管理货架、抽屉等线轴物理存放位置',
+    add: '添加位置',
+    addShort: '添加',
+    edit: '编辑位置',
+    name: '名称',
+    spools: '线轴',
+    empty: '尚无存储位置。创建第一个货架或抽屉。',
+    manage: '位置',
+    backToInventory: '返回库存',
+    createPlaceholder: '例如：A 架、抽屉 1',
+    nameRequired: '位置名称为必填项',
+    created: '位置已创建',
+    updated: '位置已更新',
+    deleted: '位置已删除',
+    saveFailed: '保存位置失败',
+    deleteFailed: '删除位置失败',
+    deleteBlocked: '删除前请移走此位置上的所有线轴',
+    confirmDelete: '删除「{{name}}」？',
+    confirmDeleteMessage: '此位置将从目录中移除。请先移走线轴。',
+  },
+
   // Inventory
   inventory: {
     title: '耗材库存',

@@ -199,6 +199,7 @@ async def init_db():
         slot_preset,
         smart_plug,
         smart_plug_energy_snapshot,
+        location,
         spool,
         spool_assignment,
         spool_catalog,
@@ -2937,6 +2938,80 @@ async def run_migrations(conn):
                     "WHERE created_at IS NULL"
                 )
             )
+
+    # Migration: structured storage locations (#1004). Flat catalog of physical
+    # shelves/drawers; spool.location_id FK with storage_location kept denormalized.
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            name_key VARCHAR(255),
+            identifier VARCHAR(100),
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS locations (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            name_key VARCHAR(255),
+            identifier VARCHAR(100),
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+    )
+    await _safe_execute(conn, "ALTER TABLE locations ADD COLUMN name_key VARCHAR(255)")
+    await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_locations_name_key ON locations (name_key)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN location_id INTEGER REFERENCES locations(id)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_location_id ON spool (location_id)")
+
+    # Backfill locations from existing free-text storage_location values.
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                """
+                INSERT INTO locations (name, name_key, created_at, updated_at)
+                SELECT DISTINCT TRIM(storage_location), LOWER(TRIM(storage_location)), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM spool
+                WHERE TRIM(COALESCE(storage_location, '')) != ''
+                  AND NOT EXISTS (
+                    SELECT 1 FROM locations l
+                    WHERE l.name_key = LOWER(TRIM(spool.storage_location))
+                  )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                UPDATE spool
+                SET location_id = (
+                    SELECT l.id FROM locations l
+                    WHERE l.name_key = LOWER(TRIM(spool.storage_location))
+                    LIMIT 1
+                )
+                WHERE TRIM(COALESCE(storage_location, '')) != ''
+                  AND location_id IS NULL
+                """
+            )
+        )
+
+    # Backfill name_key for rows created before the column existed.
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                """
+                UPDATE locations
+                SET name_key = LOWER(TRIM(name))
+                WHERE name_key IS NULL OR TRIM(name_key) = ''
+                """
+            )
+        )
 
 
 async def seed_notification_templates():

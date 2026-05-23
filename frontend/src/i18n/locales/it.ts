@@ -3678,6 +3678,29 @@ export default {
     reportPartialUsageDesc: 'Quando una stampa fallisce o viene annullata, segnala il filamento stimato usato fino a quel punto in base all\'avanzamento layer.',
   },
 
+  locations: {
+    title: 'Ubicazioni di stoccaggio',
+    subtitle: 'Gestisci scaffali, cassetti e altri posti fisici per le bobine',
+    add: 'Aggiungi ubicazione',
+    addShort: 'Aggiungi',
+    edit: 'Modifica ubicazione',
+    name: 'Nome',
+    spools: 'Bobine',
+    empty: 'Nessuna ubicazione di stoccaggio. Crea il tuo primo scaffale o cassetto.',
+    manage: 'Ubicazioni',
+    backToInventory: 'Torna all\'inventario',
+    createPlaceholder: 'es. Scaffale A, Cassetto 1',
+    nameRequired: 'Il nome dell\'ubicazione è obbligatorio',
+    created: 'Ubicazione creata',
+    updated: 'Ubicazione aggiornata',
+    deleted: 'Ubicazione eliminata',
+    saveFailed: 'Impossibile salvare l\'ubicazione',
+    deleteFailed: 'Impossibile eliminare l\'ubicazione',
+    deleteBlocked: 'Rimuovi prima tutte le bobine da questa ubicazione',
+    confirmDelete: 'Eliminare «{{name}}»?',
+    confirmDeleteMessage: 'Questa ubicazione verrà rimossa dal catalogo. Sposta prima le bobine.',
+  },
+
   // Inventory
   inventory: {
     title: 'Inventario Bobine',

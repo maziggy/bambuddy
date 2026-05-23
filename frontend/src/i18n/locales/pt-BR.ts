@@ -3678,6 +3678,29 @@ export default {
     reportPartialUsageDesc: 'Quando uma impressão falha ou é cancelada, relate o filamento estimado usado até aquele ponto com base no progresso das camadas.',
   },
 
+  locations: {
+    title: 'Locais de armazenamento',
+    subtitle: 'Gerencie prateleiras, gavetas e outros locais físicos para bobinas',
+    add: 'Adicionar local',
+    addShort: 'Adicionar',
+    edit: 'Editar local',
+    name: 'Nome',
+    spools: 'Bobinas',
+    empty: 'Nenhum local de armazenamento. Crie sua primeira prateleira ou gaveta.',
+    manage: 'Locais',
+    backToInventory: 'Voltar ao inventário',
+    createPlaceholder: 'ex. Prateleira A, Gaveta 1',
+    nameRequired: 'O nome do local é obrigatório',
+    created: 'Local criado',
+    updated: 'Local atualizado',
+    deleted: 'Local excluído',
+    saveFailed: 'Falha ao salvar local',
+    deleteFailed: 'Falha ao excluir local',
+    deleteBlocked: 'Remova todas as bobinas deste local antes de excluir',
+    confirmDelete: 'Excluir «{{name}}»?',
+    confirmDeleteMessage: 'Este local será removido do catálogo. Mova as bobinas primeiro.',
+  },
+
   // Inventory
   inventory: {
     title: 'Inventário de Carretéis',

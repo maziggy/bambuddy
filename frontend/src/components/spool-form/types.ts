@@ -36,7 +36,7 @@ export interface SpoolFormData {
   // User-defined category + per-spool low-stock threshold override (#729).
   category: string;
   low_stock_threshold_pct: number | null;
-  storage_location: string;
+  location_id: number | null;
   // When set the spool is linked to a specific Spoolman filament catalog entry;
   // the backend skips find_or_create_filament() and uses this ID directly.
   spoolman_filament_id: number | null;
@@ -59,7 +59,7 @@ export const defaultFormData: SpoolFormData = {
   cost_per_kg: null,
   category: '',
   low_stock_threshold_pct: null,
-  storage_location: '',
+  location_id: null,
   spoolman_filament_id: null,
 };
 
@@ -143,6 +143,8 @@ export interface AdditionalSectionProps extends SectionProps {
   // Global low-stock threshold (%); shown as placeholder on the per-spool
   // override input so users see what they're overriding. #729
   globalLowStockThreshold: number;
+  availableLocations?: { id: number; name: string }[];
+  onCreateLocation?: (name: string) => Promise<{ id: number; name: string } | null>;
   // When true the empty-spool weight is managed by Spoolman on the filament
   // object, so SpoolWeightPicker is hidden and an info notice is shown instead.
   spoolmanMode?: boolean;

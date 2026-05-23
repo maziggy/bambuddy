@@ -1,0 +1,200 @@
+2026-05-23 15:46:48,768 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:46:48,768 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:47:18,771 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:47:18,772 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:47:48,774 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:47:48,775 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:48:18,778 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:48:18,778 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:48:48,781 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:48:48,781 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:49:18,785 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:49:18,785 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:49:48,789 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:49:48,790 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:50:18,794 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:50:18,794 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:50:48,441 INFO [backend.app.services.smart_plug_manager] [-] Captured 2 energy snapshot(s)
+2026-05-23 15:50:48,798 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:50:48,798 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:51:18,801 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:51:18,802 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:51:48,805 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:51:48,805 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:52:18,808 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:52:18,809 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:52:48,812 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:52:48,813 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:53:18,818 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:53:18,819 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:53:48,822 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:53:48,823 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:54:18,827 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:54:18,827 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:54:48,829 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:54:48,830 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:55:18,832 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:55:18,833 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:55:48,835 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:55:48,835 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:56:18,837 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:56:18,838 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:56:48,841 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:56:48,842 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:57:18,843 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:57:18,844 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:57:48,847 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:57:48,848 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:58:18,850 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:58:18,850 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:58:48,853 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:58:48,854 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:59:18,857 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:59:18,858 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 15:59:48,860 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 15:59:48,861 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:00:18,864 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:00:18,864 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:00:48,868 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:00:48,868 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:01:18,871 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:01:18,872 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:01:48,874 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:01:48,875 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:02:18,879 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:02:18,879 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:02:48,882 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:02:48,883 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:03:18,885 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:03:18,886 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:03:48,890 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:03:48,890 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:04:18,892 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:04:18,893 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:04:48,896 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:04:48,896 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:05:18,899 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:05:18,899 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:05:48,909 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:05:48,911 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:06:18,915 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:06:18,916 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:06:48,919 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:06:48,920 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:07:18,923 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:07:18,924 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:07:48,926 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:07:48,927 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:08:18,929 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:08:18,929 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:08:48,932 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:08:48,933 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:09:18,936 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:09:18,936 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:09:48,939 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:09:48,940 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:10:18,943 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:10:18,943 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:10:48,945 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:10:48,946 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:11:18,948 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:11:18,949 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:11:48,953 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:11:48,953 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:12:18,956 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:12:18,956 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:12:48,959 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:12:48,959 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:13:18,963 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:13:18,963 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:13:48,967 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:13:48,968 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:14:18,971 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:14:18,971 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:14:48,974 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:14:48,975 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:15:18,979 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:15:18,979 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:15:48,983 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:15:48,983 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:16:18,987 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:16:18,987 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:16:48,991 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:16:48,991 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:17:18,995 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:17:18,995 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:17:48,999 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:17:48,999 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:18:19,002 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:18:19,003 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:18:49,005 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:18:49,006 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:19:19,009 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:19:19,010 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:19:49,013 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:19:49,014 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:20:19,017 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:20:19,017 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:20:49,021 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:20:49,021 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:21:19,024 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:21:19,024 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:21:49,027 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:21:49,028 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:22:19,031 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:22:19,031 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:22:49,035 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:22:49,035 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:23:19,039 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:23:19,039 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:23:49,042 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:23:49,043 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:24:19,047 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:24:19,047 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:24:49,050 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:24:49,050 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:25:19,054 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:25:19,054 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:25:49,057 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:25:49,058 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:26:19,060 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:26:19,061 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:26:49,064 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:26:49,065 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:27:19,069 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:27:19,069 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:27:49,073 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:27:49,073 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:28:19,077 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:28:19,077 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:28:49,080 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:28:49,081 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:29:19,085 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:29:19,086 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:29:49,089 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:29:49,090 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:30:19,093 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:30:19,093 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:30:49,097 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:30:49,097 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:31:19,101 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:31:19,101 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:31:27,572 INFO [uvicorn.access] [-] [IP]:58318 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 401
+2026-05-23 16:31:28,582 INFO [uvicorn.access] [-] [IP]:58317 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 401
+2026-05-23 16:31:31,271 INFO [backend.app.services.ldap_service] [816a5702] LDAP authentication successful for user: [USER] (DN: cn=Admin Bambuddy,cn=users,dc=bambuddy,dc=local, groups: 1)
+2026-05-23 16:31:31,283 INFO [uvicorn.access] [-] [IP]:58317 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-05-23 16:31:31,308 INFO [uvicorn.access] [-] [IP]:58317 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-23 16:31:31,321 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-23 16:31:31,321 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-23 16:31:31,321 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-23 16:31:49,104 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:31:49,104 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:32:19,107 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:32:19,108 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}
+2026-05-23 16:32:43,533 INFO [backend.app.api.routes.support] [f38d39f4] Log level changed to DEBUG
+2026-05-23 16:32:43,533 INFO [backend.app.api.routes.bug_report] [f38d39f4] Bug report: enabled debug logging
+2026-05-23 16:32:43,533 WARNING [backend.app.services.bambu_mqtt] [f38d39f4] [[SERIAL]] request_status_update: not connected
+2026-05-23 16:32:43,533 WARNING [backend.app.services.bambu_mqtt] [f38d39f4] [[SERIAL]] request_status_update: not connected
+2026-05-23 16:32:43,533 INFO [uvicorn.access] [-] [IP]:58358 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-23 16:32:49,111 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(444, None, 48, None), (446, None, 82, None)]
+2026-05-23 16:32:49,112 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 2}

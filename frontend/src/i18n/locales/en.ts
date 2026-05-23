@@ -24,6 +24,7 @@ export default {
     keyboardShortcuts: 'Keyboard shortcuts (?)',
     switchToLight: 'Switch to light mode',
     switchToDark: 'Switch to dark mode',
+    switchToSystem: 'Switch to system mode',
     smartSwitches: 'Smart Switches',
     logout: 'Logout',
     installApp: 'Install app',
@@ -2143,7 +2144,7 @@ export default {
     styleClassic: 'Classic',
     styleGlow: 'Glow',
     styleVibrant: 'Vibrant',
-    themeToggleHint: 'Toggle between dark and light mode using the sun/moon icon in the sidebar.',
+    themeToggleHint: 'Toggle between dark, light, and system mode using the icon in the sidebar.',
     // Archive
     autoArchivePrints: 'Auto-archive prints',
     autoArchiveDescription: 'Automatically save 3MF files when prints complete',

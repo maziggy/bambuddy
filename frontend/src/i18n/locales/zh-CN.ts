@@ -24,6 +24,7 @@ export default {
     keyboardShortcuts: '键盘快捷键 (?)',
     switchToLight: '切换到浅色模式',
     switchToDark: '切换到深色模式',
+    switchToSystem: '切换到系统模式',
     smartSwitches: '智能开关',
     logout: '退出登录',
     installApp: '安装应用',

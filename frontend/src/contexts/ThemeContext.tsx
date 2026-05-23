@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api/client';
 
-type ThemeMode = 'light' | 'dark';
+type ThemeMode = 'light' | 'dark' | 'system';
 type ThemeStyle = 'classic' | 'glow' | 'vibrant';
 type DarkBackground = 'neutral' | 'warm' | 'cool' | 'oled' | 'slate' | 'forest';
 type LightBackground = 'neutral' | 'warm' | 'cool';
@@ -9,6 +9,7 @@ type ThemeAccent = 'green' | 'teal' | 'blue' | 'orange' | 'purple' | 'red';
 
 interface ThemeContextType {
   mode: ThemeMode;
+  resolvedMode: 'light' | 'dark';
   // Dark mode settings
   darkStyle: ThemeStyle;
   darkBackground: DarkBackground;
@@ -37,6 +38,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const legacy = localStorage.getItem('theme') as ThemeMode | null;
     return stored || legacy || 'dark';
   });
+
+  // System preference detection
+  const [systemPreference, setSystemPreference] = useState<'light' | 'dark'>(() => {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => {
+      setSystemPreference(e.matches ? 'dark' : 'light');
+    };
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
+
+  // Resolved mode: what's actually applied (always 'light' or 'dark')
+  const resolvedMode: 'light' | 'dark' = mode === 'system' ? systemPreference : mode;
 
   // Dark mode settings
   const [darkStyle, setDarkStyleState] = useState<ThemeStyle>(() => {
@@ -104,8 +122,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       'accent-green', 'accent-teal', 'accent-blue', 'accent-orange', 'accent-purple', 'accent-red'
     );
 
-    // Apply based on current mode
-    if (mode === 'dark') {
+    // Apply based on resolved mode
+    if (resolvedMode === 'dark') {
       root.classList.add('dark');
       root.classList.add(`style-${darkStyle}`);
       root.classList.add(`bg-${darkBackground}`);
@@ -118,9 +136,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     localStorage.setItem('theme-mode', mode);
     localStorage.removeItem('theme');
-  }, [mode, darkStyle, darkBackground, darkAccent, lightStyle, lightBackground, lightAccent]);
+  }, [mode, resolvedMode, darkStyle, darkBackground, darkAccent, lightStyle, lightBackground, lightAccent]);
 
-  const toggleMode = () => setModeState(prev => prev === 'dark' ? 'light' : 'dark');
+  const toggleMode = () => setModeState(prev => {
+    if (prev === 'dark') return 'light';
+    if (prev === 'light') return 'system';
+    return 'dark';
+  });
   const setMode = (m: ThemeMode) => setModeState(m);
 
   // Dark setters
@@ -160,6 +182,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   return (
     <ThemeContext.Provider value={{
       mode,
+      resolvedMode,
       darkStyle, darkBackground, darkAccent,
       lightStyle, lightBackground, lightAccent,
       toggleMode, setMode,

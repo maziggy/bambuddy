@@ -24,6 +24,7 @@ export default {
     keyboardShortcuts: 'Scorciatoie da tastiera (?)',
     switchToLight: 'Passa a tema chiaro',
     switchToDark: 'Passa a tema scuro',
+    switchToSystem: 'Passa a tema di sistema',
     smartSwitches: 'Interruttori Smart',
     logout: 'Esci',
     installApp: 'Installa app',

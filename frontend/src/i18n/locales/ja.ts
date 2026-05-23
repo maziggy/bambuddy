@@ -24,6 +24,7 @@ export default {
     keyboardShortcuts: 'キーボードショートカット (?)',
     switchToLight: 'ライトモードに切替',
     switchToDark: 'ダークモードに切替',
+    switchToSystem: 'システムモードに切替',
     smartSwitches: 'スマートスイッチ',
     logout: 'ログアウト',
     installApp: 'アプリをインストール',

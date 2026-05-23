@@ -158,9 +158,10 @@ export function SettingsPage() {
   const { showToast } = useToast();
   const { authEnabled, user, isAdmin, refreshAuth, hasPermission } = useAuth();
   const {
-    mode,
+    mode, resolvedMode,
     darkStyle, darkBackground, darkAccent,
     lightStyle, lightBackground, lightAccent,
+    setMode,
     setDarkStyle, setDarkBackground, setDarkAccent,
     setLightStyle, setLightBackground, setLightAccent,
   } = useTheme();
@@ -1638,11 +1639,36 @@ export function SettingsPage() {
               </h2>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Theme Mode Selector */}
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-sm text-bambu-gray">{t('settings.theme')}:</label>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setMode('dark')}
+                    className={`px-3 py-1 text-xs rounded-lg border transition-colors ${mode === 'dark' ? 'border-bambu-green bg-bambu-green/10 text-bambu-green' : 'border-gray-300 dark:border-bambu-dark-tertiary text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white'}`}
+                  >
+                    {t('settings.themeDark')}
+                  </button>
+                  <button
+                    onClick={() => setMode('light')}
+                    className={`px-3 py-1 text-xs rounded-lg border transition-colors ${mode === 'light' ? 'border-bambu-green bg-bambu-green/10 text-bambu-green' : 'border-gray-300 dark:border-bambu-dark-tertiary text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white'}`}
+                  >
+                    {t('settings.themeLight')}
+                  </button>
+                  <button
+                    onClick={() => setMode('system')}
+                    className={`px-3 py-1 text-xs rounded-lg border transition-colors ${mode === 'system' ? 'border-bambu-green bg-bambu-green/10 text-bambu-green' : 'border-gray-300 dark:border-bambu-dark-tertiary text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white'}`}
+                  >
+                    {t('settings.themeSystem')}
+                  </button>
+                </div>
+              </div>
+
               {/* Dark Mode Settings */}
-              <div className={`space-y-3 p-4 rounded-lg border ${mode === 'dark' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
+              <div className={`space-y-3 p-4 rounded-lg border ${resolvedMode === 'dark' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
                 <h3 className="text-sm font-medium text-white flex items-center gap-2">
                   {t('settings.darkMode')}
-                  {mode === 'dark' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
+                  {resolvedMode === 'dark' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
                 </h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
@@ -1691,10 +1717,10 @@ export function SettingsPage() {
               </div>
 
               {/* Light Mode Settings */}
-              <div className={`space-y-3 p-4 rounded-lg border ${mode === 'light' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
+              <div className={`space-y-3 p-4 rounded-lg border ${resolvedMode === 'light' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
                 <h3 className="text-sm font-medium text-white flex items-center gap-2">
                   {t('settings.lightMode')}
-                  {mode === 'light' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
+                  {resolvedMode === 'light' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
                 </h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>

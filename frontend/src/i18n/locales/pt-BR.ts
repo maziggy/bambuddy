@@ -24,6 +24,7 @@ export default {
     keyboardShortcuts: 'Atalhos de teclado (?)',
     switchToLight: 'Mudar para modo claro',
     switchToDark: 'Mudar para modo escuro',
+    switchToSystem: 'Mudar para modo do sistema',
     smartSwitches: 'Interruptores inteligentes',
     logout: 'Sair',
     installApp: 'Instalar app',

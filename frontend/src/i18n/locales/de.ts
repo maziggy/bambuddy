@@ -24,6 +24,7 @@ export default {
     keyboardShortcuts: 'Tastaturkürzel (?)',
     switchToLight: 'Zum hellen Modus wechseln',
     switchToDark: 'Zum dunklen Modus wechseln',
+    switchToSystem: 'Zum Systemmodus wechseln',
     smartSwitches: 'Smart Switches',
     logout: 'Abmelden',
     installApp: 'App installieren',

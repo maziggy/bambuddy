@@ -2095,7 +2095,7 @@ export default {
     styleClassic: 'Classico',
     styleGlow: 'Luminoso',
     styleVibrant: 'Vibrante',
-    themeToggleHint: 'Passa tra modalità scura e chiara con l\'icona sole/luna nella barra laterale.',
+    themeToggleHint: 'Passa tra modalità scura, chiara e sistema con l\'icona nella barra laterale.',
     autoArchivePrints: 'Archiviazione automatica stampe',
     autoArchiveDescription: 'Salva automaticamente i file 3MF al completamento delle stampe',
     saveThumbnailsDescription: 'Estrai e salva le immagini di anteprima dai file 3MF',

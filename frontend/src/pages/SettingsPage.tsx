@@ -1643,24 +1643,19 @@ export function SettingsPage() {
               <div className="flex items-center gap-2 mb-2">
                 <label className="text-sm text-bambu-gray">{t('settings.theme')}:</label>
                 <div className="flex gap-1">
-                  <button
-                    onClick={() => setMode('dark')}
-                    className={`px-3 py-1 text-xs rounded-lg border transition-colors ${mode === 'dark' ? 'border-bambu-green bg-bambu-green/10 text-bambu-green' : 'border-gray-300 dark:border-bambu-dark-tertiary text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white'}`}
-                  >
-                    {t('settings.themeDark')}
-                  </button>
-                  <button
-                    onClick={() => setMode('light')}
-                    className={`px-3 py-1 text-xs rounded-lg border transition-colors ${mode === 'light' ? 'border-bambu-green bg-bambu-green/10 text-bambu-green' : 'border-gray-300 dark:border-bambu-dark-tertiary text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white'}`}
-                  >
-                    {t('settings.themeLight')}
-                  </button>
-                  <button
-                    onClick={() => setMode('system')}
-                    className={`px-3 py-1 text-xs rounded-lg border transition-colors ${mode === 'system' ? 'border-bambu-green bg-bambu-green/10 text-bambu-green' : 'border-gray-300 dark:border-bambu-dark-tertiary text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white'}`}
-                  >
-                    {t('settings.themeSystem')}
-                  </button>
+                  {([
+                    { id: 'dark', label: t('settings.themeDark') },
+                    { id: 'light', label: t('settings.themeLight') },
+                    { id: 'system', label: t('settings.themeSystem') },
+                  ] as const).map(({ id, label }) => (
+                    <button
+                      key={id}
+                      onClick={() => { setMode(id); showToast(t('settings.toast.settingsSaved'), 'success'); }}
+                      className={`px-3 py-1 text-xs rounded-lg border transition-colors ${mode === id ? 'border-bambu-green bg-bambu-green/10 text-bambu-green' : 'border-gray-300 dark:border-bambu-dark-tertiary text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white cursor-pointer'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
 

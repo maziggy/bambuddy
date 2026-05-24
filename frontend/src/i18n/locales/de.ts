@@ -2141,7 +2141,7 @@ export default {
     styleClassic: 'Klassisch',
     styleGlow: 'Leuchtend',
     styleVibrant: 'Lebendig',
-    themeToggleHint: 'Zwischen Hell- und Dunkelmodus mit dem Sonnen-/Mondsymbol in der Seitenleiste wechseln.',
+    themeToggleHint: 'Zwischen Dunkel-, Hell- und Systemmodus mit dem Symbol in der Seitenleiste wechseln.',
     // Archive
     autoArchivePrints: 'Drucke automatisch archivieren',
     autoArchiveDescription: '3MF-Dateien automatisch speichern, wenn Drucke abgeschlossen sind',

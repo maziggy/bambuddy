@@ -2095,7 +2095,7 @@ export default {
     styleClassic: 'Clássico',
     styleGlow: 'Brilhante',
     styleVibrant: 'Vibrante',
-    themeToggleHint: 'Alternar entre modo escuro e claro usando o ícone de sol/lua na barra lateral.',
+    themeToggleHint: 'Alternar entre modo escuro, claro e sistema usando o ícone na barra lateral.',
     autoArchivePrints: 'Arquivar impressões automaticamente',
     autoArchiveDescription: 'Salvar automaticamente arquivos 3MF quando impressões forem concluídas',
     saveThumbnailsDescription: 'Extrair e salvar imagens de pré-visualização dos arquivos 3MF',

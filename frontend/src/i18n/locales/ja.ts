@@ -2140,7 +2140,7 @@ export default {
     styleClassic: 'クラシック',
     styleGlow: 'グロー',
     styleVibrant: 'ビビッド',
-    themeToggleHint: 'サイドバーの太陽/月アイコンでダークモードとライトモードを切り替えます。',
+    themeToggleHint: 'サイドバーのアイコンでダーク、ライト、システムモードを切り替えます。',
     // Archive
     autoArchivePrints: '印刷を自動アーカイブ',
     autoArchiveDescription: '印刷完了時に3MFファイルを自動保存',

@@ -2140,7 +2140,7 @@ export default {
     styleClassic: '经典',
     styleGlow: '发光',
     styleVibrant: '鲜艳',
-    themeToggleHint: '使用侧边栏中的太阳/月亮图标在深色和浅色模式之间切换。',
+    themeToggleHint: '使用侧边栏中的图标在深色、浅色和系统模式之间切换。',
     autoArchivePrints: '自动归档打印',
     autoArchiveDescription: '打印完成时自动保存3MF文件',
     saveThumbnailsDescription: '从3MF文件中提取并保存预览图像',

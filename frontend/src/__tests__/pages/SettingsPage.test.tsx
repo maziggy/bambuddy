@@ -927,4 +927,65 @@ describe('SettingsPage', () => {
       15_000,
     );
   });
+
+  describe('theme mode buttons', () => {
+    it('renders Dark, Light, and System buttons', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Dark' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Light' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'System' })).toBeInTheDocument();
+      });
+    });
+
+    it('highlights the active mode button with green border', async () => {
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'System' })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: 'System' }));
+
+      await waitFor(() => {
+        const systemBtn = screen.getByRole('button', { name: 'System' });
+        expect(systemBtn.className).toContain('border-bambu-green');
+      });
+    });
+
+    it('clicking a theme button switches mode', async () => {
+      localStorage.setItem('theme-mode', 'dark');
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+
+      await waitFor(() => {
+        const darkBtn = screen.getByRole('button', { name: 'Dark' });
+        expect(darkBtn.className).toContain('border-bambu-green');
+      });
+
+      const lightBtn = screen.getByRole('button', { name: 'Light' });
+      await user.click(lightBtn);
+
+      await waitFor(() => {
+        expect(lightBtn.className).toContain('border-bambu-green');
+      });
+    });
+
+    it('shows a toast when theme button is clicked', async () => {
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'System' })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: 'System' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Settings saved')).toBeInTheDocument();
+      });
+    });
+  });
 });

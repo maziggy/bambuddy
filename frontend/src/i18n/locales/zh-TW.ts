@@ -2140,7 +2140,7 @@ export default {
     styleClassic: '經典',
     styleGlow: '發光',
     styleVibrant: '鮮豔',
-    themeToggleHint: '使用側邊欄中的太陽/月亮圖示在深色和淺色模式之間切換。',
+    themeToggleHint: '使用側邊欄中的圖示在深色、淺色和系統模式之間切換。',
     autoArchivePrints: '自動歸檔列印',
     autoArchiveDescription: '列印完成時自動儲存3MF檔案',
     saveThumbnailsDescription: '從3MF檔案中提取並儲存預覽影像',

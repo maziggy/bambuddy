@@ -298,19 +298,18 @@ jobs:
       - name: Verify static files exist
         run: docker run --rm bambuddy:test test -d /app/static
 
-      # Test 2: Backend Unit Tests in Docker
-      - name: Build backend test image
-        run: docker compose -f docker-compose.test.yml build backend-test
-
-      - name: Run backend tests in Docker
-        run: docker compose -f docker-compose.test.yml run --rm backend-test
-
-      # Test 3: Frontend Unit Tests in Docker
-      - name: Build frontend test image
-        run: docker compose -f docker-compose.test.yml build frontend-test
-
-      - name: Run frontend tests in Docker
-        run: docker compose -f docker-compose.test.yml run --rm frontend-test
+      # NOTE: Tests 2 and 3 from test_docker.sh (backend / frontend unit
+      # tests inside the test image) used to run here. They've been removed
+      # from the CI pipeline because the host-side `backend-tests` and
+      # `frontend-tests` jobs already exercise the exact same test code
+      # against the exact same Python version + requirements.txt the test
+      # image installs — on 2-vCPU GHA runners a re-run inside Docker
+      # added 5-10 min of wall-clock for zero new coverage. The
+      # image-validation purpose of this job (does it build, do imports
+      # resolve, does the integration container come up and answer HTTP)
+      # lives in the surrounding steps. test_docker.sh keeps the unit-test
+      # runs because devs running it locally don't have a separate host-
+      # side pytest job to compare against.
 
       # Test 4: Integration Tests
       - name: Build integration container

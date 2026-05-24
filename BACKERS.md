@@ -38,6 +38,8 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@grizz0blaw](https://github.com/grizz0blaw)
 - [@NoahTingey](https://github.com/NoahTingey)
 - [@sentinel-center](https://github.com/sentinel-center)
+- [@brianehlert](https://github.com/brianehlert)
+- [@siiruup](https://github.com/siiruup)
 ---
 
 ## One-time and historical supporters

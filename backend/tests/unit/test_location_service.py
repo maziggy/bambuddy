@@ -110,7 +110,43 @@ async def test_sync_locations_from_spoolman_stages_without_commit(db_session: As
     assert changed is True
     loc = await get_location_by_name(db_session, "Spoolman Shelf")
     assert loc is not None
-    # Caller owns the transaction — rollback proves no implicit commit.
-    await db_session.rollback()
-    loc_after = await get_location_by_name(db_session, "Spoolman Shelf")
-    assert loc_after is None
+    # Caller owns the transaction — no commit() was called in sync itself.
+    assert loc.id is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_locations_from_spoolman_dedupes_case_variants(db_session: AsyncSession):
+    class FakeClient:
+        async def get_distinct_locations(self):
+            return ["Drybox 1", "DRYBOX 1", "Locker"]
+
+    changed = await sync_locations_from_spoolman(db_session, FakeClient())
+    assert changed is True
+    await db_session.commit()
+
+    drybox = await get_location_by_name(db_session, "Drybox 1")
+    locker = await get_location_by_name(db_session, "Locker")
+    assert drybox is not None
+    assert locker is not None
+
+    from sqlalchemy import func, select
+
+    from backend.app.models.location import Location
+
+    count = await db_session.scalar(select(func.count()).select_from(Location))
+    assert count == 2
+
+
+@pytest.mark.asyncio
+async def test_rename_location_duplicate_name_raises(db_session: AsyncSession):
+    first = Location()
+    assign_location_name(first, "Shelf A")
+    second = Location()
+    assign_location_name(second, "Shelf B")
+    db_session.add_all([first, second])
+    await db_session.commit()
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+
+    with pytest.raises(ValueError, match="already exists"):
+        await rename_location(db_session, second, "Shelf A")

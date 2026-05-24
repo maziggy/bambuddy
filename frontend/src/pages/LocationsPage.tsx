@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -75,6 +75,29 @@ export default function LocationsPage() {
     setName(location.name);
     setModalOpen(true);
   };
+
+  const closeModal = useCallback(() => {
+    if (saveMutation.isPending) return;
+    setModalOpen(false);
+    setEditing(null);
+    setName('');
+  }, [saveMutation.isPending]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saveMutation.isPending) closeModal();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [modalOpen, closeModal, saveMutation.isPending]);
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveMutation.mutate();
+  };
+
+  const modalTitleId = 'location-modal-title';
 
   return (
     <div className="p-4 md:p-8 space-y-6">
@@ -153,33 +176,40 @@ export default function LocationsPage() {
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setModalOpen(false)} />
-          <div className="relative w-full max-w-md mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-white mb-4">
+          <div className="absolute inset-0 bg-black/60" onClick={closeModal} />
+          <div
+            className="relative w-full max-w-md mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={modalTitleId}
+          >
+            <h2 id={modalTitleId} className="text-lg font-semibold text-white mb-4">
               {editing ? t('locations.edit') : t('locations.add')}
             </h2>
-            <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="location-name">
-              {t('locations.name')}
-            </label>
-            <input
-              id="location-name"
-              type="text"
-              maxLength={255}
-              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green mb-4"
-              placeholder={t('locations.createPlaceholder')}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setModalOpen(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !name.trim()}>
-                {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                {t('common.save')}
-              </Button>
-            </div>
+            <form onSubmit={handleSave}>
+              <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="location-name">
+                {t('locations.name')}
+              </label>
+              <input
+                id="location-name"
+                type="text"
+                maxLength={255}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green mb-4"
+                placeholder={t('locations.createPlaceholder')}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={closeModal}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={saveMutation.isPending || !name.trim()}>
+                  {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {t('common.save')}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

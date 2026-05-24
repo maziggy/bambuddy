@@ -44,6 +44,7 @@ from backend.app.schemas.spool import SpoolKProfileBase
 from backend.app.schemas.spoolman import SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
+    maybe_sync_spoolman_locations,
     resolve_spoolman_location_string,
 )
 from backend.app.services.printer_manager import printer_manager
@@ -435,6 +436,9 @@ async def list_spools(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> list[dict]:
     """Return all Spoolman spools in the InventorySpool format."""
+    if await maybe_sync_spoolman_locations(db):
+        await db.commit()
+
     client = await _get_client(db)
     async with _translate_spoolman_errors():
         spools = await client.get_all_spools(allow_archived=include_archived)

@@ -2971,21 +2971,28 @@ async def run_migrations(conn):
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_location_id ON spool (location_id)")
 
     # Backfill locations from existing free-text storage_location values.
+    # GROUP BY name_key so case variants ("Drybox 1" / "DRYBOX 1") collapse to
+    # one row; INSERT OR IGNORE / ON CONFLICT keeps the migration idempotent.
+    _location_backfill_sql = (
+        """
+        INSERT OR IGNORE INTO locations (name, name_key, created_at, updated_at)
+        SELECT MIN(TRIM(storage_location)), LOWER(TRIM(storage_location)), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM spool
+        WHERE TRIM(COALESCE(storage_location, '')) != ''
+        GROUP BY LOWER(TRIM(storage_location))
+        """
+        if is_sqlite()
+        else """
+        INSERT INTO locations (name, name_key, created_at, updated_at)
+        SELECT MIN(TRIM(storage_location)), LOWER(TRIM(storage_location)), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM spool
+        WHERE TRIM(COALESCE(storage_location, '')) != ''
+        GROUP BY LOWER(TRIM(storage_location))
+        ON CONFLICT (name_key) DO NOTHING
+        """
+    )
     async with conn.begin_nested():
-        await conn.execute(
-            text(
-                """
-                INSERT INTO locations (name, name_key, created_at, updated_at)
-                SELECT DISTINCT TRIM(storage_location), LOWER(TRIM(storage_location)), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                FROM spool
-                WHERE TRIM(COALESCE(storage_location, '')) != ''
-                  AND NOT EXISTS (
-                    SELECT 1 FROM locations l
-                    WHERE l.name_key = LOWER(TRIM(spool.storage_location))
-                  )
-                """
-            )
-        )
+        await conn.execute(text(_location_backfill_sql))
         await conn.execute(
             text(
                 """

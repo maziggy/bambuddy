@@ -5,10 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.location import Location
 from backend.app.models.spool import Spool
+
+DUPLICATE_LOCATION_NAME = "A location with this name already exists"
 
 
 def normalize_location_name(name: str) -> str:
@@ -55,6 +58,41 @@ async def get_locations_by_name_keys(db: AsyncSession, keys: set[str]) -> dict[s
     return {loc.name_key: loc for loc in result.scalars().all()}
 
 
+async def _create_location_or_get_existing(db: AsyncSession, normalized: str) -> Location:
+    """Insert a location row, returning the winner on concurrent name_key collision."""
+    existing = await get_location_by_name(db, normalized)
+    if existing:
+        return existing
+    location = Location()
+    assign_location_name(location, normalized)
+    try:
+        async with db.begin_nested():
+            db.add(location)
+            await db.flush()
+        return location
+    except IntegrityError as exc:
+        winner = await get_location_by_name(db, normalized)
+        if winner:
+            return winner
+        raise ValueError(DUPLICATE_LOCATION_NAME) from exc
+
+
+async def _insert_location_if_absent(db: AsyncSession, name: str) -> bool:
+    """Stage a new location row when absent. Returns True when one was added."""
+    normalized = normalize_location_name(name)
+    if await get_location_by_name(db, normalized):
+        return False
+    location = Location()
+    assign_location_name(location, normalized)
+    try:
+        async with db.begin_nested():
+            db.add(location)
+            await db.flush()
+        return True
+    except IntegrityError:
+        return False
+
+
 async def resolve_location_by_name(db: AsyncSession, name: str, *, create: bool = True) -> Location | None:
     """Find a location by name (case-insensitive), optionally creating it."""
     normalized = normalize_location_name(name)
@@ -63,11 +101,7 @@ async def resolve_location_by_name(db: AsyncSession, name: str, *, create: bool 
         return existing
     if not create:
         return None
-    location = Location()
-    assign_location_name(location, normalized)
-    db.add(location)
-    await db.flush()
-    return location
+    return await _create_location_or_get_existing(db, normalized)
 
 
 async def resolve_spool_location_fields(
@@ -188,7 +222,7 @@ async def rename_location(db: AsyncSession, location: Location, new_name: str) -
     normalized = normalize_location_name(new_name)
     existing = await get_location_by_name(db, normalized)
     if existing and existing.id != location.id:
-        raise ValueError("A location with this name already exists")
+        raise ValueError(DUPLICATE_LOCATION_NAME)
 
     old_name = location.name
     assign_location_name(location, normalized)
@@ -206,7 +240,10 @@ async def rename_location(db: AsyncSession, location: Location, new_name: str) -
         )
         .values(storage_location=normalized, location_id=location.id)
     )
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        raise ValueError(DUPLICATE_LOCATION_NAME) from exc
     return location
 
 
@@ -220,15 +257,44 @@ async def sync_locations_from_spoolman(db: AsyncSession, client) -> bool:
     except Exception:
         return False
 
-    changed = False
+    # Collapse case variants before insert — Spoolman may return both
+    # "Drybox 1" and "DRYBOX 1" in the same payload.
+    by_key: dict[str, str] = {}
     for raw in names:
         name = (raw or "").strip()
         if not name:
             continue
-        existing = await get_location_by_name(db, name)
-        if not existing:
-            location = Location()
-            assign_location_name(location, name)
-            db.add(location)
+        key = location_name_key(name)
+        if key not in by_key:
+            by_key[key] = name
+
+    changed = False
+    for name in by_key.values():
+        if await _insert_location_if_absent(db, name):
             changed = True
     return changed
+
+
+async def maybe_sync_spoolman_locations(db: AsyncSession) -> bool:
+    """Sync Spoolman location names into the local catalog when integration is enabled."""
+    from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
+    from backend.app.models.settings import Settings
+    from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+
+    result = await db.execute(select(Settings))
+    settings = {s.key: s.value for s in result.scalars().all()}
+    if settings.get("spoolman_enabled", "false").lower() != "true":
+        return False
+    url = settings.get("spoolman_url", "").strip()
+    if not url:
+        return False
+    try:
+        assert_safe_spoolman_url(url)
+    except ValueError:
+        return False
+    client = await get_spoolman_client()
+    if not client or client.base_url != url.rstrip("/"):
+        client = await init_spoolman_client(url)
+    if not client:
+        return False
+    return await sync_locations_from_spoolman(db, client)

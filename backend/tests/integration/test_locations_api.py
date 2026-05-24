@@ -4,7 +4,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.spool import Spool
+from backend.app.models.location import Location
+from backend.app.services.location_service import assign_location_name
 
 
 @pytest.mark.asyncio
@@ -72,18 +73,46 @@ async def test_rename_location_updates_spool_count(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_migration_backfill_storage_location(db_session: AsyncSession):
-    spool = Spool(material="PLA", storage_location="Drybox 1")
-    db_session.add(spool)
+async def test_rename_location_collision_returns_409(async_client: AsyncClient):
+    first = await async_client.post("/api/v1/inventory/locations", json={"name": "Shelf A"})
+    second = await async_client.post("/api/v1/inventory/locations", json={"name": "Shelf B"})
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    collision = await async_client.patch(
+        f"/api/v1/inventory/locations/{second.json()['id']}",
+        json={"name": "Shelf A"},
+    )
+    assert collision.status_code == 409
+    assert collision.json()["detail"] == "A location with this name already exists"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_create_location_duplicate_after_commit_returns_409(async_client: AsyncClient):
+    """Second create with the same name_key must return 409, not 500."""
+    first = await async_client.post("/api/v1/inventory/locations", json={"name": "Race Shelf"})
+    second = await async_client.post("/api/v1/inventory/locations", json={"name": "race shelf"})
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json()["detail"] == "A location with this name already exists"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_list_locations_is_read_only(async_client: AsyncClient, db_session: AsyncSession):
+    """GET /locations is a pure read — no catalog rows appear without explicit writes."""
+    from sqlalchemy import func, select
+
+    loc = Location()
+    assign_location_name(loc, "Local Only")
+    db_session.add(loc)
     await db_session.commit()
-    await db_session.refresh(spool)
 
-    # Simulate backfill: resolve location by storage string
-    from backend.app.services.location_service import resolve_location_by_name
+    before = await db_session.scalar(select(func.count()).select_from(Location))
+    resp = await async_client.get("/api/v1/inventory/locations")
+    after = await db_session.scalar(select(func.count()).select_from(Location))
 
-    loc = await resolve_location_by_name(db_session, spool.storage_location or "")
-    spool.location_id = loc.id if loc else None
-    await db_session.commit()
-
-    assert loc is not None
-    assert spool.location_id == loc.id
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+    assert before == after == 1

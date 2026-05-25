@@ -651,6 +651,7 @@ export interface ArchiveStats {
   total_prints: number;
   successful_prints: number;
   failed_prints: number;
+  cancelled_prints: number;
   total_print_time_hours: number;
   total_filament_grams: number;
   total_cost: number;

@@ -29,6 +29,7 @@ from backend.app.services.camera import (
     get_ffmpeg_path,
     is_chamber_image_model,
     read_next_chamber_frame,
+    rtsp_socket_timeout_flag,
     test_camera_connection,
 )
 from backend.app.services.camera_fanout import (
@@ -348,8 +349,11 @@ async def generate_rtsp_mjpeg_stream(
         "tcp",
         "-rtsp_flags",
         "prefer_tcp",
-        "-timeout",
-        "30000000",  # 30 seconds in microseconds
+        # Socket I/O timeout name varies by ffmpeg version (#1504); see
+        # rtsp_socket_timeout_flag(). The 30s value is microseconds for
+        # both names.
+        f"-{rtsp_socket_timeout_flag()}",
+        "30000000",
         "-buffer_size",
         "1024000",  # 1MB buffer
         "-max_delay",

@@ -5217,3 +5217,194 @@ class TestDryingCompleteCallback:
         # Drying genuinely finishes → the real edge still fires exactly once.
         mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
         assert mqtt_client._drying_events == [0]
+
+
+class TestPrintRunningObservedCallback:
+    """#1485 follow-up: on_print_running_observed fires the FIRST time we
+    see ``state == RUNNING`` for a printer whose print started before
+    Bambuddy came up. It lets main.py capture a timelapse baseline at
+    restart-recovery time — when on_print_start was suppressed by the
+    #1304 first-push guard. Must NOT fire when on_print_start handles the
+    transition (avoids double-capture), and must NOT fire again after
+    the first observation in the same session.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    def test_fires_on_first_running_push_after_startup(self, mqtt_client):
+        """First push the client sees has _previous_gcode_state=None, so the
+        #1304 guard suppresses on_print_start. on_print_running_observed
+        must fire instead so the consumer can recover."""
+        start_calls: list[dict] = []
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_start = lambda data: start_calls.append(data)
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        # Pristine state — exactly what we have right after BambuMQTTClient
+        # construction following a Bambuddy restart.
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test_print.gcode",
+                    "subtask_name": "Test_Print",
+                }
+            }
+        )
+
+        assert start_calls == [], "on_print_start must be suppressed by the #1304 guard"
+        assert len(running_observed_calls) == 1
+        assert running_observed_calls[0]["filename"] == "/data/Metadata/test_print.gcode"
+        assert running_observed_calls[0]["subtask_name"] == "Test_Print"
+
+    def test_does_not_fire_when_print_start_fires(self, mqtt_client):
+        """Normal print start (a real state transition from non-RUNNING to
+        RUNNING) goes through on_print_start; on_print_running_observed
+        must stay quiet so the consumer doesn't capture the baseline twice."""
+        start_calls: list[dict] = []
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_start = lambda data: start_calls.append(data)
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = "IDLE"  # Not None — past the #1304 guard
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test_print.gcode",
+                    "subtask_name": "Test_Print",
+                }
+            }
+        )
+
+        assert len(start_calls) == 1, "on_print_start should fire on a real start transition"
+        assert running_observed_calls == [], "on_print_running_observed must not double up with on_print_start"
+
+    def test_fires_only_once_per_session(self, mqtt_client):
+        """Subsequent RUNNING pushes in the same session must not re-fire the
+        callback — the baseline only needs to be captured once, the consumer
+        treats repeat calls as a hint to skip via the in-memory dict guard."""
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        msg = {
+            "print": {
+                "gcode_state": "RUNNING",
+                "gcode_file": "/data/Metadata/test_print.gcode",
+                "subtask_name": "Test_Print",
+            }
+        }
+        mqtt_client._process_message(msg)
+        mqtt_client._process_message(msg)
+        mqtt_client._process_message(msg)
+
+        assert len(running_observed_calls) == 1
+
+    def test_does_not_fire_when_not_running(self, mqtt_client):
+        """An IDLE / PREPARE / FINISH first-push must not trigger the
+        restart-recovery path — there's no print to baseline."""
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "IDLE",
+                    "gcode_file": "",
+                    "subtask_name": "",
+                }
+            }
+        )
+
+        assert running_observed_calls == []
+
+    def test_does_not_fire_without_current_file(self, mqtt_client):
+        """RUNNING with no file is ill-formed (firmware glitch / transient).
+        We need ``current_file`` to find the right archive, so skip the
+        callback rather than fire it with a meaningless payload."""
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "",
+                    "subtask_name": "",
+                }
+            }
+        )
+
+        assert running_observed_calls == []
+
+    def test_safe_when_callback_not_set(self, mqtt_client):
+        """No callback configured → silently skip; no AttributeError on the
+        firing branch."""
+        mqtt_client.on_print_running_observed = None
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        # Should not raise.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test_print.gcode",
+                    "subtask_name": "Test_Print",
+                }
+            }
+        )
+
+        assert mqtt_client._was_running is True
+
+    def test_payload_shape_matches_print_start(self, mqtt_client):
+        """The payload shape must mirror on_print_start so main.py's
+        consumer can reuse the same dict fields (filename / subtask_name /
+        remaining_time / raw_data / ams_mapping). Test pins the keys."""
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test_print.gcode",
+                    "subtask_name": "Test_Print",
+                    "mc_remaining_time": 42,
+                }
+            }
+        )
+
+        assert len(running_observed_calls) == 1
+        payload = running_observed_calls[0]
+        assert set(payload.keys()) == {
+            "filename",
+            "subtask_name",
+            "remaining_time",
+            "raw_data",
+            "ams_mapping",
+        }

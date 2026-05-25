@@ -20,7 +20,9 @@ class Printer(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_archive: Mapped[bool] = mapped_column(Boolean, default=True)
     print_hours_offset: Mapped[float] = mapped_column(Float, default=0.0)  # Baseline hours to add
-    runtime_seconds: Mapped[int] = mapped_column(default=0)  # Accumulated active runtime (RUNNING/PAUSE states)
+    runtime_seconds: Mapped[int] = mapped_column(
+        default=0
+    )  # Accumulated active runtime (RUNNING state only — see #1521)
     last_runtime_update: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )  # Last time runtime was updated

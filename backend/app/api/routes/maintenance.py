@@ -126,7 +126,8 @@ async def get_printer_total_hours(db: AsyncSession, printer_id: int) -> float:
     """Calculate total active hours for a printer from runtime counter plus offset.
 
     Uses the runtime_seconds counter which tracks actual machine active time
-    (RUNNING and PAUSE states), including calibration, heating, and printing.
+    (RUNNING state only — paused time is excluded since maintenance intervals
+    measure mechanical wear, not wall-clock active time, see #1521).
     """
     # Get printer runtime and offset
     result = await db.execute(
@@ -714,7 +715,7 @@ async def set_printer_hours(
 
     The offset is calculated as: offset = total_hours - runtime_hours
     Where runtime_hours comes from the runtime_seconds counter that tracks
-    actual machine active time (RUNNING/PAUSE states).
+    actual machine active time (RUNNING state only — paused time excluded, #1521).
     """
     # Get printer
     result = await db.execute(select(Printer).where(Printer.id == printer_id))

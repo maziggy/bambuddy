@@ -3624,8 +3624,23 @@ async def slice_and_persist_as_archive(
     new_filament_type = parsed_metadata.get("filament_type") or source_archive.filament_type
     new_filament_color = parsed_metadata.get("filament_color") or source_archive.filament_color
 
+    # When the user re-slices for a different printer model than the source,
+    # the source's printer_id (e.g. an H2D's "Workshop H2C") no longer
+    # represents where the new archive can be reprinted. The archive card
+    # and reprint modal both read printer_id first and only fall back to
+    # sliced_for_model when it's None, so leaving the inherited id makes
+    # the X1C-sliced card display the source H2D's printer name.
+    # Same pitfall as the sliced_for_model copy a few lines below.
+    new_target_model = parsed_metadata.get("sliced_for_model") or source_archive.sliced_for_model
+    is_cross_model_reslice = (
+        new_target_model is not None
+        and source_archive.sliced_for_model is not None
+        and new_target_model != source_archive.sliced_for_model
+    )
+    new_printer_id = None if is_cross_model_reslice else source_archive.printer_id
+
     new_archive = PrintArchive(
-        printer_id=source_archive.printer_id,
+        printer_id=new_printer_id,
         project_id=source_archive.project_id,
         filename=out_filename,
         file_path=str(out_path.relative_to(app_settings.base_dir)),

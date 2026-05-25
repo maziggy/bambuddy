@@ -865,9 +865,22 @@ async def get_archive_stats(
     successful_prints = successful_result.scalar() or 0
 
     failed_result = await db.execute(
-        select(func.count(PrintLogEntry.id)).where(PrintLogEntry.status == "failed", *base_conditions)
+        select(func.count(PrintLogEntry.id)).where(PrintLogEntry.status.in_(("failed", "aborted")), *base_conditions)
     )
     failed_prints = failed_result.scalar() or 0
+
+    # User/system-stopped prints — stopped/cancelled/skipped are distinct from
+    # quality failures: the user (or the queue) interrupted them, the printer
+    # didn't detect a fault. Bucketed separately so the Success Rate gauge
+    # divides by completed + failed only (a cancelled print shouldn't drag
+    # the gauge down), while still being visible in the breakdown so they
+    # don't silently vanish from Total Prints (#1390).
+    cancelled_result = await db.execute(
+        select(func.count(PrintLogEntry.id)).where(
+            PrintLogEntry.status.in_(("stopped", "cancelled", "skipped")), *base_conditions
+        )
+    )
+    cancelled_prints = cancelled_result.scalar() or 0
 
     # Total elapsed time — PrintLogEntry stores duration_seconds directly so we
     # can sum it server-side. Rows missing duration fall back to the slicer
@@ -990,6 +1003,7 @@ async def get_archive_stats(
         total_prints=total_prints,
         successful_prints=successful_prints,
         failed_prints=failed_prints,
+        cancelled_prints=cancelled_prints,
         total_print_time_hours=round(total_time, 1),
         total_filament_grams=round(total_filament, 1),
         total_cost=round(total_cost, 2),

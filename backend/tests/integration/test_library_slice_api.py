@@ -1039,6 +1039,184 @@ class TestSliceArchiveResliceModel:
         source_reloaded = await db_session.get(PrintArchive, source_id)
         assert source_reloaded.sliced_for_model == "X1C"
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cross_model_reslice_drops_source_printer_id(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        """A cross-model re-slice (source's X1C → target's H2D) must not carry
+        over ``source.printer_id``. The archive card and reprint modal both
+        read ``printer_id`` first and only fall back to ``sliced_for_model``
+        when it's None, so leaving the inherited id makes the H2D-sliced card
+        display the source's X1C printer name (the "Workshop H2C" bug)."""
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        src_dir = tmp_path / "archives" / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "cube.3mf"
+        src_3mf.write_bytes(_make_3mf_with_settings())
+        source_printer = await printer_factory()
+        source = await archive_factory(
+            source_printer.id,
+            filename="cube.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            with_run=False,
+        )
+        source_id = source.id
+        source_printer_id = source_printer.id
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code=200,
+                content=_make_sliced_3mf("O1D"),  # H2D
+                headers={
+                    "x-print-time-seconds": "600",
+                    "x-filament-used-g": "5.0",
+                    "x-filament-used-mm": "1600.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source_id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        final = await _wait_for_job(async_client, resp.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        new_archive = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        assert new_archive.sliced_for_model == "H2D"
+        # Card / reprint modal will now fall back to the sliced_for_model
+        # badge instead of showing the source printer's name.
+        assert new_archive.printer_id is None
+
+        # Source untouched: still bound to its original printer.
+        source_reloaded = await db_session.get(PrintArchive, source_id)
+        assert source_reloaded.printer_id == source_printer_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_same_model_reslice_preserves_source_printer_id(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        """Same-model re-slice (X1C → X1C, e.g. just swapped a process preset)
+        keeps ``printer_id`` so the reprint modal pre-selects the original
+        printer. Only cross-model re-slices null it out."""
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        src_dir = tmp_path / "archives" / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "cube.3mf"
+        src_3mf.write_bytes(_make_3mf_with_settings())
+        source_printer = await printer_factory()
+        source = await archive_factory(
+            source_printer.id,
+            filename="cube.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            with_run=False,
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code=200,
+                content=_make_sliced_3mf("C11"),  # X1C — same model as source
+                headers={
+                    "x-print-time-seconds": "600",
+                    "x-filament-used-g": "5.0",
+                    "x-filament-used-mm": "1600.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        final = await _wait_for_job(async_client, resp.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        new_archive = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        assert new_archive.sliced_for_model == "X1C"
+        # Same-model: keep the source's printer assignment so reprint pre-selects it.
+        assert new_archive.printer_id == source_printer.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reslice_with_unknown_source_model_preserves_printer_id(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        """When ``source.sliced_for_model`` is None (older archive that
+        predates that column being populated), the backend can't tell whether
+        this is a cross-model re-slice. Fail open and preserve ``printer_id``
+        rather than spuriously nulling it — current pre-fix behaviour, kept
+        as a deliberate edge case."""
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        src_dir = tmp_path / "archives" / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "cube.3mf"
+        src_3mf.write_bytes(_make_3mf_with_settings())
+        source_printer = await printer_factory()
+        source = await archive_factory(
+            source_printer.id,
+            filename="cube.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model=None,
+            with_run=False,
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code=200,
+                content=_make_sliced_3mf("O1D"),
+                headers={
+                    "x-print-time-seconds": "600",
+                    "x-filament-used-g": "5.0",
+                    "x-filament-used-mm": "1600.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        final = await _wait_for_job(async_client, resp.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        new_archive = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        # Insufficient info to decide cross-model → preserve printer_id.
+        assert new_archive.printer_id == source_printer.id
+
 
 class TestSliceArchiveReslicedThumbnail:
     """#1493 follow-up: the re-sliced archive's cover image preference order is

@@ -246,6 +246,8 @@ describe('presetCompatibility — @BBL name fallback (no bundles)', () => {
   });
 
   it('handles a trailing nozzle-size suffix on the @BBL tag', () => {
+    // An explicit "0.4 nozzle" suffix matches the 0.4 printer (Bambu's
+    // convention is to omit it for 0.4, but some cloud presets write it).
     expect(
       presetCompatibility(
         { name: '0.20mm Standard @BBL X1C 0.4 nozzle' },
@@ -254,6 +256,11 @@ describe('presetCompatibility — @BBL name fallback (no bundles)', () => {
         idx,
       ),
     ).toBe('match');
+    // #1325 follow-up #2 (IndividualGhost1905, 2026-05-23): a different
+    // nozzle size IS a mismatch — a 0.6-nozzle process is unusable on a
+    // 0.4-nozzle printer. The dedicated "nozzle filtering" describe
+    // block below covers the full matrix; this case stays here as the
+    // counterpart to the matching-suffix case above.
     expect(
       presetCompatibility(
         { name: '0.20mm Standard @BBL X1C 0.6 nozzle' },
@@ -261,7 +268,7 @@ describe('presetCompatibility — @BBL name fallback (no bundles)', () => {
         X1C,
         idx,
       ),
-    ).toBe('match');
+    ).toBe('mismatch');
   });
 
   it('is unknown when the preset has no @BBL tag at all (custom name, no other signal)', () => {
@@ -319,5 +326,102 @@ describe('presetCompatibility — @BBL name fallback (no bundles)', () => {
         EMPTY_COMPATIBILITY_INDEX,
       ),
     ).toBe('mismatch'); // X1C ≠ "X1 Carbon" without the registry
+  });
+});
+
+// #1325 follow-up #2 (IndividualGhost1905, 2026-05-23): the @BBL name
+// fallback must also filter by nozzle diameter. Bambu ships per-nozzle
+// variants of process / filament presets — 0.2 / 0.4 / 0.6 / 0.8 —
+// and a 0.6-nozzle process is unusable on a 0.4-nozzle printer. Bambu's
+// naming convention: 0.4 is the default and DROPS the suffix; 0.2 / 0.6
+// / 0.8 carry an explicit "<size> nozzle" segment. So an empty suffix
+// means 0.4, not "any nozzle".
+describe('presetCompatibility — nozzle filtering on @BBL name fallback', () => {
+  const X1C_04 = 'Bambu Lab X1 Carbon 0.4 nozzle';
+  const X1C_06 = 'Bambu Lab X1 Carbon 0.6 nozzle';
+  const X1C_08 = 'Bambu Lab X1 Carbon 0.8 nozzle';
+  // No bundles uploaded — exercise the @BBL fallback in isolation.
+  const index = buildCompatibilityIndex([], PRINTER_MODELS);
+
+  it('treats a no-suffix process as 0.4 (Bambu default) and matches a 0.4 printer', () => {
+    expect(
+      presetCompatibility({ name: '0.20mm Standard @BBL X1C' }, 'process', X1C_04, index),
+    ).toBe('match');
+  });
+
+  it('flags a 0.6-nozzle process as mismatch against a 0.4 printer', () => {
+    expect(
+      presetCompatibility({ name: '0.30mm @BBL X1C 0.6 nozzle' }, 'process', X1C_04, index),
+    ).toBe('mismatch');
+  });
+
+  it('flags an 0.8-nozzle process as mismatch against a 0.4 printer', () => {
+    expect(
+      presetCompatibility({ name: '0.40mm Strength @BBL X1C 0.8 nozzle' }, 'process', X1C_04, index),
+    ).toBe('mismatch');
+  });
+
+  it('matches a 0.6-nozzle process against a 0.6 printer', () => {
+    expect(
+      presetCompatibility({ name: '0.30mm @BBL X1C 0.6 nozzle' }, 'process', X1C_06, index),
+    ).toBe('match');
+  });
+
+  it('flags a no-suffix process (=0.4) as mismatch against a 0.6 printer', () => {
+    expect(
+      presetCompatibility({ name: '0.20mm Standard @BBL X1C' }, 'process', X1C_06, index),
+    ).toBe('mismatch');
+  });
+
+  it('applies the same rule to filament presets', () => {
+    // Bambu's bundled filament presets follow the same per-nozzle naming.
+    expect(
+      presetCompatibility(
+        { name: 'Bambu PLA Basic @BBL X1C 0.6 nozzle' },
+        'filament',
+        X1C_04,
+        index,
+      ),
+    ).toBe('mismatch');
+    expect(
+      presetCompatibility({ name: 'Bambu PLA Basic @BBL X1C' }, 'filament', X1C_04, index),
+    ).toBe('match');
+  });
+
+  it('keeps a 0.4 process matching a 0.4 printer when the preset DOES carry an explicit "0.4 nozzle" suffix', () => {
+    // Some cloud presets write the 0.4 suffix explicitly even though
+    // Bambu's bundled convention omits it. Both forms must compare equal.
+    expect(
+      presetCompatibility(
+        { name: '0.20mm Standard @BBL X1C 0.4 nozzle' },
+        'process',
+        X1C_04,
+        index,
+      ),
+    ).toBe('match');
+  });
+
+  it('still flags a wrong-MODEL process even when the nozzle matches', () => {
+    // The model filter must continue to dominate over the nozzle filter:
+    // a 0.4 A1 process isn't usable on an X1C 0.4 just because both are 0.4.
+    expect(
+      presetCompatibility({ name: '0.20mm Standard @BBL A1' }, 'process', X1C_04, index),
+    ).toBe('mismatch');
+  });
+
+  it('falls back to model-only when the selected printer name has no parseable nozzle', () => {
+    // Defensive degrade for non-Bambu / hand-typed names that happen to
+    // match the model. Real Bambu printer presets always carry a nozzle,
+    // so this path is rare; the assertion pins the intentional behaviour.
+    const noNozzle = 'Bambu Lab X1 Carbon'; // no "0.4 nozzle" suffix
+    expect(
+      presetCompatibility({ name: '0.30mm @BBL X1C 0.6 nozzle' }, 'process', noNozzle, index),
+    ).toBe('match');
+  });
+
+  it('flags 0.4 process on 0.8 printer (sanity check across the third common size)', () => {
+    expect(
+      presetCompatibility({ name: '0.20mm Standard @BBL X1C' }, 'process', X1C_08, index),
+    ).toBe('mismatch');
   });
 });

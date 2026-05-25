@@ -11,6 +11,7 @@ import os
 import shutil
 import ssl
 import struct
+import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,9 @@ JPEG_END = b"\xff\xd9"
 
 # Cache the ffmpeg path after first lookup
 _ffmpeg_path: str | None = None
+
+# Cached result of rtsp_socket_timeout_flag(); see that function for context.
+_rtsp_socket_timeout_flag: str | None = None
 
 # Track PIDs of ffmpeg processes spawned for one-shot frame capture (snapshot).
 # The cleanup task in routes/camera.py checks this set to avoid killing active captures.
@@ -64,6 +68,69 @@ def get_ffmpeg_path() -> str | None:
         logger.warning("ffmpeg not found in PATH or common locations")
 
     return ffmpeg_path
+
+
+def rtsp_socket_timeout_flag() -> str:
+    """Return the ffmpeg argv flag (without the leading dash) that sets the
+    RTSP demuxer's client-side TCP socket I/O timeout, in microseconds.
+
+    ffmpeg has shipped three different option arrangements for this over
+    time, and Bambuddy supports the full range:
+
+    - **Modern ffmpeg (5.x / 6.x / 7.x)** — Debian 13, Ubuntu 24.04, current
+      Homebrew, etc. ``-timeout`` is the socket I/O timeout (microseconds);
+      ``-stimeout`` was REMOVED.
+    - **Transitional ffmpeg (~late-4.x, some 5.x builds)** — Ubuntu 22.04's
+      shipped version is one of these. ``-timeout`` was deprecated and
+      *repurposed* to mean the RTSP listen-mode incoming-connection
+      timeout — and any non-zero value implies ``-listen``, which makes
+      ffmpeg bind the localhost proxy port and fail with EADDRINUSE
+      (#1504). ``-stimeout`` was the replacement socket I/O timeout in
+      that window.
+    - **Old ffmpeg (early 4.x and earlier)** — ``-timeout`` is socket I/O
+      timeout (the original meaning, before the deprecation churn).
+
+    We probe ``-h demuxer=rtsp`` once and cache: if ``-stimeout`` is
+    advertised, prefer it (covers the transitional window and stays
+    correct on the older builds that still accept it as an alias); else
+    fall back to ``-timeout`` (correct on modern and pre-deprecation
+    ffmpeg). The result is cached for the process lifetime — ffmpeg
+    isn't going to swap mid-run.
+
+    Returns the option name without the leading dash, e.g. ``"timeout"``
+    or ``"stimeout"``. Callers must prepend ``-`` themselves so a string
+    formatting bug can't pass an empty flag.
+    """
+    global _rtsp_socket_timeout_flag
+
+    if _rtsp_socket_timeout_flag is not None:
+        return _rtsp_socket_timeout_flag
+
+    ffmpeg = get_ffmpeg_path()
+    chosen = "timeout"  # safe default for modern ffmpeg
+    if ffmpeg:
+        try:
+            result = subprocess.run(
+                [ffmpeg, "-hide_banner", "-h", "demuxer=rtsp"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            help_text = (result.stdout or "") + (result.stderr or "")
+            # Help lines list each option as `-<name> ` (trailing space) — match
+            # that exact form so we don't accidentally hit a substring elsewhere.
+            if "-stimeout " in help_text:
+                chosen = "stimeout"
+        except (OSError, subprocess.SubprocessError) as exc:
+            # If probing fails, keep the modern-ffmpeg default. Worst case
+            # is the EADDRINUSE regression returns for transitional-ffmpeg
+            # users — same as before this function existed.
+            logger.warning("Could not probe ffmpeg RTSP timeout flag, defaulting to -timeout: %s", exc)
+
+    _rtsp_socket_timeout_flag = chosen
+    logger.info("RTSP socket I/O timeout flag: -%s", chosen)
+    return chosen
 
 
 def supports_rtsp(model: str | None) -> bool:

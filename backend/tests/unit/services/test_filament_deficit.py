@@ -223,7 +223,7 @@ class TestFilamentDeficit:
         printer = await printer_factory()
         archive = PrintArchive(
             filename="ghost.3mf",
-            file_path="/tmp/nope-does-not-exist.3mf",
+            file_path="/nonexistent/ghost.3mf",
             file_size=0,
             status="completed",
         )

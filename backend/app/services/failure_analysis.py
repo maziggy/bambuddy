@@ -75,6 +75,11 @@ class FailureAnalysisService:
         total_result = await self.db.execute(select(func.count(PrintLogEntry.id)).where(and_(*base_filter)))
         total_prints = total_result.scalar() or 0
 
+        successful_result = await self.db.execute(
+            select(func.count(PrintLogEntry.id)).where(and_(*base_filter, PrintLogEntry.status == "completed"))
+        )
+        successful_prints = successful_result.scalar() or 0
+
         failed_result = await self.db.execute(
             select(func.count(PrintLogEntry.id)).where(
                 and_(*base_filter, PrintLogEntry.status.in_(["failed", "aborted"]))
@@ -82,7 +87,14 @@ class FailureAnalysisService:
         )
         failed_prints = failed_result.scalar() or 0
 
-        failure_rate = (failed_prints / total_prints * 100) if total_prints > 0 else 0
+        # Failure rate divides by quality-outcome prints only — a cancelled or
+        # skipped print is neither a success nor a failure of the printer, so
+        # including it in the denominator silently lowered the displayed rate
+        # whenever the user stopped jobs (#1390). Total Prints (the absolute
+        # count incl. cancelled) is still returned separately for the "X / Y
+        # prints failed" caption.
+        outcome_prints = successful_prints + failed_prints
+        failure_rate = (failed_prints / outcome_prints * 100) if outcome_prints > 0 else 0
 
         # Failures by reason
         reason_result = await self.db.execute(
@@ -188,6 +200,9 @@ class FailureAnalysisService:
             ]
 
             week_total = await self.db.execute(select(func.count(PrintLogEntry.id)).where(and_(*week_filter)))
+            week_successful = await self.db.execute(
+                select(func.count(PrintLogEntry.id)).where(and_(*week_filter, PrintLogEntry.status == "completed"))
+            )
             week_failed = await self.db.execute(
                 select(func.count(PrintLogEntry.id)).where(
                     and_(*week_filter, PrintLogEntry.status.in_(["failed", "aborted"]))
@@ -195,8 +210,10 @@ class FailureAnalysisService:
             )
 
             total = week_total.scalar() or 0
+            successful = week_successful.scalar() or 0
             failed = week_failed.scalar() or 0
-            rate = (failed / total * 100) if total > 0 else 0
+            week_outcome = successful + failed
+            rate = (failed / week_outcome * 100) if week_outcome > 0 else 0
 
             trend_data.append(
                 {

@@ -487,11 +487,24 @@ export function BugReportBubble() {
               )}
 
               {(viewState === 'stopping' || viewState === 'submitting') && (
-                <div className="flex flex-col items-center justify-center py-8 gap-3">
+                <div className="flex flex-col items-center justify-center py-6 gap-3">
                   <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
                     {viewState === 'stopping' ? t('bugReport.stoppingLogs') : t('bugReport.submitting')}
                   </p>
+                  {viewState === 'submitting' && (
+                    // Diagnostics are run server-side inside the submit call
+                    // (#1506 follow-up): the bubble already displays current
+                    // results inline, but the submitted report now also
+                    // includes a snapshot. Wait is bounded but noticeable —
+                    // list what's running so the user knows why.
+                    <ul className="text-xs text-gray-500 dark:text-gray-400 list-disc list-inside space-y-0.5">
+                      <li>{t('bugReport.submittingStepConnection')}</li>
+                      <li>{t('bugReport.submittingStepVirtualPrinters')}</li>
+                      <li>{t('bugReport.submittingStepLogScan')}</li>
+                      <li>{t('bugReport.submittingStepSubmit')}</li>
+                    </ul>
+                  )}
                 </div>
               )}
 

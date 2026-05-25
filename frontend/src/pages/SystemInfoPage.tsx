@@ -303,9 +303,30 @@ export function SystemInfoPage() {
               title={!debugLoggingState?.enabled ? t('support.enableDebugFirst', 'Enable debug logging first') : undefined}
             >
               {bundleDownloading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {t('common.download', 'Download')}
+              {bundleDownloading
+                ? t('support.bundleGenerating', 'Generating...')
+                : t('common.download', 'Download')}
             </button>
           </div>
+
+          {/* Progress indicator — bundle generation now runs connection +
+              virtual-printer diagnostics and the log-health scan before
+              writing the ZIP (#1506 follow-up), so the wait is longer than
+              a pure file-export. List what's running so it's not opaque. */}
+          {bundleDownloading && (
+            <div className="p-3 bg-bambu-dark-tertiary/40 rounded-lg space-y-1">
+              <p className="text-sm font-medium text-white flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-bambu-green" />
+                {t('support.bundleGenerating', 'Generating...')}
+              </p>
+              <ul className="text-xs text-bambu-gray list-disc list-inside space-y-0.5 pl-1">
+                <li>{t('support.bundleStepConnection', 'Running printer connectivity checks')}</li>
+                <li>{t('support.bundleStepVirtualPrinters', 'Running virtual-printer setup checks')}</li>
+                <li>{t('support.bundleStepLogScan', 'Scanning recent logs for known issues')}</li>
+                <li>{t('support.bundleStepBuild', 'Building the support bundle ZIP')}</li>
+              </ul>
+            </div>
+          )}
 
           {/* Error message */}
           {bundleError && (

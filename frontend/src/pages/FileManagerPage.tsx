@@ -2001,9 +2001,16 @@ export function FileManagerPage() {
             </div>
           ) : (
             <div className="flex-1 lg:overflow-y-auto">
-              <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-hidden">
-                {/* List header - hidden on mobile, show simplified on small screens */}
-                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
+              {/* The wrapper has overflow-x-auto so a narrow viewport scrolls
+                  horizontally instead of clipping the actions column off the
+                  right edge. The previous `overflow-hidden` was there for the
+                  rounded corners but also swallowed any content the actions
+                  column couldn't fit (#1325 follow-up reported in chat). */}
+              <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-x-auto">
+                {/* List header - hidden on mobile, show simplified on small screens.
+                    The trailing column is `min-content` so it sizes to the widest
+                    action-icon strip across all rows (sliced 3MF = 7 icons ~220px). */}
+                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_min-content]' : 'grid-cols-[auto_1fr_100px_100px_100px_min-content]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
                   {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
@@ -2016,7 +2023,7 @@ export function FileManagerPage() {
                 {filteredAndSortedFiles.map((file) => (
                   <div
                     key={file.id}
-                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_min-content]' : 'grid-cols-[auto_1fr_100px_100px_100px_min-content]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}
@@ -2355,6 +2362,17 @@ export function FileManagerPage() {
           title={viewerFile.print_name || viewerFile.filename}
           fileType={viewerFile.file_type}
           onClose={() => setViewerFile(null)}
+          onSliceWithBambuddy={
+            // Only offer in-app slicing on files the SliceModal can actually
+            // handle (matches the file-row Cog visibility check at :2127).
+            isSliceableFilename(viewerFile.filename) && hasPermission('library:upload')
+              ? () => {
+                  const f = viewerFile;
+                  setViewerFile(null);
+                  setSliceFile(f);
+                }
+              : undefined
+          }
         />
       )}
 

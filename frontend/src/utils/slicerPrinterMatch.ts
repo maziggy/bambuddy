@@ -121,38 +121,62 @@ function normalizeModelFragment(s: string): string {
   return s.replace(/\s+/g, '').toLowerCase();
 }
 
-// Pull the model token out of a "@BBL <token> [0.4 nozzle]" suffix. The token
-// may contain a space (e.g. "A1 mini") so we strip a trailing nozzle-size
-// segment rather than splitting on the first whitespace.
-function extractBblToken(presetName: string): string | null {
+// Bambu Studio's naming convention for bundled presets: the 0.4 nozzle is
+// the default and its variants drop the nozzle suffix; 0.2 / 0.6 / 0.8
+// carry an explicit "<size> nozzle" segment. So a process with no suffix
+// is implicitly a 0.4 process — required to compare correctly against a
+// 0.4 printer preset, which DOES carry the suffix.
+const DEFAULT_NOZZLE = '0.4';
+
+// Strip a trailing "<size> nozzle" segment, returning the nozzle string
+// (e.g. "0.6") or null when absent. Used by both BBL-token and printer-
+// preset extractors so the suffix is parsed identically on both sides.
+function takeNozzleSuffix(s: string): { stripped: string; nozzle: string | null } {
+  const m = s.match(/^(.*?)\s+([\d.]+)\s*nozzle\s*$/i);
+  if (!m) return { stripped: s.trim(), nozzle: null };
+  return { stripped: m[1].trim(), nozzle: m[2] };
+}
+
+// Pull the model token and nozzle out of a "@BBL <token> [<size> nozzle]"
+// suffix. The token may contain a space (e.g. "A1 mini"), so we strip a
+// trailing nozzle segment rather than splitting on the first whitespace.
+function extractBblToken(presetName: string): { token: string; nozzle: string | null } | null {
   const marker = '@BBL ';
   const idx = presetName.indexOf(marker);
   if (idx < 0) return null;
   const rest = presetName.slice(idx + marker.length).trim();
-  const cleaned = rest.replace(/\s+[\d.]+\s*nozzle\s*$/i, '').trim();
-  return cleaned || null;
+  const { stripped, nozzle } = takeNozzleSuffix(rest);
+  return stripped ? { token: stripped, nozzle } : null;
 }
 
-// Pull the model fragment out of a "Bambu Lab <model> [0.4 nozzle]" printer
-// preset name. Returns null for non-Bambu printer presets — there is no
-// reliable name-based match against those.
-function extractPrinterPresetModel(printerPresetName: string): string | null {
-  const m = printerPresetName.match(/^Bambu Lab\s+(.+?)(?:\s+[\d.]+\s*nozzle)?\s*$/i);
-  return m ? m[1].trim() : null;
+// Pull the model fragment and nozzle out of a "Bambu Lab <model> [<size>
+// nozzle]" printer preset name. Returns null for non-Bambu printer
+// presets — there is no reliable name-based match against those.
+function extractPrinterPresetModel(printerPresetName: string): { model: string; nozzle: string | null } | null {
+  const m = printerPresetName.match(/^Bambu Lab\s+(.+)$/i);
+  if (!m) return null;
+  const { stripped, nozzle } = takeNozzleSuffix(m[1]);
+  return stripped ? { model: stripped, nozzle } : null;
 }
 
 /**
  * Name-based fallback for presets BambuStudio ships with a `@BBL <model>`
  * tag (#1325 follow-up). Used only after `compatible_printers` and the
  * uploaded-bundle index have already returned `'unknown'`.
+ *
+ * Compares BOTH model AND nozzle. The nozzle filter is required because
+ * Bambu ships per-nozzle process / filament variants (0.2 / 0.4 / 0.6 /
+ * 0.8) — a 0.6-nozzle process is unusable on a 0.4-nozzle printer.
+ * 0.4 is Bambu's default and its variants drop the nozzle suffix, so a
+ * preset with no suffix counts as 0.4.
  */
 function classifyByBambuName(
   presetName: string,
   selectedPrinterName: string,
   bambuModelByShortCode: Record<string, string>,
 ): PrinterCompatibility {
-  const token = extractBblToken(presetName);
-  if (!token) return 'unknown';
+  const parsed = extractBblToken(presetName);
+  if (!parsed) return 'unknown';
   // If the token isn't in the table (a brand-new Bambu model whose short
   // code the backend registry hasn't added yet, or the model map hasn't
   // loaded yet), fall back to comparing the raw token. That keeps the
@@ -160,12 +184,21 @@ function classifyByBambuName(
   // identical — e.g. "Q1" preset against "Bambu Lab Q1 0.4 nozzle" —
   // without us having to ship a code update. When they differ in form
   // (X1C vs "X1 Carbon"), the registry is what makes the match work.
-  const inferredModel = bambuModelByShortCode[token] ?? token;
-  const selectedModel = extractPrinterPresetModel(selectedPrinterName);
-  if (!selectedModel) return 'unknown';
-  return normalizeModelFragment(selectedModel) === normalizeModelFragment(inferredModel)
-    ? 'match'
-    : 'mismatch';
+  const inferredModel = bambuModelByShortCode[parsed.token] ?? parsed.token;
+  const selectedParts = extractPrinterPresetModel(selectedPrinterName);
+  if (!selectedParts) return 'unknown';
+  if (normalizeModelFragment(selectedParts.model) !== normalizeModelFragment(inferredModel)) {
+    return 'mismatch';
+  }
+  // Nozzle compare — only when we have a usable size from the printer
+  // side. A Bambu printer preset always carries one, so this branch is
+  // taken in practice; the null path is defensive degrade for hand-typed
+  // or non-Bambu printer names that happened to match the model.
+  if (selectedParts.nozzle !== null) {
+    const presetNozzle = parsed.nozzle ?? DEFAULT_NOZZLE;
+    if (presetNozzle !== selectedParts.nozzle) return 'mismatch';
+  }
+  return 'match';
 }
 
 /**

@@ -1099,6 +1099,22 @@ async def _collect_support_info() -> dict:
     except Exception:
         logger.debug("Failed to collect WebSocket info", exc_info=True)
 
+    # Active diagnostics — per-printer connection check, per-VP setup check,
+    # and the log-health scan. These all surface in the UI today (System page +
+    # bug-report bubble) but were never persisted into what the maintainer
+    # receives, so a "looks broken in bambuddy" report arrived with no
+    # actionable signal beyond raw logs. The snapshot helper is fail-soft per
+    # probe and bounded by a per-probe wall-clock cap, so a hung interface
+    # adds at most ~15 s to bundle generation regardless of fleet size (probes
+    # run concurrently).
+    try:
+        from backend.app.services.diagnostic_snapshot import collect_diagnostic_snapshot
+
+        async with async_session() as db:
+            info["diagnostics"] = await collect_diagnostic_snapshot(db)
+    except Exception:
+        logger.warning("Failed to collect diagnostic snapshot", exc_info=True)
+
     return info
 
 

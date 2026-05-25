@@ -25,6 +25,13 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/install/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 ```
 
+### Windows Native Installation
+
+**Windows PowerShell:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/maziggy/bambuddy/main/install/windows-install.ps1 -OutFile windows-install.ps1; .\windows-install.ps1"
+```
 ---
 
 ## Scripts Overview
@@ -34,6 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/install/insta
 | `install.sh` | Linux, macOS | Native (Python venv) |
 | `docker-install.sh` | Linux, macOS | Docker |
 | `docker-install.ps1` | Windows (Docker Desktop) | Docker |
+| `windows-installer.ps1` | Windows (Native) | Windows Service |
 | `update.sh` | Linux (systemd) | Native update helper |
 
 ---
@@ -78,6 +86,15 @@ Installs BamBuddy with Python virtual environment and optional systemd/launchd s
 # Skip service setup
 ./install.sh --no-service -y
 ```
+### `windows-installer.ps1` (Windows)
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/maziggy/bambuddy/main/install/windows-install.ps1 -OutFile windows-install.ps1; .\windows-install.ps1"
+
+```
+> Installs Bambuddy natively on Windows using Git, Python, a virtual environment, and optional NSSM Windows Service registration.
 
 ---
 

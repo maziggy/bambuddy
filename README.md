@@ -632,7 +632,7 @@ Open **http://localhost:8000** and add your printer!
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/maziggy/bambuddy/main/install/windows-install.ps1 -OutFile windows-install.ps1; .\windows-install.ps1"
+powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/maziggy/bambuddy/main/install/windows-installer.ps1 -OutFile windows-installer.ps1; .\windows-installer.ps1"
 
 ```
 > Installs Bambuddy natively on Windows using Git, Python, a virtual environment, and optional NSSM Windows Service registration.

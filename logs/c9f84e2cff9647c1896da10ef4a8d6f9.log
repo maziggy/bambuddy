@@ -1,0 +1,200 @@
+2026-05-25 22:00:37,429 INFO [uvicorn.access] [-] [IP]:53721 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:00:59,083 INFO [uvicorn.access] [-] [IP]:41450 - "POST /api/v1/archives/upload-bulk HTTP/1.1" 200
+2026-05-25 22:01:19,940 INFO [uvicorn.access] [-] [IP]:1378 - "DELETE /api/v1/archives/10?purge_stats=true HTTP/1.1" 200
+2026-05-25 22:01:20,141 INFO [uvicorn.access] [-] [IP]:41840 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:03:31,172 INFO [uvicorn.access] [-] [IP]:16570 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:04:02,314 INFO [uvicorn.access] [-] [IP]:9476 - "DELETE /api/v1/archives/6 HTTP/1.1" 200
+2026-05-25 22:04:02,447 INFO [uvicorn.access] [-] [IP]:6949 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:04:29,623 INFO [uvicorn.access] [-] [IP]:35992 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:05:05,702 INFO [backend.app.services.smart_plug_manager] [-] Captured 2 energy snapshot(s)
+2026-05-25 22:05:27,648 INFO [uvicorn.access] [-] [IP]:5216 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:07:27,978 INFO [uvicorn.access] [-] [IP]:50217 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:07:53,341 INFO [backend.app.api.routes.cloud] [0582c490] get_filament_info called with 1 IDs: ['GFL03']
+2026-05-25 22:07:53,358 INFO [backend.app.api.routes.cloud] [2f471ac0] get_filament_info called with 2 IDs: ['GFA00', 'GFSNL03']
+2026-05-25 22:07:53,641 WARNING [backend.app.api.routes.cloud] [0582c490] Failed to get cloud preset GFL03 (API ID: GFSL03): Failed to get setting detail: 400
+2026-05-25 22:07:53,644 INFO [uvicorn.access] [-] [IP]:16871 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-25 22:07:53,875 WARNING [backend.app.api.routes.cloud] [2f471ac0] Failed to get cloud preset GFSNL03 (API ID: GFSNL03): Failed to get setting detail: 400
+2026-05-25 22:07:53,878 INFO [uvicorn.access] [-] [IP]:65114 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-25 22:08:25,289 INFO [uvicorn.access] [-] [IP]:7310 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:09:27,246 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-25 22:09:27,416 INFO [uvicorn.access] [-] [IP]:60027 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:09:27,504 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-25 22:09:27,505 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-25 22:09:27,507 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-25 22:09:27,562 INFO [uvicorn.access] [-] [IP]:49967 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:09:30,772 INFO [backend.app.api.routes.cloud] [534929b5] get_filament_info called with 1 IDs: ['GFL03']
+2026-05-25 22:09:30,775 INFO [uvicorn.access] [-] [IP]:39262 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-25 22:09:30,876 INFO [backend.app.api.routes.cloud] [cee6f32e] get_filament_info called with 2 IDs: ['GFA00', 'GFSNL03']
+2026-05-25 22:09:30,879 INFO [uvicorn.access] [-] [IP]:60842 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-25 22:09:46,637 INFO [uvicorn.access] [-] [IP]:22523 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:13:44,286 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-05-25 22:13:44,290 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-05-25 22:13:46,943 INFO [backend.app.services.printer_manager] [-] Loaded 2 printer(s) awaiting plate-clear acknowledgment: [1, 2]
+2026-05-25 22:13:46,951 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-05-25 22:13:48,990 INFO [backend.app.services.background_dispatch] [-] Background dispatch dispatcher started
+2026-05-25 22:13:48,990 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-05-25 22:13:48,990 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-05-25 22:13:48,998 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-05-25 22:13:49,003 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-05-25 22:13:49,004 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-05-25 22:13:49,004 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-05-25 22:13:49,009 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-05-25 22:13:49,009 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-05-25 22:13:49,009 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-05-25 22:13:49,009 INFO [backend.app.main] [-] AMS history recording started
+2026-05-25 22:13:49,009 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-05-25 22:13:49,009 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-05-25 22:13:49,009 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-05-25 22:13:49,010 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-05-25 22:13:49,010 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-05-25 22:13:49,010 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-05-25 22:13:49,023 INFO [root] [-] Virtual printer manager synced from database
+2026-05-25 22:13:52,190 INFO [uvicorn.access] [-] [IP]:22672 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:13:52,269 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-25 22:13:52,270 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-25 22:13:52,273 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-25 22:13:52,344 INFO [uvicorn.access] [-] [IP]:35393 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:14:02,264 INFO [uvicorn.access] [-] [IP]:65180 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:14:19,115 INFO [backend.app.services.smart_plug_manager] [-] Captured 2 energy snapshot(s)
+2026-05-25 22:17:00,867 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-05-25 22:17:00,870 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-05-25 22:17:03,455 INFO [backend.app.services.printer_manager] [-] Loaded 2 printer(s) awaiting plate-clear acknowledgment: [1, 2]
+2026-05-25 22:17:03,462 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-05-25 22:17:05,499 INFO [backend.app.services.background_dispatch] [-] Background dispatch dispatcher started
+2026-05-25 22:17:05,500 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-05-25 22:17:05,500 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-05-25 22:17:05,507 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-05-25 22:17:05,510 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-05-25 22:17:05,511 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-05-25 22:17:05,513 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-05-25 22:17:05,519 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-05-25 22:17:05,520 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-05-25 22:17:05,520 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-05-25 22:17:05,520 INFO [backend.app.main] [-] AMS history recording started
+2026-05-25 22:17:05,520 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-05-25 22:17:05,520 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-05-25 22:17:05,520 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-05-25 22:17:05,520 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-05-25 22:17:05,521 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-05-25 22:17:05,521 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-05-25 22:17:05,540 INFO [root] [-] Virtual printer manager synced from database
+2026-05-25 22:17:05,903 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-25 22:17:05,904 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-25 22:17:05,905 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-25 22:17:07,291 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-25 22:17:07,414 INFO [uvicorn.access] [-] [IP]:20987 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:17:07,466 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-25 22:17:07,467 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-25 22:17:07,468 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-25 22:17:07,533 INFO [uvicorn.access] [-] [IP]:42762 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:17:26,503 INFO [uvicorn.access] [-] [IP]:21570 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:17:35,620 INFO [backend.app.services.smart_plug_manager] [-] Captured 2 energy snapshot(s)
+2026-05-25 22:18:32,445 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-05-25 22:18:32,446 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-05-25 22:18:35,257 INFO [backend.app.services.printer_manager] [-] Loaded 2 printer(s) awaiting plate-clear acknowledgment: [1, 2]
+2026-05-25 22:18:35,265 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-05-25 22:18:37,304 INFO [backend.app.services.background_dispatch] [-] Background dispatch dispatcher started
+2026-05-25 22:18:37,304 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-05-25 22:18:37,304 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-05-25 22:18:37,312 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-05-25 22:18:37,316 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-05-25 22:18:37,321 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-05-25 22:18:37,322 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-05-25 22:18:37,327 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-05-25 22:18:37,327 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-05-25 22:18:37,327 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-05-25 22:18:37,327 INFO [backend.app.main] [-] AMS history recording started
+2026-05-25 22:18:37,327 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-05-25 22:18:37,328 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-05-25 22:18:37,328 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-05-25 22:18:37,328 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-05-25 22:18:37,328 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-05-25 22:18:37,329 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-05-25 22:18:37,338 INFO [root] [-] Virtual printer manager synced from database
+2026-05-25 22:18:37,945 INFO [uvicorn.access] [-] [IP]:37235 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:18:38,023 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-25 22:18:38,024 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-25 22:18:38,026 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-25 22:18:38,090 INFO [uvicorn.access] [-] [IP]:35949 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:18:53,212 INFO [uvicorn.access] [-] [IP]:24882 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:19:07,422 INFO [backend.app.services.smart_plug_manager] [-] Captured 2 energy snapshot(s)
+2026-05-25 22:20:09,629 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-05-25 22:20:09,637 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-05-25 22:20:12,522 INFO [backend.app.services.printer_manager] [-] Loaded 2 printer(s) awaiting plate-clear acknowledgment: [1, 2]
+2026-05-25 22:20:12,529 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-05-25 22:20:14,566 INFO [backend.app.services.background_dispatch] [-] Background dispatch dispatcher started
+2026-05-25 22:20:14,566 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-05-25 22:20:14,566 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-05-25 22:20:14,575 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-05-25 22:20:14,580 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-05-25 22:20:14,582 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-05-25 22:20:14,582 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-05-25 22:20:14,588 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-05-25 22:20:14,588 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-05-25 22:20:14,588 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-05-25 22:20:14,589 INFO [backend.app.main] [-] AMS history recording started
+2026-05-25 22:20:14,589 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-05-25 22:20:14,589 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-05-25 22:20:14,589 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-05-25 22:20:14,589 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-05-25 22:20:14,589 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-05-25 22:20:14,599 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-05-25 22:20:14,634 INFO [root] [-] Virtual printer manager synced from database
+2026-05-25 22:20:19,996 INFO [uvicorn.access] [-] [IP]:51566 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:20:20,078 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-25 22:20:20,079 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-25 22:20:20,081 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-05-25 22:20:20,143 INFO [uvicorn.access] [-] [IP]:64028 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-25 22:20:41,304 INFO [uvicorn.access] [-] [IP]:20526 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:20:44,706 INFO [backend.app.services.smart_plug_manager] [-] Captured 2 energy snapshot(s)
+2026-05-25 22:23:07,241 INFO [backend.app.services.camera] [a4d69f69] Found ffmpeg at: /usr/bin/ffmpeg
+2026-05-25 22:26:12,505 INFO [backend.app.api.routes.support] [e66d15bb] Log level changed to DEBUG
+2026-05-25 22:26:12,505 INFO [backend.app.api.routes.bug_report] [e66d15bb] Bug report: enabled debug logging
+2026-05-25 22:26:12,505 WARNING [backend.app.services.bambu_mqtt] [e66d15bb] [[SERIAL]] request_status_update: not connected
+2026-05-25 22:26:12,505 WARNING [backend.app.services.bambu_mqtt] [e66d15bb] [[SERIAL]] request_status_update: not connected
+2026-05-25 22:26:12,506 INFO [uvicorn.access] [-] [IP]:59479 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-25 22:26:23,035 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_begin with no data
+2026-05-25 22:26:23,041 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_header_field with data[42:61]
+2026-05-25 22:26:23,042 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_header_value with data[63:122]
+2026-05-25 22:26:23,042 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_header_end with no data
+2026-05-25 22:26:23,042 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_header_field with data[124:136]
+2026-05-25 22:26:23,042 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_header_value with data[138:162]
+2026-05-25 22:26:23,043 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_header_end with no data
+2026-05-25 22:26:23,043 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_headers_finished with no data
+2026-05-25 22:26:23,043 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[166:178440]
+2026-05-25 22:26:23,045 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:23,047 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:23,049 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:23,051 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:23,058 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:23,067 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:23,069 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:23,071 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:262143]
+2026-05-25 22:26:23,073 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:1]
+2026-05-25 22:26:23,074 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_data with data[0:244275]
+2026-05-25 22:26:23,074 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_part_end with no data
+2026-05-25 22:26:23,074 DEBUG [python_multipart.multipart] [a5d0cbec] Calling on_end with no data
+2026-05-25 22:26:23,119 INFO [uvicorn.access] [-] [IP]:59479 - "POST /api/v1/archives/7/source HTTP/1.1" 500
+2026-05-25 22:26:29,645 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-05-25 22:26:29,646 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-05-25 22:26:37,203 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_begin with no data
+2026-05-25 22:26:37,203 DEBUG [python_multipart.multipart] [2379c58c] Calling on_header_field with data[42:61]
+2026-05-25 22:26:37,203 DEBUG [python_multipart.multipart] [2379c58c] Calling on_header_value with data[63:122]
+2026-05-25 22:26:37,203 DEBUG [python_multipart.multipart] [2379c58c] Calling on_header_end with no data
+2026-05-25 22:26:37,204 DEBUG [python_multipart.multipart] [2379c58c] Calling on_header_field with data[124:136]
+2026-05-25 22:26:37,204 DEBUG [python_multipart.multipart] [2379c58c] Calling on_header_value with data[138:162]
+2026-05-25 22:26:37,204 DEBUG [python_multipart.multipart] [2379c58c] Calling on_header_end with no data
+2026-05-25 22:26:37,204 DEBUG [python_multipart.multipart] [2379c58c] Calling on_headers_finished with no data
+2026-05-25 22:26:37,204 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[166:167572]
+2026-05-25 22:26:37,206 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:37,207 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:37,209 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:37,210 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:37,214 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:37,216 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:37,218 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:37,219 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[0:262144]
+2026-05-25 22:26:37,221 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_data with data[0:255143]
+2026-05-25 22:26:37,221 DEBUG [python_multipart.multipart] [2379c58c] Calling on_part_end with no data
+2026-05-25 22:26:37,221 DEBUG [python_multipart.multipart] [2379c58c] Calling on_end with no data
+2026-05-25 22:26:37,270 INFO [uvicorn.access] [-] [IP]:10465 - "POST /api/v1/archives/7/source HTTP/1.1" 500

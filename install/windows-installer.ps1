@@ -54,6 +54,19 @@ $script:Silent = [bool]$Silent
 # Helper functions
 # ------------------------------------------------------------
 
+function Show-BambuddyBanner {
+    Write-Host ""
+    Write-Host "██████╗  █████╗ ███╗   ███╗██████╗ ██╗   ██╗██████╗ ██████╗ ██╗   ██╗" -ForegroundColor White
+    Write-Host "██╔══██╗██╔══██╗████╗ ████║██╔══██╗██║   ██║██╔══██╗██╔══██╗╚██╗ ██╔╝" -ForegroundColor White
+    Write-Host "██████╔╝███████║██╔████╔██║██████╔╝██║   ██║██║  ██║██║  ██║ ╚████╔╝ " -ForegroundColor White
+    Write-Host "██╔══██╗██╔══██║██║╚██╔╝██║██╔══██╗██║   ██║██║  ██║██║  ██║  ╚██╔╝  " -ForegroundColor White
+    Write-Host "██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝╚██████╔╝██████╔╝██████╔╝   ██║   " -ForegroundColor White
+    Write-Host "╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝    ╚═╝   " -ForegroundColor White
+    Write-Host ""
+    Write-Host "                      Bambuddy Setup" -ForegroundColor Green
+    Write-Host "               Install / Upgrade / Repair" -ForegroundColor DarkGray
+    Write-Host ""
+}
 function Write-Log {
     param (
         [Parameter(Mandatory = $true)]
@@ -621,9 +634,7 @@ try {
         Restart-AsAdmin
     }
 
-    Write-Host ""
-    Write-Host "=== Bambuddy Windows Installer ===" -ForegroundColor Green
-    Write-Host ""
+    Show-BambuddyBanner
 
     # ------------------------------------------------------------
     # Install directory
@@ -678,7 +689,7 @@ try {
 
     $exposeOnLan = -not $LocalOnly
     if (-not $LocalOnly) {
-        $exposeOnLan = Read-YesNo -Question "Expose Bambuddy on the LAN? Choose No to bind only to this computer." -DefaultYes $true
+        $exposeOnLan = Read-YesNo -Question "Expose Bambuddy on the LAN? Choose No to bind only to this computer. Exposing Bambuddy on the LAN binds to all network interfaces." -DefaultYes $true
     }
 
     if ($exposeOnLan) {

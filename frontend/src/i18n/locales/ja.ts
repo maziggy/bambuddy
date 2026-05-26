@@ -165,6 +165,8 @@ export default {
       fanOn: 'ON',
       fanOff: 'OFF',
       noEntitiesHint: 'Configure Home Assistant sensor entities in printer settings to display readings.',
+      noDataHint: 'No data yet — check Home Assistant is configured in Settings → Integrations.',
+      haNotConfiguredWarning: 'Home Assistant is not configured. Go to Settings → Integrations and enter your HA URL and token first.',
       editLabel: 'Enclosed printer',
       editDescription: 'Shows a dedicated enclosure section on the printer card for temperature and humidity.',
       editEntitiesHint: 'Enter Home Assistant entity IDs for your enclosure sensors. Readings update every 60 seconds.',

@@ -4206,6 +4206,14 @@ function PrinterCard({
                 {t('printers.enclosure.noEntitiesHint')}
               </p>
             )}
+            {/* Warn when entities are configured but no data has arrived yet */}
+            {(printer.ha_temp_entity || printer.ha_humidity_entity) &&
+              status.temperatures?.chamber === undefined &&
+              status.temperatures?.enclosure_humidity === undefined && (
+              <p className="text-[10px] text-yellow-500/70 mt-1.5">
+                {t('printers.enclosure.noDataHint')}
+              </p>
+            )}
           </div>
         )}
 
@@ -5817,6 +5825,8 @@ function EditPrinterModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { data: appSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const haConfigured = !!(appSettings?.ha_url);
   const [form, setForm] = useState({
     name: printer.name,
     ip_address: printer.ip_address,
@@ -6002,6 +6012,14 @@ function EditPrinterModal({
             {/* Enclosure sensor entities — only shown when Enclosed is checked */}
             {form.enclosed && (
               <div className="space-y-3">
+                {!haConfigured && (
+                  <div className="flex items-start gap-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                    <span className="text-yellow-400 text-sm shrink-0">⚠</span>
+                    <p className="text-xs text-yellow-300">
+                      {t('printers.enclosure.haNotConfiguredWarning')}
+                    </p>
+                  </div>
+                )}
                 <p className="text-xs text-bambu-gray">
                   {t('printers.enclosure.editEntitiesHint')}
                 </p>

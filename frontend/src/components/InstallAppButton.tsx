@@ -10,15 +10,21 @@ interface BeforeInstallPromptEvent extends Event {
   readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+// Matches the compact-sidebar breakpoint in useIsSidebarCompact.ts
+const SIDEBAR_COMPACT_BREAKPOINT = 1144;
+
 /**
  * Sidebar-footer button that installs Bambuddy as a PWA.
  *
- * Chrome for Android removed the automatic install banner in Chrome 108, so
- * without an in-app trigger the only install path on Android is a buried
- * browser-menu item (#1460). This button captures the `beforeinstallprompt`
- * event and re-fires it on click. It renders nothing when the browser has no
- * pending prompt - already installed, unsupported browser, or iOS Safari
- * (which has no programmatic install at all).
+ * On desktop (>= 1144px) this button is always visible in the sidebar, so we
+ * suppress Chrome's mini-infobar and use this as the single install entry point.
+ *
+ * On mobile (< 1144px) the button is buried inside the hamburger drawer, so we
+ * do NOT suppress the mini-infobar — Chrome's native install UI fires automatically
+ * and the drawer button remains available as a secondary path.
+ *
+ * Renders nothing when there is no pending prompt (already installed, unsupported
+ * browser, or iOS Safari which has no programmatic install API).
  */
 export function InstallAppButton() {
   const { t } = useTranslation();
@@ -27,9 +33,13 @@ export function InstallAppButton() {
 
   useEffect(() => {
     const onBeforeInstallPrompt = (e: Event) => {
-      // Suppress Chrome's own mini-infobar (desktop) so this button is the
-      // single, predictable install entry point.
-      e.preventDefault();
+      // On desktop the sidebar button is always visible, so suppress the
+      // mini-infobar and use it as the sole install trigger.
+      // On mobile the button is hidden inside the drawer, so let Chrome's
+      // native install UI (mini-infobar / rich dialog) appear automatically.
+      if (window.innerWidth >= SIDEBAR_COMPACT_BREAKPOINT) {
+        e.preventDefault();
+      }
       setPromptEvent(e as BeforeInstallPromptEvent);
     };
     const onInstalled = () => setPromptEvent(null);

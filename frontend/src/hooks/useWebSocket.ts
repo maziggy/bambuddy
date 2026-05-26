@@ -150,6 +150,25 @@ export function useWebSocket() {
                 if (merged.wifi_signal == null && old?.wifi_signal != null) {
                   merged.wifi_signal = old.wifi_signal;
                 }
+                // Deep-merge temperatures: MQTT updates carry printer sensor data but
+                // not HA-injected enclosure values (those come from the REST poll).
+                // Preserve enclosure_* keys from the previous REST-fetched state so
+                // a WebSocket update doesn't wipe them out.
+                if (old?.temperatures && statusData.temperatures) {
+                  const oldTemps = old.temperatures as Record<string, unknown>;
+                  const newTemps = statusData.temperatures as Record<string, unknown>;
+                  merged.temperatures = { ...newTemps };
+                  const enclosureKeys = ['enclosure_humidity', 'enclosure_humidity_unit', 'enclosure_temp_unit', 'enclosure_fan_on'];
+                  for (const key of enclosureKeys) {
+                    if (newTemps[key] === undefined && oldTemps[key] !== undefined) {
+                      (merged.temperatures as Record<string, unknown>)[key] = oldTemps[key];
+                    }
+                  }
+                  // Also preserve HA-sourced chamber temp for printers without built-in sensors
+                  if (newTemps.chamber === undefined && oldTemps.chamber !== undefined) {
+                    (merged.temperatures as Record<string, unknown>).chamber = oldTemps.chamber;
+                  }
+                }
                 return merged;
               }
             );

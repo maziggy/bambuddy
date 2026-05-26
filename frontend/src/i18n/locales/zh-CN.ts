@@ -5448,6 +5448,8 @@ export default {
       calibrateNow: '校准',
       calibrated: '已校准',
       tareSet: '去皮命令已发送。等待设备响应...',
+      tareComplete: '去皮完成！',
+      tareTimedOut: '去皮超时 — SpoolBuddy 守护进程是否正在运行？',
       tareFailed: '发送去皮命令失败',
       zeroSet: '零点已设置。将已知重量放在秤上。',
       calibrationDone: '校准完成！',

@@ -1,5 +1,16 @@
 # Web Framework
-fastapi>=0.109.0
+# fastapi 0.136.x ships an undocumented `fastar` dep in its [standard]
+# extras group (MAL-2026-4750, surfaced by Amazon Inspector). `fastar`
+# is a Rust-tar binding package — no plausible reason for a web
+# framework to depend on it. Even if `fastar` is benign today, the
+# advisory's framing as a namespace-abuse / supply-chain vector is
+# valid: anyone controlling the `fastar` PyPI namespace gains code
+# execution at install time across every fastapi[standard] install.
+# Bambuddy doesn't request [standard], so we don't pull `fastar` in
+# practice, but pip-audit flags the package itself and breaks CI.
+# Hold to 0.135.x (which has all features we use, including SSE)
+# until upstream removes the dep or explains the rationale.
+fastapi>=0.109.0,<0.136.0
 uvicorn[standard]>=0.27.0
 
 # Database

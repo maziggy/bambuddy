@@ -5473,6 +5473,8 @@ export default {
       calibrateNow: 'Calibrate',
       calibrated: 'Calibrated',
       tareSet: 'Tare command sent. Waiting for device...',
+      tareComplete: 'Tare complete!',
+      tareTimedOut: 'Tare timed out — is the SpoolBuddy daemon running?',
       tareFailed: 'Failed to send tare command',
       zeroSet: 'Zero point set. Place known weight on scale.',
       calibrationDone: 'Calibration complete!',

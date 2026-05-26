@@ -5448,6 +5448,8 @@ export default {
       calibrateNow: 'キャリブレーション',
       calibrated: 'キャリブレーション済み',
       tareSet: '風袋コマンドを送信しました。デバイスを待っています...',
+      tareComplete: '風袋が完了しました！',
+      tareTimedOut: '風袋がタイムアウトしました — SpoolBuddy デーモンは起動していますか？',
       tareFailed: '風袋コマンドの送信に失敗しました',
       zeroSet: 'ゼロ点を設定しました。既知の重量を計量台に置いてください。',
       calibrationDone: 'キャリブレーション完了！',

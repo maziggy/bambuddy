@@ -5448,6 +5448,8 @@ export default {
       calibrateNow: '校準',
       calibrated: '已校準',
       tareSet: '去皮命令已傳送。等待裝置回應...',
+      tareComplete: '去皮完成！',
+      tareTimedOut: '去皮逾時 — SpoolBuddy 守護程序是否正在執行？',
       tareFailed: '傳送去皮命令失敗',
       zeroSet: '零點已設定。將已知重量放在磅秤上。',
       calibrationDone: '校準完成！',

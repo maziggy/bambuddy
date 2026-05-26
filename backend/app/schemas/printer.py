@@ -293,3 +293,39 @@ class PrinterStatus(BaseModel):
     # Set for every active print regardless of plate count; the frontend decides
     # whether to render it based on current_archive_id's is_multi_plate flag.
     current_plate_id: int | None = None
+
+
+class DiagnosticCheck(BaseModel):
+    """One connection-diagnostic check result.
+
+    ``id`` is a stable key (port_mqtt, port_ftps, port_rtsps, network_mode,
+    subnet, mqtt_auth, developer_mode); the frontend renders the localized
+    title and fix text from id + status. ``params`` carries interpolation
+    values (e.g. network mode, IP addresses) for that text.
+    """
+
+    id: str
+    status: str  # "pass" | "fail" | "warn" | "skip"
+    params: dict = Field(default_factory=dict)
+
+
+class PrinterDiagnosticResult(BaseModel):
+    """Result of a printer connection diagnostic run."""
+
+    printer_id: int | None = None
+    ip_address: str
+    overall: str  # "ok" | "warnings" | "problems"
+    checks: list[DiagnosticCheck]
+
+
+class DiagnosticRequest(BaseModel):
+    """Pre-save (Add Printer) connection diagnostic request.
+
+    serial_number + access_code are optional: when both are present the
+    diagnostic also probes MQTT credentials, otherwise only the
+    network-level checks run.
+    """
+
+    ip_address: str
+    serial_number: str | None = None
+    access_code: str | None = None

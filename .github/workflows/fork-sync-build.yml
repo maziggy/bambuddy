@@ -120,6 +120,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            FORK_VERSION_SUFFIX=-soopahfly
           # GHA layer cache - pip install and npm ci layers are reused across
           # runs as long as requirements.txt / package-lock.json are unchanged.
           cache-from: type=gha,scope=fork-image-v2

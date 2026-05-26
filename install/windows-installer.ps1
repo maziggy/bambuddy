@@ -56,15 +56,18 @@ $script:Silent = [bool]$Silent
 
 function Show-BambuddyBanner {
     Write-Host ""
-    Write-Host "██████╗  █████╗ ███╗   ███╗██████╗ ██╗   ██╗██████╗ ██████╗ ██╗   ██╗" -ForegroundColor White
-    Write-Host "██╔══██╗██╔══██╗████╗ ████║██╔══██╗██║   ██║██╔══██╗██╔══██╗╚██╗ ██╔╝" -ForegroundColor White
-    Write-Host "██████╔╝███████║██╔████╔██║██████╔╝██║   ██║██║  ██║██║  ██║ ╚████╔╝ " -ForegroundColor White
-    Write-Host "██╔══██╗██╔══██║██║╚██╔╝██║██╔══██╗██║   ██║██║  ██║██║  ██║  ╚██╔╝  " -ForegroundColor White
-    Write-Host "██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝╚██████╔╝██████╔╝██████╔╝   ██║   " -ForegroundColor White
-    Write-Host "╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝    ╚═╝   " -ForegroundColor White
-    Write-Host ""
-    Write-Host "                      Bambuddy Setup" -ForegroundColor Green
-    Write-Host "               Install / Upgrade / Repair" -ForegroundColor DarkGray
+    Write-Host "============================================================" -ForegroundColor Green
+    Write-Host "  ____                  _               _     _             " -ForegroundColor Green
+    Write-Host " |  _ \                | |             | |   | |            " -ForegroundColor Green
+    Write-Host " | |_) | __ _ _ __ ___ | |__  _   _  __| | __| |_   _       " -ForegroundColor Green
+    Write-Host " |  _ < / _` | '_ ` _ \| '_ \| | | |/ _` |/ _` | | | |      " -ForegroundColor Green
+    Write-Host " | |_) | (_| | | | | | | |_) | |_| | (_| | (_| | |_| |      " -ForegroundColor Green
+    Write-Host " |____/ \__,_|_| |_| |_|_.__/ \__,_|\__,_|\__,_|\__, |      " -ForegroundColor Green
+    Write-Host "                                                  __/ |      " -ForegroundColor Green
+    Write-Host "                                                 |___/       " -ForegroundColor Green
+    Write-Host "============================================================" -ForegroundColor Green
+    Write-Host " Bambuddy Setup - Install / Upgrade / Repair" -ForegroundColor White
+    Write-Host "============================================================" -ForegroundColor Green
     Write-Host ""
 }
 function Write-Log {

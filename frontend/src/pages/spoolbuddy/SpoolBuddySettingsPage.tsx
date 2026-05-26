@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
@@ -383,11 +383,70 @@ function ScaleTab({ device, weight, weightStable, rawAdc }: {
   rawAdc: number | null;
 }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [calStep, setCalStep] = useState<'idle' | 'tare' | 'weight'>('idle');
   const [knownWeight, setKnownWeight] = useState('500');
   const [tareRawAdc, setTareRawAdc] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ type: 'ok' | 'error'; msg: string } | null>(null);
+  // Snapshot of device.last_calibrated_at taken when a tare is dispatched.
+  // The completion watcher below polls the device list and flips the banner
+  // to "Tare complete!" (or "Tare timed out") once the daemon writes back
+  // a new last_calibrated_at. Without this watcher the banner just sat at
+  // "Waiting for device..." forever (#1536).
+  const [awaitingTareSince, setAwaitingTareSince] = useState<{ snapshot: string | null; startedAtMs: number } | null>(null);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending auto-dismiss when status changes manually or on unmount.
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, []);
+
+  const scheduleStatusDismiss = useCallback((ms: number) => {
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(() => setStatus(null), ms);
+  }, []);
+
+  // Tare-completion watcher: aggressively re-fetch device data while waiting,
+  // detect when last_calibrated_at advances past the snapshot, then settle
+  // the banner. Fails open on a 15s timeout so a dead daemon doesn't leave
+  // the user staring at "Waiting for device..." indefinitely.
+  useEffect(() => {
+    if (!awaitingTareSince) return;
+    const TARE_TIMEOUT_MS = 15000;
+    const POLL_INTERVAL_MS = 1000;
+    const elapsed = () => Date.now() - awaitingTareSince.startedAtMs;
+
+    const pollHandle = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ['spoolbuddy-devices'] });
+    }, POLL_INTERVAL_MS);
+    const timeoutHandle = setTimeout(() => {
+      setAwaitingTareSince(null);
+      setStatus({
+        type: 'error',
+        msg: t('spoolbuddy.settings.tareTimedOut', 'Tare timed out — is the SpoolBuddy daemon running?'),
+      });
+      scheduleStatusDismiss(5000);
+    }, Math.max(0, TARE_TIMEOUT_MS - elapsed()));
+
+    return () => {
+      clearInterval(pollHandle);
+      clearTimeout(timeoutHandle);
+    };
+  }, [awaitingTareSince, queryClient, t, scheduleStatusDismiss]);
+
+  // When fresh device data arrives, check whether last_calibrated_at moved.
+  useEffect(() => {
+    if (!awaitingTareSince) return;
+    const current = device?.last_calibrated_at ?? null;
+    if (current !== awaitingTareSince.snapshot) {
+      setAwaitingTareSince(null);
+      setStatus({ type: 'ok', msg: t('spoolbuddy.settings.tareComplete', 'Tare complete!') });
+      scheduleStatusDismiss(3000);
+    }
+  }, [device?.last_calibrated_at, awaitingTareSince, t, scheduleStatusDismiss]);
 
   const numpadPress = (key: string) => {
     if (key === 'backspace') {
@@ -402,11 +461,18 @@ function ScaleTab({ device, weight, weightStable, rawAdc }: {
   const handleTare = async () => {
     setBusy(true);
     setStatus(null);
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    const snapshot = device?.last_calibrated_at ?? null;
     try {
       await spoolbuddyApi.tare(device.device_id);
       setStatus({ type: 'ok', msg: t('spoolbuddy.settings.tareSet', 'Tare command sent. Waiting for device...') });
+      setAwaitingTareSince({ snapshot, startedAtMs: Date.now() });
     } catch {
       setStatus({ type: 'error', msg: t('spoolbuddy.settings.tareFailed', 'Failed to send tare command') });
+      scheduleStatusDismiss(5000);
     } finally {
       setBusy(false);
     }
@@ -434,9 +500,11 @@ function ScaleTab({ device, weight, weightStable, rawAdc }: {
       try {
         await spoolbuddyApi.setCalibrationFactor(device.device_id, weightNum, rawAdc, tareRawAdc ?? undefined);
         setStatus({ type: 'ok', msg: t('spoolbuddy.settings.calibrationDone', 'Calibration complete!') });
+        scheduleStatusDismiss(3000);
         setCalStep('idle');
       } catch {
         setStatus({ type: 'error', msg: t('spoolbuddy.settings.calibrationFailed', 'Calibration failed') });
+        scheduleStatusDismiss(5000);
       } finally {
         setBusy(false);
       }

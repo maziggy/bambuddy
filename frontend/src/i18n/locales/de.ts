@@ -5430,6 +5430,8 @@ export default {
       calibrateNow: 'Kalibrieren',
       calibrated: 'Kalibriert',
       tareSet: 'Tara-Befehl gesendet. Warte auf Gerät...',
+      tareComplete: 'Tara abgeschlossen!',
+      tareTimedOut: 'Tara-Zeitüberschreitung — läuft der SpoolBuddy-Daemon?',
       tareFailed: 'Tara-Befehl fehlgeschlagen',
       zeroSet: 'Nullpunkt gesetzt. Bekanntes Gewicht auf die Waage legen.',
       calibrationDone: 'Kalibrierung abgeschlossen!',

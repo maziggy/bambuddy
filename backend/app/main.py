@@ -628,6 +628,74 @@ def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | No
     return stored_ams_mapping
 
 
+def _extract_filament_data_from_mqtt(data: dict, ams_mapping: list[int] | None = None) -> dict[str, str]:
+    """Best-effort filament metadata from the MQTT print-start snapshot.
+
+    Used when the 3MF can't be downloaded (P1S/A1/P2S firmwares lock the
+    file during print, see #1533) so the fallback PrintArchive still has
+    enough filament info to support the inventory views and AMS-expansion
+    planning the operator opens it for. Returns a dict with optional
+    ``filament_type`` and ``filament_color`` keys in the same
+    comma-separated format the 3MF extractor produces, so the rest of the
+    codebase treats the fallback archive identically to a normal one.
+
+    ``ams_mapping`` is the slicer's slot-per-print-filament list captured
+    from the MQTT print payload (global tray IDs, possibly -1 for VT-tray
+    entries). When supplied, only the slots actually consumed by this
+    print contribute. Without it the function falls back to every loaded
+    AMS slot — less accurate but still useful.
+    """
+    result: dict[str, str] = {}
+    ams_root = (data or {}).get("ams") or {}
+    ams_units = ams_root.get("ams") if isinstance(ams_root, dict) else None
+    if not isinstance(ams_units, list) or not ams_units:
+        return result
+
+    # Map global tray id (unit * 4 + tray) → (type, color).
+    loaded: dict[int, tuple[str, str]] = {}
+    for unit in ams_units:
+        if not isinstance(unit, dict):
+            continue
+        try:
+            unit_id = int(unit.get("id", 0))
+        except (TypeError, ValueError):
+            continue
+        for tray in unit.get("tray") or []:
+            if not isinstance(tray, dict):
+                continue
+            try:
+                tray_id = int(tray.get("id", 0))
+            except (TypeError, ValueError):
+                continue
+            ttype = (tray.get("tray_type") or "").strip()
+            tcolor = (tray.get("tray_color") or "").strip().upper()
+            if not ttype:
+                continue  # Empty / unloaded slot.
+            loaded[unit_id * 4 + tray_id] = (ttype, tcolor)
+
+    if not loaded:
+        return result
+
+    if ams_mapping:
+        used_ids = [int(x) for x in ams_mapping if isinstance(x, (int, float)) and int(x) >= 0]
+        filaments = [loaded[g] for g in used_ids if g in loaded]
+        if not filaments:
+            return result  # Mapping points entirely at slots we have no data for.
+    else:
+        filaments = [loaded[g] for g in sorted(loaded.keys())]
+
+    types_joined = ",".join(f[0] for f in filaments)
+    colors_joined = ",".join(f[1] for f in filaments if f[1])
+
+    # Column limits per backend/app/models/archive.py: filament_type=50,
+    # filament_color=200.
+    if types_joined:
+        result["filament_type"] = types_joined[:50]
+    if colors_joined:
+        result["filament_color"] = colors_joined[:200]
+    return result
+
+
 def _maybe_start_layer_timelapse(printer, printer_id: int, archive_id: int) -> bool:
     """Start a layer-timelapse session for *archive_id* when the printer has
     an external camera configured. Returns True if a session was started.
@@ -2592,6 +2660,14 @@ async def on_print_start(printer_id: int, data: dict):
                     if mc_remaining and isinstance(mc_remaining, (int, float)) and mc_remaining > 0:
                         fallback_print_time = int(mc_remaining * 60)
 
+                # Best-effort filament metadata from MQTT — see
+                # _extract_filament_data_from_mqtt. Without this the fallback
+                # archive's filament fields stayed NULL even though the AMS
+                # state at print start was sitting right there in `data`.
+                # The slicer's ams_mapping (when present) narrows the result
+                # to slots actually used by the print (#1533).
+                mqtt_filament_meta = _extract_filament_data_from_mqtt(data, _get_start_ams_mapping(data, None))
+
                 # Create minimal archive entry
                 fallback_archive = PrintArchive(
                     printer_id=printer_id,
@@ -2603,6 +2679,8 @@ async def on_print_start(printer_id: int, data: dict):
                     status="printing",
                     started_at=datetime.now(timezone.utc),
                     subtask_id=subtask_id,
+                    filament_type=mqtt_filament_meta.get("filament_type"),
+                    filament_color=mqtt_filament_meta.get("filament_color"),
                     extra_data={"no_3mf_available": True, "original_subtask": subtask_name, "_print_data": data},
                 )
 

@@ -5406,6 +5406,8 @@ export default {
       calibrateNow: 'Calibrar',
       calibrated: 'Calibrado',
       tareSet: 'Comando de tara enviado. Aguardando dispositivo...',
+      tareComplete: 'Tara concluída!',
+      tareTimedOut: 'Tempo esgotado para a tara — o daemon do SpoolBuddy está em execução?',
       tareFailed: 'Falha ao enviar comando de tara',
       zeroSet: 'Ponto zero definido. Coloque o peso conhecido na balança.',
       calibrationDone: 'Calibração concluída!',

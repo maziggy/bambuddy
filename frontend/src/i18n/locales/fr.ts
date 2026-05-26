@@ -5407,6 +5407,8 @@ export default {
       calibrateNow: 'Calibrer',
       calibrated: 'Calibré',
       tareSet: 'Commande de tare envoyée. En attente de l\'appareil...',
+      tareComplete: 'Tare terminée !',
+      tareTimedOut: 'Délai de tare dépassé — le daemon SpoolBuddy fonctionne-t-il ?',
       tareFailed: 'Échec de l\'envoi de la commande de tare',
       zeroSet: 'Point zéro défini. Placez le poids connu sur la balance.',
       calibrationDone: 'Calibration terminée !',

@@ -66,7 +66,7 @@ function Show-BambuddyBanner {
     Write-Host "                                                  __/ |      " -ForegroundColor Green
     Write-Host "                                                 |___/       " -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Green
-    Write-Host " Bambuddy Setup - Install / Upgrade / Repair" -ForegroundColor White
+    Write-Host "            Bambuddy Setup - Install & Upgrade"               -ForegroundColor White
     Write-Host "============================================================" -ForegroundColor Green
     Write-Host ""
 }
@@ -170,12 +170,11 @@ function Test-CommandExists {
     return [bool](Get-Command $Command -ErrorAction SilentlyContinue)
 }
 
-function Refresh-Path {
+function Update-EnvironmentPath {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $env:Path = "$machinePath;$userPath"
 }
-
 function Install-WithWinget {
     param (
         [Parameter(Mandatory = $true)]
@@ -202,7 +201,7 @@ function Install-WithWinget {
         throw "Failed to install $DisplayName via winget."
     }
 
-    Refresh-Path
+    Update-EnvironmentPath
 }
 
 function Read-YesNo {
@@ -713,7 +712,7 @@ try {
     if (-not (Test-CommandExists "git")) {
         Write-Log "Git is not installed." "WARN" Yellow
         Install-WithWinget -PackageId "Git.Git" -DisplayName "Git"
-        Refresh-Path
+        Update-EnvironmentPath
     }
 
     if (-not (Test-CommandExists "git")) {
@@ -734,7 +733,7 @@ try {
     if (-not $pythonCommand) {
         Write-Log "Python 3 is not installed." "WARN" Yellow
         Install-WithWinget -PackageId "Python.Python.3.12" -DisplayName "Python 3"
-        Refresh-Path
+        Update-EnvironmentPath
         $pythonCommand = Get-PythonCommand
     }
 

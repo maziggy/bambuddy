@@ -1,4 +1,4 @@
-name: Fork – Sync upstream and build image
+name: Fork - Sync upstream and build image
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Keeps the enclosure-sensor fork branch in sync with upstream/dev and
@@ -6,24 +6,23 @@ name: Fork – Sync upstream and build image
 # self-hosted server can pull updates without building locally.
 #
 # Two jobs:
-#   sync   – merges maziggy/bambuddy:dev into the feature branch on a schedule
-#            (or on demand).  Fails cleanly if there is a merge conflict so a
-#            human can resolve it before a broken image is published.
-#   build  – builds and pushes the Docker image whenever the feature branch is
-#            updated (by the sync job or by a direct push).
+#   sync   - merges maziggy/bambuddy:dev into the feature branch on a schedule
+#            (or on demand). Fails cleanly on conflict so nothing broken ships.
+#   build  - builds and pushes the Docker image whenever the feature branch is
+#            updated (by the sync job pushing, or by a direct push).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
   schedule:
-    - cron: '0 4 * * 1'   # every Monday at 04:00 UTC
-  workflow_dispatch:       # manual trigger in the GitHub Actions UI
+    - cron: '0 4 * * 1'  # every Monday at 04:00 UTC
+  workflow_dispatch:      # manual trigger in the GitHub Actions UI
   push:
     branches:
       - feature/ha-enclosure-sensors
 
 concurrency:
   group: fork-sync-build
-  cancel-in-progress: false   # never cancel a running build mid-push
+  cancel-in-progress: false  # never cancel a running build mid-push
 
 env:
   FEATURE_BRANCH: feature/ha-enclosure-sensors
@@ -31,23 +30,17 @@ env:
   UPSTREAM_BRANCH: dev
   IMAGE: ghcr.io/soopahfly/bambuddy
 
-# ─────────────────────────────────────────────────────────────────────────────
 jobs:
 
   # ── 1. Sync upstream ──────────────────────────────────────────────────────
+  # Runs only on schedule or manual dispatch (not on push — a push already has
+  # the latest commits, and re-syncing would create an infinite loop).
   sync:
-    name: Merge upstream/${{ env.UPSTREAM_BRANCH }} into feature branch
+    name: Merge upstream into feature branch
     runs-on: ubuntu-latest
-    # Only run the sync step on schedule / manual dispatch, NOT on a plain push
-    # (a push already has the latest commits; syncing again would be a no-op at
-    # best and could cause a loop at worst).
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
-
-    outputs:
-      # 'true' if the merge produced new commits that need a build
-      pushed: ${{ steps.merge.outputs.pushed }}
 
     steps:
       - name: Checkout feature branch
@@ -63,38 +56,33 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch upstream
-        run: git remote add upstream ${{ env.UPSTREAM_REPO }} && git fetch upstream
+        run: |
+          git remote add upstream ${{ env.UPSTREAM_REPO }}
+          git fetch upstream
 
       - name: Merge upstream into feature branch
-        id: merge
         run: |
-          # Attempt a non-fast-forward merge so the history stays readable.
           if git merge upstream/${{ env.UPSTREAM_BRANCH }} --no-edit; then
-            # Only push (and signal a build) if the merge actually added commits.
             if git diff --quiet HEAD origin/${{ env.FEATURE_BRANCH }}; then
-              echo "No new commits from upstream – nothing to do."
-              echo "pushed=false" >> "$GITHUB_OUTPUT"
+              echo "No new commits from upstream - nothing to push."
             else
               git push origin ${{ env.FEATURE_BRANCH }}
-              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              echo "Pushed merged commits - build job will trigger on the new push."
             fi
           else
-            echo "::error::Merge conflict – resolve manually then push."
+            echo "::error::Merge conflict - resolve manually then push."
             git merge --abort
             exit 1
           fi
 
   # ── 2. Build and push Docker image ────────────────────────────────────────
+  # Triggered by any push to the feature branch (including the push the sync
+  # job makes above). Does NOT depend on the sync job so it runs cleanly on
+  # direct pushes without needing always() gymnastics.
   build:
     name: Build and push Docker image
     runs-on: ubuntu-latest
-    # Run after a successful sync (if it pushed), OR directly on a push event.
-    needs: [sync]
-    if: |
-      always() && (
-        (github.event_name == 'push') ||
-        (needs.sync.result == 'success' && needs.sync.outputs.pushed == 'true')
-      )
+    if: github.event_name == 'push'
     permissions:
       contents: read
       packages: write
@@ -104,7 +92,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.FEATURE_BRANCH }}
-          # Fetch .git/HEAD so the Dockerfile can embed the branch name
           fetch-depth: 1
 
       - name: Set up Docker Buildx
@@ -117,7 +104,7 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags + labels)
+      - name: Extract metadata (tags and labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -133,9 +120,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Re-use the GHA build cache so each weekly sync rebuild only
-          # rebuilds layers that actually changed (pip install, npm ci, etc.
-          # stay cached as long as requirements.txt / package-lock.json are
-          # unchanged).
+          # GHA layer cache - pip install and npm ci layers are reused across
+          # runs as long as requirements.txt / package-lock.json are unchanged.
           cache-from: type=gha,scope=fork-image
-          cache-to:   type=gha,scope=fork-image,mode=max
+          cache-to: type=gha,scope=fork-image,mode=max

@@ -32,6 +32,11 @@ curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/install/insta
 ```powershell
 powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/maziggy/bambuddy/main/install/windows-installer.ps1 -OutFile windows-installer.ps1; .\windows-installer.ps1"
 ```
+
+**Unattended:**
+```powershell
+.\windows-installer.ps1 -InstallDir C:\Bambuddy -Port 8000 -Yes
+```
 ---
 
 ## Scripts Overview
@@ -95,6 +100,23 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 
 ```
 > Installs Bambuddy natively on Windows using Git, Python, a virtual environment, and optional NSSM Windows Service registration.
+
+**Parameters:**
+```powershell
+-InstallDir PATH  Installation directory (default: C:\Bambuddy)
+-Port PORT        Port to listen on (default: 8000)
+-Yes              Non-interactive mode, accept defaults
+-Silent           Non-interactive mode with reduced console output
+-NoService        Skip Windows Service setup
+-NoStart          Do not start Bambuddy at the end
+-LocalOnly        Bind to 127.0.0.1 instead of all LAN interfaces
+```
+
+The installer stores the Git checkout in `INSTALL_DIR\bambuddy`, user data in
+`INSTALL_DIR\data`, and application logs in `INSTALL_DIR\logs` so updates and
+re-clones do not delete runtime data. If an earlier Windows installer run left
+runtime data in the Git checkout, the installer moves known data and log paths
+to the new locations before starting Bambuddy.
 
 ---
 

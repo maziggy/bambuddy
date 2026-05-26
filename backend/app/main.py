@@ -4843,6 +4843,12 @@ if app_settings.static_dir.exists() and any(app_settings.static_dir.iterdir()):
             StaticFiles(directory=app_settings.static_dir / "icons"),
             name="icons",
         )
+    if (app_settings.static_dir / "fonts").exists():
+        app.mount(
+            "/fonts",
+            StaticFiles(directory=app_settings.static_dir / "fonts"),
+            name="fonts",
+        )
 
 
 @app.get("/")

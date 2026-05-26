@@ -3579,18 +3579,16 @@ function PrinterCard({
                                             extruderId: mappedExtruderId,
                                           }),
                                         }}
-                                        inventory={spoolmanEnabled ? undefined : {
-                                          onAssignSpool: () => setAssignSpoolModal({
-                                            printerId: printer.id,
-                                            amsId: ams.id,
-                                            trayId: slotIdx,
-                                            trayInfo: {
-                                              type: '',
-                                              color: '',
-                                              location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
-                                            },
-                                          }),
-                                        }}
+                                        onAssignSpool={spoolmanEnabled ? undefined : () => setAssignSpoolModal({
+                                          printerId: printer.id,
+                                          amsId: ams.id,
+                                          trayId: slotIdx,
+                                          trayInfo: {
+                                            type: '',
+                                            color: '',
+                                            location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
+                                          },
+                                        })}
                                       >
                                         {slotVisual}
                                       </EmptySlotHoverCard>
@@ -3897,18 +3895,16 @@ function PrinterCard({
                                         extruderId: mappedExtruderId,
                                       }),
                                     }}
-                                    inventory={spoolmanEnabled ? undefined : {
-                                      onAssignSpool: () => setAssignSpoolModal({
-                                        printerId: printer.id,
-                                        amsId: ams.id,
-                                        trayId: htSlotId,
-                                        trayInfo: {
-                                          type: '',
-                                          color: '',
-                                          location: getAmsLabel(ams.id, ams.tray.length),
-                                        },
-                                      }),
-                                    }}
+                                    onAssignSpool={spoolmanEnabled ? undefined : () => setAssignSpoolModal({
+                                      printerId: printer.id,
+                                      amsId: ams.id,
+                                      trayId: htSlotId,
+                                      trayInfo: {
+                                        type: '',
+                                        color: '',
+                                        location: getAmsLabel(ams.id, ams.tray.length),
+                                      },
+                                    })}
                                   >
                                     {slotVisual}
                                   </EmptySlotHoverCard>
@@ -4111,18 +4107,16 @@ function PrinterCard({
                                           extruderId: isDualNozzle ? (extTrayId === 254 ? 1 : 0) : undefined,
                                         }),
                                       }}
-                                      inventory={spoolmanEnabled ? undefined : {
-                                        onAssignSpool: () => setAssignSpoolModal({
-                                          printerId: printer.id,
-                                          amsId: 255,
-                                          trayId: slotTrayId,
-                                          trayInfo: {
-                                            type: '',
-                                            color: '',
-                                            location: extLabel || t('printers.external'),
-                                          },
-                                        }),
-                                      }}
+                                      onAssignSpool={spoolmanEnabled ? undefined : () => setAssignSpoolModal({
+                                        printerId: printer.id,
+                                        amsId: 255,
+                                        trayId: slotTrayId,
+                                        trayInfo: {
+                                          type: '',
+                                          color: '',
+                                          location: extLabel || t('printers.external'),
+                                        },
+                                      })}
                                     >
                                       {extSlotContent}
                                     </EmptySlotHoverCard>

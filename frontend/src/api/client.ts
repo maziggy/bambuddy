@@ -5869,6 +5869,14 @@ export const api = {
     request<{ success: boolean }>(`/local-presets/${id}`, { method: 'DELETE' }),
   refreshBaseProfileCache: () =>
     request<{ refreshed: number; failed: number; total: number }>('/local-presets/base-cache/refresh', { method: 'POST' }),
+
+  // ── Enclosure temp/humidity history ──────────────────────────────────────
+  getEnclosureHistory: (printerId: number, hours = 24) =>
+    request<EnclosureHistoryResponse>(`/enclosure/${printerId}/history?hours=${hours}`),
+
+  // ── Enclosure fan run history ─────────────────────────────────────────────
+  getEnclosureFanHistory: (printerId: number, hours = 24) =>
+    request<EnclosureFanHistoryResponse>(`/enclosure-fan/${printerId}/history?hours=${hours}`),
 };
 
 // AMS History types
@@ -6806,14 +6814,6 @@ export const spoolbuddyApi = {
       `/spoolbuddy/diagnostics/${deviceId}/result?diagnostic=${type}`,
       { method: 'GET' }
     ),
-
-  // ── Enclosure temp/humidity history ──────────────────────────────────────
-  getEnclosureHistory: (printerId: number, hours = 24) =>
-    request<EnclosureHistoryResponse>(`/enclosure/${printerId}/history?hours=${hours}`),
-
-  // ── Enclosure fan run history ─────────────────────────────────────────────
-  getEnclosureFanHistory: (printerId: number, hours = 24) =>
-    request<EnclosureFanHistoryResponse>(`/enclosure-fan/${printerId}/history?hours=${hours}`),
 };
 
 export interface BugReportRequest {

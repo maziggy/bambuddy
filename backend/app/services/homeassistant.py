@@ -304,7 +304,7 @@ class HomeAssistantService:
         result: dict = {"temp": None, "humidity": None, "temp_unit": "°C", "humidity_unit": "%"}
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
                 if temp_entity:
                     response = await client.get(
                         f"{self.base_url}/api/states/{temp_entity}",
@@ -313,13 +313,19 @@ class HomeAssistantService:
                     response.raise_for_status()
                     data = response.json()
                     state = data.get("state", "")
+                    logger.info(
+                        "Enclosure temp poll printer=%s entity=%s state=%r", printer_id, temp_entity, state
+                    )
                     if state not in ("unknown", "unavailable", ""):
                         try:
                             result["temp"] = float(state)
                             unit = data.get("attributes", {}).get("unit_of_measurement", "°C")
                             result["temp_unit"] = unit
                         except (ValueError, TypeError):
-                            pass
+                            logger.warning(
+                                "Enclosure temp not numeric for printer=%s entity=%s state=%r",
+                                printer_id, temp_entity, state,
+                            )
 
                 if humidity_entity:
                     response = await client.get(
@@ -329,15 +335,21 @@ class HomeAssistantService:
                     response.raise_for_status()
                     data = response.json()
                     state = data.get("state", "")
+                    logger.info(
+                        "Enclosure humidity poll printer=%s entity=%s state=%r", printer_id, humidity_entity, state
+                    )
                     if state not in ("unknown", "unavailable", ""):
                         try:
                             result["humidity"] = float(state)
                         except (ValueError, TypeError):
-                            pass
+                            logger.warning(
+                                "Enclosure humidity not numeric for printer=%s entity=%s state=%r",
+                                printer_id, humidity_entity, state,
+                            )
 
             self._enclosure_cache[printer_id] = result
         except Exception as e:
-            logger.debug("Failed to poll enclosure sensors for printer %s: %s", printer_id, e)
+            logger.warning("Enclosure sensor poll failed printer=%s: %s", printer_id, e)
 
     def get_cached_enclosure(self, printer_id: int) -> dict | None:
         """Return the last cached enclosure reading for a printer, or None."""
@@ -353,7 +365,7 @@ class HomeAssistantService:
             return None
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
                 response = await client.get(
                     f"{self.base_url}/api/states/{fan_entity}",
                     headers=self._headers(),
@@ -362,6 +374,9 @@ class HomeAssistantService:
                 state = response.json().get("state", "").lower()
                 is_on = state in ("on", "true", "1", "running", "active")
                 fan_on = is_on if state not in ("unknown", "unavailable", "") else None
+                logger.info(
+                    "Enclosure fan poll printer=%s entity=%s state=%r is_on=%s", printer_id, fan_entity, state, fan_on
+                )
 
             # Update enclosure cache with fan state
             if printer_id not in self._enclosure_cache:
@@ -370,7 +385,7 @@ class HomeAssistantService:
 
             return fan_on
         except Exception as e:
-            logger.debug("Failed to poll fan state for printer %s: %s", printer_id, e)
+            logger.warning("Enclosure fan poll failed printer=%s: %s", printer_id, e)
             return None
 
     def get_previous_fan_state(self, printer_id: int) -> bool | None:

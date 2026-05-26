@@ -122,5 +122,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           # GHA layer cache - pip install and npm ci layers are reused across
           # runs as long as requirements.txt / package-lock.json are unchanged.
-          cache-from: type=gha,scope=fork-image
-          cache-to: type=gha,scope=fork-image,mode=max
+          cache-from: type=gha,scope=fork-image-v2
+          cache-to: type=gha,scope=fork-image-v2,mode=max

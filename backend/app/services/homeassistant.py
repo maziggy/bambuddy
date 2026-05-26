@@ -19,6 +19,10 @@ class HomeAssistantService:
         self.timeout = timeout
         self.base_url: str = ""
         self.token: str = ""
+        # Enclosure sensor cache: printer_id -> {temp, humidity, temp_unit, humidity_unit, fan_on}
+        self._enclosure_cache: dict[int, dict] = {}
+        # Fan state cache for transition detection: printer_id -> True/False/None
+        self._fan_state_cache: dict[int, bool | None] = {}
 
     def configure(self, url: str, token: str):
         """Configure HA connection settings."""
@@ -237,15 +241,8 @@ class HomeAssistantService:
     async def list_entities(self, url: str, token: str, search: str | None = None) -> list[dict]:
         """List available entities from HA.
 
-        Always filters to switch/light/input_boolean/script — the only domains
-        the SmartPlugBase.ha_entity_id pattern accepts. When a search query is
-        provided it narrows the same domain-filtered list by entity_id or
-        friendly_name substring (case-insensitive).
-
-        Previously search bypassed the domain filter, which let users pick a
-        sensor.* or binary_sensor.* entity from the dropdown that the backend
-        schema would then reject with the cryptic Pydantic pattern error
-        (#1388). Picking what you can't save isn't a useful UX.
+        By default, returns switch/light/input_boolean domains.
+        When search is provided, searches ALL entities by entity_id or friendly_name.
 
         Returns list of entity dicts with:
             - entity_id: str
@@ -253,9 +250,8 @@ class HomeAssistantService:
             - state: str
             - domain: str
         """
-        # Allowed domains for smart plug control — must mirror the regex in
-        # backend/app/schemas/smart_plug.py:17 (SmartPlugBase.ha_entity_id).
-        allowed_domains = {"switch", "light", "input_boolean", "script"}
+        # Default domains for smart plug control
+        default_domains = {"switch", "light", "input_boolean", "script"}
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -273,13 +269,14 @@ class HomeAssistantService:
                     domain = entity_id.split(".")[0] if "." in entity_id else ""
                     friendly_name = entity.get("attributes", {}).get("friendly_name", entity_id)
 
-                    if domain not in allowed_domains:
-                        continue
-
-                    if search_lower and (
-                        search_lower not in entity_id.lower() and search_lower not in friendly_name.lower()
-                    ):
-                        continue
+                    # If searching, match against entity_id or friendly_name
+                    if search_lower:
+                        if search_lower not in entity_id.lower() and search_lower not in friendly_name.lower():
+                            continue
+                    else:
+                        # No search: filter to default domains only
+                        if domain not in default_domains:
+                            continue
 
                     entities.append(
                         {
@@ -293,6 +290,139 @@ class HomeAssistantService:
                 return sorted(entities, key=lambda x: x["friendly_name"].lower())
         except Exception as e:
             logger.warning("Failed to list HA entities: %s", e)
+            return []
+
+    async def poll_enclosure_for_printer(
+        self, printer_id: int, temp_entity: str | None, humidity_entity: str | None
+    ) -> None:
+        """Fetch enclosure temp/humidity from HA and store in cache."""
+        if not self.base_url or not self.token:
+            return
+        if not temp_entity and not humidity_entity:
+            return
+
+        result: dict = {"temp": None, "humidity": None, "temp_unit": "°C", "humidity_unit": "%"}
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                if temp_entity:
+                    response = await client.get(
+                        f"{self.base_url}/api/states/{temp_entity}",
+                        headers=self._headers(),
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    state = data.get("state", "")
+                    if state not in ("unknown", "unavailable", ""):
+                        try:
+                            result["temp"] = float(state)
+                            unit = data.get("attributes", {}).get("unit_of_measurement", "°C")
+                            result["temp_unit"] = unit
+                        except (ValueError, TypeError):
+                            pass
+
+                if humidity_entity:
+                    response = await client.get(
+                        f"{self.base_url}/api/states/{humidity_entity}",
+                        headers=self._headers(),
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    state = data.get("state", "")
+                    if state not in ("unknown", "unavailable", ""):
+                        try:
+                            result["humidity"] = float(state)
+                        except (ValueError, TypeError):
+                            pass
+
+            self._enclosure_cache[printer_id] = result
+        except Exception as e:
+            logger.debug("Failed to poll enclosure sensors for printer %s: %s", printer_id, e)
+
+    def get_cached_enclosure(self, printer_id: int) -> dict | None:
+        """Return the last cached enclosure reading for a printer, or None."""
+        return self._enclosure_cache.get(printer_id)
+
+    async def poll_fan_state(self, printer_id: int, fan_entity: str) -> bool | None:
+        """Fetch fan on/off state from HA, update caches, return current state.
+
+        Returns True (on), False (off), or None (unavailable/error).
+        Stores previous state so callers can detect transitions via get_previous_fan_state().
+        """
+        if not self.base_url or not self.token or not fan_entity:
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/api/states/{fan_entity}",
+                    headers=self._headers(),
+                )
+                response.raise_for_status()
+                state = response.json().get("state", "").lower()
+                is_on = state in ("on", "true", "1", "running", "active")
+                fan_on = is_on if state not in ("unknown", "unavailable", "") else None
+
+            # Update enclosure cache with fan state
+            if printer_id not in self._enclosure_cache:
+                self._enclosure_cache[printer_id] = {}
+            self._enclosure_cache[printer_id]["fan_on"] = fan_on
+
+            return fan_on
+        except Exception as e:
+            logger.debug("Failed to poll fan state for printer %s: %s", printer_id, e)
+            return None
+
+    def get_previous_fan_state(self, printer_id: int) -> bool | None:
+        """Return the fan state from the previous poll (before the latest poll)."""
+        return self._fan_state_cache.get(printer_id)
+
+    def set_fan_state_cache(self, printer_id: int, state: bool | None) -> None:
+        """Persist the current fan state so next poll can detect transitions."""
+        self._fan_state_cache[printer_id] = state
+
+    async def list_environment_entities(self, url: str, token: str) -> list[dict]:
+        """List HA sensor entities suitable for temperature or humidity monitoring.
+
+        Returns sensors with units: °C, °F, K, %, g/m³ (common for temp/humidity sensors).
+        """
+        temp_units = {"°c", "°f", "k", "c", "f"}
+        humidity_units = {"%", "% rh", "g/m³", "g/kg"}
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{url.rstrip('/')}/api/states",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                response.raise_for_status()
+
+                entities = []
+                for entity in response.json():
+                    entity_id = entity.get("entity_id", "")
+                    domain = entity_id.split(".")[0] if "." in entity_id else ""
+                    if domain != "sensor":
+                        continue
+
+                    attrs = entity.get("attributes", {})
+                    unit = (attrs.get("unit_of_measurement") or "").strip()
+                    if unit.lower() not in (temp_units | humidity_units):
+                        continue
+
+                    device_class = attrs.get("device_class", "")
+                    entities.append(
+                        {
+                            "entity_id": entity_id,
+                            "friendly_name": attrs.get("friendly_name", entity_id),
+                            "state": entity.get("state"),
+                            "unit_of_measurement": unit,
+                            "device_class": device_class,
+                        }
+                    )
+
+                return sorted(entities, key=lambda x: x["friendly_name"].lower())
+        except Exception as e:
+            logger.warning("Failed to list HA environment entities: %s", e)
             return []
 
     async def list_sensor_entities(self, url: str, token: str) -> list[dict]:

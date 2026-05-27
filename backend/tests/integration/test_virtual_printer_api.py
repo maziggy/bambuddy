@@ -338,3 +338,104 @@ class TestVirtualPrinterAutoDispatchAPI:
         get_resp = await async_client.get(f"/api/v1/virtual-printers/{vp_id}")
         assert get_resp.status_code == 200
         assert get_resp.json()["auto_dispatch"] is False
+
+
+class TestVirtualPrinterTailscaleToggleAPI:
+    """The Tailscale toggle is informational — toggling either way always succeeds.
+
+    There used to be a 409 guard rejecting "enable" when the daemon was unreachable,
+    back when the toggle controlled LE cert provisioning. That path was removed:
+    the slicer's printer-MQTT trust validates against its bundled BBL CA, not the
+    system trust store, so even an LE cert wouldn't be accepted. The toggle now
+    only surfaces the host's Tailscale IP/FQDN on the VP card; daemon presence is
+    irrelevant to whether the toggle can be flipped.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_toggle_does_not_consult_tailscale_daemon(self, async_client: AsyncClient):
+        """PUT tailscale_disabled never calls tailscale_service.get_status — always succeeds."""
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestTailscaleToggle",
+                "mode": "immediate",
+                "access_code": "12345678",
+            },
+        )
+        assert create_resp.status_code == 200
+        vp_id = create_resp.json()["id"]
+        assert create_resp.json()["tailscale_disabled"] is True
+
+        with patch(
+            "backend.app.services.virtual_printer.tailscale.tailscale_service.get_status",
+            new=AsyncMock(side_effect=AssertionError("get_status must not be called for toggle")),
+        ):
+            enable_resp = await async_client.put(
+                f"/api/v1/virtual-printers/{vp_id}",
+                json={"tailscale_disabled": False},
+            )
+            disable_resp = await async_client.put(
+                f"/api/v1/virtual-printers/{vp_id}",
+                json={"tailscale_disabled": True},
+            )
+
+        assert enable_resp.status_code == 200
+        assert enable_resp.json()["tailscale_disabled"] is False
+        assert disable_resp.status_code == 200
+        assert disable_resp.json()["tailscale_disabled"] is True
+
+
+class TestVirtualPrinterCaCertificateAPI:
+    """Integration tests for GET /api/v1/virtual-printers/ca-certificate."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_ca_certificate_returns_pem(self, async_client: AsyncClient):
+        """The shared CA certificate is returned as PEM with identifying metadata."""
+        response = await async_client.get("/api/v1/virtual-printers/ca-certificate")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["pem"].startswith("-----BEGIN CERTIFICATE-----")
+        assert "PRIVATE KEY" not in result["pem"]  # never expose the CA key
+        assert len(result["fingerprint_sha256"].split(":")) == 32
+        assert result["not_valid_after"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ca_certificate_route_precedes_vp_id_route(self, async_client: AsyncClient):
+        """'ca-certificate' must not be swallowed by the /{vp_id} int route."""
+        response = await async_client.get("/api/v1/virtual-printers/ca-certificate")
+        # A 200 (not 422 from int-parsing "ca-certificate") proves route ordering.
+        assert response.status_code == 200
+
+
+class TestVirtualPrinterDiagnosticAPI:
+    """Integration tests for GET /api/v1/virtual-printers/{vp_id}/diagnostic."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_diagnose_unknown_vp_returns_404(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/virtual-printers/999999/diagnostic")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_diagnose_disabled_vp_reports_problems(self, async_client: AsyncClient):
+        """A freshly created (disabled) VP fails the 'enabled' check."""
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={"name": "TestDiagVP", "mode": "immediate", "access_code": "12345678"},
+        )
+        assert create_resp.status_code == 200
+        vp_id = create_resp.json()["id"]
+
+        response = await async_client.get(f"/api/v1/virtual-printers/{vp_id}/diagnostic")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["vp_id"] == vp_id
+        assert result["overall"] == "problems"
+        by_id = {c["id"]: c["status"] for c in result["checks"]}
+        assert by_id["enabled"] == "fail"
+        assert by_id["running"] == "skip"

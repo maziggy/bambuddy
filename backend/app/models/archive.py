@@ -33,6 +33,7 @@ class PrintArchive(Base):
     total_layers: Mapped[int | None] = mapped_column(Integer)
     nozzle_diameter: Mapped[float | None] = mapped_column(Float)
     bed_temperature: Mapped[int | None] = mapped_column(Integer)
+    bed_type: Mapped[str | None] = mapped_column(String(64))  # e.g. "Cool Plate", "Textured PEI Plate"
     nozzle_temperature: Mapped[int | None] = mapped_column(Integer)
 
     # Printer model this file was sliced for (extracted from 3MF metadata)
@@ -42,6 +43,12 @@ class PrintArchive(Base):
     status: Mapped[str] = mapped_column(String(20), default="completed")
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    # Printer-assigned subtask identifier from MQTT. Used to resume the same
+    # archive row across a backend restart during a long-running print (#972):
+    # if the same subtask_id reappears after restart, we know it's the same
+    # print and keep the original row instead of cancel-then-create.
+    subtask_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Extended metadata (JSON blob for flexibility)
     extra_data: Mapped[dict | None] = mapped_column(JSON)
@@ -65,9 +72,19 @@ class PrintArchive(Base):
     # Energy tracking
     energy_kwh: Mapped[float | None] = mapped_column(Float)  # Energy consumed in kWh
     energy_cost: Mapped[float | None] = mapped_column(Float)  # Cost of energy consumed
+    # Plug lifetime counter captured at print start; delta at print end becomes energy_kwh.
+    # Persisted so per-print tracking survives backend restarts mid-print (#941).
+    energy_start_kwh: Mapped[float | None] = mapped_column(Float)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Soft-delete sentinel (#1343). When non-null, the UI hides this archive
+    # from listings (its files have already been removed from disk) but the
+    # stats endpoint keeps counting it — deleting nine of ten Benchies no
+    # longer wipes their filament / time / cost contribution from Quick Stats.
+    # The opt-in "Also remove from statistics" checkbox in the delete dialog
+    # bypasses the soft-delete path and hard-deletes the row.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None, index=True)
 
     # User tracking (who uploaded/created this archive)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

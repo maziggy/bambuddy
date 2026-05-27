@@ -132,7 +132,10 @@ class CertificateService:
                 encryption_algorithm=serialization.NoEncryption(),
             )
         )
-        self.ca_key_path.chmod(0o600)
+        try:
+            self.ca_key_path.chmod(0o600)
+        except OSError as e:
+            logger.warning("Could not set CA key permissions on %s: %s", self.ca_key_path, e)
         self.ca_cert_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
 
         logger.info("Saved new CA certificate")
@@ -311,7 +314,10 @@ class CertificateService:
                 encryption_algorithm=serialization.NoEncryption(),
             )
         )
-        self.key_path.chmod(0o600)
+        try:
+            self.key_path.chmod(0o600)
+        except OSError as e:
+            logger.warning("Could not set printer key permissions on %s: %s", self.key_path, e)
 
         # Write printer certificate (include CA cert in chain for full chain)
         cert_chain = printer_cert.public_bytes(serialization.Encoding.PEM) + ca_cert.public_bytes(
@@ -323,6 +329,28 @@ class CertificateService:
         logger.info("  CA: CN=Virtual Printer CA")
         logger.info("  Printer: CN=%s", self.serial)
         return self.cert_path, self.key_path
+
+    def get_ca_certificate_info(self) -> dict:
+        """Return the shared CA certificate as PEM text plus identifying metadata.
+
+        Generates the CA if it does not exist yet. Safe to expose over the
+        API: this is the *public* CA certificate users import into their
+        slicer's trust store. The CA private key (``bbl_ca.key``) is never
+        included and never leaves the backend.
+
+        Returns:
+            Dict with ``pem`` (PEM-encoded certificate), ``fingerprint_sha256``
+            (colon-separated uppercase hex) and ``not_valid_after`` (ISO 8601).
+        """
+        _ca_key, ca_cert = self._get_or_create_ca()
+        pem = ca_cert.public_bytes(serialization.Encoding.PEM).decode("ascii")
+        digest = ca_cert.fingerprint(hashes.SHA256()).hex().upper()
+        fingerprint = ":".join(digest[i : i + 2] for i in range(0, len(digest), 2))
+        return {
+            "pem": pem,
+            "fingerprint_sha256": fingerprint,
+            "not_valid_after": ca_cert.not_valid_after_utc.isoformat(),
+        }
 
     def delete_printer_certificate(self) -> None:
         """Delete only the printer certificate (preserves CA)."""

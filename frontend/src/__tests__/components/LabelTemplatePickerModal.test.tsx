@@ -1,0 +1,391 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { render } from '../utils';
+import { LabelTemplatePickerModal } from '../../components/LabelTemplatePickerModal';
+import { api } from '../../api/client';
+
+vi.mock('../../api/client', () => ({
+  api: {
+    printSpoolLabels: vi.fn(),
+    printSpoolmanSpoolLabels: vi.fn(),
+    getSettings: vi.fn().mockResolvedValue({}),
+    getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
+  },
+}));
+
+const PDF_BLOB = new Blob([new Uint8Array([0x25, 0x50, 0x44, 0x46])], { type: 'application/pdf' });
+
+const SPOOLS = [
+  { id: 1, material: 'PLA', subtype: 'Basic', brand: 'Polymaker', color_name: 'Red', rgba: 'FF0000FF' },
+  { id: 2, material: 'PETG', subtype: null, brand: 'Sunlu', color_name: 'Blue', rgba: '0000FFFF' },
+  { id: 3, material: 'ABS', subtype: null, brand: null, color_name: 'Black', rgba: '000000FF' },
+  { id: 4, material: 'PLA', subtype: 'Matte', brand: 'Polymaker', color_name: 'Ivory', rgba: 'F5E6D3FF' },
+];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(api.getSettings).mockResolvedValue({} as never);
+  vi.mocked(api.getAuthStatus).mockResolvedValue({ auth_enabled: false } as never);
+  Object.defineProperty(window.URL, 'createObjectURL', {
+    value: vi.fn(() => 'blob:mock'),
+    configurable: true,
+  });
+  Object.defineProperty(window.URL, 'revokeObjectURL', {
+    value: vi.fn(),
+    configurable: true,
+  });
+  vi.spyOn(window, 'open').mockImplementation(() => ({}) as Window);
+});
+
+describe('LabelTemplatePickerModal', () => {
+  it('does not render when closed', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={false}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1]}
+        spoolmanMode={false}
+      />,
+    );
+    expect(screen.queryByText(/Print spool labels/i)).not.toBeInTheDocument();
+  });
+
+  it('lists all available spools by default', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1]}
+        spoolmanMode={false}
+      />,
+    );
+    expect(screen.getByText(/Red · Polymaker/)).toBeInTheDocument();
+    expect(screen.getByText(/Blue · Sunlu/)).toBeInTheDocument();
+    expect(screen.getByText(/Black/)).toBeInTheDocument();
+    expect(screen.getByText(/Ivory · Polymaker/)).toBeInTheDocument();
+  });
+
+  it('shows the live selected count in the header', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1, 4]}
+        spoolmanMode={false}
+      />,
+    );
+    expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
+  });
+
+  it('search narrows the list but preserves selection state', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[3]}  // Black ABS pre-selected
+        spoolmanMode={false}
+      />,
+    );
+    const searchInput = screen.getByPlaceholderText(/Search name, brand, or #ID/i);
+    fireEvent.change(searchInput, { target: { value: 'polymaker' } });
+    // Polymaker spools (Red, Ivory) visible; Sunlu/no-brand hidden
+    expect(screen.getByText(/Red · Polymaker/)).toBeInTheDocument();
+    expect(screen.getByText(/Ivory · Polymaker/)).toBeInTheDocument();
+    expect(screen.queryByText(/Blue · Sunlu/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Black$/)).not.toBeInTheDocument();
+    // Selection still includes the now-hidden Black ABS
+    expect(screen.getByText(/1 selected/i)).toBeInTheDocument();
+  });
+
+  it('search by spool ID works', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[]}
+        spoolmanMode={false}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/Search/i), { target: { value: '#2' } });
+    expect(screen.getByText(/Blue · Sunlu/)).toBeInTheDocument();
+    expect(screen.queryByText(/Red · Polymaker/)).not.toBeInTheDocument();
+  });
+
+  it('material chip narrows the visible list', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[]}
+        spoolmanMode={false}
+      />,
+    );
+    // Pick the "PLA" chip
+    fireEvent.click(screen.getByRole('button', { name: 'PLA' }));
+    expect(screen.getByText(/Red · Polymaker/)).toBeInTheDocument();
+    expect(screen.getByText(/Ivory · Polymaker/)).toBeInTheDocument();
+    expect(screen.queryByText(/Blue · Sunlu/)).not.toBeInTheDocument();
+  });
+
+  it('Select all visible only adds visible spools to the selection', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[3]}  // start with Black ABS selected
+        spoolmanMode={false}
+      />,
+    );
+    // Filter to PLA, then Select all visible — should add the 2 PLA spools to
+    // the selection without dropping Black ABS.
+    fireEvent.click(screen.getByRole('button', { name: 'PLA' }));
+    fireEvent.click(screen.getByText(/Select all visible/i));
+    expect(screen.getByText(/3 selected/i)).toBeInTheDocument();
+  });
+
+  it('Clear all empties the selection regardless of filter', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1, 2, 3, 4]}
+        spoolmanMode={false}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'PLA' }));
+    fireEvent.click(screen.getByText(/Clear all/i));
+    // Header count badge disappears once selection hits 0
+    expect(screen.queryByText(/selected/i)).not.toBeInTheDocument();
+  });
+
+  it('template buttons disabled when nothing is selected', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[]}
+        spoolmanMode={false}
+      />,
+    );
+    // Two AMS holder variants exist (#1426). Both must be disabled when no
+    // spools are selected — the empty-selection guard is global, not per-template.
+    const amsButtons = screen.getAllByText(/AMS holder/i).map((el) => el.closest('button'));
+    expect(amsButtons).toHaveLength(2);
+    for (const btn of amsButtons) {
+      expect(btn).toBeDisabled();
+    }
+  });
+
+  it('sends only the currently checked IDs to the local endpoint', async () => {
+    vi.mocked(api.printSpoolLabels).mockResolvedValue(PDF_BLOB);
+    const onClose = vi.fn();
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={onClose}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1, 2, 3]}
+        spoolmanMode={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByText(/Blue · Sunlu/));  // uncheck spool 2
+    // Two "Box label …" templates exist now (40×30 and 62×29) — pin the
+    // specific one we want to send so the assertion below stays meaningful.
+    fireEvent.click(screen.getByText(/Box label \(62 × 29 mm\)/i));
+
+    await waitFor(() => {
+      expect(api.printSpoolLabels).toHaveBeenCalledWith({
+        spool_ids: [1, 3],
+        template: 'box_62x29',
+      });
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('routes to the Spoolman endpoint when spoolmanMode is true', async () => {
+    vi.mocked(api.printSpoolmanSpoolLabels).mockResolvedValue(PDF_BLOB);
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1]}
+        spoolmanMode={true}
+      />,
+    );
+
+    // Pick the larger AMS holder variant explicitly (#1426: two AMS templates
+     // exist now — pin which one the test sends so the assertion stays meaningful).
+    fireEvent.click(screen.getByText(/AMS holder — large \(75 × 55 mm\)/i));
+
+    await waitFor(() => {
+      expect(api.printSpoolmanSpoolLabels).toHaveBeenCalledWith({
+        spool_ids: [1],
+        template: 'ams_holder_75x55',
+      });
+    });
+    expect(api.printSpoolLabels).not.toHaveBeenCalled();
+  });
+
+  it('keeps the modal open and shows error when the API rejects', async () => {
+    vi.mocked(api.printSpoolLabels).mockRejectedValue(new Error('boom'));
+    const onClose = vi.fn();
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={onClose}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1]}
+        spoolmanMode={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByText(/Avery L7160/i));
+
+    await waitFor(() => {
+      expect(api.printSpoolLabels).toHaveBeenCalled();
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('shows empty-state message when no spools are available at all', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={[]}
+        initialSelectedIds={[]}
+        spoolmanMode={false}
+      />,
+    );
+    expect(screen.getByText(/No spools to show/i)).toBeInTheDocument();
+  });
+
+  it('shows no-matches message when search excludes everything', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[]}
+        spoolmanMode={false}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/Search/i), { target: { value: 'zzz-no-match' } });
+    expect(screen.getByText(/No spools match/i)).toBeInTheDocument();
+  });
+
+  it('packs templates into a 2-column grid so they plus Cancel fit on short viewports (#1230)', () => {
+    // Regression for #1230: with templates stacked vertically (~310-390px) plus
+    // header/search/action bar/footer, the modal blew past max-h-[90vh] on
+    // Windows-11 + Brave-style viewports where browser chrome eats into 90vh.
+    // overflow-hidden on the modal then clipped the bottom templates and the
+    // Cancel footer with no scroll path. The fix uses sm:grid-cols-2 so the
+    // templates render as a 2-column grid, trimming ~150px of vertical and
+    // leaving room for the footer. The earlier min-h-0 on the spool list is
+    // kept so it still yields any remaining slack.
+    const { container } = render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[]}
+        spoolmanMode={false}
+      />,
+    );
+
+    // All six templates must be in the DOM (#1426 added two AMS variants).
+    // Use the dimension suffix to disambiguate same-family entries.
+    expect(screen.getByText(/AMS holder — small \(74 × 33 mm\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/AMS holder — large \(75 × 55 mm\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Box label \(40 × 30 mm\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Box label \(62 × 29 mm\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Avery L7160/i)).toBeInTheDocument();
+    expect(screen.getByText(/Avery 5160/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
+
+    // Templates section must be a responsive grid (single column on mobile,
+    // two columns from sm: up) — a future refactor that drops the grid and
+    // reintroduces stacked rows fails CI.
+    const templatesSection = container.querySelector('div.grid.sm\\:grid-cols-2');
+    expect(templatesSection).not.toBeNull();
+    expect(templatesSection!.className).toContain('grid-cols-1');
+    expect(templatesSection!.querySelectorAll('button').length).toBe(6);
+
+    // Spool list still uses min-h-0 so it can yield further on very tight viewports.
+    const spoolListScroller = container.querySelector('div.flex-1.overflow-y-auto');
+    expect(spoolListScroller).not.toBeNull();
+    expect(spoolListScroller!.className).toContain('min-h-0');
+    expect(spoolListScroller!.className).not.toMatch(/min-h-\[\d/);
+  });
+
+  // #1410: an "ID | colour" sort toggle in the modal must flow through to the
+  // PDF — the backend (labels.py) prints in the order it receives spool_ids,
+  // so the modal's "submit in ID order" default was forcing every PDF to
+  // appear in spool-number order regardless of user choice. Toggling to
+  // colour mode must reorder both the visible list AND the payload so the
+  // printed sheet groups colours together.
+  it('sorts the submit payload by HSL hue when sort mode is "By colour" (#1410)', async () => {
+    vi.mocked(api.printSpoolLabels).mockResolvedValue(PDF_BLOB);
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1, 2, 3, 4]}  // Red / Blue / Black / Ivory all picked
+        spoolmanMode={false}
+      />,
+    );
+
+    // Default is ID-sorted; flip to colour.
+    fireEvent.click(screen.getByRole('button', { name: 'By colour' }));
+    fireEvent.click(screen.getByText(/Box label \(62 × 29 mm\)/i));
+
+    await waitFor(() => {
+      // Expected colour-sort order for the SPOOLS fixture:
+      //   Red    (1) — hue 0°   — chromatic
+      //   Ivory  (4) — hue ≈34° — chromatic
+      //   Blue   (2) — hue 240° — chromatic
+      //   Black  (3) — saturation ≈0 → neutrals bucket, lightness 0 → last
+      // Rainbow first, then neutrals (dark→light) per design choice for #1410.
+      expect(api.printSpoolLabels).toHaveBeenCalledWith({
+        spool_ids: [1, 4, 2, 3],
+        template: 'box_62x29',
+      });
+    });
+  });
+
+  it('keeps ID-order submission by default (#1410 regression guard)', async () => {
+    // Adding the sort toggle must NOT change the default behaviour — IDs go
+    // in ascending order unless the user explicitly clicks "By colour".
+    vi.mocked(api.printSpoolLabels).mockResolvedValue(PDF_BLOB);
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1, 2, 3, 4]}
+        spoolmanMode={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByText(/Box label \(40 × 30 mm\)/i));
+
+    await waitFor(() => {
+      expect(api.printSpoolLabels).toHaveBeenCalledWith({
+        spool_ids: [1, 2, 3, 4],
+        template: 'box_40x30',
+      });
+    });
+  });
+});

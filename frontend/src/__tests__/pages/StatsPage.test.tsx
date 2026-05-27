@@ -164,7 +164,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Dashboard')).toBeInTheDocument();
+        expect(screen.getByText('Statistics')).toBeInTheDocument();
       });
     });
 
@@ -210,8 +210,31 @@ describe('StatsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Success Rate')).toBeInTheDocument();
-        // Success rate: 140/(140+10) = 93%
+        // Success rate: 140 / 150 total = 93%
         expect(screen.getByText('93%')).toBeInTheDocument();
+      });
+    });
+
+    it('uses total_prints as denominator so cancelled/stopped events count (#1390)', async () => {
+      // 40 successful out of 100 total — with 20 failed and 40 cancelled/stopped
+      // mixed in. Old formula (successful / (successful + failed)) would have
+      // shown 40 / (40 + 20) = 67%. New formula shows 40 / 100 = 40%, which
+      // matches the "Total Prints: 100" the user reads right above the gauge.
+      server.use(
+        http.get('/api/v1/archives/stats', () =>
+          HttpResponse.json({
+            ...mockStats,
+            total_prints: 100,
+            successful_prints: 40,
+            failed_prints: 20,
+          }),
+        ),
+      );
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Success Rate')).toBeInTheDocument();
+        expect(screen.getByText('40%')).toBeInTheDocument();
       });
     });
   });
@@ -353,6 +376,48 @@ describe('StatsPage', () => {
       });
     });
 
+    it('Longest Print excludes failed prints (#1390)', async () => {
+      // After slim started populating actual_time_seconds for non-completed
+      // rows (so Printer Stats By Time would match Quick Stats), a failed
+      // print's elapsed duration could outrank successful prints in the
+      // Records widget. RecordsWidget gates "Longest Print" on
+      // status === 'completed' to preserve the pre-fix semantic.
+      server.use(
+        http.get('/api/v1/archives/slim', () =>
+          HttpResponse.json([
+            {
+              id: 10, created_at: '2024-02-01T10:00:00Z',
+              started_at: '2024-02-01T10:00:00Z', completed_at: null,
+              print_name: 'Aborted 25h Marathon', status: 'failed',
+              printer_id: 1, filament_type: 'PLA', filament_color: '#000000',
+              filament_used_grams: 50, actual_time_seconds: 90000,
+              print_time_seconds: 86400, cost: 1.50, quantity: 1,
+            },
+            {
+              id: 11, created_at: '2024-02-02T10:00:00Z',
+              started_at: '2024-02-02T10:00:00Z',
+              completed_at: '2024-02-02T18:00:00Z',
+              print_name: 'Successful 8h Print', status: 'completed',
+              printer_id: 1, filament_type: 'PLA', filament_color: '#FF0000',
+              filament_used_grams: 80, actual_time_seconds: 28800,
+              print_time_seconds: 27000, cost: 2.40, quantity: 1,
+            },
+          ]),
+        ),
+      );
+      render(<StatsPage />);
+
+      // Wait for the records widget itself to render.
+      await waitFor(() => {
+        expect(screen.getByText('Longest Print')).toBeInTheDocument();
+      });
+      // The failed 25h print must not surface as any record — its presence
+      // anywhere here would mean the status gate regressed.
+      expect(screen.queryByText('Aborted 25h Marathon')).not.toBeInTheDocument();
+      // The completed 8h print is the only candidate left, so it wins.
+      expect(screen.getAllByText('Successful 8h Print').length).toBeGreaterThan(0);
+    });
+
     it('shows heaviest print record', async () => {
       render(<StatsPage />);
 
@@ -409,6 +474,57 @@ describe('StatsPage', () => {
       // Auth is disabled in our test setup (default), so user filter should not appear
       // The filter requires authEnabled && hasPermission('stats:filter_by_user')
       expect(screen.queryByText('All Users')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('energy warming-up indicator (#941)', () => {
+    it('does not show a warning icon when energy data is available', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Energy Used')).toBeInTheDocument();
+      });
+
+      const energyLabel = screen.getByText('Energy Used').closest('div');
+      expect(energyLabel?.querySelector('svg[aria-label]')).toBeNull();
+    });
+
+    it('shows a warning icon with tooltip next to energy stats when warming up', async () => {
+      server.use(
+        http.get('/api/v1/archives/stats', () => {
+          return HttpResponse.json({ ...mockStats, energy_data_warming_up: true });
+        })
+      );
+
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Energy Used')).toBeInTheDocument();
+      });
+
+      // Both Energy Used and Energy Cost labels get a warning icon with the
+      // tooltip accessible via aria-label.
+      const icons = await screen.findAllByLabelText(/still collecting hourly snapshots/i);
+      expect(icons.length).toBe(2);
+    });
+
+    it('does not decorate other stats with the energy warming-up warning', async () => {
+      server.use(
+        http.get('/api/v1/archives/stats', () => {
+          return HttpResponse.json({ ...mockStats, energy_data_warming_up: true });
+        })
+      );
+
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Total Prints')).toBeInTheDocument();
+      });
+
+      const totalPrints = screen.getByText('Total Prints').closest('div');
+      expect(totalPrints?.querySelector('svg[aria-label]')).toBeNull();
+      const printTime = screen.getByText('Print Time').closest('div');
+      expect(printTime?.querySelector('svg[aria-label]')).toBeNull();
     });
   });
 });

@@ -40,6 +40,13 @@ class TestSmartPlugManager:
         plug.auto_off_pending = False
         plug.last_state = "ON"
         plug.last_checked = None
+        # #1349: drying defaults match the new schema — both off until the
+        # user opts in, so existing tests don't accidentally activate the
+        # post-drying path.
+        plug.plug_type = "tasmota"
+        plug.ha_entity_id = None
+        plug.auto_off_after_drying = False
+        plug.off_delay_after_drying_minutes = 10
         return plug
 
     @pytest.fixture
@@ -249,6 +256,94 @@ class TestSmartPlugManager:
             mock_schedule.assert_not_called()
 
     # ========================================================================
+    # Tests for on_drying_complete (#1349)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_on_drying_complete_schedules_delayed_off_when_enabled(self, manager, mock_plug, mock_db):
+        """Plug with ``auto_off_after_drying=True`` gets a delayed-off scheduled
+        using its drying-specific delay (independent of print-finish delay)."""
+        mock_plug.auto_off_after_drying = True
+        mock_plug.off_delay_after_drying_minutes = 15
+
+        with (
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_schedule_delayed_off") as mock_schedule,
+        ):
+            mock_get_plug.return_value = [mock_plug]
+
+            await manager.on_drying_complete(printer_id=1, db=mock_db)
+
+            mock_schedule.assert_called_once_with(mock_plug, 1, 15 * 60)
+
+    @pytest.mark.asyncio
+    async def test_on_drying_complete_skipped_when_toggle_off(self, manager, mock_plug, mock_db):
+        """Default state — toggle off → nothing scheduled. This is the regression
+        guard for users who only enable the print-finish auto-off and don't
+        want the AMS-drying path silently running on the same plug."""
+        mock_plug.auto_off_after_drying = False
+        # auto_off itself is True (existing print-finish behaviour) — the
+        # drying path must still be a no-op without its own toggle.
+        mock_plug.auto_off = True
+
+        with (
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_schedule_delayed_off") as mock_schedule,
+        ):
+            mock_get_plug.return_value = [mock_plug]
+
+            await manager.on_drying_complete(printer_id=1, db=mock_db)
+
+            mock_schedule.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_drying_complete_skipped_when_plug_disabled(self, manager, mock_plug, mock_db):
+        """Drying auto-off honours the master ``enabled`` flag."""
+        mock_plug.auto_off_after_drying = True
+        mock_plug.enabled = False
+
+        with (
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_schedule_delayed_off") as mock_schedule,
+        ):
+            mock_get_plug.return_value = [mock_plug]
+
+            await manager.on_drying_complete(printer_id=1, db=mock_db)
+
+            mock_schedule.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_drying_complete_skipped_for_ha_script_entity(self, manager, mock_plug, mock_db):
+        """HA script entities can be triggered but not turned off — same
+        guard the print-finish path has."""
+        mock_plug.auto_off_after_drying = True
+        mock_plug.plug_type = "homeassistant"
+        mock_plug.ha_entity_id = "script.lights_off"
+
+        with (
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_schedule_delayed_off") as mock_schedule,
+        ):
+            mock_get_plug.return_value = [mock_plug]
+
+            await manager.on_drying_complete(printer_id=1, db=mock_db)
+
+            mock_schedule.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_drying_complete_no_op_when_no_plugs(self, manager, mock_db):
+        """Printer without any linked plugs is a silent no-op (not an error)."""
+        with (
+            patch.object(manager, "_get_plugs_for_printer", new_callable=AsyncMock) as mock_get_plug,
+            patch.object(manager, "_schedule_delayed_off") as mock_schedule,
+        ):
+            mock_get_plug.return_value = []
+
+            await manager.on_drying_complete(printer_id=1, db=mock_db)
+
+            mock_schedule.assert_not_called()
+
+    # ========================================================================
     # Tests for _cancel_pending_off
     # ========================================================================
 
@@ -314,15 +409,36 @@ class TestSmartPlugManager:
 
     def test_start_scheduler_idempotent(self, manager):
         """Verify starting scheduler twice doesn't create multiple tasks."""
-        mock_task = MagicMock()
-        manager._scheduler_task = mock_task
+        mock_schedule_task = MagicMock()
+        mock_snapshot_task = MagicMock()
+        manager._scheduler_task = mock_schedule_task
+        manager._snapshot_task = mock_snapshot_task
 
-        # Mock _schedule_loop to avoid unawaited coroutine warning (in case it's called)
-        with patch.object(manager, "_schedule_loop") as mock_loop, patch("asyncio.create_task") as mock_create:
+        # Mock the loop coroutines to avoid unawaited coroutine warnings
+        with (
+            patch.object(manager, "_schedule_loop") as mock_loop,
+            patch.object(manager, "_snapshot_loop") as mock_snapshot,
+            patch("asyncio.create_task") as mock_create,
+        ):
             manager.start_scheduler()
 
-            mock_create.assert_not_called()  # Should not create new task
-            mock_loop.assert_not_called()  # Should not call _schedule_loop
+            mock_create.assert_not_called()  # Should not create new tasks
+            mock_loop.assert_not_called()
+            mock_snapshot.assert_not_called()
+
+    def test_stop_scheduler_cancels_snapshot_task(self, manager):
+        """Verify stopping scheduler also cancels the snapshot loop (#941)."""
+        mock_schedule_task = MagicMock()
+        mock_snapshot_task = MagicMock()
+        manager._scheduler_task = mock_schedule_task
+        manager._snapshot_task = mock_snapshot_task
+
+        manager.stop_scheduler()
+
+        mock_schedule_task.cancel.assert_called_once()
+        mock_snapshot_task.cancel.assert_called_once()
+        assert manager._scheduler_task is None
+        assert manager._snapshot_task is None
 
 
 class TestGetPlugsForPrinter:

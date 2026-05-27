@@ -6,6 +6,7 @@ download page. The wiki is used as the primary version source (always up-to-date
 while the download page provides firmware file URLs for offline updates.
 """
 
+import json
 import logging
 import re
 import time
@@ -46,6 +47,7 @@ MODEL_TO_API_KEY = {
     "H2S": "h2s",
     "P2S": "p2s",
     "X1E": "x1e",
+    "X2D": "x2d",
     "H2D Pro": "h2d-pro",
     "H2D-Pro": "h2d-pro",
     "H2DPRO": "h2d-pro",
@@ -64,6 +66,7 @@ MODEL_TO_API_KEY = {
     "C13": "p2s",
     "N2S": "a1",
     "N1": "a1-mini",
+    "N6": "x2d",
     "N7": "p2s",
 }
 
@@ -78,6 +81,7 @@ API_KEY_TO_DEV_MODEL = {
     "h2s": "O1S",
     "p2s": "N7",
     "x1e": "C13",
+    "x2d": "N6",
     "h2d-pro": "O1E",
 }
 
@@ -92,6 +96,7 @@ API_KEY_TO_WIKI_PATH = {
     "h2c": "/en/h2c/manual/h2c-firmware-release-history",
     "h2s": "/en/h2s/manual/h2s-firmware-release-history",
     "p2s": "/en/p2s/manual/p2s-firmware-release-history",
+    "x2d": "/en/x2d/manual/x2d-firmware-release-history",
     "h2d-pro": "/en/h2d-pro/manual/firmware-release-history",
 }
 
@@ -112,91 +117,242 @@ class FirmwareCheckService:
     def __init__(self):
         self._build_id: str | None = None
         self._build_id_time: float = 0
+        self._download_page_unreachable: bool = False
         self._version_cache: dict[str, FirmwareVersion] = {}
+        self._versions_list_cache: dict[str, list[FirmwareVersion]] = {}
         self._cache_time: float = 0
         self._client = httpx.AsyncClient(
             timeout=30.0,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                # Identify honestly as Bambuddy when scraping the public Bambu
+                # Lab firmware wiki — verified 2026-05-12 that the wiki serves
+                # this UA identically to a Chrome UA (same HTML response shape).
+                # No browser impersonation needed for read-only public pages.
+                "User-Agent": "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)",
+                # Some Cloudflare bot rules on bambulab.com 403 requests with a
+                # bare UA but no browser-like Accept headers (seen on AU IPs in
+                # #1350). Sending normal Accept hints removes that signal while
+                # staying honestly identified via the UA above.
+                "Accept": "text/html,application/json,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
             },
         )
 
+    def _build_id_cache_path(self) -> Path:
+        cache_dir = _data_dir / "firmware"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir / "build_id.json"
+
+    def _load_build_id_from_disk(self) -> tuple[str | None, float]:
+        """Load the last-known buildId from disk, returning (build_id, fetched_at)."""
+        path = self._build_id_cache_path()
+        try:
+            if not path.exists():
+                return None, 0.0
+            data = json.loads(path.read_text())
+            build_id = data.get("build_id")
+            fetched_at = float(data.get("fetched_at", 0))
+            if isinstance(build_id, str) and build_id:
+                return build_id, fetched_at
+        except (OSError, ValueError, TypeError) as e:
+            logger.debug("Could not read cached buildId: %s", e)
+        return None, 0.0
+
+    def _save_build_id_to_disk(self, build_id: str) -> None:
+        try:
+            self._build_id_cache_path().write_text(json.dumps({"build_id": build_id, "fetched_at": time.time()}))
+        except OSError as e:
+            logger.debug("Could not persist buildId: %s", e)
+
     async def _get_build_id(self) -> str | None:
-        """Fetch the Next.js build ID from Bambu Lab's firmware page."""
-        # Use cached build ID if still valid (cache for 1 hour)
+        """Fetch the Next.js build ID from Bambu Lab's firmware page.
+
+        Cache layers (fresh → stale → none):
+        1. In-memory (1 hour TTL) — fast path for repeated checks in a session
+        2. Disk-cached buildId (any age) — survives restarts, lets us recover
+           from upstream Cloudflare 403s. The buildId is treated as
+           "probably still valid" because Bambu rebuilds the page only every
+           few weeks; if the JSON fetch later fails, the caller falls back.
+        3. Live fetch from bambulab.com — only when both caches miss
+        """
+        # 1. In-memory cache (fresh)
         if self._build_id and (time.time() - self._build_id_time) < CACHE_TTL:
             return self._build_id
 
+        # 2. Disk cache: load if we don't have one in memory yet (first call
+        #    after restart). We still try the live fetch below to refresh.
+        if not self._build_id:
+            disk_id, disk_time = self._load_build_id_from_disk()
+            if disk_id:
+                self._build_id = disk_id
+                self._build_id_time = disk_time
+
+        # 3. Live fetch
         try:
             response = await self._client.get(f"{BAMBU_FIRMWARE_BASE}{FIRMWARE_PAGE}")
             if response.status_code == 200:
-                # Extract buildId from the page
                 match = re.search(r'"buildId":"([^"]+)"', response.text)
                 if match:
-                    self._build_id = match.group(1)
+                    new_build_id = match.group(1)
+                    if new_build_id != self._build_id:
+                        logger.info("Got Bambu Lab build ID: %s", new_build_id)
+                    self._build_id = new_build_id
                     self._build_id_time = time.time()
-                    logger.info("Got Bambu Lab build ID: %s", self._build_id)
+                    self._download_page_unreachable = False
+                    self._save_build_id_to_disk(new_build_id)
                     return self._build_id
-            logger.warning("Failed to get Bambu Lab page: %s", response.status_code)
+            else:
+                # 403/5xx — keep stale cached buildId if we have one (#1350).
+                logger.warning(
+                    "Failed to get Bambu Lab page: %s (will try cached buildId if available)",
+                    response.status_code,
+                )
+                self._download_page_unreachable = True
         except Exception as e:
             logger.error("Error fetching Bambu Lab build ID: %s", e)
+            self._download_page_unreachable = True
 
-        return self._build_id  # Return cached value if available
+        # Return whatever we have — even a stale buildId beats nothing.
+        return self._build_id
+
+    @property
+    def download_page_unreachable(self) -> bool:
+        """True if the most recent attempt to reach bambulab.com firmware page failed.
+
+        Used by callers (e.g. the firmware update prepare flow) to render a
+        clearer error message when a wiki-listed version has no download URL
+        because we couldn't reach Bambu Lab, vs the version genuinely not
+        being on the catalog (#1350).
+        """
+        return self._download_page_unreachable
 
     async def _fetch_version_from_wiki(self, api_key: str) -> str | None:
         """Fetch the latest firmware version from Bambu Lab's wiki release history page."""
+        versions = await self._fetch_all_versions_from_wiki(api_key)
+        if versions:
+            logger.debug("Wiki firmware for %s: %s", api_key, versions[0][0])
+            return versions[0][0]
+        return None
+
+    async def _fetch_all_versions_from_wiki(self, api_key: str) -> list[tuple[str, str | None]]:
+        """
+        Fetch all firmware versions from the wiki release history page.
+
+        Only extracts versions that appear in section-heading anchors
+        (e.g. `id="h-01030000-20260303"` or `id="h-0102000020260409"`) —
+        this excludes version-like numbers mentioned incidentally in
+        release-note text. The dash separator between version and date is
+        optional: H2D/X1/H2C/H2S still use it, but P2S and X2D publish
+        anchors without the dash.
+
+        Returns list of (version, release_date_YYYYMMDD | None) tuples, newest first.
+        """
         wiki_path = API_KEY_TO_WIKI_PATH.get(api_key)
         if not wiki_path:
-            return None
+            return []
 
         try:
             url = f"{BAMBU_WIKI_BASE}{wiki_path}"
             response = await self._client.get(url, follow_redirects=True)
+            if response.status_code != 200:
+                return []
 
-            if response.status_code == 200:
-                # Extract version strings (format: XX.XX.XX.XX), first match is the latest
-                versions = re.findall(r"(\d{2}\.\d{2}\.\d{2}\.\d{2})", response.text)
-                if versions:
-                    logger.debug("Wiki firmware for %s: %s", api_key, versions[0])
-                    return versions[0]
-            else:
-                logger.debug("Wiki firmware page for %s returned %s", api_key, response.status_code)
+            # Primary: heading anchor ids like id="h-01030000-20260303" (dash)
+            # or id="h-0102000020260409" (no dash, P2S/X2D-style).
+            anchor_matches = re.findall(r'id="h-(\d{2})(\d{2})(\d{2})(\d{2})-?(\d{8})"', response.text)
+            seen: set[str] = set()
+            versions: list[tuple[str, str | None]] = []
+            for a, b, c, d, date in anchor_matches:
+                v = f"{a}.{b}.{c}.{d}"
+                if v in seen:
+                    continue
+                seen.add(v)
+                versions.append((v, date))
 
+            if versions:
+                return versions
+
+            # Fallback: heading text with "XX.XX.XX.XX (YYYYMMDD)" —
+            # accept both ASCII "()" and full-width "（）" (U+FF08/U+FF09)
+            # which some pages (A1, A1-mini, P2S) use.
+            text_matches = re.findall(
+                r"(\d{2}\.\d{2}\.\d{2}\.\d{2})\s*[(\uff08](\d{8})[)\uff09]",
+                response.text,
+            )
+            for v, date in text_matches:
+                if v in seen:
+                    continue
+                seen.add(v)
+                versions.append((v, date))
+            return versions
         except Exception as e:
-            logger.debug("Error fetching wiki firmware for %s: %s", api_key, e)
+            logger.debug("Error fetching wiki firmware list for %s: %s", api_key, e)
+        return []
 
-        return None
+    async def _fetch_all_versions_from_download_page(self, api_key: str) -> list[FirmwareVersion]:
+        """Fetch all firmware versions from Bambu Lab's download page (newest first).
 
-    async def _fetch_from_download_page(self, api_key: str) -> FirmwareVersion | None:
-        """Fetch firmware info from Bambu Lab's download page (has download URLs)."""
+        If we have a stale (disk-cached) buildId and it returns 404 (Bambu
+        rebuilt the page), retry once with a fresh fetch — this only kicks in
+        when the in-memory cache thinks it's still valid but the upstream has
+        moved on.
+        """
         build_id = await self._get_build_id()
         if not build_id:
-            return None
+            return []
 
-        try:
-            url = f"{BAMBU_FIRMWARE_BASE}/_next/data/{build_id}/en/support/firmware-download/{api_key}.json"
-            response = await self._client.get(url)
+        for attempt in range(2):
+            try:
+                url = f"{BAMBU_FIRMWARE_BASE}/_next/data/{build_id}/en/support/firmware-download/{api_key}.json"
+                response = await self._client.get(url)
 
-            if response.status_code == 200:
-                data = response.json()
-                page_props = data.get("pageProps", {})
-                printer_map = page_props.get("printerMap", {})
-                printer_data = printer_map.get(api_key, {})
-                versions = printer_data.get("versions", [])
+                if response.status_code == 200:
+                    data = response.json()
+                    page_props = data.get("pageProps", {})
+                    printer_map = page_props.get("printerMap", {})
+                    printer_data = printer_map.get(api_key, {})
+                    versions = printer_data.get("versions", [])
+                    return [
+                        FirmwareVersion(
+                            version=v.get("version", ""),
+                            download_url=v.get("url", ""),
+                            release_notes=v.get("release_notes_en"),
+                            release_time=v.get("release_time"),
+                        )
+                        for v in versions
+                        if v.get("version")
+                    ]
 
-                if versions:
-                    latest = versions[0]
-                    return FirmwareVersion(
-                        version=latest.get("version", ""),
-                        download_url=latest.get("url", ""),
-                        release_notes=latest.get("release_notes_en"),
-                        release_time=latest.get("release_time"),
-                    )
+                # 404 with cached buildId → Bambu rebuilt the page; invalidate
+                # and retry once. Other status codes (403, 5xx) are upstream
+                # blocks — don't churn.
+                if response.status_code == 404 and attempt == 0:
+                    logger.info("Cached Bambu buildId stale (404), refreshing")
+                    self._build_id = None
+                    self._build_id_time = 0
+                    build_id = await self._get_build_id()
+                    if not build_id:
+                        return []
+                    continue
 
-        except Exception as e:
-            logger.debug("Error fetching download page firmware for %s: %s", api_key, e)
+                # 403 from the JSON endpoint is the same Cloudflare block
+                # signal as on the index page (#1350).
+                if response.status_code == 403:
+                    self._download_page_unreachable = True
 
-        return None
+                logger.debug("Download-page JSON for %s returned status %s", api_key, response.status_code)
+                return []
+
+            except Exception as e:
+                logger.debug("Error fetching download page firmware for %s: %s", api_key, e)
+                return []
+
+        return []
+
+    async def _fetch_from_download_page(self, api_key: str) -> FirmwareVersion | None:
+        """Fetch the latest firmware info from Bambu Lab's download page (has download URLs)."""
+        versions = await self._fetch_all_versions_from_download_page(api_key)
+        return versions[0] if versions else None
 
     async def _fetch_firmware_versions(self, api_key: str) -> FirmwareVersion | None:
         """Fetch firmware version info, using wiki as primary source and download page as fallback."""
@@ -266,6 +422,72 @@ class FirmwareCheckService:
 
         return version
 
+    def _resolve_api_key(self, model: str) -> str | None:
+        """Resolve a model name to its Bambu API key."""
+        model_upper = model.upper().replace(" ", "").replace("-", "")
+        for name, key in MODEL_TO_API_KEY.items():
+            if name.upper().replace(" ", "").replace("-", "") == model_upper:
+                return key
+        return MODEL_TO_API_KEY.get(model)
+
+    @staticmethod
+    def _version_tuple(v: str) -> tuple[int, ...]:
+        parts = [int(x) for x in v.split(".")]
+        while len(parts) < 4:
+            parts.append(0)
+        return tuple(parts)
+
+    async def get_available_versions(self, model: str) -> list[FirmwareVersion]:
+        """
+        Get all announced firmware versions for a model, newest first.
+
+        Merges the wiki release history (list of version strings) with the
+        download page JSON (which provides download URLs + release notes).
+        Versions present only on the wiki have an empty download_url and
+        should be treated as "unavailable" for file-based installation.
+        """
+        api_key = self._resolve_api_key(model)
+        if not api_key:
+            return []
+
+        if api_key in self._versions_list_cache and (time.time() - self._cache_time) < CACHE_TTL:
+            return self._versions_list_cache[api_key]
+
+        wiki_versions = await self._fetch_all_versions_from_wiki(api_key)
+        download_versions = await self._fetch_all_versions_from_download_page(api_key)
+        by_version: dict[str, FirmwareVersion] = {d.version: d for d in download_versions if d.version}
+
+        merged: list[FirmwareVersion] = []
+        seen: set[str] = set()
+        for v, wiki_date in wiki_versions:
+            if v in seen:
+                continue
+            seen.add(v)
+            if v in by_version:
+                merged.append(by_version[v])
+            else:
+                merged.append(FirmwareVersion(version=v, download_url="", release_time=wiki_date))
+        for d in download_versions:
+            if d.version and d.version not in seen:
+                seen.add(d.version)
+                merged.append(d)
+
+        try:
+            merged.sort(key=lambda fv: self._version_tuple(fv.version), reverse=True)
+        except (ValueError, AttributeError):
+            pass
+
+        self._versions_list_cache[api_key] = merged
+        self._cache_time = time.time()
+        return merged
+
+    async def get_version_info(self, model: str, version: str) -> FirmwareVersion | None:
+        """Find a specific version's info (including download URL) for a model."""
+        for v in await self.get_available_versions(model):
+            if v.version == version:
+                return v
+        return None
+
     async def check_for_update(self, model: str, current_version: str) -> dict:
         """
         Check if a firmware update is available for a printer.
@@ -288,17 +510,30 @@ class FirmwareCheckService:
             "latest_version": None,
             "download_url": None,
             "release_notes": None,
+            "available_versions": [],
         }
+
+        available = await self.get_available_versions(model)
+        result["available_versions"] = [
+            {
+                "version": v.version,
+                "download_url": v.download_url or None,
+                "file_available": bool(v.download_url),
+                "release_notes": v.release_notes,
+                "release_time": v.release_time,
+            }
+            for v in available
+        ]
 
         if not current_version:
             return result
 
-        latest = await self.get_latest_version(model)
+        latest = available[0] if available else await self.get_latest_version(model)
         if not latest:
             return result
 
         result["latest_version"] = latest.version
-        result["download_url"] = latest.download_url
+        result["download_url"] = latest.download_url or None
         result["release_notes"] = latest.release_notes
 
         # Compare versions (format: XX.XX.XX.XX)
@@ -340,32 +575,35 @@ class FirmwareCheckService:
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir
 
-    async def get_firmware_file_info(self, model: str) -> dict | None:
+    async def get_firmware_file_info(self, model: str, version: str | None = None) -> dict | None:
         """
-        Get information about the firmware file for a model.
+        Get information about a firmware file for a model.
 
-        Returns:
-            Dict with download_url, version, filename, and estimated_size (if available)
+        If `version` is provided, returns info for that specific version (must be
+        available on the download page). Otherwise returns info for the latest version.
         """
-        latest = await self.get_latest_version(model)
-        if not latest or not latest.download_url:
+        if version:
+            target = await self.get_version_info(model, version)
+        else:
+            target = await self.get_latest_version(model)
+        if not target or not target.download_url:
             return None
 
-        # Extract filename from URL
-        url_parts = latest.download_url.split("/")
+        url_parts = target.download_url.split("/")
         filename = url_parts[-1] if url_parts else f"firmware_{model}.bin"
 
         return {
-            "download_url": latest.download_url,
-            "version": latest.version,
+            "download_url": target.download_url,
+            "version": target.version,
             "filename": filename,
-            "release_notes": latest.release_notes,
+            "release_notes": target.release_notes,
         }
 
     async def download_firmware(
         self,
         model: str,
         progress_callback: Callable[[int, int, str], None] | None = None,
+        version: str | None = None,
     ) -> Path | None:
         """
         Download firmware file for a printer model.
@@ -377,9 +615,12 @@ class FirmwareCheckService:
         Returns:
             Path to downloaded firmware file, or None on failure
         """
-        latest = await self.get_latest_version(model)
+        if version:
+            latest = await self.get_version_info(model, version)
+        else:
+            latest = await self.get_latest_version(model)
         if not latest or not latest.download_url:
-            logger.warning("No firmware download URL available for model: %s", model)
+            logger.warning("No firmware download URL available for model %s version %s", model, version)
             return None
 
         # Extract original filename from URL (must preserve for SD card update)

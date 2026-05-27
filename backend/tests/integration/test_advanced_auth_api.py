@@ -22,7 +22,7 @@ SMTP_DATA = {
 }
 
 
-async def _setup_admin(async_client: AsyncClient, username: str = "admin", password: str = "adminpass123"):
+async def _setup_admin(async_client: AsyncClient, username: str = "admin", password: str = "AdminPass1!"):
     """Enable auth and create admin user, return admin token."""
     await async_client.post(
         "/api/v1/auth/setup",
@@ -47,7 +47,7 @@ async def _setup_smtp_and_advanced_auth(async_client: AsyncClient, token: str):
 
 
 async def _create_regular_user(
-    async_client: AsyncClient, token: str, username: str = "regular", password: str = "regularpass123"
+    async_client: AsyncClient, token: str, username: str = "regular", password: str = "Regularpass1!"
 ):
     """Create a regular (non-admin) user and return their token."""
     headers = {"Authorization": f"Bearer {token}"}
@@ -68,7 +68,7 @@ class TestSMTPConfigAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "smtpadmin", "adminpass123")
+        return await _setup_admin(async_client, "smtpadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -100,7 +100,7 @@ class TestSMTPConfigAPI:
     @pytest.mark.integration
     async def test_smtp_settings_requires_admin(self, async_client: AsyncClient, admin_token: str):
         """Non-admin user gets 403 on SMTP endpoints."""
-        user_token = await _create_regular_user(async_client, admin_token, "smtpregular", "pass123456")
+        user_token = await _create_regular_user(async_client, admin_token, "smtpregular", "Pass12345!")
         headers = {"Authorization": f"Bearer {user_token}"}
 
         response = await async_client.post("/api/v1/auth/smtp", headers=headers, json=SMTP_DATA)
@@ -143,7 +143,7 @@ class TestAdvancedAuthToggleAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "toggleadmin", "adminpass123")
+        return await _setup_admin(async_client, "toggleadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -193,7 +193,7 @@ class TestAdvancedAuthToggleAPI:
     @pytest.mark.integration
     async def test_enable_requires_admin(self, async_client: AsyncClient, admin_token: str):
         """Non-admin user gets 403 on enable/disable."""
-        user_token = await _create_regular_user(async_client, admin_token, "toggleregular", "pass123456")
+        user_token = await _create_regular_user(async_client, admin_token, "toggleregular", "Pass12345!")
         headers = {"Authorization": f"Bearer {user_token}"}
 
         response = await async_client.post("/api/v1/auth/advanced-auth/enable", headers=headers)
@@ -208,7 +208,7 @@ class TestEmailLoginAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "emailadmin", "adminpass123")
+        return await _setup_admin(async_client, "emailadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -233,13 +233,13 @@ class TestEmailLoginAPI:
             await async_client.patch(
                 f"/api/v1/users/{user_id}",
                 headers=headers,
-                json={"password": "knownpassword123"},
+                json={"password": "Knownpassword1!"},
             )
 
         # Login with email
         response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "emailuser@test.com", "password": "knownpassword123"},
+            json={"username": "emailuser@test.com", "password": "Knownpassword1!"},
         )
         assert response.status_code == 200
         assert "access_token" in response.json()
@@ -262,12 +262,12 @@ class TestEmailLoginAPI:
             await async_client.patch(
                 f"/api/v1/users/{user_id}",
                 headers=headers,
-                json={"password": "casepassword123"},
+                json={"password": "Casepassword1!"},
             )
 
         response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "CASEUSER@TEST.COM", "password": "casepassword123"},
+            json={"username": "CASEUSER@TEST.COM", "password": "Casepassword1!"},
         )
         assert response.status_code == 200
         assert "access_token" in response.json()
@@ -282,13 +282,13 @@ class TestEmailLoginAPI:
         await async_client.post(
             "/api/v1/users/",
             headers=headers,
-            json={"username": "noemail", "password": "noEmailPass1", "email": "noemail@test.com", "role": "user"},
+            json={"username": "noemail", "password": "NoEmailPass1!", "email": "noemail@test.com", "role": "user"},
         )
 
         # Try to login with email — should fail since advanced auth is off
         response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "noemail@test.com", "password": "noEmailPass1"},
+            json={"username": "noemail@test.com", "password": "NoEmailPass1!"},
         )
         assert response.status_code == 401
 
@@ -310,13 +310,13 @@ class TestEmailLoginAPI:
             await async_client.patch(
                 f"/api/v1/users/{user_id}",
                 headers=headers,
-                json={"password": "usernamepass123"},
+                json={"password": "Usernamepass1!"},
             )
 
         # Login with username (not email)
         response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "usernameuser", "password": "usernamepass123"},
+            json={"username": "usernameuser", "password": "Usernamepass1!"},
         )
         assert response.status_code == 200
         assert "access_token" in response.json()
@@ -327,7 +327,7 @@ class TestForgotPasswordAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "forgotadmin", "adminpass123")
+        return await _setup_admin(async_client, "forgotadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -388,7 +388,13 @@ class TestForgotPasswordAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_forgot_password_changes_password(self, async_client: AsyncClient, admin_token: str):
-        """After forgot-password, old password stops working."""
+        """After forgot-password + confirm, old password stops working and new one works.
+
+        H-6: The flow is now token-based: /forgot-password issues a reset link and
+        /forgot-password/confirm consumes the token and sets the new password.
+        """
+        from unittest.mock import AsyncMock
+
         headers = {"Authorization": f"Bearer {admin_token}"}
 
         with patch("backend.app.api.routes.users.send_email"):
@@ -403,29 +409,58 @@ class TestForgotPasswordAPI:
             await async_client.patch(
                 f"/api/v1/users/{user_id}",
                 headers=headers,
-                json={"password": "originalpass123"},
+                json={"password": "Originalpass1!"},
             )
 
         # Verify login works with original password
         login_resp = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "resetme", "password": "originalpass123"},
+            json={"username": "resetme", "password": "Originalpass1!"},
         )
         assert login_resp.status_code == 200
 
-        # Trigger forgot password
-        with patch("backend.app.api.routes.auth.send_email"):
-            await async_client.post(
+        # Trigger forgot-password and capture the reset URL (contains the token)
+        captured: dict[str, str] = {}
+
+        async def _capture_link_email(db, username, reset_url):
+            captured["reset_url"] = reset_url
+            return ("subject", "body", "<body/>")
+
+        with (
+            patch(
+                "backend.app.api.routes.auth.create_password_reset_link_email_from_template",
+                side_effect=_capture_link_email,
+            ),
+            patch("backend.app.api.routes.auth.send_email"),
+        ):
+            resp = await async_client.post(
                 "/api/v1/auth/forgot-password",
                 json={"email": "resetme@test.com"},
             )
+        assert resp.status_code == 200
+        assert "reset_url" in captured, "Reset URL not captured — email function was not called"
+
+        # Extract the token from the captured URL and confirm the reset
+        reset_token = captured["reset_url"].split("reset_token=")[1]
+        confirm_resp = await async_client.post(
+            "/api/v1/auth/forgot-password/confirm",
+            json={"token": reset_token, "new_password": "Newpass456!"},
+        )
+        assert confirm_resp.status_code == 200
 
         # Old password should no longer work
         login_resp = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "resetme", "password": "originalpass123"},
+            json={"username": "resetme", "password": "Originalpass1!"},
         )
         assert login_resp.status_code == 401
+
+        # New password must work
+        login_resp = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "resetme", "password": "Newpass456!"},
+        )
+        assert login_resp.status_code == 200
 
 
 class TestAdminResetPasswordAPI:
@@ -433,7 +468,7 @@ class TestAdminResetPasswordAPI:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "resetadmin", "adminpass123")
+        return await _setup_admin(async_client, "resetadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -467,7 +502,7 @@ class TestAdminResetPasswordAPI:
     async def test_reset_password_requires_admin(self, async_client: AsyncClient, admin_token: str):
         """Non-admin user gets 403 on reset-password."""
         # Create regular user before enabling advanced auth (no email required)
-        user_token = await _create_regular_user(async_client, admin_token, "resetregular", "pass123456")
+        user_token = await _create_regular_user(async_client, admin_token, "resetregular", "Pass12345!")
 
         with patch("backend.app.api.routes.users.send_email"):
             await _setup_smtp_and_advanced_auth(async_client, admin_token)
@@ -522,7 +557,7 @@ class TestAdminResetPasswordAPI:
         create_resp = await async_client.post(
             "/api/v1/users/",
             headers=headers,
-            json={"username": "noemailuser", "password": "noemail123456", "role": "user"},
+            json={"username": "noemailuser", "password": "Noemail12345!", "role": "user"},
         )
         user_id = create_resp.json()["id"]
 
@@ -543,7 +578,7 @@ class TestUserCreationAdvancedAuth:
 
     @pytest.fixture
     async def admin_token(self, async_client: AsyncClient):
-        return await _setup_admin(async_client, "createadmin", "adminpass123")
+        return await _setup_admin(async_client, "createadmin", "AdminPass1!")
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -628,3 +663,52 @@ class TestUserCreationAdvancedAuth:
         result = response.json()
         assert "email" in result
         assert result["email"] == "emailresp@test.com"
+
+
+# ===========================================================================
+# M-1: OIDC/LDAP users must not be able to use the password reset flow
+# ===========================================================================
+
+
+class TestAuthSourcePasswordResetBlocking:
+    """Forgot-password must silently skip OIDC and LDAP users (M-1)."""
+
+    @pytest.fixture
+    async def admin_token(self, async_client: AsyncClient):
+        return await _setup_admin(async_client, "authsrcadmin", "AdminPass1!")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_forgot_password_silently_skips_oidc_user(
+        self, async_client: AsyncClient, admin_token: str, db_session
+    ):
+        """forgot-password for an OIDC user returns 200 but does NOT send email."""
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.user import User
+
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        await async_client.post("/api/v1/auth/smtp", headers=headers, json=SMTP_DATA)
+        await async_client.post("/api/v1/auth/advanced-auth/enable", headers=headers)
+
+        # Directly insert an OIDC-sourced user into the DB
+        oidc_user = User(
+            username="oidcpwreset",
+            email="oidcpwreset@test.com",
+            auth_source="oidc",
+            password_hash=get_password_hash("irrelevant"),
+            role="user",
+            is_active=True,
+        )
+        db_session.add(oidc_user)
+        await db_session.commit()
+
+        with patch("backend.app.api.routes.auth.send_email") as mock_send:
+            response = await async_client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "oidcpwreset@test.com"},
+            )
+
+        # Anti-enumeration: still returns 200
+        assert response.status_code == 200
+        # But no email is sent for OIDC users
+        mock_send.assert_not_called()

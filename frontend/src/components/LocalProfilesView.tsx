@@ -303,6 +303,15 @@ export function LocalProfilesView() {
   const printers = useMemo(() => filterPresets(presets?.printer || []), [presets?.printer, filterPresets]);
   const processes = useMemo(() => filterPresets(presets?.process || []), [presets?.process, filterPresets]);
   const totalCount = filaments.length + printers.length + processes.length;
+  // Count of imported presets BEFORE the search filter — drives whether the
+  // search bar shows at all. Gating the search bar on totalCount (post-filter)
+  // made it vanish the moment a query matched nothing, leaving the user unable
+  // to clear or edit their search without a page refresh (#1470).
+  const hasAnyPresets =
+    (presets?.filament?.length ?? 0) +
+      (presets?.printer?.length ?? 0) +
+      (presets?.process?.length ?? 0) >
+    0;
 
   if (isLoading) {
     return (
@@ -349,7 +358,7 @@ export function LocalProfilesView() {
       )}
 
       {/* Search Bar */}
-      {totalCount > 0 && (
+      {hasAnyPresets && (
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
           <input
@@ -362,12 +371,20 @@ export function LocalProfilesView() {
         </div>
       )}
 
-      {/* No Presets */}
-      {totalCount === 0 && !isLoading && (
+      {/* No presets imported at all */}
+      {!hasAnyPresets && !isLoading && (
         <div className="text-center py-12">
           <HardDrive className="w-12 h-12 text-bambu-gray mx-auto mb-3 opacity-50" />
           <p className="text-bambu-gray">{t('profiles.localProfiles.noPresets')}</p>
           <p className="text-xs text-bambu-gray/60 mt-1">{t('profiles.localProfiles.importDesc')}</p>
+        </div>
+      )}
+
+      {/* Presets exist, but the search query matched none of them */}
+      {hasAnyPresets && totalCount === 0 && !isLoading && (
+        <div className="text-center py-12">
+          <Search className="w-12 h-12 text-bambu-gray mx-auto mb-3 opacity-50" />
+          <p className="text-bambu-gray">{t('profiles.localProfiles.noSearchResults')}</p>
         </div>
       )}
 

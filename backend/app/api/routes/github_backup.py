@@ -19,12 +19,46 @@ from backend.app.schemas.github_backup import (
     GitHubBackupStatus,
     GitHubBackupTriggerResponse,
     GitHubTestConnectionResponse,
+    ProviderType,
 )
 from backend.app.services.github_backup import github_backup_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/github-backup", tags=["github-backup"])
+
+
+_PUBLIC_REPO_ERROR = (
+    "Refusing to save: the target repository is not private. Bambuddy backups "
+    "include MQTT credentials, Home Assistant tokens, Prometheus tokens, your "
+    "Bambu Cloud email, the printer access codes via K-profiles, and other "
+    "settings that must not be exposed publicly. Make the repository private "
+    "in your provider's UI and try again."
+)
+_UNKNOWN_VISIBILITY_ERROR = (
+    "Refusing to save: could not confirm the target repository is private. "
+    "Bambuddy backups contain credentials and must never go to a public or "
+    "internal-visibility repository. Verify the URL, the access token's scope, "
+    "and that your provider exposes the 'private' / 'visibility' field on its "
+    "repo API."
+)
+
+
+async def _enforce_private_repo(repo_url: str, token: str, provider: str) -> None:
+    """Run a test_connection and refuse if the repo is not confirmed private.
+
+    Used by POST and PATCH /config so a backup configuration can never be
+    saved against a public repository.
+    """
+    result = await github_backup_service.test_connection(repo_url, token, provider=provider)
+    if not result.get("success"):
+        message = result.get("message") or "Connection test failed"
+        raise HTTPException(status_code=400, detail=f"Cannot verify repository: {message}")
+    is_private = result.get("is_private")
+    if is_private is None:
+        raise HTTPException(status_code=400, detail=_UNKNOWN_VISIBILITY_ERROR)
+    if is_private is False:
+        raise HTTPException(status_code=400, detail=_PUBLIC_REPO_ERROR)
 
 
 def _config_to_response(config: GitHubBackupConfig) -> dict:
@@ -34,6 +68,8 @@ def _config_to_response(config: GitHubBackupConfig) -> dict:
         "repository_url": config.repository_url,
         "has_token": bool(config.access_token),
         "branch": config.branch,
+        "provider": config.provider,
+        "allow_insecure_http": config.allow_insecure_http,
         "schedule_enabled": config.schedule_enabled,
         "schedule_type": config.schedule_type,
         "backup_kprofiles": config.backup_kprofiles,
@@ -76,7 +112,16 @@ async def save_config(
     """Create or update GitHub backup configuration.
 
     Only one configuration is supported. If one exists, it will be updated.
+    The target repository must be private — Bambuddy backups carry MQTT
+    credentials, HA/Prometheus tokens, the Bambu Cloud email, and printer
+    access codes (via K-profiles), so a public repo is a hard reject.
     """
+    await _enforce_private_repo(
+        config_data.repository_url,
+        config_data.access_token,
+        config_data.provider.value,
+    )
+
     # Check for existing config
     result = await db.execute(select(GitHubBackupConfig).limit(1))
     config = result.scalar_one_or_none()
@@ -86,6 +131,7 @@ async def save_config(
         config.repository_url = config_data.repository_url
         config.access_token = config_data.access_token
         config.branch = config_data.branch
+        config.provider = config_data.provider.value
         config.schedule_enabled = config_data.schedule_enabled
         config.schedule_type = config_data.schedule_type.value
         config.backup_kprofiles = config_data.backup_kprofiles
@@ -93,11 +139,12 @@ async def save_config(
         config.backup_settings = config_data.backup_settings
         config.backup_spools = config_data.backup_spools
         config.backup_archives = config_data.backup_archives
+        config.allow_insecure_http = config_data.allow_insecure_http
         config.enabled = config_data.enabled
 
         # Calculate next scheduled run if enabled
         if config.schedule_enabled:
-            config.next_scheduled_run = github_backup_service._calculate_next_run(config.schedule_type)
+            config.next_scheduled_run = github_backup_service.calculate_next_run(config.schedule_type)
         else:
             config.next_scheduled_run = None
 
@@ -108,6 +155,7 @@ async def save_config(
             repository_url=config_data.repository_url,
             access_token=config_data.access_token,
             branch=config_data.branch,
+            provider=config_data.provider.value,
             schedule_enabled=config_data.schedule_enabled,
             schedule_type=config_data.schedule_type.value,
             backup_kprofiles=config_data.backup_kprofiles,
@@ -115,11 +163,12 @@ async def save_config(
             backup_settings=config_data.backup_settings,
             backup_spools=config_data.backup_spools,
             backup_archives=config_data.backup_archives,
+            allow_insecure_http=config_data.allow_insecure_http,
             enabled=config_data.enabled,
         )
 
         if config.schedule_enabled:
-            config.next_scheduled_run = github_backup_service._calculate_next_run(config.schedule_type)
+            config.next_scheduled_run = github_backup_service.calculate_next_run(config.schedule_type)
 
         db.add(config)
         logger.info("Created GitHub backup config: %s", config.repository_url)
@@ -145,8 +194,34 @@ async def update_config(
 
     update_dict = update_data.model_dump(exclude_unset=True)
 
+    # Validate HTTP URL restriction when the URL policy is being changed. This avoids blocking unrelated autosaves
+    # for legacy configs that already contain an HTTP URL.
+    if "repository_url" in update_dict or "allow_insecure_http" in update_dict:
+        url_to_check = update_dict.get("repository_url", config.repository_url)
+        effective_allow_http = update_dict.get("allow_insecure_http", config.allow_insecure_http)
+        if url_to_check and url_to_check.startswith("http://") and not effective_allow_http:
+            raise HTTPException(
+                status_code=422,
+                detail="This URL uses HTTP instead of HTTPS. Enable 'Allow insecure HTTP' if your instance does not use TLS.",
+            )
+
+    # Re-verify the repo is private whenever the target changes — new URL,
+    # new token, or new provider. We DON'T re-test on every unrelated PATCH
+    # (e.g. toggling backup_archives) so flipping schedule settings doesn't
+    # round-trip a live API call.
+    target_changed = "repository_url" in update_dict or "access_token" in update_dict or "provider" in update_dict
+    if target_changed:
+        provider_value = update_dict.get("provider", config.provider)
+        if hasattr(provider_value, "value"):
+            provider_value = provider_value.value
+        await _enforce_private_repo(
+            update_dict.get("repository_url", config.repository_url),
+            update_dict.get("access_token", config.access_token),
+            provider_value,
+        )
+
     for key, value in update_dict.items():
-        if key == "schedule_type" and value is not None:
+        if key in ("schedule_type", "provider") and value is not None:
             setattr(config, key, value.value)
         else:
             setattr(config, key, value)
@@ -154,7 +229,7 @@ async def update_config(
     # Recalculate next scheduled run if schedule settings changed
     if "schedule_enabled" in update_dict or "schedule_type" in update_dict:
         if config.schedule_enabled:
-            config.next_scheduled_run = github_backup_service._calculate_next_run(config.schedule_type)
+            config.next_scheduled_run = github_backup_service.calculate_next_run(config.schedule_type)
         else:
             config.next_scheduled_run = None
 
@@ -188,12 +263,13 @@ async def delete_config(
 
 @router.post("/test", response_model=GitHubTestConnectionResponse)
 async def test_connection(
-    repo_url: str = Query(..., description="GitHub repository URL"),
+    repo_url: str = Query(..., description="Repository URL"),
     token: str = Query(..., description="Personal Access Token"),
+    provider: ProviderType = Query(default=ProviderType.GITHUB, description="Git provider key"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
-    """Test GitHub connection with provided credentials."""
-    result = await github_backup_service.test_connection(repo_url, token)
+    """Test Git provider connection with provided credentials."""
+    result = await github_backup_service.test_connection(repo_url, token, provider=provider)
     return GitHubTestConnectionResponse(**result)
 
 
@@ -212,7 +288,11 @@ async def test_stored_connection(
     if not config.access_token:
         raise HTTPException(status_code=400, detail="No access token configured")
 
-    test_result = await github_backup_service.test_connection(config.repository_url, config.access_token)
+    test_result = await github_backup_service.test_connection(
+        config.repository_url,
+        config.access_token,
+        provider=config.provider,
+    )
     return GitHubTestConnectionResponse(**test_result)
 
 

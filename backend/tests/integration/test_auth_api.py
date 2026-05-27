@@ -61,7 +61,7 @@ class TestAuthSetupAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "testadmin",
-                "admin_password": "testpassword123",
+                "admin_password": "TestPass1!",
             },
         )
 
@@ -69,6 +69,56 @@ class TestAuthSetupAPI:
         result = response.json()
         assert result["auth_enabled"] is True
         assert result["admin_created"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_setup_weak_password_rejected_when_creating_new_admin(self, async_client: AsyncClient):
+        """Complexity is enforced only when a new admin is being created."""
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "weakpw_admin",
+                "admin_password": "NoSpecial1",
+            },
+        )
+
+        assert response.status_code == 400
+        assert "special character" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_setup_reenable_with_existing_admin_ignores_password(self, async_client: AsyncClient, db_session):
+        """Re-enabling auth when an admin already exists must not reject the placeholder
+        password the frontend still sends. Regression for the LDAP re-enable flow that
+        previously 422'd because the Pydantic schema enforced complexity unconditionally.
+        """
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.user import User
+
+        existing = User(
+            username="existing_admin",
+            # pragma: allowlist secret — test fixture only, not a real credential
+            password_hash=get_password_hash("DoesNotMatter1!"),  # noqa: S106
+            role="admin",
+            is_active=True,
+        )
+        db_session.add(existing)
+        await db_session.commit()
+
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "irrelevant",
+                "admin_password": "NoSpecial1",
+            },
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["auth_enabled"] is True
+        assert result["admin_created"] is False
 
 
 class TestAuthLoginAPI:
@@ -96,14 +146,14 @@ class TestAuthLoginAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "logintest",
-                "admin_password": "loginpassword123",
+                "admin_password": "LoginPass1!",
             },
         )
 
         # Now login
         response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "logintest", "password": "loginpassword123"},
+            json={"username": "logintest", "password": "LoginPass1!"},
         )
 
         assert response.status_code == 200
@@ -123,7 +173,7 @@ class TestAuthLoginAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "invalidtest",
-                "admin_password": "correctpassword",
+                "admin_password": "CorrectPass1!",
             },
         )
 
@@ -158,13 +208,13 @@ class TestAuthMeAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "metest",
-                "admin_password": "mepassword123",
+                "admin_password": "MePass1!",
             },
         )
 
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "metest", "password": "mepassword123"},
+            json={"username": "metest", "password": "MePass1!"},
         )
         token = login_response.json()["access_token"]
 
@@ -254,13 +304,13 @@ class TestUsersAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "usersadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "usersadmin", "password": "adminpassword123"},
+            json={"username": "usersadmin", "password": "AdminPass1!"},
         )
         return login_response.json()["access_token"]
 
@@ -274,7 +324,7 @@ class TestUsersAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "authreqadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
@@ -306,7 +356,7 @@ class TestUsersAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "newuser",
-                "password": "newuserpassword",
+                "password": "Newuserpass1!",
                 "role": "user",
             },
         )
@@ -327,7 +377,7 @@ class TestUsersAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "duplicateuser",
-                "password": "password123",
+                "password": "Password123!",
                 "role": "user",
             },
         )
@@ -338,7 +388,7 @@ class TestUsersAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "duplicateuser",
-                "password": "password456",
+                "password": "Password456!",
                 "role": "user",
             },
         )
@@ -356,7 +406,7 @@ class TestUsersAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "updateuser",
-                "password": "password123",
+                "password": "Password123!",
                 "role": "user",
             },
         )
@@ -374,15 +424,30 @@ class TestUsersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_user(self, async_client: AsyncClient, auth_token: str):
-        """Verify admin can delete a user."""
+    async def test_delete_user(self, async_client: AsyncClient, auth_token: str, db_session):
+        """Verify admin can delete a user and that all auth-table side effects cascade.
+
+        The auth-cleanup side effects matter on SQLite (FK enforcement off by default):
+        without explicit DELETEs in the endpoint, deleting a user leaves orphan rows
+        in user_oidc_links / user_totp / user_otp_codes / api_keys — which would
+        block SSO re-login and leak MFA secrets (#1285).
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.api_key import APIKey
+        from backend.app.models.long_lived_token import LongLivedToken
+        from backend.app.models.oidc_provider import UserOIDCLink
+        from backend.app.models.user import User
+        from backend.app.models.user_otp_code import UserOTPCode
+        from backend.app.models.user_totp import UserTOTP
+
         # Create user
         create_response = await async_client.post(
             "/api/v1/users/",
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "deleteuser",
-                "password": "password123",
+                "password": "Password123!",
                 "role": "user",
             },
         )
@@ -395,6 +460,15 @@ class TestUsersAPI:
         )
 
         assert response.status_code == 204
+
+        # All auth-related rows for this user must be gone — see #1285.
+        await db_session.commit()
+        user_row = await db_session.execute(select(User).where(User.id == user_id))
+        assert user_row.scalar_one_or_none() is None, "User row not deleted"
+
+        for model in (UserOIDCLink, UserTOTP, UserOTPCode, APIKey, LongLivedToken):
+            rows = await db_session.execute(select(model).where(model.user_id == user_id))
+            assert rows.scalars().all() == [], f"Orphan {model.__name__} rows left after user delete"
 
 
 class TestAuthDisableAPI:
@@ -410,14 +484,14 @@ class TestAuthDisableAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "disableadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         # Login to get token
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "disableadmin", "password": "adminpassword123"},
+            json={"username": "disableadmin", "password": "AdminPass1!"},
         )
         token = login_response.json()["access_token"]
 
@@ -446,13 +520,13 @@ class TestGroupsAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "groupsadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "groupsadmin", "password": "adminpassword123"},
+            json={"username": "groupsadmin", "password": "AdminPass1!"},
         )
         return login_response.json()["access_token"]
 
@@ -592,13 +666,13 @@ class TestUserGroupsAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "usergroupadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "usergroupadmin", "password": "adminpassword123"},
+            json={"username": "usergroupadmin", "password": "AdminPass1!"},
         )
         return login_response.json()["access_token"]
 
@@ -619,7 +693,7 @@ class TestUserGroupsAPI:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "username": "groupuser",
-                "password": "password123",
+                "password": "Password123!",
                 "group_ids": [operators_group["id"]],
             },
         )
@@ -636,7 +710,7 @@ class TestUserGroupsAPI:
         user_response = await async_client.post(
             "/api/v1/users/",
             headers={"Authorization": f"Bearer {auth_token}"},
-            json={"username": "addtogroup", "password": "password123"},
+            json={"username": "addtogroup", "password": "Password123!"},
         )
         user_id = user_response.json()["id"]
 
@@ -675,13 +749,13 @@ class TestChangePasswordAPI:
             json={
                 "auth_enabled": True,
                 "admin_username": "pwchangeadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
         admin_login = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "pwchangeadmin", "password": "adminpassword123"},
+            json={"username": "pwchangeadmin", "password": "AdminPass1!"},
         )
         admin_token = admin_login.json()["access_token"]
 
@@ -689,13 +763,13 @@ class TestChangePasswordAPI:
         await async_client.post(
             "/api/v1/users/",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"username": "pwchangeuser", "password": "oldpassword123"},
+            json={"username": "pwchangeuser", "password": "Oldpassword123!"},
         )
 
         # Login as regular user
         user_login = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "pwchangeuser", "password": "oldpassword123"},
+            json={"username": "pwchangeuser", "password": "Oldpassword123!"},
         )
         return user_login.json()["access_token"]
 
@@ -707,8 +781,8 @@ class TestChangePasswordAPI:
             "/api/v1/users/me/change-password",
             headers={"Authorization": f"Bearer {user_token}"},
             json={
-                "current_password": "oldpassword123",
-                "new_password": "newpassword456",
+                "current_password": "Oldpassword123!",
+                "new_password": "Newpassword456!",
             },
         )
 
@@ -718,7 +792,7 @@ class TestChangePasswordAPI:
         # Verify can login with new password
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "pwchangeuser", "password": "newpassword456"},
+            json={"username": "pwchangeuser", "password": "Newpassword456!"},
         )
         assert login_response.status_code == 200
 
@@ -731,7 +805,7 @@ class TestChangePasswordAPI:
             headers={"Authorization": f"Bearer {user_token}"},
             json={
                 "current_password": "wrongpassword",
-                "new_password": "newpassword456",
+                "new_password": "Newpassword456!",
             },
         )
 
@@ -746,7 +820,7 @@ class TestChangePasswordAPI:
             "/api/v1/users/me/change-password",
             json={
                 "current_password": "oldpassword",
-                "new_password": "newpassword",
+                "new_password": "Strongpass456!",
             },
         )
 
@@ -768,7 +842,7 @@ class TestAuthMiddlewarePublicRoutes:
             json={
                 "auth_enabled": True,
                 "admin_username": "middlewareadmin",
-                "admin_password": "adminpassword123",
+                "admin_password": "AdminPass1!",
             },
         )
 
@@ -786,7 +860,7 @@ class TestAuthMiddlewarePublicRoutes:
         """Verify /api/v1/auth/login is accessible without auth."""
         response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "middlewareadmin", "password": "adminpassword123"},
+            json={"username": "middlewareadmin", "password": "AdminPass1!"},
         )
         # Should not return 401 (unauthorized) - it should either succeed or return
         # a different error (like 400 for wrong credentials)
@@ -826,7 +900,7 @@ class TestAuthMiddlewarePublicRoutes:
         # Login to get token
         login_response = await async_client.post(
             "/api/v1/auth/login",
-            json={"username": "middlewareadmin", "password": "adminpassword123"},
+            json={"username": "middlewareadmin", "password": "AdminPass1!"},
         )
         token = login_response.json()["access_token"]
 
@@ -863,3 +937,57 @@ class TestAuthMiddlewarePublicRoutes:
         # Will likely be 400 (advanced auth not enabled) but that's okay -
         # the important thing is it's not blocked by auth middleware
         assert response.status_code in [200, 400]
+
+
+# ===========================================================================
+# H-1: Input length validation
+# ===========================================================================
+
+
+class TestInputLengthValidation:
+    """LoginRequest and SetupRequest must reject oversized inputs (H-1)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_login_password_too_long_rejected(self, async_client: AsyncClient):
+        """Password exceeding 256 characters must be rejected with 422."""
+        response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "x" * 257},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_login_username_too_long_rejected(self, async_client: AsyncClient):
+        """Username exceeding 150 characters must be rejected with 422."""
+        response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "u" * 151, "password": "password"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_setup_password_too_long_rejected(self, async_client: AsyncClient):
+        """SetupRequest admin_password exceeding 256 characters must be rejected with 422."""
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "admin",
+                "admin_password": "x" * 257,
+            },
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_login_password_at_limit_accepted(self, async_client: AsyncClient):
+        """Password of exactly 256 characters must pass schema validation (may fail auth)."""
+        response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "x" * 256},
+        )
+        # Schema accepts it; auth may reject with 401 (auth disabled) or 400
+        assert response.status_code != 422

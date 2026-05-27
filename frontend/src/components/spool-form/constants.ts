@@ -18,6 +18,11 @@ export const DEFAULT_BRANDS = [
 // Known filament variants/subtypes
 export const KNOWN_VARIANTS = [
   'Basic', 'Matte', 'Silk', 'Silk+', 'Tough', 'Tough+', 'HF', 'High Flow', 'Engineering',
+  // CF (Carbon Fiber) / GF (Glass Fiber) — match Bambu's PETG-CF / PA6-GF /
+  // ABS-GF naming so users adding a third-party CF/GF spool can pick the
+  // base material + subtype here instead of needing a -CF Material entry
+  // (#1345).
+  'CF', 'GF',
   'Galaxy', 'Glow', 'Marble', 'Metal', 'Rainbow', 'Sparkle', 'Wood',
   'Translucent', 'Transparent', 'Clear', 'Lite', 'Pro', 'Plus', 'Max',
   'Super', 'Ultra', 'Flex', 'Soft', 'Hard', 'Strong', 'Impact',

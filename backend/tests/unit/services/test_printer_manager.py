@@ -13,6 +13,7 @@ from backend.app.services.printer_manager import (
     get_derived_status_name,
     has_stg_cur_idle_bug,
     init_printer_connections,
+    parse_plate_id,
     printer_state_to_dict,
     supports_chamber_temp,
     supports_drying,
@@ -583,11 +584,125 @@ class TestPrinterManager:
             mock_instance.state.connected = False
             MockClient.return_value = mock_instance
 
-            result = await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
+            # Shorten the probe budget so the test doesn't burn the full
+            # 8-second production timeout while polling a failing connection.
+            with (
+                patch.object(manager, "PROBE_TIMEOUT_SECONDS", 0.4),
+                patch.object(manager, "PROBE_POLL_INTERVAL_SECONDS", 0.1),
+            ):
+                result = await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
 
             assert result["success"] is False
             assert result["state"] is None
             mock_instance.disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_test_connection_polls_and_returns_early_on_connect(self, manager):
+        """#1445: a slow printer that finishes its handshake mid-probe must
+        not be reported as a failure. Previously a fixed 2s sleep meant P1S
+        TLS / CONNACK that took 3-5s got falsely rejected; now we poll and
+        early-return as soon as connected flips True.
+        """
+        import asyncio
+        import time
+
+        with patch("backend.app.services.printer_manager.BambuMQTTClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.state = MagicMock()
+            mock_instance.state.connected = False  # not connected at probe start
+            mock_instance.state.state = "IDLE"
+            mock_instance.state.raw_data = {"device_model": "P1S"}
+            MockClient.return_value = mock_instance
+
+            async def flip_connected_after(delay: float):
+                await asyncio.sleep(delay)
+                mock_instance.state.connected = True
+
+            # Simulates the P1S broker finishing its slow handshake ~0.5s in,
+            # well past the old 2s-or-fail boundary's natural variance.
+            with (
+                patch.object(manager, "PROBE_TIMEOUT_SECONDS", 3.0),
+                patch.object(manager, "PROBE_POLL_INTERVAL_SECONDS", 0.05),
+            ):
+                start = time.monotonic()
+                flip_task = asyncio.create_task(flip_connected_after(0.5))
+                try:
+                    result = await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
+                finally:
+                    await flip_task
+                elapsed = time.monotonic() - start
+
+            assert result["success"] is True
+            assert result["state"] == "IDLE"
+            # Early-return guarantee: must come back well before the configured
+            # timeout once connected flips. ~0.5s + one poll interval is plenty.
+            assert elapsed < 1.5, f"probe should have early-returned shortly after 0.5s, took {elapsed:.2f}s"
+
+    @pytest.mark.asyncio
+    async def test_test_connection_disconnect_runs_off_loop(self, manager):
+        """#1445: the root cause of the "Docker container hangs" symptom was
+        `client.disconnect()` running on the asyncio thread — paho's
+        `loop_stop()` does a thread-join that blocks until its network
+        thread exits, which on a slow P1S TLS handshake could take many
+        seconds. This test pins the off-loop teardown so a regression that
+        reintroduces sync disconnect breaks CI immediately.
+        """
+        import asyncio
+        import threading
+        import time
+
+        with patch("backend.app.services.printer_manager.BambuMQTTClient") as MockClient:
+            asyncio_thread_id = threading.get_ident()
+            disconnect_thread_ids: list[int] = []
+            disconnect_blocked_for: list[float] = []
+
+            def slow_blocking_disconnect():
+                # Mirrors paho.Client.loop_stop()'s thread-join semantics —
+                # if this runs on the asyncio thread the event loop stalls.
+                disconnect_thread_ids.append(threading.get_ident())
+                start = time.monotonic()
+                time.sleep(0.4)
+                disconnect_blocked_for.append(time.monotonic() - start)
+
+            mock_instance = MagicMock()
+            mock_instance.state = MagicMock()
+            mock_instance.state.connected = True
+            mock_instance.state.state = "IDLE"
+            mock_instance.state.raw_data = {"device_model": "P1S"}
+            mock_instance.disconnect = slow_blocking_disconnect
+            MockClient.return_value = mock_instance
+
+            # Another coroutine must keep making progress while disconnect()
+            # runs — proves the event loop was not blocked.
+            event_loop_alive_ticks = 0
+
+            async def heartbeat():
+                nonlocal event_loop_alive_ticks
+                while True:
+                    await asyncio.sleep(0.05)
+                    event_loop_alive_ticks += 1
+
+            heartbeat_task = asyncio.create_task(heartbeat())
+            try:
+                await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
+            finally:
+                heartbeat_task.cancel()
+                try:
+                    await heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+
+            # disconnect ran on a different thread than asyncio's
+            assert disconnect_thread_ids, "disconnect was never called"
+            assert disconnect_thread_ids[0] != asyncio_thread_id, (
+                "disconnect ran on the asyncio thread — this blocks the event loop (#1445)"
+            )
+            # Heartbeat made progress while the 0.4s disconnect was blocking
+            # the worker thread (proves the loop wasn't stalled).
+            assert event_loop_alive_ticks >= 3, (
+                f"event loop appears to have stalled during disconnect "
+                f"(only {event_loop_alive_ticks} heartbeats; expected >=3)"
+            )
 
     # ========================================================================
     # Tests for current print user tracking (Issue #206)
@@ -740,6 +855,60 @@ class TestPrinterStateToDict:
         assert result["ams"][0]["tray"][0]["tag_uid"] is None
         assert result["ams"][0]["tray"][0]["tray_uuid"] is None
 
+    def test_bare_tray_emulates_state_9(self, mock_state):
+        """P1S / A1 Mini physically-empty-slot signal (#1322 follow-up by @RosdasHH):
+        the firmware sends only `{"id": N}` for a truly empty slot. Treat that as
+        the firmware's "no spool" state (state=9) so the inventory assign-spool
+        path can short-circuit the doomed MQTT publish.
+        """
+        mock_state.raw_data = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "state": 11, "tray_type": "PLA"},  # loaded slot
+                        {"id": 1},  # P1S empty-slot signal — only id
+                    ],
+                }
+            ]
+        }
+
+        result = printer_state_to_dict(mock_state)
+        trays = result["ams"][0]["tray"]
+
+        assert trays[0]["state"] == 11, "loaded slot keeps its firmware state"
+        assert trays[1]["state"] == 9, "bare {id} tray must be promoted to state=9"
+
+    def test_populated_payload_with_empty_state_3_is_not_promoted(self, mock_state):
+        """A1 Mini BMCU / P1S Standard AMS post-Reset-Slot case (#1322 root):
+        firmware sends state=3 + tray_type="" but with the FULL field set
+        populated. Must NOT be confused with the bare-tray empty signal —
+        else inventory.py would short-circuit MQTT and we'd reintroduce the
+        deadlock the #1322 fix removed.
+        """
+        mock_state.raw_data = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {
+                            "id": 0,
+                            "state": 3,
+                            "tray_type": "",  # cleared
+                            "tray_color": "",
+                            "tag_uid": "0000000000000000",
+                            "remain": 0,
+                        }
+                    ],
+                }
+            ]
+        }
+
+        result = printer_state_to_dict(mock_state)
+        # state stays at 3 — the bare-tray promotion requires the dict to have
+        # ONLY the id key, not just empty/falsy values for the other fields.
+        assert result["ams"][0]["tray"][0]["state"] == 3
+
     def test_zero_tag_uid_becomes_none(self, mock_state):
         """Verify zero tag_uid is converted to None."""
         mock_state.raw_data = {
@@ -833,6 +1002,22 @@ class TestPrinterStateToDict:
         result = printer_state_to_dict(mock_state, printer_id=1)
 
         assert result["cover_url"] == "/api/v1/printers/1/cover"
+
+    def test_current_plate_id_extracted_from_gcode_file(self, mock_state):
+        """Verify current_plate_id is parsed from a Bambu plate path (#881)."""
+        mock_state.gcode_file = "/Metadata/plate_3.gcode"
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["current_plate_id"] == 3
+
+    def test_current_plate_id_none_when_no_plate_segment(self, mock_state):
+        """Verify current_plate_id stays None when gcode_file has no plate marker."""
+        mock_state.gcode_file = "/sdcard/test.gcode"
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["current_plate_id"] is None
 
     def test_cover_url_none_when_not_running(self, mock_state):
         """Verify cover_url is None when not printing."""
@@ -949,6 +1134,71 @@ class TestPrinterStateToDict:
         assert tray["drying_temp"] == 55
         assert tray["drying_time"] == 240
 
+    def test_awaiting_plate_clear_defaults_false(self, mock_state):
+        """Without a printer_id, awaiting_plate_clear is False (no lookup possible)."""
+        result = printer_state_to_dict(mock_state)
+        assert result["awaiting_plate_clear"] is False
+
+    def test_awaiting_plate_clear_surfaced_when_set(self, mock_state):
+        """With printer_id, awaiting_plate_clear reflects PrinterManager state.
+
+        Regression: PR #939 left this flag off the WebSocket payload, so the
+        "Clear Plate" button only appeared after the 30 s REST fallback poll.
+        """
+        from backend.app.services.printer_manager import printer_manager
+
+        printer_manager.set_awaiting_plate_clear(12345, True)
+        try:
+            result = printer_state_to_dict(mock_state, printer_id=12345)
+            assert result["awaiting_plate_clear"] is True
+        finally:
+            printer_manager.set_awaiting_plate_clear(12345, False)
+
+    def test_name_and_model_surfaced_when_registered(self, mock_state):
+        """Registered PrinterInfo name + model arg should land in the WS payload.
+
+        Regression for #963 follow-up: without this, the gcode viewer's printer
+        selector had to wait on a /printers fetch before it could render real
+        names, and the initial WS snapshot showed "Printer 1" fallbacks.
+        """
+        from backend.app.services.printer_manager import PrinterInfo, printer_manager
+
+        # Register a stub PrinterInfo; the real manager writes this on connect.
+        printer_manager._printer_info[98765] = PrinterInfo(name="My X1C", serial_number="01S00-0")
+        try:
+            result = printer_state_to_dict(mock_state, printer_id=98765, model="X1C")
+            assert result["name"] == "My X1C"
+            assert result["model"] == "X1C"
+        finally:
+            printer_manager._printer_info.pop(98765, None)
+
+    def test_name_and_model_absent_when_no_printer_id(self, mock_state):
+        """Without a printer_id (unusual callsites), name/model keys stay absent.
+
+        The consumers (gcode viewer, frontend card) tolerate missing keys; what
+        they can't tolerate is an unrelated printer's name accidentally leaking
+        into a status meant for a different one.
+        """
+        result = printer_state_to_dict(mock_state)
+        assert "name" not in result
+        assert "model" not in result
+
+    def test_model_absent_when_arg_is_none(self, mock_state):
+        """`model` arg=None must not plant a `model` key at all.
+
+        If the arg is None, callers didn't know the model yet; emitting a
+        `model: null` field would overwrite a good value cached client-side.
+        """
+        from backend.app.services.printer_manager import PrinterInfo, printer_manager
+
+        printer_manager._printer_info[55555] = PrinterInfo(name="N", serial_number="S")
+        try:
+            result = printer_state_to_dict(mock_state, printer_id=55555, model=None)
+            assert "model" not in result
+            assert result["name"] == "N"
+        finally:
+            printer_manager._printer_info.pop(55555, None)
+
 
 class TestStatusKeyDryingDedup:
     """Regression tests for WebSocket dedup including drying fields.
@@ -1061,6 +1311,48 @@ class TestSupportsChamberTemp:
         assert supports_chamber_temp("N1") is False
 
 
+class TestIsBedSlinger:
+    """Tests for is_bed_slinger helper function (#1334)."""
+
+    def test_a1_series_is_bed_slinger(self):
+        """A1 / A1 Mini are open-frame bed-slingers — Z axis is the toolhead."""
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        assert is_bed_slinger("A1") is True
+        assert is_bed_slinger("A1 Mini") is True
+        assert is_bed_slinger("A1MINI") is True
+        assert is_bed_slinger("A1-MINI") is True
+
+    def test_a1_internal_codes_recognised(self):
+        """Internal MQTT/SSDP codes for A1 family must also classify as bed-slinger."""
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        # A1 Mini
+        assert is_bed_slinger("N1") is True
+        # A1
+        assert is_bed_slinger("N2S") is True
+
+    def test_bed_on_z_models_not_bed_slingers(self):
+        """X1 / P1 / H2 / H2C / H2D / H2S / P2S all have the bed on Z."""
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        for model in ("X1", "X1C", "X1E", "P1P", "P1S", "P2S", "H2C", "H2D", "H2DPRO", "H2S"):
+            assert is_bed_slinger(model) is False, f"{model} should NOT be classified as bed-slinger"
+
+    def test_none_model_returns_false(self):
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        assert is_bed_slinger(None) is False
+        assert is_bed_slinger("") is False
+
+    def test_case_insensitive(self):
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        assert is_bed_slinger("a1") is True
+        assert is_bed_slinger("a1 mini") is True
+        assert is_bed_slinger("x1c") is False
+
+
 class TestSupportsDrying:
     """Tests for supports_drying helper function."""
 
@@ -1070,20 +1362,25 @@ class TestSupportsDrying:
         assert supports_drying("P1S", "01.08.00.00") is True
         assert supports_drying("H2D", "01.02.30.00") is True
         assert supports_drying("H2S", "01.02.00.00") is True
+        assert supports_drying("P2S", "01.02.00.00") is True
+        assert supports_drying("N7", "01.02.00.00") is True
 
     def test_known_supported_old_firmware(self):
         """Verify known models with old firmware return False."""
         assert supports_drying("X1C", "01.08.00.00") is False
         assert supports_drying("P1S", "01.07.00.00") is False
         assert supports_drying("H2S", "01.01.00.00") is False
+        assert supports_drying("P2S", "01.01.99.99") is False
+        assert supports_drying("N7", "01.01.99.99") is False
 
     def test_known_supported_no_firmware(self):
         """Verify known models with no firmware return False."""
         assert supports_drying("X1C", None) is False
+        assert supports_drying("P2S", None) is False
 
     def test_unsupported_models(self):
         """Verify models without AMS drying support return False regardless of firmware."""
-        for model in ["P2S", "A1", "A1MINI", "A1-MINI", "H2C", "N7", "N1", "N2S"]:
+        for model in ["A1", "A1MINI", "A1-MINI", "H2C", "N1", "N2S"]:
             assert supports_drying(model, "99.99.99.99") is False, f"Expected False for {model}"
 
     def test_unknown_models_allowed(self):
@@ -1107,7 +1404,8 @@ class TestSupportsDrying:
     def test_case_insensitive(self):
         """Verify model matching is case-insensitive."""
         assert supports_drying("x1c", "01.09.00.00") is True
-        assert supports_drying("p2s", "99.99.99.99") is False
+        assert supports_drying("p2s", "01.02.00.00") is True
+        assert supports_drying("a1", "99.99.99.99") is False
 
 
 class TestGetDerivedStatusName:
@@ -1289,3 +1587,126 @@ class TestAmsChangeCallback:
         # This tests the callback signature
         assert manager._on_ams_change is not None
         assert callable(manager._on_ams_change)
+
+
+class TestParsePlateId:
+    """Tests for parse_plate_id() — active-print plate extraction from gcode paths.
+
+    Regression coverage for #881 follow-up: the REST /status endpoint and the
+    WebSocket push path both use this helper, so they must agree on the plate
+    number the frontend sees.
+    """
+
+    def test_bambu_metadata_path(self):
+        # Canonical path that Bambu Studio / OrcaSlicer stamp into the 3MF.
+        assert parse_plate_id("/Metadata/plate_2.gcode") == 2
+
+    def test_plate_one(self):
+        assert parse_plate_id("/Metadata/plate_1.gcode") == 1
+
+    def test_double_digit_plate(self):
+        assert parse_plate_id("/Metadata/plate_12.gcode") == 12
+
+    def test_none_input(self):
+        assert parse_plate_id(None) is None
+
+    def test_empty_string(self):
+        assert parse_plate_id("") is None
+
+    def test_path_without_plate_segment(self):
+        # Some firmware / slicers report a bare filename without the plate marker.
+        assert parse_plate_id("/upload/my-model.gcode") is None
+
+    def test_similar_but_non_matching_names(self):
+        # "plate.gcode" (no number) and "nameplate_2.gcode" (substring) must not
+        # be mistaken for real plate markers. The regex anchors on `plate_<num>`.
+        assert parse_plate_id("/Metadata/plate.gcode") is None
+        assert parse_plate_id("/plates/3.gcode") is None
+
+    def test_substring_match_still_extracts(self):
+        # The regex isn't anchored to the start of a segment — any occurrence
+        # wins. This matches real Bambu paths where the segment is preceded by
+        # arbitrary directory noise, and matches the equivalent frontend regex.
+        assert parse_plate_id("/uploads/project/plate_5.gcode.md5") == 5
+
+
+class TestResolvePlateId:
+    """Tests for resolve_plate_id() — plate resolution with dispatch precedence.
+
+    Regression coverage for #1166: P1S firmware 01.10.00.00 only puts the .3mf
+    filename in print.gcode_file, so parse_plate_id() returns None and the
+    printer card falls back to plate 1. When Bambuddy dispatches the print
+    itself we know the right plate; resolve_plate_id() prefers that record over
+    the gcode_file regex when subtask_name matches.
+    """
+
+    def _make_state(self, **kwargs):
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        state = PrinterState()
+        for k, v in kwargs.items():
+            setattr(state, k, v)
+        return state
+
+    def test_dispatched_plate_wins_when_subtask_matches(self):
+        # User dispatches plate 4 via Bambuddy. Printer reflects subtask_name
+        # but firmware drops the plate path from gcode_file. Without the dispatch
+        # record we'd default to plate 1.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="MyModel.3mf",  # No plate path — firmware bug
+            subtask_name="MyModel",
+            dispatched_plate_id=4,
+            dispatched_subtask="MyModel",
+        )
+        assert resolve_plate_id(state) == 4
+
+    def test_dispatched_ignored_when_subtask_differs(self):
+        # Bambuddy's dispatch record is for a previous print; the printer is
+        # now running a different subtask (Studio-direct dispatch). The stale
+        # record must not be used — fall back to gcode_file regex.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="/Metadata/plate_2.gcode",
+            subtask_name="DifferentPrint",
+            dispatched_plate_id=4,
+            dispatched_subtask="MyModel",
+        )
+        assert resolve_plate_id(state) == 2
+
+    def test_falls_back_to_gcode_regex_without_dispatch(self):
+        # Studio-direct dispatch — no Bambuddy dispatch record. Existing logic
+        # (parse_plate_id on gcode_file) must still work.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="/Metadata/plate_3.gcode",
+            subtask_name="MyModel",
+        )
+        assert resolve_plate_id(state) == 3
+
+    def test_returns_none_when_nothing_resolvable(self):
+        # No dispatch record AND firmware swallowed the plate path. The route
+        # uses this signal to invoke the 3MF-scan fallback.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="MyModel.3mf",
+            subtask_name="MyModel",
+        )
+        assert resolve_plate_id(state) is None
+
+    def test_dispatched_subtask_required_to_avoid_false_match(self):
+        # dispatched_plate_id without dispatched_subtask is incomplete — we
+        # can't validate it points at the current print, so we ignore it.
+        from backend.app.services.printer_manager import resolve_plate_id
+
+        state = self._make_state(
+            gcode_file="MyModel.3mf",
+            subtask_name="MyModel",
+            dispatched_plate_id=4,
+            dispatched_subtask=None,
+        )
+        assert resolve_plate_id(state) is None

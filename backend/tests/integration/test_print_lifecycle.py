@@ -59,6 +59,115 @@ class TestPrintStartLogic:
         assert not errors, f"Import shadowing error: {capture_logs.format_errors()}"
 
 
+class TestPlateClearGate:
+    """The plate-clear gate (#961) blocks the queue from auto-dispatching the
+    next print until the user acknowledges the bed was cleared. The gate must
+    be raised on every terminal status that could have left material on the
+    bed — including aborted (printer self-abort or touchscreen stop) and
+    cancelled (user stopped via Bambuddy queue UI). #1171: prior code only
+    raised the flag for completed/failed, so an aborted print auto-dispatched
+    the next queue item onto a fouled bed two seconds later."""
+
+    @staticmethod
+    def _setup_mocks(stack):
+        mock_session_maker = stack.enter_context(patch("backend.app.main.async_session"))
+        stack.enter_context(patch("backend.app.main.notification_service")).on_print_complete = AsyncMock()
+        stack.enter_context(patch("backend.app.main.smart_plug_manager")).on_print_complete = AsyncMock()
+        mock_ws = stack.enter_context(patch("backend.app.main.ws_manager"))
+        mock_ws.send_print_complete = AsyncMock()
+        mock_ws.broadcast = AsyncMock()
+        stack.enter_context(patch("backend.app.main.mqtt_relay")).on_print_complete = AsyncMock()
+        mock_pm = stack.enter_context(patch("backend.app.main.printer_manager"))
+        mock_pm.get_printer.return_value = None
+        # Real method under test — track each call so the test can assert on it.
+        mock_pm.set_awaiting_plate_clear = MagicMock()
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
+        mock_session_maker.return_value = mock_session
+        return mock_pm
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "status",
+        ["completed", "failed", "aborted", "cancelled"],
+        ids=["completed", "failed", "aborted-1171", "cancelled-1171"],
+    )
+    async def test_plate_clear_gate_raised_for_every_terminal_status(self, status):
+        """Regression for #1171. Every terminal status that can leave material
+        on the bed must raise the gate. Pre-fix the gate was raised only for
+        completed/failed, so aborted (printer touchscreen stop, self-abort) and
+        cancelled (Bambuddy queue stop) auto-dispatched the next queue item
+        onto a fouled bed."""
+        from contextlib import ExitStack
+
+        tasks_before = set(asyncio.all_tasks())
+
+        with ExitStack() as stack:
+            mock_pm = self._setup_mocks(stack)
+
+            from backend.app.main import on_print_complete
+
+            await on_print_complete(
+                1,
+                {
+                    "status": status,
+                    "filename": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                    "timelapse_was_active": False,
+                },
+            )
+
+            for task in asyncio.all_tasks() - tasks_before:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+        mock_pm.set_awaiting_plate_clear.assert_any_call(1, True)
+
+    @pytest.mark.asyncio
+    async def test_plate_clear_gate_not_raised_for_unknown_status(self):
+        """Defence in depth: an unknown / not-terminal status string from a
+        future firmware revision must not silently raise the gate. The flag is
+        only meaningful when the print actually ended."""
+        from contextlib import ExitStack
+
+        tasks_before = set(asyncio.all_tasks())
+
+        with ExitStack() as stack:
+            mock_pm = self._setup_mocks(stack)
+
+            from backend.app.main import on_print_complete
+
+            await on_print_complete(
+                1,
+                {
+                    "status": "unknown_future_status",
+                    "filename": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                    "timelapse_was_active": False,
+                },
+            )
+
+            for task in asyncio.all_tasks() - tasks_before:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+        # The mock records every call; assert no True-call landed.
+        true_calls = [c for c in mock_pm.set_awaiting_plate_clear.call_args_list if c.args[1] is True]
+        assert true_calls == [], (
+            "Gate must not be raised for an unrecognised terminal status; "
+            f"set_awaiting_plate_clear({1}, True) was called {len(true_calls)} time(s)."
+        )
+
+
 class TestPrintCompleteLogic:
     """Test print complete callback logic."""
 

@@ -20,11 +20,17 @@ import pytest
 
 from backend.app.services.bambu_ftp import (
     BambuFTPClient,
+    FileNotOnPrinterError,
+    cache_3mf_download,
+    clear_3mf_cache,
     delete_file_async,
     download_file_async,
     download_file_try_paths_async,
+    get_cached_3mf,
     list_files_async,
+    normalize_3mf_name,
     upload_file_async,
+    with_ftp_retry,
 )
 
 # Brief delay to allow pyftpdlib to flush uploaded files to disk.
@@ -265,14 +271,19 @@ class TestDownload:
         assert not local.exists()
         client.disconnect()
 
-    def test_download_to_file_missing_returns_false(self, ftp_client_factory, tmp_path):
-        """Missing file returns False."""
+    def test_download_to_file_missing_raises_not_on_printer(self, ftp_client_factory, tmp_path):
+        """Missing file raises FileNotOnPrinterError so callers can short-circuit
+        the retry loop — 550 means the file isn't there and retrying won't help."""
+        from backend.app.services.bambu_ftp import FileNotOnPrinterError
+
         local = tmp_path / "missing.bin"
         client = ftp_client_factory()
         client.connect()
-        result = client.download_to_file("/cache/no_such_file.bin", local)
-        assert result is False
-        client.disconnect()
+        try:
+            with pytest.raises(FileNotOnPrinterError):
+                client.download_to_file("/cache/no_such_file.bin", local)
+        finally:
+            client.disconnect()
 
     def test_download_large_file(self, ftp_client_factory, ftp_server):
         """Large file download (>1MB) works correctly."""
@@ -372,6 +383,134 @@ class TestUpload:
         client = ftp_client_factory()
         client.connect()
         result = client.upload_file(local, "/cache/test.bin")
+        assert result is False
+        client.disconnect()
+
+    def test_upload_426_with_intact_file_proceeds(self, ftp_client_factory, ftp_server, tmp_path):
+        """Some P2S firmware revisions return 426 on voidresp() even when the
+        file landed fully (TLS data-channel close races the 226). #1417
+        follow-up — verify via SIZE: when server size matches, proceed with
+        a warning instead of failing the dispatch.
+
+        Pre-#1417 the catch raised unconditionally and the reporter saw 11
+        retries fail in a row even though every upload was actually
+        succeeding on the printer side (v0.2.4.1 worked because the prior
+        proceed-with-warning branch tolerated the noise).
+        """
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)  # 1024 bytes
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def fake_size(_path):
+            # Real P2S firmware: voidresp returns 426 but the file IS on
+            # the SD card at its full size. Mock can't reproduce both
+            # halves naturally because pyftpdlib only flushes on a clean
+            # voidresp, so we inject SIZE explicitly to model the
+            # printer-side state the user observes.
+            return 1024
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_file(local, "/cache/test.bin")
+        assert result is True, "intact file (SIZE match) tolerates 426 noise"
+        client.disconnect()
+
+    def test_upload_426_with_truncated_file_returns_false(self, ftp_client_factory, ftp_server, tmp_path):
+        """The original #1401 fix is preserved: when SIZE confirms the file
+        isn't on the server at full size (or SIZE itself fails), the upload
+        must fail so the dispatcher doesn't send a print command for a
+        partial 3MF."""
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        # Make SIZE report a smaller value — file is genuinely truncated.
+        def fake_size(_path):
+            return 100
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_file(local, "/cache/test.bin")
+        assert result is False, "truncated file (SIZE mismatch) must fail"
+        client.disconnect()
+
+    def test_upload_426_with_size_check_failing_returns_false(self, ftp_client_factory, ftp_server, tmp_path):
+        """If SIZE itself fails (e.g. server too broken to answer), assume
+        the worst and fail — better a retry than a print on a partial file.
+        """
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def raise_size(_path):
+            raise ftplib.error_perm("550 File not found.")
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = raise_size
+
+        result = client.upload_file(local, "/cache/test.bin")
+        assert result is False
+        client.disconnect()
+
+    def test_upload_bytes_426_with_intact_file_proceeds(self, ftp_client_factory, ftp_server):
+        """upload_bytes() mirrors the same SIZE-verify logic as upload_file."""
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        client = ftp_client_factory()
+        client.connect()
+        data = b"x" * 1024
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def fake_size(_path):
+            return 1024  # printer-side file matches expected size
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_bytes(data, "/cache/bytes.bin")
+        assert result is True
+        client.disconnect()
+
+    def test_upload_bytes_426_with_truncated_file_returns_false(self, ftp_client_factory, ftp_server):
+        """The truncated branch for upload_bytes()."""
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        client = ftp_client_factory()
+        client.connect()
+        data = b"x" * 1024
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def fake_size(_path):
+            return 100
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_bytes(data, "/cache/bytes.bin")
         assert result is False
         client.disconnect()
 
@@ -703,6 +842,168 @@ class TestAsyncWrappers:
         assert result is True
 
     @pytest.mark.asyncio
+    async def test_download_file_async_timeout_salvages_completed_zombie(self, tmp_path, monkeypatch):
+        """Executor thread that completes after wait_for timeout is salvaged.
+
+        asyncio.wait_for cannot cancel run_in_executor threads, so the FTP
+        download may still complete after we give up waiting. If the thread
+        genuinely finished (signalled via completion["success"] and the file
+        is on disk), download_file_async should return True rather than False.
+
+        Regression for #972: A1 user with 14 MB 3MF hit the hardcoded 60s
+        timeout, but the download thread finished ~45s later. The successful
+        file was written to disk but the async wrapper returned False, so the
+        archive was created as a fallback with no 3MF data.
+        """
+        from backend.app.services import bambu_ftp
+
+        # Clear mode cache so prot_p path is exercised.
+        bambu_ftp.BambuFTPClient._mode_cache.pop("127.0.0.1", None)
+
+        local = tmp_path / "zombie.bin"
+        expected_content = b"late arrival but complete"
+
+        class FakeClient:
+            """Connects instantly, download_to_file sleeps past wait_for's
+            timeout then writes the file and returns True."""
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                return True
+
+            def download_to_file(self, remote_path, local_path):
+                time.sleep(0.4)  # longer than wait_for timeout=0.1
+                local_path.write_bytes(expected_content)
+                return True
+
+            def disconnect(self):
+                pass
+
+        monkeypatch.setattr(bambu_ftp, "BambuFTPClient", FakeClient)
+        monkeypatch.setattr(FakeClient, "_mode_cache", {}, raising=False)
+        monkeypatch.setattr(FakeClient, "A1_MODELS", {"A1"}, raising=False)
+
+        def _noop_cache(ip, mode):
+            pass
+
+        monkeypatch.setattr(FakeClient, "cache_mode", staticmethod(_noop_cache), raising=False)
+
+        result = await download_file_async(
+            "127.0.0.1",
+            "12345678",
+            "/cache/zombie.bin",
+            local,
+            timeout=0.1,
+            printer_model="X1C",
+        )
+        assert result is True
+        assert local.read_bytes() == expected_content
+
+    @pytest.mark.asyncio
+    async def test_download_file_async_timeout_no_salvage_when_incomplete(self, tmp_path, monkeypatch):
+        """Timeout returns False when thread has not signalled success.
+
+        A partial file on disk (mid-retrbinary) must NOT be mistaken for a
+        completed download — only the thread's explicit success flag permits
+        salvage.
+        """
+        from backend.app.services import bambu_ftp
+
+        bambu_ftp.BambuFTPClient._mode_cache.pop("127.0.0.1", None)
+
+        local = tmp_path / "partial.bin"
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                return True
+
+            def download_to_file(self, remote_path, local_path):
+                # Simulate an in-progress partial write that never completes
+                # within the salvage grace period.
+                local_path.write_bytes(b"partial...")
+                time.sleep(2.0)
+                return True  # would complete eventually, but too late
+
+            def disconnect(self):
+                pass
+
+        monkeypatch.setattr(bambu_ftp, "BambuFTPClient", FakeClient)
+        monkeypatch.setattr(FakeClient, "_mode_cache", {}, raising=False)
+        monkeypatch.setattr(FakeClient, "A1_MODELS", set(), raising=False)
+        monkeypatch.setattr(FakeClient, "cache_mode", staticmethod(lambda ip, mode: None), raising=False)
+
+        result = await download_file_async(
+            "127.0.0.1",
+            "12345678",
+            "/cache/partial.bin",
+            local,
+            timeout=0.1,
+            printer_model="X1C",
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_download_file_async_timeout_waits_for_slow_zombie(self, tmp_path, monkeypatch):
+        """A zombie that completes within the 30s grace window is salvaged.
+
+        Regression for #1014: on slow WiFi, download_to_file can overshoot the
+        user's ftp_timeout by 10–30 s without being stuck. The old fixed 0.5 s
+        post-timeout sleep was too short — it gave up and started attempt 2
+        while attempt 1's zombie thread kept running, and by the time the zombie
+        wrote the file to disk with a success flag, attempt 2 had already
+        reported failure (its own completion dict was still False). The async
+        wrapper now waits up to min(timeout, 30 s) for the worker thread to
+        finish before returning, so a slow-but-progressing download salvages.
+        """
+        from backend.app.services import bambu_ftp
+
+        bambu_ftp.BambuFTPClient._mode_cache.pop("127.0.0.1", None)
+
+        local = tmp_path / "slow_zombie.bin"
+        expected_content = b"finished during grace window"
+
+        class FakeClient:
+            """Mimics a slow FTP: wait_for gives up at 1.0 s but RETR takes
+            1.5 s total. Old 0.5 s fixed sleep would have bailed (0.5 < 0.5
+            extra); new grace = max(min(1.0, 30), 0.5) = 1.0 s covers the
+            remaining 0.5 s so salvage succeeds."""
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                return True
+
+            def download_to_file(self, remote_path, local_path):
+                time.sleep(1.5)  # wait_for times out at 1.0 s; zombie finishes 0.5 s later
+                local_path.write_bytes(expected_content)
+                return True
+
+            def disconnect(self):
+                pass
+
+        monkeypatch.setattr(bambu_ftp, "BambuFTPClient", FakeClient)
+        monkeypatch.setattr(FakeClient, "_mode_cache", {}, raising=False)
+        monkeypatch.setattr(FakeClient, "A1_MODELS", set(), raising=False)
+        monkeypatch.setattr(FakeClient, "cache_mode", staticmethod(lambda ip, mode: None), raising=False)
+
+        result = await download_file_async(
+            "127.0.0.1",
+            "12345678",
+            "/cache/slow_zombie.bin",
+            local,
+            timeout=1.0,
+            printer_model="X1C",
+        )
+        assert result is True
+        assert local.read_bytes() == expected_content
+
+    @pytest.mark.asyncio
     async def test_download_file_try_paths_first_succeeds(self, patch_ftp_port, tmp_path):
         """download_file_try_paths_async succeeds on first path."""
         server = patch_ftp_port
@@ -895,3 +1196,208 @@ class TestFailureScenarios:
             downloaded = client2.download_file("/cache/voidresp_test.3mf")
             assert downloaded == content, f"Content mismatch for model={model}"
             client2.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Short-circuit retries on 550 (#972)
+# ---------------------------------------------------------------------------
+class TestFileNotOnPrinterShortCircuit:
+    """FileNotOnPrinterError must bypass the retry budget.
+
+    Before this fix, a 3MF path that wasn't on the printer (550) cost
+    `ftp_retry_count + 1` attempts × `ftp_retry_delay` seconds per candidate
+    path. With ftp_retry_count=10 and four candidate paths, that's ~22 min
+    of dead retries before the real path is tried. #972 in the wild showed
+    48 min of retrying paths that didn't exist.
+    """
+
+    async def test_with_ftp_retry_propagates_file_not_on_printer_without_retrying(self):
+        """with_ftp_retry raises FileNotOnPrinterError on first attempt.
+
+        Verifies non_retry_exceptions short-circuits before the retry loop
+        has a chance to sleep and try again.
+        """
+        attempts = {"n": 0}
+
+        async def always_missing(*_args, **_kwargs):
+            attempts["n"] += 1
+            raise FileNotOnPrinterError("/cache/absent.3mf: 550")
+
+        with pytest.raises(FileNotOnPrinterError):
+            await with_ftp_retry(
+                always_missing,
+                max_retries=10,
+                retry_delay=0.01,
+                operation_name="test 550 short-circuit",
+                non_retry_exceptions=(FileNotOnPrinterError,),
+            )
+
+        assert attempts["n"] == 1, "550 must not trigger any retry"
+
+    async def test_with_ftp_retry_still_retries_transient_errors(self):
+        """Non-550 exceptions continue to retry up to max_retries + 1."""
+        attempts = {"n": 0}
+
+        async def flaky(*_args, **_kwargs):
+            attempts["n"] += 1
+            raise TimeoutError("transient")
+
+        result = await with_ftp_retry(
+            flaky,
+            max_retries=2,
+            retry_delay=0.01,
+            operation_name="test transient retries",
+            non_retry_exceptions=(FileNotOnPrinterError,),
+        )
+
+        assert result is None
+        assert attempts["n"] == 3, "Transient errors should retry to exhaustion"
+
+    def test_download_to_file_raises_on_missing_path(self, ftp_client_factory, tmp_path):
+        """download_to_file surfaces 550 as FileNotOnPrinterError end-to-end
+        against the real mock FTPS server, not just a hand-rolled mock."""
+        local = tmp_path / "never_downloaded.3mf"
+        client = ftp_client_factory()
+        client.connect()
+        try:
+            with pytest.raises(FileNotOnPrinterError):
+                client.download_to_file("/cache/does_not_exist.3mf", local)
+        finally:
+            client.disconnect()
+        assert not local.exists(), "Partial file must be cleaned up on 550"
+
+
+# ---------------------------------------------------------------------------
+# 3MF download cache (#972)
+# ---------------------------------------------------------------------------
+class TestThreeMFCache:
+    """Cover endpoint and archive flow share downloaded 3MF bytes via this
+    cache. Tests isolate themselves with clear_3mf_cache(delete_files=False)
+    so they don't clobber each other."""
+
+    def setup_method(self):
+        clear_3mf_cache(delete_files=False)
+
+    def teardown_method(self):
+        clear_3mf_cache(delete_files=False)
+
+    def test_normalize_collapses_filename_variants(self):
+        """Bambu names vary (.3mf, .gcode.3mf, with spaces) — they all map
+        to the same cache slot so both flows agree on the key."""
+        canonical = normalize_3mf_name("Broly_Legendary.gcode.3mf")
+        assert normalize_3mf_name("Broly_Legendary.3mf") == canonical
+        assert normalize_3mf_name("Broly_Legendary") == canonical
+        # Bambu Studio rewrites spaces to underscores on upload — treat as equal
+        assert normalize_3mf_name("Broly Legendary") == canonical
+        # Case is also collapsed so keys match across capitalizations
+        assert normalize_3mf_name("BROLY_LEGENDARY.3MF") == canonical
+
+    def test_cache_hit_returns_stored_path(self, tmp_path):
+        """get_cached_3mf returns the same Path that was put in."""
+        f = tmp_path / "Broly.gcode.3mf"
+        f.write_bytes(b"fake 3mf content")
+        cache_3mf_download(1, "Broly.gcode.3mf", f)
+        assert get_cached_3mf(1, "Broly.gcode.3mf") == f
+
+    def test_cache_lookup_uses_normalized_name(self, tmp_path):
+        """Caching under .gcode.3mf and querying with bare name still hits."""
+        f = tmp_path / "Broly.gcode.3mf"
+        f.write_bytes(b"x")
+        cache_3mf_download(1, "Broly.gcode.3mf", f)
+        assert get_cached_3mf(1, "Broly.3mf") == f
+        assert get_cached_3mf(1, "Broly") == f
+
+    def test_cache_miss_on_different_printer(self, tmp_path):
+        """Printer id is part of the key — two printers never collide."""
+        f = tmp_path / "A.3mf"
+        f.write_bytes(b"x")
+        cache_3mf_download(1, "A.3mf", f)
+        assert get_cached_3mf(2, "A.3mf") is None
+
+    def test_cache_evicts_when_file_deleted(self, tmp_path):
+        """Stale entry (file gone) returns None and is dropped from the dict."""
+        f = tmp_path / "A.3mf"
+        f.write_bytes(b"x")
+        cache_3mf_download(1, "A.3mf", f)
+        f.unlink()
+        assert get_cached_3mf(1, "A.3mf") is None
+        # Re-populating after eviction works — no ghost entries remain.
+        f.write_bytes(b"y")
+        cache_3mf_download(1, "A.3mf", f)
+        assert get_cached_3mf(1, "A.3mf") == f
+
+    def test_clear_by_printer_scoped(self, tmp_path, monkeypatch):
+        """Clearing one printer leaves the other untouched."""
+        from backend.app.core import config as _config
+
+        monkeypatch.setattr(_config.settings, "archive_dir", tmp_path)
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        f1 = temp_dir / "one.3mf"
+        f1.write_bytes(b"1")
+        f2 = temp_dir / "two.3mf"
+        f2.write_bytes(b"2")
+        cache_3mf_download(1, "one.3mf", f1)
+        cache_3mf_download(2, "two.3mf", f2)
+        clear_3mf_cache(1)
+        assert get_cached_3mf(1, "one.3mf") is None
+        assert get_cached_3mf(2, "two.3mf") == f2
+        # clear_3mf_cache defaulted to delete_files=True, so the temp file is gone
+        assert not f1.exists()
+        assert f2.exists()
+
+    def test_clear_without_deleting_files(self, tmp_path, monkeypatch):
+        """delete_files=False leaves files on disk — used by tests."""
+        from backend.app.core import config as _config
+
+        monkeypatch.setattr(_config.settings, "archive_dir", tmp_path)
+        temp_dir = tmp_path / "temp"
+        temp_dir.mkdir()
+        f = temp_dir / "keep.3mf"
+        f.write_bytes(b"x")
+        cache_3mf_download(1, "keep.3mf", f)
+        clear_3mf_cache(1, delete_files=False)
+        assert get_cached_3mf(1, "keep.3mf") is None
+        assert f.exists()
+
+    def test_clear_does_not_delete_persistent_files(self, tmp_path, monkeypatch):
+        """Regression for #1212 / "file disappeared overnight" reports.
+
+        Dispatch sites added in #1166 cache the live archive copy and library
+        file bytes — paths outside ``archive_dir/temp`` — so /cover can skip
+        FTP. Those files are user data; the cache cleanup must never unlink
+        them. Pre-fix, ``clear_3mf_cache(printer_id, delete_files=True)`` ran
+        on every ``on_print_complete`` and silently destroyed them, leaving a
+        DB row whose ``file_path`` pointed at nothing — breaking Reprint and
+        View G-code with a 404.
+        """
+        from backend.app.core import config as _config
+
+        monkeypatch.setattr(_config.settings, "archive_dir", tmp_path / "archive")
+        (tmp_path / "archive" / "temp").mkdir(parents=True)
+
+        archive_file = tmp_path / "archive" / "1" / "20260504_wallhooks" / "wallhooks.gcode.3mf"
+        archive_file.parent.mkdir(parents=True)
+        archive_file.write_bytes(b"archive bytes")
+
+        library_file = tmp_path / "library_files" / "abcd.3mf"
+        library_file.parent.mkdir(parents=True)
+        library_file.write_bytes(b"library bytes")
+
+        temp_file = tmp_path / "archive" / "temp" / "cover_1_x.3mf"
+        temp_file.write_bytes(b"temp bytes")
+
+        cache_3mf_download(1, "wallhooks.gcode.3mf", archive_file)
+        cache_3mf_download(1, "library.3mf", library_file)
+        cache_3mf_download(1, "cover_1_x.3mf", temp_file)
+
+        clear_3mf_cache(1)
+
+        # All three cache entries are dropped from the dict.
+        assert get_cached_3mf(1, "wallhooks.gcode.3mf") is None
+        assert get_cached_3mf(1, "library.3mf") is None
+        assert get_cached_3mf(1, "cover_1_x.3mf") is None
+        # But only the temp file is unlinked — user data survives.
+        assert archive_file.exists(), "archive 3mf must not be deleted by cache cleanup"
+        assert library_file.exists(), "library 3mf must not be deleted by cache cleanup"
+        assert not temp_file.exists(), "temp file should still be cleaned up"

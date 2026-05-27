@@ -2,7 +2,7 @@
  * Tests for the FileManagerPage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -857,6 +857,130 @@ describe('FileManagerPage', () => {
 
       // Username should be displayed in the column
       expect(screen.getByText('testuser')).toBeInTheDocument();
+    });
+  });
+
+  describe('folder tree collapse preference (#996)', () => {
+    // localStorage is globally mocked in setup.ts (returns undefined by default),
+    // so we program each test's getItem return value explicitly.
+    const getItemMock = localStorage.getItem as ReturnType<typeof vi.fn>;
+    const setItemMock = localStorage.setItem as ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      getItemMock.mockReset();
+      setItemMock.mockReset();
+    });
+
+    it('defaults to expanded (nested folders visible) when library-collapse-folders is unset', async () => {
+      getItemMock.mockReturnValue(null);
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+      });
+      expect(screen.getByText('Brackets')).toBeInTheDocument();
+    });
+
+    it('honors library-collapse-folders=true on load (nested folders hidden)', async () => {
+      getItemMock.mockImplementation((key: string) =>
+        key === 'library-collapse-folders' ? 'true' : null
+      );
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Brackets')).not.toBeInTheDocument();
+    });
+
+    it('collapses nested folders and persists preference when Collapse is clicked', async () => {
+      getItemMock.mockReturnValue(null);
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Brackets')).toBeInTheDocument();
+      });
+
+      // The Collapse button sits next to Wrap in the sidebar header.
+      // Its text content is "Collapse" (from fileManager.collapse).
+      await user.click(screen.getByRole('button', { name: 'Collapse' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Brackets')).not.toBeInTheDocument();
+      });
+      expect(setItemMock).toHaveBeenCalledWith('library-collapse-folders', 'true');
+    });
+
+    it('re-expands nested folders and persists preference when Collapse is toggled off', async () => {
+      getItemMock.mockImplementation((key: string) =>
+        key === 'library-collapse-folders' ? 'true' : null
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Brackets')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Collapse' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Brackets')).toBeInTheDocument();
+      });
+      expect(setItemMock).toHaveBeenCalledWith('library-collapse-folders', 'false');
+    });
+  });
+
+  describe('"All Files" view (#1499)', () => {
+    it('requests every file (include_root=false) so subfolder contents are visible', async () => {
+      const rootFile = {
+        id: 10,
+        filename: 'root-file.3mf',
+        file_path: '/library/root-file.3mf',
+        file_size: 1024,
+        file_type: '3mf',
+        folder_id: null,
+        thumbnail_path: null,
+        print_name: 'Root File',
+        print_time_seconds: 0,
+        print_count: 0,
+        duplicate_count: 0,
+        created_at: '2024-01-01T00:00:00Z',
+      };
+      const nestedFile = {
+        ...rootFile,
+        id: 11,
+        filename: 'nested-file.3mf',
+        file_path: '/library/Functional Parts/nested-file.3mf',
+        folder_id: 1,
+        print_name: 'Nested File',
+      };
+
+      const includeRootValues: string[] = [];
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) => {
+          const url = new URL(request.url);
+          const includeRoot = url.searchParams.get('include_root');
+          includeRootValues.push(includeRoot ?? '');
+          // Mirror the backend: include_root=false returns everything; true
+          // returns only files with folder_id IS NULL.
+          if (includeRoot === 'false') {
+            return HttpResponse.json([rootFile, nestedFile]);
+          }
+          return HttpResponse.json([rootFile]);
+        }),
+      );
+
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Root File')).toBeInTheDocument();
+        expect(screen.getByText('Nested File')).toBeInTheDocument();
+      });
+      // Sanity-check: the buggy call would have sent include_root=true here.
+      expect(includeRootValues).toContain('false');
     });
   });
 });

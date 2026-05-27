@@ -168,6 +168,102 @@ class TestArchivesAPI:
         assert response.status_code == 200
         assert response.json()["external_url"] is None
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_archive_failure_reason_mirrors_to_print_log_entry(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1444: PATCH /archives/{id} with failure_reason must mirror to the
+        latest PrintLogEntry so the Stats page Failure Analysis widget
+        (which reads PrintLogEntry.failure_reason) reflects the user's
+        reclassification instead of showing "Unknown" forever.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        # archive_factory auto-creates a matching PrintLogEntry (failure_reason
+        # carried from the archive, which is NULL here — same shape as the bug
+        # repro: print completed → log entry written with NULL → user goes to
+        # classify the failure afterwards).
+        archive = await archive_factory(printer.id, print_name="Failed Print", status="failed", run_status="failed")
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"failure_reason": "Adhesion failure"},
+        )
+        assert response.status_code == 200
+
+        result = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        mirrored = result.scalar_one()
+        assert mirrored.failure_reason == "Adhesion failure"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_archive_status_mirrors_to_print_log_entry(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1444: PATCH /archives/{id} with status must mirror to the latest
+        PrintLogEntry so stats that filter on PrintLogEntry.status see the
+        user's reclassification.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, run_status="completed")
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"status": "failed"},
+        )
+        assert response.status_code == 200
+
+        result = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        mirrored = result.scalar_one()
+        assert mirrored.status == "failed"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_archive_failure_reason_only_touches_latest_entry(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1444: For an archive with multiple runs (reprints), only the
+        latest PrintLogEntry should receive the reclassification. Earlier
+        runs were classified at their own time and must not be retroactively
+        overwritten.
+        """
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        # First run — created by the factory's auto-run with its own reason.
+        archive = await archive_factory(printer.id, status="failed", run_status="failed")
+        from sqlalchemy import select
+
+        first_run = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        first_run.failure_reason = "Filament tangle"
+        await db_session.commit()
+
+        # Second run — the reprint that just finished with NULL classification.
+        latest_run = PrintLogEntry(archive_id=archive.id, status="failed", failure_reason=None)
+        db_session.add(latest_run)
+        await db_session.commit()
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"failure_reason": "Adhesion failure"},
+        )
+        assert response.status_code == 200
+
+        await db_session.refresh(first_run)
+        await db_session.refresh(latest_run)
+        assert first_run.failure_reason == "Filament tangle"
+        assert latest_run.failure_reason == "Adhesion failure"
+
     # ========================================================================
     # Delete endpoints
     # ========================================================================
@@ -195,6 +291,215 @@ class TestArchivesAPI:
         response = await async_client.delete("/api/v1/archives/9999")
 
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_soft_delete_preserves_stats_contribution(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1343: deleting an archive without ``purge_stats`` keeps its
+        contribution in Quick Stats. The row vanishes from listings but the
+        filament / time / cost totals stay intact.
+        """
+        printer = await printer_factory()
+        await archive_factory(
+            printer.id,
+            status="completed",
+            print_time_seconds=3600,
+            filament_used_grams=50.0,
+            cost=1.50,
+        )
+        archive_to_delete = await archive_factory(
+            printer.id,
+            status="completed",
+            print_time_seconds=7200,
+            filament_used_grams=100.0,
+            cost=3.00,
+        )
+
+        # Pre-delete: stats include both archives.
+        pre = (await async_client.get("/api/v1/archives/stats")).json()
+        assert pre["total_prints"] == 2
+        assert pre["total_filament_grams"] == 150.0
+        assert pre["total_cost"] == 4.50
+
+        # Soft delete (default — no purge_stats param).
+        resp = await async_client.delete(f"/api/v1/archives/{archive_to_delete.id}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["purged_from_stats"] is False
+
+        # Listing hides the deleted archive…
+        listing = (await async_client.get("/api/v1/archives/")).json()
+        assert all(a["id"] != archive_to_delete.id for a in listing)
+
+        # …but stats still reflect both prints (the whole point of #1343).
+        post = (await async_client.get("/api/v1/archives/stats")).json()
+        assert post["total_prints"] == 2
+        assert post["total_filament_grams"] == 150.0
+        assert post["total_cost"] == 4.50
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_soft_delete_clears_thumbnail_path_on_linked_log_entries(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1348 follow-up: soft-deleting an archive removes its files from disk;
+        the cached thumbnail_path on linked PrintLogEntry rows must be NULLed
+        in the same transaction so the print-log view doesn't 404-storm on the
+        now-deleted thumbnail file."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            status="completed",
+            thumbnail_path="archives/test/test_print/thumbnail.png",
+        )
+        # The factory's auto-PrintLogEntry doesn't copy thumbnail_path; set it
+        # manually to mirror what the production write_log_entry path stores.
+        run_query = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        run = run_query.scalar_one()
+        run.thumbnail_path = "archives/test/test_print/thumbnail.png"
+        await db_session.commit()
+        assert run.thumbnail_path is not None
+
+        resp = await async_client.delete(f"/api/v1/archives/{archive.id}")
+        assert resp.status_code == 200
+        assert resp.json()["purged_from_stats"] is False
+
+        await db_session.refresh(run)
+        assert run.thumbnail_path is None, "soft-delete must NULL thumbnail_path on linked log entry"
+        # The log entry itself survives the soft delete (its filament/cost
+        # contribution still needs to flow into stats per #1343).
+        assert run.id is not None
+        assert run.archive_id == archive.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_hard_delete_clears_thumbnail_path_before_fk_cascade(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1348 follow-up: the auto-purge sweeper (and any caller of
+        ArchiveService.delete_archive) hard-deletes the archive row but leaves
+        PrintLogEntry rows alive via ON DELETE SET NULL. The eager
+        thumbnail_path clear must run inside delete_archive so even orphaned
+        log entries don't surface stale paths."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+        from backend.app.services.archive import ArchiveService
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            status="completed",
+            thumbnail_path="archives/test/test_print/thumbnail.png",
+        )
+        run_query = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        run = run_query.scalar_one()
+        run.thumbnail_path = "archives/test/test_print/thumbnail.png"
+        await db_session.commit()
+        run_id = run.id
+
+        service = ArchiveService(db_session)
+        assert await service.delete_archive(archive.id) is True
+
+        # Log entry survives the hard-delete (the FK is ON DELETE SET NULL
+        # in production; SQLite test config doesn't enable foreign_keys=ON
+        # by default so archive_id may still be set, but the row itself
+        # remains for audit). The thumbnail_path was cleared eagerly by
+        # _null_print_log_thumbnail_paths before db.delete(archive).
+        refetch = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.id == run_id))
+        survivor = refetch.scalar_one()
+        assert survivor.thumbnail_path is None, (
+            "delete_archive must NULL thumbnail_path before removing the archive row"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_print_log_thumbnail_route_lazy_nulls_missing_file(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1348 follow-up: GET /print-log/{id}/thumbnail self-heals when the
+        thumbnail_path on a log entry points at a missing file (failed print
+        whose thumbnail was never written, or a stale path that escaped the
+        delete-time cleanup)."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="failed")
+        run_query = await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        run = run_query.scalar_one()
+        # Path points at a file that never existed (failed-print case where
+        # archive.thumbnail_path was set but the extractor never produced one).
+        run.thumbnail_path = "archives/missing/never_written/thumbnail.png"
+        await db_session.commit()
+
+        # Auth is disabled in the integration test config, so the stream-token
+        # guard is bypassed — the route runs the lazy-NULL branch directly.
+        resp = await async_client.get(f"/api/v1/print-log/{run.id}/thumbnail")
+        assert resp.status_code == 404
+
+        await db_session.refresh(run)
+        assert run.thumbnail_path is None, "missing file must self-heal to NULL"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_purge_stats_drops_archive_from_quick_stats(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1343: deleting with ``?purge_stats=true`` hard-deletes the row,
+        dropping its contribution from Quick Stats (the original behaviour,
+        now opt-in)."""
+        printer = await printer_factory()
+        keep = await archive_factory(printer.id, status="completed", filament_used_grams=50.0)
+        purge = await archive_factory(printer.id, status="completed", filament_used_grams=100.0)
+
+        resp = await async_client.delete(f"/api/v1/archives/{purge.id}?purge_stats=true")
+        assert resp.status_code == 200
+        assert resp.json()["purged_from_stats"] is True
+
+        stats = (await async_client.get("/api/v1/archives/stats")).json()
+        assert stats["total_prints"] == 1
+        assert stats["total_filament_grams"] == 50.0
+
+        # The kept archive is still listed.
+        listing = (await async_client.get("/api/v1/archives/")).json()
+        assert [a["id"] for a in listing] == [keep.id]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_soft_deleted_archive_404_on_detail(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """A soft-deleted archive must 404 on GET — a stale bookmark or
+        direct URL should not expose a row the user has already removed."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+        await async_client.delete(f"/api/v1/archives/{archive.id}")
+        resp = await async_client.get(f"/api/v1/archives/{archive.id}")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_soft_deleted_archive_hidden_from_search(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Search must skip soft-deleted archives. Uses the LIKE fallback by
+        querying a single-character pattern that the SQLite FTS5 rejects, so
+        the test covers the fallback path that the production FTS path also
+        respects."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="UniqueSoftDeleteCandidate")
+        await async_client.delete(f"/api/v1/archives/{archive.id}")
+        resp = await async_client.get("/api/v1/archives/search?q=UniqueSoftDeleteCandidate")
+        assert resp.status_code == 200
+        assert resp.json() == []
 
     # ========================================================================
     # Statistics endpoints
@@ -274,7 +579,10 @@ class TestArchivesSlimAPI:
         assert item["filament_used_grams"] == 50.0
         assert item["print_time_seconds"] == 3600
         assert item["cost"] == 1.50
-        assert item["quantity"] == 2
+        # quantity is per-event semantics now (each PrintLogEntry = one run);
+        # the archive's quantity field is no longer surfaced through this
+        # endpoint after the #1390 per-event migration.
+        assert item["quantity"] == 1
         assert "created_at" in item
 
         # Full archive fields must NOT be present
@@ -317,10 +625,13 @@ class TestArchivesSlimAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_slim_actual_time_null_for_failed(
+    async def test_slim_actual_time_for_failed_includes_elapsed(
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):
-        """Verify actual_time_seconds is null for non-completed prints."""
+        """Failed prints report measured elapsed time so Printer Stats By Time
+        matches Quick Stats Print Time (#1390). Previously this returned null
+        and the frontend fell back to the slicer estimate, double-counting the
+        unfinished portion of the print."""
         from datetime import datetime, timezone
 
         printer = await printer_factory()
@@ -335,7 +646,7 @@ class TestArchivesSlimAPI:
 
         assert response.status_code == 200
         item = response.json()[0]
-        assert item["actual_time_seconds"] is None
+        assert item["actual_time_seconds"] == 3600
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -375,6 +686,144 @@ class TestArchivesSlimAPI:
 
         assert response.status_code == 200
         assert len(response.json()) == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_slim_counts_reprints_as_separate_rows(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Reprints add events even though the archive row is overwritten (#1390).
+
+        Before the per-event migration, /archives/slim returned one row per
+        archive — so an archive that had been reprinted three times appeared
+        once and undercounted Filament Used / Cost / Time. The endpoint must
+        now return one row per logged event.
+        """
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Reprinted Model",
+            filament_used_grams=50.0,
+            cost=1.50,
+        )
+        # archive_factory synthesizes one event; add two more to simulate
+        # the same archive being reprinted twice more.
+        for _ in range(2):
+            db_session.add(
+                PrintLogEntry(
+                    archive_id=archive.id,
+                    printer_id=archive.printer_id,
+                    status="completed",
+                    filament_type=archive.filament_type,
+                    filament_used_grams=archive.filament_used_grams,
+                    cost=archive.cost,
+                    print_name=archive.print_name,
+                )
+            )
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/archives/slim")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 3, "Each reprint must contribute one row"
+        total_filament = sum(item["filament_used_grams"] or 0 for item in data)
+        assert total_filament == 150.0, "Sum across events must reflect all three runs"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_slim_includes_orphan_events(self, async_client: AsyncClient, printer_factory, db_session):
+        """Events whose archive was hard-deleted still appear (#1390).
+
+        After ON DELETE SET NULL the event row survives with archive_id=NULL.
+        The slim endpoint must keep counting it so Quick Stats and the
+        archive-iterating widgets stay aligned.
+        """
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        db_session.add(
+            PrintLogEntry(
+                archive_id=None,
+                printer_id=printer.id,
+                status="completed",
+                filament_type="PETG",
+                filament_used_grams=25.0,
+                cost=0.75,
+                print_name="Orphaned Print",
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/archives/slim")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["print_name"] == "Orphaned Print"
+        assert data[0]["filament_used_grams"] == 25.0
+        # print_time_seconds (sliced estimate) comes from the archive table,
+        # which orphans no longer have — must surface as null gracefully.
+        assert data[0]["print_time_seconds"] is None
+
+
+class TestFailureAnalysisAPI:
+    """Per-event failure analysis (#1390)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_failure_analysis_counts_reprints_and_orphans(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Failure analysis aggregates per event, not per archive.
+
+        Verifies the dual fix for #1390: a reprint that adds a second failed
+        event must count twice, and an orphan failed event (archive deleted)
+        must still appear in the totals.
+        """
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Failing Model",
+            status="failed",
+            failure_reason="filament_runout",
+        )
+        # Add a second failed event for the same archive (a reprint that also
+        # failed) and one orphan failed event (archive was deleted).
+        db_session.add(
+            PrintLogEntry(
+                archive_id=archive.id,
+                printer_id=printer.id,
+                status="failed",
+                failure_reason="filament_runout",
+                filament_type=archive.filament_type,
+                print_name=archive.print_name,
+            )
+        )
+        db_session.add(
+            PrintLogEntry(
+                archive_id=None,
+                printer_id=printer.id,
+                status="failed",
+                failure_reason="bed_adhesion",
+                filament_type="PETG",
+                print_name="Orphaned Failed Print",
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/archives/analysis/failures")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["total_prints"] == 3
+        assert result["failed_prints"] == 3
+        assert result["failures_by_reason"]["filament_runout"] == 2
+        assert result["failures_by_reason"]["bed_adhesion"] == 1
 
 
 class TestArchiveDataIntegrity:

@@ -96,6 +96,13 @@ class AppSettings(BaseModel):
         description="Path to executable on the server. Receives 3MF path as sole argument, modifies in-place, exits 0 on success.",
     )
 
+    # Scheduled local backup (#884)
+    local_backup_enabled: bool = Field(default=False, description="Enable scheduled local backups")
+    local_backup_schedule: str = Field(default="daily", description="Backup frequency: hourly, daily, weekly")
+    local_backup_time: str = Field(default="03:00", description="Time of day for daily/weekly backups (HH:MM, 24h)")
+    local_backup_retention: int = Field(default=5, description="Number of backup files to keep (1-100)")
+    local_backup_path: str = Field(default="", description="Backup output directory (empty = DATA_DIR/backups)")
+
     # Print modal settings
     per_printer_mapping_expanded: bool = Field(
         default=False, description="Expand custom filament mapping by default in print modal"
@@ -115,11 +122,15 @@ class AppSettings(BaseModel):
         default="immediate",
         description="Mode: 'immediate' (archive now), 'review' (pending review), or 'print_queue' (add to print queue)",
     )
+    virtual_printer_archive_name_source: str = Field(
+        default="metadata",
+        description="Source for the archive's display name on virtual-printer uploads: 'metadata' uses the 3MF's embedded print_name (default, matches Bambu's behavior), 'filename' uses the filename Bambu Studio sent over FTP (lets users rename via the slicer's 'send to printer' dialog).",
+    )
 
     # Dark mode theme settings
-    dark_style: str = Field(default="classic", description="Dark mode style: classic, glow, vibrant")
+    dark_style: str = Field(default="vibrant", description="Dark mode style: classic, glow, vibrant")
     dark_background: str = Field(
-        default="neutral", description="Dark mode background: neutral, warm, cool, oled, slate, forest"
+        default="cool", description="Dark mode background: neutral, warm, cool, oled, slate, forest"
     )
     dark_accent: str = Field(default="green", description="Dark mode accent: green, teal, blue, orange, purple, red")
 
@@ -182,6 +193,28 @@ class AppSettings(BaseModel):
         description="Preferred slicer: 'bambu_studio' or 'orcaslicer'",
     )
 
+    # Slicer dispatch mode: when True, "Slice" actions open the in-app
+    # SliceModal and call the slicer-API sidecar. When False (default), they
+    # hand off to the user's local desktop slicer via URI scheme — preserving
+    # the original Bambuddy behavior for users who don't run a sidecar.
+    use_slicer_api: bool = Field(
+        default=False,
+        description="Use the slicer-API sidecar for slicing instead of the desktop slicer URI scheme",
+    )
+
+    # Slicer-API sidecar base URLs. Per-installation, configured via the
+    # Settings UI (the "Slicer" card). Empty string means "fall back to the
+    # SLICER_API_URL / BAMBU_STUDIO_API_URL env vars" — which themselves
+    # default to the docker-compose ports in core/config.py.
+    orcaslicer_api_url: str = Field(
+        default="",
+        description="OrcaSlicer sidecar URL (e.g. http://localhost:3003). Empty falls back to the SLICER_API_URL env var.",
+    )
+    bambu_studio_api_url: str = Field(
+        default="",
+        description="BambuStudio sidecar URL (e.g. http://localhost:3001). Empty falls back to the BAMBU_STUDIO_API_URL env var.",
+    )
+
     # Prometheus metrics endpoint
     prometheus_enabled: bool = Field(default=False, description="Enable Prometheus metrics endpoint at /metrics")
     prometheus_token: str = Field(
@@ -223,7 +256,7 @@ class AppSettings(BaseModel):
 
     # Plate-clear confirmation for queue scheduling
     require_plate_clear: bool = Field(
-        default=True,
+        default=False,
         description="Require per-printer plate-clear confirmation before starting queued prints on finished printers",
     )
     queue_shortest_first: bool = Field(
@@ -249,6 +282,42 @@ class AppSettings(BaseModel):
     ldap_auto_provision: bool = Field(
         default=False,
         description="Auto-create BamBuddy user on first successful LDAP login",
+    )
+    ldap_default_group: str = Field(
+        default="",
+        description="Fallback BamBuddy group name assigned when an LDAP user authenticates but has no mapped groups. Empty = no fallback.",
+    )
+
+    # Obico AI failure detection (#172)
+    obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
+    obico_ml_url: str = Field(
+        default="",
+        description="Self-hosted Obico ML API base URL (e.g., http://192.168.1.10:3333)",
+    )
+    obico_sensitivity: str = Field(
+        default="medium",
+        description="Detection sensitivity: 'low', 'medium', or 'high' (adjusts LOW/HIGH thresholds)",
+    )
+    obico_action: str = Field(
+        default="notify",
+        description="Action on detected failure: 'notify', 'pause', or 'pause_and_off'",
+    )
+    obico_poll_interval: int = Field(
+        default=10,
+        ge=5,
+        le=120,
+        description="Seconds between detection checks while a print is running",
+    )
+    obico_enabled_printers: str = Field(
+        default="",
+        description="JSON array of printer IDs to monitor (empty = all connected printers)",
+    )
+
+    # Inventory forecasting
+    forecast_global_lead_time_days: int = Field(
+        default=0,
+        ge=0,
+        description="Global lead time floor (days) used in reorder point calculation for all SKUs",
     )
 
     # Default sidebar order (admin-set for all users)
@@ -297,6 +366,7 @@ class AppSettingsUpdate(BaseModel):
     virtual_printer_enabled: bool | None = None
     virtual_printer_access_code: str | None = None
     virtual_printer_mode: str | None = None
+    virtual_printer_archive_name_source: str | None = None
     dark_style: str | None = None
     dark_background: str | None = None
     dark_accent: str | None = None
@@ -322,6 +392,9 @@ class AppSettingsUpdate(BaseModel):
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
     preferred_slicer: str | None = None
+    use_slicer_api: bool | None = None
+    orcaslicer_api_url: str | None = None
+    bambu_studio_api_url: str | None = None
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
@@ -337,6 +410,11 @@ class AppSettingsUpdate(BaseModel):
     queue_shortest_first: bool | None = None
     gcode_snippets: str | None = None
     post_process_script: str | None = None
+    local_backup_enabled: bool | None = None
+    local_backup_schedule: str | None = None
+    local_backup_time: str | None = None
+    local_backup_retention: int | None = None
+    local_backup_path: str | None = None
     ldap_enabled: bool | None = None
     ldap_server_url: str | None = None
     ldap_bind_dn: str | None = None
@@ -346,7 +424,15 @@ class AppSettingsUpdate(BaseModel):
     ldap_security: str | None = None
     ldap_group_mapping: str | None = None
     ldap_auto_provision: bool | None = None
+    ldap_default_group: str | None = None
+    obico_enabled: bool | None = None
+    obico_ml_url: str | None = None
+    obico_sensitivity: str | None = None
+    obico_action: str | None = None
+    obico_poll_interval: int | None = Field(default=None, ge=5, le=120)
+    obico_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
+    forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
 
     @field_validator("gcode_snippets")
     @classmethod
@@ -372,6 +458,37 @@ class AppSettingsUpdate(BaseModel):
             raise ValueError("ldap_group_mapping must be valid JSON or empty")
         if not isinstance(parsed, dict):
             raise ValueError("ldap_group_mapping must be a JSON object mapping LDAP group DNs to BamBuddy group names")
+        return v
+
+    @field_validator("obico_enabled_printers")
+    @classmethod
+    def validate_obico_enabled_printers(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError:
+            raise ValueError("obico_enabled_printers must be valid JSON or empty")
+        if not isinstance(parsed, list) or not all(isinstance(item, int) for item in parsed):
+            raise ValueError("obico_enabled_printers must be a JSON array of printer IDs (integers)")
+        return v
+
+    @field_validator("obico_sensitivity")
+    @classmethod
+    def validate_obico_sensitivity(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in ("low", "medium", "high"):
+            raise ValueError("obico_sensitivity must be 'low', 'medium', or 'high'")
+        return v
+
+    @field_validator("obico_action")
+    @classmethod
+    def validate_obico_action(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in ("notify", "pause", "pause_and_off"):
+            raise ValueError("obico_action must be 'notify', 'pause', or 'pause_and_off'")
         return v
 
     @field_validator("default_sidebar_order")

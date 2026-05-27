@@ -4,6 +4,7 @@ export function getPrinterImage(model: string | null | undefined): string {
   if (m.includes('x1e')) return '/img/printers/x1e.png';
   if (m.includes('x1c') || m.includes('x1carbon')) return '/img/printers/x1c.png';
   if (m.includes('x1')) return '/img/printers/x1c.png';
+  if (m.includes('x2d') || m === 'n6') return '/img/printers/x2d.png';
   if (m.includes('h2dpro') || m.includes('h2d-pro')) return '/img/printers/h2dpro.png';
   if (m.includes('h2d')) return '/img/printers/h2d.png';
   if (m.includes('h2c')) return '/img/printers/h2c.png';

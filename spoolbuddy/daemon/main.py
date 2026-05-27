@@ -66,8 +66,18 @@ def _get_ip() -> str:
         return "unknown"
 
 
+SSH_KEY_TAG = "bambuddy-spoolbuddy"
+
+
 def _deploy_ssh_key(public_key: str) -> None:
-    """Write Bambuddy's SSH public key to authorized_keys if not already present."""
+    """Sync Bambuddy's SSH public key into authorized_keys.
+
+    Replaces any prior key tagged ``bambuddy-spoolbuddy`` so the file always
+    reflects Bambuddy's *current* keypair. Without this, every Bambuddy key
+    rotation (data dir wipe, container recreate, etc.) leaves a stale entry
+    behind and the file grows unbounded.
+    """
+    target = public_key.strip()
     home = Path.home()
     ssh_dir = home / ".ssh"
     auth_keys = ssh_dir / "authorized_keys"
@@ -75,17 +85,24 @@ def _deploy_ssh_key(public_key: str) -> None:
     try:
         ssh_dir.mkdir(mode=0o700, exist_ok=True)
 
-        # Check if key already deployed
+        existing_lines: list[str] = []
         if auth_keys.exists():
-            existing = auth_keys.read_text()
-            if public_key.strip() in existing:
-                return
+            existing_lines = auth_keys.read_text().splitlines()
 
-        # Append key
-        with auth_keys.open("a") as f:
-            f.write(public_key.strip() + "\n")
+        kept = [line for line in existing_lines if SSH_KEY_TAG not in line]
+        new_lines = kept + [target]
+
+        # Already in sync — current key present and no stale Bambuddy entries.
+        if existing_lines == new_lines:
+            return
+
+        auth_keys.write_text("\n".join(new_lines) + "\n")
         auth_keys.chmod(0o600)
-        logger.info("SSH public key deployed to %s", auth_keys)
+        removed = len(existing_lines) - len(kept)
+        if removed:
+            logger.info("SSH public key updated in %s (replaced %d stale entries)", auth_keys, removed)
+        else:
+            logger.info("SSH public key deployed to %s", auth_keys)
     except Exception as e:
         logger.warning("Failed to deploy SSH key: %s", e)
 
@@ -171,7 +188,9 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
 
     last_report = 0.0
     last_reported_grams: float | None = None
+    last_wake_grams: float | None = None
     REPORT_THRESHOLD = 2.0  # Only report if weight changed by more than this (grams)
+    WAKE_THRESHOLD = 50.0  # Only wake display on large changes (spool placed/removed, not sensor bounce)
     try:
         while True:
             result = await asyncio.to_thread(scale.read)
@@ -185,7 +204,22 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
                     weight_changed = last_reported_grams is None or abs(grams - last_reported_grams) >= REPORT_THRESHOLD
 
                     if weight_changed:
-                        display.wake()
+                        # Wake display only on STABLE large weight changes (spool
+                        # placed/removed). Without the stability gate, a noisy load
+                        # cell that bounces ≥50g around a midpoint repeatedly trips
+                        # the threshold AND advances last_wake_grams to the noisy
+                        # value, so the next bounce back also exceeds the threshold
+                        # — wake fires every few seconds forever and the kiosk
+                        # screen never stays blanked. The `stable` flag is True
+                        # only when readings agree within 2g over a 1s window, so
+                        # gating on it ensures last_wake_grams only advances to
+                        # settled values.
+                        wake_changed = stable and (
+                            last_wake_grams is None or abs(grams - last_wake_grams) >= WAKE_THRESHOLD
+                        )
+                        if wake_changed:
+                            display.wake()
+                            last_wake_grams = grams
                         await api.scale_reading(
                             device_id=config.device_id,
                             weight_grams=grams,
@@ -226,6 +260,10 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
         )
 
         if result:
+            ssh_key = result.get("ssh_public_key")
+            if ssh_key:
+                _deploy_ssh_key(ssh_key)
+
             cmd = result.get("pending_command")
             if cmd == "tare":
                 scale = shared.get("scale")

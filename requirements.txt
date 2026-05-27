@@ -11,6 +11,8 @@ greenlet>=3.0.0
 # Pydantic
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+# Transitive of pydantic-settings, floor-pinned to patch CVE-2026-28684 (dotenv 1.2.1)
+python-dotenv>=1.2.2
 
 # Bambu Lab Printer Communication
 paho-mqtt>=2.0.0
@@ -18,7 +20,12 @@ aioftp>=0.22.0
 
 # Virtual Printer (emulates Bambu printer for slicer uploads)
 pyftpdlib>=2.0.0
-cryptography>=46.0.5
+cryptography>=46.0.7
+
+# SpoolBuddy remote SSH updates (pure-Python SSH client; avoids the
+# OpenSSH `ssh` binary which calls getpwuid() and fails in Docker when
+# the container UID isn't in /etc/passwd)
+asyncssh>=2.18.0
 
 # 3MF Processing (standard zipfile is sufficient for Bambu 3MF files)
 defusedxml>=0.7.0  # Safe XML parsing (prevents XXE attacks)
@@ -30,11 +37,14 @@ openpyxl>=3.1.0
 pywebpush>=2.0.0
 
 # Utilities
-python-multipart>=0.0.6
+python-multipart>=0.0.27
 aiofiles>=23.0.0
 
 # QR Code generation
 qrcode[pil]>=7.4.0
+
+# PDF generation (spool label printing — #809)
+reportlab>=4.0.0
 
 # STL Thumbnail Generation
 trimesh>=4.0.0
@@ -48,15 +58,35 @@ psutil>=6.0.0
 PyJWT>=2.12.0
 passlib[bcrypt]>=1.7.4
 ldap3>=2.9.0
+pyotp>=2.9.0
+
+# Transitive dep pin: idna<3.15 has CVE-2026-45409 (ReDoS on encode() with
+# crafted Unicode). Pulled in by anyio/httpx/requests/yarl; pin the floor
+# so we don't regress when a downstream loosens its constraint.
+idna>=3.15
+
+# HTTP client (used for OIDC token exchange)
+httpx>=0.26.0
+
+# Transitive pin: urllib3 2.6.3 has CVE-2026-44431 and CVE-2026-44432;
+# 2.7.0+ is the fixed release. Direct pin here because none of our
+# top-level deps require >=2.7.0 yet, so without this the resolver
+# would silently keep installing the vulnerable 2.6.x line.
+urllib3>=2.7.0
+
+# Transitive of fastapi. starlette 1.0.0 has PYSEC-2026-161; 1.0.1 is the
+# fixed release. fastapi's range still admits 1.0.0 so we pin the floor
+# directly to stop the resolver from picking the vulnerable build.
+starlette>=1.0.1
 
 # Plate Detection (optional - enables build plate empty detection)
 opencv-python-headless>=4.8.0
 numpy>=1.24.0
 
 # Development
-pytest>=8.0.0
+pytest>=9.0.3
 pytest-asyncio>=0.23.0
 httpx>=0.26.0
 ruff>=0.2.0
 
-pillow>=12.1.1
+pillow>=12.2.0

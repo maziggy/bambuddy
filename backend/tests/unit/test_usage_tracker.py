@@ -1102,6 +1102,84 @@ class TestTrayChangeSplit:
         assert results[1]["weight_used"] == 30.0
 
     @pytest.mark.asyncio
+    async def test_tray_switch_overrides_print_cmd_mapping(self):
+        """tray_change_log evidence overrides slot_to_tray captured at print start.
+
+        Regression for #957: when AMS auto-falls-back from an empty spool to a
+        same-material sibling, the print_cmd's mapping (which named the
+        original tray) is stale by the time the print finishes. Before this
+        fix, the splitting branch was gated on ``not slot_to_tray`` so the
+        slicer mapping was preferred even when the printer actually fed from
+        a different tray — Path 1 credited the original tray with the full
+        3MF estimate and Path 2 layered the AMS-fallback delta on top, so
+        spool consumption double-counted (e.g. 78 g print credited as 78 g
+        + 60 g = 138 g). This test pins the new behavior: when
+        tray_change_log has > 1 entries, splitting takes over regardless of
+        whether ams_mapping was provided.
+        """
+        spool_a = _make_spool(spool_id=10, label_weight=1000)
+        spool_b = _make_spool(spool_id=20, label_weight=1000)
+        assign_a = _make_assignment(spool_id=10, ams_id=0, tray_id=0)
+        assign_b = _make_assignment(spool_id=20, ams_id=0, tray_id=1)
+        archive = _make_archive(archive_id=200)
+
+        # No queue_item placeholder: passing ams_mapping bypasses the queue lookup
+        # at usage_tracker.py:816 (`if not slot_to_tray and archive_id`).
+        db = _mock_db_sequential([archive, assign_a, spool_a, assign_b, spool_b])
+
+        # Slicer mapping says slot 1 -> tray 0; printer actually swapped to tray 1 at layer 30
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            progress=100,
+            layer_num=100,
+            tray_now=1,
+            last_loaded_tray=1,
+            total_layers=100,
+            tray_change_log=[(0, 0), (1, 30)],
+        )
+
+        filament_usage = [{"slot_id": 1, "used_g": 78.0, "type": "PLA", "color": ""}]
+        handled_trays: set[tuple[int, int]] = set()
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch(
+                "backend.app.utils.threemf_tools.extract_filament_usage_from_3mf",
+                return_value=filament_usage,
+            ),
+            patch(
+                "backend.app.utils.threemf_tools.extract_layer_filament_usage_from_3mf",
+                return_value=None,  # No per-layer data — exercises linear fallback
+            ),
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=200,
+                status="completed",
+                print_name="Runout w/ slicer mapping",
+                handled_trays=handled_trays,
+                printer_manager=printer_manager,
+                db=db,
+                # ams_mapping captured at print start — slicer told us slot 0 -> tray 0
+                # (1-based slot_id=1 -> 0-based slot index 0).
+                ams_mapping=[0],
+            )
+
+        # Splitting branch ran despite ams_mapping being set: two segments,
+        # one per tray, total weight matches the 3MF estimate (no double-count).
+        assert len(results) == 2
+        total = sum(r["weight_used"] for r in results)
+        assert total == pytest.approx(78.0, abs=0.1)
+        # Both trays now in handled_trays so Path 2 (remain%-delta) skips them.
+        assert (0, 0) in handled_trays
+        assert (0, 1) in handled_trays
+
+    @pytest.mark.asyncio
     async def test_no_tray_change_uses_normal_path(self):
         """Single-entry tray_change_log falls through to normal tray_now_at_start logic."""
         spool = _make_spool(spool_id=1, label_weight=1000)

@@ -21,6 +21,7 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.print_batch import PrintBatch
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.schemas.print_queue import (
     PrintBatchResponse,
@@ -31,6 +32,7 @@ from backend.app.schemas.print_queue import (
     PrintQueueItemUpdate,
     PrintQueueReorder,
 )
+from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
 from backend.app.utils.threemf_tools import extract_filament_usage_from_3mf
@@ -195,6 +197,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "require_previous_success": item.require_previous_success,
         "auto_off_after": item.auto_off_after,
         "manual_start": item.manual_start,
+        "filament_short": bool(item.filament_short),
         "ams_mapping": ams_mapping_parsed,
         "plate_id": item.plate_id,
         "bed_levelling": item.bed_levelling,
@@ -223,24 +226,36 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     }
     response = PrintQueueItemResponse(**item_dict)
     if item.archive:
-        response.archive_name = item.archive.print_name or item.archive.filename
-        response.archive_thumbnail = item.archive.thumbnail_path
-        response.print_time_seconds = item.archive.print_time_seconds
-        response.filament_used_grams = item.archive.filament_used_grams
-        response.filament_type = item.archive.filament_type
-        response.filament_color = item.archive.filament_color
-        response.layer_height = item.archive.layer_height
-        response.nozzle_diameter = item.archive.nozzle_diameter
-        response.sliced_for_model = item.archive.sliced_for_model
-        if item.plate_id:
-            archive_path = settings.base_dir / item.archive.file_path
-            if archive_path.exists():
-                plate_time = _extract_print_time_from_3mf(archive_path, item.plate_id)
-                plate_weight = sum(f["used_g"] for f in extract_filament_usage_from_3mf(archive_path, item.plate_id))
-                if plate_time is not None:
-                    response.print_time_seconds = plate_time
-                if plate_weight > 0:
-                    response.filament_used_grams = plate_weight
+        # Soft-deleted archive: files are gone from disk but the row stays
+        # (its filament/cost contribution still flows into stats per #1343).
+        # Suppress the archive-derived UI surface so the queue page doesn't
+        # 404-storm the thumbnail / plates / plate-thumbnail endpoints — the
+        # frontend's existing truthy gate on archive_thumbnail covers it
+        # (#1348 follow-up). The archive_deleted flag lets the UI render a
+        # "source deleted" badge on these rows.
+        if item.archive.deleted_at is not None:
+            response.archive_deleted = True
+        else:
+            response.archive_name = item.archive.print_name or item.archive.filename
+            response.archive_thumbnail = item.archive.thumbnail_path
+            response.print_time_seconds = item.archive.print_time_seconds
+            response.filament_used_grams = item.archive.filament_used_grams
+            response.filament_type = item.archive.filament_type
+            response.filament_color = item.archive.filament_color
+            response.layer_height = item.archive.layer_height
+            response.nozzle_diameter = item.archive.nozzle_diameter
+            response.sliced_for_model = item.archive.sliced_for_model
+            if item.plate_id:
+                archive_path = settings.base_dir / item.archive.file_path
+                if archive_path.exists():
+                    plate_time = _extract_print_time_from_3mf(archive_path, item.plate_id)
+                    plate_weight = sum(
+                        f["used_g"] for f in extract_filament_usage_from_3mf(archive_path, item.plate_id)
+                    )
+                    if plate_time is not None:
+                        response.print_time_seconds = plate_time
+                    if plate_weight > 0:
+                        response.filament_used_grams = plate_weight
     if item.library_file:
         response.library_file_name = (
             item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None
@@ -384,7 +399,7 @@ async def add_to_queue(
     # Validate library file exists (if provided) and get it for filament extraction
     library_file = None
     if data.library_file_id:
-        result = await db.execute(select(LibraryFile).where(LibraryFile.id == data.library_file_id))
+        result = await db.execute(LibraryFile.active().where(LibraryFile.id == data.library_file_id))
         library_file = result.scalar_one_or_none()
         if not library_file:
             raise HTTPException(400, "Library file not found")
@@ -486,6 +501,12 @@ async def add_to_queue(
                 if plate_time is not None:
                     cached_print_time = plate_time
 
+    # Validate project exists before insert so a bogus ID yields 404, not an FK-constraint 500
+    if data.project_id is not None:
+        project_result = await db.execute(select(Project).where(Project.id == data.project_id))
+        if not project_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Project not found")
+
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
     items = []
     for i in range(quantity):
@@ -511,6 +532,7 @@ async def add_to_queue(
             use_ams=data.use_ams,
             gcode_injection=data.gcode_injection,
             script_processing=data.script_processing,
+            project_id=data.project_id,
             position=max_pos + 1 + i,
             status="pending",
             created_by_id=current_user.id if current_user else None,
@@ -1011,19 +1033,25 @@ async def stop_queue_item(
 @router.post("/{item_id}/start")
 async def start_queue_item(
     item_id: int,
+    skip_filament_check: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
 ):
     """Manually start a staged (manual_start) queue item.
 
-    This clears the manual_start flag so the scheduler will pick it up,
-    or starts immediately if the printer is ready.
+    Clears the manual_start flag so the scheduler picks it up. When
+    ``skip_filament_check`` is false (the default) the live filament
+    deficit (#1496) is checked first — if the assigned spool can't satisfy
+    a slot's required grams, the route returns ``409`` with the deficit
+    payload so the caller can show a confirm dialog and retry with
+    ``skip_filament_check=true``.
     """
     result = await db.execute(
         select(PrintQueueItem)
         .options(
             selectinload(PrintQueueItem.archive),
             selectinload(PrintQueueItem.printer),
+            selectinload(PrintQueueItem.library_file),
             selectinload(PrintQueueItem.batch),
         )
         .where(PrintQueueItem.id == item_id)
@@ -1035,10 +1063,29 @@ async def start_queue_item(
     if item.status != "pending":
         raise HTTPException(400, f"Can only start pending items, current status: '{item.status}'")
 
-    # Clear manual_start flag so scheduler picks it up
+    # Live deficit check — re-evaluated against current spool state, so a
+    # spool swap between scheduler flagging and the user clicking ▶ clears
+    # the block automatically.
+    if not skip_filament_check:
+        deficit = await compute_deficit_for_queue_item(db, item)
+        if deficit:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "insufficient_filament",
+                    "deficit": [d.to_dict() for d in deficit],
+                },
+            )
+
+    # Print Anyway / no deficit: clear the flags and let the scheduler dispatch.
     item.manual_start = False
+    item.filament_short = False
     await db.commit()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 
-    logger.info("Manually started queue item %s (cleared manual_start flag)", item_id)
+    logger.info(
+        "Manually started queue item %s (cleared manual_start; skip_filament_check=%s)",
+        item_id,
+        skip_filament_check,
+    )
     return _enrich_response(item)

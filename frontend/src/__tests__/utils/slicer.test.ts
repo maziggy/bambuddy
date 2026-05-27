@@ -51,7 +51,7 @@ describe('slicer utility', () => {
 
       expect(appendSpy).toHaveBeenCalled();
       expect(createdLink.href).toContain('bambustudio://open?file=');
-      expect(createdLink.href).toContain('http://localhost:8000/file.3mf');
+      expect(createdLink.href).toContain(encodeURIComponent('http://localhost:8000/file.3mf'));
       expect(clickSpy).toHaveBeenCalled();
       expect(removeSpy).toHaveBeenCalled();
     });
@@ -78,15 +78,20 @@ describe('slicer utility', () => {
       expect(createdLink.href).toContain('open?file=');
     });
 
-    it('does not encode the file URL for orcaslicer', () => {
+    it('encodes filenames with spaces so the slicer receives %20 after url_decode (issue #1059)', () => {
       vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Windows NT 10.0)');
-      const url = 'http://localhost:8000/api/v1/archives/1/file/My Model.3mf';
+      // A download URL that already contains percent-encoded spaces — this is how
+      // Bambuddy emits archive paths (the filename in the URL is URL-path-encoded).
+      const url = 'http://localhost:8000/api/v1/archives/1/dl/TOKEN/Toothpick%20Launcher%20Print-in-Place.3mf';
       openInSlicer(url, 'orcaslicer');
 
-      // The href should contain the raw URL (browser may normalize it but it should not be double-encoded)
+      // Each %20 in the input must become %2520 in the href so that after the
+      // slicer's own url_decode() it comes back as %20 (preserving the original
+      // URL). Without this, the slicer would decode %20 → literal space and its
+      // subsequent HTTP fetch would fail.
       expect(createdLink.href).toContain('orcaslicer://open?file=');
-      // Should NOT contain %253A (double-encoded colon)
-      expect(createdLink.href).not.toContain('%253A');
+      expect(createdLink.href).toContain('Toothpick%2520Launcher%2520Print-in-Place.3mf');
+      expect(createdLink.href).not.toContain('Toothpick%20Launcher');
     });
 
     it('defaults to bambu_studio when no slicer specified', () => {

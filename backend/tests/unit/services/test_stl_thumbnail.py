@@ -180,6 +180,35 @@ endsolid cube"""
             result = generate_stl_thumbnail(stl_path, thumbnails_dir)
             assert result is None
 
+    @pytest.mark.skipif(
+        not _check_trimesh_available(),
+        reason="trimesh not installed",
+    )
+    def test_string_arguments_accepted_without_typeerror(self):
+        """Regression for #1299: external-scan path passed both args as str.
+
+        Before the fix, the function did ``thumbnails_dir / thumb_filename`` on
+        a ``str`` and raised ``TypeError: unsupported operand type(s) for /:
+        'str' and 'str'`` for every STL on an external folder scan. The fix
+        coerces both args to ``Path`` at entry. This test passes string args
+        and asserts the function either succeeds or returns ``None`` — but
+        never raises the TypeError.
+        """
+        from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stl_path = Path(tmpdir) / "cube.stl"
+            # Minimal valid binary STL: header (80 bytes) + tri count (0)
+            stl_path.write_bytes(b"\x00" * 80 + (0).to_bytes(4, "little"))
+
+            # str args — the exact shape the external-scan call site used.
+            result = generate_stl_thumbnail(str(stl_path), str(tmpdir))
+
+            # Zero-triangle mesh either yields no thumbnail or fails the
+            # downstream render — both are acceptable; what's NOT acceptable
+            # is a TypeError leaking out, which is what the str/str bug did.
+            assert result is None or Path(result).exists()
+
 
 class TestStlThumbnailConstants:
     """Tests for STL thumbnail service constants."""

@@ -1,11 +1,29 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PrinterBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     serial_number: str = Field(..., min_length=1, max_length=50)
+
+    @field_validator("serial_number")
+    @classmethod
+    def _normalize_serial_number(cls, v: str) -> str:
+        """Uppercase and trim the serial number.
+
+        Bambu serial numbers are uppercase alphanumeric, and the MQTT report
+        topic ``device/<serial>/report`` is case-sensitive. A serial entered
+        in the wrong case (or with stray whitespace) connects and subscribes
+        without error but never receives a message — the printer publishes to
+        the correctly-cased topic, so every status field stays unknown (#1465).
+        Normalising on input makes the subscribed topic always match.
+        """
+        normalized = v.strip().upper()
+        if not normalized:
+            raise ValueError("serial_number must not be blank")
+        return normalized
+
     ip_address: str = Field(
         ...,
         max_length=253,
@@ -18,6 +36,7 @@ class PrinterBase(BaseModel):
     external_camera_url: str | None = None
     external_camera_type: str | None = None  # "mjpeg", "rtsp", "snapshot", "usb"
     external_camera_enabled: bool = False
+    external_camera_snapshot_url: str | None = None  # Optional single-frame override; #1177
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
 
 
@@ -50,6 +69,7 @@ class PrinterUpdate(BaseModel):
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool | None = None
+    external_camera_snapshot_url: str | None = None  # #1177
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
@@ -63,6 +83,7 @@ class PrinterResponse(PrinterBase):
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool = False
+    external_camera_snapshot_url: str | None = None  # #1177
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
@@ -87,6 +108,7 @@ class PrinterResponse(PrinterBase):
             "external_camera_url": printer.external_camera_url,
             "external_camera_type": printer.external_camera_type,
             "external_camera_enabled": printer.external_camera_enabled,
+            "external_camera_snapshot_url": printer.external_camera_snapshot_url,
             "camera_rotation": printer.camera_rotation,
             "is_active": printer.is_active,
             "nozzle_count": printer.nozzle_count,
@@ -179,6 +201,24 @@ class AmsLabelBody(BaseModel):
     ams_serial: str = Field(default="", max_length=50)
 
 
+class FilaSwitchResponse(BaseModel):
+    """Filament Track Switch (FTS) state — accessory that mediates AMS-to-extruder routing.
+
+    When installed, the AMS info field reports bits 8-11 = 0xE (uninitialized)
+    because slots are dynamically routed via the FTS rather than tied to a
+    specific extruder. Frontend uses `installed` to suppress the per-extruder
+    slot filter in the print modal. See #1162.
+    """
+
+    installed: bool = False
+    # in[track] = currently loaded slot for that track (-1 = empty)
+    in_slots: list[int] = []
+    # out[track] = extruder this track terminates at (0 = right, 1 = left)
+    out_extruders: list[int] = []
+    stat: int = 0
+    info: int = 0
+
+
 class PrintOptionsResponse(BaseModel):
     """AI detection and print options from xcam data."""
 
@@ -225,6 +265,7 @@ class PrinterStatus(BaseModel):
     ipcam: bool = False  # Live view enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
     wired_network: bool = False  # Ethernet connection detected
+    door_open: bool = False  # Enclosure door open (X1/P1S/P2S/H2*)
     nozzles: list[NozzleInfoResponse] = []  # Nozzle hardware info (index 0=left/primary, 1=right)
     nozzle_rack: list[NozzleRackSlot] = []  # H2C 6-nozzle tool-changer rack
     print_options: PrintOptionsResponse | None = None  # AI detection and print options
@@ -244,6 +285,9 @@ class PrinterStatus(BaseModel):
     ams_mapping: list[int] = []
     # Per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
     ams_extruder_map: dict[str, int] = {}
+    # Filament Track Switch (FTS) accessory — when installed, AMS reports
+    # bits 8-11 = 0xE (uninitialized) and routing is dynamic via the FTS. See #1162.
+    fila_switch: FilaSwitchResponse | None = None
     # Currently loaded tray (global ID): 254 = external spool, 255 = no filament
     tray_now: int = 255
     # AMS status for filament change tracking
@@ -267,7 +311,52 @@ class PrinterStatus(BaseModel):
     firmware_version: str | None = None
     # Developer LAN mode: True = enabled, False = disabled (MQTT encryption), None = unknown
     developer_mode: bool | None = None
-    # Queue: user has acknowledged plate is cleared for next queued print
-    plate_cleared: bool = False
+    # Queue: printer is awaiting the user to acknowledge the build plate is cleared
+    # after a finished/failed print. Persisted across restarts (#961).
+    awaiting_plate_clear: bool = False
     # AMS drying support
     supports_drying: bool = False
+    # Linked archive for the active print (resolved via subtask_id). Frontend uses
+    # this to fetch plate metadata and show the plate name when the source 3MF is
+    # multi-plate (#881 follow-up).
+    current_archive_id: int | None = None
+    # 1-indexed plate number parsed from gcode_file (e.g. /Metadata/plate_2.gcode).
+    # Set for every active print regardless of plate count; the frontend decides
+    # whether to render it based on current_archive_id's is_multi_plate flag.
+    current_plate_id: int | None = None
+
+
+class DiagnosticCheck(BaseModel):
+    """One connection-diagnostic check result.
+
+    ``id`` is a stable key (port_mqtt, port_ftps, port_rtsps, network_mode,
+    subnet, mqtt_auth, developer_mode); the frontend renders the localized
+    title and fix text from id + status. ``params`` carries interpolation
+    values (e.g. network mode, IP addresses) for that text.
+    """
+
+    id: str
+    status: str  # "pass" | "fail" | "warn" | "skip"
+    params: dict = Field(default_factory=dict)
+
+
+class PrinterDiagnosticResult(BaseModel):
+    """Result of a printer connection diagnostic run."""
+
+    printer_id: int | None = None
+    ip_address: str
+    overall: str  # "ok" | "warnings" | "problems"
+    checks: list[DiagnosticCheck]
+
+
+class DiagnosticRequest(BaseModel):
+    """Pre-save (Add Printer) connection diagnostic request.
+
+    serial_number + access_code are optional: when both are present the
+    diagnostic also probes MQTT credentials, otherwise only the
+    network-level checks run.
+    """
+
+    ip_address: str
+    serial_number: str | None = None
+    access_code: str | None = None

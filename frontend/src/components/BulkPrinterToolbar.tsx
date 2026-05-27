@@ -22,7 +22,7 @@ interface PrinterStatus {
   connected: boolean;
   state: string | null;
   hms_errors?: HMSError[];
-  plate_cleared?: boolean;
+  awaiting_plate_clear?: boolean;
 }
 
 interface BulkPrinterToolbarProps {
@@ -76,7 +76,7 @@ export function BulkPrinterToolbar({
   );
   const anyStoppable = anyRunning || anyPaused;
   const anyNeedsClearPlate = selectedStatuses.some(
-    ({ status }) => status?.connected && (status.state === 'FINISH' || status.state === 'FAILED') && !status.plate_cleared,
+    ({ status }) => !!(status?.connected && status.awaiting_plate_clear),
   );
   const anyWithHMS = selectedStatuses.some(({ status }) => {
     if (!status?.connected || !status.hms_errors) return false;
@@ -94,12 +94,16 @@ export function BulkPrinterToolbar({
   printers.forEach(p => {
     const status = queryClient.getQueryData<PrinterStatus>(['printerStatus', p.id]);
     if (!status || !status.connected) { stateCounts.offline++; return; }
-    if (status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0) stateCounts.error++;
+    const hasKnownHms = status.hms_errors ? filterKnownHMSErrors(status.hms_errors).length > 0 : false;
+    if (hasKnownHms) stateCounts.error++;
     switch (status.state) {
       case 'RUNNING': stateCounts.printing++; break;
       case 'PAUSE': stateCounts.paused++; break;
       case 'FINISH': stateCounts.finished++; break;
-      case 'FAILED': stateCounts.error++; break;
+      // FAILED without an active HMS error is the post-cancel terminal state —
+      // group with FINISH. When HMS is active the error bucket is already
+      // incremented above; don't double-count.
+      case 'FAILED': if (!hasKnownHms) stateCounts.finished++; break;
       default: stateCounts.idle++; break;
     }
   });
@@ -108,7 +112,7 @@ export function BulkPrinterToolbar({
     printing: t('printers.status.printing'),
     paused: t('printers.status.paused', 'Paused'),
     finished: t('printers.status.finished', 'Finished'),
-    idle: t('printers.status.available'),
+    idle: t('printers.status.idle'),
     error: t('printers.status.problem'),
     offline: t('printers.status.offline'),
   };

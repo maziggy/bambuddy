@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.services.spoolman_tracking import (
+    _apply_spool_colors_to_archive,
     _get_fallback_spool_tag,
     _global_tray_id_to_ams_slot,
     _hash_serial_to_hex32,
@@ -19,15 +20,15 @@ from backend.app.services.spoolman_tracking import (
 class TestResolveSpoolTag:
     """Tests for _resolve_spool_tag()."""
 
-    def test_prefers_tray_uuid(self):
+    def test_prefers_tray_uuid_over_tag_uid(self):
         tray = {"tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4", "tag_uid": "DEADBEEF"}
         assert _resolve_spool_tag(tray) == "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"
 
-    def test_falls_back_to_tag_uid(self):
+    def test_falls_back_to_tag_uid_when_no_uuid(self):
         tray = {"tray_uuid": "", "tag_uid": "DEADBEEF"}
         assert _resolve_spool_tag(tray) == "DEADBEEF"
 
-    def test_skips_zero_uuid(self):
+    def test_falls_back_to_tag_uid_when_uuid_zero(self):
         tray = {"tray_uuid": "00000000000000000000000000000000", "tag_uid": "DEADBEEF"}
         assert _resolve_spool_tag(tray) == "DEADBEEF"
 
@@ -44,6 +45,10 @@ class TestResolveSpoolTag:
         tray = {"tray_uuid": "00000000000000000000000000000000", "tag_uid": "0000000000000000"}
         # global_tray_id 5 -> ams_id 1, tray_id 1
         assert _resolve_spool_tag(tray, "01P00A000000000", 5) == "ABA7845700010001"
+
+    def test_prefers_tray_uuid_over_fallback_when_non_zero(self):
+        tray = {"tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4", "tag_uid": ""}
+        assert _resolve_spool_tag(tray, "01P00A000000000", 0) == "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"
 
     def test_empty_both(self):
         tray = {"tray_uuid": "", "tag_uid": ""}
@@ -86,6 +91,35 @@ class TestResolveGlobalTrayId:
     def test_empty_mapping(self):
         mapping = []
         assert _resolve_global_tray_id(1, mapping) == 0
+
+    def test_minus_one_resolves_to_external_spool_when_present(self):
+        """#1276 (regression of #853): -1 in slot_to_tray is BambuStudio's
+        encoding for "external spool used" — look up the external spool in
+        ams_trays rather than falling through to the position-based default
+        (which would credit an unrelated AMS tray). Reporter ojimpo's H2S
+        had AMS slot 0 occupied with PLA and ran a TPU external-spool print;
+        the bug credited the TPU usage to the PLA spool.
+        """
+        # Single external spool (most common: H2S/X1C/P1S + external)
+        assert _resolve_global_tray_id(1, [-1], ams_trays={254: {}}) == 254
+        # AMS occupied with material AND external in use — fix prevents
+        # crediting AMS slot 0 (the actual bug from #1276)
+        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 1: {}, 2: {}, 3: {}, 254: {}}) == 254
+        # H2D-style deputy nozzle at 255
+        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 255: {}}) == 255
+        # Both external slots present (multi-nozzle) — prefer 254 (main on
+        # single-nozzle, deputy on H2D — matches tray_now reporting)
+        assert _resolve_global_tray_id(1, [-1], ams_trays={254: {}, 255: {}}) == 254
+
+    def test_minus_one_falls_through_when_no_external_in_ams_trays(self):
+        """If -1 is seen but ams_trays has no external spool (254/255),
+        fall through to position-based default (legacy behavior preserved
+        for callers that don't pass ams_trays or pre-fix call sites).
+        """
+        # ams_trays without external — fall through to legacy behavior
+        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 1: {}}) == 0
+        # No ams_trays passed at all — legacy fallback
+        assert _resolve_global_tray_id(1, [-1]) == 0
 
 
 class TestFallbackTagHelpers:
@@ -217,3 +251,119 @@ class TestStorePrintData:
         tracking = db.add.call_args.args[0]
         assert tracking.slot_to_tray == [1, -1, -1, -1]
         db.execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stores_tracking_when_disable_weight_sync_is_false(self):
+        """#1119: per-print tracking must run regardless of disable_weight_sync.
+
+        Previously store_print_data short-circuited when the deprecated
+        `spoolman_disable_weight_sync` flag was off, leaving non-BL spools
+        with no weight-update path at all. Per-print tracking is now the
+        only weight writer for Spoolman, so it must run whenever Spoolman
+        is enabled.
+        """
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock())
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}]}]}
+        )
+
+        mock_settings = MagicMock()
+        mock_path = MagicMock()
+        mock_path.exists.return_value = True
+        mock_settings.base_dir.__truediv__.return_value = mock_path
+
+        # Only spoolman_enabled is consulted now (disable_weight_sync is no
+        # longer read). The single side_effect entry proves no extra
+        # get_setting calls slip back in.
+        with (
+            patch("backend.app.services.spoolman_tracking.app_settings", mock_settings),
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(side_effect=["true"])),
+            patch(
+                "backend.app.utils.threemf_tools.extract_filament_usage_from_3mf",
+                return_value=[{"slot_id": 1, "used_g": 5.0, "type": "PLA", "color": "#FF0000"}],
+            ),
+            patch("backend.app.utils.threemf_tools.extract_layer_filament_usage_from_3mf", return_value=None),
+            patch("backend.app.utils.threemf_tools.extract_filament_properties_from_3mf", return_value={}),
+        ):
+            await store_print_data(
+                printer_id=1,
+                archive_id=20,
+                file_path="archives/test.3mf",
+                db=db,
+                printer_manager=printer_manager,
+                ams_mapping=[0],
+            )
+
+        # Tracking row was inserted — the fix is working.
+        db.add.assert_called_once()
+
+
+class TestApplySpoolColorsToArchive:
+    """`_apply_spool_colors_to_archive` stamps the archive's filament_color
+    from the matched Spoolman spools (#1494) — the Spoolman-mode mirror of
+    the built-in inventory rewrite in usage_tracker."""
+
+    def _make_db(self, archive):
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=archive)))
+        return db
+
+    @pytest.mark.asyncio
+    async def test_rewrites_color_from_spoolman_spool(self):
+        """The #1494 case: 3MF said #161616, the Spoolman spool is 000000."""
+        archive = MagicMock()
+        archive.filament_color = "#161616"
+        db = self._make_db(archive)
+
+        await _apply_spool_colors_to_archive(
+            db,
+            archive_id=10,
+            filament_usage=[{"slot_id": 1, "used_g": 15.9}],
+            slot_colors={1: "000000"},
+        )
+
+        assert archive.filament_color == "#000000"
+        db.commit.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_empty_slot_colors_is_noop(self):
+        """No resolved spool colours — never touches the DB."""
+        db = self._make_db(MagicMock())
+        await _apply_spool_colors_to_archive(
+            db, archive_id=10, filament_usage=[{"slot_id": 1, "used_g": 15.9}], slot_colors={}
+        )
+        db.execute.assert_not_awaited()
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_partial_match_leaves_archive_untouched(self):
+        """Slot 2 used but unresolved — keep the 3MF colour, don't load the archive."""
+        db = self._make_db(MagicMock())
+        await _apply_spool_colors_to_archive(
+            db,
+            archive_id=10,
+            filament_usage=[
+                {"slot_id": 1, "used_g": 10.0},
+                {"slot_id": 2, "used_g": 20.0},
+            ],
+            slot_colors={1: "000000"},
+        )
+        db.execute.assert_not_awaited()
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_missing_archive_does_not_crash(self):
+        """Archive row gone (deleted between completion and reporting)."""
+        db = self._make_db(None)
+        await _apply_spool_colors_to_archive(
+            db,
+            archive_id=10,
+            filament_usage=[{"slot_id": 1, "used_g": 15.9}],
+            slot_colors={1: "000000"},
+        )
+        db.commit.assert_not_awaited()

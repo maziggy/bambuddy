@@ -1,4 +1,15 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
+import { compareFwVersions } from '../utils/firmwareVersion';
+import { formatPrintName } from '../utils/printName';
+import { computePopoverPosition } from '../utils/popoverPosition';
+
+// AMS drying popover dimensions — w-[240px] on the popover, estimated height
+// covers header + filament select + temp slider + duration + rotate-tray
+// toggle + buttons. Over-estimating is fine (flip-above kicks in slightly
+// earlier); under-estimating leaves the popover clipped off the bottom (the
+// original bug at #1447).
+const DRYING_POPOVER_WIDTH = 240;
+const DRYING_POPOVER_ESTIMATED_HEIGHT = 320;
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -12,6 +23,7 @@ import {
   MoreVertical,
   Trash2,
   RefreshCw,
+  RotateCw,
   Box,
   HardDrive,
   AlertTriangle,
@@ -22,6 +34,7 @@ import {
   Zap,
   Wrench,
   ChevronDown,
+  Filter,
   Pencil,
   ArrowUp,
   ArrowDown,
@@ -47,13 +60,22 @@ import {
   Info,
   Cable,
   Flame,
+  Snowflake,
   Gauge,
+  DoorOpen,
+  DoorClosed,
+  MoveVertical,
+  LogIn,
+  LogOut,
+  MoreHorizontal,
+  SlidersHorizontal,
+  Stethoscope,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
-import { api, discoveryApi, firmwareApi, withStreamToken } from '../api/client';
+import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -70,287 +92,27 @@ import { AssignSpoolModal } from '../components/AssignSpoolModal';
 import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
+import { PlateClearedIcon } from '../components/icons/PlateClearedIcon';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
 import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
-import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag } from '../utils/amsHelpers';
+import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, isBambuLabSpool } from '../utils/amsHelpers';
 import { getPrinterImage, getWifiStrength, filterCompatibleQueueItems } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
+import { Collapsible } from '../components/Collapsible';
+import { ConnectionDiagnosticModal, DiagnosticChecklist } from '../components/ConnectionDiagnostic';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
-// Complete Bambu Lab filament color mapping by tray_id_name
-// Source: https://github.com/queengooborg/Bambu-Lab-RFID-Library
-const BAMBU_FILAMENT_COLORS: Record<string, string> = {
-  // PLA Basic (A00)
-  'A00-W1': 'Jade White',
-  'A00-P0': 'Beige',
-  'A00-D2': 'Light Gray',
-  'A00-Y0': 'Yellow',
-  'A00-Y2': 'Sunflower Yellow',
-  'A00-A1': 'Pumpkin Orange',
-  'A00-A0': 'Orange',
-  'A00-Y4': 'Gold',
-  'A00-G3': 'Bright Green',
-  'A00-G1': 'Bambu Green',
-  'A00-G2': 'Mistletoe Green',
-  'A00-R3': 'Hot Pink',
-  'A00-P6': 'Magenta',
-  'A00-R0': 'Red',
-  'A00-R2': 'Maroon Red',
-  'A00-P5': 'Purple',
-  'A00-P2': 'Indigo Purple',
-  'A00-B5': 'Turquoise',
-  'A00-B8': 'Cyan',
-  'A00-B3': 'Cobalt Blue',
-  'A00-N0': 'Brown',
-  'A00-N1': 'Cocoa Brown',
-  'A00-Y3': 'Bronze',
-  'A00-D0': 'Gray',
-  'A00-D1': 'Silver',
-  'A00-B1': 'Blue Grey',
-  'A00-D3': 'Dark Gray',
-  'A00-K0': 'Black',
-  // PLA Basic Gradient (A00-M*)
-  'A00-M3': 'Pink Citrus',
-  'A00-M6': 'Dusk Glare',
-  'A00-M0': 'Arctic Whisper',
-  'A00-M1': 'Solar Breeze',
-  'A00-M5': 'Blueberry Bubblegum',
-  'A00-M4': 'Mint Lime',
-  'A00-M2': 'Ocean to Meadow',
-  'A00-M7': 'Cotton Candy Cloud',
-  // PLA Lite (A18)
-  'A18-K0': 'Black',
-  'A18-D0': 'Gray',
-  'A18-W0': 'White',
-  'A18-R0': 'Red',
-  'A18-Y0': 'Yellow',
-  'A18-B0': 'Cyan',
-  'A18-B1': 'Blue',
-  'A18-P0': 'Matte Beige',
-  // PLA Matte (A01)
-  'A01-W2': 'Ivory White',
-  'A01-W3': 'Bone White',
-  'A01-Y2': 'Lemon Yellow',
-  'A01-A2': 'Mandarin Orange',
-  'A01-P3': 'Sakura Pink',
-  'A01-P4': 'Lilac Purple',
-  'A01-R3': 'Plum',
-  'A01-R1': 'Scarlet Red',
-  'A01-R4': 'Dark Red',
-  'A01-G0': 'Apple Green',
-  'A01-G1': 'Grass Green',
-  'A01-G7': 'Dark Green',
-  'A01-B4': 'Ice Blue',
-  'A01-B0': 'Sky Blue',
-  'A01-B3': 'Marine Blue',
-  'A01-B6': 'Dark Blue',
-  'A01-Y3': 'Desert Tan',
-  'A01-N1': 'Latte Brown',
-  'A01-N3': 'Caramel',
-  'A01-R2': 'Terracotta',
-  'A01-N2': 'Dark Brown',
-  'A01-N0': 'Dark Chocolate',
-  'A01-D3': 'Ash Gray',
-  'A01-D0': 'Nardo Gray',
-  'A01-K1': 'Charcoal',
-  // PLA Glow (A12)
-  'A12-G0': 'Green',
-  'A12-R0': 'Pink',
-  'A12-A0': 'Orange',
-  'A12-Y0': 'Yellow',
-  'A12-B0': 'Blue',
-  // PLA Marble (A07)
-  'A07-R5': 'Red Granite',
-  'A07-D4': 'White Marble',
-  // PLA Aero (A11)
-  'A11-W0': 'White',
-  'A11-K0': 'Black',
-  // PLA Sparkle (A08)
-  'A08-G3': 'Alpine Green Sparkle',
-  'A08-D5': 'Slate Gray Sparkle',
-  'A08-B7': 'Royal Purple Sparkle',
-  'A08-R2': 'Crimson Red Sparkle',
-  'A08-K2': 'Onyx Black Sparkle',
-  'A08-Y1': 'Classic Gold Sparkle',
-  // PLA Metal (A02)
-  'A02-B2': 'Cobalt Blue Metallic',
-  'A02-G2': 'Oxide Green Metallic',
-  'A02-Y1': 'Iridium Gold Metallic',
-  'A02-D2': 'Iron Gray Metallic',
-  // PLA Translucent (A17)
-  'A17-B1': 'Blue',
-  'A17-A0': 'Orange',
-  'A17-P0': 'Purple',
-  // PLA Silk+ (A06)
-  'A06-Y1': 'Gold',
-  'A06-D0': 'Titan Gray',
-  'A06-D1': 'Silver',
-  'A06-W0': 'White',
-  'A06-R0': 'Candy Red',
-  'A06-G0': 'Candy Green',
-  'A06-G1': 'Mint',
-  'A06-B1': 'Blue',
-  'A06-B0': 'Baby Blue',
-  'A06-P0': 'Purple',
-  'A06-R1': 'Rose Gold',
-  'A06-R2': 'Pink',
-  'A06-Y0': 'Champagne',
-  // PLA Silk Multi-Color (A05)
-  'A05-M8': 'Dawn Radiance',
-  'A05-M4': 'Aurora Purple',
-  'A05-M1': 'South Beach',
-  'A05-T3': 'Neon City',
-  'A05-T2': 'Midnight Blaze',
-  'A05-T1': 'Gilded Rose',
-  'A05-T4': 'Blue Hawaii',
-  'A05-T5': 'Velvet Eclipse',
-  // PLA Galaxy (A15)
-  'A15-B0': 'Purple',
-  'A15-G0': 'Green',
-  'A15-G1': 'Nebulae',
-  'A15-R0': 'Brown',
-  // PLA Wood (A16)
-  'A16-K0': 'Black Walnut',
-  'A16-R0': 'Rosewood',
-  'A16-N0': 'Clay Brown',
-  'A16-G0': 'Classic Birch',
-  'A16-W0': 'White Oak',
-  'A16-Y0': 'Ochre Yellow',
-  // PLA-CF (A50)
-  'A50-D6': 'Lava Gray',
-  'A50-K0': 'Black',
-  'A50-B6': 'Royal Blue',
-  // PLA Tough+ (A10)
-  'A10-W0': 'White',
-  'A10-D0': 'Gray',
-  // PLA Tough (A09)
-  'A09-B5': 'Lavender Blue',
-  'A09-B4': 'Light Blue',
-  'A09-A0': 'Orange',
-  'A09-D1': 'Silver',
-  'A09-R3': 'Vermilion Red',
-  'A09-Y0': 'Yellow',
-  // PETG HF (G02)
-  'G02-K0': 'Black',
-  'G02-W0': 'White',
-  'G02-R0': 'Red',
-  'G02-D0': 'Gray',
-  'G02-D1': 'Dark Gray',
-  'G02-Y1': 'Cream',
-  'G02-Y0': 'Yellow',
-  'G02-A0': 'Orange',
-  'G02-N1': 'Peanut Brown',
-  'G02-G1': 'Lime Green',
-  'G02-G0': 'Green',
-  'G02-G2': 'Forest Green',
-  'G02-B1': 'Lake Blue',
-  'G02-B0': 'Blue',
-  // PETG Translucent (G01)
-  'G01-G1': 'Translucent Teal',
-  'G01-B0': 'Translucent Light Blue',
-  'G01-C0': 'Clear',
-  'G01-D0': 'Translucent Gray',
-  'G01-G0': 'Translucent Olive',
-  'G01-N0': 'Translucent Brown',
-  'G01-A0': 'Translucent Orange',
-  'G01-P1': 'Translucent Pink',
-  'G01-P0': 'Translucent Purple',
-  // PETG-CF (G50)
-  'G50-P7': 'Violet Purple',
-  'G50-K0': 'Black',
-  // ABS (B00)
-  'B00-D1': 'Silver',
-  'B00-K0': 'Black',
-  'B00-W0': 'White',
-  'B00-G6': 'Bambu Green',
-  'B00-G7': 'Olive',
-  'B00-Y1': 'Tangerine Yellow',
-  'B00-A0': 'Orange',
-  'B00-R0': 'Red',
-  'B00-B4': 'Azure',
-  'B00-B0': 'Blue',
-  'B00-B6': 'Navy Blue',
-  // ABS-GF (B50)
-  'B50-A0': 'Orange',
-  'B50-K0': 'Black',
-  // ASA (B01)
-  'B01-W0': 'White',
-  'B01-K0': 'Black',
-  'B01-D0': 'Gray',
-  // ASA Aero (B02)
-  'B02-W0': 'White',
-  // PC (C00)
-  'C00-C1': 'Transparent',
-  'C00-C0': 'Clear Black',
-  'C00-K0': 'Black',
-  'C00-W0': 'White',
-  // PC FR (C01)
-  'C01-K0': 'Black',
-  // TPU for AMS (U02)
-  'U02-B0': 'Blue',
-  'U02-D0': 'Gray',
-  'U02-K0': 'Black',
-  // PAHT-CF (N04)
-  'N04-K0': 'Black',
-  // PA6-GF (N08)
-  'N08-K0': 'Black',
-  // Support for PLA/PETG (S02, S05)
-  'S02-W0': 'Nature',
-  'S02-W1': 'White',
-  'S05-C0': 'Black',
-  // Support for ABS (S06)
-  'S06-W0': 'White',
-  // Support for PA/PET (S03)
-  'S03-G1': 'Green',
-  // PVA (S04)
-  'S04-Y0': 'Clear',
-};
-
-// Fallback color codes for unknown material prefixes
-const BAMBU_COLOR_CODE_FALLBACK: Record<string, string> = {
-  'W0': 'White', 'W1': 'Jade White', 'W2': 'Ivory White', 'W3': 'Bone White',
-  'Y0': 'Yellow', 'Y1': 'Gold', 'Y2': 'Sunflower Yellow', 'Y3': 'Bronze', 'Y4': 'Gold',
-  'A0': 'Orange', 'A1': 'Pumpkin Orange', 'A2': 'Mandarin Orange',
-  'R0': 'Red', 'R1': 'Scarlet Red', 'R2': 'Maroon Red', 'R3': 'Hot Pink', 'R4': 'Dark Red', 'R5': 'Red Granite',
-  'P0': 'Beige', 'P1': 'Pink', 'P2': 'Indigo Purple', 'P3': 'Sakura Pink', 'P4': 'Lilac Purple', 'P5': 'Purple', 'P6': 'Magenta', 'P7': 'Violet Purple',
-  'B0': 'Blue', 'B1': 'Blue Grey', 'B2': 'Cobalt Blue', 'B3': 'Cobalt Blue', 'B4': 'Ice Blue', 'B5': 'Turquoise', 'B6': 'Navy Blue', 'B7': 'Royal Purple', 'B8': 'Cyan',
-  'G0': 'Green', 'G1': 'Grass Green', 'G2': 'Mistletoe Green', 'G3': 'Bright Green', 'G6': 'Bambu Green', 'G7': 'Dark Green',
-  'N0': 'Brown', 'N1': 'Peanut Brown', 'N2': 'Dark Brown', 'N3': 'Caramel',
-  'D0': 'Gray', 'D1': 'Silver', 'D2': 'Light Gray', 'D3': 'Dark Gray', 'D4': 'White Marble', 'D5': 'Slate Gray', 'D6': 'Lava Gray',
-  'K0': 'Black', 'K1': 'Charcoal', 'K2': 'Onyx Black',
-  'C0': 'Clear Black', 'C1': 'Transparent',
-  'M0': 'Arctic Whisper', 'M1': 'Solar Breeze', 'M2': 'Ocean to Meadow', 'M3': 'Pink Citrus', 'M4': 'Aurora Purple', 'M5': 'Blueberry Bubblegum', 'M6': 'Dusk Glare', 'M7': 'Cotton Candy Cloud', 'M8': 'Dawn Radiance',
-  'T1': 'Gilded Rose', 'T2': 'Midnight Blaze', 'T3': 'Neon City', 'T4': 'Blue Hawaii', 'T5': 'Velvet Eclipse',
-};
-
-// Extract plate number from gcode_file path and append to print name
-function formatPrintName(name: string | null, gcodeFile: string | null | undefined, t: (key: string, fallback: string, opts?: Record<string, unknown>) => string): string {
-  if (!name) return '';
-  if (!gcodeFile) return name;
-  const match = gcodeFile.match(/plate_(\d+)\.gcode/);
-  if (match && parseInt(match[1], 10) > 1) {
-    return `${name} — ${t('printers.plateNumber', 'Plate {{number}}', { number: match[1] })}`;
-  }
-  return name;
+export interface SpoolmanSlotAssignmentRow {
+  printer_id: number;
+  ams_id: number;
+  tray_id: number;
+  spoolman_spool_id: number;
 }
 
-// Get color name from Bambu Lab tray_id_name (e.g., "A00-Y2" -> "Sunflower Yellow")
-function getBambuColorName(trayIdName: string | null | undefined): string | null {
-  if (!trayIdName) return null;
-
-  // First try exact match with full tray_id_name
-  if (BAMBU_FILAMENT_COLORS[trayIdName]) {
-    return BAMBU_FILAMENT_COLORS[trayIdName];
-  }
-
-  // Fall back to color code suffix lookup for unknown material prefixes
-  const parts = trayIdName.split('-');
-  if (parts.length < 2) return null;
-  const colorCode = parts[1];
-  return BAMBU_COLOR_CODE_FALLBACK[colorCode] || null;
-}
+// Color names resolve via getColorName() which reads the backend color_catalog
+// (loaded once by ColorCatalogProvider). No hardcoded tables here — see #857.
 
 // Format K value with 3 decimal places, default to 0.020 if null
 function formatKValue(k: number | null | undefined): string {
@@ -746,14 +508,17 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
 // H2C Nozzle Rack Card — compact single row showing 6-position tool-changer dock
 function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client').NozzleRackSlot[]; filamentInfo?: Record<string, { name: string; k: number | null }> }) {
   const { t } = useTranslation();
-  // Rack nozzles only (IDs >= 2) — excludes L/R hotend nozzles (IDs 0, 1)
-  // H2C rack IDs are 16-21 — map by actual ID so empty slots appear in the correct position
+  // Rack nozzles only (IDs >= 2) — excludes L/R hotend nozzles (IDs 0, 1).
+  // H2C rack slot IDs are fixed at 16..21. When a nozzle is picked up into the
+  // hotend the firmware omits that rack ID entirely, so we must map by the fixed
+  // base — computing it from min(present IDs) shifts everything left when slot 16
+  // is the one currently mounted (#943).
   const rackNozzles = slots.filter(s => s.id >= 2);
   const RACK_SIZE = 6;
-  const minRackId = rackNozzles.length > 0 ? Math.min(...rackNozzles.map(s => s.id)) : 16;
+  const RACK_BASE_ID = 16;
   const rackSlots: (import('../api/client').NozzleRackSlot)[] = Array.from(
     { length: RACK_SIZE },
-    (_, i) => rackNozzles.find(s => s.id === minRackId + i) ?? {
+    (_, i) => rackNozzles.find(s => s.id === RACK_BASE_ID + i) ?? {
       id: -(i + 1), nozzle_type: '', nozzle_diameter: '', wear: null, stat: null,
       max_temp: 0, serial_number: '', filament_color: '', filament_id: '', filament_type: '',
     },
@@ -849,6 +614,28 @@ function ThermometerFull({ className }: { className?: string }) {
       <rect x="4.5" y="3" width="3" height="9.5" fill="#c62828" rx="0.5"/>
       <circle cx="6" cy="15" r="2" fill="#c62828"/>
       <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke="#C3C2C1" strokeWidth="1" fill="none"/>
+    </svg>
+  );
+}
+
+// Nozzle icon - schematic hot-end view (filament body + heater block + tip).
+// Added for visual parity with the thermometer icons on the dual-nozzle card
+// that previously had no icon at all (#1115, design by @m4rtini2).
+function NozzleIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="9.2" y="3.4" width="5.6" height="8.1" />
+      <rect x="6" y="11.5" width="12.1" height="3.7" />
+      <path d="M 7.3 15.2 L 12.1 19.6 L 16.7 15.2" />
     </svg>
   );
 }
@@ -998,9 +785,7 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, on
   );
 }
 
-// Get AMS label: AMS-A/B/C/D for regular AMS, HT-A/B for AMS-HT (single spool)
-// Always use tray count as the source of truth (1 tray = AMS-HT, 4 trays = regular AMS)
-// AMS-HT uses IDs 128+ while regular AMS uses 0-3
+
 function getAmsLabel(amsId: number | string, trayCount: number): string {
   // Ensure amsId is a number (backend might send string)
   const id = typeof amsId === 'string' ? parseInt(amsId, 10) : amsId;
@@ -1012,30 +797,23 @@ function getAmsLabel(amsId: number | string, trayCount: number): string {
   return isHt ? `HT-${letter}` : `AMS-${letter}`;
 }
 
-
-/**
- * Check if a tray contains a Bambu Lab spool (RFID-tagged).
- * Only checks hardware identifiers (tray_uuid, tag_uid) — NOT tray_info_idx,
- * which is a filament profile/preset ID that third-party spools also get when
- * the user selects a generic Bambu preset (e.g. "GFA00" for Generic PLA).
+/** Classify an empty AMS slot for UI rendering (#1322 follow-up).
+ *
+ *  "physical" — firmware positively confirmed no spool (state 9 or 10). The
+ *  bambu_mqtt handler now promotes tray_exist_bits=0 slots to state=9, so
+ *  every empty-by-bitmask slot lands here regardless of firmware payload
+ *  shape.
+ *
+ *  "reset" — tray_type is missing/empty but firmware hasn't confirmed
+ *  emptiness (state is null, 3, or any non-9/10 value). Typically a slot
+ *  the user cleared with "Reset Slot" where a physical spool may still be
+ *  loaded but unassigned.
+ *
+ *  Returns null when the slot is loaded (tray_type is present).
  */
-function isBambuLabSpool(tray: {
-  tray_uuid?: string | null;
-  tag_uid?: string | null;
-} | null | undefined): boolean {
-  if (!tray) return false;
-
-  // Check tray_uuid (32 hex chars, non-zero)
-  if (tray.tray_uuid && tray.tray_uuid !== '00000000000000000000000000000000') {
-    return true;
-  }
-
-  // Check tag_uid (16 hex chars, non-zero)
-  if (tray.tag_uid && tray.tag_uid !== '0000000000000000') {
-    return true;
-  }
-
-  return false;
+function getEmptySlotKind(tray: { tray_type?: string | null; state?: number | null } | null | undefined): 'physical' | 'reset' | null {
+  if (tray?.tray_type) return null;
+  return (tray?.state === 9 || tray?.state === 10) ? 'physical' : 'reset';
 }
 
 
@@ -1151,8 +929,10 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
       } else if (!status.connected) {
         offline++;
       } else {
-        // Count printers with HMS errors
-        if (status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0) {
+        // Count printers with active HMS errors as problems
+        const knownHmsCount =
+          status.hms_errors ? filterKnownHMSErrors(status.hms_errors).length : 0;
+        if (knownHmsCount > 0) {
           error++;
         }
         switch (status.state) {
@@ -1173,7 +953,16 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
             finished++;
             break;
           case 'FAILED':
-            error++;
+            // FAILED is the printer's terminal gcode_state after a print stops —
+            // including user cancellations, where there's no actual fault. Only
+            // count it as a "problem" when an HMS error is also active; otherwise
+            // it's just a print that ended unsuccessfully and the plate needs
+            // clearing (same as FINISH from the operator's perspective).
+            if (knownHmsCount > 0) {
+              // Already counted above
+            } else {
+              finished++;
+            }
             break;
           default:
             idle++;
@@ -1201,7 +990,7 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-4 gap-y-2 text-sm">
+    <div className="mt-1 flex flex-wrap items-center gap-4 gap-y-2 text-bambu-gray">
       {badges.map(({ count, dot, label }) => count > 0 && (
         <div key={label} className="flex items-center gap-1.5">
           <div className={`w-2 h-2 rounded-full ${dot}`} />
@@ -1237,6 +1026,128 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
 
 type SortOption = 'name' | 'status' | 'model' | 'location';
 type ViewMode = 'expanded' | 'compact';
+
+type ToolbarDropdownOption<T extends string> = {
+  value: T;
+  label: string;
+};
+
+function ToolbarDropdown<T extends string>({
+  value,
+  options,
+  onChange,
+  fullWidth = false,
+}: {
+  value: T;
+  options: ToolbarDropdownOption<T>[];
+  onChange: (value: T) => void;
+  fullWidth?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(option => option.value === value) ?? options[0];
+
+  return (
+    <div className={`relative ${fullWidth ? 'w-full min-w-0' : ''}`}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(open => !open)}
+        className={`h-8 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white text-sm font-medium transition-colors hover:bg-bambu-dark-tertiary focus:outline-none focus:border-bambu-green flex items-center justify-between gap-2 ${fullWidth ? 'w-full' : 'min-w-28'}`}
+      >
+        <span className="truncate">{selectedOption?.label}</span>
+        <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="absolute left-0 top-full z-20 mt-1 min-w-full rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary py-1 shadow-xl">
+            {options.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setIsOpen(false);
+                }}
+                className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-bambu-dark-tertiary ${
+                  option.value === value ? 'text-bambu-green' : 'text-white'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ToolbarMenu({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(open => !open)}
+        className="h-8 w-8 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center justify-center"
+        aria-label={label}
+        title={label}
+      >
+        {icon}
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-40 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-2 shadow-xl">
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const STATUS_GROUP_ORDER: string[] = ['error', 'printing', 'paused', 'finished', 'idle', 'offline'];
+
+const STATUS_GROUP_META: Record<string, { labelKey: string; dot: string }> = {
+  error:    { labelKey: 'printers.status.problem',   dot: 'bg-status-error' },
+  printing: { labelKey: 'printers.status.printing',  dot: 'bg-bambu-green animate-pulse' },
+  paused:   { labelKey: 'printers.status.paused',    dot: 'bg-status-warning' },
+  finished: { labelKey: 'printers.status.finished',  dot: 'bg-blue-400' },
+  idle:     { labelKey: 'printers.status.idle',       dot: 'bg-bambu-green' },
+  offline:  { labelKey: 'printers.status.offline',   dot: 'bg-gray-400' },
+};
+
+/** Classify a printer into one of the UI status buckets. */
+function classifyPrinterStatus(
+  status: { connected: boolean; state: string | null; hms_errors?: HMSError[] } | undefined,
+): PrinterState {
+  if (!status?.connected) return 'offline';
+  const hmsErrors = status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
+  if (hmsErrors.length > 0) return 'error';
+  switch (status.state) {
+    case 'RUNNING': return 'printing';
+    case 'PAUSE':   return 'paused';
+    case 'FINISH':  return 'finished';
+    // FAILED without an active HMS error is the printer's terminal state after
+    // any unsuccessful end — including user-cancellations. Treat the same as
+    // FINISH for grouping/badging purposes; only escalate to "error" when an
+    // HMS code is actually attached (handled by the early-return above).
+    case 'FAILED':  return 'finished';
+    default:        return 'idle';
+  }
+}
 
 /**
  * Get human-readable status display text for a printer.
@@ -1284,6 +1195,8 @@ function mapModelCode(ssdpModel: string | null): string {
     'BL-P001': 'X1C',
     'BL-P002': 'X1',
     'BL-P003': 'X1E',
+    // X2 Series
+    'N6': 'X2D',
     // P Series
     'C11': 'P1S',
     'C12': 'P1P',
@@ -1295,6 +1208,7 @@ function mapModelCode(ssdpModel: string | null): string {
     'X1C': 'X1C',
     'X1': 'X1',
     'X1E': 'X1E',
+    'X2D': 'X2D',
     'P1S': 'P1S',
     'P1P': 'P1P',
     'P2S': 'P2S',
@@ -1529,12 +1443,16 @@ function PrinterCard({
   spoolmanSyncMode,
   onGetAssignment,
   onUnassignSpool,
+  spoolmanSpools,
+  spoolmanSlotAssignments,
+  spoolmanLoading = false,
+  onUnassignSpoolmanSpool,
   timeFormat = 'system',
   cameraViewMode = 'window',
   onOpenEmbeddedCamera,
   checkPrinterFirmware = true,
   dryingPresets = DRYING_PRESETS,
-  requirePlateClear = true,
+  requirePlateClear = false,
   selectionMode = false,
   isSelected = false,
   onToggleSelect,
@@ -1558,6 +1476,10 @@ function PrinterCard({
   spoolAssignments?: SpoolAssignment[];
   onGetAssignment?: (printerId: number, amsId: number, trayId: number) => SpoolAssignment | undefined;
   onUnassignSpool?: (printerId: number, amsId: number, trayId: number) => void;
+  spoolmanSpools?: InventorySpool[];
+  spoolmanSlotAssignments?: SpoolmanSlotAssignmentRow[];
+  spoolmanLoading?: boolean;
+  onUnassignSpoolmanSpool?: (spoolmanSpoolId: number) => void;
   timeFormat?: 'system' | '12h' | '24h';
   cameraViewMode?: 'window' | 'embedded';
   onOpenEmbeddedCamera?: (printerId: number, printerName: string) => void;
@@ -1581,14 +1503,20 @@ function PrinterCard({
   const [showMQTTDebug, setShowMQTTDebug] = useState(false);
   const [showPowerOnConfirm, setShowPowerOnConfirm] = useState(false);
   const [showPowerOffConfirm, setShowPowerOffConfirm] = useState(false);
+  const [haToggleConfirm, setHaToggleConfirm] = useState<SmartPlug | null>(null);
   const [showHMSModal, setShowHMSModal] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState<number | null>(null);
+  const [showAirductMenu, setShowAirductMenu] = useState<number | null>(null);
+  const [showBedJogMenu, setShowBedJogMenu] = useState<number | null>(null);
+  const [bedJogStep, setBedJogStep] = useState<number>(10);
+  const [showNotHomedModal, setShowNotHomedModal] = useState<null | { distance: number }>(null);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [showUploadForPrint, setShowUploadForPrint] = useState(false);
   const [showPrinterInfo, setShowPrinterInfo] = useState(false);
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
   const closePrinterInfo = useCallback(() => setShowPrinterInfo(false), []);
   const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
   // AMS drying popover state: which AMS unit has the popover open
@@ -1745,6 +1673,23 @@ function PrinterCard({
     staleTime: 2 * 60 * 1000, // 2 minutes
   });
 
+  // Fetch plate list for the archive linked to the active print (#881 follow-up).
+  // Only queried when there's a running print backed by an archive; shared
+  // React Query cache with the Queue / Archives pages keeps it cheap.
+  const activeArchiveId =
+    (status?.state === 'RUNNING' || status?.state === 'PAUSE') ? status?.current_archive_id ?? null : null;
+  const { data: activeArchivePlates } = useQuery({
+    queryKey: ['archive-plates', activeArchiveId],
+    queryFn: () => api.getArchivePlates(activeArchiveId!),
+    enabled: activeArchiveId != null,
+    staleTime: 5 * 60 * 1000,
+  });
+  const activePlateLabel = (() => {
+    if (!activeArchivePlates?.is_multi_plate || status?.current_plate_id == null) return null;
+    const plate = activeArchivePlates.plates.find(p => p.index === status.current_plate_id);
+    return plate?.name || t('printers.plateNumber', 'Plate {{number}}', { number: status.current_plate_id });
+  })();
+
   // Fetch user-defined AMS friendly names from the database
   const { data: amsLabels, refetch: refetchAmsLabels } = useQuery({
     queryKey: ['amsLabels', printer.id],
@@ -1862,6 +1807,33 @@ function PrinterCard({
     enabled: status?.connected && status?.state !== 'RUNNING',
   });
   const lastPrint = lastPrints?.[0];
+  const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
+  const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
+  const showClearPlateButton = status?.connected && needsPlateClear && !isPrintingOrPaused;
+  const plateStatus = (() => {
+    if (!requirePlateClear || !status?.connected) return null;
+    if (isPrintingOrPaused) {
+      return {
+        label: t('printers.plateStatus.inUse'),
+        className: 'bg-blue-500/20 text-blue-400',
+      };
+    }
+    if (status.awaiting_plate_clear) {
+      return {
+        label: t('printers.plateStatus.notCleared'),
+        className: 'bg-yellow-500/20 text-yellow-400',
+      };
+    }
+    return {
+      label: t('printers.plateStatus.cleared'),
+      className: 'bg-status-ok/20 text-status-ok',
+    };
+  })();
+  const plateStatusPill = plateStatus ? (
+    <span className={`inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${plateStatus.className}`}>
+      {plateStatus.label}
+    </span>
+  ) : null;
 
   // Determine if this card should be hidden (use cached connected state to prevent flicker)
   const shouldHide = hideIfDisconnected && isConnected === false;
@@ -1884,12 +1856,22 @@ function PrinterCard({
     },
   });
 
+  const forceRefreshMutation = useMutation({
+    mutationFn: () => api.refreshPrinterStatus(printer.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+      showToast(t('printers.forceRefreshSuccess'), 'success');
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
+  });
+
   const unlinkSpoolMutation = useMutation({
     mutationFn: (spoolId: number) => api.unlinkSpool(spoolId),
     onSuccess: (result) => {
       showToast(t('spoolman.unlinkSuccess') || result?.message, 'success');
       queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
       queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
     },
     onError: (error: Error) => {
       showToast(error.message || t('spoolman.unlinkFailed'), 'error');
@@ -1971,6 +1953,19 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToResumePrint'), 'error'),
   });
 
+  const clearPlateMutation = useMutation({
+    mutationFn: () => api.clearPlate(printer.id),
+    onSuccess: () => {
+      showToast(t('queue.clearPlateSuccess'));
+      queryClient.setQueryData(['printerStatus', printer.id], (old: PrinterStatus | undefined) =>
+        old ? { ...old, awaiting_plate_clear: false } : old
+      );
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+      queryClient.invalidateQueries({ queryKey: ['queue', printer.id] });
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
+  });
+
   // Chamber light mutation with optimistic update
   const chamberLightMutation = useMutation({
     mutationFn: (on: boolean) => api.setChamberLight(printer.id, on),
@@ -2016,6 +2011,46 @@ function PrinterCard({
       }
       showToast(error.message || t('printers.toast.failedToSetSpeed'), 'error');
     },
+  });
+
+  const airductMutation = useMutation({
+    mutationFn: (mode: 'cooling' | 'heating') => api.setAirductMode(printer.id, mode),
+    onMutate: async (mode) => {
+      await queryClient.cancelQueries({ queryKey: ['printerStatus', printer.id] });
+      const previousStatus = queryClient.getQueryData(['printerStatus', printer.id]);
+      queryClient.setQueryData(['printerStatus', printer.id], (old: typeof status) => ({
+        ...old,
+        airduct_mode: mode === 'cooling' ? 0 : 1,
+      }));
+      return { previousStatus };
+    },
+    onError: (error: Error, _, context) => {
+      if (context?.previousStatus) {
+        queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
+      }
+      showToast(error.message || t('printers.toast.failedToSendCommand'), 'error');
+    },
+  });
+
+  const bedJogMutation = useMutation({
+    mutationFn: ({ distance, force }: { distance: number; force?: boolean }) =>
+      api.bedJog(printer.id, distance, force ?? false),
+    onError: (error: Error) =>
+      showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
+  });
+
+  const homeAxesMutation = useMutation({
+    mutationFn: (axes: 'z' | 'xy' | 'all') => api.homeAxes(printer.id, axes),
+    onSuccess: () => {
+      // Flip the session-scoped "warned" flag so the next bed-jog click doesn't re-prompt
+      // the not-homed modal. The flag is the same one "Move anyway" sets; after a successful
+      // auto-home request the printer is (or will shortly be) in a known-homed state, so
+      // prompting again in the same session is noise — #1052 follow-up.
+      try { sessionStorage.setItem(`bambuddy.bedJog.warned.${printer.id}`, '1'); } catch { /* ignore */ }
+      showToast(t('printers.bedJog.homingStarted'));
+    },
+    onError: (error: Error) =>
+      showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
 
   // Plate detection setting mutation
@@ -2078,6 +2113,27 @@ function PrinterCard({
         clearTimeout(refreshTimeoutRef.current);
       }
       setRefreshingSlot(null);
+    },
+  });
+
+  // AMS load/unload mutations (#891)
+  const loadAmsTrayMutation = useMutation({
+    mutationFn: ({ trayId }: { trayId: number }) => api.loadAmsTray(printer.id, trayId),
+    onSuccess: (data) => {
+      showToast(data.message || t('printers.toast.loadInitiated'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('printers.toast.failedToLoad'), 'error');
+    },
+  });
+
+  const unloadAmsMutation = useMutation({
+    mutationFn: () => api.unloadAms(printer.id),
+    onSuccess: (data) => {
+      showToast(data.message || t('printers.toast.unloadInitiated'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('printers.toast.failedToUnload'), 'error');
     },
   });
 
@@ -2520,6 +2576,17 @@ function PrinterCard({
                     {t('printers.reconnect')}
                   </button>
                   <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2 disabled:opacity-50"
+                    disabled={forceRefreshMutation.isPending}
+                    onClick={() => {
+                      forceRefreshMutation.mutate();
+                      setShowMenu(false);
+                    }}
+                  >
+                    <RotateCw className={`w-4 h-4 ${forceRefreshMutation.isPending ? 'animate-spin' : ''}`} />
+                    {t('printers.forceRefresh')}
+                  </button>
+                  <button
                     className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
                     onClick={() => {
                       setShowMQTTDebug(true);
@@ -2528,6 +2595,16 @@ function PrinterCard({
                   >
                     <Terminal className="w-4 h-4" />
                     {t('printers.mqttDebug')}
+                  </button>
+                  <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      setShowDiagnostic(true);
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Stethoscope className="w-4 h-4" />
+                    {t('diagnostic.runButton')}
                   </button>
                   <button
                     className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
@@ -2568,6 +2645,17 @@ function PrinterCard({
                 )}
                 {status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
               </span>
+              {/* Run connection diagnostic — offered when the printer is offline */}
+              {!status?.connected && (
+                <button
+                  onClick={() => setShowDiagnostic(true)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"
+                  title={t('diagnostic.runButton')}
+                >
+                  <Stethoscope className="w-3 h-3" />
+                  {t('diagnostic.runButton')}
+                </button>
+              )}
               {/* Network connection indicator */}
               {status?.connected && status?.wired_network && (
                 <span
@@ -2645,7 +2733,7 @@ function PrinterCard({
               {queueCount > 0 && (
                 <button
                   onClick={() => navigate('/queue')}
-                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-purple-500/20 text-purple-400 hover:opacity-80 transition-opacity"
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-indigo-500/20 text-indigo-400 hover:opacity-80 transition-opacity"
                   title={t('printers.queue.inQueue', { count: queueCount })}
                 >
                   <Layers className="w-3 h-3" />
@@ -2675,6 +2763,20 @@ function PrinterCard({
                   {status.firmware_version}
                 </span>
               ) : null}
+
+              {/* Enclosure Door Badge (X1/X2D/P1S/P2S/H2*) */}
+              {status?.connected && ['X1C', 'X1', 'X1E', 'X2D', 'P1S', 'P1P', 'P2S', 'H2D', 'H2D Pro', 'H2C', 'H2S'].includes(printer.model ?? '') && (
+                <span
+                  className={`flex items-center px-2 py-1 rounded-full text-xs ${
+                    status.door_open
+                      ? 'bg-yellow-500/20 text-yellow-400'
+                      : 'bg-status-ok/20 text-status-ok'
+                  }`}
+                  title={status.door_open ? t('printers.door.open') : t('printers.door.closed')}
+                >
+                  {status.door_open ? <DoorOpen className="w-3 h-3" /> : <DoorClosed className="w-3 h-3" />}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -2755,10 +2857,34 @@ function PrinterCard({
                         style={{ width: `${status.progress || 0}%` }}
                       />
                     </div>
-                    <span className="text-xs text-white">{Math.round(status.progress || 0)}%</span>
+                    <div className="flex flex-shrink-0 items-center gap-1.5">
+                      <span className="text-xs text-white">{Math.round(status.progress || 0)}%</span>
+                      {plateStatusPill}
+                    </div>
                   </div>
                 ) : (
-                  <p className="text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                      <p className="min-w-0 truncate text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                      {plateStatusPill}
+                    </div>
+                    {showClearPlateButton && (
+                      <button
+                        type="button"
+                        onClick={() => clearPlateMutation.mutate()}
+                        disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+                        aria-label={t('printers.plateStatus.markCleared')}
+                        className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
+                        title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+                      >
+                        {clearPlateMutation.isPending ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <PlateClearedIcon className="w-3 h-3" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             ) : (
@@ -2797,15 +2923,18 @@ function PrinterCard({
                     {/* Cover Image */}
                     <CoverImage
                       url={(status.state === 'RUNNING' || status.state === 'PAUSE') ? status.cover_url : null}
-                      printName={(status.state === 'RUNNING' || status.state === 'PAUSE') ? (formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t) || undefined) : undefined}
+                      printName={(status.state === 'RUNNING' || status.state === 'PAUSE') ? (formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t, activePlateLabel) || undefined) : undefined}
                     />
                     {/* Print Info */}
                     <div className="flex-1 min-w-0">
                       {status.current_print && (status.state === 'RUNNING' || status.state === 'PAUSE') ? (
                         <>
-                          <p className="text-sm text-bambu-gray mb-1">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                          <div className="mb-1 flex items-center gap-2">
+                            <p className="text-sm text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                            {plateStatusPill}
+                          </div>
                           <p className="text-white text-sm mb-2 truncate">
-                            {formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t)}
+                            {formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t, activePlateLabel)}
                           </p>
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">
@@ -2845,9 +2974,12 @@ function PrinterCard({
                       ) : (
                         <>
                           <p className="text-sm text-bambu-gray mb-1">{t('printers.sort.status')}</p>
-                          <p className="text-white text-sm mb-2">
-                            {getStatusDisplay(status.state, status.stg_cur_name)}
-                          </p>
+                          <div className="mb-2 flex items-center gap-2">
+                            <p className="text-white text-sm">
+                              {getStatusDisplay(status.state, status.stg_cur_name)}
+                            </p>
+                            {plateStatusPill}
+                          </div>
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">
                               <div className="bg-bambu-dark-tertiary h-2 rounded-full" />
@@ -2873,7 +3005,7 @@ function PrinterCard({
                 </div>
 
                 {/* Queue Widget - always visible when there are pending items */}
-                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} printerState={status.state} plateCleared={status.plate_cleared} requirePlateClear={requirePlateClear} loadedFilamentTypes={loadedFilamentTypes} loadedFilaments={loadedFilaments} />
+                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} loadedFilamentTypes={loadedFilamentTypes} loadedFilaments={loadedFilaments} />
               </>
             )}
 
@@ -2948,7 +3080,8 @@ function PrinterCard({
                       filamentInfo={filamentInfo}
                     >
                       <div className="text-center px-3 py-1.5 bg-bambu-dark rounded-lg h-full flex flex-col justify-center items-center cursor-default" title={t('printers.activeNozzle', { nozzle: activeNozzle === 'L' ? t('common.left') : t('common.right') })}>
-                        <div className="flex items-center gap-2 mb-1">
+                        <NozzleIcon className="w-3.5 h-3.5 mb-0.5 text-amber-400" />
+                        <div className="flex items-center gap-2">
                           <span className={`text-[11px] font-bold ${activeNozzle === 'L' ? 'text-amber-400' : 'text-gray-500'}`}>
                             L{leftNozzleSlot?.nozzle_diameter ? ` ${leftNozzleSlot.nozzle_diameter}` : ''}
                           </span>
@@ -2968,6 +3101,23 @@ function PrinterCard({
                 </div>
               );
             })()}
+
+            {viewMode === 'expanded' && showClearPlateButton && (
+              <button
+                type="button"
+                onClick={() => clearPlateMutation.mutate()}
+                disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+                className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
+                title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+              >
+                {clearPlateMutation.isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <PlateClearedIcon className="w-4 h-4" />
+                )}
+                {t('printers.plateStatus.markCleared')}
+              </button>
+            )}
 
             {/* Controls - Fans + Print Buttons */}
             {viewMode === 'expanded' && (() => {
@@ -2992,9 +3142,9 @@ function PrinterCard({
                     <div className="flex-1 h-px bg-bambu-dark-tertiary/30" />
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 max-[550px]:items-start">
+                  <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-2">
                     {/* Left: Fan Status - always visible, dynamic coloring */}
-                    <div className="flex items-center gap-2 min-w-0 max-[550px]:flex-wrap max-[550px]:items-start max-[550px]:gap-1.5">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
                       {/* Part Cooling Fan */}
                       <div
                         className={`flex items-center gap-1 px-1.5 py-1 rounded ${partFan && partFan > 0 ? 'bg-cyan-500/10' : 'bg-bambu-dark'}`}
@@ -3030,6 +3180,56 @@ function PrinterCard({
 
                       {/* Separator */}
                       <div className="w-px h-5 bg-bambu-gray/30" />
+
+                      {/* Airduct Mode (P2S / X2D / H2*) */}
+                      {(['P2S', 'X2D', 'H2D', 'H2C', 'H2S'].includes(printer.model ?? '')) && (() => {
+                        const isHeating = status.airduct_mode === 1;
+                        const Icon = isHeating ? Flame : Snowflake;
+                        const color = isHeating ? 'text-orange-400' : 'text-sky-400';
+                        const bg = isHeating ? 'bg-orange-500/10 hover:bg-orange-500/20' : 'bg-sky-500/10 hover:bg-sky-500/20';
+                        return (
+                          <div className="relative">
+                            <button
+                              onClick={() => setShowAirductMenu(showAirductMenu === printer.id ? null : printer.id)}
+                              disabled={!hasPermission('printers:control')}
+                              className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${bg} disabled:opacity-50 disabled:cursor-not-allowed`}
+                              title={t('printers.airduct.title')}
+                            >
+                              <Icon className={`w-3.5 h-3.5 ${color}`} />
+                              <span className={`text-[10px] ${color}`}>
+                                {isHeating ? t('printers.airduct.heating') : t('printers.airduct.cooling')}
+                              </span>
+                            </button>
+                            {showAirductMenu === printer.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowAirductMenu(null)} />
+                                <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg py-1 min-w-[130px]">
+                                  {([
+                                    { mode: 'cooling', label: t('printers.airduct.cooling'), modeId: 0 },
+                                    { mode: 'heating', label: t('printers.airduct.heating'), modeId: 1 },
+                                  ] as const).map(({ mode, label, modeId }) => (
+                                    <button
+                                      key={mode}
+                                      onClick={() => {
+                                        airductMutation.mutate(mode);
+                                        setShowAirductMenu(null);
+                                      }}
+                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
+                                        status.airduct_mode === modeId
+                                          ? 'text-bambu-green bg-bambu-green/10'
+                                          : 'text-white hover:bg-bambu-dark-tertiary'
+                                      }`}
+                                    >
+                                      {mode === 'heating' ? <Flame className="w-3 h-3" /> : <Snowflake className="w-3 h-3" />}
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Print Speed */}
                       {(() => {
@@ -3081,6 +3281,93 @@ function PrinterCard({
                                       {label}
                                     </button>
                                   ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Separator */}
+                      <div className="w-px h-5 bg-bambu-gray/30" />
+
+                      {/* Bed Jog (Z-axis) — compact badge, popover holds the actual controls */}
+                      {(() => {
+                        const canControl = hasPermission('printers:control');
+                        const disabled = isPrinting || !canControl;
+                        const bambuIsPlateBelow = true; // positive Z moves plate away from nozzle
+                        const requestJog = (direction: 1 | -1) => {
+                          const signed = direction * bedJogStep * (bambuIsPlateBelow ? 1 : -1);
+                          const warnedKey = `bambuddy.bedJog.warned.${printer.id}`;
+                          const warned = (() => {
+                            try { return sessionStorage.getItem(warnedKey) === '1'; }
+                            catch { return false; }
+                          })();
+                          setShowBedJogMenu(null);
+                          if (warned) {
+                            bedJogMutation.mutate({ distance: signed, force: true });
+                          } else {
+                            setShowNotHomedModal({ distance: signed });
+                          }
+                        };
+                        return (
+                          <div className="relative">
+                            <button
+                              onClick={() => setShowBedJogMenu(showBedJogMenu === printer.id ? null : printer.id)}
+                              disabled={disabled}
+                              className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
+                                disabled
+                                  ? 'bg-bambu-dark cursor-not-allowed'
+                                  : 'bg-indigo-500/10 hover:bg-indigo-500/20'
+                              }`}
+                              title={!canControl ? t('printers.permission.noControl') : isPrinting ? t('printers.bedJog.disabledWhilePrinting') : t('printers.bedJog.title')}
+                            >
+                              <MoveVertical className={`w-3.5 h-3.5 ${disabled ? 'text-bambu-gray/50' : 'text-indigo-400'}`} />
+                              <span className={`text-[10px] ${disabled ? 'text-bambu-gray/50' : 'text-indigo-400'}`}>
+                                {t('printers.bedJog.bed')}
+                              </span>
+                              <span className={`text-[10px] tabular-nums opacity-70 ${disabled ? 'text-bambu-gray/50' : 'text-indigo-400'}`}>
+                                {bedJogStep}mm
+                              </span>
+                            </button>
+                            {showBedJogMenu === printer.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowBedJogMenu(null)} />
+                                <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg p-2 min-w-[140px]">
+                                  <div className="flex items-center justify-between gap-1 mb-2">
+                                    <button
+                                      onClick={() => requestJog(-1)}
+                                      className="flex-1 flex items-center justify-center py-1.5 rounded bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300"
+                                      aria-label={t('printers.bedJog.up')}
+                                    >
+                                      <ArrowUp className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => requestJog(1)}
+                                      className="flex-1 flex items-center justify-center py-1.5 rounded bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300"
+                                      aria-label={t('printers.bedJog.down')}
+                                    >
+                                      <ArrowDown className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                  <div className="text-[9px] uppercase tracking-wider text-bambu-gray/70 px-1 mb-1">
+                                    {t('printers.bedJog.step')}
+                                  </div>
+                                  <div className="flex gap-1">
+                                    {[1, 10, 50].map((step) => (
+                                      <button
+                                        key={step}
+                                        onClick={() => setBedJogStep(step)}
+                                        className={`flex-1 px-1 py-1 rounded text-[10px] transition-colors ${
+                                          bedJogStep === step
+                                            ? 'bg-bambu-green/20 text-bambu-green'
+                                            : 'bg-bambu-dark text-bambu-gray hover:bg-bambu-dark-tertiary'
+                                        }`}
+                                      >
+                                        {step}
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
                               </>
                             )}
@@ -3235,7 +3522,7 @@ function PrinterCard({
                                           setDryingPopoverModuleType(ams.module_type);
                                           setDryingPopoverAmsId(ams.id);
                                           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                          setDryingPopoverPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 240) });
+                                          setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT }));
                                         }
                                       }}
                                       className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
@@ -3283,6 +3570,7 @@ function PrinterCard({
                                 const tray = ams.tray[slotIdx] || ams.tray.find(t => t.id === slotIdx);
                                 const hasFillLevel = tray?.tray_type && tray.remain >= 0;
                                 const isEmpty = !tray?.tray_type;
+                                const emptyKind = getEmptySlotKind(tray);
                                 // Check if this is the currently loaded tray
                                 // Global tray ID = ams.id * 4 + slot index (for standard AMS)
                                 const globalTrayId = ams.id * 4 + slotIdx;
@@ -3296,6 +3584,16 @@ function PrinterCard({
                                 const trayTag = (tray?.tray_uuid || tray?.tag_uid || getFallbackSpoolTag(printer.serial_number, ams.id, slotIdx))?.toUpperCase();
                                 const linkedSpool = trayTag ? linkedSpools?.[trayTag] : undefined;
                                 const spoolmanFill = getSpoolmanFillLevel(linkedSpool);
+                                // Slot-assigned-only spool fill (no tag link required)
+                                const slotAssignmentForFill = spoolmanEnabled && !spoolmanLoading
+                                  ? spoolmanSlotAssignments?.find(a => a.printer_id === printer.id && a.ams_id === ams.id && a.tray_id === slotIdx)
+                                  : undefined;
+                                const slotSpoolForFill = slotAssignmentForFill
+                                  ? spoolmanSpools?.find(s => s.id === slotAssignmentForFill.spoolman_spool_id)
+                                  : undefined;
+                                const slotSpoolFill = (slotSpoolForFill && (slotSpoolForFill.label_weight ?? 0) > 0)
+                                  ? Math.round(Math.max(0, (slotSpoolForFill.label_weight ?? 0) - slotSpoolForFill.weight_used) / (slotSpoolForFill.label_weight ?? 1) * 100)
+                                  : null;
                                 const inventoryAssignment = onGetAssignment?.(printer.id, ams.id, slotIdx);
                                 const inventoryFill = (() => {
                                   const sp = inventoryAssignment?.spool;
@@ -3308,8 +3606,8 @@ function PrinterCard({
                                 // (inventory weight_used may be stale or over-counted — #676)
                                 const resolvedInventoryFill = (inventoryFill === 0 && hasFillLevel && tray.remain > 0)
                                   ? null : inventoryFill;
-                                const effectiveFill = spoolmanFill ?? resolvedInventoryFill ?? (hasFillLevel ? tray.remain : null);
-                                const fillSource = spoolmanFill !== null ? 'spoolman' as const
+                                const effectiveFill = spoolmanFill ?? slotSpoolFill ?? resolvedInventoryFill ?? (hasFillLevel ? tray.remain : null);
+                                const fillSource = (spoolmanFill !== null || slotSpoolFill !== null) ? 'spoolman' as const
                                   : resolvedInventoryFill !== null ? 'inventory' as const
                                   : hasFillLevel ? 'ams' as const
                                   : undefined;
@@ -3317,8 +3615,17 @@ function PrinterCard({
                                 // Build filament data for hover card
                                 const filamentData = tray?.tray_type ? {
                                   vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
-                                  profile: slotPreset?.preset_name || cloudInfo?.name || inventoryAssignment?.spool?.slicer_filament_name || tray.tray_sub_brands || tray.tray_type,
-                                  colorName: getBambuColorName(tray.tray_id_name) || getColorName(tray.tray_color || ''),
+                                  // Spoolman spool name wins over cloud lookup so a slot bound to
+                                  // a Spoolman spool shows that spool's preset name (e.g. "Devil
+                                  // Design PLA") instead of whatever the printer's filament_id
+                                  // resolves to in the cloud catalog (often "Generic PLA" for
+                                  // P-prefix local presets). Spoolman's filament.name is just the
+                                  // material+subtype ("PLA Basic"); prepend the spool's brand so
+                                  // the hover card shows "Devil Design PLA Basic" rather than the
+                                  // vendor-less form. Strip the "@<printer>..." suffix that
+                                  // BambuStudio appends to user-preset names.
+                                  profile: slotPreset?.preset_name || (slotSpoolForFill ? [slotSpoolForFill.brand, slotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || slotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || inventoryAssignment?.spool?.slicer_filament_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
+                                  colorName: getColorName(tray.tray_color || ''),
                                   colorHex: tray.tray_color || null,
                                   kFactor: formatKValue(tray.k),
                                   fillLevel: effectiveFill,
@@ -3341,10 +3648,11 @@ function PrinterCard({
                                       trayColor={tray?.tray_color}
                                       trayType={tray?.tray_type}
                                       isEmpty={isEmpty}
+                                      emptyKind={emptyKind}
                                       slotNumber={slotIdx + 1}
                                     />
                                     <div className="text-[9px] text-white font-bold truncate">
-                                      {tray?.tray_type || '—'}
+                                      {tray?.tray_type || t('ams.slotEmpty')}
                                     </div>
                                     {/* Fill bar */}
                                     <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
@@ -3408,6 +3716,42 @@ function PrinterCard({
                                           <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                                           {t('printers.rfid.reread')}
                                         </button>
+                                        <button
+                                          className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                            hasPermission('printers:control')
+                                              ? 'text-white hover:bg-bambu-dark-tertiary'
+                                              : 'text-bambu-gray/50 cursor-not-allowed'
+                                          }`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (!hasPermission('printers:control')) return;
+                                            loadAmsTrayMutation.mutate({ trayId: ams.id * 4 + slotIdx });
+                                            setAmsSlotMenu(null);
+                                          }}
+                                          disabled={!hasPermission('printers:control')}
+                                          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                        >
+                                          <LogIn className="w-3 h-3" />
+                                          {t('printers.ams.load')}
+                                        </button>
+                                        <button
+                                          className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                            hasPermission('printers:control')
+                                              ? 'text-white hover:bg-bambu-dark-tertiary'
+                                              : 'text-bambu-gray/50 cursor-not-allowed'
+                                          }`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (!hasPermission('printers:control')) return;
+                                            unloadAmsMutation.mutate();
+                                            setAmsSlotMenu(null);
+                                          }}
+                                          disabled={!hasPermission('printers:control')}
+                                          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                        >
+                                          <LogOut className="w-3 h-3" />
+                                          {t('printers.ams.unload')}
+                                        </button>
                                       </div>
                                     )}
                                     {/* Hover card wraps only the visual content */}
@@ -3416,12 +3760,18 @@ function PrinterCard({
                                         data={filamentData}
                                         spoolman={{
                                           enabled: spoolmanEnabled,
-                                          linkedSpoolId: trayTag
-                                            ? linkedSpools?.[trayTag]?.id
-                                            : undefined,
+                                          // #1457: slot assignment is the user's most explicit action — it must
+                                          // outrank the tag-link, which can be stale when a non-RFID slot's
+                                          // fallback tag is still attached to a previous spool in Spoolman.
+                                          linkedSpoolId: slotAssignmentForFill?.spoolman_spool_id
+                                            ?? (trayTag ? linkedSpools?.[trayTag]?.id : undefined),
                                           spoolmanUrl,
                                           syncMode: spoolmanSyncMode,
-                                          onLinkSpool: spoolmanEnabled ? () => {
+                                          // Suppress Link button when slot is already occupied by ANY assignment
+                                          // (Spoolman SlotAssignment OR local SpoolAssignment). Phase 9 only
+                                          // suppressed for Spoolman; the maintainer screenshot shows the badge
+                                          // still appearing on slots with a local Devil Design PLA assigned.
+                                          onLinkSpool: (spoolmanEnabled && !slotAssignmentForFill && !inventoryAssignment) ? () => {
                                             const linkTag = (filamentData.trayUuid || filamentData.tagUid || getFallbackSpoolTag(printer.serial_number, ams.id, slotIdx)).toUpperCase();
                                             setLinkSpoolModal({
                                               tagUid: filamentData.tagUid || linkTag,
@@ -3433,7 +3783,37 @@ function PrinterCard({
                                           } : undefined,
                                           onUnlinkSpool: linkedSpool?.id ? () => unlinkSpoolMutation.mutate(linkedSpool.id) : undefined,
                                         }}
-                                        inventory={spoolmanEnabled ? undefined : (() => {
+                                        inventory={(() => {
+                                          if (spoolmanEnabled) {
+                                            if (spoolmanLoading) return undefined;
+                                            const slotAssignment = slotAssignmentForFill;
+                                            const spoolmanSpool = slotSpoolForFill;
+                                            return {
+                                              assignedSpool: spoolmanSpool ? {
+                                                id: spoolmanSpool.id,
+                                                material: spoolmanSpool.material,
+                                                brand: spoolmanSpool.brand ?? null,
+                                                color_name: spoolmanSpool.color_name ?? null,
+                                                remainingWeightGrams: spoolmanSpool.label_weight
+                                                  ? Math.max(0, Math.round(spoolmanSpool.label_weight - spoolmanSpool.weight_used))
+                                                  : undefined,
+                                              } : null,
+                                              onAssignSpool: () => setAssignSpoolModal({
+                                                printerId: printer.id,
+                                                amsId: ams.id,
+                                                trayId: slotIdx,
+                                                trayInfo: {
+                                                  type: tray?.tray_type || filamentData.profile,
+                                                  material: tray?.tray_type ?? undefined,
+                                                  profile: filamentData.profile,
+                                                  color: filamentData.colorHex || '',
+                                                  location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
+                                                },
+                                              }),
+                                              onUnassignSpool: (spoolmanSpool && !isBambuLabSpool(tray)) ? () => onUnassignSpoolmanSpool?.(spoolmanSpool.id) : undefined,
+                                              isAssigned: !!slotAssignment || isBambuLabSpool(tray),
+                                            };
+                                          }
                                           const assignment = onGetAssignment?.(printer.id, ams.id, slotIdx);
                                           return {
                                             assignedSpool: assignment?.spool ? {
@@ -3443,7 +3823,7 @@ function PrinterCard({
                                               color_name: assignment.spool.color_name,
                                               remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
                                             } : null,
-                                            onAssignSpool: filamentData.vendor !== 'Bambu Lab' ? () => setAssignSpoolModal({
+                                            onAssignSpool: () => setAssignSpoolModal({
                                               printerId: printer.id,
                                               amsId: ams.id,
                                               trayId: slotIdx,
@@ -3454,8 +3834,9 @@ function PrinterCard({
                                                 color: filamentData.colorHex || '',
                                                 location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
                                               },
-                                            }) : undefined,
-                                            onUnassignSpool: assignment && filamentData.vendor !== 'Bambu Lab' ? () => onUnassignSpool?.(printer.id, ams.id, slotIdx) : undefined,
+                                            }),
+                                            onUnassignSpool: (assignment && !isBambuLabSpool(tray)) ? () => onUnassignSpool?.(printer.id, ams.id, slotIdx) : undefined,
+                                            isAssigned: !!assignment || isBambuLabSpool(tray),
                                           };
                                         })()}
                                         configureSlot={{
@@ -3478,7 +3859,8 @@ function PrinterCard({
                                       </FilamentHoverCard>
                                     ) : (
                                       <EmptySlotHoverCard
-                                        configureSlot={tray?.state === 10 ? {
+                                        kind={emptyKind ?? undefined}
+                                        configureSlot={{
                                           enabled: hasPermission('printers:control'),
                                           onConfigure: () => setConfigureSlotModal({
                                             amsId: ams.id,
@@ -3486,19 +3868,19 @@ function PrinterCard({
                                             trayCount: ams.tray.length,
                                             extruderId: mappedExtruderId,
                                           }),
-                                        } : undefined}
-                                        inventory={tray?.state === 10 && !spoolmanEnabled ? {
-                                          onAssignSpool: () => setAssignSpoolModal({
-                                            printerId: printer.id,
-                                            amsId: ams.id,
-                                            trayId: slotIdx,
-                                            trayInfo: {
-                                              type: '',
-                                              color: '',
-                                              location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
-                                            },
-                                          }),
-                                        } : undefined}
+                                        }}
+                                        onAssignSpool={() => setAssignSpoolModal({
+                                          printerId: printer.id,
+                                          amsId: ams.id,
+                                          trayId: slotIdx,
+                                          trayInfo: {
+                                            type: '',
+                                            material: undefined,
+                                            profile: '',
+                                            color: '',
+                                            location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
+                                          },
+                                        })}
                                       >
                                         {slotVisual}
                                       </EmptySlotHoverCard>
@@ -3526,6 +3908,7 @@ function PrinterCard({
                         const tray = ams.tray[0];
                         const hasFillLevel = tray?.tray_type && tray.remain >= 0;
                         const isEmpty = !tray?.tray_type;
+                        const emptyKind = getEmptySlotKind(tray);
                         // Check if this is the currently loaded tray
                         const globalTrayId = getGlobalTrayId(ams.id, tray?.id ?? 0, false);
                         const isActive = effectiveTrayNow === globalTrayId;
@@ -3550,8 +3933,18 @@ function PrinterCard({
                         // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
                         const htResolvedInventoryFill = (htInventoryFill === 0 && hasFillLevel && tray.remain > 0)
                           ? null : htInventoryFill;
-                        const htEffectiveFill = htSpoolmanFill ?? htResolvedInventoryFill ?? (hasFillLevel ? tray.remain : null);
-                        const htFillSource = htSpoolmanFill !== null ? 'spoolman' as const
+                        // Slot-assigned-only fill (when spool has no NFC tag but is slot-assigned)
+                        const htSlotAssignmentForFill = spoolmanEnabled && !spoolmanLoading
+                          ? spoolmanSlotAssignments?.find(a => a.printer_id === printer.id && a.ams_id === ams.id && a.tray_id === htSlotId)
+                          : undefined;
+                        const htSlotSpoolForFill = htSlotAssignmentForFill
+                          ? spoolmanSpools?.find(s => s.id === htSlotAssignmentForFill.spoolman_spool_id)
+                          : undefined;
+                        const htSlotSpoolFill = (htSlotSpoolForFill && (htSlotSpoolForFill.label_weight ?? 0) > 0)
+                          ? Math.round(Math.max(0, (htSlotSpoolForFill.label_weight ?? 0) - htSlotSpoolForFill.weight_used) / (htSlotSpoolForFill.label_weight ?? 1) * 100)
+                          : null;
+                        const htEffectiveFill = htSpoolmanFill ?? htSlotSpoolFill ?? htResolvedInventoryFill ?? (hasFillLevel ? tray.remain : null);
+                        const htFillSource = (htSpoolmanFill !== null || htSlotSpoolFill !== null) ? 'spoolman' as const
                           : htResolvedInventoryFill !== null ? 'inventory' as const
                           : hasFillLevel ? 'ams' as const
                           : undefined;
@@ -3559,8 +3952,8 @@ function PrinterCard({
                         // Build filament data for hover card
                         const filamentData = tray?.tray_type ? {
                           vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
-                          profile: slotPreset?.preset_name || cloudInfo?.name || htInventoryAssignment?.spool?.slicer_filament_name || tray.tray_sub_brands || tray.tray_type,
-                          colorName: getBambuColorName(tray.tray_id_name) || getColorName(tray.tray_color || ''),
+                          profile: slotPreset?.preset_name || (htSlotSpoolForFill ? [htSlotSpoolForFill.brand, htSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || htSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || htInventoryAssignment?.spool?.slicer_filament_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
+                          colorName: getColorName(tray.tray_color || ''),
                           colorHex: tray.tray_color || null,
                           kFactor: formatKValue(tray.k),
                           fillLevel: htEffectiveFill,
@@ -3583,10 +3976,11 @@ function PrinterCard({
                               trayColor={tray?.tray_color}
                               trayType={tray?.tray_type}
                               isEmpty={isEmpty}
+                              emptyKind={emptyKind}
                               slotNumber={1}
                             />
                             <div className="text-[9px] text-white font-bold truncate">
-                              {tray?.tray_type || '—'}
+                              {tray?.tray_type || t('ams.slotEmpty')}
                             </div>
                             {/* Fill bar */}
                             <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
@@ -3644,7 +4038,7 @@ function PrinterCard({
                                         setDryingPopoverModuleType(ams.module_type);
                                         setDryingPopoverAmsId(ams.id);
                                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                        setDryingPopoverPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 240) });
+                                        setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT }));
                                       }
                                     }}
                                     className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
@@ -3726,6 +4120,42 @@ function PrinterCard({
                                       <RefreshCw className={`w-3 h-3 ${isHtRefreshing ? 'animate-spin' : ''}`} />
                                       {t('printers.rfid.reread')}
                                     </button>
+                                    <button
+                                      className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                        hasPermission('printers:control')
+                                          ? 'text-white hover:bg-bambu-dark-tertiary'
+                                          : 'text-bambu-gray/50 cursor-not-allowed'
+                                      }`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!hasPermission('printers:control')) return;
+                                        loadAmsTrayMutation.mutate({ trayId: ams.id * 4 + htSlotId });
+                                        setAmsSlotMenu(null);
+                                      }}
+                                      disabled={!hasPermission('printers:control')}
+                                      title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                    >
+                                      <LogIn className="w-3 h-3" />
+                                      {t('printers.ams.load')}
+                                    </button>
+                                    <button
+                                      className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                        hasPermission('printers:control')
+                                          ? 'text-white hover:bg-bambu-dark-tertiary'
+                                          : 'text-bambu-gray/50 cursor-not-allowed'
+                                      }`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!hasPermission('printers:control')) return;
+                                        unloadAmsMutation.mutate();
+                                        setAmsSlotMenu(null);
+                                      }}
+                                      disabled={!hasPermission('printers:control')}
+                                      title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                    >
+                                      <LogOut className="w-3 h-3" />
+                                      {t('printers.ams.unload')}
+                                    </button>
                                   </div>
                                 )}
                                 {/* Hover card wraps only the visual content */}
@@ -3734,12 +4164,13 @@ function PrinterCard({
                                     data={filamentData}
                                     spoolman={{
                                       enabled: spoolmanEnabled,
-                                      linkedSpoolId: htTrayTag
-                                        ? linkedSpools?.[htTrayTag]?.id
-                                        : undefined,
+                                      // #1457: slot assignment outranks tag-link (see top-level slot block).
+                                      linkedSpoolId: htSlotAssignmentForFill?.spoolman_spool_id
+                                        ?? (htTrayTag ? linkedSpools?.[htTrayTag]?.id : undefined),
                                       spoolmanUrl,
                                       syncMode: spoolmanSyncMode,
-                                      onLinkSpool: spoolmanEnabled ? () => {
+                                      // Suppress Link button when slot is occupied by ANY assignment (Phase 13 P13-6d)
+                                      onLinkSpool: (spoolmanEnabled && !htSlotAssignmentForFill && !htInventoryAssignment) ? () => {
                                         const linkTag = (filamentData.trayUuid || filamentData.tagUid || getFallbackSpoolTag(printer.serial_number, ams.id, htSlotId)).toUpperCase();
                                         setLinkSpoolModal({
                                           tagUid: filamentData.tagUid || linkTag,
@@ -3751,7 +4182,37 @@ function PrinterCard({
                                       } : undefined,
                                       onUnlinkSpool: htLinkedSpool?.id ? () => unlinkSpoolMutation.mutate(htLinkedSpool.id) : undefined,
                                     }}
-                                    inventory={spoolmanEnabled ? undefined : (() => {
+                                    inventory={(() => {
+                                      if (spoolmanEnabled) {
+                                        if (spoolmanLoading) return undefined;
+                                        const slotAssignment = htSlotAssignmentForFill;
+                                        const spoolmanSpool = htSlotSpoolForFill;
+                                        return {
+                                          assignedSpool: spoolmanSpool ? {
+                                            id: spoolmanSpool.id,
+                                            material: spoolmanSpool.material,
+                                            brand: spoolmanSpool.brand ?? null,
+                                            color_name: spoolmanSpool.color_name ?? null,
+                                            remainingWeightGrams: spoolmanSpool.label_weight
+                                              ? Math.max(0, Math.round(spoolmanSpool.label_weight - spoolmanSpool.weight_used))
+                                              : undefined,
+                                          } : null,
+                                          onAssignSpool: () => setAssignSpoolModal({
+                                            printerId: printer.id,
+                                            amsId: ams.id,
+                                            trayId: htSlotId,
+                                            trayInfo: {
+                                              type: tray?.tray_type || filamentData.profile,
+                                              material: tray?.tray_type ?? undefined,
+                                              profile: filamentData.profile,
+                                              color: filamentData.colorHex || '',
+                                              location: getAmsLabel(ams.id, ams.tray.length),
+                                            },
+                                          }),
+                                          onUnassignSpool: (spoolmanSpool && !isBambuLabSpool(tray)) ? () => onUnassignSpoolmanSpool?.(spoolmanSpool.id) : undefined,
+                                          isAssigned: !!slotAssignment || isBambuLabSpool(tray),
+                                        };
+                                      }
                                       const assignment = onGetAssignment?.(printer.id, ams.id, htSlotId);
                                       return {
                                         assignedSpool: assignment?.spool ? {
@@ -3761,7 +4222,7 @@ function PrinterCard({
                                           color_name: assignment.spool.color_name,
                                           remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
                                         } : null,
-                                        onAssignSpool: filamentData.vendor !== 'Bambu Lab' ? () => setAssignSpoolModal({
+                                        onAssignSpool: () => setAssignSpoolModal({
                                           printerId: printer.id,
                                           amsId: ams.id,
                                           trayId: htSlotId,
@@ -3772,8 +4233,9 @@ function PrinterCard({
                                             color: filamentData.colorHex || '',
                                             location: getAmsLabel(ams.id, ams.tray.length),
                                           },
-                                        }) : undefined,
-                                        onUnassignSpool: assignment && filamentData.vendor !== 'Bambu Lab' ? () => onUnassignSpool?.(printer.id, ams.id, htSlotId) : undefined,
+                                        }),
+                                        onUnassignSpool: (assignment && !isBambuLabSpool(tray)) ? () => onUnassignSpool?.(printer.id, ams.id, htSlotId) : undefined,
+                                        isAssigned: !!assignment || isBambuLabSpool(tray),
                                       };
                                     })()}
                                     configureSlot={{
@@ -3796,7 +4258,8 @@ function PrinterCard({
                                   </FilamentHoverCard>
                                 ) : (
                                   <EmptySlotHoverCard
-                                    configureSlot={tray?.state === 10 ? {
+                                    kind={emptyKind ?? undefined}
+                                    configureSlot={{
                                       enabled: hasPermission('printers:control'),
                                       onConfigure: () => setConfigureSlotModal({
                                         amsId: ams.id,
@@ -3804,19 +4267,19 @@ function PrinterCard({
                                         trayCount: ams.tray.length,
                                         extruderId: mappedExtruderId,
                                       }),
-                                    } : undefined}
-                                    inventory={tray?.state === 10 && !spoolmanEnabled ? {
-                                      onAssignSpool: () => setAssignSpoolModal({
-                                        printerId: printer.id,
-                                        amsId: ams.id,
-                                        trayId: htSlotId,
-                                        trayInfo: {
-                                          type: '',
-                                          color: '',
-                                          location: getAmsLabel(ams.id, ams.tray.length),
-                                        },
-                                      }),
-                                    } : undefined}
+                                    }}
+                                    onAssignSpool={() => setAssignSpoolModal({
+                                      printerId: printer.id,
+                                      amsId: ams.id,
+                                      trayId: htSlotId,
+                                      trayInfo: {
+                                        type: '',
+                                        material: undefined,
+                                        profile: '',
+                                        color: '',
+                                        location: getAmsLabel(ams.id, ams.tray.length),
+                                      },
+                                    })}
                                   >
                                     {slotVisual}
                                   </EmptySlotHoverCard>
@@ -3895,16 +4358,26 @@ function PrinterCard({
                               // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
                               const extResolvedInventoryFill = (extInventoryFill === 0 && extHasFillLevel && extTray.remain > 0)
                                 ? null : extInventoryFill;
-                              const extEffectiveFill = extSpoolmanFill ?? extResolvedInventoryFill ?? (extHasFillLevel ? extTray.remain : null);
-                              const extFillSource = extSpoolmanFill !== null ? 'spoolman' as const
+                              // Slot-assigned-only fill (when spool has no NFC tag but is slot-assigned)
+                              const extSlotAssignmentForFill = spoolmanEnabled && !spoolmanLoading
+                                ? spoolmanSlotAssignments?.find(a => a.printer_id === printer.id && a.ams_id === 255 && a.tray_id === slotTrayId)
+                                : undefined;
+                              const extSlotSpoolForFill = extSlotAssignmentForFill
+                                ? spoolmanSpools?.find(s => s.id === extSlotAssignmentForFill.spoolman_spool_id)
+                                : undefined;
+                              const extSlotSpoolFill = (extSlotSpoolForFill && (extSlotSpoolForFill.label_weight ?? 0) > 0)
+                                ? Math.round(Math.max(0, (extSlotSpoolForFill.label_weight ?? 0) - extSlotSpoolForFill.weight_used) / (extSlotSpoolForFill.label_weight ?? 1) * 100)
+                                : null;
+                              const extEffectiveFill = extSpoolmanFill ?? extSlotSpoolFill ?? extResolvedInventoryFill ?? (extHasFillLevel ? extTray.remain : null);
+                              const extFillSource = (extSpoolmanFill !== null || extSlotSpoolFill !== null) ? 'spoolman' as const
                                 : extResolvedInventoryFill !== null ? 'inventory' as const
                                 : extHasFillLevel ? 'ams' as const
                                 : undefined;
 
                               const extFilamentData = {
                                 vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
-                                profile: extSlotPreset?.preset_name || extCloudInfo?.name || extInventoryAssignment?.spool?.slicer_filament_name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
-                                colorName: getBambuColorName(extTray.tray_id_name) || getColorName(extTray.tray_color || ''),
+                                profile: extSlotPreset?.preset_name || (extSlotSpoolForFill ? [extSlotSpoolForFill.brand, extSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || extSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || extInventoryAssignment?.spool?.slicer_filament_name || extCloudInfo?.name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
+                                colorName: getColorName(extTray.tray_color || ''),
                                 colorHex: extTray.tray_color || null,
                                 kFactor: formatKValue(extTray.k),
                                 fillLevel: extEffectiveFill,
@@ -3914,6 +4387,7 @@ function PrinterCard({
                               };
 
                               const isEmpty = !extTray.tray_type;
+                              const emptyKind = getEmptySlotKind(extTray);
                               const extSlotContent = (
                                 <div className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
                                   {/* Filament color circle with 1-based slot number centered inside */}
@@ -3921,10 +4395,11 @@ function PrinterCard({
                                     trayColor={extTray.tray_color}
                                     trayType={extTray.tray_type}
                                     isEmpty={isEmpty}
+                                    emptyKind={emptyKind}
                                     slotNumber={slotTrayId + 1}
                                   />
                                   <div className={`text-[9px] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
-                                    {extTray.tray_type || '—'}
+                                    {extTray.tray_type || t('ams.slotEmpty')}
                                   </div>
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                     {extEffectiveFill !== null && extEffectiveFill >= 0 && !isEmpty && (
@@ -3941,19 +4416,77 @@ function PrinterCard({
                                 </div>
                               );
 
+                              const extMenuKey = 255 * 10 + slotTrayId; // unique slotId space for external menu state
+                              const isExtMenuOpen = amsSlotMenu?.amsId === 255 && amsSlotMenu?.slotId === extMenuKey;
+
                               return (
                                 <div key={extTrayId} className="relative group">
+                                  {/* Menu button - appears on hover, hidden when printer busy */}
+                                  {status?.state !== 'RUNNING' && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setAmsSlotMenu(isExtMenuOpen ? null : { amsId: 255, slotId: extMenuKey });
+                                      }}
+                                      className="absolute -top-1 -right-1 w-4 h-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-bambu-dark-tertiary"
+                                      title={t('printers.slotOptions')}
+                                    >
+                                      <MoreVertical className="w-2.5 h-2.5 text-bambu-gray" />
+                                    </button>
+                                  )}
+                                  {/* Dropdown menu */}
+                                  {status?.state !== 'RUNNING' && isExtMenuOpen && (
+                                    <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
+                                      <button
+                                        className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                          hasPermission('printers:control')
+                                            ? 'text-white hover:bg-bambu-dark-tertiary'
+                                            : 'text-bambu-gray/50 cursor-not-allowed'
+                                        }`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (!hasPermission('printers:control')) return;
+                                          loadAmsTrayMutation.mutate({ trayId: extTrayId });
+                                          setAmsSlotMenu(null);
+                                        }}
+                                        disabled={!hasPermission('printers:control')}
+                                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                      >
+                                        <LogIn className="w-3 h-3" />
+                                        {t('printers.ams.load')}
+                                      </button>
+                                      <button
+                                        className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                          hasPermission('printers:control')
+                                            ? 'text-white hover:bg-bambu-dark-tertiary'
+                                            : 'text-bambu-gray/50 cursor-not-allowed'
+                                        }`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (!hasPermission('printers:control')) return;
+                                          unloadAmsMutation.mutate();
+                                          setAmsSlotMenu(null);
+                                        }}
+                                        disabled={!hasPermission('printers:control')}
+                                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+                                      >
+                                        <LogOut className="w-3 h-3" />
+                                        {t('printers.ams.unload')}
+                                      </button>
+                                    </div>
+                                  )}
                                   {!isEmpty ? (
                                     <FilamentHoverCard
                                       data={extFilamentData}
                                       spoolman={{
                                         enabled: spoolmanEnabled,
-                                        linkedSpoolId: extTrayTag
-                                          ? linkedSpools?.[extTrayTag]?.id
-                                          : undefined,
+                                        // #1457: slot assignment outranks tag-link (see top-level slot block).
+                                        linkedSpoolId: extSlotAssignmentForFill?.spoolman_spool_id
+                                          ?? (extTrayTag ? linkedSpools?.[extTrayTag]?.id : undefined),
                                         spoolmanUrl,
                                         syncMode: spoolmanSyncMode,
-                                        onLinkSpool: spoolmanEnabled ? () => {
+                                        // Suppress Link button when slot is occupied by ANY assignment (Phase 13 P13-6d)
+                                        onLinkSpool: (spoolmanEnabled && !extSlotAssignmentForFill && !extInventoryAssignment) ? () => {
                                           const linkTag = (extFilamentData.trayUuid || extFilamentData.tagUid || getFallbackSpoolTag(printer.serial_number, 255, slotTrayId)).toUpperCase();
                                           setLinkSpoolModal({
                                             tagUid: extFilamentData.tagUid || linkTag,
@@ -3965,7 +4498,37 @@ function PrinterCard({
                                         } : undefined,
                                         onUnlinkSpool: extLinkedSpool?.id ? () => unlinkSpoolMutation.mutate(extLinkedSpool.id) : undefined,
                                       }}
-                                      inventory={spoolmanEnabled ? undefined : (() => {
+                                      inventory={(() => {
+                                        if (spoolmanEnabled) {
+                                          if (spoolmanLoading) return undefined;
+                                          const slotAssignment = extSlotAssignmentForFill;
+                                          const spoolmanSpool = extSlotSpoolForFill;
+                                          return {
+                                            assignedSpool: spoolmanSpool ? {
+                                              id: spoolmanSpool.id,
+                                              material: spoolmanSpool.material,
+                                              brand: spoolmanSpool.brand ?? null,
+                                              color_name: spoolmanSpool.color_name ?? null,
+                                              remainingWeightGrams: spoolmanSpool.label_weight
+                                                ? Math.max(0, Math.round(spoolmanSpool.label_weight - spoolmanSpool.weight_used))
+                                                : undefined,
+                                            } : null,
+                                            onAssignSpool: () => setAssignSpoolModal({
+                                              printerId: printer.id,
+                                              amsId: 255,
+                                              trayId: slotTrayId,
+                                              trayInfo: {
+                                                type: extTray.tray_type || extFilamentData.profile,
+                                                material: extTray.tray_type ?? undefined,
+                                                profile: extFilamentData.profile,
+                                                color: extFilamentData.colorHex || '',
+                                                location: extLabel || t('printers.external'),
+                                              },
+                                            }),
+                                            onUnassignSpool: (spoolmanSpool && !isBambuLabSpool(extTray)) ? () => onUnassignSpoolmanSpool?.(spoolmanSpool.id) : undefined,
+                                            isAssigned: !!slotAssignment || isBambuLabSpool(extTray),
+                                          };
+                                        }
                                         const assignment = onGetAssignment?.(printer.id, 255, slotTrayId);
                                         return {
                                           assignedSpool: assignment?.spool ? {
@@ -3987,7 +4550,8 @@ function PrinterCard({
                                               location: extLabel || t('printers.external'),
                                             },
                                           }),
-                                          onUnassignSpool: assignment ? () => onUnassignSpool?.(printer.id, 255, slotTrayId) : undefined,
+                                          onUnassignSpool: (assignment && !isBambuLabSpool(extTray)) ? () => onUnassignSpool?.(printer.id, 255, slotTrayId) : undefined,
+                                          isAssigned: !!assignment || isBambuLabSpool(extTray),
                                         };
                                       })()}
                                       configureSlot={{
@@ -4010,6 +4574,7 @@ function PrinterCard({
                                     </FilamentHoverCard>
                                   ) : (
                                     <EmptySlotHoverCard
+                                      kind={emptyKind ?? undefined}
                                       configureSlot={{
                                         enabled: hasPermission('printers:control'),
                                         onConfigure: () => setConfigureSlotModal({
@@ -4019,18 +4584,18 @@ function PrinterCard({
                                           extruderId: isDualNozzle ? (extTrayId === 254 ? 1 : 0) : undefined,
                                         }),
                                       }}
-                                      inventory={spoolmanEnabled ? undefined : {
-                                        onAssignSpool: () => setAssignSpoolModal({
-                                          printerId: printer.id,
-                                          amsId: 255,
-                                          trayId: slotTrayId,
-                                          trayInfo: {
-                                            type: '',
-                                            color: '',
-                                            location: extLabel || t('printers.external'),
-                                          },
-                                        }),
-                                      }}
+                                      onAssignSpool={() => setAssignSpoolModal({
+                                        printerId: printer.id,
+                                        amsId: 255,
+                                        trayId: slotTrayId,
+                                        trayInfo: {
+                                          type: '',
+                                          material: undefined,
+                                          profile: '',
+                                          color: '',
+                                          location: `External Slot ${slotTrayId + 1}`,
+                                        },
+                                      })}
                                     >
                                       {extSlotContent}
                                     </EmptySlotHoverCard>
@@ -4070,7 +4635,7 @@ function PrinterCard({
                   >
                     {plugStatus.state || '?'}
                     {plugStatus.state === 'ON' && plugStatus.energy?.power != null && (
-                      <span className="text-yellow-400 ml-1.5">· {plugStatus.energy.power}W</span>
+                      <span className="text-yellow-400 ml-1.5">· {Math.round(plugStatus.energy.power)}W</span>
                     )}
                   </span>
                 )}
@@ -4150,7 +4715,13 @@ function PrinterCard({
                     return (
                       <button
                         key={script.id}
-                        onClick={() => runScriptMutation.mutate({ id: script.id, action: isScript ? 'on' : 'toggle' })}
+                        onClick={() => {
+                          if (isScript) {
+                            runScriptMutation.mutate({ id: script.id, action: 'on' });
+                          } else {
+                            setHaToggleConfirm(script);
+                          }
+                        }}
                         disabled={runScriptMutation.isPending}
                         title={`${isScript ? 'Run' : 'Toggle'} ${script.ha_entity_id}`}
                         className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
@@ -4196,7 +4767,9 @@ function PrinterCard({
                       `height=${state.height}`,
                       state.left !== undefined ? `left=${state.left}` : '',
                       state.top !== undefined ? `top=${state.top}` : '',
-                      'menubar=no,toolbar=no,location=no,status=no,noopener',
+                      // No `noopener`: same-origin popup needs opener so the browser
+                      // copies sessionStorage (auth token) into the new window.
+                      'menubar=no,toolbar=no,location=no,status=no',
                     ].filter(Boolean).join(',');
                     window.open(`/camera/${printer.id}`, `camera-${printer.id}`, features);
                   }
@@ -4308,6 +4881,7 @@ function PrinterCard({
           initialSelectedPrinterIds={[printer.id]}
           onClose={() => setPrintAfterUpload(null)}
           onSuccess={() => setPrintAfterUpload(null)}
+          cleanupLibraryAfterDispatch
         />
       )}
 
@@ -4317,6 +4891,14 @@ function PrinterCard({
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowMQTTDebug(false)}
+        />
+      )}
+
+      {showDiagnostic && (
+        <ConnectionDiagnosticModal
+          printerId={printer.id}
+          printerName={printer.name}
+          onClose={() => setShowDiagnostic(false)}
         />
       )}
 
@@ -4629,6 +5211,25 @@ function PrinterCard({
         />
       )}
 
+      {/* HA entity toggle confirmation (Show on Printer Card switches) */}
+      {haToggleConfirm && (
+        <ConfirmModal
+          title={t('printers.confirm.haToggleTitle', { name: haToggleConfirm.name })}
+          message={
+            status?.state === 'RUNNING'
+              ? t('printers.confirm.haToggleWarning', { name: printer.name, entity: haToggleConfirm.ha_entity_id || haToggleConfirm.name })
+              : t('printers.confirm.haToggleMessage', { entity: haToggleConfirm.ha_entity_id || haToggleConfirm.name })
+          }
+          confirmText={t('printers.confirm.haToggleButton')}
+          variant={status?.state === 'RUNNING' ? 'danger' : 'default'}
+          onConfirm={() => {
+            runScriptMutation.mutate({ id: haToggleConfirm.id, action: 'toggle' });
+            setHaToggleConfirm(null);
+          }}
+          onCancel={() => setHaToggleConfirm(null)}
+        />
+      )}
+
       {/* Stop Print Confirmation */}
       {showStopConfirm && (
         <ConfirmModal
@@ -4672,6 +5273,53 @@ function PrinterCard({
           }}
           onCancel={() => setShowResumeConfirm(false)}
         />
+      )}
+
+      {/* Bed Jog — not-homed warning (Studio-style) */}
+      {showNotHomedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl w-full max-w-sm p-5">
+            <div className="flex items-start gap-3 mb-4">
+              <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-1">
+                  {t('printers.bedJog.notHomedTitle')}
+                </h3>
+                <p className="text-xs text-bambu-gray leading-relaxed">
+                  {t('printers.bedJog.notHomedMessage')}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  homeAxesMutation.mutate('all');
+                  setShowNotHomedModal(null);
+                }}
+                className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30 transition-colors"
+              >
+                {t('printers.bedJog.homeZ')}
+              </button>
+              <button
+                onClick={() => {
+                  const d = showNotHomedModal.distance;
+                  try { sessionStorage.setItem(`bambuddy.bedJog.warned.${printer.id}`, '1'); } catch { /* ignore */ }
+                  bedJogMutation.mutate({ distance: d, force: true });
+                  setShowNotHomedModal(null);
+                }}
+                className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 transition-colors"
+              >
+                {t('printers.bedJog.moveAnyway')}
+              </button>
+              <button
+                onClick={() => setShowNotHomedModal(null)}
+                className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-bambu-dark text-bambu-gray hover:bg-bambu-dark-tertiary transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Skip Objects Modal */}
@@ -4728,6 +5376,7 @@ function PrinterCard({
           amsId={assignSpoolModal.amsId}
           trayId={assignSpoolModal.trayId}
           trayInfo={assignSpoolModal.trayInfo}
+          spoolmanEnabled={!!spoolmanEnabled}
         />
       )}
 
@@ -4784,17 +5433,27 @@ function PrinterCard({
             <div className="fixed inset-0 z-[100]" onClick={() => setDryingPopoverAmsId(null)} />
             {/* Popover */}
             <div
-              className="fixed z-[101] w-[240px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl overflow-hidden"
-              style={{ top: dryingPopoverPos.top, left: dryingPopoverPos.left }}
+              className="fixed z-[101] flex flex-col w-[240px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl overflow-hidden"
+              style={{
+                top: dryingPopoverPos.top,
+                left: dryingPopoverPos.left,
+                // Cap to the space between the popover's top and the bottom
+                // viewport margin (8px, matching computePopoverPosition's
+                // margin). When the popover is taller than that space — short
+                // viewport, landscape phone, zoomed-in — the body scrolls and
+                // the footer stays pinned, so the Start button is always
+                // reachable (#1458 / #1447 follow-up).
+                maxHeight: `calc(100vh - ${dryingPopoverPos.top}px - 8px)`,
+              }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary">
+              <div className="shrink-0 flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary">
                 <Flame className="w-3.5 h-3.5 text-amber-400" />
                 <span className="text-xs text-white font-medium">{t('printers.drying.start')}</span>
               </div>
               {/* Body */}
-              <div className="px-3 py-2.5 space-y-2.5">
+              <div className="px-3 py-2.5 space-y-2.5 overflow-y-auto min-h-0">
                 {/* Filament type select */}
                 <div>
                   <label className="text-[10px] text-bambu-gray mb-1 block">{t('printers.filaments')}</label>
@@ -4887,7 +5546,7 @@ function PrinterCard({
                 </label>
               </div>
               {/* Footer */}
-              <div className="px-3 pb-3">
+              <div className="shrink-0 px-3 pt-2.5 pb-3">
                 <button
                   onClick={() => {
                     if (dryingPopoverAmsId !== null) {
@@ -4937,6 +5596,14 @@ function AddPrinterModal({
   const [detectedSubnets, setDetectedSubnets] = useState<string[]>([]);
   const [subnet, setSubnet] = useState('');
   const [scanProgress, setScanProgress] = useState({ scanned: 0, total: 0 });
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
+
+  // Setup-time pre-flight: run the connection diagnostic on save and warn
+  // (not block) when checks fail, so the user doesn't add a printer that
+  // immediately shows offline. checkingSave = probe in flight; saveWarning =
+  // failed result awaiting an explicit "save anyway".
+  const [checkingSave, setCheckingSave] = useState(false);
+  const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
 
   // Fetch discovery info on mount
   useEffect(() => {
@@ -4953,6 +5620,27 @@ function AddPrinterModal({
 
   // Filter out already-added printers
   const newPrinters = discovered.filter(p => !existingSerials.includes(p.serial));
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCheckingSave(true);
+    try {
+      const result = await api.diagnoseConnection({
+        ip_address: form.ip_address.trim(),
+        serial_number: form.serial_number.trim() || undefined,
+        access_code: form.access_code || undefined,
+      });
+      if (result.checks.some((c) => c.status === 'fail')) {
+        setSaveWarning(result);
+        return;
+      }
+    } catch {
+      // Diagnostic infrastructure failed — never block the save on it.
+    } finally {
+      setCheckingSave(false);
+    }
+    onAdd(form);
+  };
 
   const startDiscovery = async () => {
     setDiscoveryError('');
@@ -5059,11 +5747,12 @@ function AddPrinterModal({
   }, [onClose]);
 
   return (
+    <>
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
       onClick={onClose}
     >
-      <Card className="w-full max-w-md" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent>
           <h2 className="text-xl font-semibold mb-4">{t('printers.addPrinter')}</h2>
 
@@ -5170,13 +5859,7 @@ function AddPrinterModal({
               </p>
             )}
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onAdd(form);
-            }}
-            className="space-y-4"
-          >
+          <form onSubmit={handleAddSubmit} className="space-y-4">
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('printers.name')}</label>
               <input
@@ -5236,6 +5919,9 @@ function AddPrinterModal({
                   <option value="H2D Pro">H2D Pro</option>
                   <option value="H2S">H2S</option>
                 </optgroup>
+                <optgroup label="X2 Series">
+                  <option value="X2D">X2D</option>
+                </optgroup>
                 <optgroup label="X1 Series">
                   <option value="X1E">X1E</option>
                   <option value="X1C">X1 Carbon</option>
@@ -5275,18 +5961,62 @@ function AddPrinterModal({
                 {t('printers.modal.autoArchiveLabel')}
               </label>
             </div>
-            <div className="flex gap-3 pt-4">
-              <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" className="flex-1">
-                {t('printers.addPrinter')}
-              </Button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowDiagnostic(true)}
+              disabled={!form.ip_address.trim()}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-bambu-gray hover:text-white disabled:opacity-40 disabled:cursor-not-allowed border border-bambu-dark-tertiary rounded-lg transition-colors"
+            >
+              <Stethoscope className="w-4 h-4" />
+              {t('diagnostic.runButton')}
+            </button>
+            {saveWarning ? (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
+                  <p className="text-sm text-amber-300">{t('printers.addPreflight.warning')}</p>
+                </div>
+                <DiagnosticChecklist result={saveWarning} />
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setSaveWarning(null)}
+                    className="flex-1"
+                  >
+                    {t('printers.addPreflight.back')}
+                  </Button>
+                  <Button type="button" onClick={() => onAdd(form)} className="flex-1">
+                    {t('printers.addPreflight.saveAnyway')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-3 pt-2">
+                <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={checkingSave} className="flex-1">
+                  {checkingSave ? t('printers.addPreflight.checking') : t('printers.addPrinter')}
+                </Button>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>
     </div>
+    {showDiagnostic && (
+      <ConnectionDiagnosticModal
+        connection={{
+          ip_address: form.ip_address.trim(),
+          serial_number: form.serial_number.trim() || undefined,
+          access_code: form.access_code || undefined,
+        }}
+        printerName={form.name || null}
+        onClose={() => setShowDiagnostic(false)}
+      />
+    )}
+    </>
   );
 }
 
@@ -5307,18 +6037,21 @@ function FirmwareUpdateModal({
   const [uploadStatus, setUploadStatus] = useState<FirmwareUploadStatus | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(
+    firmwareInfo.update_available ? firmwareInfo.latest_version : null,
+  );
 
-  // Prepare check query (only when update available and user can update)
+  // Prepare check query — runs when a version is selected and user can update
   const { data: prepareInfo, isLoading: isPreparing } = useQuery({
-    queryKey: ['firmwarePrepare', printer.id],
-    queryFn: () => firmwareApi.prepareUpload(printer.id),
+    queryKey: ['firmwarePrepare', printer.id, selectedVersion],
+    queryFn: () => firmwareApi.prepareUpload(printer.id, selectedVersion ?? undefined),
     staleTime: 30000,
-    enabled: firmwareInfo.update_available && canUpdate,
+    enabled: !!selectedVersion && canUpdate && !isUploading,
   });
 
   // Start upload mutation
   const uploadMutation = useMutation({
-    mutationFn: () => firmwareApi.startUpload(printer.id),
+    mutationFn: () => firmwareApi.startUpload(printer.id, selectedVersion ?? undefined),
     onSuccess: () => {
       setIsUploading(true);
       // Start polling for status
@@ -5380,33 +6113,98 @@ function FirmwareUpdateModal({
           </div>
 
           {/* Version Info */}
-          <div className="bg-bambu-dark rounded-lg p-3 mb-4">
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-bambu-gray">{t('printers.firmwareModal.currentVersion')}</span>
-              <span className={`font-mono ${firmwareInfo.update_available ? 'text-white' : 'text-status-ok'}`}>
-                {firmwareInfo.current_version || t('common.unknown')}
-              </span>
-            </div>
-            {firmwareInfo.update_available && (
-              <div className="flex justify-between items-center text-sm mt-1">
-                <span className="text-bambu-gray">{t('printers.firmwareModal.latestVersion')}</span>
-                <span className="text-orange-400 font-mono">{firmwareInfo.latest_version}</span>
-              </div>
-            )}
-            {firmwareInfo.release_notes && (
-              <details className="mt-3 text-sm" open={!firmwareInfo.update_available}>
-                <summary className={`cursor-pointer hover:underline ${firmwareInfo.update_available ? 'text-orange-400' : 'text-status-ok'}`}>
-                  {t('printers.firmwareModal.releaseNotes')}
-                </summary>
-                <div className="mt-2 text-bambu-gray text-xs max-h-40 overflow-y-auto whitespace-pre-wrap">
-                  {firmwareInfo.release_notes}
+          {(() => {
+            const selectedEntry = selectedVersion
+              ? firmwareInfo.available_versions?.find((v) => v.version === selectedVersion)
+              : null;
+            const displayVersion = selectedVersion ?? firmwareInfo.latest_version;
+            const displayNotes = selectedEntry?.release_notes ?? firmwareInfo.release_notes;
+            const showSecondLine = !!displayVersion && displayVersion !== firmwareInfo.current_version;
+            return (
+              <div className="bg-bambu-dark rounded-lg p-3 mb-4">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-bambu-gray">{t('printers.firmwareModal.currentVersion')}</span>
+                  <span className={`font-mono ${showSecondLine ? 'text-white' : 'text-status-ok'}`}>
+                    {firmwareInfo.current_version || t('common.unknown')}
+                  </span>
                 </div>
-              </details>
-            )}
-          </div>
+                {showSecondLine && (
+                  <div className="flex justify-between items-center text-sm mt-1">
+                    <span className="text-bambu-gray">{t('printers.firmwareModal.latestVersion')}</span>
+                    <span className="text-orange-400 font-mono">{displayVersion}</span>
+                  </div>
+                )}
+                {displayNotes && (
+                  <details className="mt-3 text-sm" open={!showSecondLine} key={displayVersion ?? 'none'}>
+                    <summary className={`cursor-pointer hover:underline ${showSecondLine ? 'text-orange-400' : 'text-status-ok'}`}>
+                      {t('printers.firmwareModal.releaseNotes')}
+                    </summary>
+                    <div className="mt-2 text-bambu-gray text-xs max-h-40 overflow-y-auto whitespace-pre-wrap">
+                      {displayNotes}
+                    </div>
+                  </details>
+                )}
+              </div>
+            );
+          })()}
 
-          {/* Status / Progress (only when update available) */}
-          {!firmwareInfo.update_available ? null : isPreparing ? (
+          {/* Available versions list */}
+          {firmwareInfo.available_versions && firmwareInfo.available_versions.length > 0 && !isUploading && uploadStatus?.status !== 'complete' && (
+            <div className="mb-4">
+              <div className="text-xs text-bambu-gray mb-2">{t('printers.firmwareModal.availableVersions')}</div>
+              <div className="max-h-56 overflow-y-auto border border-bambu-dark-tertiary rounded-lg divide-y divide-bambu-dark-tertiary">
+                {firmwareInfo.available_versions.map((v) => {
+                  const isCurrent = firmwareInfo.current_version === v.version;
+                  const isSelected = selectedVersion === v.version;
+                  const cmp = firmwareInfo.current_version
+                    ? compareFwVersions(v.version, firmwareInfo.current_version)
+                    : 0;
+                  const relLabel = isCurrent
+                    ? t('printers.firmwareModal.currentBadge')
+                    : cmp > 0
+                      ? t('printers.firmwareModal.newerBadge')
+                      : t('printers.firmwareModal.olderBadge');
+                  const relClass = isCurrent
+                    ? 'text-bambu-gray'
+                    : cmp > 0
+                      ? 'text-orange-400'
+                      : 'text-blue-400';
+                  return (
+                    <button
+                      key={v.version}
+                      type="button"
+                      disabled={!v.file_available || !canUpdate || isCurrent}
+                      onClick={() => setSelectedVersion(v.version)}
+                      className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${
+                        isSelected ? 'bg-orange-500/10' : 'hover:bg-bambu-dark'
+                      } ${!v.file_available || !canUpdate || isCurrent ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-mono text-white">{v.version}</span>
+                        <span className={`text-xs ${relClass}`}>{relLabel}</span>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        isCurrent
+                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                          : v.file_available
+                            ? 'bg-bambu-green/15 text-bambu-green border border-bambu-green/30'
+                            : 'bg-bambu-gray/10 text-bambu-gray border border-bambu-gray/30'
+                      }`}>
+                        {isCurrent
+                          ? t('printers.firmwareModal.installed')
+                          : v.file_available
+                          ? t('printers.firmwareModal.usable')
+                          : t('printers.firmwareModal.unavailable')}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Status / Progress (only when a version is selected) */}
+          {!selectedVersion ? null : isPreparing ? (
             <div className="flex items-center gap-2 text-bambu-gray text-sm mb-4">
               <Loader2 className="w-4 h-4 animate-spin" />
               {t('printers.firmwareModal.checkingPrereqs')}
@@ -5521,6 +6319,11 @@ function EditPrinterModal({
     auto_archive: printer.auto_archive,
   });
 
+  // Setup-time pre-flight — same warn-on-save as the Add-Printer dialog, so an
+  // edit that breaks connectivity (e.g. a mistyped IP) is caught before save.
+  const [checkingSave, setCheckingSave] = useState(false);
+  const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
+
   const updateMutation = useMutation({
     mutationFn: (data: Partial<PrinterCreate>) => api.updatePrinter(printer.id, data),
     onSuccess: () => {
@@ -5540,8 +6343,7 @@ function EditPrinterModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const doSave = () => {
     const data: Partial<PrinterCreate> = {
       name: form.name,
       ip_address: form.ip_address,
@@ -5556,12 +6358,33 @@ function EditPrinterModal({
     updateMutation.mutate(data);
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCheckingSave(true);
+    try {
+      const result = await api.diagnoseConnection({
+        ip_address: form.ip_address.trim(),
+        serial_number: printer.serial_number,
+        access_code: form.access_code || undefined,
+      });
+      if (result.checks.some((c) => c.status === 'fail')) {
+        setSaveWarning(result);
+        return;
+      }
+    } catch {
+      // Diagnostic infrastructure failed — never block the save on it.
+    } finally {
+      setCheckingSave(false);
+    }
+    doSave();
+  };
+
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
       onClick={onClose}
     >
-      <Card className="w-full max-w-md" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent>
           <h2 className="text-xl font-semibold mb-4">{t('printers.editPrinter')}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -5622,6 +6445,9 @@ function EditPrinterModal({
                   <option value="H2D Pro">H2D Pro</option>
                   <option value="H2S">H2S</option>
                 </optgroup>
+                <optgroup label="X2 Series">
+                  <option value="X2D">X2D</option>
+                </optgroup>
                 <optgroup label="X1 Series">
                   <option value="X1E">X1E</option>
                   <option value="X1C">X1 Carbon</option>
@@ -5661,14 +6487,50 @@ function EditPrinterModal({
                 {t('printers.modal.autoArchiveLabel')}
               </label>
             </div>
-            <div className="flex gap-3 pt-4">
-              <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" className="flex-1" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? t('common.saving') : t('printers.modal.saveChanges')}
-              </Button>
-            </div>
+            {saveWarning ? (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
+                  <p className="text-sm text-amber-300">{t('printers.addPreflight.warning')}</p>
+                </div>
+                <DiagnosticChecklist result={saveWarning} />
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setSaveWarning(null)}
+                    className="flex-1"
+                  >
+                    {t('printers.addPreflight.back')}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={doSave}
+                    className="flex-1"
+                    disabled={updateMutation.isPending}
+                  >
+                    {t('printers.addPreflight.saveAnyway')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-3 pt-4">
+                <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  disabled={updateMutation.isPending || checkingSave}
+                >
+                  {checkingSave
+                    ? t('printers.addPreflight.checking')
+                    : updateMutation.isPending
+                      ? t('common.saving')
+                      : t('printers.modal.saveChanges')}
+                </Button>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>
@@ -5765,6 +6627,16 @@ export function PrintersPage() {
   });
   // Derive viewMode from cardSize: S=compact, M/L/XL=expanded
   const viewMode: ViewMode = cardSize === 1 ? 'compact' : 'expanded';
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [locationFilter, setLocationFilter] = useState<string>('all');
+  const [statusCacheVersion, setStatusCacheVersion] = useState(0);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('printerCollapsedSections');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
@@ -5799,10 +6671,12 @@ export function PrintersPage() {
     queryFn: api.getPrinters,
   });
 
-  // Fetch app settings for AMS thresholds
+  // Fetch the UI-rendering subset of settings. Uses /ui-preferences (not /settings)
+  // so users with printers:read but no settings:read still get the values needed
+  // to render the clear-plate button, drying presets, AMS thresholds, etc. (#1293).
   const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
+    queryKey: ['ui-preferences'],
+    queryFn: api.getUiPreferences,
   });
 
   // Compute drying presets: user-configured (from settings) merged over built-in defaults
@@ -5889,6 +6763,28 @@ export function PrintersPage() {
     },
   });
 
+  const { data: spoolmanSpools, isLoading: spoolmanSpoolsLoading } = useQuery({
+    queryKey: ['spoolman-inventory-spools'],
+    queryFn: () => api.getSpoolmanInventorySpools(false),
+    enabled: !!spoolmanEnabled,
+    staleTime: 30 * 1000,
+  });
+
+  const { data: spoolmanSlotAssignments, isLoading: spoolmanAssignmentsLoading } = useQuery({
+    queryKey: ['spoolman-slot-assignments'],
+    queryFn: () => api.getSpoolmanSlotAssignments(),
+    enabled: !!spoolmanEnabled,
+    staleTime: 30 * 1000,
+  });
+
+  const unassignSpoolmanMutation = useMutation({
+    mutationFn: (spoolmanSpoolId: number) => api.unassignSpoolmanSlot(spoolmanSpoolId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
+    },
+  });
+
   // Helper to find assignment for a specific slot
   const getAssignment = (printerId: number, amsId: number | string, trayId: number | string): SpoolAssignment | undefined => {
     return spoolAssignments?.find(
@@ -5927,7 +6823,15 @@ export function PrintersPage() {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       setShowAddModal(false);
     },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToAdd'), 'error'),
+    onError: (error: Error) => {
+      // Localized message when the backend returns a stable error code;
+      // the raw message is an English fallback for non-UI clients.
+      if (error instanceof ApiError && error.code === 'printer_connection_failed') {
+        showToast(t('printers.toast.connectionFailedNotAdded'), 'error');
+        return;
+      }
+      showToast(error.message || t('printers.toast.failedToAdd'), 'error');
+    },
   });
 
   const powerOnMutation = useMutation({
@@ -5985,7 +6889,7 @@ export function PrintersPage() {
         case 'stop': return status.state === 'RUNNING' || status.state === 'PAUSE';
         case 'pause': return status.state === 'RUNNING';
         case 'resume': return status.state === 'PAUSE';
-        case 'clearPlate': return (status.state === 'FINISH' || status.state === 'FAILED') && !(status as { plate_cleared?: boolean }).plate_cleared;
+        case 'clearPlate': return !!(status as { awaiting_plate_clear?: boolean }).awaiting_plate_clear;
         case 'clearHMS': return status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0;
         default: return false;
       }
@@ -6067,10 +6971,73 @@ export function PrintersPage() {
 
   const cardSizeLabels = ['S', 'M', 'L', 'XL'];
 
+  // Increment version counter whenever a printer status cache entry is updated so
+  // filteredPrinters re-computes reactively on WebSocket-driven status changes.
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event.type === 'updated' &&
+        Array.isArray(event.query.queryKey) &&
+        event.query.queryKey[0] === 'printerStatus'
+      ) {
+        setStatusCacheVersion(v => v + 1);
+      }
+    });
+    return unsubscribe;
+  }, [queryClient]);
+
+  // Filter printers by search term, status, and location
+  const filteredPrinters = useMemo(() => {
+    if (!printers) return [];
+    let result = printers;
+
+    // Text search
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        (p.model || '').toLowerCase().includes(q) ||
+        (p.location || '').toLowerCase().includes(q) ||
+        (p.serial_number || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Location filter
+    if (locationFilter !== 'all') {
+      result = result.filter(p => (p.location || '') === locationFilter);
+    }
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      result = result.filter(p => {
+        const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', p.id]);
+        if (!status?.connected) return statusFilter === 'offline';
+        const hmsErrors = status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
+        switch (statusFilter) {
+          case 'printing': return status.state === 'RUNNING';
+          case 'paused':   return status.state === 'PAUSE';
+          case 'finished': return status.state === 'FINISH';
+          case 'error':    return status.state === 'FAILED' || hmsErrors.length > 0;
+          case 'idle':     return status.state !== 'RUNNING' && status.state !== 'PAUSE' && status.state !== 'FINISH' && status.state !== 'FAILED' && hmsErrors.length === 0;
+          case 'offline':  return false; // Connected printers are never offline
+          default:         return true;
+        }
+      });
+    }
+
+    return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- statusCacheVersion is intentional: it forces recompute when WebSocket updates printer status cache
+  }, [printers, search, statusFilter, locationFilter, queryClient, statusCacheVersion]);
+
+  // Derive unique locations for the location filter dropdown
+  const availableLocations = useMemo(() => {
+    if (!printers) return [];
+    return [...new Set(printers.map(p => p.location || '').filter(Boolean))].sort();
+  }, [printers]);
+
   // Sort printers based on selected option
   const sortedPrinters = useMemo(() => {
-    if (!printers) return [];
-    const sorted = [...printers];
+    const sorted = [...filteredPrinters];
 
     switch (sortBy) {
       case 'name':
@@ -6114,7 +7081,7 @@ export function PrintersPage() {
     }
 
     return sorted;
-  }, [printers, sortBy, sortAsc, queryClient]);
+  }, [filteredPrinters, sortBy, sortAsc, queryClient]);
 
   const selectAll = useCallback(() => {
     setSelectedPrinterIds(new Set(sortedPrinters.map(p => p.id)));
@@ -6126,15 +7093,7 @@ export function PrintersPage() {
       const next = new Set(prev);
       sortedPrinters.forEach(p => {
         const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', p.id]);
-        if (!status) return;
-        switch (state) {
-          case 'printing': if (status.connected && status.state === 'RUNNING') next.add(p.id); break;
-          case 'paused': if (status.connected && status.state === 'PAUSE') next.add(p.id); break;
-          case 'finished': if (status.connected && status.state === 'FINISH') next.add(p.id); break;
-          case 'idle': if (status.connected && status.state !== 'RUNNING' && status.state !== 'PAUSE' && status.state !== 'FINISH' && status.state !== 'FAILED') next.add(p.id); break;
-          case 'error': if (status.connected && (status.state === 'FAILED' || (status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0))) next.add(p.id); break;
-          case 'offline': if (!status.connected) next.add(p.id); break;
-        }
+        if (classifyPrinterStatus(status) === state) next.add(p.id);
       });
       return next;
     });
@@ -6150,161 +7109,357 @@ export function PrintersPage() {
     setIsSelectionMode(true);
   }, [sortedPrinters]);
 
-  // Group printers by location when sorted by location
+  const selectByModel = useCallback((model: string) => {
+    setSelectedPrinterIds(prev => {
+      const next = new Set(prev);
+      sortedPrinters.filter(p => (p.model || 'Unknown') === model).forEach(p => next.add(p.id));
+      return next;
+    });
+    setIsSelectionMode(true);
+  }, [sortedPrinters]);
+
+  const toggleSectionCollapse = useCallback((key: string) => {
+    setCollapsedSections(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem('printerCollapsedSections', JSON.stringify(next)); } catch { /* quota exceeded / private mode */ }
+      return next;
+    });
+  }, []);
+
+  // Group printers when sorted by location, status, or model
   const groupedPrinters = useMemo(() => {
-    if (sortBy !== 'location') return null;
+    if (sortBy === 'name') return null;
 
     const groups: Record<string, typeof sortedPrinters> = {};
-    sortedPrinters.forEach(printer => {
-      const location = printer.location || 'Ungrouped';
-      if (!groups[location]) groups[location] = [];
-      groups[location].push(printer);
-    });
+
+    if (sortBy === 'location') {
+      sortedPrinters.forEach(printer => {
+        const location = printer.location || 'Ungrouped';
+        if (!groups[location]) groups[location] = [];
+        groups[location].push(printer);
+      });
+    } else if (sortBy === 'model') {
+      sortedPrinters.forEach(printer => {
+        const model = printer.model || 'Unknown';
+        if (!groups[model]) groups[model] = [];
+        groups[model].push(printer);
+      });
+    } else if (sortBy === 'status') {
+      sortedPrinters.forEach(printer => {
+        const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', printer.id]);
+        const group = classifyPrinterStatus(status);
+        if (!groups[group]) groups[group] = [];
+        groups[group].push(printer);
+      });
+    }
+
     return groups;
-  }, [sortBy, sortedPrinters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- classifyPrinterStatus & filterKnownHMSErrors are stable module-level functions, not reactive deps; statusCacheVersion forces recompute on WebSocket status updates
+  }, [sortBy, sortedPrinters, queryClient, statusCacheVersion]);
+
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const expandedToolbarControlsRef = useRef<HTMLDivElement>(null);
+  const expandedToolbarWidthRef = useRef(0);
+  const [compactToolbar, setCompactToolbar] = useState(false);
+
+  const measureToolbar = useCallback(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+
+    const measuredControlsWidth = expandedToolbarControlsRef.current?.offsetWidth;
+    if (measuredControlsWidth) {
+      expandedToolbarWidthRef.current = measuredControlsWidth;
+    }
+
+    const searchMinimumWidth = 220;
+    const gapWidth = 8;
+    const shouldCompact = expandedToolbarWidthRef.current > 0 && toolbar.clientWidth < expandedToolbarWidthRef.current + searchMinimumWidth + gapWidth;
+    setCompactToolbar(prev => (prev === shouldCompact ? prev : shouldCompact));
+  }, []);
+
+  const smartPlugCount = Object.keys(smartPlugByPrinter).length;
+  useLayoutEffect(() => {
+    measureToolbar();
+
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measureToolbar);
+      return () => window.removeEventListener('resize', measureToolbar);
+    }
+
+    const resizeObserver = new ResizeObserver(() => measureToolbar());
+    resizeObserver.observe(toolbar);
+    window.addEventListener('resize', measureToolbar);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', measureToolbar);
+    };
+  }, [
+    measureToolbar,
+    printers?.length,
+    availableLocations.length,
+    hideDisconnected,
+    smartPlugCount,
+  ]);
+
+  const renderFilterControls = (inMenu = false) => (
+    <>
+      {/* Status filter */}
+      {printers && printers.length > 0 && (
+        <ToolbarDropdown
+          value={statusFilter}
+          onChange={setStatusFilter}
+          fullWidth={inMenu}
+          options={[
+            { value: 'all', label: t('printers.filter.allStatuses') },
+            { value: 'printing', label: t('printers.status.printing') },
+            { value: 'paused', label: t('printers.status.paused') },
+            { value: 'idle', label: t('printers.status.idle') },
+            { value: 'finished', label: t('printers.status.finished') },
+            { value: 'error', label: t('printers.status.error') },
+            { value: 'offline', label: t('printers.status.offline') },
+          ]}
+        />
+      )}
+
+      {/* Location filter — only shown when at least one printer has a location */}
+      {printers && printers.length > 0 && availableLocations.length > 0 && (
+        <ToolbarDropdown
+          value={locationFilter}
+          onChange={setLocationFilter}
+          fullWidth={inMenu}
+          options={[
+            { value: 'all', label: t('printers.filter.allLocations') },
+            ...availableLocations.map(loc => ({ value: loc, label: loc })),
+          ]}
+        />
+      )}
+
+      <button
+        type="button"
+        onClick={toggleHideDisconnected}
+        aria-pressed={hideDisconnected}
+        className={`h-8 px-2 rounded-lg border text-sm font-medium transition-colors ${inMenu ? 'w-full' : ''} ${
+          hideDisconnected
+            ? 'bg-bambu-green border-bambu-green text-white'
+            : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
+        }`}
+      >
+        {t('printers.hideOffline')}
+      </button>
+    </>
+  );
+
+  const renderViewControls = (inMenu = false) => (
+    <>
+      {/* Sort dropdown */}
+      <div className={`flex items-center gap-1 ${inMenu ? 'w-full' : ''}`}>
+        <ToolbarDropdown<SortOption>
+          value={sortBy}
+          onChange={handleSortChange}
+          fullWidth={inMenu}
+          options={[
+            { value: 'name', label: t('printers.sort.name') },
+            { value: 'status', label: t('printers.sort.status') },
+            { value: 'model', label: t('printers.sort.model') },
+            { value: 'location', label: t('printers.sort.location') },
+          ]}
+        />
+        <button
+          onClick={toggleSortDirection}
+          className="h-8 shrink-0 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center justify-center"
+          title={sortAsc ? t('printers.sort.descending') : t('printers.sort.ascending')}
+        >
+          {sortAsc ? (
+            <ArrowUp className="w-4 h-4 text-white" />
+          ) : (
+            <ArrowDown className="w-4 h-4 text-white" />
+          )}
+        </button>
+      </div>
+
+      {/* Card size selector */}
+      <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${inMenu ? 'w-full' : ''}`}>
+        {cardSizeLabels.map((label, index) => {
+          const size = index + 1;
+          const isSelected = cardSize === size;
+          return (
+            <button
+              key={label}
+              onClick={() => {
+                setCardSize(size);
+                localStorage.setItem('printerCardSize', String(size));
+              }}
+              className={`h-full px-2 text-xs font-medium transition-colors ${inMenu ? 'flex-1' : ''} ${
+                index === 0 ? 'rounded-l-lg' : ''
+              } ${
+                index === cardSizeLabels.length - 1 ? 'rounded-r-lg' : ''
+              } ${
+                isSelected
+                  ? 'bg-bambu-green text-white'
+                  : 'text-white hover:bg-bambu-dark-tertiary'
+              }`}
+              title={label === 'S' ? t('printers.cardSize.small') : label === 'M' ? t('printers.cardSize.medium') : label === 'L' ? t('printers.cardSize.large') : t('printers.cardSize.extraLarge')}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+
+  const renderActionControls = (inMenu = false) => (
+    <>
+      {/* Bulk select toggle */}
+      <button
+        onClick={() => {
+          if (selectionMode) clearSelection();
+          else setIsSelectionMode(true);
+        }}
+        className={`h-8 px-2 rounded-lg border transition-colors ${inMenu ? 'w-full justify-center gap-1.5 text-sm font-medium flex items-center' : ''} ${
+          selectionMode
+            ? 'bg-bambu-green border-bambu-green text-white'
+            : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
+        }`}
+        title={t('printers.bulk.select')}
+        disabled={!hasPermission('printers:control')}
+      >
+        <CheckSquare className="w-4 h-4" />
+        {inMenu && <span>{t('printers.bulk.select')}</span>}
+      </button>
+
+      {/* Power dropdown for offline printers with smart plugs */}
+      {hideDisconnected && Object.keys(smartPlugByPrinter).length > 0 && (
+        <div className={`relative ${inMenu ? 'w-full' : ''}`}>
+          <button
+            onClick={() => setShowPowerDropdown(!showPowerDropdown)}
+            className={`h-8 flex items-center gap-1.5 px-2 text-sm rounded-lg border transition-colors ${
+              inMenu
+                ? 'w-full justify-between bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary hover:text-white'
+                : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <Power className="w-4 h-4" />
+              {t('printers.powerOn')}
+            </span>
+            <ChevronDown className={`w-3 h-3 transition-transform ${showPowerDropdown ? 'rotate-180' : ''}`} />
+          </button>
+          {showPowerDropdown && (
+            <>
+              {/* Backdrop to close dropdown */}
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setShowPowerDropdown(false)}
+              />
+              <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-bambu-dark-secondary border border-gray-200 dark:border-bambu-dark-tertiary rounded-lg shadow-lg z-20 py-1">
+                <div className="px-3 py-2 text-xs text-gray-500 dark:text-bambu-gray border-b border-gray-200 dark:border-bambu-dark-tertiary">
+                  {t('printers.offlinePrintersWithPlugs')}
+                </div>
+                {printers?.filter(p => smartPlugByPrinter[p.id]).map(printer => (
+                  <PowerDropdownItem
+                    key={printer.id}
+                    printer={printer}
+                    plug={smartPlugByPrinter[printer.id]}
+                    onPowerOn={(plugId) => {
+                      setPoweringOn(plugId);
+                      powerOnMutation.mutate(plugId);
+                    }}
+                    isPowering={poweringOn === smartPlugByPrinter[printer.id]?.id}
+                  />
+                ))}
+                {printers?.filter(p => smartPlugByPrinter[p.id]).length === 0 && (
+                  <div className="px-3 py-2 text-sm text-bambu-gray">
+                    No printers with smart plugs
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      <Button
+        onClick={() => setShowAddModal(true)}
+        disabled={!hasPermission('printers:create')}
+        title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
+        className={`!h-8 !min-h-8 px-2 py-0 ${inMenu ? 'w-full' : ''}`}
+      >
+        <Plus className="w-4 h-4" />
+        {t('printers.addPrinter')}
+      </Button>
+    </>
+  );
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="space-y-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">{t('printers.title')}</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <PrinterIcon className="w-7 h-7 text-bambu-green" />
+            {t('printers.title')}
+          </h1>
           <StatusSummaryBar printers={printers} />
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* Sort dropdown */}
-          <div className="flex items-center gap-1">
-            <select
-              value={sortBy}
-              onChange={(e) => handleSortChange(e.target.value as SortOption)}
-              className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1.5 text-white focus:border-bambu-green focus:outline-none"
-            >
-              <option value="name">{t('printers.sort.name')}</option>
-              <option value="status">{t('printers.sort.status')}</option>
-              <option value="model">{t('printers.sort.model')}</option>
-              <option value="location">{t('printers.sort.location')}</option>
-            </select>
-            <button
-              onClick={toggleSortDirection}
-              className="p-1.5 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
-              title={sortAsc ? t('printers.sort.descending') : t('printers.sort.ascending')}
-            >
-              {sortAsc ? (
-                <ArrowUp className="w-4 h-4 text-bambu-gray" />
-              ) : (
-                <ArrowDown className="w-4 h-4 text-bambu-gray" />
-              )}
-            </button>
-          </div>
-
-          {/* Card size selector */}
-          <div className="flex items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
-            {cardSizeLabels.map((label, index) => {
-              const size = index + 1;
-              const isSelected = cardSize === size;
-              return (
+        <div ref={toolbarRef} className="relative flex items-center gap-2">
+          {/* Only show search bar when printers exist */}
+          {printers && printers.length > 0 && (
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50" />
+              <input
+                type="search"
+                name="printer-search"
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('printers.search')}
+                aria-label={t('printers.search')}
+                className="w-full h-8 pl-9 pr-8 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+              />
+              {search && (
                 <button
-                  key={label}
-                  onClick={() => {
-                    setCardSize(size);
-                    localStorage.setItem('printerCardSize', String(size));
-                  }}
-                  className={`px-2 py-1.5 text-xs font-medium transition-colors ${
-                    index === 0 ? 'rounded-l-lg' : ''
-                  } ${
-                    index === cardSizeLabels.length - 1 ? 'rounded-r-lg' : ''
-                  } ${
-                    isSelected
-                      ? 'bg-bambu-green text-white'
-                      : 'text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
-                  }`}
-                  title={label === 'S' ? t('printers.cardSize.small') : label === 'M' ? t('printers.cardSize.medium') : label === 'L' ? t('printers.cardSize.large') : t('printers.cardSize.extraLarge')}
+                  type="button"
+                  aria-label={t('common.clear')}
+                  onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white"
                 >
-                  {label}
+                  <X className="w-4 h-4" />
                 </button>
-              );
-            })}
-          </div>
-
-          {/* Bulk select toggle */}
-          <button
-            onClick={() => {
-              if (selectionMode) clearSelection();
-              else setIsSelectionMode(true);
-            }}
-            className={`p-1.5 rounded-lg transition-colors ${
-              selectionMode
-                ? 'bg-bambu-green text-white'
-                : 'hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white'
-            }`}
-            title={t('printers.bulk.select')}
-            disabled={!hasPermission('printers:control')}
-          >
-            <CheckSquare className="w-4 h-4" />
-          </button>
-
-          <div className="w-px h-6 bg-bambu-dark-tertiary" />
-
-          <label className="flex items-center gap-2 text-sm text-bambu-gray cursor-pointer">
-            <input
-              type="checkbox"
-              checked={hideDisconnected}
-              onChange={toggleHideDisconnected}
-              className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-            />
-            {t('printers.hideOffline')}
-          </label>
-          {/* Power dropdown for offline printers with smart plugs */}
-          {hideDisconnected && Object.keys(smartPlugByPrinter).length > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setShowPowerDropdown(!showPowerDropdown)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white dark:bg-bambu-dark-secondary border border-gray-200 dark:border-bambu-dark-tertiary rounded-lg text-gray-600 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white hover:border-bambu-green transition-colors"
-              >
-                <Power className="w-4 h-4" />
-                {t('printers.powerOn')}
-                <ChevronDown className={`w-3 h-3 transition-transform ${showPowerDropdown ? 'rotate-180' : ''}`} />
-              </button>
-              {showPowerDropdown && (
-                <>
-                  {/* Backdrop to close dropdown */}
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowPowerDropdown(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-bambu-dark-secondary border border-gray-200 dark:border-bambu-dark-tertiary rounded-lg shadow-lg z-20 py-1">
-                    <div className="px-3 py-2 text-xs text-gray-500 dark:text-bambu-gray border-b border-gray-200 dark:border-bambu-dark-tertiary">
-                      {t('printers.offlinePrintersWithPlugs')}
-                    </div>
-                    {printers?.filter(p => smartPlugByPrinter[p.id]).map(printer => (
-                      <PowerDropdownItem
-                        key={printer.id}
-                        printer={printer}
-                        plug={smartPlugByPrinter[printer.id]}
-                        onPowerOn={(plugId) => {
-                          setPoweringOn(plugId);
-                          powerOnMutation.mutate(plugId);
-                        }}
-                        isPowering={poweringOn === smartPlugByPrinter[printer.id]?.id}
-                      />
-                    ))}
-                    {printers?.filter(p => smartPlugByPrinter[p.id]).length === 0 && (
-                      <div className="px-3 py-2 text-sm text-bambu-gray">
-                        No printers with smart plugs
-                      </div>
-                    )}
-                  </div>
-                </>
               )}
             </div>
           )}
-          <Button
-            onClick={() => setShowAddModal(true)}
-            disabled={!hasPermission('printers:create')}
-            title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
+          <div
+            ref={expandedToolbarControlsRef}
+            aria-hidden={compactToolbar}
+            inert={compactToolbar}
+            className={`${compactToolbar ? 'absolute -left-[9999px] top-0 flex w-max pointer-events-none opacity-0' : 'flex'} ml-auto items-center justify-end gap-2 flex-nowrap [&>*]:shrink-0`}
           >
-            <Plus className="w-4 h-4" />
-            {t('printers.addPrinter')}
-          </Button>
+            <div className="h-6 w-px bg-bambu-dark-tertiary" />
+            <div className="flex items-center gap-2">{renderFilterControls()}</div>
+            <div className="h-6 w-px bg-bambu-dark-tertiary" />
+            <div className="flex items-center gap-2">{renderViewControls()}</div>
+            <div className="h-6 w-px bg-bambu-dark-tertiary" />
+            <div className="flex items-center gap-2">{renderActionControls()}</div>
+          </div>
+
+          {compactToolbar && (
+            <div className="ml-auto flex items-center justify-end gap-1">
+              <ToolbarMenu label={t('printers.toolbar.filters', 'Filters')} icon={<Filter className="w-4 h-4" />}>
+                <div className="flex w-48 flex-col gap-2">{renderFilterControls(true)}</div>
+              </ToolbarMenu>
+              <ToolbarMenu label={t('printers.toolbar.view', 'View')} icon={<SlidersHorizontal className="w-4 h-4" />}>
+                <div className="flex w-48 flex-col gap-2">{renderViewControls(true)}</div>
+              </ToolbarMenu>
+              <ToolbarMenu label={t('printers.toolbar.actions', 'Actions')} icon={<MoreHorizontal className="w-4 h-4" />}>
+                <div className="flex w-48 flex-col gap-2">{renderActionControls(true)}</div>
+              </ToolbarMenu>
+            </div>
+          )}
         </div>
       </div>
 
@@ -6324,60 +7479,103 @@ export function PrintersPage() {
             </Button>
           </CardContent>
         </Card>
+      ) : sortedPrinters.length === 0 && (search.trim() || statusFilter !== 'all' || locationFilter !== 'all') ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <p className="text-bambu-gray">{t('printers.noSearchResults')}</p>
+          </CardContent>
+        </Card>
       ) : groupedPrinters ? (
-        /* Grouped by location view */
+        /* Grouped view (location, status, or model) */
         <div className="space-y-6">
-          {Object.entries(groupedPrinters).map(([location, locationPrinters]) => (
-            <div key={location}>
-              <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-bambu-green" />
-                {location}
-                <span className="text-sm font-normal text-bambu-gray">({locationPrinters.length})</span>
-                {selectionMode && (
-                  <button
-                    onClick={() => selectByLocation(location === 'Ungrouped' ? '' : location)}
-                    className="text-xs text-bambu-green hover:text-bambu-green-light transition-colors ml-1"
-                  >
-                    {t('printers.bulk.selectAll')}
-                  </button>
-                )}
-              </h2>
-              <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
-                {locationPrinters.map((printer) => (
-                  <PrinterCard
-                    key={printer.id}
-                    printer={printer}
-                    hideIfDisconnected={hideDisconnected}
-                    maintenanceInfo={maintenanceByPrinter[printer.id]}
-                    viewMode={viewMode}
-                    cardSize={cardSize}
-                    amsThresholds={settings ? {
-                      humidityGood: Number(settings.ams_humidity_good) || 40,
-                      humidityFair: Number(settings.ams_humidity_fair) || 60,
-                      tempGood: Number(settings.ams_temp_good) || 28,
-                      tempFair: Number(settings.ams_temp_fair) || 35,
-                    } : undefined}
-                    spoolmanEnabled={spoolmanEnabled}
-                    hasUnlinkedSpools={hasUnlinkedSpools}
-                    linkedSpools={linkedSpools}
-                    spoolmanUrl={spoolmanStatus?.url}
-                    spoolmanSyncMode={spoolmanSyncMode}
-                    onGetAssignment={getAssignment}
-                    onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
-                    timeFormat={settings?.time_format || 'system'}
-                    cameraViewMode={settings?.camera_view_mode || 'window'}
-                    onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
-                    checkPrinterFirmware={settings?.check_printer_firmware !== false}
-                    dryingPresets={effectiveDryingPresets}
-                    requirePlateClear={settings?.require_plate_clear !== false}
-                    selectionMode={selectionMode}
-                    isSelected={selectedPrinterIds.has(printer.id)}
-                    onToggleSelect={toggleSelect}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+          {(() => {
+            const keys = sortBy === 'status'
+              ? STATUS_GROUP_ORDER.filter(k => groupedPrinters[k]?.length > 0)
+              : Object.keys(groupedPrinters);
+            // For status grouping, asc/desc flips the fixed priority order
+            // (asc = error→offline, desc = offline→error). This matches the
+            // sort-toggle behaviour for other groupings.
+            return (sortAsc ? keys : [...keys].reverse());
+          })().map((groupKey) => {
+            const groupPrinters = groupedPrinters[groupKey];
+            const collapseKey = `${sortBy}:${groupKey}`;
+            const isOpen = !collapsedSections[collapseKey];
+
+            const dot = sortBy === 'status'
+              ? STATUS_GROUP_META[groupKey]?.dot || 'bg-bambu-green'
+              : 'bg-bambu-green';
+            const label = sortBy === 'status'
+              ? t(STATUS_GROUP_META[groupKey]?.labelKey || groupKey)
+              : groupKey;
+
+            return (
+              <Collapsible
+                key={groupKey}
+                open={isOpen}
+                onToggle={() => toggleSectionCollapse(collapseKey)}
+                summaryClassName="py-1"
+                summary={
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${dot}`} />
+                    {label}
+                    <span className="text-sm font-normal text-bambu-gray">({groupPrinters.length})</span>
+                    {selectionMode && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (sortBy === 'location') selectByLocation(groupKey === 'Ungrouped' ? '' : groupKey);
+                          else if (sortBy === 'status') selectByState(groupKey as PrinterState);
+                          else if (sortBy === 'model') selectByModel(groupKey);
+                        }}
+                        className="text-xs text-bambu-green hover:text-bambu-green-light transition-colors ml-1"
+                      >
+                        {t('printers.bulk.selectAll')}
+                      </button>
+                    )}
+                  </h2>
+                }
+              >
+                <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
+                  {groupPrinters.map((printer) => (
+                    <PrinterCard
+                      key={printer.id}
+                      printer={printer}
+                      hideIfDisconnected={hideDisconnected}
+                      maintenanceInfo={maintenanceByPrinter[printer.id]}
+                      viewMode={viewMode}
+                      cardSize={cardSize}
+                      amsThresholds={settings ? {
+                        humidityGood: Number(settings.ams_humidity_good) || 40,
+                        humidityFair: Number(settings.ams_humidity_fair) || 60,
+                        tempGood: Number(settings.ams_temp_good) || 28,
+                        tempFair: Number(settings.ams_temp_fair) || 35,
+                      } : undefined}
+                      spoolmanEnabled={spoolmanEnabled}
+                      hasUnlinkedSpools={hasUnlinkedSpools}
+                      linkedSpools={linkedSpools}
+                      spoolmanUrl={spoolmanStatus?.url}
+                      spoolmanSyncMode={spoolmanSyncMode}
+                      onGetAssignment={getAssignment}
+                      onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
+                      spoolmanSpools={spoolmanSpools}
+                      spoolmanSlotAssignments={spoolmanSlotAssignments}
+                      spoolmanLoading={spoolmanSpoolsLoading || spoolmanAssignmentsLoading}
+                      onUnassignSpoolmanSpool={(id) => unassignSpoolmanMutation.mutate(id)}
+                      timeFormat={settings?.time_format || 'system'}
+                      cameraViewMode={settings?.camera_view_mode || 'window'}
+                      onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+                      checkPrinterFirmware={settings?.check_printer_firmware !== false}
+                      dryingPresets={effectiveDryingPresets}
+                      requirePlateClear={settings?.require_plate_clear === true}
+                      selectionMode={selectionMode}
+                      isSelected={selectedPrinterIds.has(printer.id)}
+                      onToggleSelect={toggleSelect}
+                    />
+                  ))}
+                </div>
+              </Collapsible>
+            );
+          })}
         </div>
       ) : (
         /* Regular grid view */
@@ -6397,6 +7595,10 @@ export function PrintersPage() {
               spoolmanSyncMode={spoolmanSyncMode}
               onGetAssignment={getAssignment}
               onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
+              spoolmanSpools={spoolmanSpools}
+              spoolmanSlotAssignments={spoolmanSlotAssignments}
+              spoolmanLoading={spoolmanSpoolsLoading || spoolmanAssignmentsLoading}
+              onUnassignSpoolmanSpool={(id) => unassignSpoolmanMutation.mutate(id)}
               amsThresholds={settings ? {
                 humidityGood: Number(settings.ams_humidity_good) || 40,
                 humidityFair: Number(settings.ams_humidity_fair) || 60,
@@ -6408,7 +7610,7 @@ export function PrintersPage() {
               onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
               checkPrinterFirmware={settings?.check_printer_firmware !== false}
               dryingPresets={effectiveDryingPresets}
-              requirePlateClear={settings?.require_plate_clear !== false}
+              requirePlateClear={settings?.require_plate_clear === true}
               selectionMode={selectionMode}
               isSelected={selectedPrinterIds.has(printer.id)}
               onToggleSelect={toggleSelect}

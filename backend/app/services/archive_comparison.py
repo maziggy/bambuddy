@@ -201,13 +201,15 @@ class ArchiveComparisonService:
         # Find similar archives
         similar = []
 
-        # By same print name
+        # By same print name (soft-deleted archives are hidden from the UI
+        # per #1343 so they must not surface here as "similar" either).
         if reference.print_name:
             result = await self.db.execute(
                 select(PrintArchive)
                 .where(
                     PrintArchive.id != archive_id,
                     PrintArchive.print_name == reference.print_name,
+                    PrintArchive.deleted_at.is_(None),
                 )
                 .order_by(PrintArchive.created_at.desc())
                 .limit(limit)
@@ -233,6 +235,7 @@ class ArchiveComparisonService:
                 .where(
                     PrintArchive.id != archive_id,
                     PrintArchive.content_hash == reference.content_hash,
+                    PrintArchive.deleted_at.is_(None),
                 )
                 .order_by(PrintArchive.created_at.desc())
                 .limit(limit - len(similar))

@@ -490,5 +490,40 @@ class MQTTSmartPlugService:
                 self.connected = False
 
 
+def subscribe_plug_to_mqtt(service: "MQTTSmartPlugService", plug: Any) -> list[str]:
+    """Resolve per-type topic fields on a SmartPlug and register it with the service.
+
+    The SmartPlug model carries both a legacy single `mqtt_topic` and newer
+    per-type `mqtt_{power,energy,state}_topic` fields. Three code paths used
+    to open-code this resolution (startup restore, create, update) and they
+    drifted — the startup path skipped plugs that only had per-type topics
+    set, leaving them unsubscribed after every restart (#1010). Funnelling
+    all three through this helper keeps them in sync.
+
+    Returns the list of topics subscribed (empty if nothing was configured).
+    """
+    power_topic = plug.mqtt_power_topic or plug.mqtt_topic
+    energy_topic = plug.mqtt_energy_topic or plug.mqtt_topic
+    state_topic = plug.mqtt_state_topic or plug.mqtt_topic
+
+    if not (power_topic or energy_topic or state_topic):
+        return []
+
+    legacy_mult = plug.mqtt_multiplier or 1.0
+    service.subscribe(
+        plug_id=plug.id,
+        power_topic=power_topic,
+        power_path=plug.mqtt_power_path,
+        power_multiplier=plug.mqtt_power_multiplier or legacy_mult,
+        energy_topic=energy_topic,
+        energy_path=plug.mqtt_energy_path,
+        energy_multiplier=plug.mqtt_energy_multiplier or legacy_mult,
+        state_topic=state_topic,
+        state_path=plug.mqtt_state_path,
+        state_on_value=plug.mqtt_state_on_value,
+    )
+    return [t for t in {power_topic, energy_topic, state_topic} if t]
+
+
 # Global instance
 mqtt_smart_plug_service = MQTTSmartPlugService()

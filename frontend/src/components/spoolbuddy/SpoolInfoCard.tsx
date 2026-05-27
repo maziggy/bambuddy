@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Check, AlertTriangle, RefreshCw, Unlink } from 'lucide-react';
 import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
 import { spoolbuddyApi } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
@@ -27,9 +27,11 @@ interface SpoolInfoCardProps {
   onClose?: () => void;
   onSyncWeight?: () => void;
   onAssignToAms?: () => void;
+  isAssigned?: boolean;
+  onUnassignFromAms?: () => void;
 }
 
-export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAssignToAms }: SpoolInfoCardProps) {
+export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAssignToAms, isAssigned, onUnassignFromAms }: SpoolInfoCardProps) {
   const { t } = useTranslation();
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
@@ -99,9 +101,12 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
 
         {/* Main info */}
         <div className="flex-1 min-w-0 pt-1">
-          <h3 className="text-lg font-semibold text-zinc-100">
-            {spool.color_name || 'Unknown color'}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-zinc-100">
+              {spool.color_name || 'Unknown color'}
+            </h3>
+            <span className="text-xs font-mono text-zinc-500 shrink-0">#{spool.id}</span>
+          </div>
           <p className="text-sm text-zinc-400">
             {spool.brand} &bull; {spool.material}
             {spool.subtype && ` ${spool.subtype}`}
@@ -180,10 +185,20 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
       <div className="flex gap-2 justify-center">
         {onAssignToAms && (
           <button
-            onClick={onAssignToAms}
-            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors min-h-[44px]"
+            onClick={isAssigned ? undefined : onAssignToAms}
+            disabled={!!isAssigned}
+            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {t('spoolbuddy.modal.assignToAms', 'Assign to AMS')}
+          </button>
+        )}
+        {onUnassignFromAms && (
+          <button
+            onClick={onUnassignFromAms}
+            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors min-h-[44px]"
+          >
+            <Unlink className="w-4 h-4 inline mr-1" />
+            {t('inventory.unassignSpool')}
           </button>
         )}
         <button
@@ -267,7 +282,7 @@ export function UnknownTagCard({ tagUid, scaleWeight, coreWeight, onLinkSpool, o
             <svg className="w-4 h-4 inline-block mr-1.5 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
             </svg>
-            {t('spoolbuddy.dashboard.linkSpool', 'Link to Spool')}
+            {t('inventory.assignSpool', 'Assign Spool')}
           </button>
         )}
         {onClose && (

@@ -53,8 +53,9 @@ import {
   List,
   GanttChart,
   Code,
+  Snail,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission } from '../api/client';
 import { Card } from '../components/Card';
@@ -324,11 +325,13 @@ function SortableQueueItem({
 
   // Determine if we're printing a library file
   const isLibraryFile = !!item.library_file_id && !item.archive_id;
-  // Fetch archive plate details
+  // Fetch archive plate details. Skip when the linked archive has been
+  // soft-deleted (#1348 follow-up): its 3MF is gone from disk so the
+  // /plates endpoint just 404-storms the queue page.
   const { data: archivePlatesData } = useQuery({
     queryKey: ['archive-plates', item.archive_id],
     queryFn: () => api.getArchivePlates(item.archive_id!),
-    enabled: !!item.archive_id && !isLibraryFile,
+    enabled: !!item.archive_id && !isLibraryFile && !item.archive_deleted,
   });
 
   // Fetch library file plate details
@@ -557,44 +560,66 @@ function SortableQueueItem({
           </div>
 
           {/* Progress bar for printing items - TODO: integrate with WebSocket */}
-          {isPrinting && status && (
-            <div className="mt-2 sm:mt-3">
-              <div className="flex items-center justify-between text-xs sm:text-sm">
-                <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-1.5 sm:h-2 mr-3">
-                  <div
-                    className="bg-bambu-green h-1.5 sm:h-2 rounded-full transition-all"
-                    style={{ width: `${status.progress || 0}%` }}
-                  />
+          {isPrinting && status && (() => {
+            // Gate progress/remaining/layer on printer actually running this print.
+            // Between dispatch and RUNNING transition (H2D/P1 MQTT lag), status.progress
+            // is stale from the previous print — showing 100% then snapping back to 0%
+            // once the new print starts. Only trust these fields when state is active.
+            const isActive = status.state === 'RUNNING' || status.state === 'PAUSE';
+            const progress = isActive ? (status.progress || 0) : 0;
+            const remaining = isActive ? status.remaining_time : null;
+            const layerNum = isActive ? status.layer_num : null;
+            const totalLayers = isActive ? status.total_layers : null;
+            return (
+              <div className="mt-2 sm:mt-3">
+                <div className="flex items-center justify-between text-xs sm:text-sm">
+                  <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-1.5 sm:h-2 mr-3">
+                    <div
+                      className="bg-bambu-green h-1.5 sm:h-2 rounded-full transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <span className="text-white">{Math.round(progress)}%</span>
                 </div>
-                <span className="text-white">{Math.round(status.progress || 0)}%</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5 sm:mt-2 text-[10px] sm:text-xs text-bambu-gray">
-                {status.remaining_time != null && status.remaining_time > 0 && (
-                  <>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5 sm:mt-2 text-[10px] sm:text-xs text-bambu-gray">
+                  {remaining != null && remaining > 0 && (
+                    <>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatDuration(remaining * 60)}
+                      </span>
+                      <span className="text-bambu-green font-medium" title={t('printers.estimatedCompletion')}>
+                        ETA {formatETA(remaining, timeFormat, t)}
+                      </span>
+                    </>
+                  )}
+                  {layerNum != null && totalLayers != null && totalLayers > 0 && (
                     <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatDuration(status.remaining_time * 60)}
+                      <Layers className="w-3 h-3" />
+                      {layerNum}/{totalLayers}
                     </span>
-                    <span className="text-bambu-green font-medium" title={t('printers.estimatedCompletion')}>
-                      ETA {formatETA(status.remaining_time, timeFormat, t)}
-                    </span>
-                  </>
-                )}
-                {status.layer_num != null && status.total_layers != null && status.total_layers > 0 && (
-                  <span className="flex items-center gap-1">
-                    <Layers className="w-3 h-3" />
-                    {status.layer_num}/{status.total_layers}
-                  </span>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Waiting reason for model-based assignments */}
           {item.waiting_reason && item.status === 'pending' && (
             <p className="text-[10px] sm:text-xs text-purple-400 mt-1.5 sm:mt-2 flex items-start gap-1">
               <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
               <span>{item.waiting_reason}</span>
+            </p>
+          )}
+
+          {/* Filament-short flag from the dispatch pre-flight (#1496). */}
+          {item.filament_short && item.status === 'pending' && (
+            <p
+              className="text-[10px] sm:text-xs text-yellow-400 mt-1.5 sm:mt-2 flex items-start gap-1"
+              title={t('queue.filamentShort.rowTooltip')}
+            >
+              <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>{t('queue.filamentShort.rowBadge')}</span>
             </p>
           )}
 
@@ -813,13 +838,41 @@ export function QueuePage() {
     onError: () => showToast(t('queue.toast.stopFailed'), 'error'),
   });
 
+  // Filament-deficit confirmation state (#1496). When the backend returns
+  // 409 with `code=insufficient_filament` we stash the deficit + item id
+  // here; the modal at the bottom of the page reads it and the "Print
+  // Anyway" path re-issues the start with `skipFilamentCheck=true`.
+  const [filamentShortConfirm, setFilamentShortConfirm] = useState<{
+    itemId: number;
+    deficit: Array<{
+      slot_id: number;
+      required_grams: number;
+      remaining_grams: number | null;
+      filament_type?: string | null;
+    }>;
+  } | null>(null);
+
   const startMutation = useMutation({
-    mutationFn: (id: number) => api.startQueueItem(id),
+    mutationFn: ({ id, skipFilamentCheck }: { id: number; skipFilamentCheck?: boolean }) =>
+      api.startQueueItem(id, { skipFilamentCheck }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       showToast(t('queue.toast.released'));
+      setFilamentShortConfirm(null);
     },
-    onError: () => showToast(t('queue.toast.startFailed'), 'error'),
+    onError: (error: unknown, variables) => {
+      if (error instanceof ApiError && error.status === 409 && error.code === 'insufficient_filament') {
+        const deficitRaw = (error.detail?.deficit ?? []) as Array<{
+          slot_id: number;
+          required_grams: number;
+          remaining_grams: number | null;
+          filament_type?: string | null;
+        }>;
+        setFilamentShortConfirm({ itemId: variables.id, deficit: deficitRaw });
+        return;
+      }
+      showToast(t('queue.toast.startFailed'), 'error');
+    },
   });
 
   const reorderMutation = useMutation({
@@ -1157,9 +1210,9 @@ export function QueuePage() {
         )}
       </div>
 
-      {/* View Mode Toggle */}
-      <div className="hidden sm:flex items-center gap-3 mb-6">
-        <div className="flex items-center border border-bambu-dark-tertiary rounded-lg overflow-hidden">
+      {/* View Mode Toggle + SJF */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className="hidden sm:flex items-center border border-bambu-dark-tertiary rounded-lg overflow-hidden">
           <button
             className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-bambu-green text-white' : 'bg-bambu-dark text-bambu-gray hover:text-white'}`}
             onClick={() => setViewMode('list')}
@@ -1175,6 +1228,22 @@ export function QueuePage() {
             <GanttChart className="w-4 h-4" />
           </button>
         </div>
+        <button
+          onClick={() => {
+            const newValue = !(settings?.queue_shortest_first ?? false);
+            sjfMutation.mutate(newValue);
+          }}
+          className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${
+            settings?.queue_shortest_first
+              ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
+              : 'bg-bambu-dark-secondary border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
+          }`}
+          title={t('queue.sjf.tooltip', 'Shortest Job First — scheduler prioritizes shorter prints')}
+        >
+          <Snail className="w-4 h-4" />
+          <span className="hidden sm:inline">{t('queue.sjf.label', 'SJF')}</span>
+          <span className={`w-1.5 h-1.5 rounded-full ${settings?.queue_shortest_first ? 'bg-bambu-green' : 'bg-bambu-gray'}`} />
+        </button>
       </div>
 
       {isLoading ? (
@@ -1248,22 +1317,6 @@ export function QueuePage() {
                   </span>
                 </h2>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const newValue = !(settings?.queue_shortest_first ?? false);
-                      sjfMutation.mutate(newValue);
-                    }}
-                    className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${
-                      settings?.queue_shortest_first
-                        ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
-                        : 'bg-bambu-dark-secondary border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
-                    }`}
-                    title={t('queue.sjf.tooltip', 'Shortest Job First — scheduler prioritizes shorter prints')}
-                  >
-                    <Timer className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">{t('queue.sjf.label', 'SJF')}</span>
-                    <span className={`w-1.5 h-1.5 rounded-full ${settings?.queue_shortest_first ? 'bg-bambu-green' : 'bg-bambu-gray'}`} />
-                  </button>
                   <select
                     className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     value={pendingSortBy}
@@ -1353,7 +1406,7 @@ export function QueuePage() {
                         onRemove={() => {}}
                         onStop={() => {}}
                         onRequeue={() => {}}
-                        onStart={() => startMutation.mutate(item.id)}
+                        onStart={() => startMutation.mutate({ id: item.id })}
                         timeFormat={timeFormat}
                         isSelected={selectedItems.includes(item.id)}
                         onToggleSelect={() => handleToggleSelect(item.id)}
@@ -1450,6 +1503,33 @@ export function QueuePage() {
       )}
 
       {/* Confirm Action Modal */}
+      {filamentShortConfirm && (
+        <ConfirmModal
+          title={t('queue.filamentShort.confirmTitle')}
+          message={
+            t('queue.filamentShort.confirmIntro') + '\n\n' +
+            filamentShortConfirm.deficit
+              .map((d) =>
+                t('queue.filamentShort.lineItem', {
+                  slot: d.slot_id,
+                  required: Math.round(d.required_grams),
+                  remaining:
+                    d.remaining_grams == null
+                      ? t('queue.filamentShort.unknown')
+                      : Math.round(d.remaining_grams),
+                }),
+              )
+              .join('\n')
+          }
+          confirmText={t('queue.filamentShort.printAnyway')}
+          variant="warning"
+          onConfirm={() => {
+            startMutation.mutate({ id: filamentShortConfirm.itemId, skipFilamentCheck: true });
+          }}
+          onCancel={() => setFilamentShortConfirm(null)}
+        />
+      )}
+
       {confirmAction && (
         <ConfirmModal
           title={

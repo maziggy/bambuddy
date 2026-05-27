@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { http, HttpResponse } from 'msw';
@@ -370,6 +370,61 @@ describe('ArchivesPage', () => {
 
       // "Scan for Timelapse" buttons should be disabled when timelapse exists
       // Upload Timelapse should also be disabled
+    });
+  });
+
+  // #1153 — Sylvain wanted to differentiate VP-uploaded archives (status='archived',
+  // never sent to a printer) from those that have been printed at least once.
+  describe('Not Printed / Printed collections', () => {
+    const mixedStatusArchives = [
+      { ...mockArchives[0], id: 100, print_name: 'NeverPrinted', status: 'archived', started_at: null, completed_at: null },
+      { ...mockArchives[0], id: 101, print_name: 'WasPrinted', status: 'completed' },
+      { ...mockArchives[0], id: 102, print_name: 'WasFailed', status: 'failed' },
+      { ...mockArchives[0], id: 103, print_name: 'WasCancelled', status: 'cancelled' },
+    ];
+
+    beforeEach(() => {
+      // Reset persisted collection so each test starts on "All Archives".
+      window.localStorage.removeItem('archiveCollection');
+      server.use(
+        http.get('/api/v1/archives/', () => HttpResponse.json(mixedStatusArchives))
+      );
+    });
+
+    it('shows only archived (never-printed) entries when "Not Printed" is selected', async () => {
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('NeverPrinted')).toBeInTheDocument();
+      });
+
+      const collectionSelect = screen.getByDisplayValue('All Archives');
+      fireEvent.change(collectionSelect, { target: { value: 'not-printed' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('NeverPrinted')).toBeInTheDocument();
+        expect(screen.queryByText('WasPrinted')).not.toBeInTheDocument();
+        expect(screen.queryByText('WasFailed')).not.toBeInTheDocument();
+        expect(screen.queryByText('WasCancelled')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows only print-attempted entries (any final status) when "Printed" is selected', async () => {
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('NeverPrinted')).toBeInTheDocument();
+      });
+
+      const collectionSelect = screen.getByDisplayValue('All Archives');
+      fireEvent.change(collectionSelect, { target: { value: 'printed' } });
+
+      await waitFor(() => {
+        expect(screen.queryByText('NeverPrinted')).not.toBeInTheDocument();
+        expect(screen.getByText('WasPrinted')).toBeInTheDocument();
+        expect(screen.getByText('WasFailed')).toBeInTheDocument();
+        expect(screen.getByText('WasCancelled')).toBeInTheDocument();
+      });
     });
   });
 });

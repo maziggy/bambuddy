@@ -10,10 +10,24 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
+from backend.app.schemas.virtual_printer import VPDiagnosticResult
+
+# Imported at module scope so tests can patch
+# backend.app.api.routes.virtual_printers.tailscale_service.
+from backend.app.services.virtual_printer.tailscale import tailscale_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/virtual-printers", tags=["virtual-printers"])
+
+
+class TailscaleStatusResponse(BaseModel):
+    available: bool
+    fqdn: str
+    hostname: str
+    tailnet_name: str
+    tailscale_ips: list[str]
+    error: str | None
 
 
 class VirtualPrinterCreate(BaseModel):
@@ -24,6 +38,7 @@ class VirtualPrinterCreate(BaseModel):
     access_code: str | None = None
     target_printer_id: int | None = None
     auto_dispatch: bool = True
+    queue_force_color_match: bool = False
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
 
@@ -36,8 +51,10 @@ class VirtualPrinterUpdate(BaseModel):
     access_code: str | None = None
     target_printer_id: int | None = None
     auto_dispatch: bool | None = None
+    queue_force_color_match: bool | None = None
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
+    tailscale_disabled: bool | None = None
 
 
 def _resolve_printer_model(printer_model: str | None) -> str | None:
@@ -76,8 +93,10 @@ def _vp_to_dict(vp, status: dict | None = None) -> dict:
         "serial": serial,
         "target_printer_id": vp.target_printer_id,
         "auto_dispatch": vp.auto_dispatch,
+        "queue_force_color_match": vp.queue_force_color_match,
         "bind_ip": vp.bind_ip,
         "remote_interface_ip": vp.remote_interface_ip,
+        "tailscale_disabled": vp.tailscale_disabled,
         "position": vp.position,
         "status": status or {"running": False, "pending_files": 0},
     }
@@ -194,6 +213,7 @@ async def create_virtual_printer(
         access_code=body.access_code,
         target_printer_id=body.target_printer_id,
         auto_dispatch=body.auto_dispatch,
+        queue_force_color_match=body.queue_force_color_match,
         bind_ip=body.bind_ip,
         remote_interface_ip=body.remote_interface_ip,
         serial_suffix=new_suffix,
@@ -213,6 +233,69 @@ async def create_virtual_printer(
             logger.error("Failed to start virtual printer after create: %s", e)
 
     return _vp_to_dict(vp)
+
+
+@router.get("/tailscale-status", response_model=TailscaleStatusResponse)
+async def get_tailscale_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+) -> TailscaleStatusResponse:
+    """Return current Tailscale availability and machine identity.
+
+    Used by the frontend to indicate whether virtual printer TLS is backed
+    by a trusted Let's Encrypt certificate or a self-signed CA.
+    """
+    status = await tailscale_service.get_status()
+    return TailscaleStatusResponse(
+        available=status.available,
+        fqdn=status.fqdn,
+        hostname=status.hostname,
+        tailnet_name=status.tailnet_name,
+        tailscale_ips=status.tailscale_ips,
+        error=status.error,
+    )
+
+
+@router.get("/ca-certificate")
+async def get_ca_certificate(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
+    """Return the shared virtual-printer CA certificate (PEM) for slicer trust import.
+
+    One CA is shared by every virtual printer — the user imports it into their
+    slicer's trust store once. Only the public certificate is returned; the CA
+    private key never leaves the backend.
+    """
+    from backend.app.services.virtual_printer import virtual_printer_manager
+
+    try:
+        return virtual_printer_manager.get_ca_certificate_info()
+    except Exception as e:
+        logger.error("Failed to obtain virtual printer CA certificate: %s", e)
+        return JSONResponse(status_code=500, content={"detail": "Could not generate the CA certificate"})
+
+
+@router.get("/{vp_id}/diagnostic", response_model=VPDiagnosticResult)
+async def diagnose_virtual_printer(
+    vp_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
+    """Run setup diagnostics for a virtual printer.
+
+    Probes the VP's own bind IP and services so the user can self-diagnose the
+    common "my virtual printer doesn't show up in the slicer" failures.
+    """
+    from backend.app.models.virtual_printer import VirtualPrinter
+    from backend.app.services.virtual_printer import virtual_printer_manager
+    from backend.app.services.virtual_printer.diagnostic import run_vp_diagnostic
+
+    result = await db.execute(select(VirtualPrinter).where(VirtualPrinter.id == vp_id))
+    vp = result.scalar_one_or_none()
+    if not vp:
+        return JSONResponse(status_code=404, content={"detail": "Virtual printer not found"})
+
+    instance = virtual_printer_manager.get_instance(vp.id)
+    return await run_vp_diagnostic(vp, instance)
 
 
 @router.get("/{vp_id}")
@@ -296,10 +379,14 @@ async def update_virtual_printer(
             vp.model = _resolve_printer_model(target_printer.model) or target_printer.model
     if body.auto_dispatch is not None:
         vp.auto_dispatch = body.auto_dispatch
+    if body.queue_force_color_match is not None:
+        vp.queue_force_color_match = body.queue_force_color_match
     if body.bind_ip is not None:
         vp.bind_ip = body.bind_ip
     if body.remote_interface_ip is not None:
         vp.remote_interface_ip = body.remote_interface_ip
+    if body.tailscale_disabled is not None:
+        vp.tailscale_disabled = body.tailscale_disabled
 
     # Auto-inherit model when switching to proxy mode with existing target printer
     if body.mode == "proxy" and body.model is None and body.target_printer_id is None and vp.target_printer_id:

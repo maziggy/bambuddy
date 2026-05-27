@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sys
+import time
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends
@@ -31,6 +32,61 @@ _update_status = {
     "error": None,
 }
 
+# GitHub rate-limit backoff (#1420): when api.github.com returns 403 with
+# X-RateLimit-Remaining=0, refuse to retry until X-RateLimit-Reset (epoch
+# seconds). Falls back to a 1-hour pause if the header is absent. Prevents
+# the update checker from hammering GitHub once the unauthenticated quota
+# (60 req/hr per source IP) is exhausted.
+_GITHUB_RATE_LIMIT_FALLBACK_SECONDS = 3600
+_github_rate_limit_until: float = 0.0
+
+
+def _seconds_until_github_unblocked() -> float:
+    """Return seconds remaining until GitHub backoff lifts, or 0 if unblocked."""
+    remaining = _github_rate_limit_until - time.time()
+    return remaining if remaining > 0 else 0.0
+
+
+def _record_github_rate_limit(response: httpx.Response) -> None:
+    """Set the backoff window from a GitHub 403 response's headers."""
+    global _github_rate_limit_until
+    reset_header = response.headers.get("X-RateLimit-Reset")
+    reset_at: float | None = None
+    if reset_header:
+        try:
+            reset_at = float(reset_header)
+        except ValueError:
+            reset_at = None
+    if reset_at is None:
+        reset_at = time.time() + _GITHUB_RATE_LIMIT_FALLBACK_SECONDS
+    # Floor at a 60s minimum: protects against clock skew between the container
+    # and GitHub (parsed reset epoch in the past would otherwise leave us with
+    # no real backoff and we'd hammer GitHub again immediately).
+    reset_at = max(reset_at, time.time() + 60)
+    # Only extend the window — never shorten it via an out-of-order response.
+    if reset_at > _github_rate_limit_until:
+        _github_rate_limit_until = reset_at
+    logger.warning(
+        "GitHub rate limit hit; suppressing update checks for %.0fs (reset header=%s)",
+        _seconds_until_github_unblocked(),
+        reset_header,
+    )
+
+
+def _is_github_rate_limit_response(response: httpx.Response) -> bool:
+    """Detect a rate-limit response from GitHub (403/429 with Remaining=0)."""
+    if response.status_code not in (403, 429):
+        return False
+    remaining = response.headers.get("X-RateLimit-Remaining")
+    if remaining == "0":
+        return True
+    # Some proxies strip the header; fall back to body inspection.
+    try:
+        body = response.text or ""
+    except Exception:
+        body = ""
+    return "rate limit" in body.lower() or "API rate limit exceeded" in body
+
 
 def _is_docker_environment() -> bool:
     """Detect if running inside a Docker container."""
@@ -52,6 +108,16 @@ def _is_docker_environment() -> bool:
     except (FileNotFoundError, PermissionError):
         pass
     return False
+
+
+def _is_ha_addon() -> bool:
+    """Detect if running as a Home Assistant Supervisor addon.
+
+    HA Supervisor injects ``SUPERVISOR_TOKEN`` into every addon container;
+    the variable is not set in any other environment, so a single env-var
+    check is sufficient with no false-positive surface.
+    """
+    return bool(os.environ.get("SUPERVISOR_TOKEN"))
 
 
 def _find_executable(name: str) -> str | None:
@@ -76,6 +142,78 @@ def _find_executable(name: str) -> str | None:
             return p
 
     return None
+
+
+def _parse_github_remote(url: str) -> tuple[str, str] | None:
+    """Extract `(owner, repo)` from a GitHub remote URL, or None if it isn't a
+    GitHub URL we recognise.
+
+    Handles the four forms `git remote -v` typically prints:
+      - `git@github.com:owner/repo.git`         (SSH, the dev default)
+      - `git@github.com:owner/repo`             (SSH without .git suffix)
+      - `https://github.com/owner/repo.git`     (HTTPS, what _perform_update sets)
+      - `https://github.com/owner/repo`         (HTTPS without .git)
+
+    Anything else (a fork URL, a different host, a malformed value, the empty
+    string from a missing origin) returns None so the caller treats it as
+    "not pointing at our repo" and resets it.
+    """
+    s = url.strip()
+    if not s:
+        return None
+    # SSH form: git@github.com:owner/repo[.git]
+    ssh_prefix = "git@github.com:"
+    https_prefix_a = "https://github.com/"
+    https_prefix_b = "http://github.com/"  # tolerated for legacy
+    if s.startswith(ssh_prefix):
+        path = s[len(ssh_prefix) :]
+    elif s.startswith(https_prefix_a):
+        path = s[len(https_prefix_a) :]
+    elif s.startswith(https_prefix_b):
+        path = s[len(https_prefix_b) :]
+    else:
+        return None
+    if path.endswith(".git"):
+        path = path[:-4]
+    parts = path.strip("/").split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    return (parts[0], parts[1])
+
+
+async def _origin_points_at_repo(git_path: str, git_config: list[str], base_dir, expected_repo: str) -> bool:
+    """Return True iff the working tree's `origin` already resolves to
+    `<owner>/<repo>` matching `expected_repo` (e.g. "maziggy/bambuddy"),
+    regardless of whether it's the SSH or HTTPS form. Used to skip the
+    `git remote set-url origin https://...` rewrite when the developer's
+    SSH origin is already correct — see `_perform_update` for context."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            git_path,
+            *git_config,
+            "remote",
+            "get-url",
+            "origin",
+            cwd=str(base_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await process.communicate()
+    except (OSError, asyncio.CancelledError):
+        # Fail closed: let the caller go through the rewrite branch if we
+        # can't even invoke git. The unconditional set-url is the safer
+        # fallback, only mildly destructive.
+        return False
+    if process.returncode != 0:
+        # Most likely cause: no `origin` defined yet (fresh clone-style
+        # checkout). Caller will set it.
+        return False
+    parsed = _parse_github_remote(stdout.decode().strip())
+    if parsed is None:
+        return False
+    owner, repo = parsed
+    expected_owner, expected_repo_name = expected_repo.split("/", 1)
+    return owner == expected_owner and repo == expected_repo_name
 
 
 def parse_version(version: str) -> tuple:
@@ -205,6 +343,23 @@ async def check_for_updates(
     beta_setting = result.scalar_one_or_none()
     include_beta = beta_setting and beta_setting.value.lower() == "true"
 
+    # Short-circuit if we're still inside a GitHub rate-limit backoff window (#1420).
+    backoff_remaining = _seconds_until_github_unblocked()
+    if backoff_remaining > 0:
+        _update_status = {
+            "status": "error",
+            "progress": 0,
+            "message": "GitHub rate limit reached",
+            "error": "GitHub rate limit reached; retry later",
+        }
+        return {
+            "update_available": False,
+            "current_version": APP_VERSION,
+            "latest_version": None,
+            "error": "GitHub rate limit reached; retry later",
+            "retry_after_seconds": int(backoff_remaining),
+        }
+
     _update_status = {
         "status": "checking",
         "progress": 0,
@@ -219,6 +374,22 @@ async def check_for_updates(
                 headers={"Accept": "application/vnd.github.v3+json"},
                 timeout=10.0,
             )
+
+            if _is_github_rate_limit_response(response):
+                _record_github_rate_limit(response)
+                _update_status = {
+                    "status": "error",
+                    "progress": 0,
+                    "message": "GitHub rate limit reached",
+                    "error": "GitHub rate limit reached; retry later",
+                }
+                return {
+                    "update_available": False,
+                    "current_version": APP_VERSION,
+                    "latest_version": None,
+                    "error": "GitHub rate limit reached; retry later",
+                    "retry_after_seconds": int(_seconds_until_github_unblocked()),
+                }
 
             if response.status_code == 404:
                 # No releases yet
@@ -283,6 +454,13 @@ async def check_for_updates(
             }
 
             is_docker = _is_docker_environment()
+            is_ha_addon = _is_ha_addon()
+            if is_ha_addon:
+                update_method = "ha_addon"
+            elif is_docker:
+                update_method = "docker"
+            else:
+                update_method = "git"
             return {
                 "update_available": update_available,
                 "current_version": APP_VERSION,
@@ -292,7 +470,8 @@ async def check_for_updates(
                 "release_url": release_url,
                 "published_at": published_at,
                 "is_docker": is_docker,
-                "update_method": "docker" if is_docker else "git",
+                "is_ha_addon": is_ha_addon,
+                "update_method": update_method,
             }
 
     except httpx.HTTPError as e:
@@ -311,8 +490,68 @@ async def check_for_updates(
         }
 
 
-async def _perform_update():
-    """Perform the actual update using git fetch and reset."""
+async def _discover_target_release(db: AsyncSession) -> str | None:
+    """Look up the tag we should install from GitHub releases.
+
+    Same selection logic the GUI's update-check uses: respect
+    `include_beta_updates`, skip prereleases when the user opted out, take
+    the first matching release. Returns the raw tag name (e.g. `v0.2.4b1`)
+    so the git ref is unambiguous, or None if there's no release to install.
+
+    The previous in-app updater path was hardcoded to `git fetch origin main
+    && git reset --hard origin/main`, which silently no-ops whenever main
+    isn't where the latest release lives — e.g. during a beta release cycle
+    where the next stable hasn't been merged to main yet. Anchoring to the
+    release tag instead lets the GUI install whatever GitHub says is latest.
+    """
+    result = await db.execute(select(Settings).where(Settings.key == "include_beta_updates"))
+    beta_setting = result.scalar_one_or_none()
+    include_beta = beta_setting and beta_setting.value.lower() == "true"
+
+    if _seconds_until_github_unblocked() > 0:
+        logger.warning("Skipping update target discovery: GitHub rate-limit backoff still active")
+        return None
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=20",
+                headers={"Accept": "application/vnd.github.v3+json"},
+                timeout=10.0,
+            )
+            if _is_github_rate_limit_response(response):
+                _record_github_rate_limit(response)
+                return None
+            response.raise_for_status()
+            releases = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.error("Could not fetch GitHub releases for update target: %s", exc)
+        return None
+
+    for release in releases:
+        tag = release.get("tag_name", "")
+        if not tag:
+            continue
+        if include_beta:
+            return tag
+        # Skip prereleases (parsed from version, not GitHub flag — GitHub's
+        # is_prerelease flag isn't always set on dailies).
+        parsed = parse_version(tag)
+        if parsed[4] == 0:
+            return tag
+    return None
+
+
+async def _perform_update(target_ref: str):
+    """Perform the actual update using git fetch and reset.
+
+    `target_ref` is whatever git ref the caller wants to land on — typically
+    a release tag like `v0.2.4b1` resolved by `_discover_target_release`,
+    but accepts any ref `git reset --hard` understands (`origin/main`, a
+    branch, a sha). Tag-based refs are the production path because they pin
+    the install to a specific release artifact instead of whatever happens
+    to be on a moving branch.
+    """
     global _update_status
 
     try:
@@ -341,20 +580,32 @@ async def _perform_update():
             "error": None,
         }
 
-        # Ensure remote uses HTTPS (SSH may not be available)
+        # Ensure remote points at the expected repo. We previously rewrote
+        # origin to HTTPS unconditionally on the assumption that systemd
+        # service users wouldn't have SSH keys configured — which is fine
+        # for that case, but stomps on developer checkouts where origin is
+        # legitimately `git@github.com:maziggy/bambuddy.git` and the user
+        # auths via SSH keys. After the rewrite, `git push` prompts for
+        # HTTPS credentials and fails.
+        # New behaviour: read the current origin, parse out the
+        # `<owner>/<repo>` pair, and only rewrite if it doesn't already
+        # resolve to the right GitHub repo. SSH origins pointing at the
+        # correct repo are preserved; only missing / wrong / corrupted
+        # origins get reset to HTTPS.
         https_url = f"https://github.com/{GITHUB_REPO}.git"
-        process = await asyncio.create_subprocess_exec(
-            git_path,
-            *git_config,
-            "remote",
-            "set-url",
-            "origin",
-            https_url,
-            cwd=str(base_dir),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await process.communicate()
+        if not await _origin_points_at_repo(git_path, git_config, base_dir, GITHUB_REPO):
+            process = await asyncio.create_subprocess_exec(
+                git_path,
+                *git_config,
+                "remote",
+                "set-url",
+                "origin",
+                https_url,
+                cwd=str(base_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await process.communicate()
 
         _update_status = {
             "status": "downloading",
@@ -363,13 +614,27 @@ async def _perform_update():
             "error": None,
         }
 
-        # Fetch from origin
+        # Fetch branches AND tags from origin so any ref the caller passes
+        # (release tag like `v0.2.4b1`, a branch like `main`, or a sha) is
+        # locally resolvable for the reset below. `--tags` is required —
+        # plain `git fetch origin` doesn't bring tags by default, so a
+        # release tag would not be resolvable.
+        #
+        # `--force` lets a moved tag on the remote overwrite the local copy.
+        # Without it, any tag that was re-tagged upstream (e.g. v0.2.1 being
+        # re-pointed after a hotfix re-tag) makes `git fetch --tags` return
+        # a non-zero exit even though every other ref fetched cleanly —
+        # which we'd then surface as "Failed to fetch updates" to the user.
+        # The in-app updater's contract is "sync me to the remote"; force-
+        # overwriting a stale local tag matches that intent.
         process = await asyncio.create_subprocess_exec(
             git_path,
             *git_config,
             "fetch",
+            "--prune",
+            "--tags",
+            "--force",
             "origin",
-            "main",
             cwd=str(base_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -394,13 +659,18 @@ async def _perform_update():
             "error": None,
         }
 
-        # Hard reset to origin/main (clean update, no merge conflicts)
+        # Hard reset to the target ref (clean update, no merge conflicts).
+        # `target_ref` is typically a release tag like `v0.2.4b1` resolved
+        # from the GitHub releases API by `_discover_target_release`. The
+        # local branch name doesn't change — only HEAD moves. Falling back
+        # to `origin/main` here was the source of the "in-app updater can't
+        # reach beta releases" bug.
         process = await asyncio.create_subprocess_exec(
             git_path,
             *git_config,
             "reset",
             "--hard",
-            "origin/main",
+            target_ref,
             cwd=str(base_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -425,7 +695,13 @@ async def _perform_update():
             "error": None,
         }
 
-        # Install Python dependencies
+        # Install Python dependencies — must run from the source-code directory
+        # (where requirements.txt lives), not the data dir. On native installs
+        # systemd sets DATA_DIR=INSTALL_PATH/data, so `base_dir` is the data dir,
+        # not the working tree. `git reset` above worked from base_dir because
+        # git walks up looking for .git, but `pip install -r requirements.txt`
+        # needs the file in cwd literally.
+        app_dir = settings.app_dir
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",
@@ -434,7 +710,7 @@ async def _perform_update():
             "-r",
             "requirements.txt",
             "-q",
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -445,7 +721,7 @@ async def _perform_update():
 
         # Try to build frontend if npm is available (optional - static files are pre-built)
         npm_path = _find_executable("npm")
-        frontend_dir = base_dir / "frontend"
+        frontend_dir = app_dir / "frontend"
 
         if npm_path and frontend_dir.exists():
             _update_status = {
@@ -503,6 +779,7 @@ async def _perform_update():
 @router.post("/apply")
 async def apply_update(
     background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Apply available update (git pull + rebuild)."""
@@ -515,7 +792,20 @@ async def apply_update(
             "status": _update_status,
         }
 
-    # Check if running in Docker
+    # Check for managed deployment shapes that own the update lifecycle.
+    # HA addons are also Docker, so check HA first to surface the more
+    # specific message.
+    if _is_ha_addon():
+        return {
+            "success": False,
+            "is_ha_addon": True,
+            "is_docker": True,
+            "message": (
+                "Bambuddy is running as a Home Assistant addon. "
+                "Updates are managed by the Home Assistant Supervisor "
+                "(Settings → Add-ons → Bambuddy → Update)."
+            ),
+        }
     if _is_docker_environment():
         return {
             "success": False,
@@ -527,8 +817,22 @@ async def apply_update(
             ),
         }
 
+    # Discover which release tag to install. Resolved here (where we have
+    # a DB session) and passed into the background task; the BG task can't
+    # reuse this request's session since FastAPI closes it on response.
+    target_ref = await _discover_target_release(db)
+    if target_ref is None:
+        return {
+            "success": False,
+            "message": (
+                "Could not determine a release to install. Either GitHub is "
+                "unreachable or no release matches your update channel "
+                "(check the include_beta_updates setting)."
+            ),
+        }
+
     # Start update in background
-    background_tasks.add_task(_perform_update)
+    background_tasks.add_task(_perform_update, target_ref)
 
     _update_status = {
         "status": "downloading",

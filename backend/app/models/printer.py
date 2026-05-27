@@ -28,6 +28,11 @@ class Printer(Base):
     external_camera_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     external_camera_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # mjpeg, rtsp, snapshot
     external_camera_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Optional single-frame snapshot URL — when set, used for snapshot / finish-photo
+    # / timelapse / plate-detect captures instead of opening the live stream and
+    # skipping a warm-up frame. Bypasses MJPEG warm-up issues on sources that
+    # expose a dedicated frame endpoint (e.g. go2rtc's /api/frame.jpeg). #1177.
+    external_camera_snapshot_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     camera_rotation: Mapped[int] = mapped_column(default=0)  # 0, 90, 180, 270 degrees
     # Plate detection - check if build plate is empty before starting print
     plate_detection_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -36,6 +41,9 @@ class Printer(Base):
     plate_detection_roi_y: Mapped[float | None] = mapped_column(Float, nullable=True)  # Y start %
     plate_detection_roi_w: Mapped[float | None] = mapped_column(Float, nullable=True)  # Width %
     plate_detection_roi_h: Mapped[float | None] = mapped_column(Float, nullable=True)  # Height %
+    # Queue: True after a print finishes/fails, until user acknowledges the plate is cleared.
+    # Persisted so the gate survives crashes and power cycles (issue #961).
+    awaiting_plate_clear: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

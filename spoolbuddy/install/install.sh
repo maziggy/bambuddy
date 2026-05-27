@@ -528,6 +528,14 @@ SUDOERS
 download_spoolbuddy() {
     if [[ -d "$INSTALL_PATH/.git" ]]; then
         info "Existing installation found, updating..."
+        # Pre-emptively normalise tree ownership before git touches anything.
+        # Stray root-owned files (e.g. static/assets/* left by an earlier
+        # `sudo` run, or a frontend build that wrote as root) make
+        # `git reset --hard` fail with EACCES on the unlink/replace step,
+        # aborting the update before the post-install chown below ever
+        # runs. The script already runs as root (see check_root), so this
+        # is always safe.
+        chown -R "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$INSTALL_PATH"
         git config --global --add safe.directory "$INSTALL_PATH" 2>/dev/null || true
         cd "$INSTALL_PATH"
         git remote set-url origin "$INSTALL_REPO" 2>/dev/null || true
@@ -783,6 +791,43 @@ EOF
     success "Bambuddy service created and enabled"
 }
 
+bootstrap_spoolbuddy_kiosk_key() {
+    # Provision an API key for the local SpoolBuddy kiosk and write it into
+    # spoolbuddy/.env. Runs against the Bambuddy DB directly (via the CLI),
+    # so the bambuddy service does not need to be running yet.
+    info "Provisioning SpoolBuddy kiosk API key..."
+
+    local env_file="$INSTALL_PATH/spoolbuddy/.env"
+    if [[ ! -f "$env_file" ]]; then
+        warn "SpoolBuddy env file not found at $env_file — skipping kiosk key bootstrap"
+        return
+    fi
+
+    # CWD must be $INSTALL_PATH so `python -m backend.app.cli` finds the backend
+    # package on sys.path (matches the systemd unit's WorkingDirectory).
+    local kiosk_key
+    if ! kiosk_key="$(cd "$INSTALL_PATH" && sudo -u "$BAMBUDDY_SERVICE_USER" \
+            env DATA_DIR="$INSTALL_PATH/data" LOG_DIR="$INSTALL_PATH/logs" \
+            "$INSTALL_PATH/venv/bin/python" -m backend.app.cli kiosk-bootstrap --force)"; then
+        error "Failed to bootstrap SpoolBuddy kiosk API key"
+    fi
+
+    if [[ -z "$kiosk_key" || "$kiosk_key" != bb_* ]]; then
+        error "CLI returned an invalid API key (got: ${kiosk_key:0:8}...)"
+    fi
+
+    if ! grep -q '^SPOOLBUDDY_API_KEY=' "$env_file"; then
+        error "Sentinel 'SPOOLBUDDY_API_KEY=' line missing in $env_file"
+    fi
+
+    # Escape for sed replacement (the key is base64url-safe, no slashes, but be defensive)
+    local escaped_key
+    escaped_key=$(printf '%s\n' "$kiosk_key" | sed -e 's/[\/&]/\\&/g')
+    sed -i "s/^SPOOLBUDDY_API_KEY=.*/SPOOLBUDDY_API_KEY=${escaped_key}/" "$env_file"
+
+    success "SpoolBuddy kiosk API key provisioned"
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # System Strip-Down (dedicated appliance — remove unnecessary services/packages)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -947,7 +992,7 @@ setup_kiosk() {
         dpkg-divert --local --rename --add /usr/sbin/update-initramfs >/dev/null 2>&1 || true
         ln -sf /bin/true /usr/sbin/update-initramfs
     fi
-    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium plymouth wlr-randr
+    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium plymouth wlr-randr swayidle wlopm jq curl
     # Restore real update-initramfs
     if dpkg-divert --list /usr/sbin/update-initramfs 2>/dev/null | grep -q local; then
         rm -f /usr/sbin/update-initramfs
@@ -1161,12 +1206,55 @@ else
     kiosk_url="\$FALLBACK_URL"
 fi
 
+# Wait for the Bambuddy backend to be reachable before launching Chromium.
+# Without this the browser opens before uvicorn has bound to the port on a
+# cold boot and the user sees an ERR_CONNECTION_REFUSED splash until they
+# manually reload. Probe /health (no auth, no body) with a short timeout.
+probe_url="\${backend_url:-http://localhost}/health"
+for _i in \$(seq 1 60); do
+    if curl -sf --max-time 2 "\$probe_url" >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+# Ephemeral user-data-dir under /tmp + wipe on every launch.
+#
+# The kiosk has no per-user state worth persisting (the auth token is in
+# the URL query, not a stored cookie), but the default profile at
+# ~/.config/chromium was accumulating two specific kinds of state across
+# reboots that broke deploys badly:
+#
+#   1. HTTP disk cache holding old index.html across browser restarts.
+#      Chromium's heuristic-cache freshness window kept the old HTML
+#      "fresh" for days, which referenced an old content-hashed bundle,
+#      so newly deployed code never reached the running tab even after
+#      pkill+relaunch. Reproduced in the wild during the #1133 rollout
+#      — the kiosk kept showing the pre-fix picker for hours after every
+#      cache-clear attempt because the persistent profile would re-seed
+#      the cache from disk on next start.
+#   2. A stuck Service Worker registration, which intercepted requests
+#      with its own cache layer (CacheStorage), independent of the HTTP
+#      cache. Even after \`rm -rf Default/Cache/*\` the SW could replay
+#      stale responses from CacheStorage until explicitly unregistered.
+#
+# Wiping the user-data-dir on every launch is the simplest, most
+# bulletproof escape hatch — every kiosk restart is now functionally
+# equivalent to a private-window first-load. Future deploys propagate
+# automatically: the next chromium launch picks up the latest bundle
+# without any extra tooling. Trade-off is a slightly slower first paint
+# (no warm cache) and zero offline support, neither of which matter for
+# a single-purpose kiosk facing a backend on the same LAN.
+USER_DATA_DIR="/tmp/spoolbuddy-kiosk-userdata"
+rm -rf "\$USER_DATA_DIR"
+
 exec chromium --kiosk --no-first-run --disable-infobars \
     --disable-session-crashed-bubble --disable-features=TranslateUI \
     --noerrdialogs --disable-component-update \
     --overscroll-history-navigation=0 \
     --ozone-platform=wayland \
     --disable-crash-reporter --disable-breakpad \
+    --user-data-dir="\$USER_DATA_DIR" \
     "\$kiosk_url"
 EOF
 
@@ -1183,8 +1271,11 @@ EOF
 # Force 1024x600 (panel doesn't advertise this natively)
 wlr-randr --output HDMI-A-1 --custom-mode 1024x600@60 &
 
-# Prevent display blanking (labwc <0.8 lacks screenBlankTimeout config support)
-(while true; do wlr-randr --output HDMI-A-1 --on 2>/dev/null; sleep 60; done) &
+# Idle watchdog: powers off HDMI via wlopm after the configured inactivity
+# timeout (SpoolBuddy Settings → Display → Screen blank timeout). Reads the
+# current value from the backend on startup; UI changes take effect on the
+# next reboot / kiosk restart.
+$INSTALL_PATH/spoolbuddy/install/spoolbuddy-idle.sh &
 
 # Launch Chromium via helper that resolves URL from spoolbuddy/.env
 $kiosk_launcher &
@@ -1501,6 +1592,7 @@ main() {
         create_bambuddy_directories
         create_bambuddy_env
         create_bambuddy_service
+        bootstrap_spoolbuddy_kiosk_key
         echo ""
     fi
 
@@ -1529,10 +1621,7 @@ main() {
         echo -e "  ${BOLD}Next steps:${NC}"
         echo -e "    1. Reboot (required for kiosk, Plymouth splash, and hardware changes)"
         echo -e "    2. The touchscreen kiosk will start automatically after reboot"
-        echo -e "    3. On another device, open ${CYAN}http://$ip_addr:$BAMBUDDY_PORT${NC}"
-        echo -e "    4. Go to Settings -> API Keys and create an API key"
-        echo -e "    5. Update the API key in: ${CYAN}$INSTALL_PATH/spoolbuddy/.env${NC}"
-        echo -e "    6. Restart SpoolBuddy: ${CYAN}sudo systemctl restart spoolbuddy${NC}"
+        echo -e "    3. On another device, open ${CYAN}http://$ip_addr:$BAMBUDDY_PORT${NC} to complete first-run admin setup"
     fi
 
     echo ""

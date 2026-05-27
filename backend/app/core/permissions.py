@@ -33,6 +33,7 @@ class Permission(StrEnum):
     ARCHIVES_DELETE_ALL = "archives:delete_all"
     ARCHIVES_REPRINT_OWN = "archives:reprint_own"
     ARCHIVES_REPRINT_ALL = "archives:reprint_all"
+    ARCHIVES_PURGE = "archives:purge"
 
     # Queue
     QUEUE_READ = "queue:read"
@@ -50,6 +51,10 @@ class Permission(StrEnum):
     LIBRARY_UPDATE_ALL = "library:update_all"
     LIBRARY_DELETE_OWN = "library:delete_own"
     LIBRARY_DELETE_ALL = "library:delete_all"
+    # Admin-only: bulk purge of old files + trash retention settings (#1008).
+    # Routine per-user trash management (restore-own, hard-delete-own) is
+    # gated by the existing LIBRARY_DELETE_* permissions instead.
+    LIBRARY_PURGE = "library:purge"
 
     # Projects
     PROJECTS_READ = "projects:read"
@@ -69,6 +74,8 @@ class Permission(StrEnum):
     INVENTORY_UPDATE = "inventory:update"
     INVENTORY_DELETE = "inventory:delete"
     INVENTORY_VIEW_ASSIGNMENTS = "inventory:view_assignments"  # View spool-to-AMS assignments on printer cards
+    INVENTORY_FORECAST_READ = "inventory:forecast_read"  # View forecast/reorder intelligence panel
+    INVENTORY_FORECAST_WRITE = "inventory:forecast_write"  # Modify SKU settings, lead times, shopping list
 
     # Smart Plugs
     SMART_PLUGS_READ = "smart_plugs:read"
@@ -138,6 +145,10 @@ class Permission(StrEnum):
     # Cloud Auth (admin-level)
     CLOUD_AUTH = "cloud:auth"
 
+    # MakerWorld Integration
+    MAKERWORLD_VIEW = "makerworld:view"  # Resolve MakerWorld URLs and view model metadata
+    MAKERWORLD_IMPORT = "makerworld:import"  # Download 3MFs from MakerWorld into the library
+
     # API Keys (admin-level)
     API_KEYS_READ = "api_keys:read"
     API_KEYS_CREATE = "api_keys:create"
@@ -181,6 +192,7 @@ PERMISSION_CATEGORIES = {
         Permission.ARCHIVES_DELETE_ALL,
         Permission.ARCHIVES_REPRINT_OWN,
         Permission.ARCHIVES_REPRINT_ALL,
+        Permission.ARCHIVES_PURGE,
     ],
     "Queue": [
         Permission.QUEUE_READ,
@@ -198,6 +210,7 @@ PERMISSION_CATEGORIES = {
         Permission.LIBRARY_UPDATE_ALL,
         Permission.LIBRARY_DELETE_OWN,
         Permission.LIBRARY_DELETE_ALL,
+        Permission.LIBRARY_PURGE,
     ],
     "Projects": [
         Permission.PROJECTS_READ,
@@ -217,6 +230,8 @@ PERMISSION_CATEGORIES = {
         Permission.INVENTORY_UPDATE,
         Permission.INVENTORY_DELETE,
         Permission.INVENTORY_VIEW_ASSIGNMENTS,
+        Permission.INVENTORY_FORECAST_READ,
+        Permission.INVENTORY_FORECAST_WRITE,
     ],
     "Smart Plugs": [
         Permission.SMART_PLUGS_READ,
@@ -283,6 +298,10 @@ PERMISSION_CATEGORIES = {
     "Cloud": [
         Permission.CLOUD_AUTH,
     ],
+    "MakerWorld": [
+        Permission.MAKERWORLD_VIEW,
+        Permission.MAKERWORLD_IMPORT,
+    ],
     "API Keys": [
         Permission.API_KEYS_READ,
         Permission.API_KEYS_CREATE,
@@ -345,6 +364,9 @@ DEFAULT_GROUPS = {
             Permission.LIBRARY_UPLOAD.value,
             Permission.LIBRARY_UPDATE_OWN.value,
             Permission.LIBRARY_DELETE_OWN.value,
+            # MakerWorld integration
+            Permission.MAKERWORLD_VIEW.value,
+            Permission.MAKERWORLD_IMPORT.value,
             # Projects - full access
             Permission.PROJECTS_READ.value,
             Permission.PROJECTS_CREATE.value,
@@ -361,6 +383,8 @@ DEFAULT_GROUPS = {
             Permission.INVENTORY_UPDATE.value,
             Permission.INVENTORY_DELETE.value,
             Permission.INVENTORY_VIEW_ASSIGNMENTS.value,
+            Permission.INVENTORY_FORECAST_READ.value,
+            Permission.INVENTORY_FORECAST_WRITE.value,
             # Smart Plugs - full access
             Permission.SMART_PLUGS_READ.value,
             Permission.SMART_PLUGS_CREATE.value,
@@ -419,6 +443,7 @@ DEFAULT_GROUPS = {
             Permission.FILAMENTS_READ.value,
             Permission.INVENTORY_READ.value,
             Permission.INVENTORY_VIEW_ASSIGNMENTS.value,
+            Permission.INVENTORY_FORECAST_READ.value,
             Permission.SMART_PLUGS_READ.value,
             Permission.CAMERA_VIEW.value,
             Permission.MAINTENANCE_READ.value,
@@ -432,6 +457,8 @@ DEFAULT_GROUPS = {
             Permission.SYSTEM_READ.value,
             Permission.SETTINGS_READ.value,
             Permission.WEBSOCKET_CONNECT.value,
+            # MakerWorld browsing only (no import — that writes to library)
+            Permission.MAKERWORLD_VIEW.value,
         ],
         "is_system": True,
     },

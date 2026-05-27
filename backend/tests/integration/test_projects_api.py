@@ -113,6 +113,153 @@ class TestProjectsAPI:
         assert response.status_code == 404
 
 
+class TestProjectUrlAndCoverImage:
+    """Tests for #1155 — url field + cover image upload/get/delete."""
+
+    @pytest.fixture
+    async def project_factory(self, db_session):
+        async def _create(**kwargs):
+            from backend.app.models.project import Project
+
+            defaults = {"name": "URL/Cover Project", "color": "#00ff00"}
+            defaults.update(kwargs)
+            project = Project(**defaults)
+            db_session.add(project)
+            await db_session.commit()
+            await db_session.refresh(project)
+            return project
+
+        return _create
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_project_accepts_https_url(self, async_client: AsyncClient):
+        response = await async_client.post(
+            "/api/v1/projects/",
+            json={"name": "With URL", "url": "https://makerworld.com/models/12345"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["url"] == "https://makerworld.com/models/12345"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_project_rejects_javascript_url(self, async_client: AsyncClient):
+        # `<a href>` rendering would execute javascript: URLs — schema must reject.
+        response = await async_client.post(
+            "/api/v1/projects/",
+            json={"name": "Hostile", "url": "javascript:alert(1)"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_project_rejects_data_url(self, async_client: AsyncClient):
+        response = await async_client.post(
+            "/api/v1/projects/",
+            json={"name": "Hostile", "url": "data:text/html,<script>alert(1)</script>"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_project_clears_url_when_explicitly_null(self, async_client: AsyncClient, project_factory):
+        project = await project_factory(url="https://example.com")
+        response = await async_client.patch(f"/api/v1/projects/{project.id}", json={"url": None})
+        assert response.status_code == 200
+        assert response.json()["url"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_cover_image_then_serve_then_delete(self, async_client: AsyncClient, project_factory):
+        project = await project_factory()
+
+        # 1x1 PNG (smallest valid PNG bytes)
+        png_bytes = bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+            "890000000d49444154789c63f80f00000100010000000000000049454e44ae42"
+            "6082"
+        )
+        upload = await async_client.post(
+            f"/api/v1/projects/{project.id}/cover-image",
+            files={"file": ("cover.png", png_bytes, "image/png")},
+        )
+        assert upload.status_code == 200, upload.text
+        body = upload.json()
+        assert body["status"] == "success"
+        assert body["filename"].endswith(".png")
+        cover_filename = body["filename"]
+
+        # GET should serve the bytes back
+        served = await async_client.get(f"/api/v1/projects/{project.id}/cover-image")
+        assert served.status_code == 200
+        assert served.headers["content-type"] == "image/png"
+        assert served.content == png_bytes
+
+        # Project response should reflect the cover_image_filename field
+        view = await async_client.get(f"/api/v1/projects/{project.id}")
+        assert view.json()["cover_image_filename"] == cover_filename
+
+        # DELETE should clear the field
+        deleted = await async_client.delete(f"/api/v1/projects/{project.id}/cover-image")
+        assert deleted.status_code == 200
+        view2 = await async_client.get(f"/api/v1/projects/{project.id}")
+        assert view2.json()["cover_image_filename"] is None
+        # And subsequent GET should 404
+        served2 = await async_client.get(f"/api/v1/projects/{project.id}/cover-image")
+        assert served2.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_cover_image_rejects_non_image(self, async_client: AsyncClient, project_factory):
+        project = await project_factory()
+        response = await async_client.post(
+            f"/api/v1/projects/{project.id}/cover-image",
+            files={"file": ("evil.exe", b"MZ\x00\x00", "application/octet-stream")},
+        )
+        assert response.status_code == 400
+
+    @pytest.mark.integration
+    def test_cover_image_get_uses_stream_token_gate(self):
+        """Regression guard: GET /projects/{id}/cover-image MUST be gated by
+        ``RequireCameraStreamTokenIfAuthEnabled`` (accepts ``?token=…`` query
+        string) rather than by the bearer-token gate, because browsers can't
+        attach an ``Authorization`` header to ``<img src>`` requests. Swapping
+        back to the bearer gate would silently 401 every cover image when auth
+        is enabled."""
+        from fastapi.routing import APIRoute
+
+        from backend.app.api.routes.projects import router
+
+        # Find the GET cover-image route. The router exposes path/methods/
+        # dependencies via APIRoute objects.
+
+        cover_get = None
+        for route in router.routes:
+            if isinstance(route, APIRoute) and route.path.endswith("/cover-image") and "GET" in route.methods:
+                cover_get = route
+                break
+
+        assert cover_get is not None, "GET cover-image route missing"
+
+        # The route's dependant tree includes a Depends(require_camera_stream_token_if_auth_enabled())
+        # — its `call` is the inner check function returned by that factory.
+        # Walk the dependant tree and assert one of the dependencies came from
+        # the stream-token factory, NOT from require_permission_if_auth_enabled.
+        from backend.app.core.auth import (
+            require_camera_stream_token_if_auth_enabled,
+        )
+
+        # The factory returns a fresh closure each call; the most reliable
+        # signature is the qualified name of the function in the closure chain.
+        expected_qualname = require_camera_stream_token_if_auth_enabled().__qualname__
+
+        gate_qualnames = [dep.call.__qualname__ for dep in cover_get.dependant.dependencies if dep.call]
+        assert expected_qualname in gate_qualnames, (
+            f"GET cover-image route is not gated by RequireCameraStreamTokenIfAuthEnabled. Found: {gate_qualnames}"
+        )
+
+
 class TestProjectPartsTracking:
     """Tests for project parts tracking feature."""
 
@@ -412,6 +559,73 @@ class TestProjectArchivesAPI:
         # Project should have an archive count (may be 0)
         data = response.json()
         assert "name" in data
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_archives_in_project_returns_archives_with_creator(
+        self, async_client: AsyncClient, project_factory, db_session
+    ):
+        """``GET /projects/{id}/archives`` must eagerly load both the project AND
+        the creator User. Without selectinload(created_by) the response
+        converter triggers a lazy attribute load on a closed async session
+        and the request 500s with MissingGreenlet — exactly what was reported
+        the moment a user with auth enabled (so archives carry created_by_id)
+        opened a project view.
+        """
+        from backend.app.models.archive import PrintArchive
+        from backend.app.models.user import User
+
+        # Seed: a user (the eventual creator) and a project owning two archives,
+        # one with created_by_id set, one without.
+        creator = User(
+            username="archive-creator",
+            password_hash="x",
+            role="user",
+            is_active=True,
+        )
+        db_session.add(creator)
+        await db_session.commit()
+        await db_session.refresh(creator)
+
+        project = await project_factory(name="Project Archives Smoke")
+
+        attributed = PrintArchive(
+            filename="attributed.3mf",
+            file_path="x/attributed.3mf",
+            file_size=2048,
+            print_name="Attributed Print",
+            status="completed",
+            quantity=1,
+            project_id=project.id,
+            created_by_id=creator.id,
+        )
+        anonymous = PrintArchive(
+            filename="anon.3mf",
+            file_path="x/anon.3mf",
+            file_size=2048,
+            print_name="Anonymous Print",
+            status="completed",
+            quantity=1,
+            project_id=project.id,
+            created_by_id=None,
+        )
+        db_session.add_all([attributed, anonymous])
+        await db_session.commit()
+
+        response = await async_client.get(f"/api/v1/projects/{project.id}/archives?limit=100&offset=0")
+        assert response.status_code == 200, f"Expected 200, got {response.status_code} body={response.text}"
+
+        rows = response.json()
+        assert len(rows) == 2
+
+        # Both archive shapes serialise — the attributed one surfaces the
+        # creator username (proving the eager-load worked) and the anonymous
+        # one stays None without exploding.
+        by_filename = {r["filename"]: r for r in rows}
+        assert by_filename["attributed.3mf"]["created_by_username"] == "archive-creator"
+        assert by_filename["attributed.3mf"]["created_by_id"] == creator.id
+        assert by_filename["anon.3mf"]["created_by_username"] is None
+        assert by_filename["anon.3mf"]["created_by_id"] is None
 
 
 class TestProjectExportImport:

@@ -14,6 +14,24 @@ logger = logging.getLogger(__name__)
 BAMBU_API_BASE = "https://api.bambulab.com"
 BAMBU_API_BASE_CN = "https://api.bambulab.cn"
 
+# Client identity sent to Bambu Lab's cloud services. We identify honestly as
+# Bambuddy — the URL in parens makes the source unambiguous so Bambu can
+# distinguish our traffic from impersonators. This is the opposite of what the
+# OrcaSlicer fork was called out for in the May 2026 Bambu Lab blog post
+# ("Setting the record straight on cloud access and community"): we do not
+# introduce ourselves as official Bambu Studio.
+_USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
+
+# The `/v1/iot-service/api/slicer/setting` endpoint requires a `version` query
+# parameter in the XX.YY.ZZ.WW format Bambu Studio releases use (without it the
+# API returns HTTP 400 "field 'version' is not set"; non-matching formats like
+# "bambuddy-1.0" return HTTP 422 "Invalid input parameters"). However, Bambu's
+# server accepts ANY value within that format — it doesn't validate against a
+# release manifest. We therefore use a neutral "1.0.0.0" placeholder that does
+# not impersonate any real Bambu Studio release. Our client identity is in the
+# User-Agent header.
+_SLICER_API_VERSION = "1.0.0.0"
+
 
 class BambuCloudError(Exception):
     """Base exception for Bambu Cloud errors."""
@@ -27,15 +45,41 @@ class BambuCloudAuthError(BambuCloudError):
     pass
 
 
+_shared_http_client: httpx.AsyncClient | None = None
+
+
+def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
+    """Register an app-scoped ``httpx.AsyncClient`` so per-request
+    ``BambuCloudService`` instances can reuse its connection pool.
+
+    Pass ``None`` during shutdown to unregister. The service only holds a
+    reference (never closes a client it does not own), so region + token
+    state still stays per-request — this only shares the transport pool.
+    """
+    global _shared_http_client
+    _shared_http_client = client
+
+
 class BambuCloudService:
     """Service for interacting with Bambu Lab Cloud API."""
 
-    def __init__(self, region: str = "global"):
+    def __init__(self, region: str = "global", client: httpx.AsyncClient | None = None):
         self.base_url = BAMBU_API_BASE if region == "global" else BAMBU_API_BASE_CN
         self.access_token: str | None = None
         self.refresh_token: str | None = None
         self.token_expiry: datetime | None = None
-        self._client = httpx.AsyncClient(timeout=30.0)
+        # Prefer an explicitly-injected client (tests), else fall back to the
+        # app-scoped shared client (production), and finally create our own so
+        # scripts / tests that skip the lifespan still get a working service.
+        if client is not None:
+            self._client = client
+            self._owns_client = False
+        elif _shared_http_client is not None:
+            self._client = _shared_http_client
+            self._owns_client = False
+        else:
+            self._client = httpx.AsyncClient(timeout=30.0)
+            self._owns_client = True
 
     @property
     def is_authenticated(self) -> bool:
@@ -48,7 +92,7 @@ class BambuCloudService:
         """Get headers for authenticated requests."""
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "Bambuddy/1.0",
+            "User-Agent": _USER_AGENT,
         }
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
@@ -148,24 +192,25 @@ class BambuCloudService:
             code: 6-digit TOTP code from authenticator app
         """
         try:
-            # TFA endpoint is on bambulab.com, NOT api.bambulab.com
-            # Requires browser-like headers to bypass Cloudflare
+            # TFA endpoint is on bambulab.com, NOT api.bambulab.com.
+            # We previously sent a Chrome User-Agent plus Origin/Referer headers
+            # under the assumption Cloudflare would block bot-identified
+            # requests. Verified 2026-05-12 via curl that the endpoint accepts
+            # honest "Bambuddy/X.Y.Z" identification cleanly (HTTP 400 with the
+            # expected application-level "Login failed" JSON, no Cloudflare
+            # interstitial). Browser-impersonation removed to stay clearly on
+            # the right side of Bambu Lab's "no falsified client identity" line.
             tfa_url = "https://bambulab.com/api/sign-in/tfa"
             if "bambulab.cn" in self.base_url:
                 tfa_url = "https://bambulab.cn/api/sign-in/tfa"
 
-            browser_headers = {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Origin": "https://bambulab.com",
-                "Referer": "https://bambulab.com/",
-            }
-
             response = await self._client.post(
                 tfa_url,
-                headers=browser_headers,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": _USER_AGENT,
+                    "Accept": "application/json",
+                },
                 json={
                     "tfaKey": tfa_key,
                     "tfaCode": code,
@@ -255,12 +300,16 @@ class BambuCloudService:
         except httpx.RequestError as e:
             raise BambuCloudError(f"Request failed: {e}")
 
-    async def get_slicer_settings(self, version: str = "02.04.00.70") -> dict:
+    async def get_slicer_settings(self, version: str = _SLICER_API_VERSION) -> dict:
         """
         Get all slicer settings (filament, printer, process presets).
 
         Args:
-            version: Slicer version string
+            version: Slicer version string. Bambu's API requires the XX.YY.ZZ.WW
+                format but does not validate against a release manifest — we
+                default to the neutral _SLICER_API_VERSION placeholder so we
+                never claim to be a specific Bambu Studio build. Callers should
+                normally use the default.
         """
         if not self.is_authenticated:
             raise BambuCloudAuthError("Not authenticated")
@@ -511,17 +560,16 @@ class BambuCloudService:
             raise BambuCloudError(f"Request failed: {e}")
 
     async def close(self):
-        """Close the HTTP client."""
-        await self._client.aclose()
+        """Close the HTTP client we own. No-op when sharing an app-scoped client."""
+        if self._owns_client:
+            await self._client.aclose()
 
 
-# Singleton instance
-_cloud_service: BambuCloudService | None = None
-
-
-def get_cloud_service() -> BambuCloudService:
-    """Get the singleton cloud service instance."""
-    global _cloud_service
-    if _cloud_service is None:
-        _cloud_service = BambuCloudService()
-    return _cloud_service
+# Previously this module exposed a process-wide ``_cloud_service`` singleton
+# via ``get_cloud_service()`` / ``reset_cloud_service()``. That pattern leaked
+# region and token state across users (a China-region login would pin the
+# singleton to api.bambulab.cn until the next explicit reset), so the singleton
+# has been removed. Callers should construct a per-request
+# ``BambuCloudService(region=...)`` from the stored region and ``await
+# cloud.close()`` it when done. See ``routes.cloud.build_authenticated_cloud``
+# for the standard pattern.

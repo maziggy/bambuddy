@@ -79,3 +79,9 @@ filterwarnings = [
 markers = [
     "docker: marks tests that run in Docker integration environment",
 ]
+
+[dependency-groups]
+dev = [
+    "cryptography>=46.0.7",
+    "pyjwt>=2.12.1",
+]

@@ -149,6 +149,62 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_to_queue_with_project_id(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """#932: queue items created from the project view carry project_id forward."""
+        from backend.app.models.project import Project
+
+        printer = await printer_factory()
+        archive = await archive_factory()
+        project = Project(name="Queue Project")
+        db_session.add(project)
+        await db_session.commit()
+        await db_session.refresh(project)
+
+        data = {
+            "printer_id": printer.id,
+            "archive_id": archive.id,
+            "project_id": project.id,
+        }
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        # The response schema may or may not echo project_id; the stored row is
+        # what matters, so verify via DB.
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        row = (await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == result["id"]))).scalar_one()
+        assert row.project_id == project.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_invalid_project_id_returns_404(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """#932: bogus project_id must be rejected before the FK constraint fires.
+
+        Regression guard for the pre-check added to add_to_queue. Without the
+        validation, a nonexistent project_id would reach db.commit() and raise
+        an IntegrityError → 500. The pre-check must convert that to a 404 so
+        the UI gets a clean error it can surface.
+        """
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        data = {
+            "printer_id": printer.id,
+            "archive_id": archive.id,
+            "project_id": 999999,  # nonexistent
+        }
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 404
+        assert "project" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_with_ams_mapping(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):
@@ -439,6 +495,93 @@ class TestQueueStartEndpoint:
 
         response = await async_client.post(f"/api/v1/queue/{item.id}/start")
         assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_returns_409_on_filament_deficit(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+        monkeypatch,
+    ):
+        """Filament deficit must surface as 409 + structured payload (#1496)."""
+        from backend.app.services import filament_deficit as fd_module
+
+        item = await queue_item_factory(manual_start=True)
+
+        async def _fake_deficit(_db, _item):
+            return [
+                fd_module.FilamentDeficit(
+                    slot_id=1,
+                    ams_id=0,
+                    tray_id=0,
+                    filament_type="PLA",
+                    required_grams=270.0,
+                    remaining_grams=200.0,
+                ),
+            ]
+
+        monkeypatch.setattr(
+            "backend.app.api.routes.print_queue.compute_deficit_for_queue_item",
+            _fake_deficit,
+        )
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start")
+        assert response.status_code == 409
+        body = response.json()
+        assert body["detail"]["code"] == "insufficient_filament"
+        assert len(body["detail"]["deficit"]) == 1
+        assert body["detail"]["deficit"][0]["slot_id"] == 1
+        assert body["detail"]["deficit"][0]["required_grams"] == 270.0
+        assert body["detail"]["deficit"][0]["remaining_grams"] == 200.0
+
+        # Item still pending, manual_start unchanged.
+        await db_session.refresh(item)
+        assert item.status == "pending"
+        assert item.manual_start is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_with_skip_flag_bypasses_deficit_check(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+        monkeypatch,
+    ):
+        """With skip_filament_check=true the route dispatches even when short (#1496)."""
+        from backend.app.services import filament_deficit as fd_module
+
+        item = await queue_item_factory(manual_start=True, filament_short=True)
+        called_with = {}
+
+        async def _fake_deficit(_db, _item):
+            called_with["called"] = True
+            return [
+                fd_module.FilamentDeficit(
+                    slot_id=1,
+                    ams_id=0,
+                    tray_id=0,
+                    filament_type="PLA",
+                    required_grams=270.0,
+                    remaining_grams=200.0,
+                ),
+            ]
+
+        monkeypatch.setattr(
+            "backend.app.api.routes.print_queue.compute_deficit_for_queue_item",
+            _fake_deficit,
+        )
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start?skip_filament_check=true")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["manual_start"] is False
+        assert body["filament_short"] is False
+        # Helper not called on the bypass path — we trust the operator's
+        # decision to print anyway.
+        assert called_with == {}
 
 
 class TestQueueCancelEndpoint:
@@ -1427,6 +1570,146 @@ class TestAbortedStatusNormalisation:
         assert item.status == "completed"
 
     # ========================================================================
+    # Library file usage tracking on print completion (#1008)
+    #
+    # These exercise the _bump_library_file_usage_if_completed helper directly
+    # rather than invoking the whole on_print_complete handler — that path
+    # spawns background asyncio tasks (notifications, MQTT relay, smart-plug)
+    # that are expensive to mock and have nothing to do with the bump logic.
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bump_library_file_usage_on_completed(self, printer_factory, db_session):
+        """Successful completion increments print_count and stamps last_printed_at."""
+        from datetime import datetime, timezone
+
+        from backend.app.main import _bump_library_file_usage_if_completed
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        lib_file = LibraryFile(
+            filename="benchy.gcode.3mf",
+            file_path="/data/library/benchy.gcode.3mf",
+            file_type="gcode.3mf",
+            file_size=1024,
+            print_count=0,
+            last_printed_at=None,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        item = PrintQueueItem(
+            printer_id=printer.id,
+            library_file_id=lib_file.id,
+            status="printing",
+            position=1,
+        )
+
+        before = datetime.now(timezone.utc).replace(tzinfo=None)
+        await _bump_library_file_usage_if_completed(db_session, item, "completed")
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        assert lib_file.print_count == 1
+        assert lib_file.last_printed_at is not None
+        assert lib_file.last_printed_at >= before
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bump_library_file_usage_repeated_prints_increment_count(self, printer_factory, db_session):
+        """Each successful completion bumps print_count cumulatively."""
+        from backend.app.main import _bump_library_file_usage_if_completed
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        lib_file = LibraryFile(
+            filename="repeat.gcode.3mf",
+            file_path="/data/library/repeat.gcode.3mf",
+            file_type="gcode.3mf",
+            file_size=1024,
+            print_count=0,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        item = PrintQueueItem(
+            printer_id=printer.id,
+            library_file_id=lib_file.id,
+            status="printing",
+            position=1,
+        )
+
+        for _ in range(3):
+            await _bump_library_file_usage_if_completed(db_session, item, "completed")
+
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+        assert lib_file.print_count == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+    async def test_bump_library_file_usage_skips_non_completed(self, printer_factory, db_session, terminal_status):
+        """Failed and cancelled prints must NOT count as usage."""
+        from backend.app.main import _bump_library_file_usage_if_completed
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        lib_file = LibraryFile(
+            filename="broken.gcode.3mf",
+            file_path="/data/library/broken.gcode.3mf",
+            file_type="gcode.3mf",
+            file_size=1024,
+            print_count=0,
+            last_printed_at=None,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        item = PrintQueueItem(
+            printer_id=printer.id,
+            library_file_id=lib_file.id,
+            status="printing",
+            position=1,
+        )
+
+        await _bump_library_file_usage_if_completed(db_session, item, terminal_status)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        assert lib_file.print_count == 0
+        assert lib_file.last_printed_at is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bump_library_file_usage_skips_when_no_library_file_id(
+        self, printer_factory, archive_factory, db_session
+    ):
+        """Queue items without library_file_id (e.g. archive reprints) are a no-op."""
+        from backend.app.main import _bump_library_file_usage_if_completed
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        archive = await archive_factory()
+        item = PrintQueueItem(
+            printer_id=printer.id,
+            library_file_id=None,
+            archive_id=archive.id,
+            status="printing",
+            position=1,
+        )
+
+        # Must not raise.
+        await _bump_library_file_usage_if_completed(db_session, item, "completed")
+
+    # ========================================================================
     # Batch quantity tests
     # ========================================================================
 
@@ -1637,3 +1920,85 @@ class TestAbortedStatusNormalisation:
         """Verify 404 for non-existent batch."""
         response = await async_client.get("/api/v1/queue/batches/9999")
         assert response.status_code == 404
+
+    # ========================================================================
+    # Soft-deleted archive handling (#1348 follow-up)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_soft_delete_archive_cancels_pending_queue_items(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Soft-deleting an archive cancels its pending queue items with a
+        clear reason. The 3MF is gone from disk so the item can never
+        dispatch — leaving it in 'pending' would 404-storm the queue page
+        and confuse the user about why nothing prints."""
+        from backend.app.services.archive import ArchiveService
+
+        printer = await printer_factory()
+        archive = await archive_factory(thumbnail_path="archives/test/test/thumbnail.png")
+        pending = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+        completed = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="completed")
+
+        service = ArchiveService(db_session)
+        assert await service.soft_delete_archive(archive.id) is True
+
+        await db_session.refresh(pending)
+        await db_session.refresh(completed)
+        assert pending.status == "cancelled"
+        assert pending.waiting_reason == "Source archive deleted"
+        # Historical rows untouched — they're audit-trail.
+        assert completed.status == "completed"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_api_hides_archive_surface_when_soft_deleted(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Queue serializer must NOT populate archive_thumbnail / archive_name
+        when the archive is soft-deleted — otherwise the frontend renders a
+        broken <img> and 404-storms the thumbnail / plates / plate-thumbnail
+        endpoints. archive_deleted=True signals the soft-deleted state so
+        the UI can render a 'source deleted' badge."""
+        from datetime import datetime, timezone
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            print_name="Test Print",
+            thumbnail_path="archives/test/test/thumbnail.png",
+            deleted_at=datetime.now(timezone.utc),  # Pre-soft-deleted
+        )
+        item = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="cancelled")
+
+        resp = await async_client.get("/api/v1/queue/")
+        assert resp.status_code == 200
+        body = resp.json()
+        row = next((r for r in body if r["id"] == item.id), None)
+        assert row is not None
+        assert row["archive_deleted"] is True
+        assert row["archive_thumbnail"] is None, "must not expose stale thumbnail path for soft-deleted archive"
+        assert row["archive_name"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_api_still_exposes_archive_surface_when_live(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Sanity guard: the soft-delete suppression must not affect live
+        archives. archive_name / archive_thumbnail still flow through and
+        archive_deleted stays False."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            print_name="Live Archive",
+            thumbnail_path="archives/test/live/thumbnail.png",
+        )
+        item = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+
+        resp = await async_client.get("/api/v1/queue/")
+        assert resp.status_code == 200
+        row = next((r for r in resp.json() if r["id"] == item.id), None)
+        assert row is not None
+        assert row["archive_deleted"] is False
+        assert row["archive_name"] == "Live Archive"
+        assert row["archive_thumbnail"] == "archives/test/live/thumbnail.png"

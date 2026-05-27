@@ -5,25 +5,25 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { setAuthToken, getAuthToken, api } from '../../api/client';
+import { setAuthToken, getAuthToken, api, setStreamToken } from '../../api/client';
 
-// Mock localStorage
-const localStorageMock = {
+// Mock sessionStorage (H-5: tokens are stored in sessionStorage, not localStorage)
+const sessionStorageMock = {
   store: {} as Record<string, string>,
-  getItem: vi.fn((key: string) => localStorageMock.store[key] || null),
+  getItem: vi.fn((key: string) => sessionStorageMock.store[key] || null),
   setItem: vi.fn((key: string, value: string) => {
-    localStorageMock.store[key] = value;
+    sessionStorageMock.store[key] = value;
   }),
   removeItem: vi.fn((key: string) => {
-    delete localStorageMock.store[key];
+    delete sessionStorageMock.store[key];
   }),
   clear: vi.fn(() => {
-    localStorageMock.store = {};
+    sessionStorageMock.store = {};
   }),
 };
 
-Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock,
+Object.defineProperty(window, 'sessionStorage', {
+  value: sessionStorageMock,
 });
 
 // Create MSW server
@@ -32,22 +32,78 @@ const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }));
 afterEach(() => {
   server.resetHandlers();
-  localStorageMock.clear();
+  sessionStorageMock.clear();
+  vi.mocked(localStorage.setItem).mockClear();
+  vi.mocked(localStorage.removeItem).mockClear();
   setAuthToken(null);
 });
 afterAll(() => server.close());
 
 describe('Auth Token Management', () => {
-  it('setAuthToken stores token in localStorage', () => {
+  it('setAuthToken stores token in sessionStorage', () => {
     setAuthToken('test-token-123');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'test-token-123');
+    expect(sessionStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'test-token-123');
     expect(getAuthToken()).toBe('test-token-123');
   });
 
-  it('setAuthToken removes token from localStorage when null', () => {
+  it('setAuthToken removes token from sessionStorage when null', () => {
     setAuthToken('test-token-123');
     setAuthToken(null);
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
+    expect(getAuthToken()).toBeNull();
+  });
+
+  it("setAuthToken('persistent') writes to both sessionStorage and localStorage", () => {
+    setAuthToken('persist-token', 'persistent');
+    expect(sessionStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'persist-token');
+    expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'persist-token');
+    expect(getAuthToken()).toBe('persist-token');
+  });
+
+  it("setAuthToken('session') writes only to sessionStorage, not localStorage", () => {
+    setAuthToken('session-token', 'session');
+    expect(sessionStorageMock.setItem).toHaveBeenCalledWith('auth_token', 'session-token');
+    expect(vi.mocked(localStorage.setItem)).not.toHaveBeenCalledWith('auth_token', expect.any(String));
+  });
+
+  it('setAuthToken(null) removes from both storages regardless of previous persistence', () => {
+    setAuthToken('some-token', 'persistent');
+    vi.mocked(localStorage.setItem).mockClear();
+    setAuthToken(null);
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
+    expect(vi.mocked(localStorage.removeItem)).toHaveBeenCalledWith('auth_token');
+    expect(getAuthToken()).toBeNull();
+  });
+
+  it('setAuthToken keeps in-memory token when sessionStorage throws', () => {
+    sessionStorageMock.setItem.mockImplementationOnce(() => {
+      throw new DOMException('QuotaExceededError');
+    });
+    // Should not throw even when storage is unavailable
+    expect(() => setAuthToken('fallback-token')).not.toThrow();
+    // In-memory token must still be set
+    expect(getAuthToken()).toBe('fallback-token');
+  });
+
+  it('setAuthToken(null) removes from sessionStorage even when localStorage.removeItem throws', () => {
+    setAuthToken('some-token', 'persistent');
+    vi.mocked(localStorage.removeItem).mockImplementationOnce(() => {
+      throw new DOMException('SecurityError');
+    });
+    // Must not throw — localStorage failure must not abort the sessionStorage removal
+    expect(() => setAuthToken(null)).not.toThrow();
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
+    expect(getAuthToken()).toBeNull();
+  });
+
+  it('setAuthToken(null) removes from localStorage even when sessionStorage.removeItem throws', () => {
+    setAuthToken('some-token', 'persistent');
+    sessionStorageMock.removeItem.mockImplementationOnce(() => {
+      throw new DOMException('SecurityError');
+    });
+    // Must not throw — sessionStorage failure must not abort the localStorage removal
+    expect(() => setAuthToken(null)).not.toThrow();
+    expect(vi.mocked(localStorage.removeItem)).toHaveBeenCalledWith('auth_token');
     expect(getAuthToken()).toBeNull();
   });
 });
@@ -115,7 +171,7 @@ describe('API Client Auth Header', () => {
     }
 
     expect(getAuthToken()).toBeNull();
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
   });
 
   it('does not clear token on 401 with generic auth error', async () => {
@@ -139,6 +195,22 @@ describe('API Client Auth Header', () => {
 
     // Token should NOT be cleared for generic auth errors (might be timing issue)
     expect(getAuthToken()).toBe('valid-token');
+  });
+});
+
+describe('Slicer download URLs', () => {
+  it('keeps library slicer URLs ending in .3mf when the display name has no extension', () => {
+    const path = api.getLibrarySlicerDownloadUrl(12, 'token-abc', 'Mecha Mewtwo No AMS Multi Color Parted Statue');
+
+    expect(path).toBe(
+      '/api/v1/library/files/12/dl/token-abc/Mecha%20Mewtwo%20No%20AMS%20Multi%20Color%20Parted%20Statue.3mf'
+    );
+  });
+
+  it('sanitizes library slicer URL filenames before encoding them', () => {
+    const path = api.getLibrarySlicerDownloadUrl(12, 'token-abc', 'folder/model?bad#name.3mf');
+
+    expect(path).toBe('/api/v1/library/files/12/dl/token-abc/folder_model_bad_name.3mf');
   });
 });
 
@@ -204,5 +276,72 @@ describe('FormData requests include auth header', () => {
 
     expect(capturedHeaders).not.toBeNull();
     expect(capturedHeaders!.get('Authorization')).toBe('Bearer test-token');
+  });
+});
+
+describe('Printer control endpoints', () => {
+  it('refreshPrinterStatus POSTs to /printers/:id/refresh-status', async () => {
+    let calledUrl: string | null = null;
+    let calledMethod: string | null = null;
+    server.use(
+      http.post('/api/v1/printers/:id/refresh-status', ({ request, params }) => {
+        calledUrl = `/printers/${params.id}/refresh-status`;
+        calledMethod = request.method;
+        return HttpResponse.json({ status: 'ok' });
+      }),
+    );
+
+    const result = await api.refreshPrinterStatus(7);
+    expect(calledMethod).toBe('POST');
+    expect(calledUrl).toBe('/printers/7/refresh-status');
+    expect(result).toEqual({ status: 'ok' });
+  });
+
+  it('setAirductMode passes mode in query string', async () => {
+    let capturedUrl = '';
+    server.use(
+      http.post('/api/v1/printers/:id/airduct-mode', ({ request }) => {
+        capturedUrl = request.url;
+        return HttpResponse.json({ success: true, message: 'ok' });
+      }),
+    );
+
+    await api.setAirductMode(3, 'cooling');
+    expect(capturedUrl).toContain('mode=cooling');
+
+    await api.setAirductMode(3, 'heating');
+    expect(capturedUrl).toContain('mode=heating');
+  });
+});
+
+// #1155 — `<img src>` can't carry an `Authorization: Bearer …` header, so the
+// project cover-image URL must use the same stream-token pattern as
+// /archives/{id}/thumbnail. A regression where `withStreamToken` is removed
+// would break the modal preview AND the card thumbnail when auth is enabled.
+describe('Project cover image URL (#1155)', () => {
+  afterEach(() => {
+    setStreamToken(null);
+  });
+
+  it('appends the stream token query string when one is set', () => {
+    setStreamToken('abc123');
+    const url = api.getProjectCoverImageUrl(42);
+    expect(url).toContain('/projects/42/cover-image');
+    expect(url).toContain('token=abc123');
+  });
+
+  it('returns the bare URL when no stream token is set', () => {
+    setStreamToken(null);
+    const url = api.getProjectCoverImageUrl(42);
+    expect(url).toContain('/projects/42/cover-image');
+    expect(url).not.toContain('token=');
+  });
+
+  it('URL-encodes a token containing query-string-unsafe characters', () => {
+    setStreamToken('a&b=c');
+    const url = api.getProjectCoverImageUrl(7);
+    // Decoded back, the token must round-trip exactly.
+    const params = new URL(url, 'http://x').searchParams;
+    expect(params.get('token')).toBe('a&b=c');
   });
 });

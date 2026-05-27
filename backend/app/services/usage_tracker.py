@@ -63,6 +63,60 @@ def _decode_mqtt_mapping(mapping_raw: list | None) -> list[int] | None:
     return result
 
 
+def _spool_color_to_hex(rgba: str | None) -> str | None:
+    """Normalise a ``Spool.rgba`` value (``RRGGBBAA`` hex, no ``#``) to the
+    ``#RRGGBB`` form archives store in ``filament_color``.
+
+    Alpha is dropped — the archive colour list and the Color Distribution
+    graph treat filament colour as opaque. Returns ``None`` for a missing or
+    too-short value so the caller can fall back to the 3MF colour.
+    """
+    if not rgba:
+        return None
+    h = rgba.strip().lstrip("#")
+    if len(h) < 6:
+        return None
+    return "#" + h[:6].upper()
+
+
+def _archive_colors_from_spools(filament_usage: list[dict], results: list[dict]) -> list[str] | None:
+    """Slot-ordered, de-duplicated hex colours for an archive's ``filament_color``,
+    taken from the inventory spools that actually fed the print (#1494).
+
+    The slicer's 3MF carries its own ``filament_colour`` per slot — a value
+    picked independently of the colour the user curates on the matched
+    inventory spool. So an archive printed from a ``#000000`` inventory spool
+    would otherwise show the slicer's near-black ``#161616``. Once usage
+    tracking has resolved the used slots to spools, the spool colours are the
+    authoritative source and replace the 3MF values.
+
+    Returns ``None`` — leave the 3MF colour untouched — unless *every* slot
+    with non-zero usage was matched to a spool that carries a colour. A
+    partial rewrite would silently drop the unmatched slots' colours from the
+    archive (and the Color Distribution graph), so it is all-or-nothing.
+    """
+    used_slots = {u["slot_id"] for u in filament_usage if u.get("used_g", 0) > 0 and u.get("slot_id") is not None}
+    if not used_slots:
+        return None
+
+    slot_color: dict[int, str] = {}
+    for r in results:
+        slot_id = r.get("slot_id")
+        color = r.get("color")
+        if slot_id is not None and color:
+            slot_color.setdefault(slot_id, color)
+
+    if not used_slots.issubset(slot_color):
+        return None
+
+    ordered: list[str] = []
+    for slot_id in sorted(used_slots):
+        color = slot_color[slot_id]
+        if color not in ordered:
+            ordered.append(color)
+    return ordered
+
+
 def _match_slots_by_color(
     filament_usage: list[dict],
     ams_raw: dict | list | None,
@@ -448,6 +502,30 @@ async def on_print_complete(
                 ams_raw.get("ams", []) if isinstance(ams_raw, dict) else ams_raw if isinstance(ams_raw, list) else []
             )
 
+            # Build set of trays actually involved in this print (#1269).
+            # Without this guard, swapping a spool in an UNUSED slot mid-print
+            # makes that slot's remain% drop to 0, which the fallback below
+            # would otherwise charge to the originally-assigned spool.
+            def _global_to_ams_key(global_tray_id: int) -> tuple[int, int]:
+                if global_tray_id >= 254:
+                    return (255, global_tray_id - 254)
+                if global_tray_id >= 128:
+                    return (global_tray_id, 0)
+                return (global_tray_id // 4, global_tray_id % 4)
+
+            print_used_keys: set[tuple[int, int]] = set()
+            if ams_mapping:
+                for gid in ams_mapping:
+                    if isinstance(gid, int) and gid >= 0:
+                        print_used_keys.add(_global_to_ams_key(gid))
+            for change in getattr(state, "tray_change_log", None) or []:
+                if isinstance(change, (tuple, list)) and len(change) >= 1:
+                    gid = change[0]
+                    if isinstance(gid, int) and gid >= 0:
+                        print_used_keys.add(_global_to_ams_key(gid))
+            if session.tray_now_at_start is not None and session.tray_now_at_start >= 0:
+                print_used_keys.add(_global_to_ams_key(session.tray_now_at_start))
+
             # Collect all trays to check: AMS trays + VT (external) trays
             # Each entry: (ams_id_for_assignment, tray_id_for_assignment, current_remain, label)
             trays_to_check: list[tuple[int, int, int, str]] = []
@@ -478,6 +556,18 @@ async def on_print_complete(
                     continue  # Already tracked via 3MF
 
                 if key not in session.tray_remain_start:
+                    continue
+
+                # Skip trays the print never touched. Only enforce when we have
+                # evidence of which trays the print used; if print_used_keys is
+                # empty (no mapping, no change log, no tray_now_at_start) keep
+                # the legacy behavior of scanning every tray.
+                if print_used_keys and key not in print_used_keys:
+                    logger.info(
+                        "[UsageTracker] %s: not in print mapping/tray_change_log — skipping fallback for printer %d",
+                        tray_label,
+                        printer_id,
+                    )
                     continue
 
                 if not isinstance(current_remain, int) or current_remain < 0 or current_remain > 100:
@@ -553,6 +643,10 @@ async def on_print_complete(
                         "tray_id": assign_tray_id,
                         "material": spool.material,
                         "cost": cost,
+                        # AMS remain%-delta fallback has no 3MF slot — slot_id
+                        # stays None so it is excluded from the colour rewrite.
+                        "slot_id": None,
+                        "color": _spool_color_to_hex(spool.rgba),
                     }
                 )
 
@@ -570,19 +664,42 @@ async def on_print_complete(
         await db.commit()
 
     # --- Update PrintArchive.cost from THIS print session only ---
+    #
+    # Cover any filament weight that wasn't tracked by an inventory spool with
+    # the global default rate (#1344). Without this, a multi-color print where
+    # only some AMS trays are mapped to inventory spools would record only the
+    # mapped slots' share — e.g. $0.01 for a 110g print when 3 of 4 trays had
+    # no spool record. The initial cost set by archive.py (total grams *
+    # primary cost_per_kg) is fine on its own, but this block overwrites it,
+    # so the overwrite must reconstruct the whole-print cost.
 
     if archive_id and results:
-        from sqlalchemy import select
+        from sqlalchemy import func, select
 
         from backend.app.models.archive import PrintArchive
+        from backend.app.models.print_log import PrintLogEntry
 
         archive_result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
         archive = archive_result.scalar_one_or_none()
         if archive:
             total_cost = sum(r.get("cost", 0) or 0 for r in results)
+            tracked_grams = sum(r.get("weight_used", 0) or 0 for r in results)
+            archive_grams = archive.filament_used_grams or 0
+            untracked_grams = max(0.0, archive_grams - tracked_grams)
+            if untracked_grams > 0 and default_filament_cost > 0:
+                total_cost += (untracked_grams / 1000.0) * default_filament_cost
             if total_cost > 0:
-                archive.cost = round(total_cost, 2)
-                await db.commit()
+                # Only overwrite archive.cost on the first run. Reprint actuals
+                # live in PrintLogEntry; the archive card keeps the first run's
+                # cost so a failed reprint doesn't visually clobber a successful
+                # 100 g/$X print with a 10 g/$X/10 partial (#1378).
+                _existing_runs_result = await db.execute(
+                    select(func.count(PrintLogEntry.id)).where(PrintLogEntry.archive_id == archive_id)
+                )
+                _existing_runs = _existing_runs_result.scalar()
+                if not _existing_runs:
+                    archive.cost = round(total_cost, 2)
+                    await db.commit()
 
     return results
 
@@ -611,7 +728,7 @@ async def _resolve_3mf_fallback(archive, db: AsyncSession, base_dir):
     # 1. Try library files matching the name (match base name at file boundary)
     try:
         lib_result = await db.execute(
-            select(LibraryFile)
+            LibraryFile.active()
             .where(LibraryFile.file_path.ilike(f"%/{search_base}.%") | LibraryFile.file_path.ilike(f"{search_base}.%"))
             .where(LibraryFile.file_path.ilike("%.3mf"))
             .order_by(LibraryFile.created_at.desc())
@@ -679,7 +796,7 @@ async def _find_3mf_by_filename(
     # 1. Try library files matching the name
     try:
         lib_result = await db.execute(
-            select(LibraryFile)
+            LibraryFile.active()
             .where(LibraryFile.file_path.ilike(f"%/{search_base}.%") | LibraryFile.file_path.ilike(f"{search_base}.%"))
             .where(LibraryFile.file_path.ilike("%.3mf"))
             .order_by(LibraryFile.created_at.desc())
@@ -764,6 +881,7 @@ async def _track_from_3mf(
     from backend.app.utils.threemf_tools import extract_filament_usage_from_3mf
 
     file_path: Path | None = threemf_path
+    archive: PrintArchive | None = None
 
     if file_path is None and archive_id:
         result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -846,26 +964,29 @@ async def _track_from_3mf(
     # 5. For single-filament non-queue prints, use tray_now from printer state
     #    Priority: tray_change_log (multi-tray split) > tray_now_at_start > current tray_now
     #              > last_loaded_tray > vt_tray check
+    #
+    # tray_change_log evidence wins over slot_to_tray when present: if the
+    # printer fed from multiple trays mid-print (AMS auto-fallback when one
+    # spool runs out, #957), the slicer's mapping captured at print start
+    # is stale and needs to be replaced with per-layer split attribution.
     nonzero_slots = [u for u in filament_usage if u.get("used_g", 0) > 0]
     tray_now_override: int | None = None
     tray_changes: list[tuple[int, int]] = []  # [(global_tray_id, layer_num), ...]
-    if not slot_to_tray and len(nonzero_slots) == 1:
-        state = printer_manager.get_status(printer_id)
-        tray_changes = getattr(state, "tray_change_log", []) if state else []
+    state = printer_manager.get_status(printer_id) if len(nonzero_slots) == 1 else None
+    if state is not None:
+        tray_changes = getattr(state, "tray_change_log", []) or []
 
-        if len(tray_changes) > 1:
-            # Multi-tray usage detected — will split in per-slot loop using per-layer gcode
-            logger.info("[UsageTracker] 3MF: tray change log: %s (will split weight)", tray_changes)
-        elif 0 <= tray_now_at_start <= 254:
-            # Try tray_now_at_start first (captured at print start)
+    if len(tray_changes) > 1:
+        # Multi-tray usage detected — splitting takes over regardless of slot_to_tray.
+        logger.info("[UsageTracker] 3MF: tray change log: %s (will split weight)", tray_changes)
+    elif not slot_to_tray and len(nonzero_slots) == 1:
+        if 0 <= tray_now_at_start <= 254:
             tray_now_override = tray_now_at_start
             logger.info("[UsageTracker] 3MF: using tray_now_at_start=%d (single-filament fallback)", tray_now_at_start)
         elif state and 0 <= state.tray_now <= 254:
-            # Current state is valid (printer didn't retract yet)
             tray_now_override = state.tray_now
             logger.info("[UsageTracker] 3MF: using current tray_now=%d", state.tray_now)
         elif state and 0 <= state.last_loaded_tray <= 253:
-            # Last valid tray before retract (H2D retracts before completion callback)
             tray_now_override = state.last_loaded_tray
             logger.info("[UsageTracker] 3MF: using last_loaded_tray=%d (post-retract fallback)", state.last_loaded_tray)
         elif state and state.tray_now == 255:
@@ -874,7 +995,7 @@ async def _track_from_3mf(
             if any(int(vt.get("id", 0)) == 255 for vt in vt_tray if isinstance(vt, dict)):
                 tray_now_override = state.tray_now
                 logger.info("[UsageTracker] 3MF: using tray_now=255 (H2-series external spool)")
-        if tray_now_override is None and len(tray_changes) <= 1:
+        if tray_now_override is None:
             logger.info(
                 "[UsageTracker] 3MF: no valid tray_now (at_start=%d, current=%s, last_loaded=%s)",
                 tray_now_at_start,
@@ -1072,6 +1193,8 @@ async def _track_from_3mf(
                         "tray_id": seg_tray_id,
                         "material": spool.material,
                         "cost": cost,
+                        "slot_id": slot_id,
+                        "color": _spool_color_to_hex(spool.rgba),
                     }
                 )
 
@@ -1201,6 +1324,8 @@ async def _track_from_3mf(
                 "tray_id": tray_id,
                 "material": spool.material,
                 "cost": cost,
+                "slot_id": slot_id,
+                "color": _spool_color_to_hex(spool.rgba),
             }
         )
 
@@ -1222,5 +1347,23 @@ async def _track_from_3mf(
             tray_id,
             status,
         )
+
+    # --- Adopt the matched inventory spools' colours for the archive (#1494) ---
+    # The archive's filament_color was set from the slicer's 3MF at creation
+    # time; now that every used slot has been resolved to an inventory spool,
+    # the curated spool colour is authoritative. Committed by the caller's
+    # `if results: await db.commit()`.
+    if archive is not None:
+        spool_colors = _archive_colors_from_spools(filament_usage, results)
+        if spool_colors:
+            joined = ",".join(spool_colors)
+            if joined != archive.filament_color:
+                logger.info(
+                    "[UsageTracker] 3MF: archive %s filament_color %r -> %r (from inventory spools)",
+                    archive_id,
+                    archive.filament_color,
+                    joined,
+                )
+                archive.filament_color = joined
 
     return results

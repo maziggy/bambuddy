@@ -25,6 +25,7 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.printer import Printer
 from backend.app.services.archive import ArchiveService
 from backend.app.services.bambu_ftp import (
+    cache_3mf_download,
     delete_file_async,
     get_ftp_retry_settings,
     upload_file_async,
@@ -33,6 +34,16 @@ from backend.app.services.bambu_ftp import (
 from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
+
+# Bambu firmware states that mean the project_file has actually been accepted
+# and the printer is now processing / running / paused mid-print. Used by the
+# direct-dispatch verifier (#1370): a transition into one of these states means
+# the print landed, anything else (e.g. FINISH -> IDLE after the user dismisses
+# a post-print prompt) is NOT a valid "command landed" signal even though the
+# state value did change. Mirrors the same constant in print_scheduler.py —
+# kept duplicated rather than imported to avoid coupling the two services and
+# to keep the value at the point of use.
+_ACTIVE_PRINT_STATES: frozenset[str] = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
 
 
 class DispatchJobCancelled(Exception):
@@ -54,6 +65,8 @@ class PrintDispatchJob:
     options: dict[str, Any] = field(default_factory=dict)
     requested_by_user_id: int | None = None
     requested_by_username: str | None = None
+    project_id: int | None = None
+    cleanup_library_after_dispatch: bool = False
 
 
 @dataclass(slots=True)
@@ -160,6 +173,8 @@ class BackgroundDispatchService:
         options: dict[str, Any],
         requested_by_user_id: int | None,
         requested_by_username: str | None,
+        project_id: int | None = None,
+        cleanup_library_after_dispatch: bool = False,
     ) -> dict[str, Any]:
         return await self._dispatch(
             kind="print_library_file",
@@ -170,6 +185,8 @@ class BackgroundDispatchService:
             options=options,
             requested_by_user_id=requested_by_user_id,
             requested_by_username=requested_by_username,
+            project_id=project_id,
+            cleanup_library_after_dispatch=cleanup_library_after_dispatch,
         )
 
     async def cancel_job(self, job_id: int) -> dict[str, Any]:
@@ -257,6 +274,8 @@ class BackgroundDispatchService:
         options: dict[str, Any],
         requested_by_user_id: int | None,
         requested_by_username: str | None,
+        project_id: int | None = None,
+        cleanup_library_after_dispatch: bool = False,
     ) -> dict[str, Any]:
         async with self._lock:
             has_pending_for_printer = any(job.printer_id == printer_id for job in self._queued_jobs)
@@ -279,6 +298,8 @@ class BackgroundDispatchService:
                 options=options,
                 requested_by_user_id=requested_by_user_id,
                 requested_by_username=requested_by_username,
+                project_id=project_id,
+                cleanup_library_after_dispatch=cleanup_library_after_dispatch,
             )
             self._next_job_id += 1
             self._batch_total += 1
@@ -660,7 +681,7 @@ class BackgroundDispatchService:
                     timelapse=job.options.get("timelapse", False),
                     bed_levelling=job.options.get("bed_levelling", True),
                     flow_cali=job.options.get("flow_cali", False),
-                    vibration_cali=job.options.get("vibration_cali", False),
+                    vibration_cali=job.options.get("vibration_cali", True),
                     layer_inspect=job.options.get("layer_inspect", False),
                     use_ams=job.options.get("use_ams", True),
                 )
@@ -674,9 +695,42 @@ class BackgroundDispatchService:
                     )
                     raise RuntimeError("Failed to start print")
 
-                pre_state = getattr(printer_manager.get_status(job.printer_id), "state", None)
+                # Register the archive's local 3MF in the cover-cache so the
+                # /cover endpoint can skip FTP — we already have the file on
+                # disk, no need to refetch 36 MB from a printer whose FTP is
+                # busy serving the active print (#1166 follow-up).
+                cache_3mf_download(job.printer_id, remote_filename, file_path)
+
+                # Wait for the printer to actually pick up the command before
+                # marking the dispatch job complete (#1042). MQTT-publish success
+                # only proves the command queued locally; the printer can still
+                # reject it (HMS error pending, half-broken session, SD card
+                # missing) and never transition. Until #1042 this watchdog was
+                # fire-and-forget — the job was reported successful and the
+                # user had no signal that the print never started. The uploaded
+                # file is intentionally left on the printer's SD card on
+                # timeout: the next dispatch will overwrite it via the existing
+                # delete-then-upload step, and the printer may still be in the
+                # middle of reading it if it picked up just past the timeout.
+                pre_status = printer_manager.get_status(job.printer_id)
+                pre_state = getattr(pre_status, "state", None) if pre_status else None
+                pre_subtask_id = getattr(pre_status, "subtask_id", None) if pre_status else None
+                pre_gcode_file = getattr(pre_status, "gcode_file", None) if pre_status else None
                 if pre_state:
-                    asyncio.create_task(self._verify_print_response(job.printer_id, printer_name, pre_state))
+                    await self._set_active_message(job, f"Waiting for {printer_name} to acknowledge print...")
+                    transitioned = await self._verify_print_response(
+                        job.printer_id,
+                        printer_name,
+                        pre_state,
+                        pre_subtask_id=pre_subtask_id,
+                        pre_gcode_file=pre_gcode_file,
+                    )
+                    if not transitioned:
+                        raise RuntimeError(
+                            f"Printer did not acknowledge print command — state still {pre_state}. "
+                            f"Check the printer for a pending error (HMS code, plate-clear prompt, "
+                            f"SD card) and try again."
+                        )
 
                 if job.requested_by_user_id and job.requested_by_username:
                     printer_manager.set_current_print_user(
@@ -692,7 +746,7 @@ class BackgroundDispatchService:
         from backend.app.main import register_expected_print
 
         async with async_session() as db:
-            lib_file = await db.scalar(select(LibraryFile).where(LibraryFile.id == job.source_id))
+            lib_file = await db.scalar(LibraryFile.active().where(LibraryFile.id == job.source_id))
             if not lib_file:
                 raise RuntimeError("File not found")
 
@@ -722,6 +776,8 @@ class BackgroundDispatchService:
                 printer_id=job.printer_id,
                 source_file=file_path,
                 original_filename=lib_file.filename,
+                project_id=job.project_id,
+                created_by_id=job.requested_by_user_id,
             )
             if not archive:
                 raise RuntimeError("Failed to create archive")
@@ -830,7 +886,7 @@ class BackgroundDispatchService:
                     timelapse=job.options.get("timelapse", False),
                     bed_levelling=job.options.get("bed_levelling", True),
                     flow_cali=job.options.get("flow_cali", False),
-                    vibration_cali=job.options.get("vibration_cali", False),
+                    vibration_cali=job.options.get("vibration_cali", True),
                     layer_inspect=job.options.get("layer_inspect", False),
                     use_ams=job.options.get("use_ams", True),
                 )
@@ -845,11 +901,63 @@ class BackgroundDispatchService:
                     await db.rollback()
                     raise RuntimeError("Failed to start print")
 
-                pre_state = getattr(printer_manager.get_status(job.printer_id), "state", None)
+                # Same as the archive path: register the library file's local
+                # 3MF in the cover-cache so /cover skips FTP (#1166 follow-up).
+                cache_3mf_download(job.printer_id, remote_filename, file_path)
+
+                # See _run_reprint_archive for rationale (#1042). On timeout
+                # also rolls back the freshly-created archive so the library
+                # flow doesn't leave behind a phantom row for a print that
+                # never started.
+                pre_status = printer_manager.get_status(job.printer_id)
+                pre_state = getattr(pre_status, "state", None) if pre_status else None
+                pre_subtask_id = getattr(pre_status, "subtask_id", None) if pre_status else None
+                pre_gcode_file = getattr(pre_status, "gcode_file", None) if pre_status else None
                 if pre_state:
-                    asyncio.create_task(self._verify_print_response(job.printer_id, printer_name, pre_state))
+                    await self._set_active_message(job, f"Waiting for {printer_name} to acknowledge print...")
+                    transitioned = await self._verify_print_response(
+                        job.printer_id,
+                        printer_name,
+                        pre_state,
+                        pre_subtask_id=pre_subtask_id,
+                        pre_gcode_file=pre_gcode_file,
+                    )
+                    if not transitioned:
+                        await db.rollback()
+                        raise RuntimeError(
+                            f"Printer did not acknowledge print command — state still {pre_state}. "
+                            f"Check the printer for a pending error (HMS code, plate-clear prompt, "
+                            f"SD card) and try again."
+                        )
+
+                if job.requested_by_user_id and job.requested_by_username:
+                    printer_manager.set_current_print_user(
+                        job.printer_id,
+                        job.requested_by_user_id,
+                        job.requested_by_username,
+                    )
+
+                # Direct-Print flow only: archive_print copies, so deleting the
+                # transient library row + files here leaves archive intact. Disk
+                # deletes run only after commit so a rollback leaves no orphan.
+                cleanup_disk_paths: list[Path] = []
+                if job.cleanup_library_after_dispatch and not lib_file.is_external:
+                    cleanup_disk_paths.append(file_path)
+                    if lib_file.thumbnail_path:
+                        thumb_path = Path(lib_file.thumbnail_path)
+                        if not thumb_path.is_absolute():
+                            thumb_path = Path(settings.base_dir) / lib_file.thumbnail_path
+                        cleanup_disk_paths.append(thumb_path)
+                    await db.delete(lib_file)
 
                 await db.commit()
+
+                for cleanup_path in cleanup_disk_paths:
+                    try:
+                        if cleanup_path.exists():
+                            cleanup_path.unlink()
+                    except OSError as cleanup_err:
+                        logger.warning("Failed to delete transient library file %s: %s", cleanup_path, cleanup_err)
             except DispatchJobCancelled:
                 await db.rollback()
                 await self._set_active_message(job, f"Cancelled upload on {printer_name}.")
@@ -860,30 +968,91 @@ class BackgroundDispatchService:
         printer_id: int,
         printer_name: str,
         pre_state: str,
-        timeout: float = 15.0,
+        pre_subtask_id: str | None = None,
+        pre_gcode_file: str | None = None,
+        timeout: float = 90.0,
         poll_interval: float = 3.0,
-    ):
-        """Check if the printer responded to a print command.
+    ) -> bool:
+        """Wait for the printer to acknowledge a print command.
 
-        Runs as a fire-and-forget background task after start_print() succeeds.
-        If the printer's gcode_state hasn't changed within the timeout, logs a
-        warning for diagnostics (visible in support packages).
+        Returns True if the printer transitioned (state advanced past pre_state
+        or subtask_id advanced past pre_subtask_id). Returns False on timeout —
+        in that case logs a warning and forces an MQTT reconnect, mirroring the
+        queue-side watchdog (`_watchdog_print_start`). Caller is responsible
+        for surfacing the False result to the user (typically by raising so the
+        dispatch job is marked failed).
+
+        Both transition signals are checked because H2D can sit at FINISH for
+        ~50 s after accepting `project_file` before flipping to PREPARE; the
+        printer echoes our per-dispatch identity back as `subtask_id` on
+        `push_status` first, so a subtask_id change is a definitive "command
+        landed" signal even while state is still FINISH (#1078).
         """
         deadline = time.monotonic() + timeout
+        last_status = None
         while time.monotonic() < deadline:
             await asyncio.sleep(poll_interval)
             state = printer_manager.get_status(printer_id)
             if not state:
-                return  # Printer disconnected
-            if state.state != pre_state:
-                return  # Printer responded
+                # Printer momentarily not reporting — could be a brief MQTT
+                # disconnect mid-window. Keep polling rather than declaring
+                # failure on the first missed tick; the printer may reconnect
+                # within the remaining timeout and still surface a transition.
+                continue
+            last_status = state
+            if state.state in _ACTIVE_PRINT_STATES:
+                # Printer is actively processing the job. We do NOT accept
+                # arbitrary state transitions: a printer going FINISH -> IDLE
+                # (user dismissed the post-print prompt without accepting our
+                # project_file) would otherwise look like "command landed"
+                # and the dispatch job would be marked successful even though
+                # no print is running (#1370).
+                return True
+            if pre_subtask_id is not None and state.subtask_id is not None and state.subtask_id != pre_subtask_id:
+                # Printer picked up the job (subtask_id advanced). H2D can
+                # sit at FINISH for ~50 s after accepting project_file before
+                # transitioning to PREPARE, but the subtask_id flips to our
+                # submission_id almost immediately (#1078).
+                return True
         logger.warning(
-            "Printer %s (%d) did not respond to print command within %.0fs (state still %s) — printer may need restart",
+            "Printer %s (%d) did not respond to print command within %.0fs "
+            "(state still %s, subtask_id still %s) — printer may need restart",
             printer_name,
             printer_id,
             timeout,
             pre_state,
+            pre_subtask_id,
         )
+        # Distinguish #1150 (slow parse) from #887/#936 (half-broken session)
+        # via gcode_file: if the printer is now showing a different file than
+        # before dispatch, the project_file command landed and the printer is
+        # parsing — a forced reconnect mid-parse causes 0500_4003. If
+        # gcode_file is unchanged, the publish was silently swallowed and the
+        # original #936 recovery (force_reconnect → fresh client_id) is what
+        # we want. Caveat: in the rare retry-same-file-after-timeout case the
+        # printer's gcode_file looks identical before and after the publish
+        # lands, so a slow parse on retry-same-file still falls through to the
+        # reconnect (and the original 0500_4003) — accepted to avoid breaking
+        # the half-broken-session recovery path.
+        client = printer_manager.get_client(printer_id)
+        current_gcode_file = getattr(last_status, "gcode_file", None) if last_status else None
+        publish_landed = current_gcode_file is not None and current_gcode_file != pre_gcode_file
+        if publish_landed:
+            logger.warning(
+                "Printer %s (%d) gcode_file changed to %r (was %r) — printer "
+                "received the command and is parsing slowly. Skipping forced "
+                "MQTT reconnect to avoid 0500_4003 mid-parse (#1150).",
+                printer_name,
+                printer_id,
+                current_gcode_file,
+                pre_gcode_file,
+            )
+        elif client and hasattr(client, "force_reconnect_stale_session"):
+            client.force_reconnect_stale_session(
+                f"print command unacknowledged after {timeout:.0f}s "
+                f"(state still {pre_state}, gcode_file {current_gcode_file!r})"
+            )
+        return False
 
     @staticmethod
     async def _cleanup_sd_card_file(

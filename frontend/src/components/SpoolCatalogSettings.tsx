@@ -34,7 +34,8 @@ export function SpoolCatalogSettings() {
     try {
       const entries = await api.getSpoolCatalog();
       setCatalog(entries);
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.loadCatalog failed:', err);
       showToast(t('settings.catalog.loadFailed'), 'error');
     } finally {
       setLoading(false);
@@ -62,7 +63,8 @@ export function SpoolCatalogSettings() {
       setFormName('');
       setFormWeight('');
       showToast(t('settings.catalog.entryAdded'), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleAdd failed:', err);
       showToast(t('settings.catalog.addFailed'), 'error');
     } finally {
       setSaving(false);
@@ -94,7 +96,8 @@ export function SpoolCatalogSettings() {
       setFormName('');
       setFormWeight('');
       showToast(t('settings.catalog.entryUpdated'), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleUpdate failed:', err);
       showToast(t('settings.catalog.updateFailed'), 'error');
     } finally {
       setSaving(false);
@@ -107,7 +110,8 @@ export function SpoolCatalogSettings() {
       await api.deleteCatalogEntry(deleteEntry.id);
       setCatalog(prev => prev.filter(e => e.id !== deleteEntry.id));
       showToast(t('settings.catalog.entryDeleted'), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleDelete failed:', err);
       showToast(t('settings.catalog.deleteFailed'), 'error');
     } finally {
       setDeleteEntry(null);
@@ -121,7 +125,8 @@ export function SpoolCatalogSettings() {
       await api.resetSpoolCatalog();
       await loadCatalog();
       showToast(t('settings.catalog.resetSuccess'), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleReset failed:', err);
       showToast(t('settings.catalog.resetFailed'), 'error');
       setLoading(false);
     }
@@ -152,7 +157,8 @@ export function SpoolCatalogSettings() {
       setCatalog(prev => prev.filter(e => !selectedIds.has(e.id)));
       setSelectedIds(new Set());
       showToast(t('settings.catalog.bulkDeleted', { count: result.deleted }), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleBulkDelete failed:', err);
       showToast(t('settings.catalog.bulkDeleteFailed'), 'error');
     }
   };
@@ -189,23 +195,30 @@ export function SpoolCatalogSettings() {
           const entry = await api.addCatalogEntry({ name: item.name, weight: item.weight });
           setCatalog(prev => [...prev, entry].sort((a, b) => a.name.localeCompare(b.name)));
           added++;
-        } catch { skipped++; }
+        } catch (err) {
+          console.error('SpoolCatalogSettings import item failed:', err);
+          skipped++;
+        }
       }
       showToast(t('settings.catalog.imported', { added, skipped }), 'success');
-    } catch {
+    } catch (err) {
+      console.error('SpoolCatalogSettings.handleImport failed:', err);
       showToast(t('settings.catalog.importFailed'), 'error');
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
-    <Card>
+    <Card id="card-spool-catalog">
       <CardHeader>
         <div className="flex items-center gap-2 mb-3">
           <Database className="w-5 h-5 text-bambu-gray" />
-          <h2 className="text-lg font-semibold text-white">{t('settings.catalog.spoolCatalog')}</h2>
+          <h2 className="text-lg font-semibold text-white">
+            {t('settings.catalog.spoolCatalog')}
+          </h2>
           <span className="text-sm text-bambu-gray">({catalog.length})</span>
         </div>
+
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleExport}
@@ -240,6 +253,7 @@ export function SpoolCatalogSettings() {
             <span className="hidden sm:inline">{t('common.add')}</span>
           </button>
         </div>
+
         {selectedIds.size > 0 && (
           <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
             <span className="text-sm text-red-400">
@@ -261,12 +275,12 @@ export function SpoolCatalogSettings() {
           </div>
         )}
       </CardHeader>
+
       <CardContent className="space-y-4">
         <p className="text-sm text-bambu-gray">
           {t('settings.catalog.spoolCatalogDescription')}
         </p>
 
-        {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
           <input
@@ -278,7 +292,6 @@ export function SpoolCatalogSettings() {
           />
         </div>
 
-        {/* Add form */}
         {showAddForm && (
           <div className="p-4 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
             <h3 className="text-sm font-medium text-white mb-3">{t('settings.catalog.addNewEntry')}</h3>
@@ -318,7 +331,6 @@ export function SpoolCatalogSettings() {
           </div>
         )}
 
-        {/* Catalog list */}
         {loading ? (
           <div className="flex items-center justify-center py-8 text-bambu-gray">
             <Loader2 className="w-5 h-5 animate-spin mr-2" />
@@ -447,7 +459,6 @@ export function SpoolCatalogSettings() {
         )}
       </CardContent>
 
-      {/* Delete confirmation */}
       {deleteEntry && (
         <ConfirmModal
           title={t('settings.catalog.deleteEntry')}
@@ -459,7 +470,6 @@ export function SpoolCatalogSettings() {
         />
       )}
 
-      {/* Bulk delete confirmation */}
       {showBulkDeleteConfirm && (
         <ConfirmModal
           title={t('settings.catalog.deleteSelected')}
@@ -471,7 +481,6 @@ export function SpoolCatalogSettings() {
         />
       )}
 
-      {/* Reset confirmation */}
       {showResetConfirm && (
         <ConfirmModal
           title={t('settings.catalog.resetCatalog')}

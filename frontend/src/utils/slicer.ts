@@ -15,9 +15,13 @@
  *   - (orcaslicer|bambustudio|...)://open?file=<URL>
  *   - bambustudioopen://<URL>
  *
- * Key insight: Using ?file= query format, the browser's URL parser preserves
- * http:// in the query string without any encoding. Only the macOS-specific
- * bambustudioopen:// format needs encodeURIComponent (BS calls url_decode).
+ * Key insight: every form needs encodeURIComponent on the file URL, because
+ * the slicer calls url_decode() on the received query (post_init calls
+ * url_decode then split_str; MacOpenURL strips the prefix then url_decode;
+ * OrcaSlicer's Downloader regex-extracts then url_decode). Without encoding,
+ * any already-percent-encoded character in the download URL (most commonly
+ * %20 in filenames with spaces) decodes to a literal space and the slicer's
+ * subsequent HTTP fetch fails with a 0-byte body or 404. See issue #1059.
  */
 
 export type SlicerType = 'bambu_studio' | 'orcaslicer';
@@ -51,22 +55,19 @@ export function detectPlatform(): Platform {
 export function openInSlicer(downloadUrl: string, slicer: SlicerType = 'bambu_studio'): void {
   let url: string;
 
+  const encoded = encodeURIComponent(downloadUrl);
   if (slicer === 'orcaslicer') {
-    // OrcaSlicer: ?file= query format — http:// preserved in query string
-    url = `orcaslicer://open?file=${downloadUrl}`;
+    url = `orcaslicer://open?file=${encoded}`;
   } else {
     const platform = detectPlatform();
     if (platform === 'macos') {
       // macOS only: bambustudioopen scheme via MacOpenURL() callback.
-      // Must encode because bare http:// in authority gets mangled by browser.
-      // BS calls url_decode() after stripping "bambustudioopen://" prefix.
-      url = `bambustudioopen://${encodeURIComponent(downloadUrl)}`;
+      url = `bambustudioopen://${encoded}`;
     } else {
       // Windows/Linux: bambustudio://open?file= via post_init() CLI args.
-      // The ?file= query format preserves http:// without encoding.
       // IMPORTANT: On Linux, BS only handles "bambustudio://open" prefix —
       // it does NOT process "bambustudioopen://" (that's macOS-only).
-      url = `bambustudio://open?file=${downloadUrl}`;
+      url = `bambustudio://open?file=${encoded}`;
     }
   }
 

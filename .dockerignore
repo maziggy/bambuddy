@@ -1,5 +1,12 @@
 # Git
-.git
+# Exclude all .git contents EXCEPT HEAD. HEAD is a tiny text file (under
+# 100 bytes) containing e.g. `ref: refs/heads/dev`, which the Dockerfile
+# copies into the image so detect_current_branch() in spoolbuddy_ssh.py
+# can report the correct branch for SpoolBuddy remote updates. Without
+# this, the production image has no git metadata at all and always falls
+# back to "main" regardless of which branch the operator built from.
+.git/*
+!.git/HEAD
 .gitignore
 
 # Python

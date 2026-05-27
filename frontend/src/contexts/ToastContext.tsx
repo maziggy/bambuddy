@@ -42,6 +42,13 @@ interface ToastContextType {
   showToast: (message: string, type?: ToastType) => void;
   showPersistentToast: ShowPersistentToast;
   dismissToast: (id: string) => void;
+  /**
+   * Suppress the visible toast viewport while keeping the state machine alive.
+   * Used by the SpoolBuddy kiosk layout to keep the kiosk display free of
+   * main-app notifications (background dispatch progress, etc.) without
+   * tearing down the dispatch-job subscription that other tabs rely on.
+   */
+  setViewportSuppressed: (suppressed: boolean) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -74,26 +81,39 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isDispatchCollapsed, setIsDispatchCollapsed] = useState(false);
+  const [viewportSuppressed, setViewportSuppressed] = useState(false);
   const [cancellingDispatchJobIds, setCancellingDispatchJobIds] = useState<Set<number>>(new Set());
   const timeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const dispatchToastId = 'background-dispatch';
   const lastDispatchSummaryRef = useRef<string | null>(null);
+  // Tracks whether the provider is still mounted. A toast can be triggered by
+  // an async callback that resolves AFTER React has unmounted us (common in
+  // tests: `cleanup()` runs while a login promise is still in flight, then
+  // the error handler calls showToast). In that case, scheduling a setTimeout
+  // that later calls setToasts produces "window is not defined" once the jsdom
+  // environment is torn down. Guard every setToasts call behind this ref so a
+  // post-unmount showToast is a no-op instead of crashing.
+  const isMountedRef = useRef(true);
 
   // Clean up all timeouts on unmount
   useEffect(() => {
+    isMountedRef.current = true;
     const timeouts = timeoutRefs.current;
     return () => {
+      isMountedRef.current = false;
       timeouts.forEach((timeout) => clearTimeout(timeout));
       timeouts.clear();
     };
   }, []);
 
   const showToast = useCallback((message: string, type: ToastType = 'success') => {
+    if (!isMountedRef.current) return;
     const id = Math.random().toString(36).substr(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
 
     // Auto-dismiss after 3 seconds
     const timeout = setTimeout(() => {
+      if (!isMountedRef.current) return;
       setToasts((prev) => prev.filter((t) => t.id !== id));
       timeoutRefs.current.delete(id);
     }, 3000);
@@ -101,6 +121,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showPersistentToast = useCallback((id: string, message: string, type: ToastType = 'info') => {
+    if (!isMountedRef.current) return;
     setToasts((prev) => {
       // Update existing toast if same id, otherwise add new one
       const exists = prev.find((t) => t.id === id);
@@ -112,6 +133,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const dismissToast = useCallback((id: string) => {
+    if (!isMountedRef.current) return;
     // Clear any pending auto-dismiss timeout
     const timeout = timeoutRefs.current.get(id);
     if (timeout) {
@@ -268,6 +290,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           const existingTimeout = timeoutRefs.current.get(dispatchToastId);
           if (existingTimeout) clearTimeout(existingTimeout);
           const timeout = setTimeout(() => {
+            if (!isMountedRef.current) return;
             setToasts((prev) => prev.filter((t) => t.id !== dispatchToastId));
             timeoutRefs.current.delete(dispatchToastId);
             lastDispatchSummaryRef.current = null;
@@ -464,11 +487,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 
   return (
-    <ToastContext.Provider value={{ showToast, showPersistentToast, dismissToast }}>
+    <ToastContext.Provider value={{ showToast, showPersistentToast, dismissToast, setViewportSuppressed }}>
       {children}
 
-      {/* Toast Container — to the left of the bug-report bubble (bottom-4 right-4 w-12) */}
-      <div className="fixed bottom-4 right-20 z-[60] flex flex-col items-end gap-2">
+      {/* Toast Container — to the left of the bug-report bubble (bottom-4 right-4 w-12).
+          The kiosk layout suppresses this entire viewport so SpoolBuddy displays stay
+          free of main-app notifications. */}
+      <div className={`fixed bottom-4 right-20 z-[60] flex flex-col items-end gap-2 ${viewportSuppressed ? 'hidden' : ''}`}>
         {toasts.map((toast) => (
           <div
             key={toast.id}
@@ -525,6 +550,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                         failed: 100,
                         cancelled: 100,
                       };
+                      // Upload byte count reached the total — the printer hasn't yet
+                      // confirmed it received the file (state is still 'processing').
+                      // Without distinguishing this we show a frozen 100% bar that
+                      // reads as "stuck" on small files where the upload completed
+                      // in <500ms.
+                      const uploadDoneAwaitingPrinter =
+                        job.status === 'processing' &&
+                        typeof job.uploadProgressPct === 'number' &&
+                        job.uploadProgressPct >= 99.9;
                       const barColorByStatus: Record<DispatchJobStatus, string> = {
                         dispatched: 'bg-bambu-gray/60',
                         processing: 'bg-bambu-green',
@@ -564,15 +598,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                               {job.message}
                             </div>
                           )}
-                          {job.status === 'processing' && typeof job.uploadBytes === 'number' && typeof job.uploadTotalBytes === 'number' && job.uploadTotalBytes > 0 && (
-                            <div className="text-[11px] text-bambu-gray truncate">
-                              {formatFileSize(job.uploadBytes)} / {formatFileSize(job.uploadTotalBytes)}
-                              {typeof job.uploadProgressPct === 'number' ? ` (${job.uploadProgressPct.toFixed(1)}%)` : ''}
-                            </div>
+                          {job.status === 'processing' && (
+                            uploadDoneAwaitingPrinter ? (
+                              <div className="text-[11px] text-bambu-gray truncate">
+                                {t('backgroundDispatch.awaitingPrinter')}
+                              </div>
+                            ) : typeof job.uploadBytes === 'number' && typeof job.uploadTotalBytes === 'number' && job.uploadTotalBytes > 0 ? (
+                              <div className="text-[11px] text-bambu-gray truncate">
+                                {formatFileSize(job.uploadBytes)} / {formatFileSize(job.uploadTotalBytes)}
+                                {typeof job.uploadProgressPct === 'number' ? ` (${job.uploadProgressPct.toFixed(1)}%)` : ''}
+                              </div>
+                            ) : null
                           )}
                           <div className="mt-1 h-1.5 w-full rounded bg-white/10 overflow-hidden">
                             <div
-                              className={`h-full ${barColorByStatus[job.status]} transition-all duration-300`}
+                              className={`h-full ${barColorByStatus[job.status]} transition-all duration-300 ${uploadDoneAwaitingPrinter ? 'animate-pulse' : ''}`}
                               style={{
                                 width: `${
                                   job.status === 'processing' && typeof job.uploadProgressPct === 'number'

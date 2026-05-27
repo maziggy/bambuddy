@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, getAuthToken, setAuthToken } from '../api/client';
-import type { Permission, UserResponse } from '../api/client';
+import type { LoginResponse, Permission, TokenPersistence, UserResponse } from '../api/client';
 
 interface AuthContextType {
   user: UserResponse | null;
@@ -8,7 +8,10 @@ interface AuthContextType {
   requiresSetup: boolean;
   loading: boolean;
   isAdmin: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  /** Login with username/password. Returns LoginResponse (may include requires_2fa). */
+  login: (username: string, password: string, persistence?: TokenPersistence) => Promise<LoginResponse>;
+  /** Finalise login after 2FA or OIDC — store token and set user directly. */
+  loginWithToken: (token: string, user: UserResponse, persistence?: TokenPersistence) => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
   refreshAuth: () => Promise<void>;
@@ -30,12 +33,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuthStatus = async () => {
     try {
-      // Bootstrap: if URL has ?token= param, store it and strip from URL.
-      // Allows SpoolBuddy kiosk to pass API key via URL on first load.
+      // Bootstrap: if URL has ?token= param, store it session-only first and
+      // strip it from the URL. Allows SpoolBuddy kiosk to pass an API key via
+      // URL on first load. Persistence to localStorage is deferred until the
+      // token has been verified by the server (L-4: prevents session fixation
+      // where an attacker-crafted URL immediately persists a forged/stolen token).
       const urlParams = new URLSearchParams(window.location.search);
       const urlToken = urlParams.get('token');
       if (urlToken) {
-        setAuthToken(urlToken);
+        setAuthToken(urlToken, 'session'); // session-only until server confirms it's valid
         urlParams.delete('token');
         const cleanSearch = urlParams.toString();
         const cleanUrl = window.location.pathname
@@ -56,8 +62,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const currentUser = await api.getCurrentUser();
             if (!mountedRef.current) return;
             setUser(currentUser);
+            // Persist kiosk token only after the server confirms it is valid.
+            if (urlToken && token === urlToken) {
+              setAuthToken(urlToken, 'persistent');
+            }
           } catch {
-            // Token invalid, clear it
+            // Token invalid, clear it (removes from both sessionStorage and localStorage)
             setAuthToken(null);
             if (!mountedRef.current) return;
             setUser(null);
@@ -106,10 +116,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loading, requiresSetup, authEnabled]);
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, persistence: TokenPersistence = 'session'): Promise<LoginResponse> => {
     const response = await api.login({ username, password });
-    setAuthToken(response.access_token);
-    await checkAuthStatus();
+    if (!response.requires_2fa && response.access_token) {
+      setAuthToken(response.access_token, persistence);
+      await checkAuthStatus();
+    }
+    return response;
+  };
+
+  const loginWithToken = (token: string, userObj: UserResponse, persistence: TokenPersistence = 'session') => {
+    setAuthToken(token, persistence);
+    setUser(userObj);
+    setAuthEnabled(true);
   };
 
   const logout = () => {
@@ -205,6 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         isAdmin,
         login,
+        loginWithToken,
         logout,
         refreshUser,
         refreshAuth,

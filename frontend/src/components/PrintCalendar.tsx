@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 
+import { localDateKey } from '../utils/date';
+
 interface PrintCalendarProps {
   printDates: string[]; // Array of ISO date strings
   months?: number; // How many months to show (default 3)
@@ -24,11 +26,14 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
   }, []);
 
   const { weeks, monthLabels, printCounts } = useMemo(() => {
-    // Count prints per day
+    // Count prints per day. Bucket by local-tz YYYY-MM-DD so an evening
+    // print in a negative-UTC-offset region (e.g. CDT) doesn't get
+    // attributed to "tomorrow's" UTC cell while its label renders as
+    // today (#1446).
     const counts: Record<string, number> = {};
     printDates.forEach((date) => {
-      const day = date.split('T')[0];
-      counts[day] = (counts[day] || 0) + 1;
+      const day = localDateKey(date);
+      if (day) counts[day] = (counts[day] || 0) + 1;
     });
 
     // Generate weeks for the last N months
@@ -149,9 +154,12 @@ export function PrintCalendar({ printDates, months = 3 }: PrintCalendarProps) {
                     );
                   }
 
-                  const dateStr = day.toISOString().split('T')[0];
+                  // Keep lookup + "today" comparison on the same local-tz
+                  // axis as the buckets — toISOString() would shift these
+                  // cells to UTC and break the join (#1446).
+                  const dateStr = localDateKey(day);
                   const count = printCounts[dateStr] || 0;
-                  const isToday = dateStr === new Date().toISOString().split('T')[0];
+                  const isToday = dateStr === localDateKey(new Date());
 
                   return (
                     <div

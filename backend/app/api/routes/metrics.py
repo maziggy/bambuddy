@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import APP_VERSION
 from backend.app.core.database import get_db
-from backend.app.models.archive import PrintArchive
+from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
@@ -352,11 +352,13 @@ async def get_metrics(
     # Print statistics (from database)
     # =========================================================================
 
-    # Total prints by status
+    # Total prints by status — count print events from PrintLogEntry so
+    # reprints contribute new rows instead of overwriting the source archive
+    # (#1378).
     lines.append("")
     lines.append("# HELP bambuddy_prints_total Total number of prints by result")
     lines.append("# TYPE bambuddy_prints_total counter")
-    result = await db.execute(select(PrintArchive.status, func.count(PrintArchive.id)).group_by(PrintArchive.status))
+    result = await db.execute(select(PrintLogEntry.status, func.count(PrintLogEntry.id)).group_by(PrintLogEntry.status))
     for print_result, count in result.all():
         result_label = print_result or "unknown"
         labels = format_labels(result=result_label)
@@ -367,7 +369,7 @@ async def get_metrics(
     lines.append("# HELP bambuddy_printer_prints_total Total prints per printer")
     lines.append("# TYPE bambuddy_printer_prints_total counter")
     result = await db.execute(
-        select(PrintArchive.printer_id, func.count(PrintArchive.id)).group_by(PrintArchive.printer_id)
+        select(PrintLogEntry.printer_id, func.count(PrintLogEntry.id)).group_by(PrintLogEntry.printer_id)
     )
     for printer_id, count in result.all():
         if printer_id and printer_id in printer_info:
@@ -379,19 +381,19 @@ async def get_metrics(
             )
             lines.append(f"bambuddy_printer_prints_total{labels} {count}")
 
-    # Total filament used - filament_used_grams already contains the total for each print job
+    # Total filament used — sum per-run actuals from PrintLogEntry.
     lines.append("")
     lines.append("# HELP bambuddy_filament_used_grams Total filament used in grams")
     lines.append("# TYPE bambuddy_filament_used_grams counter")
-    result = await db.execute(select(func.coalesce(func.sum(PrintArchive.filament_used_grams), 0)))
+    result = await db.execute(select(func.coalesce(func.sum(PrintLogEntry.filament_used_grams), 0)))
     total_filament = result.scalar() or 0
     lines.append(f"bambuddy_filament_used_grams {total_filament:.1f}")
 
-    # Total print time
+    # Total print time — sum per-run elapsed durations.
     lines.append("")
     lines.append("# HELP bambuddy_print_time_seconds Total print time in seconds")
     lines.append("# TYPE bambuddy_print_time_seconds counter")
-    result = await db.execute(select(func.coalesce(func.sum(PrintArchive.print_time_seconds), 0)))
+    result = await db.execute(select(func.coalesce(func.sum(PrintLogEntry.duration_seconds), 0)))
     total_time = result.scalar() or 0
     lines.append(f"bambuddy_print_time_seconds {total_time}")
 

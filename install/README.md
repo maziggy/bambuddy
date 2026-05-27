@@ -11,6 +11,13 @@ Interactive installation scripts for BamBuddy with support for both native and D
 curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/install/docker-install.sh -o docker-install.sh && chmod +x docker-install.sh && ./docker-install.sh
 ```
 
+**Windows (Command Prompt or PowerShell):**
+```cmd
+powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/maziggy/bambuddy/main/install/docker-install.ps1 -OutFile docker-install.ps1; .\docker-install.ps1"
+```
+
+> Requires Docker Desktop running. Printer auto-discovery is unavailable in Docker Desktop — add printers manually by IP.
+
 ### Native Installation
 
 **Linux/macOS:**
@@ -26,6 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/install/insta
 |--------|----------|--------|
 | `install.sh` | Linux, macOS | Native (Python venv) |
 | `docker-install.sh` | Linux, macOS | Docker |
+| `docker-install.ps1` | Windows (Docker Desktop) | Docker |
 | `update.sh` | Linux (systemd) | Native update helper |
 
 ---
@@ -99,6 +107,45 @@ Installs BamBuddy using Docker containers.
 # Build from source
 ./docker-install.sh --build --yes
 ```
+
+### `docker-install.ps1` (Windows)
+
+PowerShell mirror of `docker-install.sh` for Windows + Docker Desktop. Verifies
+Docker Desktop is running, downloads `docker-compose.yml`, rewrites it to use
+port mappings instead of host networking (Docker Desktop doesn't support host
+networking), and starts the container.
+
+**Requirements:**
+- Docker Desktop installed and running ([download](https://www.docker.com/products/docker-desktop))
+- PowerShell 5.1+ (ships with Windows 10/11) or PowerShell 7+
+
+**Parameters:**
+```
+-InstallPath PATH    Installation directory (default: %USERPROFILE%\bambuddy)
+-Port PORT           Port to expose (default: 8000)
+-TimeZone TZ         IANA timezone (default: derived from Get-TimeZone or UTC)
+-Build               Build from source instead of pulling pre-built image
+-Yes                 Non-interactive mode, accept defaults
+-Help                Show full help (Get-Help)
+```
+
+**Examples:**
+```powershell
+# Interactive
+.\docker-install.ps1
+
+# Unattended
+.\docker-install.ps1 -InstallPath C:\bambuddy -Port 8080 -TimeZone Europe/Berlin -Yes
+
+# Build from source
+.\docker-install.ps1 -Build -Yes
+```
+
+> **Limitations on Windows / Docker Desktop:** Printer auto-discovery (SSDP)
+> does not work — add printers manually by IP. The Virtual Printer feature
+> requires manually uncommenting the relevant port mappings in
+> `docker-compose.yml` (the script leaves them commented because most users
+> don't need them).
 
 ---
 

@@ -47,6 +47,7 @@ export function GroupEditPage() {
       api.createGroup(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['group'] });
       showToast(t('groups.toast.created'));
       navigate('/settings?tab=users');
     },
@@ -58,8 +59,19 @@ export function GroupEditPage() {
   const updateMutation = useMutation({
     mutationFn: (data: { name?: string; description?: string; permissions: Permission[] }) =>
       api.updateGroup(Number(id), data),
-    onSuccess: () => {
+    onSuccess: (updatedGroup) => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
+      // Prime the single-group detail cache with the PATCH response body so
+      // reopening the editor within the 60s default staleTime shows the
+      // newly-saved permissions instead of the stale pre-update snapshot
+      // (#1083). setQueryData alone is enough — we intentionally do NOT also
+      // invalidate ['group', id] because that would trigger an immediate
+      // background refetch that could race with / overwrite this primed value
+      // in test environments where the GET handler is a static mock; in
+      // production the server's GET would match this payload anyway.
+      if (updatedGroup) {
+        queryClient.setQueryData(['group', id], updatedGroup);
+      }
       showToast(t('groups.toast.updated'));
       navigate('/settings?tab=users');
     },

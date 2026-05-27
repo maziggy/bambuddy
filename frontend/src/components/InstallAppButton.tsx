@@ -2,51 +2,48 @@ import { useState, useEffect } from 'react';
 import { Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../contexts/ToastContext';
-
-// The beforeinstallprompt event is not in the standard TS DOM lib.
-interface BeforeInstallPromptEvent extends Event {
-  readonly platforms: string[];
-  prompt: () => Promise<void>;
-  readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
-}
-
-// Matches the compact-sidebar breakpoint in useIsSidebarCompact.ts
-const SIDEBAR_COMPACT_BREAKPOINT = 1144;
+import { type BeforeInstallPromptEvent, getPendingPrompt, clearPendingPrompt } from '../pwa';
 
 /**
  * Sidebar-footer button that installs Bambuddy as a PWA.
  *
- * On desktop (>= 1144px) this button is always visible in the sidebar, so we
- * suppress Chrome's mini-infobar and use this as the single install entry point.
+ * On desktop (>= 1144 px) the button is always visible in the sidebar, so
+ * pwa.ts suppresses Chrome's mini-infobar and this button is the sole install
+ * trigger.
  *
- * On mobile (< 1144px) the button is buried inside the hamburger drawer, so we
- * do NOT suppress the mini-infobar — Chrome's native install UI fires automatically
- * and the drawer button remains available as a secondary path.
+ * On mobile (< 1144 px) pwa.ts does NOT call e.preventDefault(), so Chrome's
+ * native mini-infobar fires automatically.  The button remains available inside
+ * the hamburger drawer as a secondary path.
  *
- * Renders nothing when there is no pending prompt (already installed, unsupported
- * browser, or iOS Safari which has no programmatic install API).
+ * The event is captured in pwa.ts (imported before React mounts) to avoid
+ * losing it during the auth-loading phase when this component hasn't mounted yet.
+ *
+ * Renders nothing when there is no pending prompt (already installed,
+ * unsupported browser, or iOS Safari which has no programmatic install API).
  */
 export function InstallAppButton() {
   const { t } = useTranslation();
   const { showToast } = useToast();
-  const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
+
+  // Lazy initialiser: pick up any prompt that fired before this component mounted.
+  const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(
+    () => getPendingPrompt(),
+  );
 
   useEffect(() => {
-    const onBeforeInstallPrompt = (e: Event) => {
-      // On desktop the sidebar button is always visible, so suppress the
-      // mini-infobar and use it as the sole install trigger.
-      // On mobile the button is hidden inside the drawer, so let Chrome's
-      // native install UI (mini-infobar / rich dialog) appear automatically.
-      if (window.innerWidth >= SIDEBAR_COMPACT_BREAKPOINT) {
-        e.preventDefault();
-      }
-      setPromptEvent(e as BeforeInstallPromptEvent);
+    // Listen for future events (Chrome re-fires beforeinstallprompt after the
+    // PWA is uninstalled; pwa.ts recaptures and relays it as a custom event).
+    const onPrompt = (e: Event) => {
+      setPromptEvent((e as CustomEvent<BeforeInstallPromptEvent>).detail);
     };
-    const onInstalled = () => setPromptEvent(null);
-    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    const onInstalled = () => {
+      setPromptEvent(null);
+      clearPendingPrompt();
+    };
+    window.addEventListener('bambuddy:installprompt', onPrompt);
     window.addEventListener('appinstalled', onInstalled);
     return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('bambuddy:installprompt', onPrompt);
       window.removeEventListener('appinstalled', onInstalled);
     };
   }, []);
@@ -58,9 +55,9 @@ export function InstallAppButton() {
   const handleInstall = async () => {
     await promptEvent.prompt();
     const { outcome } = await promptEvent.userChoice;
-    // A captured prompt can only be used once; drop it either way so the
-    // button hides until the browser fires a fresh beforeinstallprompt.
+    // A captured prompt can only be used once; clear it either way.
     setPromptEvent(null);
+    clearPendingPrompt();
     if (outcome === 'accepted') {
       showToast(t('nav.installAppSuccess'), 'success');
     }

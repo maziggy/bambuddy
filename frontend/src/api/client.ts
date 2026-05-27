@@ -2812,6 +2812,8 @@ export const api = {
     }),
   recalculateCosts: () =>
     request<{ message: string; updated: number }>('/archives/recalculate-costs', { method: 'POST' }),
+  deduplicateArchives: () =>
+    request<{ deleted: number; errors: { id: number; error: string }[] }>('/archives/deduplicate', { method: 'POST' }),
   getFailureAnalysis: (options?: { days?: number; dateFrom?: string; dateTo?: string; printerId?: number; projectId?: number; createdById?: number }) => {
     const params = new URLSearchParams();
     if (options?.days) params.set('days', String(options.days));

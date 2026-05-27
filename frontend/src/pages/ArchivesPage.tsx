@@ -78,6 +78,7 @@ import { TimelapseViewer } from '../components/TimelapseViewer';
 import { CompareArchivesModal } from '../components/CompareArchivesModal';
 import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 import { TagManagementModal } from '../components/TagManagementModal';
+import { DeduplicateModal } from '../components/DeduplicateModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatFileSize } from '../utils/file';
@@ -2396,6 +2397,7 @@ export function ArchivesPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showTagManagement, setShowTagManagement] = useState(false);
+  const [showDeduplicateModal, setShowDeduplicateModal] = useState(false);
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
   const [pendingNavigationArchiveId, setPendingNavigationArchiveId] = useState<number | null>(null);
 
@@ -3217,6 +3219,14 @@ export function ArchivesPage() {
               <Copy className="w-4 h-4" />
               <span className="text-sm hidden md:inline">{t('archives.hideDuplicates')}</span>
             </button>
+            <button
+              onClick={() => setShowDeduplicateModal(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors flex-shrink-0 bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white"
+              title="Remove Duplicates"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="text-sm hidden md:inline">Remove Duplicates</span>
+            </button>
             {uniqueTags.length > 0 && (
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Tag className="w-4 h-4 text-bambu-gray hidden md:block" />
@@ -3682,6 +3692,14 @@ export function ArchivesPage() {
       {/* Tag Management Modal */}
       {showTagManagement && (
         <TagManagementModal onClose={() => setShowTagManagement(false)} />
+      )}
+
+      {/* Deduplicate Modal */}
+      {showDeduplicateModal && (
+        <DeduplicateModal
+          archives={archives ?? []}
+          onClose={() => setShowDeduplicateModal(false)}
+        />
       )}
 
       {/* Clear Log Confirmation */}

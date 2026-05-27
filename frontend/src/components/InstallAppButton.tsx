@@ -97,7 +97,9 @@ export function InstallAppButton() {
       // Manual fallback: Chrome is in cooldown or hasn't offered the prompt yet.
       // Guide the user to the browser's own install path.
       showToast(
-        t('nav.installAppManual', { defaultValue: 'Tap the ⋮ menu → "Add to Home Screen" to install' }),
+        t('nav.installAppManual', {
+          defaultValue: 'Tap the ⋮ menu → "Install app" or "Add to Home Screen" to install',
+        }),
         'info',
       );
     }

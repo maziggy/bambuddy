@@ -1,0 +1,49 @@
+# docker-compose.override.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy this file to docker-compose.override.yml on your SERVER (not in git).
+# Docker Compose automatically merges it with docker-compose.yml, so you
+# don't need to modify the main file at all.
+#
+# What it does:
+#   • Points bambuddy at YOUR fork's image on ghcr.io instead of upstream's
+#   • Adds Watchtower, which polls ghcr.io and auto-restarts the container
+#     whenever a new image is published (after the weekly GitHub Actions build)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  bambuddy:
+    # Pull from your fork's registry instead of maziggy's.
+    # Make the package public in GitHub → your profile → Packages → bambuddy
+    # → Package settings → "Change visibility" → Public.
+    # If you keep it private, run once on the server first:
+    #   echo <YOUR_PAT> | docker login ghcr.io -u soopahfly --password-stdin
+    # (PAT needs read:packages scope)
+    image: ghcr.io/soopahfly/bambuddy:latest
+
+  # ── Watchtower ──────────────────────────────────────────────────────────────
+  # Checks ghcr.io every hour for a new image digest.  When it finds one it
+  # pulls it and performs a rolling restart of the bambuddy container with
+  # zero manual intervention.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # If bambuddy's image is private, give Watchtower the same credentials:
+      # - $HOME/.docker/config.json:/config.json
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=3600          # check every hour (seconds)
+      - WATCHTOWER_CLEANUP=true                # remove old image layers after update
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - WATCHTOWER_NOTIFICATIONS=email         # optional – remove if you don't want emails
+      # Uncomment and fill in to get an email when Watchtower updates the container:
+      #- WATCHTOWER_NOTIFICATION_EMAIL_FROM=watchtower@yourdomain.com
+      #- WATCHTOWER_NOTIFICATION_EMAIL_TO=you@yourdomain.com
+      #- WATCHTOWER_NOTIFICATION_EMAIL_SERVER=smtp.yourdomain.com
+      #- WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PORT=587
+      #- WATCHTOWER_NOTIFICATION_EMAIL_SERVER_USER=user
+      #- WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PASSWORD=password
+    # Only watch the bambuddy container, leave everything else alone
+    command: bambuddy

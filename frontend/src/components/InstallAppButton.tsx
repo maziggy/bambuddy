@@ -29,6 +29,9 @@ function isAndroidChrome(): boolean {
   );
 }
 
+// Matches the compact-sidebar breakpoint in useIsSidebarCompact.ts
+const SIDEBAR_COMPACT_BREAKPOINT = 1144;
+
 /**
  * Sidebar-footer button that installs Bambuddy as a PWA.
  *
@@ -48,6 +51,15 @@ function isAndroidChrome(): boolean {
  *
  * Returns null when already running as installed PWA, or on browsers / platforms
  * that have no install path (iOS Safari, Firefox, desktop without a prompt).
+ * On desktop (>= 1144px) this button is always visible in the sidebar, so we
+ * suppress Chrome's mini-infobar and use this as the single install entry point.
+ *
+ * On mobile (< 1144px) the button is buried inside the hamburger drawer, so we
+ * do NOT suppress the mini-infobar — Chrome's native install UI fires automatically
+ * and the drawer button remains available as a secondary path.
+ *
+ * Renders nothing when there is no pending prompt (already installed, unsupported
+ * browser, or iOS Safari which has no programmatic install API).
  */
 export function InstallAppButton() {
   const { t } = useTranslation();

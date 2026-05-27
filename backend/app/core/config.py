@@ -6,7 +6,8 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
-APP_VERSION = "0.2.5b1"
+# FORK_VERSION_SUFFIX is baked in at Docker build time (e.g. "-soopahfly")
+APP_VERSION = "0.2.5b1" + os.getenv("FORK_VERSION_SUFFIX", "")
 GITHUB_REPO = "maziggy/bambuddy"
 BUG_REPORT_RELAY_URL = os.environ.get("BUG_REPORT_RELAY_URL", "https://bambuddy.cool/api/bug-report")
 

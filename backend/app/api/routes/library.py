@@ -64,6 +64,7 @@ from backend.app.schemas.library import (
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
 from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
 from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
@@ -1577,6 +1578,11 @@ async def upload_file(
             raise HTTPException(status_code=400, detail="Filename is required")
 
         filename = file.filename
+        # Reject FAT32/exFAT-incompatible filenames up front (#1540).
+        try:
+            validate_print_filename(filename)
+        except InvalidFilenameError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
         ext = os.path.splitext(filename)[1].lower()
         # Handle files without extension
         file_type = ext[1:] if ext else "unknown"
@@ -3830,6 +3836,15 @@ async def print_library_file(
             detail="Not a sliced file. Only .gcode or .gcode.3mf files can be printed.",
         )
 
+    # Filenames containing FAT32/exFAT-illegal characters would 553 at
+    # FTP upload time (#1540). Older rows may pre-date the rename-time
+    # validation, so reject the print attempt with an actionable message
+    # rather than silently renaming user data.
+    try:
+        validate_print_filename(lib_file.filename)
+    except InvalidFilenameError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     # Get the full file path
     file_path = Path(app_settings.base_dir) / lib_file.file_path
 
@@ -4007,9 +4022,13 @@ async def update_file(
             raise HTTPException(status_code=403, detail="You can only update your own files")
 
     if data.filename is not None:
-        # Validate filename doesn't contain path separators
-        if "/" in data.filename or "\\" in data.filename:
-            raise HTTPException(status_code=400, detail="Filename cannot contain path separators")
+        # Bambu printer SD cards are FAT32/exFAT; reject the same set Bambu
+        # Studio refuses on save so we fail here with a clear message
+        # instead of an obscure FTP 553 at print time (#1540).
+        try:
+            validate_print_filename(data.filename)
+        except InvalidFilenameError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
         file.filename = data.filename
         # No print_name to keep in sync — library files display by filename,
         # and _without_print_name strips the embedded 3MF Title on import (#1489).

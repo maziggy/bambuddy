@@ -3093,6 +3093,7 @@ export default {
     folderNamePlaceholder: 'es., Parti funzionali',
     renameFile: 'Rinomina file',
     renameFolder: 'Rinomina cartella',
+    invalidFilenameChar: 'Il carattere "{{char}}" non è consentito nei nomi dei file di stampa. La scheda SD della stampante rifiuta: < > : " / \\ | ? *',
     moveFiles: 'Sposta {{count}} file',
     rootNoFolder: 'Root (nessuna cartella)',
     current: 'corrente',

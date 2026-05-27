@@ -3108,6 +3108,7 @@ export default {
     folderNamePlaceholder: 'e.g., Functional Parts',
     renameFile: 'Rename File',
     renameFolder: 'Rename Folder',
+    invalidFilenameChar: 'The character "{{char}}" is not allowed in print filenames. The printer SD card rejects: < > : " / \\ | ? *',
     moveFiles: 'Move {{count}} File(s)',
     rootNoFolder: 'Root (No Folder)',
     current: 'current',

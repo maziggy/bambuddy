@@ -3093,6 +3093,7 @@ export default {
     folderNamePlaceholder: 'ex.: Peças Funcionais',
     renameFile: 'Renomear Arquivo',
     renameFolder: 'Renomear Pasta',
+    invalidFilenameChar: 'O caractere "{{char}}" não é permitido em nomes de arquivos de impressão. O cartão SD da impressora rejeita: < > : " / \\ | ? *',
     moveFiles: 'Mover {{count}} Arquivo(s)',
     rootNoFolder: 'Raiz (Sem Pasta)',
     current: 'Atual',

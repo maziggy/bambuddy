@@ -3093,6 +3093,7 @@ export default {
     folderNamePlaceholder: '例如：功能零件',
     renameFile: '重命名文件',
     renameFolder: '重命名文件夹',
+    invalidFilenameChar: '打印文件名中不允许使用字符 "{{char}}"。打印机 SD 卡拒绝以下字符: < > : " / \\ | ? *',
     moveFiles: '移动 {{count}} 个文件',
     rootNoFolder: '根目录（无文件夹）',
     current: '当前',

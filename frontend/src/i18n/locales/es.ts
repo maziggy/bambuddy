@@ -3076,6 +3076,7 @@ export default {
     folderNamePlaceholder: 'p. ej., Piezas funcionales',
     renameFile: 'Renombrar archivo',
     renameFolder: 'Renombrar carpeta',
+    invalidFilenameChar: 'El carácter "{{char}}" no está permitido en nombres de archivos de impresión. La tarjeta SD de la impresora rechaza: < > : " / \\ | ? *',
     moveFiles: 'Mover {{count}} archivo(s)',
     rootNoFolder: 'Raíz (sin carpeta)',
     current: 'actual',

@@ -3105,6 +3105,7 @@ export default {
     folderNamePlaceholder: '例: 機能パーツ',
     renameFile: 'ファイル名を変更',
     renameFolder: 'フォルダ名を変更',
+    invalidFilenameChar: '印刷ファイル名に "{{char}}" は使用できません。プリンターのSDカードは次の文字を拒否します: < > : " / \\ | ? *',
     moveFiles: '{{count}}件のファイルを移動',
     rootNoFolder: 'ルート（フォルダなし）',
     current: '（現在）',

@@ -3094,6 +3094,7 @@ export default {
     folderNamePlaceholder: 'ex: Pièces Utiles',
     renameFile: 'Renommer fichier',
     renameFolder: 'Renommer dossier',
+    invalidFilenameChar: 'Le caractère "{{char}}" n\'est pas autorisé dans les noms de fichier d\'impression. La carte SD de l\'imprimante refuse : < > : " / \\ | ? *',
     moveFiles: 'Déplacer {{count}} fichier(s)',
     rootNoFolder: 'Racine (aucun dossier)',
     current: 'actuel',

@@ -220,6 +220,18 @@ function ExternalFolderModal({ onClose, onSave, isLoading, t }: ExternalFolderMo
   );
 }
 
+// FAT32/exFAT-illegal chars rejected by Bambu Studio (#1540). Mirrors the
+// backend validator in backend/app/utils/filename.py — keep in sync.
+const INVALID_FILENAME_CHARS = '<>:"/\\|?*';
+
+function findInvalidFilenameChar(name: string): string | null {
+  for (const ch of name) {
+    if (INVALID_FILENAME_CHARS.includes(ch)) return ch;
+    if (ch.charCodeAt(0) < 0x20) return ch;
+  }
+  return null;
+}
+
 // Rename Modal
 interface RenameModalProps {
   type: 'file' | 'folder';
@@ -237,8 +249,14 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
   const baseName = type === 'file' && fileExtension ? currentName.slice(0, -fileExtension.length) : currentName;
   const [name, setName] = useState(baseName);
 
+  const invalidChar = type === 'file' ? findInvalidFilenameChar(name) : null;
+  const filenameError = invalidChar
+    ? t('fileManager.invalidFilenameChar', { char: invalidChar })
+    : null;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (filenameError) return;
     const fullName = type === 'file' ? name.trim() + fileExtension : name.trim();
     if (name.trim() && fullName !== currentName) {
       onSave(fullName);
@@ -256,7 +274,7 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
             <label className="block text-sm font-medium text-white mb-1">
               {t('common.name')}
             </label>
-            <div className="flex items-center bg-bambu-dark border border-bambu-dark-tertiary rounded focus-within:border-bambu-green">
+            <div className={`flex items-center bg-bambu-dark border rounded focus-within:border-bambu-green ${filenameError ? 'border-red-500' : 'border-bambu-dark-tertiary'}`}>
               <input
                 type="text"
                 value={name}
@@ -269,12 +287,15 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
                 <span className="pr-3 text-bambu-gray text-sm select-none whitespace-nowrap">{fileExtension}</span>
               )}
             </div>
+            {filenameError && (
+              <p className="mt-1 text-xs text-red-400">{filenameError}</p>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={!name.trim() || name.trim() === baseName || isLoading}>
+            <Button type="submit" disabled={!name.trim() || name.trim() === baseName || !!filenameError || isLoading}>
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.rename')}
             </Button>
           </div>

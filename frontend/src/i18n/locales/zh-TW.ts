@@ -3093,6 +3093,7 @@ export default {
     folderNamePlaceholder: '例如：功能零件',
     renameFile: '重新命名檔案',
     renameFolder: '重新命名資料夾',
+    invalidFilenameChar: '列印檔案名稱中不允許使用字元 "{{char}}"。印表機 SD 卡拒絕以下字元: < > : " / \\ | ? *',
     moveFiles: '移動 {{count}} 個檔案',
     rootNoFolder: '根目錄（無資料夾）',
     current: '目前',

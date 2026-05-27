@@ -4641,6 +4641,7 @@ async def security_headers_middleware(request, call_next):
             "media-src 'self' blob:; "
             "connect-src 'self' ws: wss:; "
             "font-src 'self' data:; "
+            "worker-src 'self'; "
             "object-src 'none'; "
             "base-uri 'self'; "
             "frame-src 'self' http: https:; "
@@ -4655,6 +4656,12 @@ async def security_headers_middleware(request, call_next):
             "media-src 'self' blob:; "
             "connect-src 'self' ws: wss:; "
             "font-src 'self' data:; "
+            # Explicit worker-src so Chrome's PWA installability check does not
+            # have to infer service-worker permission via the default-src fallback
+            # chain.  Chrome 128+ verifies that a same-origin SW can be created;
+            # without this directive some Chrome builds treat the absence of
+            # worker-src as ambiguous and refuse to offer installation.
+            "worker-src 'self'; "
             "object-src 'none'; "
             "base-uri 'self'; "
             "frame-src 'self' http: https:; "
@@ -4885,7 +4892,11 @@ async def serve_manifest():
     """Serve PWA manifest."""
     manifest_file = app_settings.static_dir / "manifest.json"
     if manifest_file.exists():
-        return FileResponse(manifest_file, media_type="application/manifest+json")
+        return FileResponse(
+            manifest_file,
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return {"error": "Manifest not found"}
 
 
@@ -4911,7 +4922,11 @@ async def serve_sw_register():
     """
     reg_file = app_settings.static_dir / "sw-register.js"
     if reg_file.exists():
-        return FileResponse(reg_file, media_type="application/javascript")
+        return FileResponse(
+            reg_file,
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return {"error": "sw-register.js not found"}
 
 

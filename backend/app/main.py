@@ -5320,6 +5320,7 @@ async def security_headers_middleware(request, call_next):
             "media-src 'self' blob:; "
             "connect-src 'self' ws: wss:; "
             "font-src 'self' data:; "
+            "worker-src 'self'; "
             "object-src 'none'; "
             "base-uri 'self'; "
             "frame-src 'self' http: https:; " + _frame_ancestors("'self'")
@@ -5348,6 +5349,12 @@ async def security_headers_middleware(request, call_next):
             "media-src 'self' blob:; "
             "connect-src 'self' ws: wss:; "
             "font-src 'self' data:; "
+            # Explicit worker-src so Chrome's PWA installability check does not
+            # have to infer service-worker permission via the default-src fallback
+            # chain.  Chrome 128+ verifies that a same-origin SW can be created;
+            # without this directive some Chrome builds treat the absence of
+            # worker-src as ambiguous and refuse to offer installation.
+            "worker-src 'self'; "
             "object-src 'none'; "
             "base-uri 'self'; "
             "frame-src 'self' http: https:; " + _frame_ancestors("'none'")

@@ -90,7 +90,7 @@ export const DEFAULT_SCHEDULE_OPTIONS: ScheduleOptions = {
   requirePreviousSuccess: false,
   autoOffAfter: false,
   gcodeInjection: false,
-  scriptProcessing: false,
+  scriptProcessing: true,
   staggerEnabled: false,
   staggerGroupSize: 2,
   staggerIntervalMinutes: 5,

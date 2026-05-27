@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Calendar, Code, Layers, Loader2, Pencil, Printer, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Calendar, Code, Layers, Loader2, Pencil, Printer, Terminal, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
@@ -1163,6 +1163,23 @@ export function PrintModal({
                 <label htmlFor="gcodeInjectionReprint" className="text-sm flex items-center gap-1 text-bambu-gray">
                   <Code className="w-3.5 h-3.5" />
                   {t('printModal.gcodeInjection', 'Inject auto-print G-code')}
+                </label>
+              </div>
+            )}
+
+            {/* Post-processor for reprint mode */}
+            {mode === 'reprint' && !!settings?.post_process_script && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="scriptProcessingReprint"
+                  checked={scheduleOptions.scriptProcessing}
+                  onChange={(e) => setScheduleOptions({ ...scheduleOptions, scriptProcessing: e.target.checked })}
+                  className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+                />
+                <label htmlFor="scriptProcessingReprint" className="text-sm flex items-center gap-1 text-bambu-gray">
+                  <Terminal className="w-3.5 h-3.5" />
+                  {t('printModal.scriptProcessing', 'Run farm post-processor')}
                 </label>
               </div>
             )}

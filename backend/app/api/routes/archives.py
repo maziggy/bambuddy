@@ -1316,6 +1316,45 @@ async def backfill_content_hashes(
     return {"updated": updated, "errors": errors}
 
 
+@router.post("/deduplicate")
+async def deduplicate_archives(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_ALL),
+):
+    """Delete duplicate archives, keeping the earliest (lowest id) per content hash."""
+    # Find all content_hash values that appear more than once
+    dup_query = (
+        select(PrintArchive.content_hash)
+        .where(PrintArchive.content_hash.is_not(None))
+        .group_by(PrintArchive.content_hash)
+        .having(func.count(PrintArchive.id) > 1)
+    )
+    dup_result = await db.execute(dup_query)
+    duplicate_hashes = [row[0] for row in dup_result.all()]
+
+    deleted = 0
+    errors = []
+
+    service = ArchiveService(db)
+    for content_hash in duplicate_hashes:
+        archives_result = await db.execute(
+            select(PrintArchive)
+            .where(PrintArchive.content_hash == content_hash)
+            .order_by(PrintArchive.id.asc())
+        )
+        archives = list(archives_result.scalars().all())
+        # Keep the first (earliest id), delete the rest
+        for archive in archives[1:]:
+            try:
+                await service.delete_archive(archive.id)
+                deleted += 1
+            except Exception as e:
+                logger.exception("Failed to delete duplicate archive %s: %s", archive.id, e)
+                errors.append({"id": archive.id, "error": str(e)})
+
+    return {"deleted": deleted, "errors": errors}
+
+
 @router.delete("/{archive_id}")
 async def delete_archive(
     archive_id: int,

@@ -5,21 +5,49 @@ import { useToast } from '../contexts/ToastContext';
 import { type BeforeInstallPromptEvent, getPendingPrompt, clearPendingPrompt } from '../pwa';
 
 /**
+ * Returns true when running inside a browser (not a PWA standalone window).
+ * Used to hide the button once the user has installed and reopened as a PWA.
+ */
+function isInStandaloneMode(): boolean {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    // Safari/iOS sets this property instead
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+}
+
+/**
+ * Returns true on stock Android Chrome (not Edge, Opera, Samsung Browser).
+ * These browsers all fire beforeinstallprompt and support programmatic install.
+ */
+function isAndroidChrome(): boolean {
+  const ua = navigator.userAgent;
+  return (
+    /Android/.test(ua) &&
+    /Chrome\//.test(ua) &&
+    !/EdgA|OPR\/|SamsungBrowser/.test(ua)
+  );
+}
+
+/**
  * Sidebar-footer button that installs Bambuddy as a PWA.
  *
- * On desktop (>= 1144 px) the button is always visible in the sidebar, so
- * pwa.ts suppresses Chrome's mini-infobar and this button is the sole install
- * trigger.
+ * Two modes:
  *
- * On mobile (< 1144 px) pwa.ts does NOT call e.preventDefault(), so Chrome's
- * native mini-infobar fires automatically.  The button remains available inside
- * the hamburger drawer as a secondary path.
+ * 1. **Native prompt** — when Chrome has fired `beforeinstallprompt` (captured
+ *    early in pwa.ts before React mounts), clicking triggers the browser's
+ *    native install dialog directly.
  *
- * The event is captured in pwa.ts (imported before React mounts) to avoid
- * losing it during the auth-loading phase when this component hasn't mounted yet.
+ * 2. **Manual fallback** — when Chrome hasn't fired the event (e.g. a per-site
+ *    cooldown from previous e.preventDefault() calls), the button is still shown
+ *    on Android Chrome so the user gets an actionable hint.  Clicking shows a
+ *    toast: "Tap ⋮ → Add to Home Screen".
  *
- * Renders nothing when there is no pending prompt (already installed,
- * unsupported browser, or iOS Safari which has no programmatic install API).
+ * On desktop (>= 1144 px) pwa.ts calls e.preventDefault() so only the sidebar
+ * button triggers install (never the mini-infobar).
+ *
+ * Returns null when already running as installed PWA, or on browsers / platforms
+ * that have no install path (iOS Safari, Firefox, desktop without a prompt).
  */
 export function InstallAppButton() {
   const { t } = useTranslation();
@@ -31,8 +59,7 @@ export function InstallAppButton() {
   );
 
   useEffect(() => {
-    // Listen for future events (Chrome re-fires beforeinstallprompt after the
-    // PWA is uninstalled; pwa.ts recaptures and relays it as a custom event).
+    // Listen for future events (Chrome re-fires after uninstall; pwa.ts relays it).
     const onPrompt = (e: Event) => {
       setPromptEvent((e as CustomEvent<BeforeInstallPromptEvent>).detail);
     };
@@ -48,18 +75,31 @@ export function InstallAppButton() {
     };
   }, []);
 
-  if (!promptEvent) {
-    return null;
-  }
+  // Never show the button once the app is running as an installed PWA.
+  if (isInStandaloneMode()) return null;
+
+  // If we have the native prompt, we can show the button on any platform.
+  // If not, only show the manual-fallback button on Android Chrome — it's the
+  // only mobile browser where we know "Add to Home Screen" is in the ⋮ menu.
+  if (!promptEvent && !isAndroidChrome()) return null;
 
   const handleInstall = async () => {
-    await promptEvent.prompt();
-    const { outcome } = await promptEvent.userChoice;
-    // A captured prompt can only be used once; clear it either way.
-    setPromptEvent(null);
-    clearPendingPrompt();
-    if (outcome === 'accepted') {
-      showToast(t('nav.installAppSuccess'), 'success');
+    if (promptEvent) {
+      // Native flow: Chrome shows its own install dialog.
+      await promptEvent.prompt();
+      const { outcome } = await promptEvent.userChoice;
+      setPromptEvent(null);
+      clearPendingPrompt();
+      if (outcome === 'accepted') {
+        showToast(t('nav.installAppSuccess'), 'success');
+      }
+    } else {
+      // Manual fallback: Chrome is in cooldown or hasn't offered the prompt yet.
+      // Guide the user to the browser's own install path.
+      showToast(
+        t('nav.installAppManual', { defaultValue: 'Tap the ⋮ menu → "Add to Home Screen" to install' }),
+        'info',
+      );
     }
   };
 

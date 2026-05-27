@@ -2,6 +2,7 @@ import asyncio
 import logging
 import mimetypes as _mimetypes
 import posixpath
+import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -4608,6 +4609,14 @@ PUBLIC_API_PATTERNS = [
 @app.middleware("http")
 async def security_headers_middleware(request, call_next):
     """Add standard HTTP security headers to every response."""
+    # Per-request nonce stamped into `script-src` (#1460). Cloudflare's
+    # bot-detection script is injected inline into every HTML response with a
+    # hash that rotates per request, so it can't be allowlisted by hash and
+    # violates a strict `script-src 'self'`. When CF sees a nonce in our CSP
+    # header it clones that nonce onto its injected <script>, so the inline
+    # script passes the policy without us needing 'unsafe-inline'.
+    # See: https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/#if-you-have-a-content-security-policy-csp
+    csp_nonce = secrets.token_urlsafe(16)
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
@@ -4619,18 +4628,19 @@ async def security_headers_middleware(request, call_next):
     #   - img-src data: / blob:: base64 thumbnails and Blob-URL timelapse previews.
     #   - media-src blob:: timelapse video player uses Blob URLs.
     #   - font-src data:: some icon fonts are embedded as data URIs.
+    #   - Inter font is self-hosted under /fonts/; no CDN references needed.
     if request.url.path.startswith("/gcode-viewer"):
         # The gcode viewer is embedded in an iframe served by this same origin,
         # so frame-ancestors must allow 'self'.  prettygcode.js also uses eval()
         # internally, so script-src needs 'unsafe-eval'.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-eval'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            f"script-src 'self' 'nonce-{csp_nonce}' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "media-src 'self' blob:; "
             "connect-src 'self' ws: wss:; "
-            "font-src 'self' data: https://fonts.gstatic.com; "
+            "font-src 'self' data:; "
             "object-src 'none'; "
             "base-uri 'self'; "
             "frame-src 'self' http: https:; "
@@ -4639,12 +4649,12 @@ async def security_headers_middleware(request, call_next):
     else:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            f"script-src 'self' 'nonce-{csp_nonce}'; "
+            "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "media-src 'self' blob:; "
             "connect-src 'self' ws: wss:; "
-            "font-src 'self' data: https://fonts.gstatic.com; "
+            "font-src 'self' data:; "
             "object-src 'none'; "
             "base-uri 'self'; "
             "frame-src 'self' http: https:; "
@@ -4870,7 +4880,7 @@ async def health_check():
     return {"status": "healthy"}
 
 
-@app.get("/manifest.json")
+@app.api_route("/manifest.json", methods=["GET", "HEAD"])
 async def serve_manifest():
     """Serve PWA manifest."""
     manifest_file = app_settings.static_dir / "manifest.json"
@@ -4879,7 +4889,7 @@ async def serve_manifest():
     return {"error": "Manifest not found"}
 
 
-@app.get("/sw.js")
+@app.api_route("/sw.js", methods=["GET", "HEAD"])
 async def serve_service_worker():
     """Serve service worker."""
     sw_file = app_settings.static_dir / "sw.js"
@@ -4892,7 +4902,7 @@ async def serve_service_worker():
     return {"error": "Service worker not found"}
 
 
-@app.get("/sw-register.js")
+@app.api_route("/sw-register.js", methods=["GET", "HEAD"])
 async def serve_sw_register():
     """Serve the service-worker registration bootstrap script.
 

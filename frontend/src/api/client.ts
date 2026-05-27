@@ -292,6 +292,11 @@ export interface Printer {
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   created_at: string;
   updated_at: string;
+  // Enclosure sensor integration (Home Assistant)
+  enclosed: boolean;
+  ha_temp_entity: string | null;
+  ha_humidity_entity: string | null;
+  ha_fan_entity: string | null;
 }
 
 export interface HMSError {
@@ -410,6 +415,11 @@ export interface PrinterStatus {
     chamber?: number;
     chamber_target?: number;
     chamber_heating?: boolean;  // Actual heater state from MQTT
+    // Home Assistant enclosure sensor readings
+    enclosure_temp_unit?: string;   // Unit from HA sensor (°C or °F)
+    enclosure_humidity?: number;    // Enclosure RH% from HA sensor
+    enclosure_humidity_unit?: string;
+    enclosure_fan_on?: boolean;     // HA fan entity state
   } | null;
   cover_url: string | null;
   hms_errors: HMSError[];
@@ -490,6 +500,11 @@ export interface PrinterCreate {
   camera_rotation?: number;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
+  // Enclosure sensor integration (Home Assistant)
+  enclosed?: boolean;
+  ha_temp_entity?: string | null;
+  ha_humidity_entity?: string | null;
+  ha_fan_entity?: string | null;
 }
 
 // Plate Detection
@@ -5854,6 +5869,14 @@ export const api = {
     request<{ success: boolean }>(`/local-presets/${id}`, { method: 'DELETE' }),
   refreshBaseProfileCache: () =>
     request<{ refreshed: number; failed: number; total: number }>('/local-presets/base-cache/refresh', { method: 'POST' }),
+
+  // ── Enclosure temp/humidity history ──────────────────────────────────────
+  getEnclosureHistory: (printerId: number, hours = 24) =>
+    request<EnclosureHistoryResponse>(`/enclosure/${printerId}/history?hours=${hours}`),
+
+  // ── Enclosure fan run history ─────────────────────────────────────────────
+  getEnclosureFanHistory: (printerId: number, hours = 24) =>
+    request<EnclosureFanHistoryResponse>(`/enclosure-fan/${printerId}/history?hours=${hours}`),
 };
 
 // AMS History types
@@ -6823,3 +6846,36 @@ export const bugReportApi = {
       method: 'POST',
     }),
 };
+
+// ── Enclosure sensor types ─────────────────────────────────────────────────
+
+export interface EnclosureReadingPoint {
+  recorded_at: string;
+  temp: number | null;
+  humidity: number | null;
+}
+
+export interface EnclosureHistoryResponse {
+  printer_id: number;
+  readings: EnclosureReadingPoint[];
+  current_temp: number | null;
+  current_humidity: number | null;
+  temp_unit: string;
+  humidity_unit: string;
+}
+
+export interface FanRunPoint {
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number | null;
+}
+
+export interface EnclosureFanHistoryResponse {
+  printer_id: number;
+  runs: FanRunPoint[];
+  total_runtime_seconds: number;
+  run_count: number;
+  avg_duration_seconds: number | null;
+  longest_run_seconds: number | null;
+  is_on: boolean | null;
+}

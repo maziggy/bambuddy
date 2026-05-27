@@ -18,6 +18,11 @@ FROM python:3.13-slim-trixie
 
 WORKDIR /app
 
+# Fork version suffix - passed as a build arg by the CI workflow and baked
+# into the image so the app reports e.g. "0.2.5b1-soopahfly" at runtime.
+ARG FORK_VERSION_SUFFIX=""
+ENV FORK_VERSION_SUFFIX=${FORK_VERSION_SUFFIX}
+
 # Install system dependencies
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \

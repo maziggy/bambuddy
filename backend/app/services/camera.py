@@ -1,7 +1,7 @@
 """Camera capture service for Bambu Lab printers.
 
 Supports two camera protocols:
-- RTSP: Used by X1, X1C, X1E, H2C, H2D, H2DPRO, H2S, P2S (port 322)
+- RTSP: Used by X1, X1C, X1E, X2D, H2C, H2D, H2DPRO, H2S, P2S (port 322)
 - Chamber Image: Used by A1, A1MINI, P1P, P1S (port 6000, custom binary protocol)
 """
 
@@ -11,6 +11,7 @@ import os
 import shutil
 import ssl
 import struct
+import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,13 @@ JPEG_END = b"\xff\xd9"
 
 # Cache the ffmpeg path after first lookup
 _ffmpeg_path: str | None = None
+
+# Cached result of rtsp_socket_timeout_flag(); see that function for context.
+_rtsp_socket_timeout_flag: str | None = None
+
+# Track PIDs of ffmpeg processes spawned for one-shot frame capture (snapshot).
+# The cleanup task in routes/camera.py checks this set to avoid killing active captures.
+_active_capture_pids: set[int] = set()
 
 
 def get_ffmpeg_path() -> str | None:
@@ -62,16 +70,80 @@ def get_ffmpeg_path() -> str | None:
     return ffmpeg_path
 
 
+def rtsp_socket_timeout_flag() -> str:
+    """Return the ffmpeg argv flag (without the leading dash) that sets the
+    RTSP demuxer's client-side TCP socket I/O timeout, in microseconds.
+
+    ffmpeg has shipped three different option arrangements for this over
+    time, and Bambuddy supports the full range:
+
+    - **Modern ffmpeg (5.x / 6.x / 7.x)** — Debian 13, Ubuntu 24.04, current
+      Homebrew, etc. ``-timeout`` is the socket I/O timeout (microseconds);
+      ``-stimeout`` was REMOVED.
+    - **Transitional ffmpeg (~late-4.x, some 5.x builds)** — Ubuntu 22.04's
+      shipped version is one of these. ``-timeout`` was deprecated and
+      *repurposed* to mean the RTSP listen-mode incoming-connection
+      timeout — and any non-zero value implies ``-listen``, which makes
+      ffmpeg bind the localhost proxy port and fail with EADDRINUSE
+      (#1504). ``-stimeout`` was the replacement socket I/O timeout in
+      that window.
+    - **Old ffmpeg (early 4.x and earlier)** — ``-timeout`` is socket I/O
+      timeout (the original meaning, before the deprecation churn).
+
+    We probe ``-h demuxer=rtsp`` once and cache: if ``-stimeout`` is
+    advertised, prefer it (covers the transitional window and stays
+    correct on the older builds that still accept it as an alias); else
+    fall back to ``-timeout`` (correct on modern and pre-deprecation
+    ffmpeg). The result is cached for the process lifetime — ffmpeg
+    isn't going to swap mid-run.
+
+    Returns the option name without the leading dash, e.g. ``"timeout"``
+    or ``"stimeout"``. Callers must prepend ``-`` themselves so a string
+    formatting bug can't pass an empty flag.
+    """
+    global _rtsp_socket_timeout_flag
+
+    if _rtsp_socket_timeout_flag is not None:
+        return _rtsp_socket_timeout_flag
+
+    ffmpeg = get_ffmpeg_path()
+    chosen = "timeout"  # safe default for modern ffmpeg
+    if ffmpeg:
+        try:
+            result = subprocess.run(
+                [ffmpeg, "-hide_banner", "-h", "demuxer=rtsp"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            help_text = (result.stdout or "") + (result.stderr or "")
+            # Help lines list each option as `-<name> ` (trailing space) — match
+            # that exact form so we don't accidentally hit a substring elsewhere.
+            if "-stimeout " in help_text:
+                chosen = "stimeout"
+        except (OSError, subprocess.SubprocessError) as exc:
+            # If probing fails, keep the modern-ffmpeg default. Worst case
+            # is the EADDRINUSE regression returns for transitional-ffmpeg
+            # users — same as before this function existed.
+            logger.warning("Could not probe ffmpeg RTSP timeout flag, defaulting to -timeout: %s", exc)
+
+    _rtsp_socket_timeout_flag = chosen
+    logger.info("RTSP socket I/O timeout flag: -%s", chosen)
+    return chosen
+
+
 def supports_rtsp(model: str | None) -> bool:
     """Check if printer model supports RTSP camera streaming.
 
-    RTSP supported: X1, X1C, X1E, H2C, H2D, H2DPRO, H2S, P2S
+    RTSP supported: X1, X1C, X1E, X2D, H2C, H2D, H2DPRO, H2S, P2S
     Chamber image only: A1, A1MINI, P1P, P1S
 
     Note: Model can be either display name (e.g., "P2S") or internal code (e.g., "N7").
     Internal codes from MQTT/SSDP:
       - BL-P001: X1/X1C
       - C13: X1E
+      - N6: X2D
       - O1D: H2D
       - O1C, O1C2: H2C
       - O1S: H2S
@@ -80,11 +152,11 @@ def supports_rtsp(model: str | None) -> bool:
     """
     if model:
         model_upper = model.upper()
-        # Display names: X1, X1C, X1E, H2C, H2D, H2DPRO, H2S, P2S
-        if model_upper.startswith(("X1", "H2", "P2")):
+        # Display names: X1, X1C, X1E, X2D, H2C, H2D, H2DPRO, H2S, P2S
+        if model_upper.startswith(("X1", "X2", "H2", "P2")):
             return True
         # Internal codes for RTSP models
-        if model_upper in ("BL-P001", "C13", "O1D", "O1C", "O1C2", "O1S", "O1E", "O2D", "N7"):
+        if model_upper in ("BL-P001", "C13", "N6", "O1D", "O1C", "O1C2", "O1S", "O1E", "O2D", "N7"):
             return True
     # A1/P1 and unknown models use chamber image protocol
     return False
@@ -93,7 +165,7 @@ def supports_rtsp(model: str | None) -> bool:
 def get_camera_port(model: str | None) -> int:
     """Get the camera port based on printer model.
 
-    X1/H2/P2 series use RTSP on port 322.
+    X1/X2/H2/P2 series use RTSP on port 322.
     A1/P1 series use chamber image protocol on port 6000.
     """
     if supports_rtsp(model):
@@ -157,6 +229,16 @@ async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "as
             proxy_url = f"rtsp://127.0.0.1:{_local_port[0]}".encode()
             real_url = f"rtsps://{target_host}:{target_port}".encode()
 
+            # Note on the broad except below: dst.write() raises RuntimeError
+            # under uvloop when the underlying handle has already been torn
+            # down (uvloop.loop.UVHandle._ensure_alive). asyncio's default
+            # selector loop reports the same situation as ConnectionResetError
+            # / OSError, so a tuple that doesn't include RuntimeError leaks the
+            # uvloop variant up to asyncio's unhandled-exception logger
+            # ("Unhandled exception in client_connected_cb"). The forwarders
+            # are intentionally fire-and-forget on tear-down — once either
+            # peer drops, both halves of the proxy should exit quietly.
+
             async def _fwd_to_server(src: asyncio.StreamReader, dst: asyncio.StreamWriter):
                 """Forward client→server, rewriting RTSP request-line URLs only."""
                 try:
@@ -167,7 +249,7 @@ async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "as
                         data = rewrite_rtsp_request_url(data, proxy_url, real_url)
                         dst.write(data)
                         await dst.drain()
-                except (ConnectionError, OSError, asyncio.CancelledError):
+                except (ConnectionError, OSError, asyncio.CancelledError, RuntimeError):
                     pass
                 finally:
                     if not dst.is_closing():
@@ -185,7 +267,7 @@ async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "as
                             break
                         dst.write(data)
                         await dst.drain()
-                except (ConnectionError, OSError, asyncio.CancelledError):
+                except (ConnectionError, OSError, asyncio.CancelledError, RuntimeError):
                     pass
                 finally:
                     if not dst.is_closing():
@@ -505,6 +587,7 @@ async def capture_camera_frame_bytes(
 
     logger.info("Capturing camera frame bytes from %s using RTSP (model: %s)", ip_address, model)
 
+    process = None
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -512,6 +595,7 @@ async def capture_camera_frame_bytes(
             stderr=asyncio.subprocess.PIPE,
         )
 
+        _active_capture_pids.add(process.pid)
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
         except TimeoutError:
@@ -535,6 +619,8 @@ async def capture_camera_frame_bytes(
         logger.exception("Camera frame bytes capture failed: %s", e)
         return None
     finally:
+        if process is not None:
+            _active_capture_pids.discard(process.pid)
         proxy_server.close()
         await proxy_server.wait_closed()
 

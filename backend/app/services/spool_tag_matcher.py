@@ -2,7 +2,7 @@
 
 import logging
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -86,34 +86,47 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         elif color_code and color_code[0] == "T":
             subtype = "Tri Color"
 
-    # Resolve color name from tray_id_name code, hex catalog, or raw tray_id_name
-    from backend.app.core.bambu_colors import resolve_bambu_color_name
-
+    # Resolve color name from the color catalog by hex. The catalog is the single
+    # source of truth — tray_id_name codes (e.g. "A17-R1") are NOT globally unique
+    # across material families (A17-R1 is PLA Translucent Cherry Pink; A01-R1 is
+    # PLA Matte Scarlet Red), so a suffix-based fallback would pick the wrong name.
+    # See #857.
+    #
+    # Hex isn't unique either: #FFFFFF maps to "Jade White" (PLA Basic), "Ivory
+    # White" (PLA Matte), and "White" (PLA Silk) in the Bambu catalog. Filter by
+    # the printer-reported material variant (`tray_sub_brands`, e.g. "PLA Matte")
+    # so a new Ivory White roll doesn't get auto-named Jade White just because
+    # PLA Basic happens to come first in catalog insertion order. See #1227.
     rgba = tray_color if tray_color else None
     color_name = None
 
-    # 1. Try Bambu color code mapping (e.g. "A06-D0" → "Titan Gray")
-    if tray_id_name:
-        color_name = resolve_bambu_color_name(tray_id_name)
-        logger.info("Color resolve: tray_id_name=%r → resolved=%r", tray_id_name, color_name)
-        # If not a known code, use tray_id_name directly (it may be a readable name)
-        if not color_name and "-" not in tray_id_name:
-            color_name = tray_id_name
-    else:
-        logger.info("Color resolve: tray_id_name is empty, rgba=%r", rgba)
-
-    # 2. Try color catalog lookup by hex color
-    if not color_name and rgba and len(rgba) >= 6:
+    if rgba and len(rgba) >= 6:
         hex_prefix = f"#{rgba[:6].upper()}"
-        cat_result = await db.execute(
+        cat_query = (
             select(ColorCatalogEntry)
             .where(func.upper(ColorCatalogEntry.hex_color) == hex_prefix)
             .where(func.upper(ColorCatalogEntry.manufacturer) == "BAMBU LAB")
-            .limit(1)
         )
+        if tray_sub_brands:
+            cat_query = cat_query.where(func.upper(ColorCatalogEntry.material) == tray_sub_brands.upper())
+        # Deterministic tiebreak when the material filter can't disambiguate
+        # (e.g. third-party spools with empty tray_sub_brands).
+        cat_query = cat_query.order_by(ColorCatalogEntry.id).limit(1)
+        cat_result = await db.execute(cat_query)
         entry = cat_result.scalar_one_or_none()
         if entry:
             color_name = entry.color_name
+
+    # If tray_id_name is a human-readable name (no "-" code), fall back to it.
+    if not color_name and tray_id_name and "-" not in tray_id_name:
+        color_name = tray_id_name
+
+    logger.info(
+        "Color resolve: tray_id_name=%r rgba=%r → resolved=%r",
+        tray_id_name,
+        rgba,
+        color_name,
+    )
 
     # Look up core weight from spool catalog
     core_weight = 250  # Default for Bambu Lab plastic spools
@@ -189,11 +202,22 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
 
 
 async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spool | None:
-    """Find an existing untagged inventory spool matching brand/material/color.
+    """Find an existing untagged Bambu inventory spool matching material/color.
 
     When a Bambu Lab spool is detected in the AMS but no tag match exists,
     check if the user has a manually-added spool with the same properties
-    that hasn't been linked to a tag yet. Returns the oldest match (FIFO).
+    that hasn't been linked to a tag yet. Returns the best match (#918):
+
+    - **Brand**: only consider spools whose brand is unspecified or contains
+      "bambu" (case-insensitive — covers both "Bambu" and "Bambu Lab" as
+      stored by the form's brand dropdown). This prevents a same-color
+      Polymaker / generic spool from accidentally attracting a Bambu UUID.
+    - **Subtype**: prefer an exact match (e.g. AMS "Basic" → spool subtype
+      "Basic"), but fall back to a NULL-subtype spool — the form's Quick Add
+      mode leaves subtype empty, so bulk-logged spools rely on this fallback
+      to attract their RFID tag instead of duplicating on first AMS read.
+    - **FIFO** within each preference group (user likely logged in purchase
+      order).
     """
     tray_type = tray_data.get("tray_type", "")
     tray_sub_brands = tray_data.get("tray_sub_brands", "")
@@ -227,7 +251,7 @@ async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spo
         elif color_code and color_code[0] == "T":
             subtype = "Tri Color"
 
-    # Build query: active spools with no tag, matching brand + material + color
+    # Active, untagged spools matching material + color + Bambu-or-unset brand.
     query = (
         select(Spool)
         .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
@@ -237,17 +261,30 @@ async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spo
             Spool.tray_uuid.is_(None),
             func.upper(Spool.material) == material.upper(),
             func.upper(Spool.rgba) == tray_color.upper(),
+            or_(
+                Spool.brand.is_(None),
+                func.lower(Spool.brand).like("%bambu%"),
+            ),
         )
     )
 
-    # Match subtype if parsed (e.g. "Basic", "Matte")
     if subtype:
-        query = query.where(func.upper(Spool.subtype) == subtype.upper())
+        # Exact subtype OR NULL fallback. The CASE in ORDER BY ensures an
+        # exact-subtype row beats a NULL-subtype row when both exist; FIFO
+        # within each group.
+        query = query.where(
+            or_(
+                func.upper(Spool.subtype) == subtype.upper(),
+                Spool.subtype.is_(None),
+            )
+        ).order_by(
+            case((func.upper(Spool.subtype) == subtype.upper(), 0), else_=1),
+            Spool.created_at.asc(),
+        )
     else:
-        query = query.where(Spool.subtype.is_(None))
+        query = query.where(Spool.subtype.is_(None)).order_by(Spool.created_at.asc())
 
-    # FIFO: oldest spool first (user likely added in purchase order)
-    query = query.order_by(Spool.created_at.asc()).limit(1)
+    query = query.limit(1)
 
     result = await db.execute(query)
     spool = result.scalar_one_or_none()
@@ -501,6 +538,27 @@ async def auto_assign_spool(
                     ams_id,
                     tray_id,
                 )
+            elif tray is not None:
+                # No stored K-profile: fall back to the slot's current live cali_idx
+                # so the printer keeps its existing calibration selection.
+                live_cali_idx = tray.get("cali_idx")
+                if live_cali_idx is not None and live_cali_idx >= 0:
+                    cali_filament_id = spool.slicer_filament or tray_info_idx or ""
+                    client.extrusion_cali_sel(
+                        ams_id=ams_id,
+                        tray_id=tray_id,
+                        cali_idx=live_cali_idx,
+                        filament_id=cali_filament_id,
+                        nozzle_diameter=nozzle_diameter,
+                    )
+                    logger.info(
+                        "No stored K-profile for spool %d on printer %d AMS%d-T%d — preserved live cali_idx=%d",
+                        spool.id,
+                        printer_id,
+                        ams_id,
+                        tray_id,
+                        live_cali_idx,
+                    )
 
             logger.info(
                 "Auto-assigned spool %d to printer %d AMS%d-T%d (RFID match)",

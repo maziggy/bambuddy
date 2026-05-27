@@ -30,14 +30,20 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         String(20), default="user"
     )  # "admin" or "user" (legacy, kept for backward compat)
-    auth_source: Mapped[str] = mapped_column(String(20), default="local")  # "local" or "ldap"
+    auth_source: Mapped[str] = mapped_column(String(20), default="local")  # "local", "ldap", or "oidc"
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # Set whenever the local password is changed/reset — used to invalidate JWTs
+    # issued before the change (M-R7-B).  NULL means no password change recorded yet.
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Per-user Bambu Cloud credentials (when auth is enabled, each user has their own)
     cloud_token: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     cloud_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    # "global" or "china"; NULL treated as "global" for legacy rows.
+    cloud_region: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
 
     # Relationship to groups through association table
     groups: Mapped[list[Group]] = relationship(

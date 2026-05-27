@@ -212,6 +212,48 @@ class TestArchiveThumbnails:
         for path in expected_thumbnail_paths:
             assert "png" in path.lower()
 
+    def test_extract_thumbnail_falls_back_to_auxiliaries(self, tmp_path):
+        """#1493 follow-up: when BambuStudio's CLI runs with --arrange it
+        rearranges objects but doesn't always emit a fresh
+        ``Metadata/plate_N.png`` for the rearranged plate. The project-wide
+        thumbnail under ``Auxiliaries/.thumbnails/`` survives though, and
+        we use it as a cover-image fallback so re-sliced archive cards
+        still render with a thumbnail."""
+        import zipfile
+
+        from backend.app.services.archive import ThreeMFParser
+
+        threemf_path = tmp_path / "sliced.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            # No Metadata/plate_1.png / thumbnail.png — only the
+            # Auxiliaries project-wide thumbnail (what arranged slices
+            # carry in practice).
+            zf.writestr("Auxiliaries/.thumbnails/thumbnail_middle.png", b"PNGMIDDLE")
+
+        parser = ThreeMFParser(str(threemf_path), plate_number=1)
+        parsed = parser.parse()
+        assert parsed.get("_thumbnail_data") == b"PNGMIDDLE"
+        assert parsed.get("_thumbnail_ext") == ".png"
+
+    def test_per_plate_png_wins_over_auxiliaries_fallback(self, tmp_path):
+        """Order matters: when BOTH the per-plate preview and the
+        Auxiliaries fallback are present, the per-plate one wins because
+        it reflects the actual sliced layout."""
+        import zipfile
+
+        from backend.app.services.archive import ThreeMFParser
+
+        threemf_path = tmp_path / "sliced.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr("Metadata/plate_1.png", b"PLATE1")
+            zf.writestr("Auxiliaries/.thumbnails/thumbnail_middle.png", b"PROJECT_WIDE")
+
+        parser = ThreeMFParser(str(threemf_path), plate_number=1)
+        parsed = parser.parse()
+        assert parsed.get("_thumbnail_data") == b"PLATE1"
+
 
 class TestPrintableObjectsExtraction:
     """Tests for extracting printable objects count from 3MF files."""
@@ -643,3 +685,47 @@ class TestReprintCostCalculation:
         # After 3 prints (1 original + 2 reprints)
         total_after_3_prints = round(single_print_cost * 3, 2)
         assert total_after_3_prints == 6.0
+
+
+class TestGcodeHeaderFilamentUsage:
+    """ThreeMFParser pulls total filament usage from the produced 3MF's G-code
+    header. Some slicer-sidecar builds leave the X-Filament-Used-* response
+    headers unset, so the slice would otherwise report "0 g" for a real
+    multi-hour print."""
+
+    @staticmethod
+    def _make_3mf(gcode_header: str) -> str:
+        import tempfile
+        import zipfile
+
+        fd, path = tempfile.mkstemp(suffix=".3mf")
+        import os
+
+        os.close(fd)
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr("Metadata/plate_1.gcode", gcode_header + "\nG1 X0 Y0\n")
+        return path
+
+    def test_extracts_filament_weight_and_length_from_header(self):
+        from backend.app.services.archive import ThreeMFParser
+
+        header = (
+            "; HEADER_BLOCK_START\n"
+            "; BambuStudio 02.06.00.51\n"
+            "; total layer number: 503\n"
+            "; total filament length [mm] : 41661.40\n"
+            "; total filament volume [cm^3] : 100207.42\n"
+            "; total filament weight [g] : 126.26\n"
+        )
+        meta = ThreeMFParser(self._make_3mf(header)).parse()
+        assert meta.get("filament_used_grams") == 126.26
+        assert meta.get("filament_used_mm") == 41661.40
+        assert meta.get("total_layers") == 503
+
+    def test_no_filament_keys_when_header_lacks_them(self):
+        from backend.app.services.archive import ThreeMFParser
+
+        meta = ThreeMFParser(self._make_3mf("; total layer number: 10\n")).parse()
+        assert "filament_used_grams" not in meta
+        assert "filament_used_mm" not in meta

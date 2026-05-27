@@ -40,6 +40,7 @@ class TimelapseSession:
     archive_id: int | None
     camera_url: str
     camera_type: str
+    snapshot_url: str | None = None  # Optional single-frame override; #1177
     last_layer: int = -1
     frame_count: int = 0
     session_id: str = field(default_factory=lambda: datetime.now().strftime("%Y%m%d_%H%M%S"))
@@ -66,7 +67,7 @@ class TimelapseSession:
         self.last_layer = layer_num
 
         try:
-            frame_data = await capture_frame(self.camera_url, self.camera_type)
+            frame_data = await capture_frame(self.camera_url, self.camera_type, snapshot_url=self.snapshot_url)
             if frame_data:
                 frame_path = self.frames_dir / f"layer_{layer_num:05d}.jpg"
                 await asyncio.to_thread(frame_path.write_bytes, frame_data)
@@ -180,7 +181,13 @@ class TimelapseSession:
             logger.warning("Failed to cleanup timelapse frames: %s", e)
 
 
-def start_session(printer_id: int, archive_id: int | None, url: str, cam_type: str) -> TimelapseSession:
+def start_session(
+    printer_id: int,
+    archive_id: int | None,
+    url: str,
+    cam_type: str,
+    snapshot_url: str | None = None,
+) -> TimelapseSession:
     """Start new timelapse session for a printer.
 
     Args:
@@ -188,6 +195,8 @@ def start_session(printer_id: int, archive_id: int | None, url: str, cam_type: s
         archive_id: Associated print archive ID (optional)
         url: External camera URL
         cam_type: Camera type ("mjpeg", "rtsp", "snapshot")
+        snapshot_url: Optional single-frame URL override; when set, layer captures
+            fetch from it directly instead of opening the live stream. #1177.
 
     Returns:
         The new TimelapseSession
@@ -200,6 +209,7 @@ def start_session(printer_id: int, archive_id: int | None, url: str, cam_type: s
         archive_id=archive_id,
         camera_url=url,
         camera_type=cam_type,
+        snapshot_url=snapshot_url,
     )
     _active_sessions[printer_id] = session
     logger.info("Started timelapse session for printer %s", printer_id)

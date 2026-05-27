@@ -69,6 +69,60 @@ async def test_dispatch_enqueues_job_and_broadcasts_state():
 
 
 @pytest.mark.asyncio
+async def test_dispatch_library_file_defaults_cleanup_flag_false():
+    """cleanup_library_after_dispatch defaults to False when not passed — protects
+    File Manager / Project Detail / queued-library-file paths from surprise deletion."""
+    service = BackgroundDispatchService()
+
+    with (
+        patch("backend.app.services.background_dispatch.printer_manager.get_status", return_value=None),
+        patch("backend.app.services.background_dispatch.ws_manager.broadcast", new_callable=AsyncMock),
+    ):
+        await service.dispatch_print_library_file(
+            file_id=1,
+            filename="cube.gcode.3mf",
+            printer_id=1,
+            printer_name="Printer A",
+            options={},
+            requested_by_user_id=None,
+            requested_by_username=None,
+        )
+
+    assert len(service._queued_jobs) == 1
+    assert service._queued_jobs[0].cleanup_library_after_dispatch is False
+
+
+@pytest.mark.asyncio
+async def test_dispatch_library_file_propagates_cleanup_flag_true():
+    """cleanup_library_after_dispatch=True arrives on the queued job so the runner
+    can delete the transient LibraryFile after the print is accepted by the printer."""
+    service = BackgroundDispatchService()
+
+    with (
+        patch("backend.app.services.background_dispatch.printer_manager.get_status", return_value=None),
+        patch("backend.app.services.background_dispatch.ws_manager.broadcast", new_callable=AsyncMock),
+    ):
+        await service.dispatch_print_library_file(
+            file_id=1,
+            filename="cube.gcode.3mf",
+            printer_id=1,
+            printer_name="Printer A",
+            options={},
+            requested_by_user_id=42,
+            requested_by_username="alice",
+            cleanup_library_after_dispatch=True,
+        )
+
+    assert len(service._queued_jobs) == 1
+    job = service._queued_jobs[0]
+    assert job.cleanup_library_after_dispatch is True
+    # Sanity: other fields still wired correctly
+    assert job.requested_by_user_id == 42
+    assert job.requested_by_username == "alice"
+    assert job.kind == "print_library_file"
+
+
+@pytest.mark.asyncio
 async def test_cancel_queued_job_removes_it_and_broadcasts():
     """Cancelling queued job removes it immediately."""
     service = BackgroundDispatchService()
@@ -156,6 +210,45 @@ def test_is_sliced_file_recognizes_supported_extensions():
     assert BackgroundDispatchService._is_sliced_file("part.gcode") is True
     assert BackgroundDispatchService._is_sliced_file("part.gcode.3mf") is True
     assert BackgroundDispatchService._is_sliced_file("part.3mf") is False
+
+
+def test_dispatch_option_defaults_align_with_request_schema_defaults():
+    """The `job.options.get("<field>", <default>)` calls in the dispatch
+    loop must use the same default as the Pydantic request schema. If a
+    field is missing from options (e.g. an internal caller bypassing the
+    schema), the resulting print command must match what a fresh
+    `ReprintRequest()` / `FilePrintRequest()` would produce — anything
+    else means certain fields silently flip depending on which entry
+    point queued the job.
+
+    Earlier `vibration_cali` had a False default in the dispatch loop
+    against a True schema default, latent only because every existing
+    caller always sent the field.
+    """
+    import inspect
+
+    from backend.app.schemas.archive import ReprintRequest
+    from backend.app.schemas.library import FilePrintRequest
+    from backend.app.services import background_dispatch as bd
+
+    fields = ("bed_levelling", "flow_cali", "vibration_cali", "layer_inspect", "timelapse", "use_ams")
+    reprint_defaults = {f: getattr(ReprintRequest(), f) for f in fields}
+    libprint_defaults = {f: getattr(FilePrintRequest(), f) for f in fields}
+    assert reprint_defaults == libprint_defaults, (
+        "ReprintRequest and FilePrintRequest must share the same defaults for these fields"
+    )
+
+    src = inspect.getsource(bd)
+    for field, expected_default in reprint_defaults.items():
+        literal = "True" if expected_default else "False"
+        needle = f'{field}=job.options.get("{field}", {literal})'
+        count = src.count(needle)
+        assert count == 2, (
+            f"Expected exactly 2 occurrences of `{needle}` in background_dispatch (one per "
+            f"`_process_job` branch). Found {count}. A drift between the request schema's "
+            f"default for `{field}` and the dispatch loop's `.get()` default means callers "
+            f"that bypass the schema will get inconsistent behaviour."
+        )
 
 
 @pytest.mark.asyncio

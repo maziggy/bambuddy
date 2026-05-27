@@ -224,10 +224,9 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
 
 // --- Display Tab ---
 
-function DisplayTab({ device, onBrightnessChange, onBlankTimeoutChange }: {
+function DisplayTab({ device, onBrightnessChange }: {
   device: SpoolBuddyDevice;
   onBrightnessChange: (value: number) => void;
-  onBlankTimeoutChange: (value: number) => void;
 }) {
   const { t } = useTranslation();
   const [brightness, setBrightness] = useState(device.display_brightness);
@@ -265,7 +264,6 @@ function DisplayTab({ device, onBrightnessChange, onBlankTimeoutChange }: {
 
   const handleBlankTimeoutChange = (value: number) => {
     setBlankTimeout(value);
-    onBlankTimeoutChange(value);  // Instant layout update
     sendDisplayUpdate(brightness, value);
   };
 
@@ -950,7 +948,7 @@ function SystemTab({ device }: { device: SpoolBuddyDevice }) {
 type SettingsTab = 'device' | 'display' | 'scale' | 'updates' | 'system';
 
 export function SpoolBuddySettingsPage() {
-  const { sbState, setDisplayBrightness, setDisplayBlankTimeout } = useOutletContext<SpoolBuddyOutletContext>();
+  const { sbState, setDisplayBrightness } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTab>('device');
 
@@ -1012,7 +1010,6 @@ export function SpoolBuddySettingsPage() {
               <DisplayTab
                 device={device}
                 onBrightnessChange={setDisplayBrightness}
-                onBlankTimeoutChange={setDisplayBlankTimeout}
               />
             )}
             {activeTab === 'scale' && (

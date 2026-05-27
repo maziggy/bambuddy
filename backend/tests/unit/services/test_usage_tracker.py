@@ -12,13 +12,15 @@ import pytest
 from backend.app.services.usage_tracker import (
     PrintSession,
     _active_sessions,
+    _archive_colors_from_spools,
+    _spool_color_to_hex,
     _track_from_3mf,
     on_print_complete,
     on_print_start,
 )
 
 
-def _make_spool(*, id=1, label_weight=1000, weight_used=0, tag_uid=None, tray_uuid=None):
+def _make_spool(*, id=1, label_weight=1000, weight_used=0, tag_uid=None, tray_uuid=None, rgba=None):
     """Create a mock Spool object."""
     spool = MagicMock()
     spool.id = id
@@ -29,6 +31,7 @@ def _make_spool(*, id=1, label_weight=1000, weight_used=0, tag_uid=None, tray_uu
     spool.last_used = None
     spool.cost_per_kg = None
     spool.material = "PLA"
+    spool.rgba = rgba
     return spool
 
 
@@ -192,6 +195,64 @@ class TestOnPrintCompleteAMSDelta:
         results = await on_print_complete(1, {"status": "completed"}, pm, db)
 
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_skips_fallback_for_trays_outside_print_mapping(self):
+        """#1269: swapping a spool in an UNUSED slot mid-print must NOT charge the old spool.
+
+        Reproduces maugsburger's report: single-color print on AMS0-T3
+        (ams_mapping=[3]). User swaps spools in T1 and T2 during the print —
+        those slots report remain=0 at completion (new spool with no tag).
+        The fallback must skip T1 and T2 because they were never in the
+        print's tray mapping or runtime tray_change_log.
+        """
+        _active_sessions[1] = PrintSession(
+            printer_id=1,
+            print_name="splitter",
+            started_at=datetime.now(timezone.utc),
+            tray_remain_start={(0, 1): 100, (0, 2): 17, (0, 3): 100},
+            tray_now_at_start=3,
+            ams_mapping=[3],
+        )
+
+        # User swapped T1 and T2 mid-print → both report remain=0 now.
+        # T3 was actually used but it's also at 0 now. Without the fix the
+        # fallback would charge the originally-assigned spools at T1 and T2.
+        ams_data = [
+            {
+                "id": 0,
+                "tray": [
+                    {"id": 1, "remain": 0},
+                    {"id": 2, "remain": 0},
+                    {"id": 3, "remain": 0},
+                ],
+            }
+        ]
+        state = _make_printer_state(ams_data, tray_now=3)
+        state.tray_change_log = [(3, 0)]  # only T3 was loaded during the print
+        pm = _make_printer_manager(state)
+
+        # Only T3 should reach the spool lookup; T1 and T2 must be filtered
+        # out before any DB query is issued for them.
+        t3_spool = _make_spool(id=8, label_weight=1000, weight_used=0)
+        t3_assignment = _make_assignment(spool_id=8, ams_id=0, tray_id=3)
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(),  # _find_3mf_by_filename: library search
+                MagicMock(),  # _find_3mf_by_filename: archive search
+                MagicMock(scalar_one_or_none=MagicMock(return_value=t3_assignment)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=t3_spool)),
+            ]
+        )
+
+        results = await on_print_complete(1, {"status": "completed"}, pm, db)
+
+        # Only T3 should be charged. T1 (spool 27 in the report) and T2
+        # (spool 24) must NOT appear in the results.
+        assert len(results) == 1
+        assert results[0]["ams_id"] == 0
+        assert results[0]["tray_id"] == 3
 
 
 class TestTrackFrom3MF:
@@ -649,6 +710,9 @@ class TestSpoolAssignmentSnapshot:
         spool = _make_spool(id=8, label_weight=1000, weight_used=50)
         archive = MagicMock()
         archive.file_path = "archives/big_print.3mf"
+        # Explicit numeric so the #1344 top-up branch doesn't trip a
+        # MagicMock-vs-float comparison.
+        archive.filament_used_grams = 14.2
 
         # Session was created at print start WITH snapshot
         _active_sessions[1] = PrintSession(
@@ -678,9 +742,8 @@ class TestSpoolAssignmentSnapshot:
                 MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
-                # Cost aggregation: sum query (uses .scalar()), archive lookup
-                MagicMock(scalar=MagicMock(return_value=0)),
-                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+                # Cost-update block re-selects the archive to mutate cost.
+                MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
             ]
         )
 
@@ -706,3 +769,194 @@ class TestSpoolAssignmentSnapshot:
         assert results[0]["weight_used"] == 14.2
         # Spool weight should be updated: 50 + 14.2 = 64.2
         assert spool.weight_used == 64.2
+
+
+class TestSpoolColorToHex:
+    """`_spool_color_to_hex` normalises Spool.rgba (RRGGBBAA, no #) to #RRGGBB."""
+
+    def test_strips_alpha_and_adds_hash(self):
+        assert _spool_color_to_hex("000000FF") == "#000000"
+        assert _spool_color_to_hex("EC984CFF") == "#EC984C"
+
+    def test_uppercases(self):
+        assert _spool_color_to_hex("ec984cff") == "#EC984C"
+
+    def test_accepts_six_char_value(self):
+        """A value with no alpha is still valid."""
+        assert _spool_color_to_hex("161616") == "#161616"
+
+    def test_tolerates_leading_hash(self):
+        assert _spool_color_to_hex("#000000FF") == "#000000"
+
+    def test_none_and_too_short_return_none(self):
+        """Missing / malformed colour falls back to the 3MF value."""
+        assert _spool_color_to_hex(None) is None
+        assert _spool_color_to_hex("") is None
+        assert _spool_color_to_hex("FFF") is None
+
+
+class TestArchiveColorsFromSpools:
+    """`_archive_colors_from_spools` rebuilds an archive's filament_color from
+    the inventory spools that fed the print (#1494). All-or-nothing: a partial
+    match returns None so the 3MF colour is left intact."""
+
+    def test_single_slot_matched(self):
+        """The #1494 case: one used slot, matched to a #000000 spool."""
+        usage = [{"slot_id": 1, "used_g": 15.9, "color": "#161616"}]
+        results = [{"slot_id": 1, "color": "#000000"}]
+        assert _archive_colors_from_spools(usage, results) == ["#000000"]
+
+    def test_multi_slot_all_matched_keeps_slot_order(self):
+        usage = [
+            {"slot_id": 1, "used_g": 10.0, "color": "#111111"},
+            {"slot_id": 2, "used_g": 20.0, "color": "#222222"},
+        ]
+        # results deliberately out of slot order — output must be slot-ordered
+        results = [
+            {"slot_id": 2, "color": "#00FF00"},
+            {"slot_id": 1, "color": "#FF0000"},
+        ]
+        assert _archive_colors_from_spools(usage, results) == ["#FF0000", "#00FF00"]
+
+    def test_duplicate_colors_deduplicated(self):
+        """Two slots of the same spool colour collapse to one entry, as the
+        3MF-derived path also de-duplicates."""
+        usage = [
+            {"slot_id": 1, "used_g": 10.0, "color": "#111111"},
+            {"slot_id": 2, "used_g": 20.0, "color": "#222222"},
+        ]
+        results = [
+            {"slot_id": 1, "color": "#000000"},
+            {"slot_id": 2, "color": "#000000"},
+        ]
+        assert _archive_colors_from_spools(usage, results) == ["#000000"]
+
+    def test_partial_match_returns_none(self):
+        """Slot 2 was used but never matched to a spool — leave the 3MF colour
+        untouched rather than dropping slot 2 from the archive."""
+        usage = [
+            {"slot_id": 1, "used_g": 10.0, "color": "#111111"},
+            {"slot_id": 2, "used_g": 20.0, "color": "#222222"},
+        ]
+        results = [{"slot_id": 1, "color": "#000000"}]
+        assert _archive_colors_from_spools(usage, results) is None
+
+    def test_matched_spool_without_color_returns_none(self):
+        """A spool with no rgba (color None) does not count as matched."""
+        usage = [{"slot_id": 1, "used_g": 15.0, "color": "#161616"}]
+        results = [{"slot_id": 1, "color": None}]
+        assert _archive_colors_from_spools(usage, results) is None
+
+    def test_unused_slot_not_required(self):
+        """A slot with zero usage need not be matched."""
+        usage = [
+            {"slot_id": 1, "used_g": 15.0, "color": "#161616"},
+            {"slot_id": 2, "used_g": 0.0, "color": "#888888"},
+        ]
+        results = [{"slot_id": 1, "color": "#000000"}]
+        assert _archive_colors_from_spools(usage, results) == ["#000000"]
+
+    def test_no_used_slots_returns_none(self):
+        assert _archive_colors_from_spools([], []) is None
+
+    def test_ams_fallback_results_excluded(self):
+        """AMS remain%-delta fallback results carry slot_id=None and must not
+        satisfy the match for a real 3MF slot."""
+        usage = [{"slot_id": 1, "used_g": 15.0, "color": "#161616"}]
+        results = [{"slot_id": None, "color": "#000000"}]
+        assert _archive_colors_from_spools(usage, results) is None
+
+
+class TestArchiveFilamentColorRewrite:
+    """`_track_from_3mf` overwrites the archive's filament_color with the
+    matched inventory spool colour at print completion (#1494)."""
+
+    @pytest.mark.asyncio
+    async def test_archive_color_adopts_spool_color(self):
+        """A print from a #000000 inventory spool whose 3MF says #161616 ends
+        up with the archive showing the spool's #000000."""
+        spool = _make_spool(id=5, label_weight=1000, weight_used=100, rgba="000000FF")
+        assignment = _make_assignment(spool_id=5)
+        archive = MagicMock()
+        archive.file_path = "archives/test.3mf"
+        archive.filament_color = "#161616"  # what archive.py set from the 3MF
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
+            ]
+        )
+
+        pm = _make_printer_manager(_make_printer_state([], tray_now=0))
+        filament_usage = [{"slot_id": 1, "used_g": 25.5, "type": "PETG", "color": "#161616"}]
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch("backend.app.utils.threemf_tools.extract_filament_usage_from_3mf", return_value=filament_usage),
+        ):
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=10,
+                status="completed",
+                print_name="test_print",
+                handled_trays=set(),
+                printer_manager=pm,
+                db=db,
+            )
+
+        assert len(results) == 1
+        assert results[0]["color"] == "#000000"
+        assert results[0]["slot_id"] == 1
+        # The archive colour was rewritten from the slicer's #161616 to the
+        # inventory spool's #000000.
+        assert archive.filament_color == "#000000"
+
+    @pytest.mark.asyncio
+    async def test_archive_color_untouched_when_spool_has_no_color(self):
+        """A spool with no rgba leaves the 3MF colour in place."""
+        spool = _make_spool(id=5, label_weight=1000, weight_used=100, rgba=None)
+        assignment = _make_assignment(spool_id=5)
+        archive = MagicMock()
+        archive.file_path = "archives/test.3mf"
+        archive.filament_color = "#161616"
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
+            ]
+        )
+
+        pm = _make_printer_manager(_make_printer_state([], tray_now=0))
+        filament_usage = [{"slot_id": 1, "used_g": 25.5, "type": "PETG", "color": "#161616"}]
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch("backend.app.utils.threemf_tools.extract_filament_usage_from_3mf", return_value=filament_usage),
+        ):
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            await _track_from_3mf(
+                printer_id=1,
+                archive_id=10,
+                status="completed",
+                print_name="test_print",
+                handled_trays=set(),
+                printer_manager=pm,
+                db=db,
+            )
+
+        assert archive.filament_color == "#161616"

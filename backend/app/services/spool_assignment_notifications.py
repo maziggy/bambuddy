@@ -4,6 +4,7 @@ from backend.app.core.database import async_session
 from backend.app.core.websocket import ws_manager
 from backend.app.models.printer import Printer
 from backend.app.models.spool_assignment import SpoolAssignment
+from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager
@@ -127,12 +128,23 @@ async def notify_missing_spool_assignments_on_print_start(
             printer = await db.get(Printer, printer_id)
             printer_name = printer.name if printer else f"Printer {printer_id}"
 
-            assignments_result = await db.execute(
-                SpoolAssignment.__table__.select().where(SpoolAssignment.printer_id == printer_id)
-            )
-            assignments = assignments_result.fetchall()
+            # A tray is "assigned" if it has a row in EITHER table: the legacy
+            # spool_assignment table (internal-inventory mode) or
+            # spoolman_slot_assignments (Spoolman mode — the binding
+            # source-of-truth since #1119). Querying only the legacy table
+            # flagged every used tray as missing on every Spoolman-mode print
+            # (#1473). Both tables expose printer_id / ams_id / tray_id in the
+            # same shape, so _global_tray_from_assignment works on either.
+            legacy_rows = (
+                await db.execute(SpoolAssignment.__table__.select().where(SpoolAssignment.printer_id == printer_id))
+            ).fetchall()
+            spoolman_rows = (
+                await db.execute(
+                    SpoolmanSlotAssignment.__table__.select().where(SpoolmanSlotAssignment.printer_id == printer_id)
+                )
+            ).fetchall()
             assigned_global_trays = {
-                _global_tray_from_assignment(assignment.ams_id, assignment.tray_id) for assignment in assignments
+                _global_tray_from_assignment(row.ams_id, row.tray_id) for row in (*legacy_rows, *spoolman_rows)
             }
 
             missing_global = sorted(used_global_trays - assigned_global_trays)

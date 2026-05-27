@@ -10,6 +10,10 @@ import logging
 import ssl
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +25,7 @@ MODEL_PRODUCT_NAMES = {
     "BL-P001": "X1 Carbon",
     "BL-P002": "X1",
     "C13": "X1E",
+    "N6": "X2D",
     "C11": "P1P",
     "C12": "P1S",
     "N7": "P2S",
@@ -201,6 +206,14 @@ class SimpleMQTTServer:
         self._running = False
         self._server = None
         self._clients: dict[str, asyncio.StreamWriter] = {}
+        # Per-client "effective serial" — the serial the slicer actually uses in
+        # device/{serial}/report|request topics. Populated from the first
+        # SUBSCRIBE/PUBLISH we see on a connection. This lets the VP respond on
+        # the topic the slicer is listening on even when it disagrees with
+        # self.serial (e.g. a stale Orca config that was bound to an older VP
+        # serial, or a printer entry that was re-pointed at the VP IP without
+        # updating the serial).
+        self._client_serials: dict[str, str] = {}
         self._status_push_task: asyncio.Task | None = None
         self._sequence_id = 0
 
@@ -208,6 +221,12 @@ class SimpleMQTTServer:
         self._gcode_state = "IDLE"
         self._current_file = ""
         self._prepare_percent = "0"
+
+        # MQTT bridge for non-proxy modes — set by VirtualPrinterInstance after start().
+        # When the bridge is_active, real printer pushes are fanned out to slicers and
+        # the synthetic 1s push is suspended. When the target printer goes offline the
+        # synthetic fallback resumes automatically.
+        self._bridge: MQTTBridge | None = None
 
     async def start(self) -> None:
         """Start the MQTT server."""
@@ -311,6 +330,7 @@ class SimpleMQTTServer:
             except OSError:
                 pass  # Best-effort client connection cleanup; client may have disconnected
         self._clients.clear()
+        self._client_serials.clear()
 
         if self._server:
             try:
@@ -320,21 +340,41 @@ class SimpleMQTTServer:
                 pass  # Best-effort server shutdown; port may already be released
             self._server = None
 
+    @staticmethod
+    def _extract_serial_from_topic(topic: str) -> str | None:
+        """Pull the serial out of a `device/{serial}/report|request` topic.
+
+        Returns None if the topic doesn't match that shape — callers fall back
+        to self.serial in that case.
+        """
+        if not topic.startswith("device/"):
+            return None
+        rest = topic[len("device/") :]
+        # Expect "{serial}/report" or "{serial}/request" (possibly with suffixes).
+        slash = rest.find("/")
+        if slash <= 0:
+            return None
+        return rest[:slash]
+
+    def set_bridge(self, bridge: "MQTTBridge | None") -> None:
+        """Attach (or detach) the MQTT bridge that mirrors the target printer."""
+        self._bridge = bridge
+
     async def _periodic_status_push(self) -> None:
-        """Send periodic status updates to all connected clients."""
+        """Send periodic status updates to all connected clients (1 Hz, exact pre-bridge behaviour)."""
         logger.info("Starting periodic status push task")
         while self._running:
             try:
                 await asyncio.sleep(1)  # Push every 1 second like real printers
 
-                # Send status to all connected clients
                 disconnected = []
                 for client_id, writer in list(self._clients.items()):
                     try:
                         if writer.is_closing():
                             disconnected.append(client_id)
                             continue
-                        await self._send_status_report(writer)
+                        serial = self._client_serials.get(client_id, self.serial)
+                        await self._send_status_report(writer, serial=serial)
                     except OSError as e:
                         logger.debug("Failed to push status to %s: %s", client_id, e)
                         disconnected.append(client_id)
@@ -342,6 +382,7 @@ class SimpleMQTTServer:
                 # Remove disconnected clients
                 for client_id in disconnected:
                     self._clients.pop(client_id, None)
+                    self._client_serials.pop(client_id, None)
 
             except asyncio.CancelledError:
                 break
@@ -349,6 +390,48 @@ class SimpleMQTTServer:
                 logger.error("Periodic status push error: %s", e)
 
         logger.info("Periodic status push task stopped")
+
+    async def push_raw_to_clients(self, topic: str, payload: bytes) -> None:
+        """Publish a pre-serialized MQTT payload on `topic` to every connected slicer.
+
+        Called by MQTTBridge from the asyncio loop (scheduled via
+        run_coroutine_threadsafe from paho's network thread).
+        """
+        topic_bytes = topic.encode("utf-8")
+        # MQTT remaining-length: 2-byte topic length prefix + topic + message body.
+        remaining = 2 + len(topic_bytes) + len(payload)
+        packet = bytearray([0x30])  # PUBLISH, QoS 0
+        while True:
+            byte = remaining % 128
+            remaining //= 128
+            if remaining > 0:
+                byte |= 0x80
+            packet.append(byte)
+            if remaining == 0:
+                break
+        packet.extend([len(topic_bytes) >> 8, len(topic_bytes) & 0xFF])
+        packet.extend(topic_bytes)
+        packet.extend(payload)
+        frame = bytes(packet)
+
+        disconnected = []
+        for client_id, writer in list(self._clients.items()):
+            try:
+                if writer.is_closing():
+                    disconnected.append(client_id)
+                    continue
+                writer.write(frame)
+                try:
+                    await asyncio.wait_for(writer.drain(), timeout=5)
+                except TimeoutError:
+                    logger.debug("MQTT drain timeout pushing bridge frame to %s", client_id)
+            except OSError as e:
+                logger.debug("Failed to push bridge frame to %s: %s", client_id, e)
+                disconnected.append(client_id)
+
+        for client_id in disconnected:
+            self._clients.pop(client_id, None)
+            self._client_serials.pop(client_id, None)
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle an MQTT client connection."""
@@ -384,14 +467,17 @@ class SimpleMQTTServer:
                     authenticated = await self._handle_connect(payload, writer)
                     if not authenticated:
                         break
-                    # Register client for periodic status pushes
+                    # Register client for periodic status pushes; start with
+                    # self.serial as the fallback until we learn the slicer's
+                    # preferred serial from the first SUBSCRIBE/PUBLISH.
                     self._clients[client_id] = writer
+                    self._client_serials[client_id] = self.serial
                 elif packet_type == 3:  # PUBLISH
                     if authenticated:
-                        await self._handle_publish(header[0], payload, writer)
+                        await self._handle_publish(header[0], payload, writer, client_id)
                 elif packet_type == 8:  # SUBSCRIBE
                     if authenticated:
-                        await self._handle_subscribe(payload, writer)
+                        await self._handle_subscribe(payload, writer, client_id)
                 elif packet_type == 12:  # PINGREQ
                     # Send PINGRESP
                     writer.write(bytes([0xD0, 0x00]))
@@ -405,8 +491,8 @@ class SimpleMQTTServer:
             logger.debug("MQTT client error: %s", e)
         finally:
             logger.debug("MQTT client disconnected: %s", client_id)
-            if client_id in self._clients:
-                del self._clients[client_id]
+            self._clients.pop(client_id, None)
+            self._client_serials.pop(client_id, None)
             try:
                 writer.close()
                 await writer.wait_closed()
@@ -493,7 +579,7 @@ class SimpleMQTTServer:
             await writer.drain()
             return False
 
-    async def _handle_subscribe(self, payload: bytes, writer: asyncio.StreamWriter) -> None:
+    async def _handle_subscribe(self, payload: bytes, writer: asyncio.StreamWriter, client_id: str) -> None:
         """Handle MQTT SUBSCRIBE packet."""
         try:
             # Parse packet ID
@@ -502,6 +588,7 @@ class SimpleMQTTServer:
             # Parse topic filters (just acknowledge them)
             idx = 2
             granted_qos = []
+            learned_serial: str | None = None
             while idx < len(payload):
                 topic_len = (payload[idx] << 8) | payload[idx + 1]
                 idx += 2
@@ -513,23 +600,84 @@ class SimpleMQTTServer:
                 logger.info("%sMQTT subscribe: %s QoS=%s", self._log_prefix, topic, requested_qos)
                 granted_qos.append(min(requested_qos, 1))  # Grant up to QoS 1
 
+                # Remember the serial the slicer is listening on so status/version
+                # responses go to a topic it actually subscribed to.
+                if learned_serial is None:
+                    extracted = self._extract_serial_from_topic(topic)
+                    if extracted:
+                        learned_serial = extracted
+
+            if learned_serial and learned_serial != self._client_serials.get(client_id):
+                if learned_serial != self.serial:
+                    logger.info(
+                        "%sMQTT client subscribed with serial %s (VP serial is %s) — adapting responses",
+                        self._log_prefix,
+                        learned_serial,
+                        self.serial,
+                    )
+                self._client_serials[client_id] = learned_serial
+
             # Send SUBACK
             suback = bytes([0x90, 2 + len(granted_qos), packet_id >> 8, packet_id & 0xFF])
             suback += bytes(granted_qos)
             writer.write(suback)
             await writer.drain()
 
-            # Send initial status report after subscribe
-            await self._send_status_report(writer)
+            # Send initial status report after subscribe on the client's subscribed topic
+            await self._send_status_report(writer, serial=self._client_serials.get(client_id, self.serial))
 
         except (IndexError, ValueError, OSError) as e:
             logger.debug("MQTT SUBSCRIBE error: %s", e)
 
-    async def _send_status_report(self, writer: asyncio.StreamWriter) -> None:
-        """Send a status report to the slicer after connection."""
+    async def _send_status_report(self, writer: asyncio.StreamWriter, serial: str | None = None) -> None:
+        """Send a status report to the slicer after connection.
+
+        When a bridge is active and has cached the real printer's latest
+        push_status, send a copy of the real push with only the upload-state-
+        machine fields we own (gcode_state, gcode_file, prepare_percent,
+        subtask_name) overridden. BambuStudio's Send pre-flight checks the
+        push_status shape against what it expects from the printer model, and
+        the synthetic stub introduced fields the real H2D doesn't have (storage,
+        the wrong chamber_temper shape, etc.) which trip the check.
+        """
         try:
-            # Build status message matching Bambu printer format
             self._sequence_id += 1
+
+            cached = self._bridge.get_latest_print_state() if self._bridge is not None else None
+            if isinstance(cached, dict):
+                # Real-printer-shaped response. Copy the cache, then replace the
+                # protocol / upload-state fields with values under our control.
+                print_block = dict(cached)
+                print_block["sequence_id"] = str(self._sequence_id)
+                print_block["command"] = "push_status"
+                print_block["msg"] = 0
+                print_block["gcode_state"] = self._gcode_state
+                print_block["gcode_file"] = self._current_file
+                print_block["gcode_file_prepare_percent"] = self._prepare_percent
+                if self._current_file:
+                    print_block["subtask_name"] = self._current_file.replace(".3mf", "")
+                else:
+                    # Don't override real subtask_name with empty if no upload pending.
+                    print_block.setdefault("subtask_name", "")
+                # Storage-availability indicators the slicer's "Send" pre-flight reads
+                # (#1228). P1S/A1-class firmware doesn't always include these in
+                # push_status (no SD card inserted, older field shapes), and BambuStudio
+                # rejects the send pre-flight with the generic "storage needs to be
+                # inserted before send to printer" error before even attempting FTP.
+                # For VP usage the slicer uploads via FTPS to Bambuddy's filesystem —
+                # the printer's actual SD/storage state is irrelevant on that path.
+                # Force "available" indicators so the pre-flight passes regardless of
+                # what the real printer reports. Restores the 0.2.3.2 synthetic-stub
+                # behaviour for these fields without losing the live AMS / k-profile /
+                # camera mirror cached-as-base provides.
+                print_block["home_flag"] = print_block.get("home_flag", 0) | 0x100  # bit 8 = HAS_SDCARD_NORMAL
+                print_block["sdcard"] = True
+                print_block.setdefault("storage", {"free": 1_000_000_000, "total": 32_000_000_000})
+                status = {"print": print_block}
+                await self._publish_to_report(writer, status, serial or self.serial)
+                return
+
+            # No bridge / no cache yet — fall back to the synthetic stub.
             status = {
                 "print": {
                     "sequence_id": str(self._sequence_id),
@@ -603,16 +751,21 @@ class SimpleMQTTServer:
                 }
             }
 
-            await self._publish_to_report(writer, status, self.serial)
+            await self._publish_to_report(writer, status, serial or self.serial)
 
         except OSError as e:
             logger.error("Failed to send status report: %s", e)
 
-    async def _send_version_response(self, writer: asyncio.StreamWriter, sequence_id: str) -> None:
+    async def _send_version_response(
+        self, writer: asyncio.StreamWriter, sequence_id: str, serial: str | None = None
+    ) -> None:
         """Send version info response to the slicer."""
         try:
             product_name = MODEL_PRODUCT_NAMES.get(self.model, self.model or "X1 Carbon")
-            serial = self.serial
+            # The serial is embedded inside the module[].sn fields *and* used as
+            # the report topic. Use the client's effective serial so the slicer
+            # sees internal/topic consistency even when it differs from self.serial.
+            serial = serial or self.serial
 
             # Build version response matching OrcaSlicer expectations
             # Required fields per module: name, product_name, sw_ver, sw_new_ver, sn, hw_ver, flag
@@ -670,6 +823,15 @@ class SimpleMQTTServer:
                 }
             }
 
+            # Overlay real version modules from the bridge cache when available
+            # (specifically the AMS modules ams/0, n3f/0, n3s/128 etc. that
+            # BambuStudio's Prepare tab uses to identify AMS hardware — without
+            # them every AMS unit shows as "unknown" in the Prepare panel).
+            if self._bridge is not None:
+                cached_modules = self._bridge.get_latest_version_modules()
+                if isinstance(cached_modules, list) and cached_modules:
+                    version_info["info"]["module"] = cached_modules
+
             await self._publish_to_report(writer, version_info, serial)
             logger.info("Sent version response (product_name=%s)", product_name)
 
@@ -686,9 +848,15 @@ class SimpleMQTTServer:
         self._prepare_percent = prepare_percent
 
     async def _publish_to_report(self, writer: asyncio.StreamWriter, payload: dict, serial: str = "") -> None:
-        """Publish a message on the device report topic."""
+        """Publish a message on the device report topic.
+
+        Real Bambu printers wire-format push_status JSON with 4-space indentation
+        (32254 bytes for an idle H2D push vs 14268 bytes compact). BambuStudio's
+        Send pre-flight rejects compact JSON — without matching the on-wire
+        format the slicer never proceeds to FTP upload.
+        """
         topic = f"device/{serial or self.serial}/report"
-        message = json.dumps(payload)
+        message = json.dumps(payload, indent=4)
 
         topic_bytes = topic.encode("utf-8")
         message_bytes = message.encode("utf-8")
@@ -715,7 +883,9 @@ class SimpleMQTTServer:
         except TimeoutError:
             logger.debug("MQTT drain timeout for %s — client may be busy", topic)
 
-    async def _send_print_response(self, writer: asyncio.StreamWriter, sequence_id: str, filename: str) -> None:
+    async def _send_print_response(
+        self, writer: asyncio.StreamWriter, sequence_id: str, filename: str, serial: str | None = None
+    ) -> None:
         """Send project_file acknowledgment matching real Bambu printer behavior."""
         # Update state so periodic status pushes reflect preparation
         self._gcode_state = "PREPARE"
@@ -739,12 +909,12 @@ class SimpleMQTTServer:
                     "msg": 0,
                 }
             }
-            await self._publish_to_report(writer, response)
+            await self._publish_to_report(writer, response, serial or self.serial)
             logger.info("Sent project_file acknowledgment for %s", filename)
         except OSError as e:
             logger.error("Failed to send print response: %s", e)
 
-    async def _handle_publish(self, header: int, payload: bytes, writer: asyncio.StreamWriter) -> None:
+    async def _handle_publish(self, header: int, payload: bytes, writer: asyncio.StreamWriter, client_id: str) -> None:
         """Handle MQTT PUBLISH packet."""
         try:
             # Parse topic
@@ -765,55 +935,98 @@ class SimpleMQTTServer:
 
             logger.info("MQTT publish to %s: %s...", topic, message[:100])
 
-            # Handle commands on device request topic
-            if f"device/{self.serial}/request" in topic:
-                try:
-                    data = json.loads(message)
+            # Only handle publishes on *some* device/.../request topic. The
+            # serial is taken from the topic rather than compared against
+            # self.serial: the client is already authenticated via the access
+            # code, and Orca/BambuStudio may have a cached serial that differs
+            # from the VP's computed self.serial (#927). Use the topic's serial
+            # for all responses so they land on the topic the slicer subscribed
+            # to.
+            if not topic.startswith("device/") or "/request" not in topic:
+                return
 
-                    # Handle pushing command (status request)
-                    if "pushing" in data:
-                        pushing_data = data["pushing"]
-                        command = pushing_data.get("command", "")
-                        logger.info("MQTT pushing command: %s", command)
+            client_serial = self._extract_serial_from_topic(topic) or self.serial
+            if client_serial and client_serial != self._client_serials.get(client_id):
+                if client_serial != self.serial:
+                    logger.info(
+                        "%sMQTT client publishing with serial %s (VP serial is %s) — adapting responses",
+                        self._log_prefix,
+                        client_serial,
+                        self.serial,
+                    )
+                self._client_serials[client_id] = client_serial
 
-                        if command == "pushall":
-                            # Slicer is requesting full status - send response
-                            logger.info("Sending status report in response to pushall")
-                            await self._send_status_report(writer)
-                        elif command == "start":
-                            # Slicer wants periodic status updates - send one now
-                            logger.info("Starting status push stream")
-                            await self._send_status_report(writer)
+            try:
+                # Some slicer builds (observed with OrcaSlicer on Linux, #927)
+                # include the C-string null terminator in the MQTT payload
+                # length, so the decoded message ends with \x00. Real brokers
+                # pass the bytes through; strict json.loads raises "Extra data"
+                # and every pushall/get_version/project_file silently dropped.
+                data = json.loads(message.rstrip("\x00 \r\n\t"))
+            except json.JSONDecodeError as e:
+                logger.debug(
+                    "MQTT publish JSON decode failed: %s (payload=%r)",
+                    e,
+                    message[:200],
+                )
+                return
 
-                    # Handle info commands (get_version, etc.)
-                    if "info" in data:
-                        info_data = data["info"]
-                        command = info_data.get("command", "")
-                        sequence_id = info_data.get("sequence_id", "0")
-                        logger.info("MQTT info command: %s", command)
+            # The synthetic flow below is the original (pre-bridge) behaviour and is
+            # what the proven-working FTP "Send" depends on. Do NOT replace any
+            # synthetic response with a forward — only ADD forwarding alongside,
+            # at the bottom, for commands the synthetic flow doesn't handle
+            # (AMS write / xcam / system / etc., which need to actually reach
+            # the real printer).
 
-                        if command == "get_version":
-                            await self._send_version_response(writer, sequence_id)
+            handled_locally = False
 
-                    # Handle print commands
-                    if "print" in data:
-                        print_data = data["print"]
-                        command = print_data.get("command", "")
-                        filename = print_data.get("subtask_name", "")
-                        sequence_id = print_data.get("sequence_id", "0")
+            # Handle pushing command (status request)
+            if "pushing" in data:
+                pushing_data = data["pushing"]
+                command = pushing_data.get("command", "")
+                logger.info("MQTT pushing command: %s", command)
 
-                        logger.info("MQTT print command: %s for %s", command, filename)
+                if command == "pushall":
+                    logger.info("Sending status report in response to pushall")
+                    await self._send_status_report(writer, serial=client_serial)
+                    handled_locally = True
+                elif command == "start":
+                    logger.info("Starting status push stream")
+                    await self._send_status_report(writer, serial=client_serial)
+                    handled_locally = True
 
-                        if command == "project_file":
-                            # Respond with PREPARE status so slicer proceeds with FTP upload
-                            file_3mf = print_data.get("file", filename)
-                            await self._send_print_response(writer, sequence_id, file_3mf)
+            # Handle info commands (get_version, etc.)
+            if "info" in data:
+                info_data = data["info"]
+                command = info_data.get("command", "")
+                sequence_id = info_data.get("sequence_id", "0")
+                logger.info("MQTT info command: %s", command)
 
-                            if self.on_print_command:
-                                await self._notify_print_command(filename, print_data)
+                if command == "get_version":
+                    await self._send_version_response(writer, sequence_id, serial=client_serial)
+                    handled_locally = True
 
-                except json.JSONDecodeError:
-                    pass  # Non-JSON payloads on request topic are safely ignored
+            # Handle print commands
+            if "print" in data:
+                print_data = data["print"]
+                command = print_data.get("command", "")
+                filename = print_data.get("subtask_name", "")
+                sequence_id = print_data.get("sequence_id", "0")
+
+                logger.info("MQTT print command: %s for %s", command, filename)
+
+                if command in ("project_file", "gcode_file"):
+                    # File lives on Bambuddy, not the printer — synthetic only.
+                    file_3mf = print_data.get("file", filename)
+                    await self._send_print_response(writer, sequence_id, file_3mf, serial=client_serial)
+                    if self.on_print_command:
+                        await self._notify_print_command(filename, print_data)
+                    handled_locally = True
+
+            # Forward anything the synthetic flow didn't handle to the real
+            # printer. AMS load / dry / xcam / system / extrusion_cali_get etc.
+            if not handled_locally and self._bridge is not None and self._bridge.is_active:
+                self._bridge.forward_to_printer(data)
 
         except (IndexError, ValueError, OSError) as e:
             logger.debug("MQTT PUBLISH error: %s", e)

@@ -350,12 +350,16 @@ class TestCostCalculationScenarios:
         await db_session.refresh(spool_new)
         await db_session.refresh(spool_old)
 
-        # Create archive with new SpoolUsageHistory (archive_id set)
+        # Create archive with new SpoolUsageHistory (archive_id set).
+        # filament_used_grams matches the tracked weight so the #1344 default-
+        # rate top-up for untracked filament doesn't apply -- this test pins
+        # the query routing, not the top-up branch.
         archive_new = await archive_factory(
             printer.id,
             print_name="UniquePrint",
             status="completed",
             cost=None,
+            filament_used_grams=20.0,
         )
 
         history_new = SpoolUsageHistory(

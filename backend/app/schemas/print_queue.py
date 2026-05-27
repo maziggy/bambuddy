@@ -46,6 +46,8 @@ class PrintQueueItemCreate(BaseModel):
     script_processing: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
     quantity: int = 1
+    # Project to associate the resulting archive with
+    project_id: int | None = None
 
 
 class PrintQueueItemUpdate(BaseModel):
@@ -88,6 +90,11 @@ class PrintQueueItemResponse(BaseModel):
     require_previous_success: bool
     auto_off_after: bool
     manual_start: bool
+    # True when the dispatch scheduler last evaluated this item and the
+    # assigned spool could not satisfy at least one slot's required grams
+    # (#1496). Display-only — the ▶ click recomputes deficit against live
+    # spool state.
+    filament_short: bool = False
     ams_mapping: list[int] | None = None
     plate_id: int | None = None  # Plate ID for multi-plate 3MF files
     # Print options
@@ -106,6 +113,13 @@ class PrintQueueItemResponse(BaseModel):
     # Nested info for UI (populated in route)
     archive_name: str | None = None
     archive_thumbnail: str | None = None
+    # True when the linked archive has been soft-deleted (its files are gone
+    # from disk). In that case the *archive_name* / *archive_thumbnail* /
+    # downstream metadata fields are intentionally left None so the frontend
+    # doesn't 404-storm the now-missing thumbnail / plates / plate-thumbnail
+    # endpoints (#1348 follow-up). Frontends can render a "source deleted"
+    # badge based on this flag.
+    archive_deleted: bool = False
     library_file_name: str | None = None  # Name of library file (if library_file_id is set)
     library_file_thumbnail: str | None = None  # Thumbnail of library file
     printer_name: str | None = None

@@ -308,3 +308,48 @@ class TestSystemHelperFunctions:
 
         result = format_uptime(30)  # 30 seconds
         assert result == "< 1m"
+
+
+class TestSystemHealthAPI:
+    """Integration tests for GET /api/v1/system/health (log-health scan)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_health_clean_log(self, async_client: AsyncClient, tmp_path, monkeypatch):
+        """A log with no known issues returns an empty, healthy result."""
+        from backend.app.core.config import settings
+
+        (tmp_path / "bambuddy.log").write_text(
+            "2026-05-22 10:00:00,000 INFO [backend.app.main] Application startup complete\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(settings, "log_dir", tmp_path)
+
+        response = await async_client.get("/api/v1/system/health")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["log_available"] is True
+        assert result["findings"] == []
+        assert result["summary"]["total"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_health_detects_known_issue(self, async_client: AsyncClient, tmp_path, monkeypatch):
+        """A known signature in the log surfaces as a finding."""
+        from backend.app.core.config import settings
+
+        (tmp_path / "bambuddy.log").write_text(
+            "2026-05-22 10:00:00,000 WARNING [backend.app.services.bambu_ftp] "
+            "FTP connection permission error to 10.0.0.9: 530\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(settings, "log_dir", tmp_path)
+
+        response = await async_client.get("/api/v1/system/health")
+
+        assert response.status_code == 200
+        result = response.json()
+        ids = [f["signature_id"] for f in result["findings"]]
+        assert "ftp-auth-rejected" in ids
+        assert result["summary"]["layer8"] >= 1

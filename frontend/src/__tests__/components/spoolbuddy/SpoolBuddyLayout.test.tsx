@@ -9,6 +9,7 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { SpoolBuddyLayout } from '../../../components/spoolbuddy/SpoolBuddyLayout';
+import { ToastProvider } from '../../../contexts/ToastContext';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -32,9 +33,21 @@ vi.mock('../../../utils/date', () => ({
   formatTimeOnly: () => '12:00',
 }));
 
-vi.mock('lucide-react', () => ({
-  WifiOff: (props: Record<string, unknown>) => <span data-testid="wifi-off" {...props} />,
-}));
+vi.mock('lucide-react', () => {
+  const Stub = (props: Record<string, unknown>) => <span {...props} />;
+  return {
+    WifiOff: (props: Record<string, unknown>) => <span data-testid="wifi-off" {...props} />,
+    // ToastProvider, brought in by SpoolBuddyLayout's useToast(), imports these.
+    AlertCircle: Stub,
+    CheckCircle: Stub,
+    ChevronDown: Stub,
+    ChevronUp: Stub,
+    Info: Stub,
+    Loader2: Stub,
+    X: Stub,
+    XCircle: Stub,
+  };
+});
 
 vi.mock('../../../components/VirtualKeyboard', () => ({
   VirtualKeyboard: () => <div data-testid="virtual-keyboard" />,
@@ -43,15 +56,17 @@ vi.mock('../../../components/VirtualKeyboard', () => ({
 function renderLayout() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/spoolbuddy']}>
-        <Routes>
-          <Route path="spoolbuddy" element={<SpoolBuddyLayout />}>
-            <Route index element={<div data-testid="child-page">Child</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>
+    <ToastProvider>
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/spoolbuddy']}>
+          <Routes>
+            <Route path="spoolbuddy" element={<SpoolBuddyLayout />}>
+              <Route index element={<div data-testid="child-page">Child</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </ToastProvider>
   );
 }
 
@@ -85,5 +100,22 @@ describe('SpoolBuddyLayout', () => {
     renderLayout();
     const child = document.querySelector('[data-testid="child-page"]');
     expect(child).not.toBeNull();
+  });
+
+  it('suppresses the global toast viewport while mounted', () => {
+    const { unmount } = renderLayout();
+    // Visible viewport gets `hidden` class while the kiosk is up.
+    const viewport = document.querySelector('div.fixed.bottom-4.right-20');
+    expect(viewport?.className).toContain('hidden');
+
+    // Cleanup restores the viewport when the kiosk unmounts (e.g. user
+    // navigates back to the main app).
+    unmount();
+    const viewportAfter = document.querySelector('div.fixed.bottom-4.right-20');
+    // After unmount the toast container is gone with the provider; the
+    // important guarantee is the suppression flag was untoggled, which the
+    // ToastContext tests pin directly. Here we only assert no crash on
+    // unmount during cleanup.
+    expect(viewportAfter).toBeNull();
   });
 });

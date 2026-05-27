@@ -1,8 +1,30 @@
-import { useState, useMemo } from 'react';
-import { Search, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Search, Clock, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ColorSectionProps, CatalogDisplayColor } from './types';
 import { QUICK_COLORS, ALL_COLORS } from './constants';
+import { FilamentSwatch } from '../FilamentSwatch';
+import { buildFilamentBackground, FILAMENT_EFFECT_OPTIONS } from '../filamentSwatchHelpers';
+
+/** Parse user paste from 3dfilamentprofiles.com etc.: split on commas/whitespace,
+ *  drop the leading `#`, accept 6/8-char hex, lowercase. Returns null when no
+ *  valid stops are found. Mirrors the server-side validator output. */
+function normalizeExtraColorsInput(raw: string): { value: string; invalid: string[] } {
+  const tokens = raw
+    .split(/[\s,]+/)
+    .map((t) => t.trim().replace(/^#/, ''))
+    .filter(Boolean);
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  for (const tok of tokens) {
+    if ((tok.length === 6 || tok.length === 8) && /^[0-9a-fA-F]+$/.test(tok)) {
+      valid.push(tok.toLowerCase());
+    } else {
+      invalid.push(tok);
+    }
+  }
+  return { value: valid.join(','), invalid };
+}
 
 export function ColorSection({
   formData,
@@ -18,14 +40,48 @@ export function ColorSection({
   // Current hex without # prefix
   const currentHex = formData.rgba.replace('#', '').substring(0, 6);
 
+  // Draft state for the manual hex input. Decoupled from `formData.rgba` so
+  // mid-typing values (1–5 chars) don't trigger the immediate auto-pad-to-6
+  // that used to drop every keystroke past the first (#1407). The draft is
+  // committed to `formData.rgba` once it reaches 6 chars, or on blur (where
+  // shorter drafts are padded with `0` so the backend never sees a malformed
+  // rgba — preserves the #1055 invariant). The useEffect re-syncs the draft
+  // whenever an external action (color picker, swatch click, edit-mode load)
+  // changes `currentHex`.
+  const [hexDraft, setHexDraft] = useState(currentHex);
+  useEffect(() => {
+    setHexDraft(currentHex);
+  }, [currentHex]);
+
   const isSelected = (hex: string) => {
     return currentHex.toUpperCase() === hex.toUpperCase();
   };
 
-  const selectColor = (hex: string, name: string) => {
+  const selectColor = (
+    hex: string,
+    name: string,
+    // #1340: catalog entries carry an optional gradient + effect. Pass them in
+    // (even as empty strings) to overwrite the spool's existing values — the
+    // catalog entry is a complete preset, the user explicitly chose its look.
+    // Pass `undefined` (the default, used by recent/fallback swatches) to
+    // leave any existing gradient/effect untouched — those buttons are plain
+    // hex pickers, not full presets.
+    extraColors?: string | null,
+    effectType?: string | null,
+  ) => {
     // Store as RRGGBBAA (with FF alpha)
     updateField('rgba', hex.toUpperCase() + 'FF');
     updateField('color_name', name);
+    if (extraColors !== undefined) {
+      const next = extraColors ?? '';
+      setExtraColorsDraft(next);
+      setExtraColorsErrors([]);
+      lastCommittedExtraColorsRef.current = next;
+      updateField('extra_colors', next);
+    }
+    if (effectType !== undefined) {
+      updateField('effect_type', effectType ?? '');
+    }
     onColorUsed({ name, hex });
   };
 
@@ -60,6 +116,8 @@ export function ColorSection({
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
     }
@@ -79,6 +137,8 @@ export function ColorSection({
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
       // Try without trailing "+" (e.g. "PLA Silk+" -> "PLA Silk")
@@ -111,6 +171,8 @@ export function ColorSection({
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
     }
@@ -143,12 +205,60 @@ export function ColorSection({
     return showAllColors ? ALL_COLORS : QUICK_COLORS;
   }, [colorSearch, showAllColors]);
 
+  // #1154: editable buffer for the multi-colour paste field. We keep the raw
+  // text the user typed/pasted so they can still see invalid tokens — only
+  // commit the canonical form to formData on blur or when valid.
+  const [extraColorsDraft, setExtraColorsDraft] = useState<string>(formData.extra_colors);
+  const [extraColorsErrors, setExtraColorsErrors] = useState<string[]>([]);
+
+  // #1154 follow-up: when the modal opens to edit an existing spool, the
+  // parent's ``setFormData(...)`` lands in a useEffect AFTER ColorSection
+  // already mounted with the default-empty formData. Without resyncing,
+  // ``extraColorsDraft`` stays at the initial '' and the field appears
+  // empty even though the spool has saved colours (visible as the gradient
+  // banner above). Track our own commits via a ref so external formData
+  // updates resync the draft without clobbering live user typing.
+  const lastCommittedExtraColorsRef = useRef<string>(formData.extra_colors);
+  useEffect(() => {
+    if (formData.extra_colors !== lastCommittedExtraColorsRef.current) {
+      setExtraColorsDraft(formData.extra_colors);
+      setExtraColorsErrors([]);
+      lastCommittedExtraColorsRef.current = formData.extra_colors;
+    }
+  }, [formData.extra_colors]);
+  const previewBackground = useMemo(
+    () =>
+      buildFilamentBackground({
+        rgba: formData.rgba,
+        extraColors: formData.extra_colors,
+        effectType: formData.effect_type,
+        subtype: formData.subtype,
+        effectSize: 'bar',
+      }),
+    [formData.rgba, formData.extra_colors, formData.effect_type, formData.subtype],
+  );
+
+  const commitExtraColors = (text: string) => {
+    setExtraColorsDraft(text);
+    if (!text.trim()) {
+      setExtraColorsErrors([]);
+      lastCommittedExtraColorsRef.current = '';
+      updateField('extra_colors', '');
+      return;
+    }
+    const { value, invalid } = normalizeExtraColorsInput(text);
+    setExtraColorsErrors(invalid);
+    lastCommittedExtraColorsRef.current = value;
+    updateField('extra_colors', value);
+  };
+
   return (
     <div className="space-y-3">
-      {/* Color preview banner */}
+      {/* Color preview banner — shows gradient + effect overlay. */}
       <div
         className="h-10 rounded-lg border border-bambu-dark-tertiary"
-        style={{ backgroundColor: `#${currentHex}` }}
+        style={previewBackground}
+        data-testid="color-preview-banner"
       />
 
       {/* Recently Used Colors */}
@@ -201,7 +311,7 @@ export function ColorSection({
               <button
                 key={`${color.hex}-${color.name}-${color.manufacturer ?? ''}`}
                 type="button"
-                onClick={() => selectColor(color.hex, color.name)}
+                onClick={() => selectColor(color.hex, color.name, color.extra_colors, color.effect_type)}
                 className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 hover:z-20 relative group ${
                   isSelected(color.hex)
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'
@@ -296,10 +406,36 @@ export function ColorSection({
                 type="text"
                 className="w-full pl-7 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm font-mono uppercase focus:outline-none focus:border-bambu-green"
                 placeholder="RRGGBB"
-                value={currentHex.toUpperCase()}
+                value={hexDraft.toUpperCase()}
                 onChange={(e) => {
-                  const val = e.target.value.replace('#', '').replace(/[^0-9A-Fa-f]/g, '');
-                  if (val.length <= 8) updateField('rgba', val.toUpperCase() + (val.length <= 6 ? 'FF' : ''));
+                  // Sanitize: drop `#`, non-hex chars, uppercase. 7/8-char
+                  // pastes (with an alpha byte) truncate to the leading RGB —
+                  // Bambu filaments are opaque, so we never expose an alpha
+                  // affordance and discarding pasted alpha is fine. The draft
+                  // can hold 0–6 chars freely while the user types; we only
+                  // commit to `formData.rgba` (and through to the backend)
+                  // once the value is a complete 6-char hex, which keeps the
+                  // #1055 invariant intact without re-introducing the
+                  // mid-keystroke truncation that broke typing in #1407.
+                  const sanitized = e.target.value
+                    .replace('#', '')
+                    .replace(/[^0-9A-Fa-f]/g, '')
+                    .toUpperCase();
+                  const next = sanitized.length > 6 ? sanitized.substring(0, 6) : sanitized;
+                  setHexDraft(next);
+                  if (next.length === 6) {
+                    updateField('rgba', next + 'FF');
+                  }
+                }}
+                onBlur={() => {
+                  // User left the field with a partial value — pad to 6 chars
+                  // and commit so the form state always carries a valid rgba
+                  // when submitted.
+                  if (hexDraft.length > 0 && hexDraft.length < 6) {
+                    const padded = hexDraft.padEnd(6, '0');
+                    setHexDraft(padded);
+                    updateField('rgba', padded + 'FF');
+                  }
                 }}
               />
             </div>
@@ -312,6 +448,61 @@ export function ColorSection({
                 updateField('rgba', hex + 'FF');
               }}
               title={t('inventory.pickColor')}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* #1154: Multi-colour gradient stops + visual effect. Optional —
+          empty values keep the spool rendering as a solid swatch. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-bambu-dark-tertiary/50">
+        <div>
+          <label className="block text-sm font-medium text-bambu-gray mb-1">
+            {t('inventory.extraColorsLabel')}
+          </label>
+          <input
+            type="text"
+            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm font-mono placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+            placeholder={t('inventory.extraColorsPlaceholder')}
+            value={extraColorsDraft}
+            onChange={(e) => commitExtraColors(e.target.value)}
+            data-testid="extra-colors-input"
+          />
+          {extraColorsErrors.length > 0 && (
+            <p className="text-xs text-red-400 mt-1">
+              {t('inventory.extraColorsInvalid', { tokens: extraColorsErrors.join(', ') })}
+            </p>
+          )}
+          {!extraColorsErrors.length && (
+            <p className="text-xs text-bambu-gray/70 mt-1">{t('inventory.extraColorsHint')}</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-bambu-gray mb-1 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            {t('inventory.colorEffectLabel')}
+          </label>
+          <div className="flex gap-2 items-stretch">
+            <select
+              className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+              value={formData.effect_type}
+              onChange={(e) => updateField('effect_type', e.target.value)}
+              data-testid="effect-type-select"
+            >
+              {FILAMENT_EFFECT_OPTIONS.map((opt) => (
+                <option key={opt.value || 'none'} value={opt.value}>
+                  {t(opt.labelKey)}
+                </option>
+              ))}
+            </select>
+            <FilamentSwatch
+              rgba={formData.rgba}
+              extraColors={formData.extra_colors}
+              effectType={formData.effect_type}
+              subtype={formData.subtype}
+              effectSize="preview"
+              className="w-10 h-10"
+              shape="square"
             />
           </div>
         </div>

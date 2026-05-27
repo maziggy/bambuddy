@@ -2,8 +2,8 @@
  * Tests for the LoginPage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { LoginPage } from '../../pages/LoginPage';
@@ -157,6 +157,678 @@ describe('LoginPage', () => {
 
       // Release the login request
       resolveLogin!();
+    });
+  });
+
+  describe('2FA flow', () => {
+    // Helper: login as a 2FA user and get to the 2FA step
+    async function loginWith2FA(twoFAMethods = ['totp', 'backup']) {
+      const user = userEvent.setup();
+
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            requires_2fa: true,
+            pre_auth_token: 'test-pre-auth-token',
+            two_fa_methods: twoFAMethods,
+          })
+        )
+      );
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'mfa-user');
+      await user.type(screen.getByLabelText(/Password/i), 'mfa-password');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      return user;
+    }
+
+    it('shows 2FA step when login returns requires_2fa', async () => {
+      await loginWith2FA();
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+    });
+
+    it('shows code input on the 2FA step', async () => {
+      await loginWith2FA();
+
+      await waitFor(() => {
+        // The code input field is rendered
+        expect(screen.getByRole('textbox', { name: /Verification Code/i })).toBeInTheDocument();
+      });
+    });
+
+    it('submits 2FA verify request with code and pre_auth_token', async () => {
+      let verifyCalled = false;
+      let verifyBody: unknown;
+
+      server.use(
+        http.post('/api/v1/auth/2fa/verify', async ({ request }) => {
+          verifyCalled = true;
+          verifyBody = await request.json();
+          return HttpResponse.json({
+            access_token: 'final-jwt',
+            token_type: 'bearer',
+            user: {
+              id: 1,
+              username: 'mfa-user',
+              role: 'admin',
+              is_active: true,
+              created_at: new Date().toISOString(),
+            },
+          });
+        })
+      );
+
+      const user = await loginWith2FA();
+
+      await waitFor(() => {
+        expect(screen.getByRole('textbox', { name: /Verification Code/i })).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByRole('textbox', { name: /Verification Code/i }), '123456');
+      await user.click(screen.getByRole('button', { name: /Verify/i }));
+
+      await waitFor(() => {
+        expect(verifyCalled).toBe(true);
+      });
+
+      expect(verifyBody).toMatchObject({
+        pre_auth_token: 'test-pre-auth-token',
+        code: '123456',
+        method: 'totp',
+      });
+    });
+
+    it('returns to credentials step when back button is clicked', async () => {
+      await loginWith2FA();
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+
+      const user = userEvent.setup();
+      const backButton = screen.getByRole('button', { name: /Back to login/i });
+      await user.click(backButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Bambuddy Login/i })).toBeInTheDocument();
+      });
+    });
+
+    it('shows method selector when multiple 2FA methods are available', async () => {
+      await loginWith2FA(['totp', 'email', 'backup']);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+
+      // Multiple method buttons should be visible
+      expect(screen.getByRole('button', { name: /Authenticator/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Email/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Backup/i })).toBeInTheDocument();
+    });
+
+    it('does not show method selector with only one 2FA method', async () => {
+      await loginWith2FA(['totp']);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+
+      // Single-method: no method selector buttons
+      expect(screen.queryByRole('button', { name: /Authenticator/i })).not.toBeInTheDocument();
+    });
+
+    it('shows send code button when email method is selected', async () => {
+      const _user = await loginWith2FA(['email']);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+
+      // For email method the "Send code" button should be shown
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Send Code/i })).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Remember Me', () => {
+    const mockUser = {
+      id: 1,
+      username: 'testuser',
+      role: 'admin' as const,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    beforeEach(() => {
+      vi.mocked(localStorage.setItem).mockClear();
+      sessionStorage.clear();
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            access_token: 'test-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        ),
+        // Prevent checkAuthStatus from clearing the token when getCurrentUser is called
+        http.get('/api/v1/auth/me', () => HttpResponse.json(mockUser))
+      );
+    });
+
+    it('renders Remember Me checkbox on credentials step', async () => {
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Remember Me/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('checkbox', { name: /Remember Me/i })).not.toBeChecked();
+    });
+
+    it('does not persist token to localStorage when unchecked (default)', async () => {
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'testuser');
+      await user.type(screen.getByLabelText(/Password/i), 'testpassword');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      // Token must be in sessionStorage (tab-only) but not in localStorage
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).not.toHaveBeenCalledWith('auth_token', expect.any(String));
+        expect(sessionStorage.getItem('auth_token')).toBe('test-token');
+      });
+    });
+
+    it('persists token to localStorage when Remember Me is checked', async () => {
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('checkbox', { name: /Remember Me/i }));
+      await user.type(screen.getByLabelText(/Username/i), 'testuser');
+      await user.type(screen.getByLabelText(/Password/i), 'testpassword');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'test-token');
+      });
+    });
+
+    it('carries Remember Me through 2FA verification', async () => {
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            requires_2fa: true,
+            pre_auth_token: 'pre-token',
+            two_fa_methods: ['totp'],
+          })
+        ),
+        http.post('/api/v1/auth/2fa/verify', () =>
+          HttpResponse.json({
+            access_token: 'final-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      // Check Remember Me before submitting credentials
+      await user.click(screen.getByRole('checkbox', { name: /Remember Me/i }));
+      await user.type(screen.getByLabelText(/Username/i), 'testuser');
+      await user.type(screen.getByLabelText(/Password/i), 'testpassword');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      // Now on 2FA step — enter code and verify
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByRole('textbox', { name: /Verification Code/i }), '123456');
+      await user.click(screen.getByRole('button', { name: /Verify/i }));
+
+      // Token must be persisted to localStorage because Remember Me was checked
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'final-token');
+      });
+    });
+
+    it('checkbox is not shown on 2FA step', async () => {
+      server.use(
+        http.post('/api/v1/auth/login', () =>
+          HttpResponse.json({
+            requires_2fa: true,
+            pre_auth_token: 'pre-token',
+            two_fa_methods: ['totp'],
+          })
+        )
+      );
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/Username/i), 'testuser');
+      await user.type(screen.getByLabelText(/Password/i), 'testpassword');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+
+      expect(screen.queryByLabelText(/Remember Me/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('OIDC with Remember Me', () => {
+    const mockUser = {
+      id: 1,
+      username: 'oidcuser',
+      role: 'admin' as const,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    beforeEach(() => {
+      vi.mocked(localStorage.setItem).mockClear();
+      sessionStorage.clear();
+    });
+
+    afterEach(() => {
+      window.location.hash = '';
+      window.history.pushState({}, '', '/login');
+      sessionStorage.clear();
+    });
+
+    it('persists token to localStorage after OIDC redirect when Remember Me was set', async () => {
+      sessionStorage.setItem('auth_remember_me', '1');
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            access_token: 'oidc-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+
+      window.location.hash = '#oidc_token=test-exchange-token';
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'oidc-token');
+      });
+      expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+    });
+
+    it('carries Remember Me through OIDC + 2FA flow', async () => {
+      sessionStorage.setItem('auth_remember_me', '1');
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            requires_2fa: true,
+            pre_auth_token: 'oidc-pre-token',
+            two_fa_methods: ['totp'],
+          })
+        ),
+        http.post('/api/v1/auth/2fa/verify', () =>
+          HttpResponse.json({
+            access_token: 'oidc-2fa-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+
+      window.location.hash = '#oidc_token=test-exchange-token';
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Two-Factor Authentication/i })).toBeInTheDocument();
+      });
+      // Flag consumed on mount — no stale value for future flows
+      expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+
+      await user.type(screen.getByRole('textbox', { name: /Verification Code/i }), '123456');
+      await user.click(screen.getByRole('button', { name: /Verify/i }));
+
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledWith('auth_token', 'oidc-2fa-token');
+      });
+    });
+
+    it('cleans up auth_remember_me flag when OIDC returns an error', async () => {
+      sessionStorage.setItem('auth_remember_me', '1');
+      window.history.pushState({}, '', '/login?oidc_error=invalid_state');
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+      });
+    });
+
+    it('does not persist token to localStorage after OIDC redirect when Remember Me was not set', async () => {
+      // No auth_remember_me flag set — token must stay session-only
+      server.use(
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({
+            access_token: 'oidc-session-token',
+            token_type: 'bearer',
+            user: mockUser,
+          })
+        )
+      );
+
+      window.location.hash = '#oidc_token=test-exchange-token';
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(sessionStorage.getItem('auth_token')).toBe('oidc-session-token');
+      });
+      expect(vi.mocked(localStorage.setItem)).not.toHaveBeenCalledWith('auth_token', expect.any(String));
+    });
+
+    it('shows error toast when OIDC exchange returns unexpected response shape', async () => {
+      sessionStorage.setItem('auth_remember_me', '1');
+      server.use(
+        // Response is missing both access_token and requires_2fa — hits the else branch
+        http.post('/api/v1/auth/oidc/exchange', () =>
+          HttpResponse.json({ token_type: 'bearer' })
+        )
+      );
+
+      window.location.hash = '#oidc_token=test-exchange-token';
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Login.*failed|failed.*login/i)).toBeInTheDocument();
+      });
+      // Flag must still be cleaned up even on malformed response
+      expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+    });
+
+    it('writes auth_remember_me flag to sessionStorage before OIDC provider redirect', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 42,
+              name: 'FlagIdP',
+              issuer_url: 'https://flag.test',
+              client_id: 'c',
+              is_enabled: true,
+              icon_url: null,
+              has_icon: false,
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+            },
+          ])
+        ),
+        http.get('/api/v1/auth/oidc/authorize/42', () =>
+          HttpResponse.json({ auth_url: 'https://flag.test/authorize?state=abc' })
+        )
+      );
+
+      const user = userEvent.setup();
+      render(<LoginPage />);
+
+      // Tick "Remember Me"
+      await waitFor(() => {
+        expect(screen.getByRole('checkbox', { name: /Remember Me/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('checkbox', { name: /Remember Me/i }));
+
+      // Wait for OIDC provider button to appear
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /FlagIdP/i })).toBeInTheDocument();
+      });
+
+      // Stub window.location so the OIDC redirect doesn't actually navigate.
+      // Keep href valid so relative fetch URLs resolve correctly.
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: { ...window.location, href: 'http://localhost:3000/' },
+      });
+
+      await user.click(screen.getByRole('button', { name: /FlagIdP/i }));
+
+      await waitFor(() => {
+        expect(sessionStorage.getItem('auth_remember_me')).toBe('1');
+      });
+    });
+  });
+
+  // #1333: icon proxy — login page renders <img src> from /icon endpoint
+  // rather than the upstream icon_url, so the strict img-src CSP holds.
+  describe('OIDC icon proxy (#1333)', () => {
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, setup_required: false })
+        ),
+      );
+    });
+
+    it('renders provider icon via the proxy URL when has_icon is true', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 7,
+              name: 'IconProv',
+              issuer_url: 'https://idp.test',
+              client_id: 'c',
+              is_enabled: true,
+              icon_url: 'https://idp.test/icon.png',
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: true,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const button = await screen.findByRole('button', { name: /IconProv/i });
+      const img = button.querySelector('img');
+      expect(img).not.toBeNull();
+      // Same-origin path — never the upstream icon_url. This is the entire
+      // point of the proxy: keep img-src strictly 'self' data: blob:.
+      expect(img!.getAttribute('src')).toBe('/api/v1/auth/oidc/providers/7/icon');
+    });
+
+    it('renders shield fallback when has_icon is false', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 8,
+              name: 'NoIconProv',
+              issuer_url: 'https://idp.test',
+              client_id: 'c',
+              is_enabled: true,
+              icon_url: null,
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: false,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const button = await screen.findByRole('button', { name: /NoIconProv/i });
+      expect(button.querySelector('img')).toBeNull();
+    });
+
+    it('renders mixed has_icon providers without crash', async () => {
+      // N12 — multiple providers on the login page with a mix of
+      // has_icon=true / false. No React-keys-collision warning, both
+      // branches render correctly side by side.
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 10,
+              name: 'WithIcon',
+              issuer_url: 'https://idp.test',
+              client_id: 'c1',
+              is_enabled: true,
+              icon_url: 'https://idp.test/icon.png',
+              has_icon: true,
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+            },
+            {
+              id: 11,
+              name: 'NoIcon',
+              issuer_url: 'https://idp.test',
+              client_id: 'c2',
+              is_enabled: true,
+              icon_url: null,
+              has_icon: false,
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const withIconBtn = await screen.findByRole('button', { name: /WithIcon/i });
+      const noIconBtn = await screen.findByRole('button', { name: /NoIcon/i });
+      expect(withIconBtn.querySelector('img')).not.toBeNull();
+      expect(noIconBtn.querySelector('img')).toBeNull();
+    });
+
+    it('swaps in shield fallback when the icon fails to load', async () => {
+      // I3 (#1333 review): the LoginPage must not show the browser
+      // broken-image glyph to anonymous users. onError must fall back to
+      // the Shield icon.
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 9,
+              name: 'FlakyIcon',
+              issuer_url: 'https://idp.test',
+              client_id: 'c',
+              is_enabled: true,
+              icon_url: 'https://idp.test/icon.png',
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: true,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const img = (await screen.findByRole('button', { name: /FlakyIcon/i })).querySelector('img');
+      expect(img).not.toBeNull();
+      // Fire the image's onError — jsdom doesn't fetch network resources
+      // so we simulate the failure directly.
+      fireEvent.error(img!);
+      // After error, no more <img> in the button; Shield fallback rendered.
+      await waitFor(() => {
+        const button = screen.getByRole('button', { name: /FlakyIcon/i });
+        expect(button.querySelector('img')).toBeNull();
+      });
+    });
+
+    it('keeps each provider button\'s iconFailed state independent', async () => {
+      // The OIDCProviderButton sub-component exists specifically so each
+      // provider owns its own iconFailed state. If a future refactor hoists
+      // useState into the parent loop, an error on provider A would also
+      // hide provider B's icon — exactly the regression this test catches.
+      server.use(
+        http.get('/api/v1/auth/oidc/providers', () =>
+          HttpResponse.json([
+            {
+              id: 21,
+              name: 'AlphaIdP',
+              issuer_url: 'https://a.test',
+              client_id: 'a',
+              is_enabled: true,
+              icon_url: 'https://a.test/icon.png',
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: true,
+            },
+            {
+              id: 22,
+              name: 'BetaIdP',
+              issuer_url: 'https://b.test',
+              client_id: 'b',
+              is_enabled: true,
+              icon_url: 'https://b.test/icon.png',
+              email_claim: 'email',
+              require_email_verified: true,
+              auto_create_users: false,
+              auto_link_existing_accounts: false,
+              has_icon: true,
+            },
+          ])
+        ),
+      );
+      render(<LoginPage />);
+
+      const alphaImg = (await screen.findByRole('button', { name: /AlphaIdP/i })).querySelector('img');
+      const betaImg = (await screen.findByRole('button', { name: /BetaIdP/i })).querySelector('img');
+      expect(alphaImg).not.toBeNull();
+      expect(betaImg).not.toBeNull();
+
+      fireEvent.error(alphaImg!);
+
+      // Alpha's icon swaps to the Shield fallback…
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /AlphaIdP/i }).querySelector('img')).toBeNull();
+      });
+      // …but Beta's icon stays put. If state leaks to the parent, this fails.
+      expect(screen.getByRole('button', { name: /BetaIdP/i }).querySelector('img')).not.toBeNull();
     });
   });
 });

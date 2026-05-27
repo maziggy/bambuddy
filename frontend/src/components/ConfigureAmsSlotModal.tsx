@@ -369,19 +369,18 @@ export function ConfigureAmsSlotModal({
         trayInfoIdx = builtinFilamentId!;
         settingId = '';
       } else {
-        // Get tray_info_idx: for user presets, fetch detail to get filament_id or derive from base_id
         trayInfoIdx = convertToTrayInfoIdx(selectedPresetId);
         settingId = selectedPresetId;
 
-        // For user presets (not starting with GF), fetch the detail to get the real filament_id
+        // User cloud presets may carry a distinct filament_id in the cloud detail
+        // (e.g. "P285e239"); prefer it when present. Never fall back to base_id —
+        // that collapses custom presets to the inherited generic's filament_id and
+        // makes the slicer resolve the slot to "Generic …" instead (#1053).
         if (!selectedPresetId.startsWith('GFS')) {
           try {
             const detail = await api.getCloudSettingDetail(selectedPresetId);
             if (detail.filament_id) {
               trayInfoIdx = detail.filament_id;
-            } else if (detail.base_id) {
-              trayInfoIdx = convertToTrayInfoIdx(detail.base_id);
-              console.log(`Derived tray_info_idx from base_id: ${detail.base_id} -> ${trayInfoIdx}`);
             }
           } catch (e) {
             console.warn('Failed to fetch preset detail for filament_id:', e);
@@ -929,14 +928,14 @@ export function ConfigureAmsSlotModal({
                         key={preset.id}
                         data-preset-id={preset.id}
                         onClick={() => setSelectedPresetId(preset.id)}
-                        className={`w-full p-2 rounded-lg border text-left transition-colors ${
+                        className={`group w-full p-2 rounded-lg border text-left transition-colors ${
                           selectedPresetId === preset.id
                             ? 'bg-bambu-green/20 border-bambu-green'
                             : 'bg-bambu-dark border-bambu-dark-tertiary hover:border-bambu-gray'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-white text-sm truncate">{preset.name}</span>
+                          <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {preset.source === 'local' && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
@@ -1164,14 +1163,14 @@ export function ConfigureAmsSlotModal({
                           key={preset.id}
                           data-preset-id={preset.id}
                           onClick={() => setSelectedPresetId(preset.id)}
-                          className={`w-full p-2 rounded-lg border text-left transition-colors ${
+                          className={`group w-full p-2 rounded-lg border text-left transition-colors ${
                             selectedPresetId === preset.id
                               ? 'bg-bambu-green/20 border-bambu-green'
                               : 'bg-bambu-dark border-bambu-dark-tertiary hover:border-bambu-gray'
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-white text-sm truncate">{preset.name}</span>
+                            <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               {preset.source === 'local' && (
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">

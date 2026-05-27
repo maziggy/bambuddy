@@ -56,7 +56,9 @@ services:
     environment:
       - BAMBUDDY_TEST_URL=http://integration:8000
       - TESTING=1
-    command: ["pytest", "backend/tests/integration/", "-v", "--tb=short", "-p", "no:cacheprovider", "-n", "auto"]
+    # -v dropped + -n auto so integration tests inherit the same noise /
+    # parallelism profile as the backend-test image (see Dockerfile.test CMD).
+    command: ["pytest", "backend/tests/integration/", "--tb=short", "-p", "no:cacheprovider", "-n", "auto"]
     volumes:
       - ./backend:/app/backend:ro
 

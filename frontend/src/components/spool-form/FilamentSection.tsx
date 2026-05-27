@@ -164,7 +164,7 @@ export function FilamentSection({
                 ) : (
                   filteredPresets.map(option => (
                     <button
-                      key={option.code}
+                      key={`${option.code}::${option.name}`}
                       type="button"
                       className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary truncate ${
                         selectedPresetOption?.code === option.code

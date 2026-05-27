@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { hexToColorName, getColorName, resolveSpoolColorName } from '../../utils/colors';
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  hexToColorName,
+  getColorName,
+  resolveSpoolColorName,
+  setColorCatalog,
+  __resetColorCatalogForTests,
+} from '../../utils/colors';
 
 describe('hexToColorName', () => {
   it('returns "Unknown" for null/empty input', () => {
@@ -23,20 +29,18 @@ describe('hexToColorName', () => {
 });
 
 describe('getColorName', () => {
-  it('looks up Bambu hex colors before HSL fallback', () => {
-    // 5f6367 is in BAMBU_HEX_COLORS as "Titan Gray"
+  beforeEach(() => {
+    __resetColorCatalogForTests();
+  });
+
+  it('looks up the runtime color catalog before HSL fallback', () => {
+    setColorCatalog({ '5f6367': 'Titan Gray' });
     expect(getColorName('5f6367')).toBe('Titan Gray');
-    // Also with uppercase
     expect(getColorName('5F6367')).toBe('Titan Gray');
   });
 
-  it('looks up alternative Titan Gray hex', () => {
-    // 565656 is also mapped to "Titan Gray" in BAMBU_HEX_COLORS
-    expect(getColorName('565656')).toBe('Titan Gray');
-  });
-
-  it('falls back to HSL for unknown hex colors', () => {
-    // A hex that is not in the Bambu database
+  it('falls back to HSL when hex is not in the runtime catalog', () => {
+    // No catalog entry for 123456; HSL bucketing puts it in Blue.
     expect(getColorName('123456')).toBe('Blue');
   });
 
@@ -45,11 +49,30 @@ describe('getColorName', () => {
   });
 
   it('handles hex with # prefix', () => {
+    setColorCatalog({ '5f6367': 'Titan Gray' });
     expect(getColorName('#5f6367')).toBe('Titan Gray');
+  });
+
+  it('normalizes catalog keys (strips # and lowercases)', () => {
+    // Provider can pass keys in any case / with or without '#'; the utility
+    // must normalize so lookups succeed regardless of input shape.
+    setColorCatalog({ '#F5B6CD': 'Cherry Pink' });
+    expect(getColorName('F5B6CD')).toBe('Cherry Pink');
+    expect(getColorName('f5b6cd')).toBe('Cherry Pink');
+  });
+
+  it('resolves #857 regression — A17-R1 / F5B6CD is Cherry Pink, not Scarlet Red', () => {
+    setColorCatalog({ 'f5b6cd': 'Cherry Pink' });
+    expect(getColorName('F5B6CDFF')).toBe('Cherry Pink');
   });
 });
 
 describe('resolveSpoolColorName', () => {
+  beforeEach(() => {
+    __resetColorCatalogForTests();
+    setColorCatalog({ '5f6367': 'Titan Gray' });
+  });
+
   it('returns readable color name directly', () => {
     expect(resolveSpoolColorName('Titan Gray', '5F6367FF')).toBe('Titan Gray');
   });

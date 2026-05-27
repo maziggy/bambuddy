@@ -20,6 +20,7 @@ import {
   Calendar,
   ChevronDown,
   Users,
+  BarChart3,
 } from 'lucide-react';
 import {
   BarChart,
@@ -129,29 +130,50 @@ function QuickStatsWidget({
     total_cost: number;
     total_energy_kwh: number;
     total_energy_cost: number;
+    energy_data_warming_up?: boolean;
   } | undefined;
   currency: string;
 }) {
   const { t } = useTranslation();
+
+  const warmingUp = stats?.energy_data_warming_up === true;
+  const warmingUpTooltip = warmingUp ? t('stats.energyWarmingUpTooltip') : undefined;
 
   const items = [
     { icon: Package, color: 'text-bambu-green', label: t('stats.totalPrints'), value: `${stats?.total_prints || 0}` },
     { icon: Clock, color: 'text-blue-400', label: t('stats.printTime'), value: `${stats?.total_print_time_hours?.toFixed(1) ?? '0'}h` },
     { icon: Package, color: 'text-orange-400', label: t('stats.filamentUsed'), value: formatWeight(stats?.total_filament_grams || 0) },
     { icon: DollarSign, color: 'text-green-400', label: t('stats.filamentCost'), value: `${currency} ${stats?.total_cost?.toFixed(2) ?? '0.00'}` },
-    { icon: Zap, color: 'text-yellow-400', label: t('stats.energyUsed'), value: `${stats?.total_energy_kwh?.toFixed(3) ?? '0.000'} kWh` },
-    { icon: DollarSign, color: 'text-yellow-500', label: t('stats.energyCost'), value: `${currency} ${stats?.total_energy_cost?.toFixed(2) ?? '0.00'}` },
+    {
+      icon: Zap,
+      color: 'text-yellow-400',
+      label: t('stats.energyUsed'),
+      value: `${stats?.total_energy_kwh?.toFixed(3) ?? '0.000'} kWh`,
+      warning: warmingUp,
+      tooltip: warmingUpTooltip,
+    },
+    {
+      icon: DollarSign,
+      color: 'text-yellow-500',
+      label: t('stats.energyCost'),
+      value: `${currency} ${stats?.total_energy_cost?.toFixed(2) ?? '0.00'}`,
+      warning: warmingUp,
+      tooltip: warmingUpTooltip,
+    },
   ];
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
       {items.map((item) => (
-        <div key={item.label} className="flex items-start gap-3">
+        <div key={item.label} className="flex items-start gap-3" title={item.tooltip}>
           <div className={`p-2 rounded-lg bg-bambu-dark ${item.color}`}>
             <item.icon className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs text-bambu-gray">{item.label}</p>
+            <p className="text-xs text-bambu-gray flex items-center gap-1">
+              {item.label}
+              {item.warning && <AlertTriangle className="w-3 h-3 text-yellow-400" aria-label={item.tooltip} />}
+            </p>
             <p className="text-xl font-bold text-white">{item.value}</p>
           </div>
         </div>
@@ -175,9 +197,8 @@ function SuccessRateWidget({
   size?: 1 | 2 | 4;
 }) {
   const { t } = useTranslation();
-  const completedAndFailed = (stats?.successful_prints || 0) + (stats?.failed_prints || 0);
-  const successRate = completedAndFailed
-    ? Math.round((stats!.successful_prints / completedAndFailed) * 100)
+  const successRate = stats?.total_prints
+    ? Math.round(((stats.successful_prints || 0) / stats.total_prints) * 100)
     : 0;
 
   // Scale gauge size based on widget size
@@ -823,7 +844,13 @@ function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; curren
       return { archive: best, value: bestVal };
     };
 
-    const longest = findMax(a => a.actual_time_seconds);
+    // Only completed prints qualify as the "longest" record. Pre-#1390 this
+    // happened implicitly because the slim endpoint returned null
+    // actual_time_seconds for non-completed rows; that gate moved up to the
+    // backend so failed/cancelled prints now carry their elapsed duration
+    // (Quick Stats Print Time needs that), but a partially-completed 20-hour
+    // run shouldn't outrank a successful 18-hour print here.
+    const longest = findMax(a => (a.status === 'completed' ? a.actual_time_seconds : null));
     if (longest.archive) {
       result.push({
         icon: Clock, iconColor: 'text-blue-400', label: t('stats.longestPrint'),
@@ -1127,10 +1154,13 @@ export function StatsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-white">{t('stats.title')}</h1>
+            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+              <BarChart3 className="w-7 h-7 text-bambu-green" />
+              {t('stats.title')}
+            </h1>
             {isRefetching && <Loader2 className="w-5 h-5 text-bambu-green animate-spin" />}
           </div>
-          <p className="text-bambu-gray">{t('stats.subtitle')}</p>
+          <p className="text-bambu-gray mt-1">{t('stats.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Hidden widgets button - toggles panel in Dashboard */}

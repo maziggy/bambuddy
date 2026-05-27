@@ -141,6 +141,24 @@ describe('LocalProfilesView', () => {
     expect(screen.getByText('eSUN PETG @Bambu Lab H2D')).toBeInTheDocument();
   });
 
+  it('keeps the search bar visible when no presets match the query (#1470)', async () => {
+    render(<LocalProfilesView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Overture PLA Matte @BBL X1C')).toBeInTheDocument();
+    });
+
+    const searchInput = screen.getByPlaceholderText(/search/i);
+    fireEvent.change(searchInput, { target: { value: 'zzz-nothing-matches' } });
+
+    // The search bar must stay mounted so the query can be cleared/edited
+    // without a page refresh, and it keeps the typed value.
+    expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/search/i)).toHaveValue('zzz-nothing-matches');
+    // A no-matches message replaces the columns (not the "import some" empty state).
+    expect(screen.getByText(/no presets match your search/i)).toBeInTheDocument();
+  });
+
   it('shows empty state when no presets', async () => {
     server.use(
       http.get('/api/v1/local-presets/', () => {

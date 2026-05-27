@@ -23,6 +23,8 @@ from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.user import User
+from backend.app.services.log_health import ScanResult, scan_logs
+from backend.app.services.log_reader import collect_sensitive_strings
 from backend.app.services.printer_manager import printer_manager
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -574,3 +576,17 @@ async def get_storage_usage(
     """Get storage usage breakdown for Bambuddy data directories."""
     max_age_seconds = max(0, min(max_age_seconds, 3600))
     return await _get_storage_usage_cached(refresh=refresh, max_age_seconds=max_age_seconds)
+
+
+@router.get("/health", response_model=ScanResult)
+async def get_system_health(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SYSTEM_READ),
+):
+    """Scan the recent application log against the known-issue catalog.
+
+    Powers the self-service triage surfaces (System page + bug reporter).
+    Sample lines are sanitized before they leave the process.
+    """
+    sensitive_strings = await collect_sensitive_strings(db)
+    return await asyncio.to_thread(scan_logs, sensitive_strings=sensitive_strings)

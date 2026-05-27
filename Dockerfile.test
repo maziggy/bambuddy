@@ -1,4 +1,5 @@
 # Test image for running backend and frontend tests
+# syntax=docker/dockerfile:1.7
 FROM python:3.13-slim AS backend-test
 
 WORKDIR /app
@@ -8,14 +9,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies including test dependencies
+# Install Python dependencies including test dependencies.
+# BuildKit cache mount makes subsequent builds re-use the pip download
+# cache so the second build only does install work — the slow ~60-90s
+# fetch step from the first build becomes ~5s. Requires DOCKER_BUILDKIT=1
+# (already set in test_docker.sh).
 COPY requirements.txt ./
 COPY requirements-dev.txt ./
-RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt -r requirements-dev.txt
 
 # Copy backend code
 COPY backend/ ./backend/
 COPY pyproject.toml ./
+
+# Embedded GCode viewer assets — required so the @app.get("/gcode-viewer/...")
+# packaging-regression test in tests/integration/test_gcode_viewer.py actually
+# runs instead of pytest-skipping with "index.html not present". Path matches
+# the production Dockerfile (static_dir.parent / "gcode_viewer" = /app/gcode_viewer/).
+COPY gcode_viewer/ ./gcode_viewer/
 
 # Create necessary directories
 RUN mkdir -p /app/data /app/logs /app/archive
@@ -25,9 +37,14 @@ ENV PYTHONUNBUFFERED=1
 ENV DATA_DIR=/app/data
 ENV TESTING=1
 
-# Default command runs pytest (excluding docker integration tests)
-# Use -n auto for parallel execution (auto-detects available CPUs)
-CMD ["pytest", "backend/tests/", "-v", "--tb=short", "-p", "no:cacheprovider", "-n", "auto"]
+# Default command runs pytest (excluding docker integration tests).
+# -v dropped: 5300+ "PASSED foo::bar" lines per worker eat noticeable
+# stdout I/O time and clutter test_docker.sh output. --tb=short still
+# gives full failure tracebacks when something breaks.
+# -n auto adapts to the host's vCPU count instead of hard-coding 30 —
+# on a 2-vCPU CI / VM runner, -n 30 spawns 30 Python processes fighting
+# for 2 cores, which is mostly IPC + import-thrash overhead.
+CMD ["pytest", "backend/tests/", "--tb=short", "-p", "no:cacheprovider", "-n", "auto"]
 
 # -------------------------------------------
 # Frontend test stage

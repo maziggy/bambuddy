@@ -569,6 +569,125 @@ describe('computeAmsMapping - nozzle filtering', () => {
 
     expect(result).toEqual([0, 4]);  // Left gets AMS0-T0, Right gets AMS1-T0
   });
+
+  // FTS (Filament Track Switch) — when present, AMS slots aren't tied to a
+  // specific extruder. The track switch routes any slot to either extruder, so
+  // the per-nozzle hard filter must NOT apply. See #1162.
+  it('ignores nozzle_id when FTS is installed', () => {
+    // Required filament asks for nozzle 1 (left). Without FTS this would force
+    // AMS 0 (which is on the left nozzle). With FTS we accept any AMS slot
+    // matching by type/color since the FTS routes it to whichever extruder.
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PETG', color: '#00FF00', used_grams: 10, nozzle_id: 1 },
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,  // Without FTS, this AMS would be left/extruder 1; ams_extruder_map
+                // is empty because the printer reports info bits 8-11 = 0xE.
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000' },
+          { id: 1, tray_type: 'PETG', tray_color: '00FF00' },
+        ],
+      },
+    ]);
+    (status as any).ams_extruder_map = {};
+    (status as any).fila_switch = {
+      installed: true,
+      in_slots: [-1, 1],
+      out_extruders: [0, 1],
+      stat: 0,
+      info: 2,
+    };
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([1]);  // Picks AMS 0 tray 1 (PETG green) regardless of nozzle
+  });
+
+  // X2D / H2D / X2 Pro with no AMS but two external spools (one feeding each
+  // extruder). Pre-fix, dual-nozzle was inferred from `ams_extruder_map` being
+  // non-empty, which fails when there are no AMS units — both vt_tray entries
+  // got `extruderId=undefined`, the per-nozzle filter rejected everything, and
+  // the UI surfaced "Required filament type not found in printer" even though
+  // the matching filament was sitting in the external spool. (#1257)
+  it('matches external spools per-extruder on dual-nozzle without AMS', () => {
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 15, nozzle_id: 1 },  // Left
+      ],
+    };
+    const status = createPrinterStatus([], [
+      // Two external spools, both PETG. Ext-L (id=254) feeds left extruder (1),
+      // Ext-R (id=255) feeds right (0). 255 - id formula in buildLoadedFilaments
+      // routes them when hasDualNozzle is true.
+      { id: 254, tray_type: 'PETG', tray_color: 'FFFFFF' } as PrinterStatus['vt_tray'][number],
+      { id: 255, tray_type: 'PETG', tray_color: '000000' } as PrinterStatus['vt_tray'][number],
+    ]);
+    // Real X2D hardware: both nozzles report a populated diameter via the
+    // MQTT right_nozzle_diameter / left_nozzle_diameter fields. ams_extruder_map
+    // is empty because there are zero AMS units.
+    (status as any).nozzles = [
+      { nozzle_type: 'stainless_steel', nozzle_diameter: '0.4' },
+      { nozzle_type: 'stainless_steel', nozzle_diameter: '0.4' },
+    ];
+    (status as any).ams_extruder_map = {};
+
+    // Loaded filaments must surface extruderId on each external entry,
+    // otherwise computeAmsMapping's per-nozzle filter strips them out.
+    const loaded = buildLoadedFilaments(status);
+    expect(loaded).toHaveLength(2);
+    expect(loaded.find((f) => f.globalTrayId === 254)?.extruderId).toBe(1);  // Ext-L → left
+    expect(loaded.find((f) => f.globalTrayId === 255)?.extruderId).toBe(0);  // Ext-R → right
+
+    // Mapping must succeed and pick Ext-L (left extruder, white PETG).
+    const result = computeAmsMapping(reqs, status);
+    expect(result).toEqual([254]);
+  });
+
+  // Sibling regression: the bambu_mqtt state defaults `nozzles` to a 2-entry
+  // list with empty NozzleInfo() stubs even on single-nozzle printers, and the
+  // route emits both entries on the wire. The dual-nozzle inference must NOT
+  // be tripped by a stub second entry — only by populated hardware info,
+  // populated ams_extruder_map, or >1 external trays. Pin: single-nozzle
+  // printer (P1S/A1/X1C) with one external spool gets extruderId=undefined,
+  // matching pre-fix behaviour. (#1257)
+  it('does not fabricate extruderId for single-nozzle with stub nozzles[1]', () => {
+    const status = createPrinterStatus([], [
+      { id: 254, tray_type: 'PLA', tray_color: 'FF0000' } as PrinterStatus['vt_tray'][number],
+    ]);
+    // Single-nozzle: nozzles[1] is the default stub (empty fields).
+    (status as any).nozzles = [
+      { nozzle_type: 'stainless_steel', nozzle_diameter: '0.4' },
+      { nozzle_type: '', nozzle_diameter: '' },
+    ];
+    (status as any).ams_extruder_map = {};
+
+    const loaded = buildLoadedFilaments(status);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].extruderId).toBeUndefined();
+  });
+
+  it('still applies nozzle filter when FTS object is null', () => {
+    // Sanity check: explicit null fila_switch behaves like no FTS — nozzle
+    // filter still applies on real dual-nozzle printers.
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, nozzle_id: 1 },
+      ],
+    };
+    const status = createPrinterStatus([
+      { id: 0, tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }] },
+      { id: 1, tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }] },
+    ]);
+    (status as any).ams_extruder_map = { '0': 1, '1': 0 };
+    (status as any).fila_switch = null;
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([0]);  // AMS 0 (left/extruder 1)
+  });
 });
 
 // ============================================================================

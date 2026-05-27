@@ -82,7 +82,7 @@ export function ExternalLinksSettings() {
 
   return (
     <>
-      <Card>
+      <Card id="card-sidebar-links">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

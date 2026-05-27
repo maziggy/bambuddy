@@ -1,7 +1,34 @@
 """Integration tests for GitHub Backup API endpoints."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from httpx import AsyncClient
+
+
+@pytest.fixture(autouse=True)
+def _mock_private_repo_check():
+    """Default mock: test_connection returns success + confirmed private.
+
+    POST /config and PATCH /config now refuse to save when the target repo
+    isn't confirmed private (Bambuddy backups carry credentials — see
+    `_enforce_private_repo` in github_backup.py routes). The default mock
+    here keeps the existing test suite green; tests that need to exercise
+    the public / unknown-visibility branches override this fixture inline.
+    """
+    with patch(
+        "backend.app.services.github_backup.github_backup_service.test_connection",
+        new=AsyncMock(
+            return_value={
+                "success": True,
+                "message": "Connection successful",
+                "repo_name": "test/repo",
+                "permissions": {"push": True},
+                "is_private": True,
+            }
+        ),
+    ) as m:
+        yield m
 
 
 class TestGitHubBackupConfigAPI:
@@ -164,6 +191,39 @@ class TestGitHubBackupConfigAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_update_config_rejects_disabling_insecure_http_for_stored_http_url(self, async_client: AsyncClient):
+        """Verify PATCH rejects leaving a stored HTTP URL without explicit insecure-HTTP allowance."""
+        create_data = {
+            "repository_url": "http://git.example.com/test/httprepo",
+            "access_token": "gitea_token",
+            "branch": "main",
+            "provider": "gitea",
+            "allow_insecure_http": True,
+            "schedule_enabled": False,
+            "schedule_type": "daily",
+            "backup_kprofiles": True,
+            "backup_cloud_profiles": True,
+            "backup_settings": False,
+            "backup_spools": False,
+            "backup_archives": False,
+            "enabled": True,
+        }
+        create_response = await async_client.post("/api/v1/github-backup/config", json=create_data)
+        assert create_response.status_code == 200
+
+        response = await async_client.patch("/api/v1/github-backup/config", json={"allow_insecure_http": False})
+
+        assert response.status_code == 422
+        assert "Allow insecure HTTP" in response.json()["detail"]
+
+        stored_response = await async_client.get("/api/v1/github-backup/config")
+        assert stored_response.status_code == 200
+        stored = stored_response.json()
+        assert stored["repository_url"] == "http://git.example.com/test/httprepo"
+        assert stored["allow_insecure_http"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_config(self, async_client: AsyncClient):
         """Verify GitHub backup config can be deleted."""
         # Create config first
@@ -199,6 +259,195 @@ class TestGitHubBackupConfigAPI:
         # Try to delete again
         response = await async_client.delete("/api/v1/github-backup/config")
         assert response.status_code == 404
+
+
+class TestGitHubBackupPrivateRepoGuard:
+    """Refuse to save a config when the target repository is not private.
+
+    Bambuddy backups contain MQTT credentials, HA/Prometheus tokens, the
+    Bambu Cloud email, and printer access codes via K-profiles — they must
+    never be pushed to a public or internal-visibility repository.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_config_rejects_public_repo(self, async_client: AsyncClient):
+        """POST /config returns 400 when the connection test reports is_private=False."""
+        with patch(
+            "backend.app.services.github_backup.github_backup_service.test_connection",
+            new=AsyncMock(
+                return_value={
+                    "success": True,
+                    "message": "Connection successful",
+                    "repo_name": "test/public-repo",
+                    "permissions": {"push": True},
+                    "is_private": False,
+                }
+            ),
+        ):
+            response = await async_client.post(
+                "/api/v1/github-backup/config",
+                json={
+                    "repository_url": "https://github.com/test/public-repo",
+                    "access_token": "ghp_token",
+                    "branch": "main",
+                    "schedule_enabled": False,
+                    "schedule_type": "daily",
+                    "backup_kprofiles": True,
+                    "backup_cloud_profiles": True,
+                    "backup_settings": True,
+                    "enabled": True,
+                },
+            )
+
+        assert response.status_code == 400
+        assert "not private" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_config_rejects_unknown_visibility(self, async_client: AsyncClient):
+        """POST /config returns 400 when is_private cannot be determined (None)."""
+        with patch(
+            "backend.app.services.github_backup.github_backup_service.test_connection",
+            new=AsyncMock(
+                return_value={
+                    "success": True,
+                    "message": "Connection successful",
+                    "repo_name": "test/repo",
+                    "permissions": {"push": True},
+                    "is_private": None,
+                }
+            ),
+        ):
+            response = await async_client.post(
+                "/api/v1/github-backup/config",
+                json={
+                    "repository_url": "https://github.com/test/repo",
+                    "access_token": "ghp_token",
+                    "branch": "main",
+                    "schedule_enabled": False,
+                    "schedule_type": "daily",
+                    "backup_kprofiles": True,
+                    "backup_cloud_profiles": True,
+                    "backup_settings": True,
+                    "enabled": True,
+                },
+            )
+
+        assert response.status_code == 400
+        assert "could not confirm" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_config_rejects_failed_connection(self, async_client: AsyncClient):
+        """POST /config returns 400 when the connection test itself fails."""
+        with patch(
+            "backend.app.services.github_backup.github_backup_service.test_connection",
+            new=AsyncMock(
+                return_value={
+                    "success": False,
+                    "message": "Invalid access token",
+                    "repo_name": None,
+                    "permissions": None,
+                    "is_private": None,
+                }
+            ),
+        ):
+            response = await async_client.post(
+                "/api/v1/github-backup/config",
+                json={
+                    "repository_url": "https://github.com/test/repo",
+                    "access_token": "bad-token",
+                    "branch": "main",
+                    "schedule_enabled": False,
+                    "schedule_type": "daily",
+                    "backup_kprofiles": True,
+                    "backup_cloud_profiles": True,
+                    "backup_settings": True,
+                    "enabled": True,
+                },
+            )
+
+        assert response.status_code == 400
+        assert "invalid access token" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_rejects_url_change_to_public_repo(self, async_client: AsyncClient):
+        """Changing the repository_url on an existing config re-checks privacy."""
+        # Initial create succeeds via the default autouse mock (private).
+        await async_client.post(
+            "/api/v1/github-backup/config",
+            json={
+                "repository_url": "https://github.com/test/private-repo",
+                "access_token": "ghp_token",
+                "branch": "main",
+                "schedule_enabled": False,
+                "schedule_type": "daily",
+                "backup_kprofiles": True,
+                "backup_cloud_profiles": True,
+                "backup_settings": True,
+                "enabled": True,
+            },
+        )
+
+        # Now try to switch to a public repo — must be rejected.
+        with patch(
+            "backend.app.services.github_backup.github_backup_service.test_connection",
+            new=AsyncMock(
+                return_value={
+                    "success": True,
+                    "message": "Connection successful",
+                    "repo_name": "test/public-repo",
+                    "permissions": {"push": True},
+                    "is_private": False,
+                }
+            ),
+        ):
+            response = await async_client.patch(
+                "/api/v1/github-backup/config",
+                json={"repository_url": "https://github.com/test/public-repo"},
+            )
+
+        assert response.status_code == 400
+        assert "not private" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_skips_check_for_unrelated_fields(self, async_client: AsyncClient):
+        """PATCHing a non-target field (e.g. schedule) does NOT re-run the test.
+
+        Without this, every benign toggle would trigger a live API call.
+        """
+        await async_client.post(
+            "/api/v1/github-backup/config",
+            json={
+                "repository_url": "https://github.com/test/private-repo",
+                "access_token": "ghp_token",
+                "branch": "main",
+                "schedule_enabled": False,
+                "schedule_type": "daily",
+                "backup_kprofiles": True,
+                "backup_cloud_profiles": True,
+                "backup_settings": True,
+                "enabled": True,
+            },
+        )
+
+        # Replace the mock with one that would fail if called — proves the
+        # PATCH didn't hit test_connection for a schedule-only change.
+        mock = AsyncMock(side_effect=AssertionError("test_connection should not be called"))
+        with patch(
+            "backend.app.services.github_backup.github_backup_service.test_connection",
+            new=mock,
+        ):
+            response = await async_client.patch(
+                "/api/v1/github-backup/config",
+                json={"schedule_enabled": True},
+            )
+
+        assert response.status_code == 200
+        mock.assert_not_called()
 
 
 class TestGitHubBackupStatusAPI:

@@ -176,6 +176,19 @@ DEFAULT_TEMPLATES = [
         "title_template": "{app_name} - Password Reset",
         "body_template": "Hello {username},\n\nYour password has been reset.\nNew Password: {password}\n\nLogin at: {login_url}",
     },
+    # Inventory stock alert templates
+    {
+        "event_type": "stock_reorder_alert",
+        "name": "Stock Reorder Alert",
+        "title_template": "Reorder Alert: {material}",
+        "body_template": "{material} ({brand}) has reached the reorder point.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Days left: {days_left}d\nReorder now to avoid a stock break.",
+    },
+    {
+        "event_type": "stock_break_alert",
+        "name": "Stock Break Alert",
+        "title_template": "Stock Break Risk: {material}",
+        "body_template": "{material} ({brand}) will run out before replenishment arrives.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Lead time: {lead_time_days}d\nOnly {days_left}d of stock remaining — order immediately.",
+    },
     # User email notification templates (sent to the print job owner)
     {
         "event_type": "user_print_start",

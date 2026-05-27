@@ -51,6 +51,22 @@ interface Parsed3MFData {
   plateOffsets: Map<number, { offsetX: number; offsetY: number }>;
 }
 
+// Yield to the browser event loop so the main thread can repaint, process
+// user input (especially the modal's close button), and avoid the
+// "page unresponsive" dialog while we crunch through large 3MFs in
+// straight-line JS. setTimeout(_, 0) is sufficient — we don't need rAF
+// here, the goal is just to surrender control so queued tasks run.
+function nextTick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+// Yield once per N iterations of a hot loop. Picked so each batch is
+// ~5-10 ms of work on a typical desktop — fine-grained enough to keep
+// frames flowing, coarse enough not to drown the loop in setTimeout
+// dispatch overhead. Adjust if profiling shows otherwise.
+const YIELD_EVERY_N_VERTICES = 20000;
+const YIELD_EVERY_N_TRIANGLES = 20000;
+
 // Parse 3MF transform - keep in 3MF coordinate space (Z-up)
 function parseTransform3MF(transformStr: string | null): THREE.Matrix4 {
   const matrix = new THREE.Matrix4();
@@ -96,6 +112,9 @@ async function parseMeshFromDoc(doc: Document, defaultExtruder: number = 0): Pro
         parseFloat(v.getAttribute('y') || '0'),
         parseFloat(v.getAttribute('z') || '0')
       );
+      if (k > 0 && k % YIELD_EVERY_N_VERTICES === 0) {
+        await nextTick();
+      }
     }
 
     const triangleElements = meshEl.getElementsByTagName('triangle');
@@ -106,6 +125,9 @@ async function parseMeshFromDoc(doc: Document, defaultExtruder: number = 0): Pro
         parseInt(t.getAttribute('v2') || '0'),
         parseInt(t.getAttribute('v3') || '0')
       );
+      if (k > 0 && k % YIELD_EVERY_N_TRIANGLES === 0) {
+        await nextTick();
+      }
     }
 
     if (vertices.length > 0 && triangles.length > 0) {
@@ -326,6 +348,12 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
   // Parse objects - Bambu Studio uses components to reference external files
   const objectElements = mainDoc.getElementsByTagName('object');
   for (let i = 0; i < objectElements.length; i++) {
+    // Yield once per top-level object so the modal stays interactive
+    // throughout the parse (#1412). Inner vertex/triangle/component
+    // loops yield on their own. See nextTick() comment near the top.
+    if (i > 0) {
+      await nextTick();
+    }
     const objEl = objectElements[i];
     const objectId = objEl.getAttribute('id');
     if (!objectId) continue;
@@ -356,6 +384,9 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
           parseFloat(v.getAttribute('y') || '0'),
           parseFloat(v.getAttribute('z') || '0')
         );
+        if (k > 0 && k % YIELD_EVERY_N_VERTICES === 0) {
+          await nextTick();
+        }
       }
 
       const triangleElements = meshEl.getElementsByTagName('triangle');
@@ -366,6 +397,9 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
           parseInt(t.getAttribute('v2') || '0'),
           parseInt(t.getAttribute('v3') || '0')
         );
+        if (k > 0 && k % YIELD_EVERY_N_TRIANGLES === 0) {
+          await nextTick();
+        }
       }
 
       if (vertices.length > 0 && triangles.length > 0) {
@@ -376,6 +410,12 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
     // Check for component references (Bambu Studio style)
     const componentElements = objEl.getElementsByTagName('component');
     for (let j = 0; j < componentElements.length; j++) {
+      // Yield before each component — each one triggers another async file
+      // load + DOM parse + vertex/triangle iteration. Multi-color "parted"
+      // statues from MakerWorld can have dozens of components; without
+      // this yield the whole chain runs as one long synchronous burst
+      // between awaits and freezes the modal close button (#1412).
+      await nextTick();
       const compEl = componentElements[j];
       // p:path attribute contains the external file reference
       const extPath = compEl.getAttribute('p:path') || compEl.getAttributeNS('http://schemas.microsoft.com/3dmanufacturing/production/2015/06', 'path');

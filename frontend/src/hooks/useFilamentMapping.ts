@@ -16,7 +16,19 @@ import type { PrinterStatus } from '../api/client';
 export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): LoadedFilament[] {
   const filaments: LoadedFilament[] = [];
   const amsExtruderMap = printerStatus?.ams_extruder_map;
-  const hasDualNozzle = amsExtruderMap && Object.keys(amsExtruderMap).length > 0;
+  // Dual-nozzle detection. The backend always emits a 2-entry nozzles array
+  // (default-stub second entry for single-nozzle printers), so length is not
+  // a reliable signal. Real second-nozzle hardware sets `nozzle_diameter` from
+  // the MQTT `right_nozzle_diameter` field (bambu_mqtt.py:2619-2621); without
+  // that field, nozzles[1] stays at its empty default. Belt-and-braces: a
+  // populated ams_extruder_map (dual-nozzle with AMS) and >1 vt_tray (only
+  // dual-nozzle hardware exposes multiple external feeds) each independently
+  // imply dual-nozzle — keep them as fallbacks for any firmware rev that
+  // surfaces one signal but not the other. (#1257)
+  const hasDualNozzle =
+    Boolean(printerStatus?.nozzles?.[1]?.nozzle_diameter)
+    || (amsExtruderMap && Object.keys(amsExtruderMap).length > 0)
+    || (printerStatus?.vt_tray?.length ?? 0) > 1;
 
   // Add filaments from all AMS units (regular and HT)
   printerStatus?.ams?.forEach((amsUnit) => {
@@ -96,6 +108,10 @@ export function computeAmsMapping(
   const loadedFilaments = buildLoadedFilaments(printerStatus);
   if (loadedFilaments.length === 0) return undefined;
 
+  // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
+  // doesn't apply when it's installed (#1162).
+  const ftsActive = printerStatus?.fila_switch?.installed === true;
+
   // Track which trays have been assigned to avoid duplicates
   const usedTrayIds = new Set<number>();
 
@@ -108,7 +124,8 @@ export function computeAmsMapping(
     // Nozzle-aware filtering: restrict to trays on the correct nozzle.
     // This is a hard filter — cross-nozzle assignment causes print failures
     // ("position of left hotend is abnormal"), so we never fall back to wrong-nozzle trays.
-    if (req.nozzle_id != null) {
+    // Skip when an FTS is installed: it can route any slot to either extruder.
+    if (req.nozzle_id != null && !ftsActive) {
       available = available.filter((f) => f.extruderId === req.nozzle_id);
     }
 
@@ -311,6 +328,10 @@ export function useFilamentMapping(
 ): UseFilamentMappingResult {
   const loadedFilaments = useLoadedFilaments(printerStatus);
 
+  // FTS routes any AMS slot to any extruder, so per-nozzle slot restriction
+  // doesn't apply when it's installed (#1162).
+  const ftsActive = printerStatus?.fila_switch?.installed === true;
+
   const filamentComparison = useMemo(() => {
     if (!filamentReqs?.filaments || filamentReqs.filaments.length === 0) return [];
 
@@ -363,7 +384,8 @@ export function useFilamentMapping(
 
       // Nozzle-aware filtering: restrict to trays on the correct nozzle.
       // This is a hard filter — cross-nozzle assignment causes print failures.
-      if (req.nozzle_id != null) {
+      // Skip when an FTS is installed: it can route any slot to either extruder.
+      if (req.nozzle_id != null && !ftsActive) {
         available = available.filter((f) => f.extruderId === req.nozzle_id);
       }
 
@@ -469,7 +491,7 @@ export function useFilamentMapping(
         isManual: false,
       };
     });
-  }, [filamentReqs, loadedFilaments, manualMappings, preferLowest]);
+  }, [filamentReqs, loadedFilaments, manualMappings, preferLowest, ftsActive]);
 
   // Build AMS mapping from matched filaments
   // Format: array matching 3MF filament slot structure

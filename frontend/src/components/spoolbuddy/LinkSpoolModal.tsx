@@ -105,8 +105,11 @@ export function LinkSpoolModal({
                     size={40}
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-zinc-100 truncate">
-                      {spool.color_name || 'Unknown color'}
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium text-zinc-100 truncate">
+                        {spool.color_name || 'Unknown color'}
+                      </div>
+                      <span className="text-[10px] font-mono text-zinc-500 shrink-0">#{spool.id}</span>
                     </div>
                     <div className="text-sm text-zinc-400 truncate">
                       {spool.brand} &bull; {spool.material}

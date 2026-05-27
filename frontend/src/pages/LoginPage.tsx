@@ -1,25 +1,109 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { X, Mail } from 'lucide-react';
-import { api } from '../api/client';
+import { X, Mail, Shield, Smartphone, Key } from 'lucide-react';
+import { api, type LoginResponse, type OIDCProvider, type TokenPersistence } from '../api/client';
 import { Card, CardHeader, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 
+type LoginStep = 'credentials' | '2fa' | 'reset-password';
+
+// sessionStorage survives the OIDC provider round-trip; React state does not.
+// Read + remove in one try so all branches in the OIDC useEffect see the same
+// value and a subsequent page load does not replay the flag.
+const REMEMBER_ME_KEY = 'auth_remember_me';
+
+function toPersistence(remember: boolean): TokenPersistence {
+  return remember ? 'persistent' : 'session';
+}
+
+function consumeSavedRememberMe(): boolean {
+  try {
+    const saved = sessionStorage.getItem(REMEMBER_ME_KEY) === '1';
+    sessionStorage.removeItem(REMEMBER_ME_KEY);
+    return saved;
+  } catch (err) {
+    console.warn('consumeSavedRememberMe: sessionStorage unavailable, Remember Me preference lost across OIDC redirect', err);
+    return false;
+  }
+}
+
+/**
+ * Single OIDC-provider login button. Extracted from the `.map()` body
+ * because hooks can't be used inside a loop callback — the `iconFailed`
+ * state is per-provider and must live in its own component instance.
+ *
+ * On `<img>` load failure (provider deleted between page load and image
+ * fetch, network blip, etc.) we flip to the Shield fallback rather than
+ * showing the browser's broken-image glyph to anonymous users (#1333 review).
+ */
+function OIDCProviderButton({
+  provider,
+  onClick,
+  disabled,
+}: {
+  provider: OIDCProvider;
+  onClick: () => void;
+  disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const [iconFailed, setIconFailed] = useState(false);
+  const showIcon = provider.has_icon && !iconFailed;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary hover:border-bambu-green/50 rounded-lg text-white font-medium transition-colors disabled:opacity-50"
+    >
+      {showIcon ? (
+        <img
+          src={api.oidcProviderIconUrl(provider.id)}
+          alt=""
+          className="w-5 h-5 object-contain"
+          onError={() => setIconFailed(true)}
+        />
+      ) : (
+        <Shield className="w-5 h-5 text-bambu-green" />
+      )}
+      {t('login.twoFA.signInWith', { provider: provider.name })}
+    </button>
+  );
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useTranslation();
-  const { login } = useAuth();
+  const { login, loginWithToken } = useAuth();
   const { showToast } = useToast();
   const { mode } = useTheme();
+
+  // Credentials step state
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
+
+  // 2FA step state
+  const [step, setStep] = useState<LoginStep>('credentials');
+  const [preAuthToken, setPreAuthToken] = useState('');
+  const [twoFAMethods, setTwoFAMethods] = useState<string[]>([]);
+  const [twoFAMethod, setTwoFAMethod] = useState<'totp' | 'email' | 'backup'>('totp');
+  const [twoFACode, setTwoFACode] = useState('');
+  const [emailOTPSent, setEmailOTPSent] = useState(false);
+  const twoFAInputRef = useRef<HTMLInputElement>(null);
+
+  const [rememberMe, setRememberMe] = useState(false);
+
+  // H-6: Password reset step state
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   // Check if advanced auth is enabled
   const { data: advancedAuthStatus } = useQuery({
@@ -27,11 +111,116 @@ export function LoginPage() {
     queryFn: () => api.getAdvancedAuthStatus(),
   });
 
+  // Fetch enabled OIDC providers for login buttons
+  const { data: oidcProviders } = useQuery({
+    queryKey: ['oidcProviders'],
+    queryFn: () => api.getOIDCProviders(),
+  });
+
+  // M-B: Detect #reset_token=... in the URL fragment and switch to the reset step.
+  // Fragments are never sent to the server so the token never appears in access-logs
+  // or Referer headers — mirrors the H-4 treatment of the OIDC token.
+  useEffect(() => {
+    const hash = window.location.hash;
+    const token = hash.startsWith('#reset_token=') ? hash.slice('#reset_token='.length) : null;
+    if (token) {
+      setResetToken(token);
+      setStep('reset-password');
+      // Clear the fragment from the URL so it can't be bookmarked or re-triggered.
+      navigate('/login', { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle OIDC callback: if #oidc_token=... is present in the fragment, exchange it.
+  // H-4: Read from the URL fragment (#) — fragments are never sent to the server
+  // so the exchange token stays out of access logs and Referer headers.
+  useEffect(() => {
+    const hash = window.location.hash;
+    const oidcToken = hash.startsWith('#oidc_token=') ? hash.slice('#oidc_token='.length) : null;
+    const oidcError = searchParams.get('oidc_error');
+
+    if (!oidcToken && !oidcError) return;
+
+    const savedRememberMe = consumeSavedRememberMe();
+
+    if (oidcError) {
+      // L-3: Whitelist known OIDC error codes so provider-controlled text is never
+      // shown verbatim. Any unknown code falls back to a generic message.
+      const KNOWN_OIDC_ERRORS: Record<string, string> = {
+        oidc_provider_error: t('login.oidcErrors.providerError'),
+        missing_parameters: t('login.oidcErrors.missingParameters'),
+        invalid_state: t('login.oidcErrors.invalidState'),
+        state_expired: t('login.oidcErrors.stateExpired'),
+        provider_not_found: t('login.oidcErrors.providerNotFound'),
+        discovery_failed: t('login.oidcErrors.discoveryFailed'),
+        invalid_discovery_document: t('login.oidcErrors.invalidDiscovery'),
+        token_exchange_network_error: t('login.oidcErrors.networkError'),
+        token_exchange_bad_response: t('login.oidcErrors.badResponse'),
+        no_id_token: t('login.oidcErrors.noIdToken'),
+        token_validation_failed: t('login.oidcErrors.validationFailed'),
+        nonce_mismatch: t('login.oidcErrors.nonceMismatch'),
+        missing_sub_claim: t('login.oidcErrors.missingSubClaim'),
+        no_linked_account: t('login.oidcErrors.noLinkedAccount'),
+        account_inactive: t('login.oidcErrors.accountInactive'),
+        user_resolution_failed: t('login.oidcErrors.userResolutionFailed'),
+        internal_error: t('login.oidcErrors.internalError'),
+      };
+      // Dynamic codes like "token_exchange_<provider_code>" → generic message
+      const errorMsg = KNOWN_OIDC_ERRORS[oidcError]
+        ?? (oidcError.startsWith('token_exchange_') ? t('login.oidcErrors.tokenExchangeFailed') : t('login.oidcLoginFailed'));
+      showToast(errorMsg, 'error');
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    if (oidcToken) {
+      api.exchangeOIDCToken(oidcToken).then((resp: LoginResponse) => {
+        if (resp.requires_2fa && resp.pre_auth_token) {
+          // OIDC user has 2FA enabled — redirect to 2FA step
+          setRememberMe(savedRememberMe);
+          setPreAuthToken(resp.pre_auth_token);
+          const methods = resp.two_fa_methods ?? [];
+          setTwoFAMethods(methods);
+          if (methods.includes('totp')) setTwoFAMethod('totp');
+          else if (methods.includes('email')) setTwoFAMethod('email');
+          else setTwoFAMethod('backup');
+          setStep('2fa');
+          // Remove oidc_token from URL so page refresh doesn't re-trigger exchange
+          navigate('/login', { replace: true });
+        } else if (resp.access_token && resp.user) {
+          loginWithToken(resp.access_token, resp.user, toPersistence(savedRememberMe));
+          showToast(t('login.loginSuccess'));
+          navigate('/', { replace: true });
+        } else {
+          showToast(t('login.oidcLoginFailed'), 'error');
+          navigate('/login', { replace: true });
+        }
+      }).catch((err: unknown) => {
+        console.error('OIDC token exchange failed', err);
+        showToast(t('login.oidcLoginFailed'), 'error');
+        navigate('/login', { replace: true });
+      });
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Step 1: Credentials login ---
   const loginMutation = useMutation({
-    mutationFn: () => login(username, password),
-    onSuccess: () => {
-      showToast(t('login.loginSuccess'));
-      navigate('/');
+    mutationFn: () => login(username, password, toPersistence(rememberMe)),
+    onSuccess: (resp: LoginResponse) => {
+      if (resp.requires_2fa && resp.pre_auth_token) {
+        // 2FA required — switch to verification step
+        setPreAuthToken(resp.pre_auth_token);
+        const methods = resp.two_fa_methods ?? [];
+        setTwoFAMethods(methods);
+        // Pick a sensible default method
+        if (methods.includes('totp')) setTwoFAMethod('totp');
+        else if (methods.includes('email')) setTwoFAMethod('email');
+        else setTwoFAMethod('backup');
+        setStep('2fa');
+      } else if (resp.access_token && resp.user) {
+        showToast(t('login.loginSuccess'));
+        navigate('/');
+      }
     },
     onError: (error: Error) => {
       showToast(error.message || t('login.loginFailed'), 'error');
@@ -50,6 +239,72 @@ export function LoginPage() {
     },
   });
 
+  // H-6: Mutation to set a new password using the reset token from the email link
+  const resetPasswordMutation = useMutation({
+    mutationFn: () => api.forgotPasswordConfirm(resetToken, newPassword),
+    onSuccess: (data) => {
+      showToast(data.message, 'success');
+      setStep('credentials');
+      setResetToken('');
+      setNewPassword('');
+      setConfirmPassword('');
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('login.resetPassword.resetFailed'), 'error');
+    },
+  });
+
+  // --- Step 2: 2FA verification ---
+  const sendEmailOTPMutation = useMutation({
+    mutationFn: () => api.sendEmailOTP(preAuthToken),
+    onSuccess: (data: { message: string; pre_auth_token?: string }) => {
+      setEmailOTPSent(true);
+      // Backend issues a fresh pre-auth token after consuming the original one
+      if (data.pre_auth_token) setPreAuthToken(data.pre_auth_token);
+      showToast(data.message, 'success');
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('login.twoFA.sendCodeFailed'), 'error');
+    },
+  });
+
+  const verify2FAMutation = useMutation({
+    mutationFn: () =>
+      api.verify2FA({ pre_auth_token: preAuthToken, code: twoFACode, method: twoFAMethod }),
+    onSuccess: (resp: LoginResponse) => {
+      if (resp.access_token && resp.user) {
+        loginWithToken(resp.access_token, resp.user, toPersistence(rememberMe));
+        showToast(t('login.loginSuccess'));
+        navigate('/');
+      } else {
+        console.error('2FA verify: unexpected response shape', resp);
+        showToast(t('login.loginFailed'), 'error');
+      }
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('login.twoFA.invalidCode'), 'error');
+      setTwoFACode('');
+    },
+  });
+
+  // OIDC login
+  const oidcLoginMutation = useMutation({
+    mutationFn: (providerId: number) => api.getOIDCAuthorizeUrl(providerId),
+    onSuccess: (data) => {
+      if (rememberMe) {
+        try {
+          sessionStorage.setItem(REMEMBER_ME_KEY, '1');
+        } catch (err) {
+          console.warn('setItem auth_remember_me failed, Remember Me will not carry through OIDC redirect', err);
+        }
+      }
+      window.location.href = data.auth_url;
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('login.oidcLoginFailed'), 'error');
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) {
@@ -59,15 +314,285 @@ export function LoginPage() {
     loginMutation.mutate();
   };
 
+  const handle2FASubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFACode.trim()) {
+      showToast(t('login.twoFA.enterCode'), 'error');
+      return;
+    }
+    verify2FAMutation.mutate();
+  };
+
   const handleForgotPassword = (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotEmail) {
-      showToast('Please enter your email address', 'error');
+      showToast(t('login.enterEmail'), 'error');
       return;
     }
     forgotPasswordMutation.mutate(forgotEmail);
   };
 
+  const handleMethodChange = (method: 'totp' | 'email' | 'backup') => {
+    setTwoFAMethod(method);
+    setTwoFACode('');
+    setEmailOTPSent(false);
+    // Re-focus the code input after method switch (autoFocus only fires on mount)
+    setTimeout(() => twoFAInputRef.current?.focus(), 0);
+  };
+
+  // ---- Render: password-reset step (H-6) ----
+  if (step === 'reset-password') {
+    const handleResetSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (newPassword !== confirmPassword) {
+        showToast(t('login.resetPassword.passwordsDoNotMatch'), 'error');
+        return;
+      }
+      if (newPassword.length < 8) {
+        showToast(t('login.resetPassword.passwordTooShort'), 'error');
+        return;
+      }
+      resetPasswordMutation.mutate();
+    };
+
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bambu-dark p-4">
+        <div className="max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg">
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-14 h-14 rounded-full bg-bambu-green/20 flex items-center justify-center">
+                <Key className="w-7 h-7 text-bambu-green" />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-white">{t('login.resetPassword.title')}</h2>
+            <p className="mt-2 text-sm text-bambu-gray">{t('login.resetPassword.subtitle')}</p>
+          </div>
+
+          <form onSubmit={handleResetSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="new-password" className="block text-sm font-medium text-white mb-2">
+                {t('login.resetPassword.newPassword')}
+              </label>
+              <input
+                id="new-password"
+                type="password"
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                placeholder={t('login.resetPassword.newPasswordPlaceholder')}
+                autoFocus
+                autoComplete="new-password"
+                minLength={8}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="confirm-password" className="block text-sm font-medium text-white mb-2">
+                {t('login.resetPassword.confirmPassword')}
+              </label>
+              <input
+                id="confirm-password"
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                placeholder={t('login.resetPassword.confirmPasswordPlaceholder')}
+                autoComplete="new-password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={resetPasswordMutation.isPending || !newPassword || !confirmPassword}
+              className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {resetPasswordMutation.isPending ? t('login.resetPassword.saving') : t('login.resetPassword.submit')}
+            </button>
+          </form>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setStep('credentials');
+                setResetToken('');
+                setNewPassword('');
+                setConfirmPassword('');
+              }}
+              className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
+            >
+              {t('login.resetPassword.backToLogin')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Render: 2FA step ----
+  if (step === '2fa') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bambu-dark p-4">
+        <div className="max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg">
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-14 h-14 rounded-full bg-bambu-green/20 flex items-center justify-center">
+                <Shield className="w-7 h-7 text-bambu-green" />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-white">{t('login.twoFA.title')}</h2>
+            <p className="mt-2 text-sm text-bambu-gray">{t('login.twoFA.subtitle')}</p>
+          </div>
+
+          {/* Method selector — only show if multiple methods available */}
+          {twoFAMethods.length > 1 && (
+            <div className="flex gap-2">
+              {twoFAMethods.includes('totp') && (
+                <button
+                  type="button"
+                  onClick={() => handleMethodChange('totp')}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2 px-3 rounded-lg border text-xs font-medium transition-colors ${
+                    twoFAMethod === 'totp'
+                      ? 'border-bambu-green bg-bambu-green/10 text-bambu-green'
+                      : 'border-bambu-dark-tertiary text-bambu-gray hover:border-bambu-green/50'
+                  }`}
+                >
+                  <Smartphone className="w-4 h-4" />
+                  {t('login.twoFA.methodAuthenticator')}
+                </button>
+              )}
+              {twoFAMethods.includes('email') && (
+                <button
+                  type="button"
+                  onClick={() => handleMethodChange('email')}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2 px-3 rounded-lg border text-xs font-medium transition-colors ${
+                    twoFAMethod === 'email'
+                      ? 'border-bambu-green bg-bambu-green/10 text-bambu-green'
+                      : 'border-bambu-dark-tertiary text-bambu-gray hover:border-bambu-green/50'
+                  }`}
+                >
+                  <Mail className="w-4 h-4" />
+                  {t('login.twoFA.methodEmail')}
+                </button>
+              )}
+              {twoFAMethods.includes('backup') && (
+                <button
+                  type="button"
+                  onClick={() => handleMethodChange('backup')}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2 px-3 rounded-lg border text-xs font-medium transition-colors ${
+                    twoFAMethod === 'backup'
+                      ? 'border-bambu-green bg-bambu-green/10 text-bambu-green'
+                      : 'border-bambu-dark-tertiary text-bambu-gray hover:border-bambu-green/50'
+                  }`}
+                >
+                  <Key className="w-4 h-4" />
+                  {t('login.twoFA.methodBackup')}
+                </button>
+              )}
+            </div>
+          )}
+
+          <form onSubmit={handle2FASubmit} className="space-y-4">
+            {/* Method-specific instructions */}
+            {twoFAMethod === 'totp' && (
+              <p className="text-sm text-bambu-gray">{t('login.twoFA.instructionsTotp')}</p>
+            )}
+            {twoFAMethod === 'email' && (
+              <div className="space-y-3">
+                <p className="text-sm text-bambu-gray">
+                  {emailOTPSent
+                    ? t('login.twoFA.instructionsEmail')
+                    : t('login.twoFA.instructionsEmailNotSent')}
+                </p>
+                {!emailOTPSent && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => sendEmailOTPMutation.mutate()}
+                    disabled={sendEmailOTPMutation.isPending}
+                  >
+                    {sendEmailOTPMutation.isPending
+                      ? t('login.twoFA.sendingCode')
+                      : t('login.twoFA.sendCodeButton')}
+                  </Button>
+                )}
+                {emailOTPSent && (
+                  <button
+                    type="button"
+                    onClick={() => { setEmailOTPSent(false); sendEmailOTPMutation.mutate(); }}
+                    className="text-xs text-bambu-gray hover:text-bambu-green transition-colors"
+                  >
+                    {t('login.twoFA.resendCode')}
+                  </button>
+                )}
+              </div>
+            )}
+            {twoFAMethod === 'backup' && (
+              <p className="text-sm text-bambu-gray">{t('login.twoFA.instructionsBackup')}</p>
+            )}
+
+            <div>
+              <label htmlFor="twofa-code" className="block text-sm font-medium text-white mb-2">
+                {twoFAMethod === 'backup'
+                  ? t('login.twoFA.backupCodeLabel')
+                  : t('login.twoFA.codeLabel')}
+              </label>
+              <input
+                ref={twoFAInputRef}
+                id="twofa-code"
+                type="text"
+                inputMode={twoFAMethod === 'backup' ? 'text' : 'numeric'}
+                autoComplete="one-time-code"
+                value={twoFACode}
+                onChange={(e) => setTwoFACode(e.target.value.trim())}
+                disabled={twoFAMethod === 'email' && !emailOTPSent}
+                className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray text-center tracking-widest text-xl font-mono focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors disabled:opacity-40"
+                placeholder={twoFAMethod === 'backup'
+                  ? t('login.twoFA.backupCodePlaceholder')
+                  : t('login.twoFA.codePlaceholder')}
+                maxLength={twoFAMethod === 'backup' ? 8 : 6}
+                autoFocus
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={
+                verify2FAMutation.isPending ||
+                !twoFACode.trim() ||
+                (twoFAMethod === 'email' && !emailOTPSent)
+              }
+              className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {verify2FAMutation.isPending
+                ? t('login.twoFA.verifyingButton')
+                : t('login.twoFA.verifyButton')}
+            </button>
+          </form>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setStep('credentials');
+                setPreAuthToken('');
+                setTwoFACode('');
+                setEmailOTPSent(false);
+              }}
+              className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
+            >
+              {t('login.twoFA.backToLogin')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Render: credentials step ----
   return (
     <div className="min-h-screen flex items-center justify-center bg-bambu-dark p-4">
       <div className="max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg">
@@ -92,7 +617,7 @@ export function LoginPage() {
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-white mb-2">
                 {advancedAuthStatus?.advanced_auth_enabled
-                  ? t('login.usernameOrEmail') || 'Username or Email'
+                  ? t('login.usernameOrEmail')
                   : t('login.username')}
               </label>
               <input
@@ -103,7 +628,7 @@ export function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
                 placeholder={advancedAuthStatus?.advanced_auth_enabled
-                  ? t('login.usernameOrEmailPlaceholder') || 'Enter your username or email'
+                  ? t('login.usernameOrEmailPlaceholder')
                   : t('login.usernamePlaceholder')}
                 autoComplete="username"
               />
@@ -111,7 +636,7 @@ export function LoginPage() {
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-white mb-2">
-                {t('login.password')}
+                {t('login.password') || 'Password'}
               </label>
               <input
                 id="password"
@@ -126,6 +651,19 @@ export function LoginPage() {
             </div>
           </div>
 
+          <div className="flex items-center gap-2">
+            <input
+              id="remember-me"
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="h-4 w-4 rounded border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-green focus:ring-bambu-green/50 cursor-pointer"
+            />
+            <label htmlFor="remember-me" className="text-sm text-bambu-gray cursor-pointer">
+              {t('login.rememberMe')}
+            </label>
+          </div>
+
           <div>
             <button
               type="submit"
@@ -136,18 +674,41 @@ export function LoginPage() {
             </button>
           </div>
 
-          {advancedAuthStatus?.advanced_auth_enabled && (
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => setShowForgotPassword(true)}
-                className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
-              >
-                {t('login.forgotPassword')}
-              </button>
-            </div>
-          )}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => setShowForgotPassword(true)}
+              className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
+            >
+              {t('login.forgotPassword')}
+            </button>
+          </div>
         </form>
+
+        {/* OIDC provider buttons */}
+        {oidcProviders && oidcProviders.length > 0 && (
+          <div className="space-y-3">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-bambu-dark-tertiary" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-bambu-dark-secondary text-bambu-gray">{t('login.twoFA.orContinueWith')}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {oidcProviders.map((provider) => (
+                <OIDCProviderButton
+                  key={provider.id}
+                  provider={provider}
+                  onClick={() => oidcLoginMutation.mutate(provider.id)}
+                  disabled={oidcLoginMutation.isPending}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Forgot Password Modal */}
@@ -182,12 +743,12 @@ export function LoginPage() {
               {advancedAuthStatus?.advanced_auth_enabled ? (
                 <form onSubmit={handleForgotPassword} className="space-y-4">
                   <p className="text-bambu-gray text-sm">
-                    {t('login.forgotPasswordEmailMessage') || 'Enter your email address and we\'ll send you a new password.'}
+                    {t('login.forgotPasswordEmailMessage')}
                   </p>
 
                   <div>
                     <label htmlFor="forgot-email" className="block text-sm font-medium text-white mb-2">
-                      {t('login.emailAddress') || 'Email Address'}
+                      {t('login.emailAddress')}
                     </label>
                     <input
                       id="forgot-email"
@@ -196,7 +757,7 @@ export function LoginPage() {
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}
                       className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                      placeholder={t('login.emailPlaceholder') || 'your.email@example.com'}
+                      placeholder={t('login.emailPlaceholder')}
                     />
                   </div>
 
@@ -210,7 +771,7 @@ export function LoginPage() {
                         setForgotEmail('');
                       }}
                     >
-                      {t('login.cancel') || 'Cancel'}
+                      {t('login.cancel')}
                     </Button>
                     <Button
                       type="submit"
@@ -218,8 +779,8 @@ export function LoginPage() {
                       disabled={forgotPasswordMutation.isPending}
                     >
                       {forgotPasswordMutation.isPending
-                        ? (t('login.sending') || 'Sending...')
-                        : (t('login.sendResetEmail') || 'Send Reset Email')}
+                        ? t('login.sending')
+                        : t('login.sendResetEmail')}
                     </Button>
                   </div>
                 </form>

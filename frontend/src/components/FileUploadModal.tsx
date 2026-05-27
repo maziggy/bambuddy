@@ -112,7 +112,17 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
 
     setIsUploading(false);
     onUploadComplete();
-    onClose();
+    // #1401: don't auto-close if any file ended with an error — the user
+    // needs to see the rejection message (e.g. "raw .gcode upload"), not
+    // have the modal vanish before they can read it. Closing happens via
+    // the X / Close button instead, after the user has seen what failed.
+    setFiles((prev) => {
+      const anyFailed = prev.some((f) => f.status === 'error');
+      if (!anyFailed) {
+        onClose();
+      }
+      return prev;
+    });
   };
 
   const addFiles = (newFiles: File[]) => {
@@ -287,6 +297,13 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
                         <span className="text-green-400 ml-2">• {t('fileManager.filesExtracted', { count: uploadFile.extractedCount })}</span>
                       )}
                     </p>
+                    {/* #1401: errors render inline rather than as a hover-only
+                        title. The backend's rejection messages explain the
+                        actual fix (re-export as .gcode.3mf) — useless if the
+                        user can't read them. */}
+                    {uploadFile.status === 'error' && uploadFile.error && (
+                      <p className="text-xs text-red-400 mt-1 break-words">{uploadFile.error}</p>
+                    )}
                   </div>
                   {uploadFile.status === 'pending' && (
                     <button

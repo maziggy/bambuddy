@@ -88,8 +88,6 @@ const mockOutletContext = {
   setAlert: vi.fn(),
   displayBrightness: 80,
   setDisplayBrightness: vi.fn(),
-  displayBlankTimeout: 300,
-  setDisplayBlankTimeout: vi.fn(),
 };
 
 function OutletWrapper() {

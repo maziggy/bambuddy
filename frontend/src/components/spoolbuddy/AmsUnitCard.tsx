@@ -158,6 +158,7 @@ function SpoolSlot({ tray, slotIndex, isActive, fillOverride, spoolmanFill, onCl
     <div
       className={`relative flex flex-col items-center p-2.5 rounded-lg transition-all ${isActive ? 'ring-2 ring-bambu-green' : ''} ${onClick ? 'cursor-pointer hover:bg-white/5' : ''}`}
       onClick={onClick}
+      title={onClick ? `AMS Slot ${slotIndex + 1}` : undefined}
     >
       {/* Spool visualization */}
       <div className="relative w-16 h-16 mb-1">

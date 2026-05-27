@@ -170,13 +170,13 @@ export function EmailSettings() {
   }
 
   const advancedEnabled = advancedAuthStatus?.advanced_auth_enabled ?? false;
-  const inputClasses = "w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors";
-  const disabledInputClasses = "w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white/40 placeholder-bambu-gray/40 cursor-not-allowed";
+  const inputClasses = "w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors";
+  const disabledInputClasses = "w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white/40 placeholder-bambu-gray/40 cursor-not-allowed";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Advanced Authentication Toggle - Always visible */}
-      <Card>
+      <Card id="card-email-advanced-auth">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -205,7 +205,7 @@ export function EmailSettings() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {advancedEnabled ? (
               <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
                 <div className="flex items-start gap-3">
@@ -242,19 +242,20 @@ export function EmailSettings() {
         </CardContent>
       </Card>
 
-      {/* SMTP Configuration */}
-      <div>
-        <Card>
+      {/* SMTP Config + Test SMTP side-by-side on lg+ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2">
+        <Card id="card-smtp-config">
           <CardHeader>
             <h2 className="text-lg font-semibold text-white">
               {t('settings.email.smtpSettings') || 'SMTP Configuration'}
             </h2>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {/* Authentication - at the top */}
               <div>
-                <label className="block text-sm font-medium text-white mb-2">
+                <label className="block text-sm font-medium text-white mb-1">
                   {t('settings.email.authentication') || 'Authentication'}
                 </label>
                 <select
@@ -270,7 +271,7 @@ export function EmailSettings() {
               {/* Username / Password - dimmed when auth disabled */}
               <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 transition-opacity ${!smtpSettings.smtp_auth_enabled ? 'opacity-40 pointer-events-none' : ''}`}>
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">
+                  <label className="block text-sm font-medium text-white mb-1">
                     {t('settings.email.username') || 'Username'}
                   </label>
                   <input
@@ -283,7 +284,7 @@ export function EmailSettings() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">
+                  <label className="block text-sm font-medium text-white mb-1">
                     {t('settings.email.password') || 'Password'}
                   </label>
                   <input
@@ -300,7 +301,7 @@ export function EmailSettings() {
               {/* SMTP Server / Port */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">
+                  <label className="block text-sm font-medium text-white mb-1">
                     {t('settings.email.smtpHost') || 'SMTP Server'} *
                   </label>
                   <input
@@ -312,7 +313,7 @@ export function EmailSettings() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">
+                  <label className="block text-sm font-medium text-white mb-1">
                     {t('settings.email.smtpPort') || 'SMTP Port'}
                   </label>
                   <input
@@ -327,7 +328,7 @@ export function EmailSettings() {
 
               {/* Security */}
               <div>
-                <label className="block text-sm font-medium text-white mb-2">
+                <label className="block text-sm font-medium text-white mb-1">
                   {t('settings.email.security') || 'Security'}
                 </label>
                 <select
@@ -344,7 +345,7 @@ export function EmailSettings() {
               {/* From Email / Name */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">
+                  <label className="block text-sm font-medium text-white mb-1">
                     {t('settings.email.fromEmail') || 'From Email'} *
                   </label>
                   <input
@@ -356,7 +357,7 @@ export function EmailSettings() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">
+                  <label className="block text-sm font-medium text-white mb-1">
                     {t('settings.email.fromName') || 'From Name'}
                   </label>
                   <input
@@ -388,20 +389,20 @@ export function EmailSettings() {
             </div>
           </CardContent>
         </Card>
-      </div>
+        </div>
 
-      {/* Test SMTP */}
-      <div>
-        <Card>
+        {/* Test SMTP */}
+        <div>
+        <Card id="card-email-test">
           <CardHeader>
             <h2 className="text-lg font-semibold text-white">
               {t('settings.email.testConnection') || 'Test SMTP Connection'}
             </h2>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-white mb-2">
+                <label className="block text-sm font-medium text-white mb-1">
                   {t('settings.email.testRecipient') || 'Test Recipient Email'}
                 </label>
                 <input
@@ -432,6 +433,7 @@ export function EmailSettings() {
             </div>
           </CardContent>
         </Card>
+        </div>
       </div>
 
     </div>

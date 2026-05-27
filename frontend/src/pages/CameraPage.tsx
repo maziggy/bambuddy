@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut } from 'lucide-react';
-import { api, getAuthToken, withStreamToken } from '../api/client';
+import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut, Stethoscope } from 'lucide-react';
+import { api, getAuthToken, getStreamToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useStreamTokenSync } from '../hooks/useCameraStreamToken';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
+import { CameraDiagnoseModal } from '../components/CameraDiagnoseModal';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const INITIAL_RECONNECT_DELAY = 2000; // 2 seconds
@@ -18,12 +20,28 @@ export function CameraPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, authEnabled, user } = useAuth();
   const { printerId } = useParams<{ printerId: string }>();
   const id = parseInt(printerId || '0', 10);
+  const [searchParams] = useSearchParams();
+  const fpsParam = parseInt(searchParams.get('fps') || '15', 10);
+  const fps = Math.min(Math.max(isNaN(fpsParam) ? 15 : fpsParam, 1), 30);
+
+  // Subscribe to the stream-token query so this page re-renders once the token
+  // arrives. useStreamTokenSync (mounted in App) already owns the fetch; this
+  // useQuery call dedupes via the shared key and just reads the cached value.
+  useStreamTokenSync();
+  const { data: streamTokenData } = useQuery({
+    queryKey: ['camera-stream-token', user?.id ?? null],
+    queryFn: () => api.getCameraStreamToken(),
+    enabled: authEnabled ? !!user : true,
+    staleTime: 50 * 60 * 1000,
+  });
+  const streamTokenValue = streamTokenData?.token ?? getStreamToken();
 
   const [streamMode, setStreamMode] = useState<'stream' | 'snapshot'>('stream');
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
+  const [showDiagnoseModal, setShowDiagnoseModal] = useState(false);
   const [streamError, setStreamError] = useState(false);
   const [streamLoading, setStreamLoading] = useState(true);
   const [imageKey, setImageKey] = useState(Date.now());
@@ -574,11 +592,20 @@ export function CameraPage() {
     setPanOffset({ x: 0, y: 0 });
   };
 
-  const currentUrl = transitioning
+  // When auth is enabled, wait for the stream token before rendering the <img>
+  // src — otherwise the first request fires without ?token= and the backend
+  // rejects it with "Valid camera stream token required" (see #979). We append
+  // the token directly from the reactive query value instead of relying on the
+  // module-level cache in withStreamToken(), because that cache is updated in a
+  // useEffect that runs after render.
+  const waitingForStreamToken = authEnabled && !streamTokenValue;
+  const appendToken = (url: string) =>
+    streamTokenValue ? `${url}&token=${encodeURIComponent(streamTokenValue)}` : withStreamToken(url);
+  const currentUrl = transitioning || waitingForStreamToken
     ? ''
     : streamMode === 'stream'
-      ? withStreamToken(`/api/v1/printers/${id}/camera/stream?fps=15&t=${imageKey}`)
-      : withStreamToken(`/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`);
+      ? appendToken(`/api/v1/printers/${id}/camera/stream?fps=${fps}&t=${imageKey}`)
+      : appendToken(`/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`);
 
   const isDisabled = streamLoading || transitioning || isReconnecting;
 
@@ -655,6 +682,13 @@ export function CameraPage() {
             <RefreshCw className={`w-4 h-4 text-bambu-gray ${isDisabled ? 'animate-spin' : ''}`} />
           </button>
           <button
+            onClick={() => setShowDiagnoseModal(true)}
+            className="p-1.5 hover:bg-bambu-dark-tertiary rounded"
+            title={t('camera.diagnose.button')}
+          >
+            <Stethoscope className="w-4 h-4 text-bambu-gray" />
+          </button>
+          <button
             onClick={toggleFullscreen}
             className="p-1.5 hover:bg-bambu-dark-tertiary rounded"
             title={isFullscreen ? t('camera.exitFullscreen') : t('camera.fullscreen')}
@@ -697,7 +731,7 @@ export function CameraPage() {
                 <WifiOff className="w-10 h-10 text-orange-400 mx-auto mb-3" />
                 <p className="text-white mb-2">{t('camera.connectionLost')}</p>
                 <p className="text-sm text-bambu-gray mb-3">
-                  {t('camera.reconnecting', { countdown: reconnectCountdown, attempt: reconnectAttempts + 1, max: MAX_RECONNECT_ATTEMPTS })}
+                  {t('camera.reconnecting', { countdown: reconnectCountdown, attempt: Math.min(reconnectAttempts + 1, MAX_RECONNECT_ATTEMPTS), max: MAX_RECONNECT_ATTEMPTS })}
                 </p>
                 <button
                   onClick={refresh}
@@ -716,12 +750,20 @@ export function CameraPage() {
                 <p className="text-xs text-bambu-gray mb-4 max-w-md">
                   {t('camera.cameraUnavailableDesc')}
                 </p>
-                <button
-                  onClick={refresh}
-                  className="px-4 py-2 bg-bambu-green text-white rounded hover:bg-bambu-green/80 transition-colors"
-                >
-                  {t('camera.retry')}
-                </button>
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={refresh}
+                    className="px-4 py-2 bg-bambu-green text-white rounded hover:bg-bambu-green/80 transition-colors"
+                  >
+                    {t('camera.retry')}
+                  </button>
+                  <button
+                    onClick={() => setShowDiagnoseModal(true)}
+                    className="px-4 py-2 bg-bambu-dark border border-bambu-dark-tertiary text-bambu-gray hover:text-white rounded transition-colors"
+                  >
+                    {t('camera.diagnose.button')}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -777,6 +819,14 @@ export function CameraPage() {
         isOpen={showSkipObjectsModal}
         onClose={() => setShowSkipObjectsModal(false)}
       />
+      {/* Camera diagnostic modal — stethoscope icon + error-state Diagnose button (#1395) */}
+      {showDiagnoseModal && (
+        <CameraDiagnoseModal
+          printerId={id}
+          printerName={printer?.name || null}
+          onClose={() => setShowDiagnoseModal(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Droplets, Link2, Copy, Check, Settings2, ExternalLink, Package, Unlink } from 'lucide-react';
+import { Droplets, Copy, Check, Settings2, Package, Unlink } from 'lucide-react';
 import { isLightColor } from '../utils/colors';
 
 interface FilamentData {
@@ -28,6 +30,7 @@ interface InventoryConfig {
   onAssignSpool?: () => void;
   onUnassignSpool?: () => void;
   assignedSpool?: { id: number; material: string; brand: string | null; color_name: string | null; remainingWeightGrams?: number | null } | null;
+  isAssigned?: boolean;
 }
 
 interface ConfigureSlotConfig {
@@ -51,8 +54,15 @@ interface FilamentHoverCardProps {
  */
 export function FilamentHoverCard({ data, children, disabled, className = '', spoolman, inventory, configureSlot }: FilamentHoverCardProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
+  // Screen-space coordinates for the portaled card (#1336 follow-up). Using
+  // a portal + position:fixed lets the popover escape sibling printer cards
+  // that create their own stacking contexts on the dashboard — without this,
+  // a card later in DOM order draws over the hover popover regardless of
+  // z-index because z-index doesn't cross stacking-context boundaries.
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [copied, setCopied] = useState(false);
   const [showUnlinkConfirm, setShowUnlinkConfirm] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
@@ -94,23 +104,43 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
     document.body.removeChild(textarea);
   };
 
-  // Calculate position when showing
-  useEffect(() => {
-    if (isVisible && triggerRef.current && cardRef.current) {
+  // Compute placement (top/bottom) + screen coordinates for the portaled
+  // card. Runs on visibility change, scroll, and resize so the popover
+  // tracks the trigger when the viewport moves. useLayoutEffect rather
+  // than useEffect so the first paint already has the correct coords —
+  // avoids a one-frame flicker at (0, 0).
+  useLayoutEffect(() => {
+    if (!isVisible) {
+      setCoords(null);
+      return;
+    }
+    const compute = () => {
+      if (!triggerRef.current || !cardRef.current) return;
       const triggerRect = triggerRef.current.getBoundingClientRect();
       const cardHeight = cardRef.current.offsetHeight;
-      // Account for fixed header (56px) - space above should exclude header area
+      const cardWidth = cardRef.current.offsetWidth;
       const headerHeight = 56;
       const spaceAbove = triggerRect.top - headerHeight;
       const spaceBelow = window.innerHeight - triggerRect.bottom;
-
-      // Prefer top, but flip to bottom if not enough space (accounting for header)
-      if (spaceAbove < cardHeight + 12 && spaceBelow > spaceAbove) {
-        setPosition('bottom');
-      } else {
-        setPosition('top');
-      }
-    }
+      const placement: 'top' | 'bottom' =
+        spaceAbove < cardHeight + 12 && spaceBelow > spaceAbove ? 'bottom' : 'top';
+      const centerX = triggerRect.left + triggerRect.width / 2;
+      const left = Math.max(8, Math.min(centerX - cardWidth / 2, window.innerWidth - cardWidth - 8));
+      const top = placement === 'top' ? triggerRect.top - cardHeight - 8 : triggerRect.bottom + 8;
+      setPosition(placement);
+      setCoords({ top, left });
+    };
+    // First compute is synchronous from the layout effect; a follow-up rAF
+    // re-measures after the card actually has its rendered dimensions.
+    compute();
+    const rafId = requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
   }, [isVisible]);
 
   const handleMouseEnter = () => {
@@ -152,19 +182,24 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
     >
       {children}
 
-      {/* Hover Card */}
-      {isVisible && (
+      {/* Portaled hover card — rendered into document.body so it escapes
+          any ancestor stacking context. Sibling printer cards on the
+          dashboard create their own stacking contexts; without the portal
+          the popover gets covered by the next card even at z-[60]
+          (#1336 follow-up). */}
+      {isVisible && createPortal(
         <div
           ref={cardRef}
-          className={`
-            absolute left-1/2 -translate-x-1/2 z-[60]
-            ${position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}
-            animate-in fade-in-0 zoom-in-95 duration-150
-          `}
+          className="fixed z-[60] animate-in fade-in-0 zoom-in-95 duration-150"
           style={{
-            // Ensure card doesn't go off-screen horizontally
+            top: coords?.top ?? -9999,
+            left: coords?.left ?? -9999,
             maxWidth: 'calc(100vw - 24px)',
+            // Hide until coords are computed to avoid a (-9999,-9999) flash.
+            visibility: coords ? 'visible' : 'hidden',
           }}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
         >
           {/* Card container */}
           <div className="
@@ -236,12 +271,6 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     {assignedRemainingWeight !== null && data.fillLevel !== null && (
                       <span className="text-[9px] text-bambu-gray font-normal">• {assignedRemainingWeight}g</span>
                     )}
-                    {data.fillSource === 'spoolman' && data.fillLevel !== null && (
-                      <span className="text-[9px] text-bambu-gray font-normal">{t('spoolman.fillSourceLabel')}</span>
-                    )}
-                    {data.fillSource === 'inventory' && data.fillLevel !== null && (
-                      <span className="text-[9px] text-bambu-gray font-normal">{t('inventory.fillSourceLabel')}</span>
-                    )}
                   </span>
                 </div>
                 {/* Fill bar */}
@@ -291,62 +320,43 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     )}
                   </div>
 
-                  {/* Open in Spoolman button (when already linked) */}
-                  {spoolman.linkedSpoolId && spoolman.spoolmanUrl && (
+                  {/* Open in inventory button (when already linked to a Spoolman spool) */}
+                  {spoolman.linkedSpoolId && (
                     <>
-                      <a
-                        href={`${spoolman.spoolmanUrl.replace(/\/$/, '')}/spool/show/${spoolman.linkedSpoolId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/inventory?spool=${spoolman.linkedSpoolId}`);
+                        }}
                         className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green"
-                        title={t('spoolman.openInSpoolman')}
+                        title={t('inventory.openInInventory')}
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        {t('spoolman.openInSpoolman')}
-                      </a>
+                        <Package className="w-3.5 h-3.5" />
+                        {t('inventory.openInInventory')}
+                      </button>
 
-                      {spoolman.onUnlinkSpool && (data.vendor !== 'Bambu Lab' || spoolman.syncMode === 'manual') && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowUnlinkConfirm(true);
-                          }}
-                          className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-red-500/20 hover:bg-red-500/30 text-red-400"
-                          title={t('spoolman.unlinkSpool')}
-                        >
-                          <Unlink className="w-3.5 h-3.5" />
-                          {t('spoolman.unlinkSpool')}
-                        </button>
-                      )}
                     </>
                   )}
 
-                  {/* Link Spool button (when not linked) */}
-                  {!spoolman.linkedSpoolId && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (spoolman.onLinkSpool) {
-                          spoolman.onLinkSpool?.();
-                        }
-                      }}
-                      disabled={!spoolman.onLinkSpool}
-                      className={`w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors ${
-                        !spoolman.onLinkSpool
-                          ? 'bg-bambu-gray/10 text-bambu-gray cursor-not-allowed'
-                          : 'bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green'
-                      }`}
-                    >
-                      <Link2 className="w-3.5 h-3.5" />
-                      {t('spoolman.linkToSpoolman')}
-                    </button>
-                  )}
+                  {/* Link/Unlink action buttons intentionally NOT rendered
+                      here. The inventory section below already provides
+                      Assign/Unassign for slot-binding (the primary user
+                      flow in Spoolman mode). Showing the spoolman tag-link
+                      buttons in addition surfaced two red Unlink-icon
+                      buttons for what users perceive as the same action,
+                      regardless of whether the labels said "Unlink Spool"
+                      vs "Unassign Spool". Tag-linking remains available
+                      via dedicated UI (LinkSpoolModal can be opened from
+                      Spoolman settings / inventory page). */}
                 </div>
               )}
 
-              {/* Inventory section - only for non-Bambu spools */}
-              {inventory && data.vendor !== 'Bambu Lab' && (
+              {/* Inventory section — shown for every vendor including
+                  Bambu Lab (#1133). The earlier "non-Bambu only" gate
+                  prevented users from manually assigning a Bambu spool
+                  in inventory to an AMS slot when they didn't want to
+                  re-scan via SpoolBuddy NFC. */}
+              {inventory && (
                 <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary space-y-2">
                   {inventory.assignedSpool ? (
                     <>
@@ -356,11 +366,27 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                           {t('inventory.assigned')}
                         </span>
                       </div>
-                      <p className="text-xs text-white truncate">
-                        {inventory.assignedSpool.brand ? `${inventory.assignedSpool.brand} ` : ''}
-                        {inventory.assignedSpool.material}
-                        {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
-                      </p>
+                      <div className="flex items-baseline gap-1.5 min-w-0 mb-1">
+                        <p className="text-xs text-white truncate">
+                          {inventory.assignedSpool.brand ? `${inventory.assignedSpool.brand} ` : ''}
+                          {inventory.assignedSpool.material}
+                          {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
+                        </p>
+                        <span className="text-[10px] font-mono text-bambu-gray shrink-0">#{inventory.assignedSpool.id}</span>
+                      </div>
+                      {(!spoolman?.linkedSpoolId || inventory.assignedSpool!.id !== spoolman.linkedSpoolId) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/inventory?spool=${inventory.assignedSpool!.id}`);
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green"
+                          title={t('inventory.openInInventory')}
+                        >
+                          <Package className="w-3.5 h-3.5" />
+                          {t('inventory.openInInventory')}
+                        </button>
+                      )}
                       {inventory.onUnassignSpool && (
                         <button
                           onClick={(e) => {
@@ -376,11 +402,14 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     </>
                   ) : inventory.onAssignSpool ? (
                     <button
-                      onClick={(e) => {
+                      onClick={inventory.isAssigned ? undefined : (e) => {
                         e.stopPropagation();
                         inventory.onAssignSpool?.();
                       }}
-                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
+                      disabled={!!inventory.isAssigned}
+                      className={`w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 text-bambu-blue ${
+                        inventory.isAssigned ? 'opacity-50 cursor-not-allowed' : 'hover:bg-bambu-blue/30'
+                      }`}
                     >
                       <Package className="w-3.5 h-3.5" />
                       {t('inventory.assignSpool')}
@@ -419,7 +448,8 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                 : 'bottom-full border-b-[6px] border-b-bambu-dark-tertiary'}
             `}
           />
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Unlink Confirmation Dialog */}
@@ -453,7 +483,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                   }}
                   className="flex-1 px-3 py-2 text-sm font-medium rounded transition-colors bg-red-500/20 hover:bg-red-500/30 text-red-400"
                 >
-                  {t('spoolman.unlinkSpool')}
+                  {t('inventory.unassignSpool')}
                 </button>
               </div>
             </div>
@@ -468,15 +498,22 @@ interface EmptySlotHoverCardProps {
   children: ReactNode;
   className?: string;
   configureSlot?: ConfigureSlotConfig;
-  inventory?: InventoryConfig;
+  onAssignSpool?: () => void;
+  // #1322 follow-up: distinguish firmware-confirmed empty (state 9/10) from
+  // a user reset where the firmware still has a spool registered. "reset"
+  // surfaces the user-cleared label; undefined / "physical" keeps the
+  // historical "Empty slot" wording.
+  kind?: 'physical' | 'reset';
 }
 
-/**
- * Wrapper for empty slots - shows "Empty" on hover with optional configure button
- */
-export function EmptySlotHoverCard({ children, className = '', configureSlot, inventory }: EmptySlotHoverCardProps) {
+export function EmptySlotHoverCard({ children, className = '', configureSlot, onAssignSpool, kind }: EmptySlotHoverCardProps) {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
+  // Screen-space coords for the portaled card — same pattern as
+  // FilamentHoverCard, see comment there (#1336 follow-up).
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
@@ -495,55 +532,85 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, in
     };
   }, []);
 
+  useLayoutEffect(() => {
+    if (!isVisible) {
+      setCoords(null);
+      return;
+    }
+    const compute = () => {
+      if (!triggerRef.current || !cardRef.current) return;
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const cardHeight = cardRef.current.offsetHeight;
+      const cardWidth = cardRef.current.offsetWidth;
+      const centerX = triggerRect.left + triggerRect.width / 2;
+      const left = Math.max(8, Math.min(centerX - cardWidth / 2, window.innerWidth - cardWidth - 8));
+      const top = triggerRect.top - cardHeight - 8;
+      setCoords({ top, left });
+    };
+    compute();
+    const rafId = requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [isVisible]);
+
   return (
     <div
+      ref={triggerRef}
       className={`relative ${className}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
       {children}
 
-      {isVisible && (
-        <div className="
-          absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50
-          animate-in fade-in-0 zoom-in-95 duration-150
-        ">
+      {isVisible && createPortal(
+        <div
+          ref={cardRef}
+          className="fixed z-[60] animate-in fade-in-0 zoom-in-95 duration-150"
+          style={{
+            top: coords?.top ?? -9999,
+            left: coords?.left ?? -9999,
+            visibility: coords ? 'visible' : 'hidden',
+          }}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
           <div className="
             bg-bambu-dark-secondary border border-bambu-dark-tertiary
             rounded-md shadow-lg overflow-hidden
           ">
             <div className="px-3 py-1.5 text-xs text-bambu-gray whitespace-nowrap">
-              {t('ams.emptySlot')}
+              {kind === 'reset' ? t('ams.emptySlotReset') : t('ams.emptySlot')}
             </div>
             {/* Configure slot button */}
-            {configureSlot?.enabled && (
-              <div className="px-2 pb-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    configureSlot.onConfigure?.();
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
-                  title={t('ams.configureSlot')}
-                >
-                  <Settings2 className="w-3.5 h-3.5" />
-                  {t('ams.configure')}
-                </button>
-              </div>
-            )}
-            {/* Assign spool button - allows assigning inventory spool to empty slot */}
-            {inventory?.onAssignSpool && (
-              <div className="px-2 pb-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    inventory.onAssignSpool?.();
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
-                >
-                  <Package className="w-3.5 h-3.5" />
-                  {t('inventory.assignSpool')}
-                </button>
+            {(configureSlot?.enabled || onAssignSpool) && (
+              <div className="px-2 pb-2 space-y-1">
+                {configureSlot?.enabled && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      configureSlot.onConfigure?.();
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
+                    title={t('ams.configureSlot')}
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                    {t('ams.configure')}
+                  </button>
+                )}
+                {onAssignSpool && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onAssignSpool(); }}
+                    className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
+                  >
+                    <Package className="w-3.5 h-3.5" />
+                    {t('inventory.assignSpool')}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -553,7 +620,8 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, in
             border-r-[5px] border-r-transparent
             border-t-[5px] border-t-bambu-dark-tertiary
           " />
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

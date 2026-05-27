@@ -31,6 +31,7 @@ vi.mock('../../api/client', () => ({
     getSpoolCatalog: vi.fn().mockResolvedValue([]),
     getColorCatalog: vi.fn().mockResolvedValue([]),
     getLocalPresets: vi.fn().mockResolvedValue({ filament: [] }),
+    getBuiltinFilaments: vi.fn().mockResolvedValue([]),
     getPrinters: vi.fn().mockResolvedValue([]),
     getSpoolUsageHistory: vi.fn().mockResolvedValue([]),
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
@@ -61,6 +62,8 @@ const existingSpool: InventorySpool = {
   brand: 'Polymaker',
   color_name: 'Red',
   rgba: 'FF0000FF',
+  extra_colors: null,
+  effect_type: null,
   label_weight: 1000,
   core_weight: 250,
   core_weight_catalog_id: null,
@@ -141,6 +144,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );
@@ -158,6 +162,7 @@ describe('SpoolFormModal quick-add toggle', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={existingSpool}
+        mode="edit"
         currencySymbol="$"
       />,
     );
@@ -174,6 +179,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );
@@ -206,6 +212,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );
@@ -223,6 +230,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );
@@ -253,6 +261,7 @@ describe('SpoolFormModal quick-add toggle', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={existingSpool}
+        mode="edit"
         currencySymbol="$"
       />,
     );
@@ -270,6 +279,7 @@ describe('SpoolFormModal quick-add toggle', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        mode="create"
         currencySymbol="$"
       />,
     );

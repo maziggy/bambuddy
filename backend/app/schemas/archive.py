@@ -66,6 +66,7 @@ class ArchiveResponse(BaseModel):
     total_layers: int | None = None
     nozzle_diameter: float | None
     bed_temperature: int | None
+    bed_type: str | None = None  # e.g. "Cool Plate", "Textured PEI Plate" (from 3MF curr_bed_type)
     nozzle_temperature: int | None
 
     sliced_for_model: str | None = None  # Printer model this file was sliced for
@@ -98,6 +99,15 @@ class ArchiveResponse(BaseModel):
     # User tracking (Issue #206)
     created_by_id: int | None = None
     created_by_username: str | None = None
+
+    # Per-archive run aggregates (#1378). Computed from PrintLogEntry — one
+    # row per actual print event — so reprints contribute to these counters
+    # without overwriting the source archive's first-run data.
+    run_count: int = 0
+    last_run_at: datetime | None = None
+    total_filament_actual_grams: float | None = None
+    successful_run_count: int = 0
+    failed_run_count: int = 0
 
     @model_validator(mode="after")
     def compute_object_count(self) -> "ArchiveResponse":
@@ -149,6 +159,10 @@ class ArchiveStats(BaseModel):
     # Energy stats
     total_energy_kwh: float = 0.0
     total_energy_cost: float = 0.0
+    # Set when the date-range query in "total consumption" mode is running on
+    # incomplete snapshot history — e.g. right after a fresh upgrade before the
+    # hourly snapshot loop has built up a baseline. Frontend shows a tooltip.
+    energy_data_warming_up: bool = False
 
 
 class ProjectPageImage(BaseModel):

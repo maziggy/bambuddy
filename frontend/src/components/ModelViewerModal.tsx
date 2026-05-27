@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { X, ExternalLink, Box, Code2, Loader2, Layers, Check, Maximize2, Minimize2 } from 'lucide-react';
+import { X, ExternalLink, Box, Code2, Cog, Loader2, Layers, Check, Maximize2, Minimize2 } from 'lucide-react';
 import { ModelViewer } from './ModelViewer';
 import { GcodeViewer } from './GcodeViewer';
 import { Button } from './Button';
@@ -17,6 +17,11 @@ interface ModelViewerModalProps {
   title: string;
   fileType?: string;
   onClose: () => void;
+  // When set and `settings.use_slicer_api` is on, the header's slicer button
+  // becomes "Slice" and calls this instead of opening BambuStudio / Orca
+  // externally — so the preview modal's slice action matches the file row's
+  // Cog (in-app Bambuddy SliceModal) when the slicer API is enabled.
+  onSliceWithBambuddy?: () => void;
 }
 
 interface Capabilities {
@@ -27,7 +32,7 @@ interface Capabilities {
   filament_colors: string[];
 }
 
-export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, onClose }: ModelViewerModalProps) {
+export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, onClose, onSliceWithBambuddy }: ModelViewerModalProps) {
   const { t } = useTranslation();
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const preferredSlicer: SlicerType = settings?.preferred_slicer || 'bambu_studio';
@@ -263,6 +268,20 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
 
   const canOpenInSlicer = isLibrary ? (fileType || '').toLowerCase() === '3mf' : true;
 
+  // When the user has the in-app Slicer API enabled (Settings → Workflow →
+  // Slicer → Use Slicer API), library-mode previews route the header's slicer
+  // button into Bambuddy's own SliceModal — same behaviour as the Cog button
+  // in the file-row actions. Falls back to the external-slicer launcher when
+  // the API is off, when no in-app handler is wired (e.g. archive preview),
+  // or when the file type can't be sliced (.gcode / .gcode.3mf, etc.).
+  const sliceableType = (() => {
+    const t = (fileType || '').toLowerCase();
+    return t === '3mf' || t === 'stl' || t === 'step' || t === 'stp';
+  })();
+  const useBambuddySlicer = Boolean(
+    isLibrary && settings?.use_slicer_api && onSliceWithBambuddy && sliceableType,
+  );
+
   const handleOpenInSlicer = async () => {
     if (!canOpenInSlicer) return;
     const filename = title || 'model';
@@ -310,10 +329,17 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={handleOpenInSlicer} disabled={!canOpenInSlicer}>
-              <ExternalLink className="w-4 h-4" />
-              {t('modelViewer.openInSlicer')}
-            </Button>
+            {useBambuddySlicer ? (
+              <Button variant="secondary" size="sm" onClick={onSliceWithBambuddy}>
+                <Cog className="w-4 h-4" />
+                {t('slice.action')}
+              </Button>
+            ) : (
+              <Button variant="secondary" size="sm" onClick={handleOpenInSlicer} disabled={!canOpenInSlicer}>
+                <ExternalLink className="w-4 h-4" />
+                {t('modelViewer.openInSlicer')}
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"

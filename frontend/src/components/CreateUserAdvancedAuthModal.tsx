@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Plus, Loader2, Users as UsersIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
-import type { Group, UserCreate } from '../api/client';
+import { LdapUserPicker } from './LdapUserPicker';
+import type { Group, UserCreate, UserResponse } from '../api/client';
 
 interface AdvancedAuthFormData extends UserCreate {
   group_ids: number[];
@@ -19,7 +20,14 @@ interface CreateUserAdvancedAuthModalProps {
   onCreate: () => void;
   isCreating: boolean;
   isCreateButtonDisabled: boolean;
+  // When LDAP is enabled in settings, the modal shows a "LDAP" tab beside
+  // "Local"; the picker handles its own provision call and reports success
+  // back through onLdapProvisioned.
+  ldapEnabled?: boolean;
+  onLdapProvisioned?: (user: UserResponse) => void;
 }
+
+type Tab = 'local' | 'ldap';
 
 export function CreateUserAdvancedAuthModal({
   formData,
@@ -29,8 +37,11 @@ export function CreateUserAdvancedAuthModal({
   onCreate,
   isCreating,
   isCreateButtonDisabled,
+  ldapEnabled = false,
+  onLdapProvisioned,
 }: CreateUserAdvancedAuthModalProps) {
   const { t } = useTranslation();
+  const [tab, setTab] = useState<Tab>('local');
 
   // Close modal on Escape key
   useEffect(() => {
@@ -80,6 +91,48 @@ export function CreateUserAdvancedAuthModal({
           </div>
         </CardHeader>
         <CardContent>
+          {ldapEnabled && (
+            <div
+              className="mb-4 flex items-center gap-1 p-1 bg-bambu-dark-secondary rounded-lg"
+              role="tablist"
+              aria-label={t('users.modal.tabsAriaLabel')}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'local'}
+                onClick={() => setTab('local')}
+                className={`flex-1 px-3 py-2 text-sm rounded-md transition-colors ${
+                  tab === 'local'
+                    ? 'bg-bambu-green/15 text-bambu-green'
+                    : 'text-bambu-gray hover:text-white'
+                }`}
+              >
+                {t('users.modal.localTab')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'ldap'}
+                onClick={() => setTab('ldap')}
+                className={`flex-1 px-3 py-2 text-sm rounded-md transition-colors ${
+                  tab === 'ldap'
+                    ? 'bg-bambu-green/15 text-bambu-green'
+                    : 'text-bambu-gray hover:text-white'
+                }`}
+              >
+                {t('users.modal.ldapTab')}
+              </button>
+            </div>
+          )}
+
+          {tab === 'ldap' && ldapEnabled ? (
+            <LdapUserPicker
+              onSuccess={(user) => {
+                onLdapProvisioned?.(user);
+              }}
+            />
+          ) : (
           <div className="space-y-4">
             {/* Username Field */}
             <div>
@@ -148,8 +201,10 @@ export function CreateUserAdvancedAuthModal({
               </div>
             </div>
           </div>
+          )}
 
-          {/* Action Buttons */}
+          {/* Action Buttons — Cancel always shown; Create only on local tab
+              (LDAP picker has its own submit). */}
           <div className="mt-6 flex justify-end gap-3">
             <Button
               variant="secondary"
@@ -157,22 +212,24 @@ export function CreateUserAdvancedAuthModal({
             >
               {t('users.modal.cancel')}
             </Button>
-            <Button
-              onClick={onCreate}
-              disabled={isCreateButtonDisabled}
-            >
-              {isCreating ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {t('users.modal.creating')}
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4" />
-                  {t('users.modal.createUser')}
-                </>
-              )}
-            </Button>
+            {tab === 'local' && (
+              <Button
+                onClick={onCreate}
+                disabled={isCreateButtonDisabled}
+              >
+                {isCreating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {t('users.modal.creating')}
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4" />
+                    {t('users.modal.createUser')}
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

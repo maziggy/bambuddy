@@ -40,10 +40,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Dark mode settings
   const [darkStyle, setDarkStyleState] = useState<ThemeStyle>(() => {
-    return (localStorage.getItem('dark-style') as ThemeStyle) || 'classic';
+    return (localStorage.getItem('dark-style') as ThemeStyle) || 'vibrant';
   });
   const [darkBackground, setDarkBackgroundState] = useState<DarkBackground>(() => {
-    return (localStorage.getItem('dark-background') as DarkBackground) || 'neutral';
+    return (localStorage.getItem('dark-background') as DarkBackground) || 'cool';
   });
   const [darkAccent, setDarkAccentState] = useState<ThemeAccent>(() => {
     return (localStorage.getItem('dark-accent') as ThemeAccent) || 'green';

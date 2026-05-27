@@ -5653,7 +5653,11 @@ async def serve_manifest():
     """Serve PWA manifest."""
     manifest_file = app_settings.static_dir / "manifest.json"
     if manifest_file.exists():
-        return FileResponse(manifest_file, media_type="application/manifest+json")
+        return FileResponse(
+            manifest_file,
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return {"error": "Manifest not found"}
 
 
@@ -5679,7 +5683,11 @@ async def serve_sw_register():
     """
     reg_file = app_settings.static_dir / "sw-register.js"
     if reg_file.exists():
-        return FileResponse(reg_file, media_type="application/javascript")
+        return FileResponse(
+            reg_file,
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return {"error": "sw-register.js not found"}
 
 

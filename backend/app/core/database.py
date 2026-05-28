@@ -673,7 +673,10 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN is_favorite BOOLEAN DEFAULT 0")
 
     # Migration: Add wallet_charge_skipped column to print_archives so deleted print charges stay deleted
-    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN wallet_charge_skipped BOOLEAN DEFAULT 0")
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN wallet_charge_skipped BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN wallet_charge_skipped BOOLEAN DEFAULT FALSE")
 
     # Migration: Add content_hash column to print_archives for duplicate detection
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN content_hash VARCHAR(64)")
@@ -957,6 +960,17 @@ async def run_migrations(conn):
     # Migration: Add manual_start column to print_queue for staged prints
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN manual_start BOOLEAN DEFAULT 0")
 
+    # Migration: Add cost_center_id column to print_queue for billing metadata
+    try:
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    "ALTER TABLE print_queue ADD COLUMN cost_center_id INTEGER REFERENCES cost_centers(id) ON DELETE SET NULL"
+                )
+            )
+    except (OperationalError, ProgrammingError):
+        pass  # Already applied
+
     # Migration: Add wiki_url column to maintenance_types for documentation links
     await _safe_execute(conn, "ALTER TABLE maintenance_types ADD COLUMN wiki_url VARCHAR(500)")
 
@@ -1050,12 +1064,16 @@ async def run_migrations(conn):
             result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='print_queue'"))
             row = result.fetchone()
             if row and "printer_id INTEGER NOT NULL" in (row[0] or ""):
+                cols_result = await conn.execute(text("PRAGMA table_info(print_queue)"))
+                col_names = {col[1] for col in cols_result.fetchall()}
+                cost_center_select = "cost_center_id" if "cost_center_id" in col_names else "NULL"
                 await conn.execute(
                     text("""
                     CREATE TABLE print_queue_new (
                         id INTEGER PRIMARY KEY,
                         printer_id INTEGER REFERENCES printers(id) ON DELETE CASCADE,
                         archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+                        cost_center_id INTEGER REFERENCES cost_centers(id) ON DELETE SET NULL,
                         project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
                         position INTEGER DEFAULT 0,
                         scheduled_time DATETIME,
@@ -1072,13 +1090,15 @@ async def run_migrations(conn):
                 """)
                 )
                 await conn.execute(
-                    text("""
+                    text(
+                        f"""
                     INSERT INTO print_queue_new
-                    SELECT id, printer_id, archive_id, project_id, position, scheduled_time,
+                    SELECT id, printer_id, archive_id, {cost_center_select}, project_id, position, scheduled_time,
                            manual_start, require_previous_success, auto_off_after, ams_mapping,
                            status, started_at, completed_at, error_message, created_at
                     FROM print_queue
-                """)
+                """
+                    )
                 )
                 await conn.execute(text("DROP TABLE print_queue"))
                 await conn.execute(text("ALTER TABLE print_queue_new RENAME TO print_queue"))
@@ -1211,6 +1231,9 @@ async def run_migrations(conn):
             result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='print_queue'"))
             row = result.fetchone()
             if row and "archive_id INTEGER NOT NULL" in (row[0] or ""):
+                cols_result = await conn.execute(text("PRAGMA table_info(print_queue)"))
+                col_names = {col[1] for col in cols_result.fetchall()}
+                cost_center_select = "cost_center_id" if "cost_center_id" in col_names else "NULL"
                 await conn.execute(
                     text("""
                     CREATE TABLE print_queue_new2 (
@@ -1218,6 +1241,7 @@ async def run_migrations(conn):
                         printer_id INTEGER REFERENCES printers(id) ON DELETE CASCADE,
                         archive_id INTEGER REFERENCES print_archives(id) ON DELETE CASCADE,
                         library_file_id INTEGER REFERENCES library_files(id) ON DELETE CASCADE,
+                        cost_center_id INTEGER REFERENCES cost_centers(id) ON DELETE SET NULL,
                         project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
                         position INTEGER DEFAULT 0,
                         scheduled_time DATETIME,
@@ -1241,15 +1265,17 @@ async def run_migrations(conn):
                 """)
                 )
                 await conn.execute(
-                    text("""
+                    text(
+                        f"""
                     INSERT INTO print_queue_new2
-                    SELECT id, printer_id, archive_id, NULL, project_id, position, scheduled_time,
+                    SELECT id, printer_id, archive_id, NULL, {cost_center_select}, project_id, position, scheduled_time,
                            manual_start, require_previous_success, auto_off_after, ams_mapping, plate_id,
                            COALESCE(bed_levelling, 1), COALESCE(flow_cali, 0), COALESCE(vibration_cali, 1),
                            COALESCE(layer_inspect, 0), COALESCE(timelapse, 0), COALESCE(use_ams, 1),
                            status, started_at, completed_at, error_message, created_at
                     FROM print_queue
-                """)
+                """
+                    )
                 )
                 await conn.execute(text("DROP TABLE print_queue"))
                 await conn.execute(text("ALTER TABLE print_queue_new2 RENAME TO print_queue"))

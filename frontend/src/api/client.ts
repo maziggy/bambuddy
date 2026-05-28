@@ -290,6 +290,11 @@ export interface Printer {
   camera_rotation: number;  // 0, 90, 180, 270 degrees
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
+  // WLED LED strip integration
+  wled_enabled: boolean;
+  wled_host: string | null;
+  wled_port: number;
+  wled_api_key: string | null;
   created_at: string;
   updated_at: string;
   // Enclosure sensor integration (Home Assistant)
@@ -505,6 +510,11 @@ export interface PrinterCreate {
   ha_temp_entity?: string | null;
   ha_humidity_entity?: string | null;
   ha_fan_entity?: string | null;
+  // WLED LED strip integration
+  wled_enabled?: boolean;
+  wled_host?: string | null;
+  wled_port?: number;
+  wled_api_key?: string | null;
 }
 
 // Plate Detection
@@ -1111,6 +1121,9 @@ export interface AppSettings {
   ha_url_from_env: boolean;
   ha_token_from_env: boolean;
   ha_env_managed: boolean;
+  // WLED LED strip integration
+  wled_enabled: boolean;
+  wled_state_map: string;
   // File Manager / Library settings
   library_archive_mode: 'always' | 'never' | 'ask';
   library_disk_warning_gb: number;
@@ -1762,6 +1775,28 @@ export interface HATestConnectionResult {
   message: string | null;
   error: string | null;
 }
+
+export interface WledTestConnectionResult {
+  success: boolean;
+  device_name: string | null;
+  version: string | null;
+  led_count: number | null;
+  error: string | null;
+}
+
+export interface WledPreset {
+  id: number;
+  name: string;
+}
+
+export interface WledStateConfig {
+  color: string;        // hex e.g. "#FF0000"
+  brightness: number;  // 0–255
+  effect_id: number;   // 0 = Solid
+  preset_id: number | null;
+}
+
+export type WledStateMap = Record<string, WledStateConfig>;
 
 export interface SmartPlugEnergy {
   power: number | null;  // Current watts
@@ -4453,6 +4488,20 @@ export const api = {
     request<HATestConnectionResult>('/smart-plugs/ha/test-connection', {
       method: 'POST',
       body: JSON.stringify({ url, token }),
+    }),
+
+  // WLED
+  testWledConnection: (host: string, port: number, api_key?: string | null) =>
+    request<WledTestConnectionResult>('/wled/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({ host, port, api_key: api_key || null }),
+    }),
+  getWledPresets: (host: string, port: number, api_key?: string | null) =>
+    request<WledPreset[]>(`/wled/presets?host=${encodeURIComponent(host)}&port=${port}${api_key ? `&api_key=${encodeURIComponent(api_key)}` : ''}`),
+  triggerWledTestEffect: (host: string, port: number, api_key?: string | null) =>
+    request<{ success: boolean }>('/wled/test-effect', {
+      method: 'POST',
+      body: JSON.stringify({ host, port, api_key: api_key || null }),
     }),
   getHAEntities: (search?: string) => {
     const params = search ? `?search=${encodeURIComponent(search)}` : '';

@@ -1529,6 +1529,12 @@ async def run_migrations(conn):
         "UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL",
     )
 
+    # Migration: Add WLED per-printer LED strip connection fields
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_enabled BOOLEAN DEFAULT 0")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_host VARCHAR(253)")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_port INTEGER DEFAULT 80")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_api_key VARCHAR(100)")
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

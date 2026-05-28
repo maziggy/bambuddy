@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, Lightbulb } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import { checkPasswordComplexity } from '../utils/password';
-import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
+import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, WledStateMap, WledStateConfig } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
@@ -78,6 +78,7 @@ registerSettingsSearch({ labelKey: 'settings.ftpRetry', tab: 'network', keywords
 registerSettingsSearch({ labelKey: 'settings.homeAssistant', tab: 'network', keywords: 'home assistant ha hass mqtt integration', anchor: 'card-ha' });
 registerSettingsSearch({ labelKey: 'settings.mqttPublishing', tab: 'network', keywords: 'mqtt publish broker topic', anchor: 'card-mqtt' });
 registerSettingsSearch({ labelKey: 'settings.prometheusMetrics', tab: 'network', keywords: 'prometheus metrics grafana monitoring bearer token', anchor: 'card-prometheus' });
+registerSettingsSearch({ labelKey: 'settings.wled', labelFallback: 'WLED LED Strip', tab: 'network', keywords: 'wled led strip light colour color effect printer state visualization', anchor: 'card-wled' });
 registerSettingsSearch({ labelKey: 'settings.createNewApiKey', tab: 'apikeys', keywords: 'api key create permission scope', anchor: 'card-createapi' });
 registerSettingsSearch({ labelKey: 'settings.webhookEndpoints', tab: 'apikeys', keywords: 'webhook endpoint post http', anchor: 'card-webhooks' });
 registerSettingsSearch({ labelKey: 'settings.apiBrowser', tab: 'apikeys', keywords: 'api browser endpoint documentation test', anchor: 'card-apibrowser' });
@@ -149,6 +150,192 @@ const STORAGE_FALLBACK_COLORS = [
 
 const getStorageColor = (key: string, index: number) =>
   STORAGE_CATEGORY_COLORS[key] || STORAGE_FALLBACK_COLORS[index % STORAGE_FALLBACK_COLORS.length];
+
+// ---------------------------------------------------------------------------
+// WLED helpers & sub-component
+// ---------------------------------------------------------------------------
+
+const DEFAULT_WLED_MAP: WledStateMap = {
+  RUNNING: { color: '#0064FF', brightness: 200, effect_id: 0, preset_id: null },
+  IDLE:    { color: '#FFFFFF', brightness: 80,  effect_id: 0, preset_id: null },
+  FINISH:  { color: '#00FF00', brightness: 255, effect_id: 0, preset_id: null },
+  FAILED:  { color: '#FF0000', brightness: 255, effect_id: 0, preset_id: null },
+  PAUSE:   { color: '#FFC800', brightness: 150, effect_id: 0, preset_id: null },
+  PREPARE: { color: '#0032AA', brightness: 120, effect_id: 0, preset_id: null },
+  offline: { color: '#000000', brightness: 0,   effect_id: 0, preset_id: null },
+};
+
+const WLED_STATE_ROWS: { key: string; labelKey: string; dot: string }[] = [
+  { key: 'RUNNING', labelKey: 'settings.wledStatePrinting',  dot: 'bg-blue-400' },
+  { key: 'IDLE',    labelKey: 'settings.wledStateIdle',      dot: 'bg-gray-400' },
+  { key: 'FINISH',  labelKey: 'settings.wledStateFinished',  dot: 'bg-green-400' },
+  { key: 'FAILED',  labelKey: 'settings.wledStateError',     dot: 'bg-red-400' },
+  { key: 'PAUSE',   labelKey: 'settings.wledStatePaused',    dot: 'bg-yellow-400' },
+  { key: 'PREPARE', labelKey: 'settings.wledStatePreparing', dot: 'bg-blue-600' },
+  { key: 'offline', labelKey: 'settings.wledStateOffline',   dot: 'bg-gray-600' },
+];
+
+function parseWledMap(json: string | undefined | null): WledStateMap {
+  if (!json) return { ...DEFAULT_WLED_MAP };
+  try {
+    const parsed = JSON.parse(json) as Partial<WledStateMap>;
+    const result: WledStateMap = { ...DEFAULT_WLED_MAP };
+    for (const key of Object.keys(DEFAULT_WLED_MAP)) {
+      if (parsed[key]) result[key] = { ...DEFAULT_WLED_MAP[key], ...parsed[key] } as WledStateConfig;
+    }
+    return result;
+  } catch {
+    return { ...DEFAULT_WLED_MAP };
+  }
+}
+
+function WledSettingsCard({
+  wledEnabled,
+  wledStateMap,
+  onToggle,
+  onMapChange,
+}: {
+  wledEnabled: boolean;
+  wledStateMap: string;
+  onToggle: (v: boolean) => void;
+  onMapChange: (json: string) => void;
+}) {
+  const { t } = useTranslation();
+  const map = parseWledMap(wledStateMap);
+
+  const updateField = (stateKey: string, field: keyof WledStateConfig, value: string | number | null) => {
+    const updated: WledStateMap = {
+      ...map,
+      [stateKey]: { ...map[stateKey], [field]: value },
+    };
+    onMapChange(JSON.stringify(updated));
+  };
+
+  const resetToDefaults = () => onMapChange(JSON.stringify(DEFAULT_WLED_MAP));
+
+  return (
+    <Card id="card-wled">
+      <CardHeader>
+        <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+          <Lightbulb className="w-5 h-5 text-yellow-400" />
+          {t('settings.wled')}
+        </h2>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-bambu-gray">{t('settings.wledDescription')}</p>
+
+        {/* Global enable toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-white">{t('settings.enableWled')}</p>
+            <p className="text-xs text-bambu-gray">{t('settings.wledEnableDescription')}</p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={wledEnabled}
+              onChange={(e) => onToggle(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500" />
+          </label>
+        </div>
+
+        {/* State colour map — only shown when WLED is enabled */}
+        {wledEnabled && (
+          <div className="space-y-3 pt-2 border-t border-bambu-dark-tertiary">
+            <div>
+              <p className="text-sm text-white font-medium">{t('settings.wledStateMapTitle')}</p>
+              <p className="text-xs text-bambu-gray mt-0.5">{t('settings.wledStateMapDescription')}</p>
+            </div>
+
+            {/* Column headers */}
+            <div className="grid grid-cols-[1fr_48px_72px_72px_72px] gap-2 text-xs text-bambu-gray px-1">
+              <span>{/* State label */}</span>
+              <span className="text-center">{t('settings.wledColour')}</span>
+              <span className="text-center">{t('settings.wledBrightness')}</span>
+              <span className="text-center">{t('settings.wledEffectId')}</span>
+              <span className="text-center">{t('settings.wledPresetId')}</span>
+            </div>
+
+            {/* One row per printer state */}
+            {WLED_STATE_ROWS.map(({ key, labelKey, dot }) => {
+              const cfg = map[key] ?? DEFAULT_WLED_MAP[key];
+              return (
+                <div key={key} className="grid grid-cols-[1fr_48px_72px_72px_72px] gap-2 items-center">
+                  {/* State label */}
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                    <span className="text-sm text-white">{t(labelKey)}</span>
+                  </div>
+
+                  {/* Colour picker */}
+                  <input
+                    type="color"
+                    value={cfg.color}
+                    onChange={(e) => updateField(key, 'color', e.target.value)}
+                    className="w-10 h-8 rounded cursor-pointer bg-transparent border border-bambu-dark-tertiary p-0.5"
+                    title={cfg.color}
+                  />
+
+                  {/* Brightness 0-255 */}
+                  <input
+                    type="number"
+                    min={0}
+                    max={255}
+                    value={cfg.brightness}
+                    onChange={(e) => updateField(key, 'brightness', Math.min(255, Math.max(0, Number(e.target.value))))}
+                    className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-yellow-500 focus:outline-none text-center"
+                  />
+
+                  {/* Effect ID */}
+                  <input
+                    type="number"
+                    min={0}
+                    max={255}
+                    value={cfg.effect_id}
+                    onChange={(e) => updateField(key, 'effect_id', Math.min(255, Math.max(0, Number(e.target.value))))}
+                    className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-yellow-500 focus:outline-none text-center"
+                  />
+
+                  {/* Preset ID (optional override) */}
+                  <input
+                    type="number"
+                    min={1}
+                    max={999}
+                    placeholder="—"
+                    value={cfg.preset_id ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value === '' ? null : Math.min(999, Math.max(1, Number(e.target.value)));
+                      updateField(key, 'preset_id', v);
+                    }}
+                    className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-yellow-500 focus:outline-none text-center"
+                  />
+                </div>
+              );
+            })}
+
+            {/* Hints */}
+            <div className="text-xs text-bambu-gray space-y-0.5 pt-1">
+              <p>{t('settings.wledEffectIdHint')}</p>
+              <p>{t('settings.wledPresetIdHint')}</p>
+            </div>
+
+            {/* Reset button */}
+            <div className="pt-1">
+              <Button variant="secondary" size="sm" onClick={resetToDefaults}>
+                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                Reset to defaults
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
@@ -1008,7 +1195,9 @@ export function SettingsPage() {
       (settings.default_timelapse ?? false) !== (localSettings.default_timelapse ?? false) ||
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
-      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false);
+      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.wled_enabled ?? false) !== (localSettings.wled_enabled ?? false) ||
+      (settings.wled_state_map ?? '') !== (localSettings.wled_state_map ?? '');
 
     if (!hasChanges) {
       return;
@@ -1093,6 +1282,8 @@ export function SettingsPage() {
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        wled_enabled: localSettings.wled_enabled,
+        wled_state_map: localSettings.wled_state_map,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -3097,6 +3288,14 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* WLED */}
+          <WledSettingsCard
+            wledEnabled={localSettings.wled_enabled ?? false}
+            wledStateMap={localSettings.wled_state_map ?? ''}
+            onToggle={(v) => updateSetting('wled_enabled', v)}
+            onMapChange={(json) => updateSetting('wled_state_map', json)}
+          />
         </div>
       </div>
       )}

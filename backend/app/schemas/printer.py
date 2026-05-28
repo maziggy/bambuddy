@@ -61,6 +61,10 @@ class PrinterUpdate(BaseModel):
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+    wled_enabled: bool | None = None
+    wled_host: str | None = None
+    wled_port: int | None = None
+    wled_api_key: str | None = None
 
 
 class PrinterResponse(PrinterBase):
@@ -74,6 +78,10 @@ class PrinterResponse(PrinterBase):
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    wled_enabled: bool = False
+    wled_host: str | None = None
+    wled_port: int = 80
+    wled_api_key: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -104,6 +112,10 @@ class PrinterResponse(PrinterBase):
             "nozzle_count": printer.nozzle_count,
             "print_hours_offset": printer.print_hours_offset,
             "plate_detection_enabled": printer.plate_detection_enabled,
+            "wled_enabled": getattr(printer, "wled_enabled", False),
+            "wled_host": getattr(printer, "wled_host", None),
+            "wled_port": getattr(printer, "wled_port", 80) or 80,
+            "wled_api_key": getattr(printer, "wled_api_key", None),
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,
         }

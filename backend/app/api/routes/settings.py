@@ -121,6 +121,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "mqtt_enabled",
             "mqtt_use_tls",
             "ha_enabled",
+            "wled_enabled",
             "per_printer_mapping_expanded",
             "prometheus_enabled",
             "user_notifications_enabled",
@@ -242,6 +243,15 @@ async def update_settings(
             await mqtt_relay.configure(mqtt_settings)
         except Exception:
             pass  # Don't fail the settings update if MQTT reconfiguration fails
+
+    # Invalidate WLED state map cache if WLED settings changed
+    if {"wled_enabled", "wled_state_map"} & set(update_data.keys()):
+        try:
+            from backend.app.services.wled import wled_service
+
+            wled_service.invalidate_cache()
+        except Exception:
+            pass
 
     # Return updated settings (never scrub secrets on PUT — caller has SETTINGS_UPDATE permission)
     return await _build_settings_response(db, is_api_key=False)

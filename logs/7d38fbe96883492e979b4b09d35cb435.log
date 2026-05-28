@@ -1,0 +1,200 @@
+2026-05-27 21:34:12,004 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP-Data-50095 TCP proxy listening on port 50095
+2026-05-27 21:34:12,004 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP-Data-50096 TCP proxy listening on port 50096
+2026-05-27 21:34:12,005 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP-Data-50097 TCP proxy listening on port 50097
+2026-05-27 21:34:12,005 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP-Data-50098 TCP proxy listening on port 50098
+2026-05-27 21:34:12,005 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP-Data-50099 TCP proxy listening on port 50099
+2026-05-27 21:34:12,005 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP-Data-50100 TCP proxy listening on port 50100
+2026-05-27 21:34:12,005 INFO [uvicorn.access] [-] [IP]:52962 - "PUT /api/v1/virtual-printers/1 HTTP/1.1" 200
+2026-05-27 21:34:12,009 INFO [backend.app.services.virtual_printer.bind_server] [a44a135a] Bind server listening on [IP]:3002 (TLS)
+2026-05-27 21:34:12,011 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] Proxy diagnostic: probing un-proxied ports [21, 80, 443] on [IP]
+2026-05-27 21:34:12,011 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] Slicer proxy started for [IP] (transparent TCP + MQTT TLS, 101 FTP data ports)
+2026-05-27 21:36:10,052 INFO [backend.app.services.virtual_printer.bind_server] [a44a135a] Bind server: client connected from [IP]:63877
+2026-05-27 21:36:10,057 INFO [backend.app.services.virtual_printer.bind_server] [a44a135a] Bind server: received from [IP]:63877: {'login': {'command': 'detect', 'sequence_id': '20001'}}
+2026-05-27 21:36:10,057 INFO [backend.app.services.virtual_printer.bind_server] [a44a135a] Bind server: sent detect response to [IP]:63877 (serial=[SERIAL])
+2026-05-27 21:36:35,037 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 21:41:35,062 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 21:42:33,278 INFO [uvicorn.access] [-] [IP]:60092 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 21:42:33,728 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:42:33,729 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:42:33,736 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:42:33,919 INFO [backend.app.api.routes.cloud] [ea04c88c] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:42:33,937 INFO [uvicorn.access] [-] [IP]:60116 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:42:56,749 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:43:24,373 INFO [uvicorn.access] [-] [IP]:36970 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 21:43:26,800 INFO [backend.app.api.routes.cloud] [da3ebaf7] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:43:26,801 INFO [uvicorn.access] [-] [IP]:36970 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:43:34,539 INFO [uvicorn.access] [-] [IP]:57933 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 21:43:34,591 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:43:34,592 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:43:34,596 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:43:35,159 INFO [backend.app.api.routes.cloud] [f635d72e] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:43:35,161 INFO [uvicorn.access] [-] [IP]:57933 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:43:41,271 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:43:53,760 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:45:07,650 INFO [uvicorn.access] [-] [IP]:59675 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 21:45:07,927 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:45:07,928 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:45:07,932 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:45:08,485 INFO [backend.app.api.routes.cloud] [bbcd6ad6] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:45:08,487 INFO [uvicorn.access] [-] [IP]:59678 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:45:49,839 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:45:51,798 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:45:51,859 INFO [uvicorn.access] [-] [IP]:59701 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 21:45:52,120 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:45:52,121 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:45:52,124 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:45:52,592 INFO [backend.app.api.routes.cloud] [786b72c5] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:45:52,594 INFO [uvicorn.access] [-] [IP]:59704 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:46:29,387 INFO [uvicorn.access] [-] [IP]:59729 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 21:46:29,665 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:46:29,666 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:46:29,669 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:46:30,164 INFO [backend.app.api.routes.cloud] [b3678c2e] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:46:30,170 INFO [uvicorn.access] [-] [IP]:59736 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:46:35,089 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 21:46:35,465 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:48:42,610 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:51:35,116 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 21:52:35,185 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:52:35,187 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:52:35,191 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:52:37,849 INFO [uvicorn.access] [-] [IP]:40898 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 21:52:38,338 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:52:38,339 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:52:38,345 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:52:38,704 INFO [backend.app.api.routes.cloud] [5c0e5812] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:52:38,712 INFO [uvicorn.access] [-] [IP]:40908 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:52:43,416 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:52:43,422 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:53:00,897 INFO [backend.app.api.routes.cloud] [d34c18d2] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:53:00,903 INFO [uvicorn.access] [-] [IP]:58826 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:53:03,502 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:53:03,502 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:53:03,504 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:53:04,212 INFO [backend.app.api.routes.cloud] [85b5815c] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:53:04,216 INFO [uvicorn.access] [-] [IP]:58837 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:53:06,768 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:53:06,769 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:53:06,774 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:53:07,735 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:53:19,165 INFO [uvicorn.access] [-] [IP]:56784 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 21:53:19,249 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:53:19,251 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:53:19,254 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:53:19,739 INFO [backend.app.api.routes.cloud] [3965d574] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:53:19,742 INFO [uvicorn.access] [-] [IP]:56784 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:53:23,105 INFO [backend.app.services.virtual_printer.certificate] [ff028eda] Using existing CA certificate (expires in 7299 days)
+2026-05-27 21:53:37,060 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: client connected from [IP]:47722
+2026-05-27 21:53:37,060 INFO [backend.app.services.virtual_printer.manager] [a44a135a] [VP Virtual A1] Proxy FTP: connected: [IP]:47722
+2026-05-27 21:53:37,070 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: connected to printer [IP]:990
+2026-05-27 21:53:37,073 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: client [IP]:47722 disconnected
+2026-05-27 21:53:37,074 INFO [backend.app.services.virtual_printer.manager] [a44a135a] [VP Virtual A1] Proxy FTP: disconnected: [IP]:47722
+2026-05-27 21:53:40,392 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: client connected from [IP]:47730
+2026-05-27 21:53:40,392 INFO [backend.app.services.virtual_printer.manager] [a44a135a] [VP Virtual A1] Proxy FTP: connected: [IP]:47730
+2026-05-27 21:53:40,401 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: connected to printer [IP]:990
+2026-05-27 21:53:40,402 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: client [IP]:47730 disconnected
+2026-05-27 21:53:40,402 INFO [backend.app.services.virtual_printer.manager] [a44a135a] [VP Virtual A1] Proxy FTP: disconnected: [IP]:47730
+2026-05-27 21:53:59,823 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:55:03,084 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:55:03,085 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:55:03,087 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 21:56:35,130 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 21:58:06,177 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 21:59:35,947 INFO [backend.app.api.routes.cloud] [6ae4ed2b] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 21:59:35,958 INFO [uvicorn.access] [-] [IP]:64679 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 21:59:38,412 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 21:59:38,413 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 21:59:38,415 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 22:01:35,155 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:02:57,808 INFO [uvicorn.access] [-] [IP]:57973 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 22:02:58,038 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 22:02:58,039 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 22:02:58,042 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 22:02:59,219 INFO [backend.app.api.routes.cloud] [4c9cc44d] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 22:02:59,220 INFO [uvicorn.access] [-] [IP]:57973 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 22:03:29,569 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 22:06:35,168 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:11:35,180 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:16:35,203 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:21:35,217 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:26:35,229 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:31:35,254 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:34:56,428 INFO [backend.app.api.routes.cloud] [7c1a2839] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 22:34:56,444 INFO [uvicorn.access] [-] [IP]:59714 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 22:34:58,400 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 22:35:02,083 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 22:35:02,085 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 22:35:02,090 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 22:35:52,093 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 22:36:35,279 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:41:35,307 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:42:05,967 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 22:42:05,968 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 22:42:05,973 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 22:42:15,200 INFO [backend.app.api.routes.cloud] [d672b1c5] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 22:42:15,257 INFO [uvicorn.access] [-] [IP]:60248 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 22:43:19,159 INFO [uvicorn.access] [-] [IP]:57561 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 22:46:35,335 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:47:14,752 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 22:47:18,215 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 22:47:18,215 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 22:47:18,218 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 22:47:31,412 INFO [backend.app.api.routes.cloud] [1382812a] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 22:47:31,454 INFO [uvicorn.access] [-] [IP]:61015 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 22:47:33,871 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: client connected from [IP]:50718
+2026-05-27 22:47:33,871 INFO [backend.app.services.virtual_printer.manager] [a44a135a] [VP Virtual A1] Proxy FTP: connected: [IP]:50718
+2026-05-27 22:47:33,883 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: connected to printer [IP]:990
+2026-05-27 22:47:33,884 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: client [IP]:50718 disconnected
+2026-05-27 22:47:33,884 INFO [backend.app.services.virtual_printer.manager] [a44a135a] [VP Virtual A1] Proxy FTP: disconnected: [IP]:50718
+2026-05-27 22:47:46,912 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: client connected from [IP]:51624
+2026-05-27 22:47:46,912 INFO [backend.app.services.virtual_printer.manager] [a44a135a] [VP Virtual A1] Proxy FTP: connected: [IP]:51624
+2026-05-27 22:47:46,920 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: connected to printer [IP]:990
+2026-05-27 22:47:46,921 INFO [backend.app.services.virtual_printer.tcp_proxy] [a44a135a] FTP proxy: client [IP]:51624 disconnected
+2026-05-27 22:47:46,922 INFO [backend.app.services.virtual_printer.manager] [a44a135a] [VP Virtual A1] Proxy FTP: disconnected: [IP]:51624
+2026-05-27 22:48:13,518 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 22:48:17,200 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 22:48:17,202 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 22:48:17,207 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 22:49:33,442 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-27 22:49:36,995 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-27 22:49:36,998 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-27 22:49:37,003 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-27 22:51:19,447 INFO [backend.app.services.virtual_printer.certificate] [fc7b7ee9] Using existing CA certificate (expires in 7299 days)
+2026-05-27 22:51:35,348 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:54:29,057 INFO [backend.app.api.routes.cloud] [847b7892] get_filament_info called with 2 IDs: ['GFL04', 'GFL99']
+2026-05-27 22:54:29,107 INFO [uvicorn.access] [-] [IP]:59265 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-27 22:55:46,360 INFO [uvicorn.access] [-] [IP]:62433 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-27 22:56:35,374 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-05-27 22:57:31,424 INFO [backend.app.api.routes.support] [6baf0bfe] Log level changed to DEBUG
+2026-05-27 22:57:31,425 INFO [backend.app.api.routes.bug_report] [6baf0bfe] Bug report: enabled debug logging
+2026-05-27 22:57:31,425 DEBUG [backend.app.services.bambu_mqtt] [6baf0bfe] [[SERIAL]] Requesting status update (pushall)
+2026-05-27 22:57:31,427 INFO [uvicorn.access] [-] [IP]:62881 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-27 22:57:31,492 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-05-27 22:57:31,492 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-05-27 22:57:31,493 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: Toploader_case_-_NO_SUPPORT_plate_1.gcode.3mf
+2026-05-27 22:57:31,493 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 82, 'insert_flag': False, 'power_on_flag': True}
+2026-05-27 22:57:31,493 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-05-27 22:57:31,493 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-05-27 22:57:31,494 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-05-27 22:57:31,494 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-05-27 22:57:31,494 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-05-27 22:57:31,495 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-27 22:57:31,495 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-05-27 22:57:31,495 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-05-27 22:57:31,495 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-05-27 22:57:31,496 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-05-27 22:57:31,496 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-05-27 22:57:31,496 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-05-27 22:57:31,496 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-05-27 22:57:31,497 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-05-27 22:57:31,497 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: Toploader_case_-_NO_SUPPORT_plate_1.gcode.3mf
+2026-05-27 22:57:33,537 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-27 22:57:33,538 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -44dBm
+2026-05-27 22:57:37,631 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-27 22:57:37,631 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-05-27 22:57:39,665 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-27 22:57:39,666 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-05-27 22:57:43,751 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-27 22:57:43,752 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-05-27 22:57:45,792 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-27 22:57:45,792 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -43dBm

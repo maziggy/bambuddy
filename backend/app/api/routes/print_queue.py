@@ -401,6 +401,15 @@ async def add_to_queue(
         library_file = result.scalar_one_or_none()
         if not library_file:
             raise HTTPException(400, "Library file not found")
+        # Bambu SD card is FAT32/exFAT — illegal filename chars would 553 at
+        # FTP upload time (#1540). Reject at queue time so the user gets the
+        # actionable error before waiting in queue.
+        from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
+
+        try:
+            validate_print_filename(library_file.filename)
+        except InvalidFilenameError as e:
+            raise HTTPException(400, str(e)) from e
 
     # Extract filament types for model-based assignment (used by scheduler for validation)
     required_filament_types = None

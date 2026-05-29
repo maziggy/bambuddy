@@ -3061,6 +3061,7 @@ export default {
     folderNamePlaceholder: 'ex.: Peças Funcionais',
     renameFile: 'Renomear Arquivo',
     renameFolder: 'Renomear Pasta',
+    invalidFilenameChar: 'O caractere "{{char}}" não é permitido em nomes de arquivos de impressão. O cartão SD da impressora rejeita: < > : " / \\ | ? *',
     moveFiles: 'Mover {{count}} Arquivo(s)',
     rootNoFolder: 'Raiz (Sem Pasta)',
     current: 'Atual',
@@ -3818,6 +3819,7 @@ export default {
     assignMismatchConfirm: 'Atribuir mesmo assim',
     assignPartialMismatchMessage: 'O material do carretel "{{spoolMaterial}}" é semelhante, mas não corresponde exatamente a "{{trayMaterial}}" em {{location}}. Deseja prosseguir?',
     assignProfileMismatchMessage: 'O perfil do carretel "{{spoolProfile}}" não corresponde ao perfil da bandeja "{{trayProfile}}" em {{location}}. Deseja prosseguir?',
+    assignReconfigureNote: 'O slot do AMS será reconfigurado para usar o perfil do carretel.',
     // Spoolman filament catalog picker
     spoolmanFilamentCatalog: 'Catálogo de filamentos Spoolman',
     pickFromSpoolmanCatalog: 'Escolher do catálogo Spoolman…',

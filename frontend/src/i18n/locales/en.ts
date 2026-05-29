@@ -3076,6 +3076,7 @@ export default {
     folderNamePlaceholder: 'e.g., Functional Parts',
     renameFile: 'Rename File',
     renameFolder: 'Rename Folder',
+    invalidFilenameChar: 'The character "{{char}}" is not allowed in print filenames. The printer SD card rejects: < > : " / \\ | ? *',
     moveFiles: 'Move {{count}} File(s)',
     rootNoFolder: 'Root (No Folder)',
     current: 'current',
@@ -3842,6 +3843,7 @@ export default {
     assignMismatchConfirm: 'Assign Anyway',
     assignPartialMismatchMessage: 'The spool material "{{spoolMaterial}}" is similar to but not exactly matching "{{trayMaterial}}" in {{location}}. Do you want to proceed?',
     assignProfileMismatchMessage: 'The spool profile "{{spoolProfile}}" does not match the tray profile "{{trayProfile}}" in {{location}}. Do you want to proceed?',
+    assignReconfigureNote: 'The AMS slot will be reconfigured to use the spool\'s profile.',
     // Spoolman filament catalog picker
     spoolmanFilamentCatalog: 'Spoolman Filament Catalog',
     pickFromSpoolmanCatalog: 'Pick from Spoolman catalog…',

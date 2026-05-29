@@ -909,10 +909,13 @@ class SpoolmanClient:
             logger.debug("Skipping tray with empty color")
             return None
 
-        # Handle transparent/natural filament (RRGGBBAA with alpha=00)
-        # Replace with cream color that represents how natural PLA actually looks
-        if tray_color == "00000000":
-            tray_color = "F5E6D3FF"  # Light cream/natural color
+        # Transparent filament (alpha=00) used to be rewritten to a cream
+        # "natural PLA" colour before being stored, because the swatch
+        # renderer couldn't show alpha. The swatch now paints a checkerboard
+        # underlay for translucent rgbas (see filamentSwatchHelpers.ts), so
+        # we pass `00000000` through verbatim — the inventory row keeps the
+        # AMS-reported colour and the frontend resolves the name to "Clear"
+        # via getColorName (#1545).
 
         # Get sub_brands, falling back to tray_type
         tray_sub_brands = tray_data.get("tray_sub_brands", "")

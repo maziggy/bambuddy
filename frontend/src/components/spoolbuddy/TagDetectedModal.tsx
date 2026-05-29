@@ -4,6 +4,7 @@ import { Check, RefreshCw, AlertTriangle, X } from 'lucide-react';
 import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
 import { spoolbuddyApi } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
+import { spoolColorString } from '../../utils/colors';
 
 // Storage key for default core weight (shared with SpoolInfoCard)
 const DEFAULT_CORE_WEIGHT_KEY = 'spoolbuddy-default-core-weight';
@@ -134,7 +135,7 @@ interface KnownSpoolViewProps {
 
 function KnownSpoolView({ spool, scaleWeight, weightStable, syncing, synced, onSyncWeight, onAssignToAms, onClose }: KnownSpoolViewProps) {
   const { t } = useTranslation();
-  const colorHex = spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#808080';
+  const colorHex = spoolColorString(spool.rgba);
 
   const coreWeight = (spool.core_weight && spool.core_weight > 0)
     ? spool.core_weight

@@ -3073,6 +3073,7 @@ export default {
     folderNamePlaceholder: 'z.B. Funktionsteile',
     renameFile: 'Datei umbenennen',
     renameFolder: 'Ordner umbenennen',
+    invalidFilenameChar: 'Das Zeichen "{{char}}" ist in Druck-Dateinamen nicht erlaubt. Die SD-Karte des Druckers lehnt folgende Zeichen ab: < > : " / \\ | ? *',
     moveFiles: '{{count}} Datei(en) verschieben',
     rootNoFolder: 'Stammverzeichnis (Kein Ordner)',
     current: 'aktuell',
@@ -3830,6 +3831,7 @@ export default {
     assignMismatchConfirm: 'Trotzdem zuweisen',
     assignPartialMismatchMessage: 'Das Spulenmaterial "{{spoolMaterial}}" ist ähnlich, stimmt aber nicht genau mit "{{trayMaterial}}" in {{location}} überein. Möchten Sie fortfahren?',
     assignProfileMismatchMessage: 'Das Spulenprofil "{{spoolProfile}}" stimmt nicht mit dem Fachprofil "{{trayProfile}}" in {{location}} überein. Möchten Sie fortfahren?',
+    assignReconfigureNote: 'Der AMS-Slot wird mit dem Profil der Spule neu konfiguriert.',
     // Spoolman filament catalog picker
     spoolmanFilamentCatalog: 'Spoolman-Filamentkatalog',
     pickFromSpoolmanCatalog: 'Aus Spoolman-Katalog wählen…',

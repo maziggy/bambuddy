@@ -404,8 +404,7 @@ function Move-LegacyRuntimeData {
 
     $legacyMappings = @(
         @{ Source = (Join-Path $BambuddyDir "bambuddy.db"); Destination = (Join-Path $DataDir "bambuddy.db") },
-        @{ Source = (Join-Path $BambuddyDir "archive"); Destination = (Join-Path $DataDir "archive") },
-        @{ Source = (Join-Path $BambuddyDir "data"); Destination = (Join-Path $DataDir "data") }
+        @{ Source = (Join-Path $BambuddyDir "archive"); Destination = (Join-Path $DataDir "archive") }
     )
 
     foreach ($mapping in $legacyMappings) {
@@ -415,6 +414,27 @@ function Move-LegacyRuntimeData {
         }
         elseif ((Test-Path $mapping.Source) -and (Test-Path $mapping.Destination)) {
             Write-Log "Legacy runtime data remains at '$($mapping.Source)' because '$($mapping.Destination)' already exists." "WARN" Yellow
+        }
+    }
+
+    $legacyDataRoot = Join-Path $BambuddyDir "data"
+    if (Test-Path $legacyDataRoot) {
+        $legacyDataItems = Get-ChildItem -Path $legacyDataRoot -Force -ErrorAction SilentlyContinue
+
+        foreach ($legacyDataItem in $legacyDataItems) {
+            $destination = Join-Path $DataDir $legacyDataItem.Name
+
+            if (-not (Test-Path $destination)) {
+                Write-Log "Moving legacy runtime data from '$($legacyDataItem.FullName)' to '$destination'." "INFO" Cyan
+                Move-Item -Path $legacyDataItem.FullName -Destination $destination -Force
+            }
+            else {
+                Write-Log "Legacy runtime data remains at '$($legacyDataItem.FullName)' because '$destination' already exists." "WARN" Yellow
+            }
+        }
+
+        if (-not (Get-ChildItem -Path $legacyDataRoot -Force -ErrorAction SilentlyContinue)) {
+            Remove-Item $legacyDataRoot -Force
         }
     }
 

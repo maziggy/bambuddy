@@ -8,6 +8,7 @@ import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { filterSpoolsByQuery } from '../utils/inventorySearch';
+import { getSwatchStyle } from '../utils/colors';
 
 interface AssignSpoolModalProps {
   isOpen: boolean;
@@ -406,7 +407,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                       {spool.rgba && (
                         <span
                           className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
-                          style={{ backgroundColor: `#${spool.rgba.substring(0, 6)}` }}
+                          style={getSwatchStyle(spool.rgba)}
                         />
                       )}
                       <span className="text-xs text-bambu-gray truncate">{spool.color_name || ''}</span>
@@ -481,7 +482,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                               {spool.rgba && (
                                 <span
                                   className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
-                                  style={{ backgroundColor: `#${spool.rgba.substring(0, 6)}` }}
+                                  style={getSwatchStyle(spool.rgba)}
                                 />
                               )}
                               <span className="text-xs text-bambu-gray truncate">{spool.color_name || ''}</span>

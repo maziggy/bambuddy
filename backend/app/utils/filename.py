@@ -55,3 +55,36 @@ def validate_print_filename(name: str) -> None:
 
     if len(name.encode("utf-8")) > MAX_FILENAME_BYTES:
         raise InvalidFilenameError(f"Filename exceeds {MAX_FILENAME_BYTES} bytes")
+
+
+def derive_remote_filename(filename: str) -> str:
+    """Compute the SD-card filename used when uploading a sliced print file.
+
+    Strips repeated trailing ``.gcode.3mf`` / ``.3mf`` suffixes until the
+    bare stem remains, then appends a single ``.3mf``; spaces are
+    replaced with underscores because the firmware parses
+    ``ftp://{filename}`` as a URL.
+
+    Canonical for both the dispatch uploader and the post-print SD
+    cleanup — when the two drift apart the cleanup misses, and a
+    library row whose stored filename ended up with a doubled
+    ``.gcode.3mf`` (#1542) leaves the real file on the SD card. On A1
+    firmware that lingering file becomes a ghost print on the next
+    power-on (same family as the P1S behaviour in #374).
+
+    Raises ``TypeError`` on non-string input rather than entering the
+    strip loop, because a duck-typed object that returns truthy
+    sentinels from ``endswith`` would never escape and the resulting
+    unbounded allocation has cgroup-OOM'd the test runner under mocks.
+    """
+    if not isinstance(filename, str):
+        raise TypeError(f"derive_remote_filename requires str, got {type(filename).__name__}")
+    stem = filename
+    while True:
+        if stem.endswith(".gcode.3mf"):
+            stem = stem[:-10]
+        elif stem.endswith(".3mf"):
+            stem = stem[:-4]
+        else:
+            break
+    return f"{stem}.3mf".replace(" ", "_")

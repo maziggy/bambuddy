@@ -7,6 +7,7 @@ import { ConfirmModal } from '../ConfirmModal';
 import { AmsUnitCard, NozzleBadge } from './AmsUnitCard';
 import type { AmsThresholds } from './AmsUnitCard';
 import { getFillBarColor } from '../../utils/amsHelpers';
+import { getSwatchStyle } from '../../utils/colors';
 
 function getAmsName(id: number): string {
   if (id <= 3) return `AMS ${String.fromCharCode(65 + id)}`;
@@ -352,7 +353,7 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId, spoolmanMo
 
   if (!isOpen) return null;
 
-  const colorHex = spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#808080';
+  const colorStyle = getSwatchStyle(spool.rgba);
 
   return (
     <>
@@ -360,7 +361,7 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId, spoolmanMo
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-7 h-7 rounded-full shrink-0" style={{ backgroundColor: colorHex }} />
+          <div className="w-7 h-7 rounded-full shrink-0" style={colorStyle} />
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-zinc-100 truncate">
               {t('spoolbuddy.modal.assignToAmsTitle', 'Assign to AMS')}

@@ -5,6 +5,7 @@ import pytest
 from backend.app.utils.filename import (
     INVALID_FILENAME_CHARS,
     InvalidFilenameError,
+    derive_remote_filename,
     validate_print_filename,
 )
 
@@ -64,3 +65,56 @@ class TestValidatePrintFilename:
         # 'ä' is 2 bytes in UTF-8
         with pytest.raises(InvalidFilenameError, match="bytes"):
             validate_print_filename("ä" * 200)
+
+
+class TestDeriveRemoteFilename:
+    """SD-card upload-name derivation must match what the cleanup deletes (#1542)."""
+
+    def test_strips_gcode_3mf(self) -> None:
+        assert derive_remote_filename("Cube.gcode.3mf") == "Cube.3mf"
+
+    def test_strips_3mf(self) -> None:
+        assert derive_remote_filename("Cube.3mf") == "Cube.3mf"
+
+    def test_bare_stem_appends_3mf(self) -> None:
+        assert derive_remote_filename("Cube") == "Cube.3mf"
+
+    def test_replaces_spaces_with_underscores(self) -> None:
+        # firmware parses ftp://{filename} as a URL, spaces break it
+        assert derive_remote_filename("Cube (1).gcode.3mf") == "Cube_(1).3mf"
+
+    def test_doubled_gcode_3mf_fully_stripped(self) -> None:
+        # The literal reproducer from #1542: library row had .gcode.3mf appended twice
+        assert derive_remote_filename("Cube (1).gcode.3mf.gcode.3mf") == "Cube_(1).3mf"
+
+    def test_doubled_3mf_fully_stripped(self) -> None:
+        assert derive_remote_filename("Cube.3mf.3mf") == "Cube.3mf"
+
+    def test_mixed_double_extensions_fully_stripped(self) -> None:
+        assert derive_remote_filename("Cube.gcode.3mf.3mf") == "Cube.3mf"
+
+    def test_raw_gcode_unchanged_stem(self) -> None:
+        # Bare .gcode (no .3mf wrapper) is a valid sliced file — only the
+        # .3mf wrapper gets stripped; .gcode survives and the result is
+        # the printer's expected ftp:// target.
+        assert derive_remote_filename("Cube.gcode") == "Cube.gcode.3mf"
+
+    def test_idempotent(self) -> None:
+        once = derive_remote_filename("Cube (1).gcode.3mf.gcode.3mf")
+        assert derive_remote_filename(once) == once
+
+    def test_unicode_stem_preserved(self) -> None:
+        assert derive_remote_filename("プリント.gcode.3mf") == "プリント.3mf"
+
+    def test_non_string_input_raises_typeerror(self) -> None:
+        """A duck-typed object whose endswith always returns truthy must not be
+        allowed to enter the strip loop — that's how a test mock OOM'd the
+        container at 61 GB before the type guard was added."""
+        from unittest.mock import MagicMock
+
+        with pytest.raises(TypeError, match="requires str"):
+            derive_remote_filename(MagicMock())
+        with pytest.raises(TypeError, match="requires str"):
+            derive_remote_filename(None)  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="requires str"):
+            derive_remote_filename(123)  # type: ignore[arg-type]

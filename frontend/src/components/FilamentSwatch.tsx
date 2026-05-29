@@ -54,13 +54,21 @@ export function FilamentSwatch({
     shape === 'circle' ? 'rounded-full' : shape === 'pill' ? 'rounded-full' : 'rounded';
 
   // Compute a sensible title fallback — solid hex or gradient summary.
+  // Show the full 8-char rgba when alpha < FF so the tooltip on a Clear /
+  // translucent spool reflects what's actually painted (#1545).
+  const titleHex = (() => {
+    if (!rgba) return undefined;
+    const clean = rgba.replace(/^#/, '');
+    if (clean.length >= 8 && clean.substring(6, 8).toLowerCase() !== 'ff') {
+      return `#${clean.substring(0, 8)}`;
+    }
+    return `#${clean.substring(0, 6)}`;
+  })();
   const computedTitle =
     title ??
     (stops.length > 0
       ? stops.join(', ')
-      : rgba
-        ? `#${rgba.substring(0, 6)}`
-        : undefined);
+      : titleHex);
 
   return (
     <span

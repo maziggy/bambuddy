@@ -2738,24 +2738,43 @@ async def on_print_complete(printer_id: int, data: dict):
                 if archive:
                     archive_id = archive.id
 
-    # Cleanup: delete uploaded file from printer SD card to prevent phantom prints (Issue #374)
-    # The print scheduler uploads files to the SD card root (/). Some printers (e.g. P1S)
+    # Cleanup: delete uploaded file from printer SD card to prevent phantom prints (Issue #374, #1542)
+    # The print scheduler uploads files to the SD card root (/). Some printers (e.g. P1S, A1)
     # auto-start files found in root on power cycle, causing ghost prints.
     # Must run before the archive_id early-return so it executes even when archiving is disabled.
     try:
         if subtask_name:
+            archive_filename: str | None = None
             async with async_session() as db:
+                from backend.app.models.archive import PrintArchive
                 from backend.app.models.printer import Printer
 
                 result = await db.execute(select(Printer).where(Printer.id == printer_id))
                 printer = result.scalar_one_or_none()
+                if archive_id:
+                    archive_row = await db.execute(select(PrintArchive.filename).where(PrintArchive.id == archive_id))
+                    archive_filename = archive_row.scalar_one_or_none()
 
             if printer:
                 from backend.app.services.bambu_ftp import delete_file_async
+                from backend.app.utils.filename import derive_remote_filename
 
-                # Try both .3mf and .gcode extensions — the printer may have either
+                # Primary candidate: the exact path the dispatcher uploaded to
+                # (derived from archive.filename via the same rule as upload).
+                # Without it, a library row that ended up with a doubled
+                # .gcode.3mf (#1542) leaves the real file behind because the
+                # subtask_name + ext fallbacks below don't match what's on the
+                # SD card. Fallbacks remain for archive-less prints (subtask
+                # never resolved to an archive) and for older naming variants.
+                candidate_paths: list[str] = []
+                if archive_filename:
+                    candidate_paths.append(f"/{derive_remote_filename(archive_filename)}")
                 for ext in (".3mf", ".gcode"):
-                    remote_path = f"/{subtask_name}{ext}"
+                    fallback = f"/{subtask_name}{ext}"
+                    if fallback not in candidate_paths:
+                        candidate_paths.append(fallback)
+
+                for remote_path in candidate_paths:
                     # Retry up to 3 times — the printer may still lock the filesystem briefly after a print ends
                     for attempt in range(1, 4):
                         try:

@@ -440,12 +440,18 @@ class SimpleMQTTServer:
         logger.info("%sMQTT client connected: %s", self._log_prefix, client_id)
 
         authenticated = False
+        # Per-packet read timeout. Before CONNECT we default to 60 s so a
+        # client that opens TCP but never sends anything still gets reaped;
+        # after CONNECT the value is updated to 1.5× the keepalive the
+        # client negotiated (MQTT spec §4.4). ``None`` means no timeout,
+        # which is what spec §3.1.2.10 mandates for keep_alive == 0.
+        read_timeout: float | None = 60.0
 
         try:
             while self._running:
                 # Read MQTT fixed header
                 try:
-                    header = await asyncio.wait_for(reader.read(1), timeout=60)
+                    header = await asyncio.wait_for(reader.read(1), timeout=read_timeout)
                 except TimeoutError:
                     break
 
@@ -464,9 +470,16 @@ class SimpleMQTTServer:
 
                 # Handle packet types
                 if packet_type == 1:  # CONNECT
-                    authenticated = await self._handle_connect(payload, writer)
+                    authenticated, keep_alive = await self._handle_connect(payload, writer)
                     if not authenticated:
                         break
+                    # Honour the client's negotiated keepalive (#1548). Before
+                    # this fix, the hardcoded 60 s above would close
+                    # OrcaSlicer's idle connection at the keepalive boundary
+                    # instead of waiting 1.5× as the spec requires — Orca
+                    # sends PINGREQ within its own keepalive interval but
+                    # we'd already have closed the socket.
+                    read_timeout = keep_alive * 1.5 if keep_alive > 0 else None
                     # Register client for periodic status pushes; start with
                     # self.serial as the fallback until we learn the slicer's
                     # preferred serial from the first SUBSCRIBE/PUBLISH.
@@ -519,10 +532,13 @@ class SimpleMQTTServer:
 
         return None
 
-    async def _handle_connect(self, payload: bytes, writer: asyncio.StreamWriter) -> bool:
+    async def _handle_connect(self, payload: bytes, writer: asyncio.StreamWriter) -> tuple[bool, int]:
         """Handle MQTT CONNECT packet.
 
-        Returns True if authentication successful.
+        Returns ``(authenticated, keep_alive_seconds)`` — the second element
+        is the value the client advertised in CONNECT, so the caller's
+        read-loop can honour it instead of the hardcoded default. ``0``
+        means the client opted out of keepalive (#1548).
         """
         try:
             # Parse CONNECT packet
@@ -535,7 +551,12 @@ class SimpleMQTTServer:
             # connect_flags = payload[idx + 1]
             idx += 2
 
-            # Skip keepalive
+            # Keepalive (2-byte big-endian, seconds). Honoured by the read
+            # loop in `_handle_client` per MQTT spec §3.1.2.10 / §4.4 —
+            # before #1548 we ignored this and used a hardcoded 60 s, which
+            # closed OrcaSlicer's idle connection at exactly the negotiated
+            # keepalive boundary instead of the spec-mandated 1.5×.
+            keep_alive = (payload[idx] << 8) | payload[idx + 1]
             idx += 2
 
             # Read client ID
@@ -564,20 +585,20 @@ class SimpleMQTTServer:
 
                 # Send immediate status report after auth - slicer expects this
                 await self._send_status_report(writer)
-                return True
+                return True, keep_alive
             else:
                 # Send CONNACK with auth failure
                 writer.write(bytes([0x20, 0x02, 0x00, 0x05]))  # Not authorized
                 await writer.drain()
                 logger.warning("%sMQTT auth failed for user '%s' (access code mismatch)", self._log_prefix, username)
-                return False
+                return False, 0
 
         except (IndexError, ValueError) as e:
             logger.debug("MQTT CONNECT parse error: %s", e)
             # Send CONNACK with error
             writer.write(bytes([0x20, 0x02, 0x00, 0x02]))  # Protocol error
             await writer.drain()
-            return False
+            return False, 0
 
     async def _handle_subscribe(self, payload: bytes, writer: asyncio.StreamWriter, client_id: str) -> None:
         """Handle MQTT SUBSCRIBE packet."""

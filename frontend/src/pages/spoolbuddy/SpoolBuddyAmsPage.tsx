@@ -7,6 +7,7 @@ import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolB
 import { api } from '../../api/client';
 import type { PrinterStatus, AMSTray, SpoolAssignment } from '../../api/client';
 import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isBambuLabSpool } from '../../utils/amsHelpers';
+import { getSwatchStyle } from '../../utils/colors';
 import { AmsUnitCard, HumidityIndicator, TemperatureIndicator, NozzleBadge } from '../../components/spoolbuddy/AmsUnitCard';
 import type { AmsThresholds } from '../../components/spoolbuddy/AmsUnitCard';
 import { ConfigureAmsSlotModal } from '../../components/ConfigureAmsSlotModal';
@@ -748,7 +749,7 @@ export function SpoolBuddyAmsPage() {
                       {assignment.spool.rgba && (
                         <span
                           className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
-                          style={{ backgroundColor: `#${assignment.spool.rgba.substring(0, 6)}` }}
+                          style={getSwatchStyle(assignment.spool.rgba)}
                         />
                       )}
                       <span className="text-sm text-white">
@@ -781,7 +782,7 @@ export function SpoolBuddyAmsPage() {
                       {spoolmanAssignedSpool.rgba && (
                         <span
                           className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
-                          style={{ backgroundColor: `#${spoolmanAssignedSpool.rgba.substring(0, 6)}` }}
+                          style={getSwatchStyle(spoolmanAssignedSpool.rgba)}
                         />
                       )}
                       <span className="text-sm text-white">

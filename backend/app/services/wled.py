@@ -167,11 +167,29 @@ class WledService:
                     "error": None,
                 }
         except httpx.TimeoutException:
-            return {"success": False, "device_name": None, "version": None, "led_count": None, "error": "Connection timeout"}
+            return {
+                "success": False,
+                "device_name": None,
+                "version": None,
+                "led_count": None,
+                "error": "Connection timeout",
+            }
         except httpx.ConnectError:
-            return {"success": False, "device_name": None, "version": None, "led_count": None, "error": f"Could not connect to {host}:{port}"}
+            return {
+                "success": False,
+                "device_name": None,
+                "version": None,
+                "led_count": None,
+                "error": f"Could not connect to {host}:{port}",
+            }
         except httpx.HTTPStatusError as e:
-            return {"success": False, "device_name": None, "version": None, "led_count": None, "error": f"HTTP {e.response.status_code}"}
+            return {
+                "success": False,
+                "device_name": None,
+                "version": None,
+                "led_count": None,
+                "error": f"HTTP {e.response.status_code}",
+            }
         except Exception as e:
             return {"success": False, "device_name": None, "version": None, "led_count": None, "error": str(e)}
 
@@ -213,7 +231,12 @@ class WledService:
                 await client.post(
                     f"{self._wled_base_url(host, port)}/json/state",
                     headers=self._headers(api_key),
-                    json={"on": True, "bri": 255, "seg": [{"col": [[255, 255, 255]], "fx": 0}], "nl": {"on": True, "dur": 2, "mode": 1, "tbri": 0}},
+                    json={
+                        "on": True,
+                        "bri": 255,
+                        "seg": [{"col": [[255, 255, 255]], "fx": 0}],
+                        "nl": {"on": True, "dur": 2, "mode": 1, "tbri": 0},
+                    },
                 )
                 return {"success": True}
         except Exception as e:

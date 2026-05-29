@@ -313,9 +313,7 @@ class HomeAssistantService:
                     response.raise_for_status()
                     data = response.json()
                     state = data.get("state", "")
-                    logger.info(
-                        "Enclosure temp poll printer=%s entity=%s state=%r", printer_id, temp_entity, state
-                    )
+                    logger.info("Enclosure temp poll printer=%s entity=%s state=%r", printer_id, temp_entity, state)
                     if state not in ("unknown", "unavailable", ""):
                         try:
                             result["temp"] = float(state)
@@ -324,7 +322,9 @@ class HomeAssistantService:
                         except (ValueError, TypeError):
                             logger.warning(
                                 "Enclosure temp not numeric for printer=%s entity=%s state=%r",
-                                printer_id, temp_entity, state,
+                                printer_id,
+                                temp_entity,
+                                state,
                             )
 
                 if humidity_entity:
@@ -344,7 +344,9 @@ class HomeAssistantService:
                         except (ValueError, TypeError):
                             logger.warning(
                                 "Enclosure humidity not numeric for printer=%s entity=%s state=%r",
-                                printer_id, humidity_entity, state,
+                                printer_id,
+                                humidity_entity,
+                                state,
                             )
 
             self._enclosure_cache[printer_id] = result

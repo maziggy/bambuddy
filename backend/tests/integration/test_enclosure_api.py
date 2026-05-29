@@ -84,9 +84,7 @@ class TestEnclosureHistoryAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_history_isolates_by_printer(
-        self, async_client: AsyncClient, reading_factory, printer_factory
-    ):
+    async def test_get_history_isolates_by_printer(self, async_client: AsyncClient, reading_factory, printer_factory):
         """History for one printer does not include another printer's readings."""
         r1 = await reading_factory()
         other = await printer_factory()

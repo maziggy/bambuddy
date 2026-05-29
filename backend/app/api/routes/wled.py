@@ -2,12 +2,10 @@
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
-from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
 from backend.app.services.wled import wled_service
@@ -60,7 +58,7 @@ async def trigger_wled_test_effect(
 
 @router.post("/invalidate-cache")
 async def invalidate_wled_cache(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_WRITE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Invalidate the cached state map — called automatically when settings are saved."""
     wled_service.invalidate_cache()

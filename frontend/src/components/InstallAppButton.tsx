@@ -29,9 +29,6 @@ function isAndroidChrome(): boolean {
   );
 }
 
-// Matches the compact-sidebar breakpoint in useIsSidebarCompact.ts
-const SIDEBAR_COMPACT_BREAKPOINT = 1144;
-
 /**
  * Sidebar-footer button that installs Bambuddy as a PWA.
  *

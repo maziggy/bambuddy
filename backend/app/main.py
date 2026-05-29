@@ -82,7 +82,6 @@ from backend.app.services.github_backup import github_backup_service
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.local_backup import local_backup_service
 from backend.app.services.mqtt_relay import mqtt_relay
-from backend.app.services.wled import wled_service
 from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
 from backend.app.services.notification_service import notification_service
 from backend.app.services.obico_detection import obico_detection_service
@@ -103,6 +102,7 @@ from backend.app.services.spoolman_tracking import (
     store_print_data as _store_spoolman_print_data,
 )
 from backend.app.services.tasmota import tasmota_service
+from backend.app.services.wled import wled_service
 
 
 # =============================================================================
@@ -823,8 +823,6 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # WLED status visualization — only fires on real state changes (dedup already passed)
     try:
         async with async_session() as _wled_db:
-            from sqlalchemy import select
-
             from backend.app.models.printer import Printer
 
             _result = await _wled_db.execute(select(Printer).where(Printer.id == printer_id))

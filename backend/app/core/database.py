@@ -141,11 +141,25 @@ async def get_db() -> AsyncSession:
         try:
             yield session
             await session.commit()
-        except Exception:
-            await session.rollback()
+        except BaseException:
+            # Catch BaseException (not just Exception) so CancelledError —
+            # raised when Starlette's BaseHTTPMiddleware cancels the inner
+            # task scope on client disconnect — also triggers rollback.
+            # `asyncio.shield` keeps the rollback running to completion
+            # even when the await itself gets cancelled, so the SQLite
+            # write lock is released promptly instead of being held until
+            # the connection is GC'd ages later (which was producing the
+            # "database is locked" cascade in #1112's support package).
+            try:
+                await asyncio.shield(session.rollback())
+            except BaseException:  # noqa: BLE001 — rollback failure must not mask the original
+                pass
             raise
         finally:
-            await session.close()
+            try:
+                await asyncio.shield(session.close())
+            except BaseException:  # noqa: BLE001 — close failure must not mask the original
+                pass
 
 
 async def init_db():
@@ -161,11 +175,13 @@ async def init_db():
         color_catalog,
         external_link,
         filament,
+        filament_sku_settings,
         github_backup,
         group,
         kprofile_note,
         library,
         local_preset,
+        long_lived_token,
         maintenance,
         notification,
         notification_template,
@@ -179,6 +195,7 @@ async def init_db():
         project,
         project_bom,
         settings,
+        shopping_list,
         slot_preset,
         smart_plug,
         smart_plug_energy_snapshot,
@@ -188,6 +205,8 @@ async def init_db():
         spool_k_profile,
         spool_usage_history,
         spoolbuddy_device,
+        spoolman_k_profile,
+        spoolman_slot_assignment,
         user,
         user_email_pref,
         user_otp_code,
@@ -201,6 +220,13 @@ async def init_db():
         # Run migrations for new columns (SQLite doesn't auto-add columns)
         await run_migrations(conn)
 
+    # Re-encrypt any legacy plaintext OIDC client_secret / TOTP secret rows
+    # that exist from before the encryption key was configured.
+    # Runs on a fresh AsyncSession (NOT the run_migrations() connection) so it
+    # doesn't share a transaction with the schema-DDL block above — required to
+    # avoid SQLite "database is locked" contention on the WAL writer.
+    await _migrate_encrypt_legacy_secrets()
+
     # Seed default notification templates
     await seed_notification_templates()
 
@@ -212,23 +238,412 @@ async def init_db():
     await seed_color_catalog()
 
 
-async def _safe_execute(conn, sql):
-    """Execute a migration statement, ignoring 'already exists' errors.
+# B2: Module-level counter exposing the number of rows skipped during the last
+# _migrate_encrypt_legacy_secrets() invocation. Surfaced via /encryption-status
+# (migration_error_count) so operators can spot poison rows that need attention.
+_migration_error_count: int = 0
 
-    Uses a savepoint so that a failed statement doesn't poison the
-    surrounding transaction (required for PostgreSQL).
+
+def get_migration_error_count() -> int:
+    """Return the number of rows that failed to re-encrypt during the last
+    _migrate_encrypt_legacy_secrets() run."""
+    return _migration_error_count
+
+
+async def _migrate_encrypt_legacy_secrets() -> None:
+    """Re-encrypt OIDC ``client_secret`` and TOTP ``secret`` rows that are still
+    stored as plaintext (no ``fernet:`` prefix).
+
+    Called from :func:`init_db` after :func:`run_migrations` finishes. No-ops
+    when no encryption key is configured (so plaintext storage stays the
+    legacy behaviour for installs without a key).
+
+    B2: per-row strategy — each row is committed in its own AsyncSession so a
+    single corrupt row does NOT block other successful re-encryptions on every
+    startup forever. The skipped-row count is exposed via
+    :func:`get_migration_error_count` and surfaced on /encryption-status.
+
+    B3: unexpected (non-row) failures during the read phase are re-raised so
+    operators see the problem instead of silent data corruption — startup
+    fails loudly rather than running with half-migrated rows.
+
+    Idempotent: rows that already start with ``fernet:`` are skipped, and the
+    write-phase re-checks the prefix before encrypting (guards against double
+    encryption from concurrent workers).
+    """
+    from sqlalchemy import not_, select
+
+    from backend.app.core.encryption import is_encryption_active
+    from backend.app.models.oidc_provider import OIDCProvider
+    from backend.app.models.user_totp import UserTOTP
+
+    global _migration_error_count
+
+    if not is_encryption_active():
+        # Reset stale counter from a previous active-key run — we no longer
+        # have any rows to migrate, so the count must not leak across runs.
+        _migration_error_count = 0
+        return
+
+    # Phase 1 (read): collect (id, stored_value) tuples for plaintext rows.
+    # Read phase failures are startup-fatal — re-raise (B3).
+    try:
+        async with async_session() as ro:
+            oidc_rows = await ro.execute(
+                select(OIDCProvider.id, OIDCProvider._client_secret_enc).where(
+                    not_(OIDCProvider._client_secret_enc.like("fernet:%"))
+                )
+            )
+            oidc_candidates = [(r[0], r[1]) for r in oidc_rows.all()]
+            totp_rows = await ro.execute(
+                select(UserTOTP.id, UserTOTP._secret_enc).where(not_(UserTOTP._secret_enc.like("fernet:%")))
+            )
+            totp_candidates = [(r[0], r[1]) for r in totp_rows.all()]
+    except Exception:
+        logger.error("_migrate_encrypt_legacy_secrets: phase 1 read failed", exc_info=True)
+        raise  # B3
+
+    oidc_count = totp_count = error_count = 0
+
+    # Phase 2 (write): each row in its own AsyncSession + transaction.
+    # Failure of one row does NOT block the others.
+    for oidc_id, stored in oidc_candidates:
+        if not stored:
+            continue  # defensive: skip empty strings
+        try:
+            async with async_session() as wr:
+                provider = await wr.get(OIDCProvider, oidc_id)
+                if provider is None:
+                    continue  # row deleted between phase 1 and phase 2
+                # Idempotent guard: re-check inside the write session in case a
+                # concurrent worker beat us to it.
+                if not provider._client_secret_enc.startswith("fernet:"):
+                    provider.client_secret = stored  # setter -> mfa_encrypt
+                    await wr.commit()
+                    oidc_count += 1
+        except Exception:
+            logger.error(
+                "Failed to re-encrypt OIDCProvider id=%s — skipping",
+                oidc_id,
+                exc_info=True,
+            )
+            error_count += 1
+
+    for totp_id, stored in totp_candidates:
+        if not stored:
+            continue
+        try:
+            async with async_session() as wr:
+                totp = await wr.get(UserTOTP, totp_id)
+                if totp is None:
+                    continue
+                if not totp._secret_enc.startswith("fernet:"):
+                    totp.secret = stored
+                    await wr.commit()
+                    totp_count += 1
+        except Exception:
+            logger.error(
+                "Failed to re-encrypt UserTOTP id=%s — skipping",
+                totp_id,
+                exc_info=True,
+            )
+            error_count += 1
+
+    _migration_error_count = error_count
+    if oidc_count or totp_count:
+        logger.info(
+            "Re-encrypted legacy plaintext secrets: %d OIDC client_secret(s), %d TOTP secret(s)",
+            oidc_count,
+            totp_count,
+        )
+    elif error_count == 0:
+        logger.debug("_migrate_encrypt_legacy_secrets: no rows needed re-encryption")
+    if error_count:
+        logger.error(
+            "_migrate_encrypt_legacy_secrets: %d row(s) skipped due to errors. "
+            "See /api/v1/auth/encryption-status (migration_error_count).",
+            error_count,
+        )
+
+
+async def _safe_execute(conn, sql):
+    """Execute a DDL migration statement, silently ignoring idempotency errors.
+
+    'already exists', 'duplicate column name' (SQLite ADD COLUMN), 'no such column'
+    (SQLite RENAME COLUMN), 'duplicate key', and the compound
+    'column … does not exist' (PostgreSQL RENAME COLUMN idempotency) are swallowed
+    so that re-running DDL migrations is safe.  The compound check additionally
+    requires the SQL to be a RENAME COLUMN statement so that "does not exist" errors
+    from ADD COLUMN or CREATE INDEX (which would indicate schema corruption, not
+    idempotency) are never silently swallowed.
+    Any other error is logged and re-raised — callers must not assume silent
+    recovery, as a failure will abort the migration sequence and prevent
+    application startup.
+
+    Only use for DDL statements (ALTER TABLE, CREATE INDEX, etc.).
+    For DML backfills (UPDATE, DELETE) use conn.execute() directly inside
+    async with conn.begin_nested() so failures are never silently swallowed.
+
+    Uses a savepoint so that a failed statement doesn't poison the surrounding
+    transaction (required for PostgreSQL).
     """
     from sqlalchemy import text
 
     try:
         async with conn.begin_nested():
             await conn.execute(text(sql))
-    except (OperationalError, ProgrammingError):
-        pass
+    except (OperationalError, ProgrammingError) as exc:
+        msg = str(exc).lower()
+        # Only swallow "column … does not exist" for RENAME COLUMN — not for ADD COLUMN
+        # or CREATE INDEX where it would indicate schema corruption, not idempotency.
+        column_not_exists = "rename column" in sql.lower() and "column" in msg and "does not exist" in msg
+        if (
+            not any(k in msg for k in ("already exists", "duplicate key", "duplicate column name", "no such column"))
+            and not column_not_exists
+        ):
+            logger.error("Migration statement failed: %s | SQL: %.200s", exc, sql)
+            raise
+
+
+async def _migrate_normalize_printer_ids(conn) -> None:
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        if is_sqlite():
+            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'"))
+        else:
+            await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids::text = '[]'"))
+
+
+async def _migrate_drop_library_print_name(conn) -> None:
+    """Strip the embedded 3MF Title (``print_name``) from library file metadata (#1489).
+
+    Library files stored the 3MF's ``<metadata name="Title">`` as
+    ``file_metadata.print_name`` — generic ("Exported 3D Model") for Bambu
+    Studio exports, a marketing title for MakerWorld downloads — and the
+    FileManager wrongly preferred it over the filename for the card label,
+    search and sort. New imports no longer store it; this clears it from rows
+    imported before the fix so existing libraries don't need a rename
+    round-trip. Idempotent — rows without the key are untouched.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        if is_sqlite():
+            await conn.execute(
+                text(
+                    "UPDATE library_files SET file_metadata = json_remove(file_metadata, '$.print_name') "
+                    "WHERE json_extract(file_metadata, '$.print_name') IS NOT NULL"
+                )
+            )
+        else:
+            # file_metadata is a JSON (not JSONB) column — cast to jsonb for the
+            # key-exists test (jsonb_exists, avoiding the `?` operator which
+            # clashes with driver parameter syntax) and the `- key` removal.
+            await conn.execute(
+                text(
+                    "UPDATE library_files SET file_metadata = (file_metadata::jsonb - 'print_name')::json "
+                    "WHERE jsonb_exists(file_metadata::jsonb, 'print_name')"
+                )
+            )
+
+
+async def _migrate_update_auto_link_constraint(conn) -> None:
+    """Update the auto_link CHECK constraint to allow Fall C (custom email claim).
+
+    Old formula: auto_link = FALSE OR (require_ev = TRUE AND email_claim = 'email')
+    New formula: auto_link = FALSE OR email_claim != 'email' OR require_ev = TRUE
+
+    Only Fall B (email_claim='email' + require_ev=False) remains blocked.
+    Fall C (custom claim, e.g. Azure preferred_username/upn) is now allowed.
+
+    PostgreSQL: DROP CONSTRAINT IF EXISTS + ADD new formula via _safe_execute (idempotent).
+    SQLite: table recreation when old formula is detected in sqlite_master (idempotent).
+    """
+    from sqlalchemy import text
+
+    _NEW_FORMULA = "auto_link_existing_accounts = FALSE OR email_claim != 'email' OR require_email_verified = TRUE"
+    _CONSTRAINT_NAME = "ck_auto_link_requires_verified_email_claim"
+
+    if not is_sqlite():
+        await _safe_execute(conn, f"ALTER TABLE oidc_providers DROP CONSTRAINT IF EXISTS {_CONSTRAINT_NAME}")
+        await _safe_execute(
+            conn,
+            f"ALTER TABLE oidc_providers ADD CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})",
+        )
+    else:
+        row = (
+            await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='oidc_providers'"))
+        ).fetchone()
+        # Only recreate if the old (more restrictive) formula is still present.
+        # Fresh installs created with the new __table_args__ already have the correct formula.
+        # Installs without any constraint (pre-SEC-1 upgrades) are skipped — app-level guards suffice.
+        if row and "require_email_verified = TRUE AND email_claim = 'email'" in row[0]:
+            try:
+                async with conn.begin_nested():
+                    await conn.execute(text("DROP TABLE IF EXISTS oidc_providers_v2"))
+                    await conn.execute(
+                        text(
+                            "CREATE TABLE oidc_providers_v2 ("
+                            "id INTEGER NOT NULL, "
+                            "name VARCHAR(100) NOT NULL, "
+                            "issuer_url VARCHAR(500) NOT NULL, "
+                            "client_id VARCHAR(255) NOT NULL, "
+                            "client_secret VARCHAR(512) NOT NULL, "
+                            "scopes VARCHAR(500), "
+                            "is_enabled BOOLEAN, "
+                            "auto_create_users BOOLEAN, "
+                            "auto_link_existing_accounts BOOLEAN DEFAULT 0, "
+                            "email_claim VARCHAR(64) DEFAULT 'email', "
+                            "require_email_verified BOOLEAN DEFAULT 1, "
+                            "icon_url TEXT, "
+                            "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                            "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                            "PRIMARY KEY (id), "
+                            f"UNIQUE (name), "
+                            f"CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})"
+                            ")"
+                        )
+                    )
+                    await conn.execute(
+                        text(
+                            "INSERT INTO oidc_providers_v2 "
+                            "(id, name, issuer_url, client_id, client_secret, scopes, is_enabled, "
+                            "auto_create_users, auto_link_existing_accounts, email_claim, "
+                            "require_email_verified, icon_url, created_at, updated_at) "
+                            "SELECT id, name, issuer_url, client_id, client_secret, scopes, is_enabled, "
+                            "auto_create_users, auto_link_existing_accounts, email_claim, "
+                            "require_email_verified, icon_url, created_at, updated_at "
+                            "FROM oidc_providers"
+                        )
+                    )
+                    original = (await conn.execute(text("SELECT count(*) FROM oidc_providers"))).scalar_one()
+                    copied = (await conn.execute(text("SELECT count(*) FROM oidc_providers_v2"))).scalar_one()
+                    if copied != original:
+                        raise RuntimeError(
+                            f"auto_link constraint migration: row count mismatch after copy "
+                            f"({original} in source, {copied} in copy)"
+                        )
+                    await conn.execute(text("DROP TABLE oidc_providers"))
+                    await conn.execute(text("ALTER TABLE oidc_providers_v2 RENAME TO oidc_providers"))
+            except Exception as exc:
+                logger.error(
+                    "auto_link constraint update (SQLite table recreation) FAILED: %s",
+                    exc,
+                    exc_info=True,
+                )
+                raise
+
+
+async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
+    """Widen ck_ams_id_range on spoolman_slot_assignments to admit AMS-HT (#1274).
+
+    Old formula: (ams_id >= 0 AND ams_id <= 7) OR ams_id = 255
+    New formula: (ams_id >= 0 AND ams_id <= 7) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255
+
+    The H2C/H2D AMS-HT reports ams_id 128+. The old constraint rejected every
+    AMS-HT slot link with `IntegrityError: CHECK constraint failed: ck_ams_id_range`.
+
+    PostgreSQL: DROP CONSTRAINT IF EXISTS + ADD new formula via _safe_execute.
+    SQLite: table recreation when the old (narrower) formula is detected in
+    sqlite_master. Fresh installs already have the widened constraint from
+    the CREATE TABLE migration above.
+    """
+    from sqlalchemy import text
+
+    _NEW_FORMULA = "(ams_id >= 0 AND ams_id <= 7) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255"
+    _CONSTRAINT_NAME = "ck_ams_id_range"
+
+    if not is_sqlite():
+        await _safe_execute(
+            conn,
+            f"ALTER TABLE spoolman_slot_assignments DROP CONSTRAINT IF EXISTS {_CONSTRAINT_NAME}",
+        )
+        await _safe_execute(
+            conn,
+            f"ALTER TABLE spoolman_slot_assignments ADD CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})",
+        )
+        return
+
+    row = (
+        await conn.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name='spoolman_slot_assignments'")
+        )
+    ).fetchone()
+    if not row:
+        return
+    sql = row[0] or ""
+    # Already widened by an earlier run or by the fresh-install CREATE TABLE above.
+    if "ams_id >= 128" in sql:
+        return
+    # Pre-migration table without any CHECK constraint at all → leave alone;
+    # the app-level validation handles correctness and we don't risk a
+    # destructive table rebuild for a constraint that isn't blocking anyone.
+    if "ck_ams_id_range" not in sql and "ams_id <= 7" not in sql:
+        return
+
+    try:
+        async with conn.begin_nested():
+            await conn.execute(text("DROP TABLE IF EXISTS spoolman_slot_assignments_v2"))
+            await conn.execute(
+                text(
+                    "CREATE TABLE spoolman_slot_assignments_v2 ("
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE, "
+                    f"ams_id INTEGER NOT NULL CHECK ({_NEW_FORMULA}), "
+                    "tray_id INTEGER NOT NULL CHECK (tray_id >= 0 AND tray_id <= 3), "
+                    "spoolman_spool_id INTEGER NOT NULL, "
+                    "assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                    "CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id)"
+                    ")"
+                )
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO spoolman_slot_assignments_v2 "
+                    "(id, printer_id, ams_id, tray_id, spoolman_spool_id, assigned_at) "
+                    "SELECT id, printer_id, ams_id, tray_id, spoolman_spool_id, assigned_at "
+                    "FROM spoolman_slot_assignments"
+                )
+            )
+            original = (await conn.execute(text("SELECT count(*) FROM spoolman_slot_assignments"))).scalar_one()
+            copied = (await conn.execute(text("SELECT count(*) FROM spoolman_slot_assignments_v2"))).scalar_one()
+            if copied != original:
+                raise RuntimeError(
+                    f"spoolman_slot_assignments migration: row count mismatch after copy "
+                    f"({original} in source, {copied} in copy)"
+                )
+            await conn.execute(text("DROP TABLE spoolman_slot_assignments"))
+            await conn.execute(text("ALTER TABLE spoolman_slot_assignments_v2 RENAME TO spoolman_slot_assignments"))
+            # The index sits on the renamed table; recreate it idempotently
+            # to handle older sqlite versions that don't auto-rename indexes.
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_slot_assignment_spool "
+                    "ON spoolman_slot_assignments (spoolman_spool_id)"
+                )
+            )
+    except Exception as exc:
+        logger.error(
+            "spoolman_slot_assignments ck_ams_id_range widening (SQLite table recreation) FAILED: %s",
+            exc,
+            exc_info=True,
+        )
+        raise
 
 
 async def run_migrations(conn):
-    """Add new columns to existing tables if they don't exist."""
+    """Run all schema migrations and data backfills on startup.
+
+    Includes ALTER TABLE (add columns, rename columns, add constraints),
+    CREATE INDEX, CREATE TRIGGER, data UPDATE backfills, and table recreations
+    for complex SQLite schema changes that ALTER TABLE cannot handle.
+
+    DDL statements are wrapped in _safe_execute for idempotency.
+    DML backfills (UPDATE/DELETE) are executed directly via conn.execute()
+    inside begin_nested() so any failure is always fatal and never silently
+    swallowed.
+    """
     from sqlalchemy import text
 
     # Migration: Add is_favorite column to print_archives
@@ -480,11 +895,56 @@ async def run_migrations(conn):
     # Migration: Add wiki_url column to maintenance_types for documentation links
     await _safe_execute(conn, "ALTER TABLE maintenance_types ADD COLUMN wiki_url VARCHAR(500)")
 
+    # Migration: Add tailscale_disabled column to virtual_printers. Opt-in: default TRUE so
+    # the auto-detect + fallback noise only runs for users who explicitly enable it.
+    # Postgres rejects `DEFAULT 1` for BOOLEAN (#1070 round-2 review).
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN tailscale_disabled BOOLEAN DEFAULT 1")
+    else:
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN tailscale_disabled BOOLEAN DEFAULT true")
+
     # Migration: Add ams_mapping column to print_queue for storing filament slot assignments
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN ams_mapping TEXT")
 
+    # Migration: filament_short flag on print_queue (#1496). Set by the
+    # dispatch scheduler when the assigned spool can't satisfy the print's
+    # per-slot weight; surfaced as a "filament short" badge on the queue row.
+    # Postgres rejects `DEFAULT 0` for BOOLEAN — branch on dialect.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN filament_short BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN filament_short BOOLEAN DEFAULT false")
+
+    # Migration: Add queue_force_color_match column to virtual_printers (#1188).
+    # Opt-in flag: when true, VP queue-mode uploads pin the per-slot type+color
+    # from the 3MF onto the queue item's filament_overrides so the scheduler
+    # refuses to dispatch onto a printer with the wrong filament loaded.
+    # Default false to preserve current behaviour for upgraders.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN queue_force_color_match BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE virtual_printers ADD COLUMN queue_force_color_match BOOLEAN DEFAULT FALSE"
+        )
+
     # Migration: Add target_parts_count column to projects for tracking total parts needed
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_parts_count INTEGER")
+
+    # Migration: Add url + cover_image_filename columns to projects (#1155).
+    # url: external link rendered next to the project name on the card.
+    # cover_image_filename: filename of the project's hero image inside the
+    # existing attachments dir; rendered as a thumbnail on the card.
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN url VARCHAR(2048)")
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN cover_image_filename VARCHAR(255)")
+
+    # Migration: enhanced filament colour handling on color_catalog (#1154).
+    # Mirrors the Spool columns added below; widens hex_color to VARCHAR(9)
+    # so catalog entries can store an alpha component (#RRGGBBAA). SQLite
+    # ignores VARCHAR length, so the widen only matters on PostgreSQL.
+    await _safe_execute(conn, "ALTER TABLE color_catalog ADD COLUMN extra_colors VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE color_catalog ADD COLUMN effect_type VARCHAR(20)")
+    if not is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE color_catalog ALTER COLUMN hex_color TYPE VARCHAR(9)")
 
     # Migration: Make printer_id nullable in print_queue for unassigned queue items
     # SQLite doesn't support ALTER COLUMN, so we need to recreate the table
@@ -723,6 +1183,7 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN external_camera_url VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN external_camera_type VARCHAR(20)")
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN external_camera_enabled BOOLEAN DEFAULT 0")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN external_camera_snapshot_url VARCHAR(500)")
 
     # Migration: Add external_url column to print_archives for user-defined links (Printables, etc.)
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN external_url VARCHAR(500)")
@@ -1009,25 +1470,36 @@ async def run_migrations(conn):
         pass  # Already applied
 
     # Create active_print_spoolman table for Spoolman per-filament tracking
-    try:
-        async with conn.begin_nested():
-            await conn.execute(
-                text("""
-                CREATE TABLE IF NOT EXISTS active_print_spoolman (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
-                    archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
-                    filament_usage TEXT NOT NULL,
-                    ams_trays TEXT NOT NULL,
-                    slot_to_tray TEXT,
-                    layer_usage TEXT,
-                    filament_properties TEXT,
-                    UNIQUE(printer_id, archive_id)
-                )
-            """)
-            )
-    except (OperationalError, ProgrammingError):
-        pass  # Already applied
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS active_print_spoolman (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+            filament_usage TEXT NOT NULL,
+            ams_trays TEXT NOT NULL,
+            slot_to_tray TEXT,
+            layer_usage TEXT,
+            filament_properties TEXT,
+            UNIQUE(printer_id, archive_id)
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS active_print_spoolman (
+            id SERIAL PRIMARY KEY,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+            filament_usage TEXT NOT NULL,
+            ams_trays TEXT NOT NULL,
+            slot_to_tray TEXT,
+            layer_usage TEXT,
+            filament_properties TEXT,
+            UNIQUE(printer_id, archive_id)
+        )
+        """,
+    )
 
     # Migration: Add preset_source column to slot_preset_mappings for local preset support
     try:
@@ -1056,24 +1528,34 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN core_weight_catalog_id INTEGER")
 
     # Migration: Create spool_usage_history table for filament consumption tracking
-    try:
-        async with conn.begin_nested():
-            await conn.execute(
-                text("""
-                CREATE TABLE IF NOT EXISTS spool_usage_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    spool_id INTEGER NOT NULL REFERENCES spool(id) ON DELETE CASCADE,
-                    printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
-                    print_name VARCHAR(500),
-                    weight_used REAL NOT NULL DEFAULT 0,
-                    percent_used INTEGER NOT NULL DEFAULT 0,
-                    status VARCHAR(20) NOT NULL DEFAULT 'completed',
-                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            )
-    except (OperationalError, ProgrammingError):
-        pass  # Already applied
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS spool_usage_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            spool_id INTEGER NOT NULL REFERENCES spool(id) ON DELETE CASCADE,
+            printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
+            print_name VARCHAR(500),
+            weight_used REAL NOT NULL DEFAULT 0,
+            percent_used INTEGER NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'completed',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS spool_usage_history (
+            id SERIAL PRIMARY KEY,
+            spool_id INTEGER NOT NULL REFERENCES spool(id) ON DELETE CASCADE,
+            printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
+            print_name VARCHAR(500),
+            weight_used REAL NOT NULL DEFAULT 0,
+            percent_used INTEGER NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'completed',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+    )
 
     # Migration: Add open_in_new_tab column to external_links
     await _safe_execute(conn, "ALTER TABLE external_links ADD COLUMN open_in_new_tab BOOLEAN DEFAULT 0")
@@ -1099,6 +1581,32 @@ async def run_migrations(conn):
 
     # Migration: Add cost tracking fields to spool table
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN cost_per_kg REAL")
+
+    # Migration: Per-spool category + low-stock threshold override (#729). Both
+    # nullable — NULL category leaves the spool uncategorised, NULL threshold
+    # falls back to the global low_stock_threshold setting.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN category VARCHAR(50)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN low_stock_threshold_pct INTEGER")
+    # Migration: Add user-editable storage location to spool table
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN storage_location VARCHAR(255)")
+    # Migration: Add weight_used_baseline anchor for the resettable "Total
+    # Consumed" stat (#1390). Existing spools default to 0 (no baseline),
+    # so the counter starts unaffected; pressing "Reset usage to 0" now
+    # stamps baseline = weight_used without touching remaining.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN weight_used_baseline REAL DEFAULT 0")
+    # Migration: Widen tag_uid column from VARCHAR(16) to VARCHAR(32) to accommodate 7-byte NFC
+    # UIDs (14 hex chars) in addition to 8-byte Bambu Lab UIDs (16 hex chars).
+    # ALTER COLUMN ... TYPE is PostgreSQL-only syntax; SQLite ignores VARCHAR sizes so no-op there.
+    if not is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE spool ALTER COLUMN tag_uid TYPE VARCHAR(32)")
+
+    # Migration: enhanced filament colour handling (#1154). `extra_colors` is
+    # a comma-separated list of 6- or 8-char hex tokens (no `#`) for multi-
+    # colour gradients; `effect_type` is one of {sparkle, wood, marble, glow,
+    # matte} as a visual rendering hint. Both nullable — NULL keeps the
+    # current single-rgba/no-effect behaviour.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN extra_colors VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN effect_type VARCHAR(20)")
     # Migration: Add cost field to spool_usage_history table
     await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN cost REAL")
     # Migration: Add archive_id field to spool_usage_history table
@@ -1197,6 +1705,14 @@ async def run_migrations(conn):
 
     # Migration: Add system_stats JSON blob column to spoolbuddy_devices
     await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN system_stats TEXT")
+
+    # Migration: Add SSH host key for TOFU verification (H1 security fix)
+    await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN ssh_host_key VARCHAR(500)")
+    # Migration: Widen ssh_host_key from VARCHAR(500) to TEXT — RSA-3072+ host keys
+    # in OpenSSH format exceed 500 chars (RSA-4096 ~720 chars). PostgreSQL enforces
+    # the limit and rejects the UPDATE; SQLite ignores VARCHAR length so no-op there.
+    if not is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ALTER COLUMN ssh_host_key TYPE TEXT")
 
     # Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
     # Labels are now keyed by AMS serial number so they persist when the AMS is moved to another printer.
@@ -1388,41 +1904,9 @@ async def run_migrations(conn):
 
     # Migration: Normalize empty printer_ids [] to NULL (global access) on API keys
     # Previously both None and [] meant "all printers"; now [] means "no printers"
-    await _safe_execute(conn, "UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'")
-
-    # Migration: Add HA enclosure sensor entity columns to printers
-    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN enclosed BOOLEAN DEFAULT 0")
-    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN ha_temp_entity VARCHAR(100)")
-    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN ha_humidity_entity VARCHAR(100)")
-    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN ha_fan_entity VARCHAR(100)")
-
-    # Migration: Create enclosure_readings table for HA temp/humidity history
-    await _safe_execute(
-        conn,
-        """
-        CREATE TABLE IF NOT EXISTS enclosure_readings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
-            temp REAL,
-            humidity REAL,
-            recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-        if is_sqlite()
-        else """
-        CREATE TABLE IF NOT EXISTS enclosure_readings (
-            id SERIAL PRIMARY KEY,
-            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
-            temp REAL,
-            humidity REAL,
-            recorded_at TIMESTAMP NOT NULL DEFAULT NOW()
-        )
-        """,
-    )
-    await _safe_execute(
-        conn,
-        "CREATE INDEX IF NOT EXISTS ix_enclosure_readings_printer_time ON enclosure_readings(printer_id, recorded_at)",
-    )
+    # PostgreSQL stores printer_ids as JSONB; comparing JSONB to a string literal fails
+    # with "operator does not exist: jsonb = unknown" — cast the literal to jsonb explicitly.
+    await _migrate_normalize_printer_ids(conn)
 
     # Migration: Add auth_source column to users for LDAP support (#794)
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local' NOT NULL")
@@ -1453,8 +1937,13 @@ async def run_migrations(conn):
                 )
                 await conn.execute(text(f"PRAGMA schema_version = {schema_version + 1}"))
                 await conn.execute(text("PRAGMA writable_schema = OFF"))
-        except (OperationalError, ProgrammingError):
-            pass
+        except (OperationalError, ProgrammingError) as exc:
+            logger.error(
+                "Failed to remove NOT NULL from users.password_hash via writable_schema — "
+                "OIDC/LDAP user creation will fail on this install: %s",
+                exc,
+                exc_info=True,
+            )
     else:
         await _safe_execute(conn, "ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
 
@@ -1468,6 +1957,24 @@ async def run_migrations(conn):
     # backend restart mid-print. Without it, a long print (e.g. 13h) triggers
     # stale-cancel + new-archive, losing started_at continuity.
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN subtask_id VARCHAR(64)")
+
+    # Migration: Add bed_type to print_archives (#1253)
+    # Build plate type extracted from 3MF (curr_bed_type), drives the bed icon
+    # rendered on archive cards.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN bed_type VARCHAR(64)")
+
+    # Migration: Add deleted_at to print_archives (#1343)
+    # Soft-delete sentinel so deleting an archive entry from the UI no longer
+    # wipes its filament / time / cost contribution from Quick Stats. Listings
+    # hide rows where deleted_at IS NOT NULL; the stats endpoint counts them all.
+    # DATETIME on SQLite, TIMESTAMP on PostgreSQL (PG doesn't accept DATETIME on
+    # ALTER TABLE the same way it tolerates it inside CREATE TABLE).
+    _deleted_at_type = "DATETIME" if is_sqlite() else "TIMESTAMP"
+    await _safe_execute(conn, f"ALTER TABLE print_archives ADD COLUMN deleted_at {_deleted_at_type}")
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_print_archives_deleted_at ON print_archives (deleted_at)",
+    )
 
     # Migration: Create smart_plug_energy_snapshots table (#941)
     # Hourly snapshots of each plug's lifetime counter, so date-range queries in
@@ -1508,7 +2015,106 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE auth_ephemeral_tokens ADD COLUMN challenge_id VARCHAR(128)")
 
     # Migration: Add auto_link_existing_accounts column to oidc_providers (M-4)
-    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT 1")
+    # Postgres rejects `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE oidc_providers ADD COLUMN auto_link_existing_accounts BOOLEAN DEFAULT false"
+        )
+
+    # Migration: Azure Entra ID support — configurable email claim and verification requirement
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN email_claim VARCHAR(64) DEFAULT 'email'")
+    # Postgres rejects `DEFAULT 1` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT 1")
+    else:
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN require_email_verified BOOLEAN DEFAULT true")
+    # SEC-1 backfill: reset auto_link only for Fall B (email_claim='email' + require_email_verified=False).
+    # Fall C (custom claim) is now allowed to use auto_link — do NOT reset those rows.
+    # Runs BEFORE the CHECK constraint below so Fall B rows self-heal rather than failing
+    # PostgreSQL's "check constraint is violated by some row" on ADD CONSTRAINT.
+    # On fresh installs the column defaults guarantee this UPDATE matches zero rows.
+    # TRUE/FALSE literals are accepted by both SQLite (≥ 3.23) and PostgreSQL — no dialect branch needed.
+    try:
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    "UPDATE oidc_providers SET auto_link_existing_accounts = FALSE "
+                    "WHERE auto_link_existing_accounts = TRUE "
+                    "AND email_claim = 'email' AND require_email_verified = FALSE"
+                )
+            )
+    except Exception as exc:
+        logger.error(
+            "SEC-1 safety backfill FAILED — auto_link_existing_accounts may remain enabled "
+            "on providers with unsafe email settings: %s",
+            exc,
+            exc_info=True,
+        )
+        raise
+
+    # SEC-1: Add DB-level CHECK constraint for existing PostgreSQL installs.
+    # SQLite does not support ALTER TABLE ADD CONSTRAINT — handled by __table_args__ at creation.
+    # Runs AFTER the backfill so Fall B rows don't fail constraint validation.
+    if not is_sqlite():
+        try:
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "ALTER TABLE oidc_providers ADD CONSTRAINT ck_auto_link_requires_verified_email_claim "
+                        "CHECK (auto_link_existing_accounts = FALSE OR email_claim != 'email' OR require_email_verified = TRUE)"
+                    )
+                )
+        except (OperationalError, ProgrammingError) as exc:
+            msg = str(exc).lower()
+            if "already exists" not in msg:
+                logger.error(
+                    "Security constraint migration FAILED — auto_link safety constraint may not be enforced: %s",
+                    exc,
+                    exc_info=True,
+                )
+                raise
+
+    # Migration: Update auto_link CHECK constraint formula (existing installs).
+    # Existing PostgreSQL installs that ran the ADD CONSTRAINT above with the old formula
+    # (or a previous version of this code) need an explicit DROP + ADD to update it.
+    # For SQLite, the table is recreated with the new constraint formula if the old formula
+    # is still present in sqlite_master (SQLite cannot ALTER TABLE DROP/ADD CONSTRAINT).
+    await _migrate_update_auto_link_constraint(conn)
+
+    # Migration: Add default_group_id to oidc_providers.
+    # Must run AFTER _migrate_update_auto_link_constraint to avoid being dropped during
+    # the SQLite table recreation that function performs on stale-formula databases.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE oidc_providers ADD COLUMN default_group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL",
+    )
+
+    # Migration: Add cached-icon columns to oidc_providers (#1333).
+    # SPA's strict CSP (img-src 'self' data: blob:) blocks hotlinking external
+    # icon hosts, so we proxy them: admin sets icon_url, backend fetches and
+    # caches the bytes here, the SPA renders <img src="/api/v1/auth/oidc/providers/{id}/icon">.
+    # Must run AFTER _migrate_update_auto_link_constraint for the same reason as
+    # default_group_id above (SQLite table recreation drops unknown columns).
+    # Dialect-conditional type: BLOB on SQLite, BYTEA on PostgreSQL.
+    _blob_type = "BLOB" if is_sqlite() else "BYTEA"
+    await _safe_execute(conn, f"ALTER TABLE oidc_providers ADD COLUMN icon_data {_blob_type}")
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN icon_content_type VARCHAR(20)")
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN icon_etag VARCHAR(64)")
+
+    # PostgreSQL-only: enforce the all-or-nothing triplet at the DB layer.
+    # SQLite cannot ADD CONSTRAINT to an existing table — fresh SQLite
+    # installs get the CHECK via metadata.create_all (model __table_args__);
+    # stale SQLite installs rely on the application layer, same trade-off
+    # as the default_group_id FK ON DELETE SET NULL above.
+    if not is_sqlite():
+        await _safe_execute(
+            conn,
+            "ALTER TABLE oidc_providers ADD CONSTRAINT ck_oidc_icon_triplet_co_null "
+            "CHECK ((icon_data IS NULL) = (icon_content_type IS NULL) "
+            "AND (icon_content_type IS NULL) = (icon_etag IS NULL))",
+        )
 
     # Migration: Add password_changed_at to users (M-R7-B)
     # Tracks the last time a user's password was changed/reset.  JWTs whose iat
@@ -1524,30 +2130,399 @@ async def run_migrations(conn):
     # tokens could never be invalidated via the freshness check.  Setting it to
     # created_at is conservative: any token issued before the account was created
     # is always invalid, so this is a safe lower bound.
+    async with conn.begin_nested():
+        await conn.execute(text("UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL"))
+
+    # Migration: Provenance columns on library_files for MakerWorld imports.
+    # source_url is indexed so "already imported" dedupe lookups stay O(log N)
+    # as the library grows.
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN source_type VARCHAR(32)")
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN source_url VARCHAR(512)")
     await _safe_execute(
         conn,
-        "UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL",
+        "CREATE INDEX IF NOT EXISTS ix_library_files_source_url ON library_files(source_url)",
     )
 
-    # Migration: Add WLED per-printer LED strip connection fields
-    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_enabled BOOLEAN DEFAULT 0")
-    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_host VARCHAR(253)")
-    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_port INTEGER DEFAULT 80")
-    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_api_key VARCHAR(100)")
+    # Migration: Cache metadata title on pending uploads (#1152 follow-up).
+    # Without this column the review card always shows the FTP filename while
+    # the eventual archive's print_name comes from the 3MF metadata title,
+    # creating a confusing review→archive name mismatch. Captured at upload
+    # time so /pending-uploads/ list calls don't have to reopen each 3MF.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE pending_uploads ADD COLUMN metadata_print_name VARCHAR(255)",
+    )
 
-    # Data migration: drop the embedded 3MF Title (`print_name`) from library
-    # file metadata so the FileManager displays the filename, not the title (#1489).
-    await _migrate_drop_library_print_name(conn)
+    # Migration: Per-user API key ownership + cloud-access scope (#1182).
+    # user_id is nullable so legacy keys (created before #1182) survive the
+    # migration; cloud routes reject calls from keys without an owner so the
+    # operator is forced to recreate them. ON DELETE CASCADE so deleting a user
+    # takes their keys with them — orphan keys must never authenticate.
+    # SQLite ignores REFERENCES on ADD COLUMN (not enforced but not an error);
+    # PostgreSQL enforces the FK from this point forward. Indexed for the
+    # auth-gate's owner→keys lookup that runs on every API-keyed request.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_api_keys_user_id ON api_keys(user_id)",
+    )
+    # ``DEFAULT 0`` works on SQLite (boolean is just integer-coerced) but
+    # asyncpg's strict type-check rejects it: "column is of type boolean but
+    # default expression is of type integer". Use ``DEFAULT FALSE`` so both
+    # dialects accept the same statement — same pattern as the print_queue
+    # gcode_injection migration above.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_access_cloud BOOLEAN DEFAULT FALSE",
+    )
+    # Narrowly-scoped settings-write toggle for the dynamic-tariff push case
+    # documented in wiki/features/energy.md (#1356). Defaults FALSE so existing
+    # keys never silently gain settings-write capability on upgrade.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_update_energy_cost BOOLEAN DEFAULT FALSE",
+    )
 
-    # Migration: update the auto_link CHECK constraint to allow Fall C (custom email claim).
-    await _migrate_update_auto_link_constraint(conn)
+    # Migration: Soft-delete column for trash bin (Issue #1008). Indexed so the
+    # sweeper's "SELECT ... WHERE deleted_at < cutoff" and the trash list's
+    # "WHERE deleted_at IS NOT NULL" stay cheap as the table grows.
+    #
+    # ``DATETIME`` is a SQLite-only type alias — PostgreSQL rejects it as
+    # invalid syntax, _safe_execute swallows the error, and the column is
+    # never added (breaking every query that references it). Emit
+    # dialect-appropriate SQL so both backends get the column.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN deleted_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN deleted_at TIMESTAMP")
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_library_files_deleted_at ON library_files(deleted_at)",
+    )
+
+    # Legacy SQLite installs created `settings` without a UNIQUE constraint on `key`,
+    # so `INSERT OR IGNORE` below silently degrades to a plain INSERT and dupes rows on
+    # every restart. Dedupe (keep lowest id per key) and add the missing unique index
+    # before seeding. Safe/idempotent on both dialects — fresh installs already have
+    # no dupes and `create_all` already emits the index.
+    async with conn.begin_nested():
+        await conn.execute(text("DELETE FROM settings WHERE id NOT IN (SELECT MIN(id) FROM settings GROUP BY key)"))
+    await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_settings_key ON settings(key)")
+
+    # Migration: Normalise provider_email to lowercase (SEC-3).
+    # Required for Entra ID where UPN/email claims may arrive in mixed case.
+    # LOWER() is supported by both SQLite and PostgreSQL; the UPDATE is idempotent.
+    # Executed directly (not via _safe_execute) so any column-reference failure
+    # is always fatal and never silently swallowed.
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "UPDATE user_oidc_links SET provider_email = LOWER(provider_email) "
+                "WHERE provider_email IS NOT NULL AND provider_email != LOWER(provider_email)"
+            )
+        )
+
+    # Migration: Create spoolman_slot_assignments table for local AMS-slot→Spoolman-spool mapping.
+    # Replaces the pattern of writing spool.location in Spoolman (which polluted the
+    # user-editable storage_location field in the UI).
+    # ck_ams_id_range formula was widened in #1274 to admit AMS-HT (ams_id 128-191).
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS spoolman_slot_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            ams_id INTEGER NOT NULL CHECK ((ams_id >= 0 AND ams_id <= 7) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
+            tray_id INTEGER NOT NULL CHECK (tray_id >= 0 AND tray_id <= 3),
+            spoolman_spool_id INTEGER NOT NULL,
+            assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id)
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS spoolman_slot_assignments (
+            id SERIAL PRIMARY KEY,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            ams_id INTEGER NOT NULL CHECK ((ams_id >= 0 AND ams_id <= 7) OR (ams_id >= 128 AND ams_id <= 191) OR ams_id = 255),
+            tray_id INTEGER NOT NULL CHECK (tray_id >= 0 AND tray_id <= 3),
+            spoolman_spool_id INTEGER NOT NULL,
+            assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_slot_assignment UNIQUE(printer_id, ams_id, tray_id)
+        )
+        """,
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_slot_assignment_spool ON spoolman_slot_assignments (spoolman_spool_id)",
+    )
+
+    # Migration: widen ck_ams_id_range on spoolman_slot_assignments to allow
+    # AMS-HT ids (128-191). Existing installs created before #1274 carry the
+    # stale formula which rejects every AMS-HT slot link with a CHECK violation.
+    await _migrate_widen_spoolman_slot_ams_id_range(conn)
+
+    # Migration: Create spoolman_k_profile table for K-value calibration profiles linked to Spoolman spools.
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS spoolman_k_profile (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            spoolman_spool_id INTEGER NOT NULL,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            extruder INTEGER NOT NULL DEFAULT 0 CHECK (extruder >= 0 AND extruder <= 1),
+            nozzle_diameter VARCHAR(10) NOT NULL DEFAULT '0.4',
+            nozzle_type VARCHAR(50),
+            k_value REAL NOT NULL,
+            name VARCHAR(100),
+            cali_idx INTEGER,
+            setting_id VARCHAR(50),
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_spoolman_k_profile UNIQUE(spoolman_spool_id, printer_id, extruder, nozzle_diameter)
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS spoolman_k_profile (
+            id SERIAL PRIMARY KEY,
+            spoolman_spool_id INTEGER NOT NULL,
+            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            extruder INTEGER NOT NULL DEFAULT 0 CHECK (extruder >= 0 AND extruder <= 1),
+            nozzle_diameter VARCHAR(10) NOT NULL DEFAULT '0.4',
+            nozzle_type VARCHAR(50),
+            k_value DOUBLE PRECISION NOT NULL,
+            name VARCHAR(100),
+            cali_idx INTEGER,
+            setting_id VARCHAR(50),
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_spoolman_k_profile UNIQUE(spoolman_spool_id, printer_id, extruder, nozzle_diameter)
+        )
+        """,
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_spoolman_k_profile_spool ON spoolman_k_profile (spoolman_spool_id)",
+    )
+
+    # Migration: Add provider column to github_backup_config for multi-provider support
+    await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN provider VARCHAR(30) DEFAULT 'github'")
+
+    # Migration: Add allow_insecure_http column to github_backup_config for self-hosted HTTP instances
+    await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN allow_insecure_http BOOLEAN DEFAULT FALSE")
+
+    # Seed default settings keys that must exist on fresh install
+    default_settings = [
+        ("advanced_auth_enabled", "false"),
+        ("smtp_auth_enabled", "true"),
+    ]
+    for key, value in default_settings:
+        try:
+            if is_sqlite():
+                await conn.execute(
+                    text("INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"),
+                    {"key": key, "value": value},
+                )
+            else:
+                await conn.execute(
+                    text("INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"),
+                    {"key": key, "value": value},
+                )
+        except (OperationalError, ProgrammingError):
+            pass
+
+    # Migration: Create filament_sku_settings table for reorder forecasting
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_sku_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                lead_time_days INTEGER NOT NULL DEFAULT 0,
+                safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (material, subtype, brand)
+            )""",
+        )
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7"))
+        await _safe_execute(
+            conn, "ALTER TABLE filament_sku_settings ADD COLUMN safety_margin_value INTEGER NOT NULL DEFAULT 14"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE filament_sku_settings ADD COLUMN safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days'"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE filament_sku_settings ADD COLUMN alerts_snoozed BOOLEAN NOT NULL DEFAULT 0"
+        )
+        # Backfill and drop legacy safety_margin_days column — SQLite requires a table rebuild.
+        # Only run if the stale column still exists.
+        cols_result = await conn.execute(text("PRAGMA table_info(filament_sku_settings)"))
+        col_names = [row[1] for row in cols_result.fetchall()]
+        if "safety_margin_days" in col_names:
+            async with conn.begin_nested():
+                # Defensive: a previous startup may have crashed mid-rebuild leaving
+                # filament_sku_settings_new behind, which would break the CREATE below.
+                await conn.execute(text("DROP TABLE IF EXISTS filament_sku_settings_new"))
+                await conn.execute(
+                    text(
+                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days "
+                        "WHERE safety_margin_value = 14 AND safety_margin_days != 14"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """CREATE TABLE filament_sku_settings_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        material VARCHAR(50) NOT NULL,
+                        subtype VARCHAR(50),
+                        brand VARCHAR(100),
+                        lead_time_days INTEGER NOT NULL DEFAULT 0,
+                        safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                        safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                        alerts_snoozed BOOLEAN NOT NULL DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (material, subtype, brand)
+                    )"""
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """INSERT INTO filament_sku_settings_new
+                        (id, material, subtype, brand, lead_time_days, safety_margin_value,
+                         safety_margin_unit, alerts_snoozed, created_at, updated_at)
+                       SELECT id, material, subtype, brand, lead_time_days, safety_margin_value,
+                              safety_margin_unit, COALESCE(alerts_snoozed, 0), created_at, updated_at
+                       FROM filament_sku_settings"""
+                    )
+                )
+                await conn.execute(text("DROP TABLE filament_sku_settings"))
+                await conn.execute(text("ALTER TABLE filament_sku_settings_new RENAME TO filament_sku_settings"))
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_shopping_list (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                quantity_spools INTEGER NOT NULL DEFAULT 1,
+                note VARCHAR(500),
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                purchased_at DATETIME,
+                added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+        )
+        # SQLite has no implicit updated_at trigger — add one so the column stays current.
+        await _safe_execute(
+            conn,
+            """CREATE TRIGGER IF NOT EXISTS trg_filament_sku_settings_updated_at
+               AFTER UPDATE ON filament_sku_settings FOR EACH ROW
+               BEGIN
+                 UPDATE filament_sku_settings SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+               END""",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_sku_settings (
+                id SERIAL PRIMARY KEY,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                lead_time_days INTEGER NOT NULL DEFAULT 0,
+                safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (material, subtype, brand)
+            )""",
+        )
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE filament_sku_settings SET lead_time_days = 0 WHERE lead_time_days = 7"))
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS safety_margin_value INTEGER NOT NULL DEFAULT 14",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days'",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS alerts_snoozed BOOLEAN NOT NULL DEFAULT FALSE",
+        )
+        # Only backfill from safety_margin_days if that column still exists (PostgreSQL).
+        col_check = await conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'filament_sku_settings' AND column_name = 'safety_margin_days'"
+            )
+        )
+        if col_check.fetchone():
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "UPDATE filament_sku_settings SET safety_margin_value = safety_margin_days "
+                        "WHERE safety_margin_value = 14 AND safety_margin_days != 14"
+                    )
+                )
+        await _safe_execute(
+            conn,
+            """CREATE TABLE IF NOT EXISTS filament_shopping_list (
+                id SERIAL PRIMARY KEY,
+                material VARCHAR(50) NOT NULL,
+                subtype VARCHAR(50),
+                brand VARCHAR(100),
+                quantity_spools INTEGER NOT NULL DEFAULT 1,
+                note VARCHAR(500),
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                purchased_at TIMESTAMP,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending'",
+        )
+        await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS purchased_at TIMESTAMP")
+
+    # Migration: Add inventory stock alert columns to notification_providers.
+    # Postgres rejects `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT 0"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT 0"
+        )
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_reorder_alert BOOLEAN DEFAULT false"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT false"
+        )
 
     # Migration: Heal orphan auth-related rows left behind by user-delete
-    # on SQLite. user_oidc_links, user_totp, user_otp_codes and long_lived_tokens
-    # all declare ON DELETE CASCADE on user_id — SQLite ships with FK enforcement
-    # off, so rows pointing to a deleted user persisted — blocking SSO re-login,
-    # leaking MFA secrets, and leaving camera-stream tokens. See issue #1285.
-    # This migration is a no-op on PostgreSQL and idempotent on SQLite.
+    # on SQLite. user_oidc_links, user_totp, user_otp_codes (introduced in
+    # PR #933) and long_lived_tokens (PR #1108) all declare ON DELETE
+    # CASCADE on user_id — both predate the explicit APIKey-cleanup
+    # pattern in PR #1182. PostgreSQL enforces the cascade, but SQLite
+    # ships with FK enforcement off, so rows pointing to a deleted user
+    # persisted — blocking SSO re-login (the OIDC callback finds the
+    # orphan link, fails to resolve the missing user, and falls through
+    # to "account_inactive" instead of triggering auto_create), leaking
+    # MFA secrets, and leaving camera-stream tokens whose secret_hash is
+    # still verify()-able by lookup_prefix. See issue #1285 (#1295 review
+    # extended the cleanup to long_lived_tokens). This migration is a
+    # no-op on PostgreSQL and idempotent on SQLite.
     async with conn.begin_nested():
         oidc_result = await conn.execute(
             text("DELETE FROM user_oidc_links WHERE user_id NOT IN (SELECT id FROM users)")
@@ -1570,145 +2545,171 @@ async def run_migrations(conn):
             llt_n,
         )
 
-    # Seed default settings keys that must exist on fresh install
-    default_settings = [
-        ("advanced_auth_enabled", "false"),
-        ("smtp_auth_enabled", "true"),
-    ]
-    for key, value in default_settings:
-        try:
+    # Migration: extend print_log_entries with archive_id, cost, energy, failure_reason,
+    # created_by_id (#1378). Statistics queries shift from PrintArchive to PrintLogEntry
+    # so reprints contribute new rows instead of overwriting the source archive's data.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN archive_id INTEGER")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN cost REAL")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN energy_kwh REAL")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN energy_cost REAL")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN failure_reason VARCHAR(100)")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN created_by_id INTEGER")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS archive_id INTEGER")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS cost DOUBLE PRECISION")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS energy_kwh DOUBLE PRECISION")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS energy_cost DOUBLE PRECISION")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS failure_reason VARCHAR(100)")
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN IF NOT EXISTS created_by_id INTEGER")
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_print_log_entries_archive_id ON print_log_entries (archive_id)"
+    )
+
+    # Backfill PrintLogEntry → PrintArchive linkage and per-event cost/energy
+    # for pre-#1378 rows the column-add migration left NULL (#1390).
+    #
+    # Without this backfill the user's Quick Stats show Filament Cost = 0 and
+    # Time Accuracy empty even though their archives carry both, because:
+    #
+    #   - the new stats queries SUM PrintLogEntry.cost (NULL for old rows)
+    #   - the time-accuracy query JOINs PrintArchive ON archive_id (NULL for
+    #     old rows, so old runs get excluded from the average)
+    #
+    # Pre-#1378, archive.cost / energy_kwh / energy_cost were overwritten by
+    # each rerun, so the current archive values represent the *latest* run.
+    # Backfilling them onto the latest matching PrintLogEntry per archive
+    # reconstructs the pre-fix total exactly (sum across archives stays
+    # unchanged), and leaves earlier reprints with NULL cost so they
+    # contribute zero — matching the "first/latest writes, rest stay NULL"
+    # convention #1378 introduced for new prints.
+    #
+    # DML, not DDL — use conn.execute() inside a savepoint per _safe_execute's
+    # own docstring. SQL is plain ANSI (correlated UPDATE, MAX/GROUP BY/HAVING,
+    # CASE in HAVING) and runs unchanged on SQLite + PostgreSQL; verified
+    # against postgres:16-alpine + asyncpg.
+    #
+    # Step 1: link old log entries to their archive via print_name + printer_id.
+    # Picks the highest-id matching archive when multiple share the same key
+    # (newest archive wins — closest to the log's overwrite-then-leave shape).
+    from sqlalchemy import text as _text
+
+    async with conn.begin_nested():
+        await conn.execute(
+            _text("""
+            UPDATE print_log_entries
+            SET archive_id = (
+                SELECT a.id
+                FROM print_archives a
+                WHERE a.print_name = print_log_entries.print_name
+                  AND (
+                      a.printer_id = print_log_entries.printer_id
+                      OR (a.printer_id IS NULL AND print_log_entries.printer_id IS NULL)
+                  )
+                ORDER BY a.id DESC
+                LIMIT 1
+            )
+            WHERE archive_id IS NULL AND print_name IS NOT NULL
+            """)
+        )
+
+    # Step 2: backfill cost / energy_kwh / energy_cost onto the latest linked
+    # log entry per archive — the row whose creation time best matches the
+    # value currently stored on the archive (overwrite-on-reprint semantics
+    # under the old design). Only fires for archives where NO log entry has
+    # cost set yet, which gives the migration a clean idempotency property:
+    # the second pass sees the archive already has a cost-bearing run and
+    # leaves the rest of its history NULL (instead of marching up the
+    # ID-ordered list of NULL runs on every pass).
+    async with conn.begin_nested():
+        await conn.execute(
+            _text("""
+            UPDATE print_log_entries
+            SET cost = (SELECT cost FROM print_archives WHERE id = print_log_entries.archive_id),
+                energy_kwh = (SELECT energy_kwh FROM print_archives WHERE id = print_log_entries.archive_id),
+                energy_cost = (SELECT energy_cost FROM print_archives WHERE id = print_log_entries.archive_id)
+            WHERE id IN (
+                SELECT MAX(id)
+                FROM print_log_entries
+                WHERE archive_id IS NOT NULL
+                GROUP BY archive_id
+                HAVING SUM(CASE WHEN cost IS NOT NULL THEN 1 ELSE 0 END) = 0
+            )
+            """)
+        )
+
+    # Migration: smart_plugs gets per-plug auto-off-after-drying toggle and
+    # delay (#1349). Fires whenever any AMS attached to the linked printer
+    # finishes a dry cycle. Plain ANSI ALTER TABLE works on both SQLite and
+    # Postgres for INTEGER/BOOLEAN with simple defaults.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN auto_off_after_drying BOOLEAN DEFAULT 0")
+        await _safe_execute(
+            conn, "ALTER TABLE smart_plugs ADD COLUMN off_delay_after_drying_minutes INTEGER DEFAULT 10"
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS auto_off_after_drying BOOLEAN DEFAULT false",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS off_delay_after_drying_minutes INTEGER DEFAULT 10",
+        )
+
+    # Data migration: drop the embedded 3MF Title (`print_name`) from library
+    # file metadata so the FileManager displays the filename, not the title (#1489).
+    await _migrate_drop_library_print_name(conn)
+
+    # Migration: Add HA enclosure sensor entity columns to printers
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN enclosed BOOLEAN DEFAULT 0")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN ha_temp_entity VARCHAR(100)")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN ha_humidity_entity VARCHAR(100)")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN ha_fan_entity VARCHAR(100)")
+
+    # Migration: Create enclosure_readings table for HA temp/humidity history
+    try:
+        async with conn.begin_nested():
             if is_sqlite():
                 await conn.execute(
-                    text("INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"),
-                    {"key": key, "value": value},
+                    text(
+                        """
+                        CREATE TABLE IF NOT EXISTS enclosure_readings (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+                            temperature REAL,
+                            humidity REAL,
+                            recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """
+                    )
                 )
             else:
                 await conn.execute(
-                    text("INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"),
-                    {"key": key, "value": value},
-                )
-        except (OperationalError, ProgrammingError):
-            pass
-
-
-async def _migrate_update_auto_link_constraint(conn) -> None:
-    """Update the auto_link CHECK constraint to allow Fall C (custom email claim).
-
-    Old formula: auto_link = FALSE OR (require_ev = TRUE AND email_claim = 'email')
-    New formula: auto_link = FALSE OR email_claim != 'email' OR require_ev = TRUE
-
-    Only Fall B (email_claim='email' + require_ev=False) remains blocked.
-    Fall C (custom claim, e.g. Azure preferred_username/upn) is now allowed.
-
-    PostgreSQL: DROP CONSTRAINT IF EXISTS + ADD new formula via _safe_execute (idempotent).
-    SQLite: table recreation when old formula is detected in sqlite_master (idempotent).
-    """
-    from sqlalchemy import text
-
-    _NEW_FORMULA = "auto_link_existing_accounts = FALSE OR email_claim != 'email' OR require_email_verified = TRUE"
-    _CONSTRAINT_NAME = "ck_auto_link_requires_verified_email_claim"
-
-    if not is_sqlite():
-        await _safe_execute(conn, f"ALTER TABLE oidc_providers DROP CONSTRAINT IF EXISTS {_CONSTRAINT_NAME}")
-        await _safe_execute(
-            conn,
-            f"ALTER TABLE oidc_providers ADD CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})",
-        )
-    else:
-        row = (
-            await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='oidc_providers'"))
-        ).fetchone()
-        # Only recreate if the old (more restrictive) formula is still present.
-        # Fresh installs created with the new __table_args__ already have the correct formula.
-        # Installs without any constraint (pre-SEC-1 upgrades) are skipped — app-level guards suffice.
-        if row and "require_email_verified = TRUE AND email_claim = 'email'" in row[0]:
-            try:
-                async with conn.begin_nested():
-                    await conn.execute(text("DROP TABLE IF EXISTS oidc_providers_v2"))
-                    await conn.execute(
-                        text(
-                            "CREATE TABLE oidc_providers_v2 ("
-                            "id INTEGER NOT NULL, "
-                            "name VARCHAR(100) NOT NULL, "
-                            "issuer_url VARCHAR(500) NOT NULL, "
-                            "client_id VARCHAR(255) NOT NULL, "
-                            "client_secret VARCHAR(512) NOT NULL, "
-                            "scopes VARCHAR(500), "
-                            "is_enabled BOOLEAN, "
-                            "auto_create_users BOOLEAN, "
-                            "auto_link_existing_accounts BOOLEAN DEFAULT 0, "
-                            "email_claim VARCHAR(64) DEFAULT 'email', "
-                            "require_email_verified BOOLEAN DEFAULT 1, "
-                            "icon_url TEXT, "
-                            "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-                            "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-                            "PRIMARY KEY (id), "
-                            f"UNIQUE (name), "
-                            f"CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})"
-                            ")"
+                    text(
+                        """
+                        CREATE TABLE IF NOT EXISTS enclosure_readings (
+                            id SERIAL PRIMARY KEY,
+                            printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+                            temperature REAL,
+                            humidity REAL,
+                            recorded_at TIMESTAMP NOT NULL DEFAULT NOW()
                         )
+                        """
                     )
-                    await conn.execute(
-                        text(
-                            "INSERT INTO oidc_providers_v2 "
-                            "(id, name, issuer_url, client_id, client_secret, scopes, is_enabled, "
-                            "auto_create_users, auto_link_existing_accounts, email_claim, "
-                            "require_email_verified, icon_url, created_at, updated_at) "
-                            "SELECT id, name, issuer_url, client_id, client_secret, scopes, is_enabled, "
-                            "auto_create_users, auto_link_existing_accounts, email_claim, "
-                            "require_email_verified, icon_url, created_at, updated_at "
-                            "FROM oidc_providers"
-                        )
-                    )
-                    original = (await conn.execute(text("SELECT count(*) FROM oidc_providers"))).scalar_one()
-                    copied = (await conn.execute(text("SELECT count(*) FROM oidc_providers_v2"))).scalar_one()
-                    if copied != original:
-                        raise RuntimeError(
-                            f"auto_link constraint migration: row count mismatch after copy "
-                            f"({original} in source, {copied} in copy)"
-                        )
-                    await conn.execute(text("DROP TABLE oidc_providers"))
-                    await conn.execute(text("ALTER TABLE oidc_providers_v2 RENAME TO oidc_providers"))
-            except Exception as exc:
-                logger.error(
-                    "auto_link constraint update (SQLite table recreation) FAILED: %s",
-                    exc,
-                    exc_info=True,
                 )
-                raise
+    except (OperationalError, ProgrammingError):
+        pass
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_enclosure_readings_printer_time ON enclosure_readings(printer_id, recorded_at)",
+    )
 
-
-async def _migrate_drop_library_print_name(conn) -> None:
-    """Strip the embedded 3MF Title (``print_name``) from library file metadata (#1489).
-
-    Library files stored the 3MF's ``<metadata name="Title">`` as
-    ``file_metadata.print_name`` — generic ("Exported 3D Model") for Bambu
-    Studio exports, a marketing title for MakerWorld downloads — and the
-    FileManager wrongly preferred it over the filename for the card label,
-    search and sort. New imports no longer store it; this clears it from rows
-    imported before the fix so existing libraries don't need a rename
-    round-trip. Idempotent — rows without the key are untouched.
-    """
-    from sqlalchemy import text
-
-    async with conn.begin_nested():
-        if is_sqlite():
-            await conn.execute(
-                text(
-                    "UPDATE library_files SET file_metadata = json_remove(file_metadata, '$.print_name') "
-                    "WHERE json_extract(file_metadata, '$.print_name') IS NOT NULL"
-                )
-            )
-        else:
-            # file_metadata is a JSON (not JSONB) column — cast to jsonb for the
-            # key-exists test (jsonb_exists, avoiding the `?` operator which
-            # clashes with driver parameter syntax) and the `- key` removal.
-            await conn.execute(
-                text(
-                    "UPDATE library_files SET file_metadata = (file_metadata::jsonb - 'print_name')::json "
-                    "WHERE jsonb_exists(file_metadata::jsonb, 'print_name')"
-                )
-            )
+    # Migration: Add WLED per-printer LED strip connection fields
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_enabled BOOLEAN DEFAULT 0")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_host VARCHAR(253)")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_port INTEGER DEFAULT 80")
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_api_key VARCHAR(100)")
 
 
 async def seed_notification_templates():
@@ -1863,6 +2864,72 @@ async def seed_default_groups():
             ):
                 group.permissions = [*group.permissions, "printers:clear_plate"]
                 logger.info("Added printers:clear_plate to group '%s' (has printers:control)", group.name)
+        await session.commit()
+
+        # Migrate new permissions for MakerWorld integration: groups that
+        # already have library:upload (i.e. can write to the library) are
+        # the correct audience for makerworld:view + makerworld:import, and
+        # groups that only have library:read get makerworld:view (browse
+        # only). Matches the intent of DEFAULT_GROUPS without clobbering
+        # any user-customised permission lists.
+        result = await session.execute(select(Group))
+        for group in result.scalars().all():
+            if not group.permissions:
+                continue
+            perms = list(group.permissions)
+            changed = False
+            if "library:upload" in perms:
+                for new_perm in ("makerworld:view", "makerworld:import"):
+                    if new_perm not in perms:
+                        perms.append(new_perm)
+                        changed = True
+                        logger.info("Added %s to group '%s' (has library:upload)", new_perm, group.name)
+            elif "library:read" in perms and "makerworld:view" not in perms:
+                perms.append("makerworld:view")
+                changed = True
+                logger.info("Added makerworld:view to group '%s' (has library:read)", group.name)
+            if changed:
+                group.permissions = perms
+        await session.commit()
+
+        # Backfill library:purge + archives:purge for the Administrators group
+        # on existing installs. Both permissions were added after Administrators
+        # was first seeded, so upgrading users miss them even though the default
+        # config (ALL_PERMISSIONS) includes them for fresh installs.
+        result = await session.execute(select(Group).where(Group.name == "Administrators"))
+        admin_group = result.scalar_one_or_none()
+        if admin_group and admin_group.permissions is not None:
+            perms = list(admin_group.permissions)
+            added = False
+            for new_perm in ("library:purge", "archives:purge"):
+                if new_perm not in perms:
+                    perms.append(new_perm)
+                    added = True
+                    logger.info("Added %s to Administrators group (backfill)", new_perm)
+            if added:
+                admin_group.permissions = perms
+        await session.commit()
+
+        # Backfill inventory forecast permissions for existing groups.
+        # inventory:forecast_read was added after initial seeding, so groups
+        # that already have inventory:read (or inventory:update) need it added.
+        # inventory:forecast_write goes to any group with inventory:update.
+        result = await session.execute(select(Group))
+        for group in result.scalars().all():
+            if not group.permissions:
+                continue
+            perms = list(group.permissions)
+            changed = False
+            if "inventory:read" in perms and "inventory:forecast_read" not in perms:
+                perms.append("inventory:forecast_read")
+                changed = True
+                logger.info("Added inventory:forecast_read to group '%s' (backfill)", group.name)
+            if "inventory:update" in perms and "inventory:forecast_write" not in perms:
+                perms.append("inventory:forecast_write")
+                changed = True
+                logger.info("Added inventory:forecast_write to group '%s' (backfill)", group.name)
+            if changed:
+                group.permissions = perms
         await session.commit()
 
         # Migrate existing users to groups if they're not already in any group

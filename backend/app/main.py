@@ -294,6 +294,70 @@ _notified_hms_errors: dict[int, set[str]] = {}
 _hms_last_seen: dict[int, float] = {}
 _HMS_CLEAR_GRACE_SECONDS = 30.0
 
+# Canonical map from HMS short code ("MMMM_CCCC") to a human-readable failure reason.
+# Populated incrementally — only codes we've confirmed map cleanly to a single root
+# cause are listed. An earlier approach used attr/code independently, but attr alone
+# caused user-cancellations to be archived as "Layer shift" failures.
+# We now match by full short code only — anything not in this map leaves
+# failure_reason=None rather than guessing.
+_HMS_FAILURE_REASONS: dict[str, str] = {
+    # Layer shift / step loss
+    "0300_4057": "Layer shift",
+    "0300_4068": "Layer shift",
+    "0300_800C": "Layer shift",
+    # Filament runout (printer-side & per-AMS-slot)
+    "0300_8004": "Filament runout",
+    "0700_8011": "Filament runout",
+    "0701_8011": "Filament runout",
+    "0702_8011": "Filament runout",
+    "0703_8011": "Filament runout",
+    "0704_8011": "Filament runout",
+    "0705_8011": "Filament runout",
+    "0706_8011": "Filament runout",
+    "0707_8011": "Filament runout",
+    "07FF_8011": "Filament runout",
+    # Clogged nozzle / extruder
+    "0300_4006": "Clogged nozzle",
+    "0300_8016": "Clogged nozzle",
+    "0300_801C": "Clogged nozzle",
+    "0700_8003": "Clogged nozzle",
+    "0700_8007": "Clogged nozzle",
+    "0700_8013": "Clogged nozzle",
+    "0701_8003": "Clogged nozzle",
+    "0701_8007": "Clogged nozzle",
+    "0701_8013": "Clogged nozzle",
+    "0702_8003": "Clogged nozzle",
+}
+
+
+def _hms_short_code(attr: int, code: int | str) -> str:
+    """Build the canonical "MMMM_CCCC" HMS short code from raw attr/code values."""
+    if isinstance(code, str):
+        code_int = int(code.replace("0x", ""), 16) if code else 0
+    else:
+        code_int = int(code or 0)
+    attr_int = int(attr or 0)
+    return f"{(attr_int >> 16) & 0xFFFF:04X}_{code_int & 0xFFFF:04X}"
+
+
+def derive_failure_reason(status: str, hms_errors: list[dict] | None) -> str | None:
+    """Derive a human-readable failure_reason for an archived print.
+
+    Returns "User cancelled" for cancelled/aborted prints; for failed prints,
+    returns the first matching reason from _HMS_FAILURE_REASONS, or None when
+    no HMS code matches (don't guess — null is honest).
+    """
+    if status in ("aborted", "cancelled"):
+        return "User cancelled"
+    if status != "failed":
+        return None
+    for err in hms_errors or []:
+        short_code = _hms_short_code(err.get("attr", 0), err.get("code", 0))
+        if short_code in _HMS_FAILURE_REASONS:
+            return _HMS_FAILURE_REASONS[short_code]
+    return None
+
+
 # Track timelapse file baselines at print start: {printer_id: set of video filenames}
 # Used for snapshot-diff detection at print completion
 _timelapse_baselines: dict[int, set[str]] = {}
@@ -312,6 +376,35 @@ _user_stopped_printers: set[int] = set()
 # the archive itself doesn't have created_by_id set (e.g. library-file-based prints).
 # {(printer_id, filename): created_by_id}
 _expected_print_creators: dict[tuple[int, str], int] = {}
+
+# Per-printer lock that serialises the spool-assignment side of on_ams_change
+# (auto-unlink stale + auto-assign new) when MQTT bursts deliver multiple AMS
+# updates for the same printer in quick succession (~30 ms apart, observed in
+# the wild on H2D + dual AMS).
+#
+# Without this serialisation, two concurrent on_ams_change callbacks each read
+# "no assignment for (printer, ams, tray)", each call auto_assign_spool, and
+# the second commit hits
+#   IntegrityError: duplicate key value violates unique constraint
+#                   "spool_assignment_printer_id_ams_id_tray_id_key"
+# SQLite's WAL serial-write semantics had been silently swallowing the race
+# until optional Postgres support landed (asyncpg allows true concurrent
+# transactions and surfaces the constraint violation).
+#
+# Scope is intentionally narrow: only the two DB-mutating blocks (unlink +
+# assign) are inside the lock. The Spoolman sync block further down stays
+# concurrent because it's network-bound and idempotent.
+_ams_assignment_locks: dict[int, asyncio.Lock] = {}
+
+
+def _get_ams_assignment_lock(printer_id: int) -> asyncio.Lock:
+    """Return the per-printer assignment lock, creating it on first use."""
+    lock = _ams_assignment_locks.get(printer_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _ams_assignment_locks[printer_id] = lock
+    return lock
+
 
 # TTL for expected-print entries: evict registrations older than this to prevent
 # unbounded growth when a print is registered but never starts (e.g. printer
@@ -427,6 +520,38 @@ def register_expected_print(
     logging.getLogger(__name__).info(
         f"Registered expected print: printer={printer_id}, file={filename}, archive={archive_id}, ams_mapping={ams_mapping}"
     )
+
+
+def _compute_run_filament_grams(
+    status: str,
+    archive_filament_used_grams: float | None,
+    progress: float | int | None,
+    usage_results: list[dict] | None,
+) -> float | None:
+    """Per-run filament for PrintLogEntry, partial- and tracker-aware (#1378, #1390).
+
+    Priority for every status:
+        1. Sum of tracked spool deltas in ``usage_results`` (AMS-measured
+           weight delta — same source that drives "Total Consumed" on the
+           Inventory page, so Stats and Inventory totals stay aligned).
+        2. For ``completed``: the slicer estimate (no tracker available, fall
+           back to the canonical "this print used X" value).
+        3. For partial statuses: ``estimate * progress%``.
+        4. ``None`` if nothing is known.
+    """
+    tracked_grams = sum(r.get("weight_used") or 0 for r in (usage_results or []))
+    if tracked_grams > 0:
+        return round(tracked_grams, 1)
+
+    if status == "completed":
+        return archive_filament_used_grams
+
+    if archive_filament_used_grams:
+        scale = max(0.0, min(((progress or 0) / 100.0), 1.0))
+        if scale > 0:
+            return round(archive_filament_used_grams * scale, 1)
+
+    return None
 
 
 def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | None:
@@ -3825,7 +3950,7 @@ RUNTIME_TRACKING_INTERVAL = 30  # Update every 30 seconds
 
 
 async def track_printer_runtime():
-    """Background task to track printer active runtime (RUNNING/PAUSE states)."""
+    """Background task to track printer active runtime (RUNNING state only)."""
     logger = logging.getLogger(__name__)
 
     # Wait for MQTT connections to establish on startup
@@ -3863,7 +3988,7 @@ async def track_printer_runtime():
                 new_runtime = runtime_secs
                 new_last_update = last_update
 
-                if state.state in ("RUNNING", "PAUSE"):
+                if state.state == "RUNNING":
                     if last_update:
                         lu = last_update if last_update.tzinfo else last_update.replace(tzinfo=timezone.utc)
                         elapsed = (now - lu).total_seconds()

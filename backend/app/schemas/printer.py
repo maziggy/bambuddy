@@ -1,11 +1,29 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PrinterBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     serial_number: str = Field(..., min_length=1, max_length=50)
+
+    @field_validator("serial_number")
+    @classmethod
+    def _normalize_serial_number(cls, v: str) -> str:
+        """Uppercase and trim the serial number.
+
+        Bambu serial numbers are uppercase alphanumeric, and the MQTT report
+        topic ``device/<serial>/report`` is case-sensitive. A serial entered
+        in the wrong case (or with stray whitespace) connects and subscribes
+        without error but never receives a message — the printer publishes to
+        the correctly-cased topic, so every status field stays unknown (#1465).
+        Normalising on input makes the subscribed topic always match.
+        """
+        normalized = v.strip().upper()
+        if not normalized:
+            raise ValueError("serial_number must not be blank")
+        return normalized
+
     ip_address: str = Field(
         ...,
         max_length=253,

@@ -1539,6 +1539,37 @@ async def run_migrations(conn):
     # file metadata so the FileManager displays the filename, not the title (#1489).
     await _migrate_drop_library_print_name(conn)
 
+    # Migration: update the auto_link CHECK constraint to allow Fall C (custom email claim).
+    await _migrate_update_auto_link_constraint(conn)
+
+    # Migration: Heal orphan auth-related rows left behind by user-delete
+    # on SQLite. user_oidc_links, user_totp, user_otp_codes and long_lived_tokens
+    # all declare ON DELETE CASCADE on user_id — SQLite ships with FK enforcement
+    # off, so rows pointing to a deleted user persisted — blocking SSO re-login,
+    # leaking MFA secrets, and leaving camera-stream tokens. See issue #1285.
+    # This migration is a no-op on PostgreSQL and idempotent on SQLite.
+    async with conn.begin_nested():
+        oidc_result = await conn.execute(
+            text("DELETE FROM user_oidc_links WHERE user_id NOT IN (SELECT id FROM users)")
+        )
+        totp_result = await conn.execute(text("DELETE FROM user_totp WHERE user_id NOT IN (SELECT id FROM users)"))
+        otp_result = await conn.execute(text("DELETE FROM user_otp_codes WHERE user_id NOT IN (SELECT id FROM users)"))
+        llt_result = await conn.execute(
+            text("DELETE FROM long_lived_tokens WHERE user_id NOT IN (SELECT id FROM users)")
+        )
+    oidc_n = oidc_result.rowcount or 0
+    totp_n = totp_result.rowcount or 0
+    otp_n = otp_result.rowcount or 0
+    llt_n = llt_result.rowcount or 0
+    if oidc_n or totp_n or otp_n or llt_n:
+        logger.info(
+            "Cleaned up orphan auth rows: %d OIDC links, %d TOTP, %d OTP codes, %d long-lived tokens",
+            oidc_n,
+            totp_n,
+            otp_n,
+            llt_n,
+        )
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),
@@ -1558,6 +1589,93 @@ async def run_migrations(conn):
                 )
         except (OperationalError, ProgrammingError):
             pass
+
+
+async def _migrate_update_auto_link_constraint(conn) -> None:
+    """Update the auto_link CHECK constraint to allow Fall C (custom email claim).
+
+    Old formula: auto_link = FALSE OR (require_ev = TRUE AND email_claim = 'email')
+    New formula: auto_link = FALSE OR email_claim != 'email' OR require_ev = TRUE
+
+    Only Fall B (email_claim='email' + require_ev=False) remains blocked.
+    Fall C (custom claim, e.g. Azure preferred_username/upn) is now allowed.
+
+    PostgreSQL: DROP CONSTRAINT IF EXISTS + ADD new formula via _safe_execute (idempotent).
+    SQLite: table recreation when old formula is detected in sqlite_master (idempotent).
+    """
+    from sqlalchemy import text
+
+    _NEW_FORMULA = "auto_link_existing_accounts = FALSE OR email_claim != 'email' OR require_email_verified = TRUE"
+    _CONSTRAINT_NAME = "ck_auto_link_requires_verified_email_claim"
+
+    if not is_sqlite():
+        await _safe_execute(conn, f"ALTER TABLE oidc_providers DROP CONSTRAINT IF EXISTS {_CONSTRAINT_NAME}")
+        await _safe_execute(
+            conn,
+            f"ALTER TABLE oidc_providers ADD CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})",
+        )
+    else:
+        row = (
+            await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='oidc_providers'"))
+        ).fetchone()
+        # Only recreate if the old (more restrictive) formula is still present.
+        # Fresh installs created with the new __table_args__ already have the correct formula.
+        # Installs without any constraint (pre-SEC-1 upgrades) are skipped — app-level guards suffice.
+        if row and "require_email_verified = TRUE AND email_claim = 'email'" in row[0]:
+            try:
+                async with conn.begin_nested():
+                    await conn.execute(text("DROP TABLE IF EXISTS oidc_providers_v2"))
+                    await conn.execute(
+                        text(
+                            "CREATE TABLE oidc_providers_v2 ("
+                            "id INTEGER NOT NULL, "
+                            "name VARCHAR(100) NOT NULL, "
+                            "issuer_url VARCHAR(500) NOT NULL, "
+                            "client_id VARCHAR(255) NOT NULL, "
+                            "client_secret VARCHAR(512) NOT NULL, "
+                            "scopes VARCHAR(500), "
+                            "is_enabled BOOLEAN, "
+                            "auto_create_users BOOLEAN, "
+                            "auto_link_existing_accounts BOOLEAN DEFAULT 0, "
+                            "email_claim VARCHAR(64) DEFAULT 'email', "
+                            "require_email_verified BOOLEAN DEFAULT 1, "
+                            "icon_url TEXT, "
+                            "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                            "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                            "PRIMARY KEY (id), "
+                            f"UNIQUE (name), "
+                            f"CONSTRAINT {_CONSTRAINT_NAME} CHECK ({_NEW_FORMULA})"
+                            ")"
+                        )
+                    )
+                    await conn.execute(
+                        text(
+                            "INSERT INTO oidc_providers_v2 "
+                            "(id, name, issuer_url, client_id, client_secret, scopes, is_enabled, "
+                            "auto_create_users, auto_link_existing_accounts, email_claim, "
+                            "require_email_verified, icon_url, created_at, updated_at) "
+                            "SELECT id, name, issuer_url, client_id, client_secret, scopes, is_enabled, "
+                            "auto_create_users, auto_link_existing_accounts, email_claim, "
+                            "require_email_verified, icon_url, created_at, updated_at "
+                            "FROM oidc_providers"
+                        )
+                    )
+                    original = (await conn.execute(text("SELECT count(*) FROM oidc_providers"))).scalar_one()
+                    copied = (await conn.execute(text("SELECT count(*) FROM oidc_providers_v2"))).scalar_one()
+                    if copied != original:
+                        raise RuntimeError(
+                            f"auto_link constraint migration: row count mismatch after copy "
+                            f"({original} in source, {copied} in copy)"
+                        )
+                    await conn.execute(text("DROP TABLE oidc_providers"))
+                    await conn.execute(text("ALTER TABLE oidc_providers_v2 RENAME TO oidc_providers"))
+            except Exception as exc:
+                logger.error(
+                    "auto_link constraint update (SQLite table recreation) FAILED: %s",
+                    exc,
+                    exc_info=True,
+                )
+                raise
 
 
 async def _migrate_drop_library_print_name(conn) -> None:

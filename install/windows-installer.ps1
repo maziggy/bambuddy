@@ -212,6 +212,7 @@ function Read-YesNo {
         [bool]$DefaultYes = $true
     )
 
+    # Keep installer prompts English-only until the installer has full locale support.
     if ($script:Yes -or $script:Silent) {
         return $DefaultYes
     }
@@ -777,9 +778,8 @@ try {
 
     Write-Log "Repository target: $bambuddyDir" "INFO" Cyan
 
-    Set-FolderPermissions -Path $installDir
-    Set-FolderPermissions -Path $dataDir
-    Set-FolderPermissions -Path $appLogDir
+    New-Item -Path $dataDir -ItemType Directory -Force | Out-Null
+    New-Item -Path $appLogDir -ItemType Directory -Force | Out-Null
 
     if (Test-Path $bambuddyDir) {
         $gitDir = Join-Path $bambuddyDir ".git"
@@ -809,6 +809,7 @@ try {
             $removeBroken = Read-YesNo -Question "Remove this directory and clone again? This deletes '$bambuddyDir'." -DefaultYes $false
 
             if ($removeBroken) {
+                Move-LegacyRuntimeData -BambuddyDir $bambuddyDir -DataDir $dataDir -LogDir $appLogDir
                 Write-Log "Removing existing target directory..." "INFO" Cyan
                 Remove-Item $bambuddyDir -Recurse -Force
             }
@@ -1062,6 +1063,11 @@ catch {
         Add-Content -Path $script:LogFile -Value "[ERROR] $($_.Exception.Message)" -Encoding UTF8
         Write-Host ""
         Write-Host "Installer log: $script:LogFile" -ForegroundColor Yellow
+    }
+
+    if ((Test-IsAdmin) -and (-not $script:Yes) -and (-not $script:Silent)) {
+        Write-Host ""
+        Read-Host "Press Enter to close"
     }
 
     exit 1

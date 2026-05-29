@@ -58,6 +58,7 @@ from backend.app.api.routes import (
     virtual_printers,
     webhook,
     websocket,
+    wled,
 )
 from backend.app.api.routes.maintenance import _get_printer_maintenance_internal, ensure_default_types
 from backend.app.api.routes.support import init_debug_logging
@@ -81,6 +82,7 @@ from backend.app.services.github_backup import github_backup_service
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.local_backup import local_backup_service
 from backend.app.services.mqtt_relay import mqtt_relay
+from backend.app.services.wled import wled_service
 from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
 from backend.app.services.notification_service import notification_service
 from backend.app.services.obico_detection import obico_detection_service
@@ -817,6 +819,27 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         printer_id,
         printer_state_to_dict(state, printer_id, printer_manager.get_model(printer_id)),
     )
+
+    # WLED status visualization — only fires on real state changes (dedup already passed)
+    try:
+        async with async_session() as _wled_db:
+            from sqlalchemy import select
+
+            from backend.app.models.printer import Printer
+
+            _result = await _wled_db.execute(select(Printer).where(Printer.id == printer_id))
+            _printer = _result.scalar_one_or_none()
+            if _printer and getattr(_printer, "wled_enabled", False) and getattr(_printer, "wled_host", None):
+                await wled_service.apply_state(
+                    printer_id=printer_id,
+                    host=_printer.wled_host,
+                    port=_printer.wled_port or 80,
+                    api_key=_printer.wled_api_key,
+                    state=state.state or "offline",
+                    db=_wled_db,
+                )
+    except Exception:
+        pass
 
 
 def _is_bambu_uuid(tray_uuid: str) -> bool:
@@ -4824,6 +4847,7 @@ app.include_router(projects.router, prefix=app_settings.api_prefix)
 app.include_router(library.router, prefix=app_settings.api_prefix)
 app.include_router(api_keys.router, prefix=app_settings.api_prefix)
 app.include_router(webhook.router, prefix=app_settings.api_prefix)
+app.include_router(wled.router, prefix=app_settings.api_prefix)
 app.include_router(ams_history.router, prefix=app_settings.api_prefix)
 app.include_router(enclosure.router, prefix=app_settings.api_prefix)
 app.include_router(enclosure_fan.router, prefix=app_settings.api_prefix)

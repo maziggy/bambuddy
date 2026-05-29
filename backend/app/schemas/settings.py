@@ -165,6 +165,13 @@ class AppSettings(BaseModel):
         default=False, description="Whether HA integration is fully managed by environment variables"
     )
 
+    # WLED LED strip integration
+    wled_enabled: bool = Field(default=False, description="Enable WLED integration for printer status visualization")
+    wled_state_map: str = Field(
+        default="",
+        description="JSON: per-state WLED color/effect mapping {state: {color, brightness, effect_id, preset_id}}",
+    )
+
     # File Manager / Library settings
     library_archive_mode: str = Field(
         default="ask",
@@ -382,6 +389,8 @@ class AppSettingsUpdate(BaseModel):
     ha_enabled: bool | None = None
     ha_url: str | None = None
     ha_token: str | None = None
+    wled_enabled: bool | None = None
+    wled_state_map: str | None = None
     library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
@@ -426,6 +435,19 @@ class AppSettingsUpdate(BaseModel):
     obico_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
     forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
+
+    @field_validator("wled_state_map")
+    @classmethod
+    def validate_wled_state_map(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError:
+            raise ValueError("wled_state_map must be valid JSON or empty")
+        if not isinstance(parsed, dict):
+            raise ValueError("wled_state_map must be a JSON object keyed by printer state")
+        return v
 
     @field_validator("gcode_snippets")
     @classmethod

@@ -55,12 +55,13 @@ import {
   DoorOpen,
   DoorClosed,
   MoveVertical,
+  Lightbulb,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, WledTestConnectionResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -5838,7 +5839,13 @@ function EditPrinterModal({
     ha_temp_entity: printer.ha_temp_entity || '',
     ha_humidity_entity: printer.ha_humidity_entity || '',
     ha_fan_entity: printer.ha_fan_entity || '',
+    wled_enabled: printer.wled_enabled ?? false,
+    wled_host: printer.wled_host ?? '',
+    wled_port: printer.wled_port ?? 80,
+    wled_api_key: printer.wled_api_key ?? '',
   });
+  const [wledTestResult, setWledTestResult] = useState<WledTestConnectionResult | null>(null);
+  const [wledTestLoading, setWledTestLoading] = useState(false);
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<PrinterCreate>) => api.updatePrinter(printer.id, data),
@@ -5876,6 +5883,11 @@ function EditPrinterModal({
     if (form.access_code) {
       data.access_code = form.access_code;
     }
+    // WLED fields
+    data.wled_enabled = form.wled_enabled;
+    data.wled_host = form.wled_host || null;
+    data.wled_port = form.wled_port || 80;
+    data.wled_api_key = form.wled_api_key || null;
     updateMutation.mutate(data);
   };
 
@@ -6055,6 +6067,127 @@ function EditPrinterModal({
                 </div>
               </div>
             )}
+
+            {/* WLED LED Strip */}
+            <div className="border-t border-bambu-dark-tertiary pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4 text-yellow-400" />
+                  <span className="text-sm font-medium text-white">{t('printers.wled.sectionTitle')}</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.wled_enabled}
+                    onChange={(e) => setForm({ ...form, wled_enabled: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500" />
+                </label>
+              </div>
+              <p className="text-xs text-bambu-gray">{t('printers.wled.sectionDescription')}</p>
+
+              {form.wled_enabled && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-[1fr_80px] gap-2">
+                    <div>
+                      <label className="block text-xs text-bambu-gray mb-1">{t('printers.wled.host')}</label>
+                      <input
+                        type="text"
+                        value={form.wled_host}
+                        onChange={(e) => { setForm({ ...form, wled_host: e.target.value }); setWledTestResult(null); }}
+                        placeholder={t('printers.wled.hostPlaceholder')}
+                        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-yellow-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-bambu-gray mb-1">{t('printers.wled.port')}</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={65535}
+                        value={form.wled_port}
+                        onChange={(e) => setForm({ ...form, wled_port: Number(e.target.value) })}
+                        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-yellow-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-bambu-gray mb-1">{t('printers.wled.apiKey')}</label>
+                    <input
+                      type="password"
+                      value={form.wled_api_key}
+                      onChange={(e) => setForm({ ...form, wled_api_key: e.target.value })}
+                      placeholder={t('printers.wled.apiKeyPlaceholder')}
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-yellow-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {form.wled_host && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={wledTestLoading}
+                          onClick={async () => {
+                            setWledTestLoading(true);
+                            setWledTestResult(null);
+                            try {
+                              const result = await api.testWledConnection(form.wled_host, form.wled_port, form.wled_api_key || null);
+                              setWledTestResult(result);
+                            } catch (e) {
+                              setWledTestResult({ success: false, device_name: null, version: null, led_count: null, error: e instanceof Error ? e.message : 'Unknown error' });
+                            } finally {
+                              setWledTestLoading(false);
+                            }
+                          }}
+                        >
+                          {wledTestLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                          {t('printers.wled.testConnection')}
+                        </Button>
+
+                        {wledTestResult?.success && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => api.triggerWledTestEffect(form.wled_host, form.wled_port, form.wled_api_key || null)}
+                          >
+                            <Lightbulb className="w-3.5 h-3.5" />
+                            {t('printers.wled.testEffect')}
+                          </Button>
+                        )}
+                      </div>
+
+                      {wledTestResult && (
+                        <div className={`flex items-center gap-1.5 text-xs ${wledTestResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                          {wledTestResult.success ? (
+                            <>
+                              <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                              <span>
+                                {t('printers.wled.deviceInfo', {
+                                  name: wledTestResult.device_name || 'WLED',
+                                  version: wledTestResult.version || '?',
+                                  leds: wledTestResult.led_count ?? '?',
+                                })}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                              <span>{wledTestResult.error}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="flex gap-3 pt-4">
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1">

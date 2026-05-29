@@ -1066,7 +1066,6 @@ async def run_migrations(conn):
             if row and "printer_id INTEGER NOT NULL" in (row[0] or ""):
                 cols_result = await conn.execute(text("PRAGMA table_info(print_queue)"))
                 col_names = {col[1] for col in cols_result.fetchall()}
-                cost_center_select = "cost_center_id" if "cost_center_id" in col_names else "NULL"
                 await conn.execute(
                     text("""
                     CREATE TABLE print_queue_new (
@@ -1089,17 +1088,26 @@ async def run_migrations(conn):
                     )
                 """)
                 )
-                await conn.execute(
-                    text(
-                        f"""
+                if "cost_center_id" in col_names:
+                    await conn.execute(
+                        text("""
                     INSERT INTO print_queue_new
-                    SELECT id, printer_id, archive_id, {cost_center_select}, project_id, position, scheduled_time,
+                    SELECT id, printer_id, archive_id, cost_center_id, project_id, position, scheduled_time,
                            manual_start, require_previous_success, auto_off_after, ams_mapping,
                            status, started_at, completed_at, error_message, created_at
                     FROM print_queue
-                """
+                """)
                     )
-                )
+                else:
+                    await conn.execute(
+                        text("""
+                    INSERT INTO print_queue_new
+                    SELECT id, printer_id, archive_id, NULL, project_id, position, scheduled_time,
+                           manual_start, require_previous_success, auto_off_after, ams_mapping,
+                           status, started_at, completed_at, error_message, created_at
+                    FROM print_queue
+                """)
+                    )
                 await conn.execute(text("DROP TABLE print_queue"))
                 await conn.execute(text("ALTER TABLE print_queue_new RENAME TO print_queue"))
         except (OperationalError, ProgrammingError):
@@ -1233,7 +1241,6 @@ async def run_migrations(conn):
             if row and "archive_id INTEGER NOT NULL" in (row[0] or ""):
                 cols_result = await conn.execute(text("PRAGMA table_info(print_queue)"))
                 col_names = {col[1] for col in cols_result.fetchall()}
-                cost_center_select = "cost_center_id" if "cost_center_id" in col_names else "NULL"
                 await conn.execute(
                     text("""
                     CREATE TABLE print_queue_new2 (
@@ -1264,19 +1271,30 @@ async def run_migrations(conn):
                     )
                 """)
                 )
-                await conn.execute(
-                    text(
-                        f"""
+                if "cost_center_id" in col_names:
+                    await conn.execute(
+                        text("""
                     INSERT INTO print_queue_new2
-                    SELECT id, printer_id, archive_id, NULL, {cost_center_select}, project_id, position, scheduled_time,
+                    SELECT id, printer_id, archive_id, NULL, cost_center_id, project_id, position, scheduled_time,
                            manual_start, require_previous_success, auto_off_after, ams_mapping, plate_id,
                            COALESCE(bed_levelling, 1), COALESCE(flow_cali, 0), COALESCE(vibration_cali, 1),
                            COALESCE(layer_inspect, 0), COALESCE(timelapse, 0), COALESCE(use_ams, 1),
                            status, started_at, completed_at, error_message, created_at
                     FROM print_queue
-                """
+                """)
                     )
-                )
+                else:
+                    await conn.execute(
+                        text("""
+                    INSERT INTO print_queue_new2
+                    SELECT id, printer_id, archive_id, NULL, NULL, project_id, position, scheduled_time,
+                           manual_start, require_previous_success, auto_off_after, ams_mapping, plate_id,
+                           COALESCE(bed_levelling, 1), COALESCE(flow_cali, 0), COALESCE(vibration_cali, 1),
+                           COALESCE(layer_inspect, 0), COALESCE(timelapse, 0), COALESCE(use_ams, 1),
+                           status, started_at, completed_at, error_message, created_at
+                    FROM print_queue
+                """)
+                    )
                 await conn.execute(text("DROP TABLE print_queue"))
                 await conn.execute(text("ALTER TABLE print_queue_new2 RENAME TO print_queue"))
         except (OperationalError, ProgrammingError):

@@ -241,8 +241,8 @@ class HomeAssistantService:
     async def list_entities(self, url: str, token: str, search: str | None = None) -> list[dict]:
         """List available entities from HA.
 
-        By default, returns switch/light/input_boolean domains.
-        When search is provided, searches ALL entities by entity_id or friendly_name.
+        Always restricted to switch/light/input_boolean/script domains.
+        When search is provided, further filters by entity_id or friendly_name match.
 
         Returns list of entity dicts with:
             - entity_id: str
@@ -269,13 +269,18 @@ class HomeAssistantService:
                     domain = entity_id.split(".")[0] if "." in entity_id else ""
                     friendly_name = entity.get("attributes", {}).get("friendly_name", entity_id)
 
-                    # If searching, match against entity_id or friendly_name
+                    # Always restrict to allowed domains — prevents non-saveable
+                    # entities (sensor.*, binary_sensor.*, media_player.*, …) from
+                    # appearing in the dropdown even when a search query is active.
+                    # Fixes: search was bypassing the domain filter so users could
+                    # pick an entity whose entity_id the schema would later reject.
+                    if domain not in default_domains:
+                        continue
+
+                    # When a search term is supplied, further narrow by entity_id
+                    # or friendly_name (domain filter already applied above).
                     if search_lower:
                         if search_lower not in entity_id.lower() and search_lower not in friendly_name.lower():
-                            continue
-                    else:
-                        # No search: filter to default domains only
-                        if domain not in default_domains:
                             continue
 
                     entities.append(

@@ -8,6 +8,7 @@ immediately upon connection, before any FTP commands are exchanged.
 """
 
 import asyncio
+import hmac
 import logging
 import os
 import random
@@ -23,6 +24,14 @@ logger = logging.getLogger(__name__)
 # address — breaking multi-VP setups with different bind IPs.
 # Requires CAP_NET_BIND_SERVICE or root.
 FTP_PORT = 990
+
+# Hard cap on a single upload. 4 GiB covers the largest realistic
+# multi-plate .gcode.3mf and rejects runaway / malicious clients before
+# they can exhaust the disk or OOM the host. STOR still buffers the
+# whole file in memory before write_bytes — peak RSS ~2x file size during
+# the b''.join — so the cap also caps that peak. If real users hit it
+# with a legitimate file, raise here.
+MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB
 
 
 class FTPSession:
@@ -162,7 +171,10 @@ class FTPSession:
     async def cmd_PASS(self, arg: str) -> None:
         """Handle PASS command."""
         if self.username and self.username.lower() == "bblp":
-            if arg == self.access_code:
+            # ``hmac.compare_digest`` is constant-time — keeps the auth check
+            # from leaking the access code via response timing under network
+            # jitter. LAN-only threat is marginal; this is the standard fix.
+            if hmac.compare_digest(arg, self.access_code):
                 self.authenticated = True
                 await self.send(230, "Login successful")
                 logger.info("%sFTP login from %s", self._log_prefix, self.remote_ip)
@@ -380,7 +392,19 @@ class FTPSession:
             await asyncio.sleep(0.1)
 
     async def cmd_STOR(self, arg: str) -> None:
-        """Handle STOR command - receive file upload."""
+        """Handle STOR command - receive file upload.
+
+        Streams each chunk directly to disk inside the receive loop instead
+        of buffering the whole file in a ``list[bytes]`` and joining at the
+        end. Wire protocol unchanged — same 150/226/426 sequence, same
+        single-write target path (no ``.part`` or atomic rename), no new
+        verbs, no concurrency guard. The visible behaviour difference is
+        that the destination file grows progressively during upload rather
+        than appearing all-at-once on completion; slicers don't LIST during
+        STOR, so this isn't observable. Peak RSS for a multi-GB upload
+        drops from ~2× file size to one chunk (64 KiB).
+        ``MAX_UPLOAD_BYTES`` cap kept — purely server-internal DoS guard.
+        """
         if not self.authenticated:
             await self.send(530, "Not logged in")
             return
@@ -410,22 +434,23 @@ class FTPSession:
             await self._close_data_connection()
             return
 
-        # Receive data
-        data_content: list[bytes] = []
+        # Receive + stream to disk
         total_received = 0
+        write_failed: Exception | None = None
         try:
-            while True:
-                chunk = await asyncio.wait_for(self._data_reader.read(65536), timeout=60)
-                if not chunk:
-                    break
-                data_content.append(chunk)
-                total_received += len(chunk)
-                logger.debug("FTP received chunk: %s bytes (total: %s)", len(chunk), total_received)
+            with file_path.open("wb") as f:
+                while True:
+                    chunk = await asyncio.wait_for(self._data_reader.read(65536), timeout=60)
+                    if not chunk:
+                        break
+                    total_received += len(chunk)
+                    if total_received > MAX_UPLOAD_BYTES:
+                        raise OSError(f"upload exceeded size cap ({total_received} > {MAX_UPLOAD_BYTES} bytes)")
+                    f.write(chunk)
+                    logger.debug("FTP received chunk: %s bytes (total: %s)", len(chunk), total_received)
         except TimeoutError:
             logger.error("FTP data transfer timeout after %s bytes for %s", total_received, filename)
-            await self.send(426, "Transfer timeout")
-            await self._close_data_connection()
-            return
+            write_failed = TimeoutError("Transfer timeout")
         except Exception as e:
             logger.error(
                 "FTP data transfer error after %s bytes for %s: %s(%s)",
@@ -434,32 +459,32 @@ class FTPSession:
                 type(e).__name__,
                 e,
             )
-            await self.send(426, f"Transfer failed: {e}")
-            await self._close_data_connection()
-            return
+            write_failed = e
 
         # Close data connection
         await self._close_data_connection()
 
-        # Write file
-        try:
-            total_size = sum(len(c) for c in data_content)
-            file_path.write_bytes(b"".join(data_content))
-            logger.info("FTP saved file: %s (%s bytes)", file_path, total_size)
-            await self.send(226, "Transfer complete")
+        if write_failed is not None:
+            # Drop the partial file so it doesn't masquerade as a complete
+            # upload — buffer-then-write never had a partial-file footprint.
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            await self.send(426, f"Transfer failed: {write_failed}")
+            return
 
-            # Notify callback
-            if self.on_file_received:
-                try:
-                    result = self.on_file_received(file_path, self.remote_ip)
-                    if asyncio.iscoroutine(result):
-                        await result
-                except Exception as e:
-                    logger.error("File received callback error: %s", e)
+        # Confirm + notify
+        logger.info("FTP saved file: %s (%s bytes)", file_path, total_received)
+        await self.send(226, "Transfer complete")
 
-        except Exception as e:
-            logger.error("Failed to save file %s: %s", file_path, e)
-            await self.send(550, "Failed to save file")
+        if self.on_file_received:
+            try:
+                result = self.on_file_received(file_path, self.remote_ip)
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as e:
+                logger.error("File received callback error: %s", e)
 
     async def cmd_SIZE(self, arg: str) -> None:
         """Handle SIZE command."""
@@ -514,7 +539,18 @@ class FTPSession:
         await self.send(257, f'"{arg}" directory created')
 
     async def cmd_LIST(self, arg: str) -> None:
-        """Handle LIST command - list directory contents."""
+        """Handle LIST command - list directory contents.
+
+        Intentionally answers 150 + 226 without opening the passive data
+        channel. Bambuddy is an upload-only VP — no slicer in capture logs
+        actually issues LIST during the project_file flow, so the
+        no-data-conn ack is what every observed slicer accepts. A previous
+        audit recommended opening + closing the data conn for protocol
+        purity; reverted because (a) the bug was theoretical, (b) slicer
+        compatibility matters more than RFC purity here, and (c) adding
+        NLST/MLSD alongside changes the "supported verbs" surface in a way
+        we cannot regression-test without every supported slicer build.
+        """
         if not self.authenticated:
             await self.send(530, "Not logged in")
             return
@@ -526,8 +562,14 @@ class FTPSession:
 class VirtualPrinterFTPServer:
     """Implicit FTPS server that accepts uploads from slicers."""
 
+    # Passive-mode data port range. Widened from 50000-50100 (101 ports) to
+    # 50000-51000 (1001 ports) so concurrent transfers across multiple VPs
+    # — particularly when a VP falls back to bind 0.0.0.0 (manager.py picks
+    # this when bind_ip is unset) — don't collide. With 101 ports and 10
+    # random pick attempts per session, birthday-style collisions hit
+    # under load; 1001 ports gives multi-VP setups headroom.
     PASSIVE_PORT_MIN = 50000
-    PASSIVE_PORT_MAX = 50100
+    PASSIVE_PORT_MAX = 51000
 
     def __init__(
         self,
@@ -562,6 +604,12 @@ class VirtualPrinterFTPServer:
         self.vp_name = vp_name
         self._server: asyncio.Server | None = None
         self._running = False
+        # Set after the socket is bound and the server is accepting connections,
+        # so VirtualPrinterInstance.start_server can wait for readiness before
+        # reporting is_running=True. Without this, a caller racing the start
+        # could probe the port and see "connection refused" while is_running
+        # already says yes.
+        self.ready = asyncio.Event()
         self._ssl_context: ssl.SSLContext | None = None
         self._active_sessions: list[asyncio.Task] = []
         # Override PASV response IP for Docker bridge mode / NAT environments
@@ -579,7 +627,14 @@ class VirtualPrinterFTPServer:
         cache_dir = self.upload_dir / "cache"
         cache_dir.mkdir(exist_ok=True)
 
-        # Create SSL context for implicit FTPS (TLS from byte 0)
+        # Create SSL context for implicit FTPS (TLS from byte 0).
+        # Pinned to TLS 1.2 only. Allowing 1.3 broke BambuStudio mid-upload
+        # in the field (session_reused=True on data channel via PSK + libcurl
+        # CURLE_PARTIAL_FILE / RST after ~80 KiB; "server did not report OK,
+        # got 426"). Real Bambu printers also serve their FTPS at 1.2 only,
+        # and the slicer expects to match that. A future slicer drop of 1.2
+        # is a problem to solve when it actually happens; until then 1.2 is
+        # mandatory for compat.
         self._ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self._ssl_context.load_cert_chain(str(self.cert_path), str(self.key_path))
         self._ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -599,6 +654,7 @@ class VirtualPrinterFTPServer:
                 ssl=self._ssl_context,  # This makes it implicit FTPS!
             )
             self._running = True
+            self.ready.set()
 
             logger.info("Implicit FTPS server started on port %s", self.port)
             logger.info(
@@ -657,14 +713,17 @@ class VirtualPrinterFTPServer:
         """Stop the FTPS server."""
         logger.info("Stopping FTP server")
         self._running = False
+        self.ready.clear()
 
-        # Cancel all active sessions first
-        for task in self._active_sessions[:]:  # Copy list to avoid modification during iteration
+        # Cancel all active sessions and AWAIT cancellation. Previously
+        # this slept 0.1 s and called it good — a session mid-write,
+        # mid-TLS handshake, or holding a 60 s data-read could easily
+        # outlive that and then ``_server.close()`` would run while the
+        # underlying sockets were still in use.
+        for task in self._active_sessions[:]:
             task.cancel()
-
-        # Wait briefly for sessions to clean up
         if self._active_sessions:
-            await asyncio.sleep(0.1)
+            await asyncio.gather(*self._active_sessions, return_exceptions=True)
 
         self._active_sessions.clear()
 

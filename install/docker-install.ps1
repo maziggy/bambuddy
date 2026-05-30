@@ -240,7 +240,7 @@ function Update-ComposeForDockerDesktop {
 
     [System.IO.File]::WriteAllText($path, $content)
     Warn 'Printer auto-discovery (SSDP) does NOT work on Docker Desktop. Add printers manually by IP.'
-    Warn 'Virtual Printer ports (322, 990, 2024-2026, 3000/3002, 6000, 8883, 50000-50100) stay commented out.'
+    Warn 'Virtual Printer ports (322, 990, 2024-2026, 3000/3002, 6000, 8883, 50000-51000) stay commented out.'
     Warn 'If you plan to use a Virtual Printer, edit docker-compose.yml and uncomment the relevant `- "PORT:PORT"` lines under `ports:`.'
 }
 

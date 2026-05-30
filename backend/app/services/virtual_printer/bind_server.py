@@ -64,6 +64,11 @@ class BindServer:
 
         self._servers: list[asyncio.Server] = []
         self._running = False
+        # Set after at least one bind port is listening — see ftp_server.py
+        # for rationale. Bind server is best-effort across BIND_PORTS, so
+        # "ready" means "at least one port bound", matching the existing
+        # serve_forever path.
+        self.ready = asyncio.Event()
 
     def _create_tls_context(self) -> ssl.SSLContext | None:
         """Create SSL context for the TLS bind port (3002)."""
@@ -122,6 +127,7 @@ class BindServer:
             if not self._servers:
                 logger.error("Bind server: could not bind to any port")
                 return
+            self.ready.set()
 
             # Serve all successfully bound ports
             await asyncio.gather(*(s.serve_forever() for s in self._servers))
@@ -137,6 +143,7 @@ class BindServer:
         """Stop the bind server."""
         logger.info("Stopping bind server")
         self._running = False
+        self.ready.clear()
 
         for server in self._servers:
             try:
@@ -176,7 +183,14 @@ class BindServer:
                 logger.warning("Bind server: unexpected command from %s: %s", client_id, request)
                 return
 
-            # Build response
+            # Build response. `sequence_id` is an INTEGER counter chosen by
+            # the printer side (not an echo of the slicer's string seq_id).
+            # The protocol docstring at the top of this file documents the
+            # asymmetry: slicer sends `"20000"` (string), printer replies
+            # with an int. The hardcoded 3021 mirrors real-firmware-captured
+            # value; an earlier audit suggesting we echo the slicer's seq_id
+            # was wrong and would have broken slicers that validate the
+            # type (int vs string).
             response = {
                 "login": {
                     "bind": "free",

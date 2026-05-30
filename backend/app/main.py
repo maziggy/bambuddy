@@ -5577,7 +5577,10 @@ async def auth_middleware(request, call_next):
         if pattern in path:
             return await call_next(request)
 
-    # Check if auth is enabled
+    # Check if auth is enabled. Fail CLOSED on any exception during the
+    # probe — GHSA-6mf4-q26m-47pv: the previous fail-open path here let
+    # an attacker who could force a DB exception (e.g. file-descriptor
+    # exhaustion via login flood) bypass auth on every protected endpoint.
     try:
         async with async_session() as db:
             from backend.app.core.auth import is_auth_enabled
@@ -5588,8 +5591,11 @@ async def auth_middleware(request, call_next):
             # Auth disabled, allow all requests
             return await call_next(request)
     except Exception:
-        # If we can't check auth status, allow request (fail open for DB issues)
-        return await call_next(request)
+        logging.getLogger(__name__).exception("auth_middleware: failing closed on auth-probe error from %s", path)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Authentication service temporarily unavailable"},
+        )
 
     # Auth is enabled - require valid token
     auth_header = request.headers.get("Authorization")

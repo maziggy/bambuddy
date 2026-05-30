@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 PORT_FTPS = 990  # implicit FTPS — slicer file upload
 PORT_MQTT = 8883  # MQTT over TLS — control + status
 PORT_BIND = 3002  # bind/detect (TLS) — slicer discovery handshake
+PORT_BIND_PLAIN = 3000  # bind/detect (plain) — legacy / some slicer models
 
 _PORT_PROBE_TIMEOUT = 2.0
 
@@ -134,14 +135,26 @@ async def run_vp_diagnostic(vp: VirtualPrinter, instance) -> VPDiagnosticResult:
         )
         checks.append(DiagnosticCheck(id="port_bind", status="skip", params={"port": PORT_BIND}))
     else:
-        ftp_ok, mqtt_ok, bind_ok = await asyncio.gather(
+        # The non-proxy bind server listens on BOTH 3000 (plain) and 3002
+        # (TLS) per bind_server.py BIND_PORTS — slicers pick either path.
+        # Probing only 3002 missed half-dead VPs where one listener failed
+        # to start and the other succeeded; report port_bind as pass only
+        # when both probes succeed.
+        ftp_ok, mqtt_ok, bind_tls_ok, bind_plain_ok = await asyncio.gather(
             _check_port(bind_ip, PORT_FTPS),
             _check_port(bind_ip, PORT_MQTT),
             _check_port(bind_ip, PORT_BIND),
+            _check_port(bind_ip, PORT_BIND_PLAIN),
         )
         checks.append(DiagnosticCheck(id="port_ftps", status="pass" if ftp_ok else "fail", params={"port": PORT_FTPS}))
         checks.append(DiagnosticCheck(id="port_mqtt", status="pass" if mqtt_ok else "fail", params={"port": PORT_MQTT}))
-        checks.append(DiagnosticCheck(id="port_bind", status="pass" if bind_ok else "fail", params={"port": PORT_BIND}))
+        checks.append(
+            DiagnosticCheck(
+                id="port_bind",
+                status="pass" if (bind_tls_ok and bind_plain_ok) else "fail",
+                params={"port": PORT_BIND, "port_plain": PORT_BIND_PLAIN},
+            )
+        )
 
     # --- TLS certificate ---
     # When running, the cert chain must exist on disk for the slicer's TLS

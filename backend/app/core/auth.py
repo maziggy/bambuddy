@@ -471,16 +471,27 @@ async def authenticate_user_by_email(db: AsyncSession, email: str, password: str
 
 
 async def is_auth_enabled(db: AsyncSession) -> bool:
-    """Check if authentication is enabled."""
-    try:
-        result = await db.execute(select(Settings).where(Settings.key == "auth_enabled"))
-        setting = result.scalar_one_or_none()
-        if setting is None:
-            return False
-        return setting.value.lower() == "true"
-    except Exception:
-        # If settings table doesn't exist or query fails, assume auth is disabled
+    """Check if authentication is enabled.
+
+    Fails CLOSED on database errors. A previous version of this function
+    caught every exception and returned False — silently treating an
+    unavailable database as "auth is disabled" and granting unauthenticated
+    access to every endpoint that called it (GHSA-6mf4-q26m-47pv, CVSS 9.8).
+    An attacker could trigger that fail-open by flooding /api/v1/auth/login
+    to exhaust the process's file-descriptor budget, then hit a protected
+    endpoint during the window where the next DB op raised.
+
+    Legitimate "auth was never configured" still returns False — the
+    settings row is simply absent, ``scalar_one_or_none`` returns None,
+    no exception. Any OTHER failure (connection error, fd exhaustion,
+    schema mismatch, …) propagates so the caller can deny the request
+    (503 / 500). Fail-closed is the only safe default for an auth probe.
+    """
+    result = await db.execute(select(Settings).where(Settings.key == "auth_enabled"))
+    setting = result.scalar_one_or_none()
+    if setting is None:
         return False
+    return setting.value.lower() == "true"
 
 
 async def _user_from_api_key(db: AsyncSession, api_key: APIKey) -> User | None:

@@ -72,9 +72,58 @@ class CertificateService:
             Tuple of (cert_path, key_path)
         """
         if self.cert_path.exists() and self.key_path.exists():
-            logger.debug("Using existing virtual printer certificates")
-            return self.cert_path, self.key_path
+            if self._cert_matches_current_ca():
+                logger.debug("Using existing virtual printer certificates")
+                return self.cert_path, self.key_path
+            logger.warning(
+                "Existing per-VP certificate's issuer doesn't match the current CA "
+                "(likely a CA rotation since the cert was signed). Regenerating "
+                "to keep the slicer's imported CA in sync with the served chain."
+            )
         return self.generate_certificates()
+
+    def _cert_matches_current_ca(self) -> bool:
+        """Check whether the on-disk per-VP cert was signed by the current CA.
+
+        Slicers that import the shared CA validate the per-VP cert against it.
+        If the CA has been rotated since the per-VP cert was signed, the chain
+        is broken even though both files exist on disk. ``ensure_certificates``
+        uses this to decide whether to regenerate.
+
+        Uses real signature verification — Bambuddy's auto-generated CAs all
+        share the same Subject DN ("Virtual Printer CA"), so a DN-only compare
+        would incorrectly return True even after rotation.
+        """
+        try:
+            if not self.ca_cert_path.exists():
+                # No CA yet — let generate_certificates create one and the
+                # matching per-VP chain.
+                return False
+            cert_pem = self.cert_path.read_bytes()
+            cert = x509.load_pem_x509_certificate(cert_pem)
+            ca_pem = self.ca_cert_path.read_bytes()
+            ca_cert = x509.load_pem_x509_certificate(ca_pem)
+            from cryptography.exceptions import InvalidSignature
+            from cryptography.hazmat.primitives.asymmetric import padding
+
+            try:
+                ca_cert.public_key().verify(
+                    cert.signature,
+                    cert.tbs_certificate_bytes,
+                    padding.PKCS1v15(),
+                    cert.signature_hash_algorithm,
+                )
+                return True
+            except InvalidSignature:
+                return False
+        except (OSError, ValueError) as e:
+            logger.debug("CA-match probe failed for %s: %s", self.cert_path, e)
+            return False
+        except Exception as e:
+            # Any unexpected exception during verification → treat as mismatch
+            # and regenerate. Safer than reusing a cert we can't validate.
+            logger.debug("CA-match verification failed for %s: %s", self.cert_path, e)
+            return False
 
     def _load_existing_ca(self) -> tuple[rsa.RSAPrivateKey, x509.Certificate] | None:
         """Try to load existing CA certificate and key.
@@ -123,8 +172,13 @@ class CertificateService:
         # Generate new CA
         ca_key, ca_cert = self._generate_ca_certificate()
 
-        # Save CA certificate and key
-        self.cert_dir.mkdir(parents=True, exist_ok=True)
+        # Save CA certificate and key. ``ca_key_path`` and ``ca_cert_path``
+        # resolve under ``shared_ca_dir`` (which may differ from cert_dir),
+        # so the parent we need to mkdir is the CA file's parent — not
+        # cert_dir. Previously this created the per-VP subdirectory while
+        # the writes targeted the parent CA dir, which works only because
+        # the manager pre-creates both — the method itself was latent.
+        self.ca_key_path.parent.mkdir(parents=True, exist_ok=True)
         self.ca_key_path.write_bytes(
             ca_key.private_bytes(
                 encoding=serialization.Encoding.PEM,

@@ -157,6 +157,9 @@ function Restart-AsAdmin {
     }
     catch {
         Write-Host "Elevation cancelled or failed. Please run PowerShell as Administrator." -ForegroundColor Red
+        if (-not $script:Silent) {
+            Read-Host "Press Enter to close"
+        }
         exit 1
     }
 }
@@ -607,6 +610,12 @@ function Register-BambuddyService {
         throw "NSSM failed to create service '$ServiceName'."
     }
 
+    $configuredArguments = & $nssmExe get $ServiceName AppParameters
+    Write-Log "NSSM AppParameters: $configuredArguments" "INFO" Cyan
+    if ($configuredArguments -ne $serviceArguments) {
+        Write-Log "NSSM AppParameters differ from expected value. Verify paths with spaces before starting the service." "WARN" Yellow
+    }
+
     & $nssmExe set $ServiceName DisplayName "Bambuddy"
     & $nssmExe set $ServiceName Description "Bambuddy backend service"
     & $nssmExe set $ServiceName AppDirectory $BambuddyDir
@@ -656,7 +665,9 @@ try {
         Restart-AsAdmin
     }
 
-    Show-BambuddyBanner
+    if (-not $script:Silent) {
+        Show-BambuddyBanner
+    }
 
     # ------------------------------------------------------------
     # Install directory
@@ -1060,7 +1071,7 @@ catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
 
     if ($script:LogFile) {
-        Add-Content -Path $script:LogFile -Value "[ERROR] $($_.Exception.Message)" -Encoding UTF8
+        Add-Content -Path $script:LogFile -Value "[ERROR] $($_.Exception.Message)`n$($_.ScriptStackTrace)" -Encoding UTF8
         Write-Host ""
         Write-Host "Installer log: $script:LogFile" -ForegroundColor Yellow
     }

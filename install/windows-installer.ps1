@@ -622,9 +622,8 @@ function Register-BambuddyService {
     & $nssmExe set $ServiceName AppRotateBytes 10485760
 
     # Restart behavior
-    & $nssmExe set $ServiceName AppExit Default Exit
+    & $nssmExe set $ServiceName AppExit Default Restart
     & $nssmExe set $ServiceName AppExit 0 Exit
-    & $nssmExe set $ServiceName AppExit 1 Restart
     & $nssmExe set $ServiceName AppRestartDelay 5000
 
     Write-Log "Service '$ServiceName' created successfully with NSSM." "INFO" Green
@@ -712,7 +711,8 @@ try {
 
     $exposeOnLan = -not $LocalOnly
     if (-not $LocalOnly) {
-        $exposeOnLan = Read-YesNo -Question "Expose Bambuddy on the LAN? Choose No to bind only to this computer. Exposing Bambuddy on the LAN binds to all network interfaces." -DefaultYes $true
+        $lanQuestion = "Expose Bambuddy on the LAN? Choose No to bind only to this computer. Exposing Bambuddy on the LAN binds to all network interfaces. Bambuddy is unauthenticated by default. After installation, open Settings -> Security and enable auth before relying on LAN access."
+        $exposeOnLan = Read-YesNo -Question $lanQuestion -DefaultYes $true
     }
 
     if ($exposeOnLan) {

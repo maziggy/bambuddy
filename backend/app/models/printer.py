@@ -28,6 +28,7 @@ class Printer(Base):
     external_camera_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     external_camera_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # mjpeg, rtsp, snapshot
     external_camera_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    external_camera_snapshot_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     camera_rotation: Mapped[int] = mapped_column(default=0)  # 0, 90, 180, 270 degrees
     # Home Assistant enclosure sensors (for printers without built-in enclosure temp/humidity)
     enclosed: Mapped[bool] = mapped_column(Boolean, default=False)

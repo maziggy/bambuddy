@@ -40,6 +40,7 @@ from backend.app.services.bambu_ftp import (
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.printer_manager import (
     get_derived_status_name,
+    is_bed_slinger,
     parse_plate_id,
     printer_manager,
     supports_chamber_temp,
@@ -2535,10 +2536,15 @@ async def bed_jog(
     if not client:
         raise HTTPException(400, "Printer not connected")
 
+    # A1/A1-Mini are bed-slingers: the toolhead moves, not the bed.  For these
+    # models the Z-axis direction is inverted so "move bed up" (decrease gap)
+    # maps to G1 Z+ instead of the usual G1 Z-.
+    gcode_distance = -distance if is_bed_slinger(printer.model) else distance
+
     lines = []
     if force:
         lines.append("M211 S0")
-    lines += ["G91", f"G1 Z{distance:.2f} F600", "G90"]
+    lines += ["G91", f"G1 Z{gcode_distance:.2f} F600", "G90"]
     if force:
         lines.append("M211 S1")
 

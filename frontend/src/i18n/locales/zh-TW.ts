@@ -3721,6 +3721,7 @@ export default {
     assignMismatchConfirm: '仍然分配',
     assignPartialMismatchMessage: '料盤材料 "{{spoolMaterial}}" 與 {{location}} 的 "{{trayMaterial}}" 相近但不完全一致。是否繼續？',
     assignProfileMismatchMessage: '料盤設定 "{{spoolProfile}}" 與 {{location}} 的料槽設定 "{{trayProfile}}" 不一致。是否繼續？',
+    assignReconfigureNote: 'AMS 槽位將重新設定為使用料盤的設定。',
     selectSpool: '選擇要分配到此槽位的耗材',
     assigned: '已分配',
     assigning: '分配中...',

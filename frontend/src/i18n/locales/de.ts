@@ -3900,6 +3900,7 @@ export default {
     assignMismatchConfirm: 'Trotzdem zuweisen',
     assignPartialMismatchMessage: 'Das Spulenmaterial "{{spoolMaterial}}" ist ähnlich, stimmt aber nicht genau mit "{{trayMaterial}}" in {{location}} überein. Möchten Sie fortfahren?',
     assignProfileMismatchMessage: 'Das Spulenprofil "{{spoolProfile}}" stimmt nicht mit dem Fachprofil "{{trayProfile}}" in {{location}} überein. Möchten Sie fortfahren?',
+    assignReconfigureNote: 'Der AMS-Slot wird mit dem Profil der Spule neu konfiguriert.',
     // Spoolman filament catalog picker
     spoolmanFilamentCatalog: 'Spoolman-Filamentkatalog',
     pickFromSpoolmanCatalog: 'Aus Spoolman-Katalog wählen…',

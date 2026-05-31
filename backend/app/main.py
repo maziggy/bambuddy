@@ -334,6 +334,14 @@ logging.info("Bambuddy starting - debug=%s, log_level=%s", app_settings.debug, l
 # Track active prints: {(printer_id, filename): archive_id}
 _active_prints: dict[tuple[int, str], int] = {}
 
+# Per-printer "connected" edge tracker. Used by `on_printer_status_change`
+# to fire `reconcile_stale_active_prints` exactly once per (re)connection
+# (#1542 follow-up — power-cycle ghost prints). The value is True after
+# the first connected status update for that connection; transitions back
+# to False whenever we observe `state.connected = False` so the next
+# reconnect re-arms reconciliation. Keyed by printer_id.
+_printer_reconciled_since_connect: dict[int, bool] = {}
+
 # Track expected prints from reprint/scheduled (skip auto-archiving for these)
 # {(printer_id, filename): archive_id}
 _expected_prints: dict[tuple[int, str], int] = {}
@@ -648,9 +656,24 @@ def _extract_filament_data_from_mqtt(data: dict, ams_mapping: list[int] | None =
     entries). When supplied, only the slots actually consumed by this
     print contribute. Without it the function falls back to every loaded
     AMS slot — less accurate but still useful.
+
+    Accepts both the raw inner payload (``{"ams": {"ams": [...]}, ...}``)
+    that the unit tests pass directly, AND the on_print_start callback
+    shape (``{"raw_data": {"ams": {"ams": [...]}, ...}, ...}``) the
+    bambu_mqtt service hands to main.py at runtime. The original
+    ``_extract_filament_data_from_mqtt(data)`` shipped in #1533 only
+    handled the inner shape and silently returned ``{}`` for every real
+    print start, leaving fallback archives' filament fields NULL — the
+    exact regression the fix was meant to close. Reported with a log
+    proving the AMS state was right there at
+    ``data["raw_data"]["ams"]["ams"][0]["tray"][0]`` (#1533 follow-up).
     """
     result: dict[str, str] = {}
-    ams_root = (data or {}).get("ams") or {}
+    # Look at the on_print_start wrapper first, then the inner shape.
+    raw_data = (data or {}).get("raw_data")
+    ams_root = (raw_data or {}).get("ams") if isinstance(raw_data, dict) else None
+    if not isinstance(ams_root, dict):
+        ams_root = (data or {}).get("ams") or {}
     ams_units = ams_root.get("ams") if isinstance(ams_root, dict) else None
     if not isinstance(ams_units, list) or not ams_units:
         return result
@@ -787,6 +810,26 @@ _nozzle_count_updated: set[int] = set()
 
 async def on_printer_status_change(printer_id: int, state: PrinterState):
     """Handle printer status changes - broadcast via WebSocket."""
+    # Connected-edge reconciliation (#1542 follow-up). When the printer
+    # transitions disconnected → connected — which covers both Bambuddy
+    # startup (no prior connection) and a mid-session MQTT reconnect — fire
+    # `reconcile_stale_active_prints` exactly once for this connection so
+    # any archive still in `status="printing"` that can't actually be
+    # running anymore (printer IDLE / different subtask / empty subtask)
+    # gets a synthesised PRINT COMPLETE. Without this, a print that
+    # finished during a disconnect window + a smart-plug power cycle
+    # leaves the .3mf on the SD card and the firmware ghost-replays it on
+    # next boot. Reconciliation runs concurrently — it must not block the
+    # WebSocket dedup / broadcast logic below, and the connected edge is
+    # marked True BEFORE the await so concurrent status updates inside
+    # the same connection don't re-trigger reconciliation.
+    if state.connected and not _printer_reconciled_since_connect.get(printer_id, False):
+        _printer_reconciled_since_connect[printer_id] = True
+        asyncio.create_task(reconcile_stale_active_prints(printer_id))
+    elif not state.connected and _printer_reconciled_since_connect.get(printer_id, False):
+        # Re-arm so the next reconnect triggers reconciliation again.
+        _printer_reconciled_since_connect[printer_id] = False
+
     # Only broadcast if something meaningful changed (reduce WebSocket spam)
     # Include rounded temperatures to detect meaningful temp changes (within 1 degree)
     temps = state.temperatures or {}
@@ -3171,6 +3214,136 @@ async def on_print_running_observed(printer_id: int, data: dict):
     await _capture_timelapse_baseline_at_start(printer, printer_id, logger)
 
 
+def _is_active_archive_stale(archive, state) -> tuple[bool, str]:
+    """Return ``(is_stale, reason)`` for an archive in ``status="printing"``
+    against the printer's current MQTT state.
+
+    Reconciliation triggers (#1542 follow-up — recovers from missed PRINT
+    COMPLETE events, typically a print finishing during an MQTT disconnect
+    window followed by a smart-plug power cycle):
+
+      1. Printer state is terminal (IDLE / FINISH / FAILED). The print is
+         provably not running anymore — only branch that should fire under
+         normal disconnect-then-reconnect timing.
+      2. Printer has a different ``subtask_id`` than the archive. Bambu
+         firmware mints a fresh ``subtask_id`` for each print, including the
+         ghost replay it runs after a power cycle from a leftover SD file —
+         so a mismatch unambiguously means the in-DB archive is no longer
+         the print on the printer.
+      3. Printer is running but ``subtask_name`` is empty. The printer
+         doesn't know what it's running; the archive's reference to it is
+         already broken.
+
+    Conservative on purpose: PAUSE / PREPARE / SLICING and any RUNNING state
+    with matching subtask_id+subtask_name is left alone. The cost of a false
+    positive is a single misreported "aborted" status that the next real
+    PRINT COMPLETE would have overwritten with the correct status anyway.
+    The cost of a false negative is the ghost-print loop in #1542.
+    """
+    current_state = (state.state or "").upper()
+    if current_state in ("IDLE", "FINISH", "FAILED"):
+        return True, f"printer state {current_state}"
+    # Below here the printer is in a running / pre-running state (RUNNING /
+    # PAUSE / PREPARE / SLICING / etc.) — decide based on subtask identity.
+    current_subtask_id = (state.subtask_id or "").strip()
+    if archive.subtask_id and current_subtask_id and archive.subtask_id != current_subtask_id:
+        return True, f"subtask_id changed ({archive.subtask_id!r} → {current_subtask_id!r})"
+    current_subtask_name = (state.subtask_name or "").strip()
+    if not current_subtask_name:
+        return True, "printer subtask_name empty"
+    return False, ""
+
+
+async def reconcile_stale_active_prints(printer_id: int) -> int:
+    """Synthesise ``on_print_complete`` for archives whose print can't be
+    running on the printer anymore.
+
+    Called once per MQTT (re)connection (from on_printer_status_change when
+    the connected edge flips False → True) and at Bambuddy startup (from
+    the FastAPI lifespan). Without this, a print that completes during a
+    disconnect window — followed by a smart-plug-driven power cycle — leaves
+    the ``.3mf`` on the SD card, the firmware auto-replays it on next boot,
+    and Bambuddy fires a fresh PRINT START for the ghost rather than the
+    SD cleanup that PRINT COMPLETE was supposed to run. Repeats every
+    power cycle until the operator notices (#1542 follow-up). Reconciliation
+    closes the loop by faking the missed PRINT COMPLETE — the existing
+    cleanup chain handles SD-file deletion, status updates, usage tracking,
+    and notifications.
+
+    Synthesised ``status="aborted"`` is the conservative label: we have no
+    proof the print finished successfully (and no progress evidence to
+    promote to ``"completed"``). The real PRINT COMPLETE callback, if it
+    fires later, overwrites the status with the correct value.
+
+    Returns the number of archives reconciled.
+    """
+    state = printer_manager.get_status(printer_id)
+    if not state:
+        return 0
+    # Don't reconcile while disconnected — we'd be making a decision against
+    # stale cached state. The connected → reconcile edge handles this.
+    if not state.connected:
+        return 0
+
+    from backend.app.models.archive import PrintArchive
+
+    reconciled = 0
+    async with async_session() as db:
+        result = await db.execute(
+            select(PrintArchive).where(
+                PrintArchive.printer_id == printer_id,
+                PrintArchive.status == "printing",
+            )
+        )
+        active = list(result.scalars().all())
+
+    if not active:
+        return 0
+
+    logger = logging.getLogger(__name__)
+    for archive in active:
+        is_stale, reason = _is_active_archive_stale(archive, state)
+        if not is_stale:
+            continue
+        logger.info(
+            "[RECONCILE] Printer %s: synthesising missed PRINT COMPLETE for archive %s (%s) — %s",
+            printer_id,
+            archive.id,
+            archive.filename,
+            reason,
+        )
+        # Synthesised payload: minimal fields the on_print_complete chain
+        # needs. `_reconciled` marker lets downstream code distinguish this
+        # from a real MQTT-driven completion if it ever needs to (e.g. for
+        # metrics / debug logging). raw_data is the live printer state so
+        # the usage tracker can compare end-of-print remain% against the
+        # captured start values.
+        try:
+            await on_print_complete(
+                printer_id,
+                {
+                    "status": "aborted",
+                    "filename": archive.filename,
+                    "subtask_name": archive.print_name or "",
+                    "subtask_id": archive.subtask_id or "",
+                    "raw_data": state.raw_data or {},
+                    "_reconciled": True,
+                },
+            )
+            reconciled += 1
+        except Exception as e:
+            # Catch-all: a reconciliation failure must not block the
+            # printer's normal status flow. The archive stays in
+            # ``status="printing"`` and the next reconnect retries.
+            logger.warning(
+                "[RECONCILE] on_print_complete synthesis failed for archive %s: %s",
+                archive.id,
+                e,
+            )
+
+    return reconciled
+
+
 async def on_print_complete(printer_id: int, data: dict):
     """Handle print completion - update the archive status."""
     import time
@@ -5552,7 +5725,10 @@ async def auth_middleware(request, call_next):
         if pattern in path:
             return await call_next(request)
 
-    # Check if auth is enabled
+    # Check if auth is enabled. Fail CLOSED on any exception during the
+    # probe — GHSA-6mf4-q26m-47pv: the previous fail-open path here let
+    # an attacker who could force a DB exception (e.g. file-descriptor
+    # exhaustion via login flood) bypass auth on every protected endpoint.
     try:
         async with async_session() as db:
             from backend.app.core.auth import is_auth_enabled
@@ -5563,8 +5739,11 @@ async def auth_middleware(request, call_next):
             # Auth disabled, allow all requests
             return await call_next(request)
     except Exception:
-        # If we can't check auth status, allow request (fail open for DB issues)
-        return await call_next(request)
+        logging.getLogger(__name__).exception("auth_middleware: failing closed on auth-probe error from %s", path)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Authentication service temporarily unavailable"},
+        )
 
     # Auth is enabled - require valid token
     auth_header = request.headers.get("Authorization")

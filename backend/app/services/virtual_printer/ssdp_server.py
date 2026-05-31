@@ -55,6 +55,9 @@ class VirtualPrinterSSDPServer:
         self.model = model
         self._bind_ip = bind_ip
         self._running = False
+        # Set after the primary multicast socket is bound — see ftp_server.py
+        # for rationale.
+        self.ready = asyncio.Event()
         self._socket: socket.socket | None = None
         self._extra_sockets: list[socket.socket] = []
         self._extra_interfaces = extra_interfaces or []
@@ -169,6 +172,7 @@ class VirtualPrinterSSDPServer:
             local_ip = self._get_local_ip()
             logger.info("SSDP server listening on port %s, advertising IP: %s", SSDP_PORT, local_ip)
             logger.info("Virtual printer: %s (%s) model=%s", self.name, self.serial, self.model)
+            self.ready.set()
 
             # Create extra sockets for additional interfaces (VPN, etc.)
             # If no explicit extra interfaces given and we're bound to a
@@ -249,6 +253,7 @@ class VirtualPrinterSSDPServer:
         """Stop the SSDP server."""
         logger.info("Stopping SSDP server")
         self._running = False
+        self.ready.clear()
         await self._cleanup()
 
     async def _cleanup(self) -> None:

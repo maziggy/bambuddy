@@ -47,6 +47,8 @@ VIRTUAL_PRINTER_MODELS = {
     "N1": "A1 Mini",  # A1 Mini
     # H2 Series
     "O1D": "H2D",  # H2D
+    "O1E": "H2D Pro",  # H2D Pro
+    "O2D": "H2D Pro",  # H2D Pro
     "O1C": "H2C",  # H2C
     "O1C2": "H2C",  # H2C (dual nozzle variant)
     "O1S": "H2S",  # H2S
@@ -77,6 +79,8 @@ MODEL_SERIAL_PREFIXES = {
     "N1": "03000A",  # A1 Mini
     # H2 Series
     "O1D": "09400A",  # H2D
+    "O1E": "09400A",  # H2D Pro (same prefix family as H2D)
+    "O2D": "09400A",  # H2D Pro
     "O1C": "09400A",  # H2C
     "O1C2": "09400A",  # H2C (dual nozzle variant)
     "O1S": "09400A",  # H2S
@@ -87,6 +91,14 @@ DISPLAY_NAME_TO_MODEL_CODE = {v: k for k, v in VIRTUAL_PRINTER_MODELS.items()}
 
 # Default model
 DEFAULT_VIRTUAL_PRINTER_MODEL = "BL-P001"  # X1C
+
+# Bound on per-instance ``_slicer_print_options`` cache size. The slicer's
+# project_file MQTT command stashes one dict per filename; the
+# corresponding ``_add_to_print_queue`` pop only fires when the file
+# upload completes. Failed / cancelled / non-3MF uploads orphan their
+# stash. The bound triggers FIFO eviction in ``on_print_command`` once
+# the dict fills, so a long-running VP can't leak unbounded state.
+_SLICER_OPTIONS_CACHE_LIMIT = 128
 
 
 def _get_serial_for_model(model: str, serial_suffix: str) -> str:
@@ -241,6 +253,12 @@ class VirtualPrinterInstance:
         # against the same field during the upload window.
         if self._mqtt and file_path.suffix.lower() == ".3mf":
             self._mqtt.set_gcode_state("FINISH", filename=file_path.name, prepare_percent="100")
+            # FINISH is the terminal state for the upload cycle per #1280
+            # (commit 0d6171dc). The Print-flow slicer's in-flight-job lock
+            # releases on FINISH; resetting to IDLE 2 s later would re-confuse
+            # the slicer that just unwedged. Earlier audit suggesting the
+            # IDLE reset was wrong — staying at FINISH is the designed
+            # behaviour. The next upload's PREPARE→FINISH cycle starts fresh.
 
     async def on_print_command(self, filename: str, data: dict) -> None:
         """Handle print command from MQTT.
@@ -257,6 +275,19 @@ class VirtualPrinterInstance:
         logger.info("[VP %s] Print command for: %s", self.name, filename)
         if self.mode != "print_queue":
             return
+        # Drop the oldest stash if the cache is growing — happens when the
+        # slicer sends project_file for a filename whose FTP upload was
+        # rejected / cancelled / non-3MF, so _add_to_print_queue's pop
+        # never fires. With no bound, a long-running VP accumulates one
+        # dict per such mismatch.
+        if len(self._slicer_print_options) >= _SLICER_OPTIONS_CACHE_LIMIT:
+            try:
+                stale_key = next(iter(self._slicer_print_options))
+                self._slicer_print_options.pop(stale_key, None)
+                self._slicer_print_options_events.pop(stale_key, None)
+                logger.debug("[VP %s] Evicted stale slicer options for %s", self.name, stale_key)
+            except StopIteration:
+                pass
         self._slicer_print_options[filename] = dict(data)
         event = self._slicer_print_options_events.get(filename)
         if event:
@@ -277,6 +308,7 @@ class VirtualPrinterInstance:
                 pass
             return
 
+        archived = False
         try:
             from backend.app.api.routes.settings import get_setting
             from backend.app.services.archive import ArchiveService
@@ -298,15 +330,29 @@ class VirtualPrinterInstance:
                 if archive:
                     logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
                     await self._broadcast_archive_created(archive)
-                    try:
-                        file_path.unlink()
-                    except OSError:
-                        pass
-                    self._pending_files.pop(file_path.name, None)
+                    archived = True
                 else:
                     logger.error("Failed to archive file: %s", file_path.name)
         except Exception as e:
             logger.error("Error archiving file: %s", e)
+        finally:
+            # Always release the in-flight marker and delete the temp file —
+            # previously the failure paths only logged and the next upload of
+            # the same name was silently rejected with "already uploading",
+            # the upload_dir filled up indefinitely, and the slicer received
+            # a clean 226 even though no archive existed (#audit-R2-1).
+            self._pending_files.pop(file_path.name, None)
+            if archived:
+                try:
+                    file_path.unlink()
+                except OSError:
+                    pass
+            else:
+                # Drop the failed temp file so it doesn't accumulate.
+                try:
+                    file_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     async def _queue_file(self, file_path: Path, source_ip: str) -> None:
         """Queue file for user review."""
@@ -354,9 +400,19 @@ class VirtualPrinterInstance:
                 db.add(pending)
                 await db.commit()
                 logger.info("[VP %s] Queued: %s - %s", self.name, pending.id, file_path.name)
-                self._pending_files.pop(file_path.name, None)
         except Exception as e:
             logger.error("Error queueing file: %s", e)
+            # Queue insert failed — drop the temp file so it doesn't
+            # accumulate. The file is unreachable without the DB row.
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        finally:
+            # Always release the in-flight marker so concurrent uploads
+            # with the same filename aren't spuriously rejected after
+            # a queue failure.
+            self._pending_files.pop(file_path.name, None)
 
     async def _add_to_print_queue(self, file_path: Path, source_ip: str) -> None:
         """Archive file and add to print queue, assigned to target printer or model."""
@@ -492,12 +548,33 @@ class VirtualPrinterInstance:
                             if overrides:
                                 filament_overrides_json = json.dumps(overrides)
 
+                    # Pick the next free position the same way the manual
+                    # /print-queue/ POST does — previously hardcoded to 1,
+                    # which created duplicate position=1 rows on every
+                    # VP upload and made queue execution order
+                    # non-deterministic for any non-empty queue.
+                    from sqlalchemy import func, select as _sql_select
+
+                    queue_scope = _sql_select(func.max(PrintQueueItem.position)).where(
+                        PrintQueueItem.status == "pending"
+                    )
+                    if self.target_printer_id is not None:
+                        queue_scope = queue_scope.where(PrintQueueItem.printer_id == self.target_printer_id)
+                    else:
+                        queue_scope = queue_scope.where(PrintQueueItem.printer_id.is_(None))
+                    try:
+                        max_pos_raw = (await db.execute(queue_scope)).scalar()
+                        max_pos = int(max_pos_raw) if max_pos_raw is not None else 0
+                    except (TypeError, ValueError):
+                        max_pos = 0
+                    next_position = max_pos + 1
+
                     queue_item = PrintQueueItem(
                         printer_id=self.target_printer_id,
                         target_model=target_model,
                         archive_id=archive.id,
                         plate_id=plate_id,
-                        position=1,
+                        position=next_position,
                         status="pending",
                         manual_start=not self.auto_dispatch,
                         required_filament_types=required_filament_types_json,
@@ -512,15 +589,20 @@ class VirtualPrinterInstance:
                     await db.commit()
                     logger.info("[VP %s] Added to queue: %s", self.name, queue_item.id)
                     await self._broadcast_archive_created(archive)
-                    try:
-                        file_path.unlink()
-                    except OSError:
-                        pass
-                    self._pending_files.pop(file_path.name, None)
                 else:
                     logger.error("Failed to archive file: %s", file_path.name)
         except Exception as e:
             logger.error("Error adding to print queue: %s", e)
+        finally:
+            # Always release the marker and clean the temp file. Without this
+            # the same-name STOR guard would block the next upload and the
+            # upload_dir would accumulate failed temp files forever
+            # (#audit-R2-1).
+            self._pending_files.pop(file_path.name, None)
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     async def _broadcast_archive_created(self, archive) -> None:
         """Notify connected clients that a new archive exists.
@@ -560,7 +642,12 @@ class VirtualPrinterInstance:
                         for meta in plate.findall("metadata"):
                             if meta.get("key") == "index" and meta.get("value"):
                                 return int(meta.get("value"))
-        except Exception:
+        except Exception as e:
+            # Malformed / missing slice_info.config — fall through to None.
+            # Logged at debug so a non-3MF or unconventional 3MF doesn't
+            # spam production logs; a debug trail exists for support
+            # bundles when wrong-plate dispatches are reported.
+            logger.debug("[VP] _extract_plate_id failed for %s: %s", file_path.name, e)
             return None
         return None
 
@@ -682,8 +769,11 @@ class VirtualPrinterInstance:
             )
         )
 
-        # SSDP server — advertise_addr is the Tailscale FQDN when available,
-        # otherwise the bind/remote IP (existing behaviour)
+        # SSDP server — advertise_addr is the remote_interface_ip (Tailscale
+        # IP, when chosen from the bind_ip dropdown) or the bind_ip. SSDP
+        # Location accepts IPs only; FQDNs go in through bind_ip selection
+        # at the printer-IP level and resolve before reaching the SSDP
+        # advertisement.
         self._ssdp = VirtualPrinterSSDPServer(
             name=self.name,
             serial=self.serial,
@@ -697,6 +787,32 @@ class VirtualPrinterInstance:
                 name=f"vp_{self.id}_ssdp",
             )
         )
+
+        # Wait briefly for every child service to actually finish binding its
+        # socket so ``is_running`` doesn't lie. Without this barrier a caller
+        # racing the start (e.g. the diagnostic route) would see is_running=True
+        # while ports were still in the gap between task creation and the
+        # ``asyncio.start_server`` returning. Bounded timeout — if a child
+        # hangs we log it and move on; the existing task tracking still
+        # catches the failure on the next iteration.
+        ready_targets = [
+            ("FTP", self._ftp.ready),
+            ("MQTT", self._mqtt.ready),
+            ("Bind", self._bind.ready),
+            ("SSDP", self._ssdp.ready),
+        ]
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*(e.wait() for _, e in ready_targets)),
+                timeout=5.0,
+            )
+        except TimeoutError:
+            not_ready = [name for name, e in ready_targets if not e.is_set()]
+            logger.warning(
+                "[VP %s] Sub-service(s) didn't bind within 5s: %s — continuing anyway",
+                self.name,
+                ", ".join(not_ready) or "(none)",
+            )
 
         logger.info("[VP %s] Server-mode services started on %s", self.name, bind_addr)
 
@@ -850,6 +966,13 @@ class VirtualPrinterManager:
         self._session_factory: Callable | None = None
         self._printer_manager: PrinterManager | None = None
         self._instances: dict[int, VirtualPrinterInstance] = {}
+        # Serialize sync_from_db so concurrent PUT /vp/{id} calls can't
+        # race the start/stop sequence and leave duplicate sub-services
+        # bound to the same port. The lock is fine-grained enough that
+        # a single VP update completes in well under a second; if the
+        # user holds the lock with a long-running start they intended
+        # to anyway.
+        self._sync_lock = asyncio.Lock()
 
         # Directories
         self._base_dir = app_settings.base_dir / "virtual_printer"
@@ -895,11 +1018,22 @@ class VirtualPrinterManager:
         return len(self._instances) > 0
 
     async def sync_from_db(self) -> None:
-        """Load all VPs from DB, reconcile running state."""
+        """Load all VPs from DB, reconcile running state.
+
+        Serialised by ``self._sync_lock`` — concurrent PUT /vp/{id} routes
+        all call into this method; without the lock the start / stop
+        sequence races and can leave duplicate sub-services bound to the
+        same port or orphan still-running tasks.
+        """
         if not self._session_factory:
             logger.warning("Cannot sync virtual printers: no session factory")
             return
 
+        async with self._sync_lock:
+            await self._sync_from_db_locked()
+
+    async def _sync_from_db_locked(self) -> None:
+        """Inner sync body — caller holds ``self._sync_lock``."""
         from sqlalchemy import select
 
         from backend.app.models.printer import Printer
@@ -935,6 +1069,22 @@ class VirtualPrinterManager:
             if not instance:
                 continue
 
+            # Proxy mode: detect target printer IP / serial changes from the
+            # DB lookup above. Without this branch a DHCP renewal that gives
+            # the target printer a new IP would leave the running proxy
+            # forwarding to the stale IP until the user manually toggles the
+            # VP. The same shape covers a target-side serial change.
+            proxy_target_changed = False
+            if vp.mode == "proxy":
+                fresh = proxy_ips.get(vp.id)
+                if fresh is not None:
+                    fresh_ip, fresh_serial = fresh
+                    if (
+                        getattr(instance, "target_printer_ip", None) != fresh_ip
+                        or getattr(instance, "target_printer_serial", None) != fresh_serial
+                    ):
+                        proxy_target_changed = True
+
             changed = (
                 instance.mode != vp.mode
                 or instance.model != (vp.model or DEFAULT_VIRTUAL_PRINTER_MODEL)
@@ -943,6 +1093,11 @@ class VirtualPrinterManager:
                 or instance.remote_interface_ip != (vp.remote_interface_ip or "")
                 or instance.target_printer_id != vp.target_printer_id
                 or instance.auto_dispatch != vp.auto_dispatch
+                # Queue-mode behaviour toggle — without it the running
+                # instance silently keeps the old value until process
+                # restart (#1552 follow-up family).
+                or instance.queue_force_color_match != vp.queue_force_color_match
+                or proxy_target_changed
             )
 
             if changed:

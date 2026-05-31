@@ -3890,6 +3890,7 @@ export default {
     assignMismatchConfirm: 'Assigner quand même',
     assignPartialMismatchMessage: 'Le matériau de la bobine "{{spoolMaterial}}" est similaire, mais ne correspond pas exactement à "{{trayMaterial}}" dans {{location}}. Voulez-vous continuer ?',
     assignProfileMismatchMessage: 'Le profil de la bobine "{{spoolProfile}}" ne correspond pas au profil du plateau "{{trayProfile}}" dans {{location}}. Voulez-vous continuer ?',
+    assignReconfigureNote: 'Le slot AMS sera reconfiguré pour utiliser le profil de la bobine.',
     // Spoolman filament catalog picker
     spoolmanFilamentCatalog: 'Catalogue de filaments Spoolman',
     pickFromSpoolmanCatalog: 'Choisir dans le catalogue Spoolman…',

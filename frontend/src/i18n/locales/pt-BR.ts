@@ -3889,6 +3889,7 @@ export default {
     assignMismatchConfirm: 'Atribuir mesmo assim',
     assignPartialMismatchMessage: 'O material do carretel "{{spoolMaterial}}" é semelhante, mas não corresponde exatamente a "{{trayMaterial}}" em {{location}}. Deseja prosseguir?',
     assignProfileMismatchMessage: 'O perfil do carretel "{{spoolProfile}}" não corresponde ao perfil da bandeja "{{trayProfile}}" em {{location}}. Deseja prosseguir?',
+    assignReconfigureNote: 'O slot do AMS será reconfigurado para usar o perfil do carretel.',
     // Spoolman filament catalog picker
     spoolmanFilamentCatalog: 'Catálogo de filamentos Spoolman',
     pickFromSpoolmanCatalog: 'Escolher do catálogo Spoolman…',

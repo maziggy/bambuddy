@@ -774,6 +774,48 @@ class TestStatusReportCachedAsBase:
         assert payload["print"]["gcode_state"] == "PREPARE"
         assert payload["print"]["gcode_file"] == "foo.3mf"
 
+    @pytest.mark.asyncio
+    async def test_live_progress_fields_zeroed_in_cached_branch(self):
+        """#1558: when the real target printer is mid-print, the cached
+        push_status carries live values for mc_percent / stg_cur / layer_num /
+        etc. BambuStudio's Send pre-flight reads any of these as "VP busy"
+        even when gcode_state above is forced to IDLE — blocking Send while
+        the target prints. The cached branch must override these to the same
+        idle values the synthetic stub uses.
+        """
+        server = _make_server()
+        bridge = MagicMock()
+        # Real printer mid-print state: gcode_state may be RUNNING upstream,
+        # but the VP's own _gcode_state is IDLE (Send is requesting a
+        # new upload, the VP isn't running anything).
+        bridge.get_latest_print_state.return_value = {
+            "command": "push_status",
+            "msg": 0,
+            "gcode_state": "RUNNING",
+            "mc_print_stage": "2",
+            "mc_percent": 47,
+            "mc_remaining_time": 3600,
+            "stg": [1, 2, 3],
+            "stg_cur": 14,
+            "layer_num": 120,
+            "total_layer_num": 250,
+            "print_error": 0,
+        }
+        server.set_bridge(bridge)
+        published = self._capture_published(server)
+
+        await server._send_status_report(MagicMock())
+        _serial, payload = published[0]
+        # Every live-progress field must reflect "idle / VP isn't busy".
+        assert payload["print"]["mc_print_stage"] == ""
+        assert payload["print"]["mc_percent"] == 0
+        assert payload["print"]["mc_remaining_time"] == 0
+        assert payload["print"]["stg"] == []
+        assert payload["print"]["stg_cur"] == 0
+        assert payload["print"]["layer_num"] == 0
+        assert payload["print"]["total_layer_num"] == 0
+        assert payload["print"]["print_error"] == 0
+
 
 # ---------------------------------------------------------------------------
 # Wire format

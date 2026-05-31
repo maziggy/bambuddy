@@ -3721,6 +3721,7 @@ export default {
     assignMismatchConfirm: '仍然分配',
     assignPartialMismatchMessage: '线轴材料 "{{spoolMaterial}}" 与 {{location}} 的 "{{trayMaterial}}" 相近但不完全一致。是否继续？',
     assignProfileMismatchMessage: '线轴配置 "{{spoolProfile}}" 与 {{location}} 的料槽配置 "{{trayProfile}}" 不一致。是否继续？',
+    assignReconfigureNote: 'AMS 槽位将重新配置为使用线轴的配置。',
     selectSpool: '选择要分配到此槽位的耗材',
     assigned: '已分配',
     assigning: '分配中...',

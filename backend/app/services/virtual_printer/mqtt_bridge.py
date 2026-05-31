@@ -65,6 +65,20 @@ _SLICER_VISIBLE_STICKY_KEYS: tuple[str, ...] = (
     "net",
     "ipcam",
     "lights_report",
+    # Pre-flight / Prepare-tab fields that BambuStudio reads off cached
+    # push_status. Bambu firmware emits them in full pushall but typically
+    # OMITS them from 1 Hz incremental updates, so without sticky-preservation
+    # the cache drops them after the very next tick and the slicer's
+    # "block Send while busy / unknown firmware" branch kicks in. Same shape
+    # as #1228 (storage indicators) and #1558 (live-progress fields) —
+    # cached-branch field-shape parity, not a new mechanism.
+    "upgrade_state",  # Send pre-flight reads dis_state / force_upgrade
+    "xcam",  # Prepare-tab reads spaghetti / first-layer / halt sensitivity
+    "hw_switch_state",  # Hardware switch state (Prepare tab)
+    "nozzle_diameter",
+    "nozzle_type",
+    "online",  # Module online map (ahb / rfid / version)
+    "ams_status",  # AMS overall status; can be ams_status-only incremental
 )
 
 
@@ -241,6 +255,11 @@ class MQTTBridge:
         BambuMQTTClient is destroyed and recreated on PrinterManager.connect_printer
         (e.g. printer config update). Without periodic refresh the bridge would lose
         fan-out after such a churn until the VP itself restarts.
+
+        On crash exit, the handler must be unbound — otherwise the registered
+        ``_on_printer_raw`` keeps firing on every real-printer message even
+        though the bridge is functionally dead (memory leak + behaviour leak
+        across VP restart).
         """
         try:
             while not self._stopping:
@@ -250,6 +269,9 @@ class MQTTBridge:
             raise
         except Exception:
             logger.exception("[%s] MQTT bridge refresh loop crashed", self.vp_name)
+            # Crash exit — unbind so the orphaned handler stops firing.
+            # ``stop()`` won't be invoked because the task completes done-not-cancelled.
+            self._unbind_client()
 
     def _resolve_client(self) -> None:
         """Look up the current client for target_printer_id and rebind if it changed."""
@@ -402,7 +424,11 @@ class MQTTBridge:
                 for sticky_key in _SLICER_VISIBLE_STICKY_KEYS:
                     if sticky_key not in new_state:
                         if sticky_key in prev:
-                            new_state[sticky_key] = prev[sticky_key]
+                            # Defensive deep copy — without this the carried-over
+                            # nested dicts/lists are shared between new_state and
+                            # the previous cache, so any in-place mutation later
+                            # (current or future code paths) would corrupt both.
+                            new_state[sticky_key] = copy.deepcopy(prev[sticky_key])
                         continue
                     # Key IS in new_state — but firmware sends partial blobs
                     # (status-only / tray-targeted) under the same key on

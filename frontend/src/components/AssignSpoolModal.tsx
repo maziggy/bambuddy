@@ -40,8 +40,16 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   const [searchFilter, setSearchFilter] = useState('');
   const [pendingAssignId, setPendingAssignId] = useState<number | null>(null);
   const [showMismatchConfirm, setShowMismatchConfirm] = useState(false);
+  // Profile-only mismatch no longer triggers the popup — the backend's
+  // `apply_spool_to_slot_via_mqtt` pushes the spool's slicer profile to the
+  // AMS slot on every assign anyway, so warning the user about a profile
+  // delta then "fixing" it during the same action was friction without
+  // benefit (#1552). Material mismatch still warns because the firmware can
+  // refuse a print when type doesn't match; combined material+profile
+  // mismatches keep the profile detail in the same popup as the material
+  // warning.
   const [mismatchDetails, setMismatchDetails] = useState<{
-    type: 'material' | 'partial' | 'profile' | 'material_profile' | 'partial_profile';
+    type: 'material' | 'partial' | 'material_profile' | 'partial_profile';
     spoolMaterial: string;
     trayMaterial: string;
     spoolProfile?: string;
@@ -291,17 +299,18 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       const trayProfile = trayInfo.profile || trayInfo.type;
       const profileMatches = checkProfileMatch(spoolProfile, trayProfile);
 
-      // Always evaluate both checks; if both fail, show a combined warning.
-      if (materialMatchResult !== 'exact' || !profileMatches) {
-        let mismatchType: 'material' | 'partial' | 'profile' | 'material_profile' | 'partial_profile' = 'profile';
-
+      // Only material-bearing mismatches warn — profile-only deltas are
+      // silently resolved by the backend's AMS reconfigure on every assign
+      // (#1552).
+      if (materialMatchResult !== 'exact') {
+        let mismatchType: 'material' | 'partial' | 'material_profile' | 'partial_profile';
         if (materialMatchResult === 'none' && !profileMatches) {
           mismatchType = 'material_profile';
         } else if (materialMatchResult === 'partial' && !profileMatches) {
           mismatchType = 'partial_profile';
         } else if (materialMatchResult === 'none') {
           mismatchType = 'material';
-        } else if (materialMatchResult === 'partial') {
+        } else {
           mismatchType = 'partial';
         }
 
@@ -584,13 +593,13 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
             trayProfile: mismatchDetails.trayProfile || t('common.unknown'),
             location: trayInfo.location,
           })}`;
-        } else if (mismatchDetails.type === 'profile') {
-          message = t('inventory.assignProfileMismatchMessage', {
-            spoolProfile: mismatchDetails.spoolProfile || t('common.unknown'),
-            trayProfile: mismatchDetails.trayProfile || t('common.unknown'),
-            location: trayInfo.location,
-          });
         }
+
+        // Always tell the user the AMS slot is going to be reconfigured —
+        // the existing wording made "Assign Anyway" sound like the popup was
+        // a no-op confirmation, when the backend in fact pushes the spool's
+        // profile to the slot on every assign (#1552).
+        message = `${message}\n\n${t('inventory.assignReconfigureNote')}`;
 
         return (
           <ConfirmModal

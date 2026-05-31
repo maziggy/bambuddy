@@ -763,7 +763,9 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
         {/* File type badge */}
         <div className={`absolute top-2 right-2 text-xs px-1.5 py-0.5 rounded font-medium ${
           file.file_type === '3mf' ? 'bg-bambu-green/90 text-white'
-          : file.file_type === 'gcode' ? 'bg-blue-500/90 text-white'
+          // Sliced output — share the gcode blue so users see at a glance
+          // that the file is already sliced and ready to print (#1543).
+          : file.file_type === 'gcode' || file.file_type === 'gcode.3mf' ? 'bg-blue-500/90 text-white'
           : file.file_type === 'stl' ? 'bg-purple-500/90 text-white'
           : 'bg-bambu-gray/90 text-white'
         }`}>
@@ -855,7 +857,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('slice.action')}
                 </button>
               )}
-              {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
+              {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl' || file.file_type === 'gcode.3mf') && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
                     hasPermission('library:read') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'

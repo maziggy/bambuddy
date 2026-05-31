@@ -3900,6 +3900,7 @@ export default {
     assignMismatchConfirm: '強制的に割り当て',
     assignPartialMismatchMessage: 'スプールの材料「{{spoolMaterial}}」は「{{trayMaterial}}」に似ていますが、{{location}} と完全には一致しません。続行しますか？',
     assignProfileMismatchMessage: 'スプールのプロファイル「{{spoolProfile}}」は {{location}} のトレイプロファイル「{{trayProfile}}」と一致しません。続行しますか？',
+    assignReconfigureNote: 'AMSスロットはスプールのプロファイルで再構成されます。',
     // Spoolman filament catalog picker
     spoolmanFilamentCatalog: 'Spoolmanフィラメントカタログ',
     pickFromSpoolmanCatalog: 'Spoolmanカタログから選択…',

@@ -3908,6 +3908,7 @@ export default {
     assignMismatchConfirm: 'Asignar de todos modos',
     assignPartialMismatchMessage: 'El material de la bobina "{{spoolMaterial}}" es similar pero no coincide exactamente con "{{trayMaterial}}" en {{location}}. ¿Desea continuar?',
     assignProfileMismatchMessage: 'El perfil de la bobina "{{spoolProfile}}" no coincide con el perfil de la bandeja "{{trayProfile}}" en {{location}}. ¿Desea continuar?',
+    assignReconfigureNote: 'La ranura del AMS se reconfigurará para usar el perfil de la bobina.',
     // Spoolman filament catalog picker
     spoolmanFilamentCatalog: 'Catálogo de filamentos de Spoolman',
     pickFromSpoolmanCatalog: 'Elegir del catálogo de Spoolman…',

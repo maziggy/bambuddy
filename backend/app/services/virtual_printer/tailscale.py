@@ -134,13 +134,18 @@ class TailscaleService:
 
         try:
             returncode, stdout, stderr = await self._run_tailscale("status", "--json", timeout=5.0)
-        except OSError as e:
+        except (OSError, asyncio.TimeoutError) as e:
+            # asyncio.TimeoutError covers the case where ``_run_tailscale``
+            # killed a stuck subprocess and re-raised. Without this branch
+            # the timeout escaped into the FastAPI route handler and could
+            # crash the VP management UI for users with a lagging
+            # tailscaled daemon.
             return TailscaleStatus(
                 available=False,
                 hostname="",
                 tailnet_name="",
                 fqdn="",
-                error=str(e),
+                error=str(e) or "tailscale status timed out",
             )
 
         if returncode is None or returncode != 0:

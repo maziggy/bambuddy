@@ -1,0 +1,200 @@
+2026-05-30 18:08:00,432 INFO [backend.app.api.routes.support] [8107a33f] Log level changed to INFO
+2026-05-30 18:08:00,432 INFO [backend.app.api.routes.bug_report] [8107a33f] Bug report: restored normal logging
+2026-05-30 18:08:00,432 INFO [uvicorn.access] [-] [IP]:52925 - "POST /api/v1/bug-report/stop-logging?was_debug=false HTTP/1.1" 200
+2026-05-30 18:08:01,990 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Normal disconnection, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-05-30 18:08:06,285 INFO [uvicorn.access] [-] [IP]:52925 - "POST /api/v1/bug-report/submit HTTP/1.1" 200
+2026-05-30 18:09:03,931 INFO [backend.app.api.routes.camera] [b8dd8f1e] Using chamber image protocol for P1S
+2026-05-30 18:09:03,931 INFO [backend.app.api.routes.camera] [b8dd8f1e] Camera viewer attached to printer-1 (subscribers=1)
+2026-05-30 18:09:03,931 INFO [backend.app.api.routes.camera] [b8dd8f1e] Starting chamber image stream for [IP] (stream_id=1-fanout, model=P1S)
+2026-05-30 18:09:03,986 INFO [backend.app.api.routes.cloud] [918417af] get_filament_info called with 3 IDs: ['GFL99', 'GFG99', 'GFU99']
+2026-05-30 18:09:03,993 INFO [uvicorn.access] [-] [IP]:57378 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-30 18:09:04,697 INFO [backend.app.services.camera] [b8dd8f1e] Chamber image: connected to [IP]:6000
+2026-05-30 18:09:12,705 INFO [backend.app.api.routes.camera] [b8dd8f1e] Camera viewer detached from printer-1 (subscribers=0)
+2026-05-30 18:09:12,741 INFO [backend.app.api.routes.camera] [b8dd8f1e] Chamber image stream cancelled (stream_id=1-fanout)
+2026-05-30 18:09:12,759 INFO [backend.app.api.routes.camera] [b8dd8f1e] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-05-30 18:09:12,759 INFO [backend.app.api.routes.camera] [a1153ef1] Shut down camera fan-out broadcaster for printer 1
+2026-05-30 18:09:12,759 INFO [backend.app.api.routes.camera] [a1153ef1] Stopped 0 camera stream(s) for printer 1
+2026-05-30 18:09:12,759 INFO [uvicorn.access] [-] [IP]:53906 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-05-30 18:09:23,591 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 18:09:24,647 INFO [backend.app.api.routes.camera] [79222466] Using chamber image protocol for P1S
+2026-05-30 18:09:24,647 INFO [backend.app.api.routes.camera] [79222466] Camera viewer attached to printer-1 (subscribers=1)
+2026-05-30 18:09:24,648 INFO [backend.app.api.routes.camera] [79222466] Starting chamber image stream for [IP] (stream_id=1-fanout, model=P1S)
+2026-05-30 18:09:27,042 INFO [backend.app.services.camera] [79222466] Chamber image: connected to [IP]:6000
+2026-05-30 18:09:37,346 INFO [uvicorn.access] [-] [IP]:59988 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-05-30 18:09:38,380 INFO [uvicorn.access] [-] [IP]:59988 - "PATCH /api/v1/printers/1 HTTP/1.1" 200
+2026-05-30 18:09:39,273 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] RUNNING observed without PRINT START (restart-recovery) - file: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, subtask: Universal_Clamp_Holder_for_PCB_Circuit_Boards
+2026-05-30 18:09:39,274 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-05-30 18:09:39,283 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 89778 bytes
+2026-05-30 18:09:39,285 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.07.00.00
+2026-05-30 18:09:40,067 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 18:09:40,708 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 75 video files for printer 1
+2026-05-30 18:09:44,541 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=3)
+2026-05-30 18:09:44,559 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-05-30 18:09:46,739 INFO [backend.app.services.virtual_printer.mqtt_bridge] [-] [[PRINTER] Bamb] MQTT bridge unbound from printer 1
+2026-05-30 18:09:46,740 INFO [backend.app.services.virtual_printer.mqtt_bridge] [-] [[PRINTER] Bamb] MQTT bridge bound to printer 1 (serial=[SERIAL])
+2026-05-30 18:09:52,195 INFO [backend.app.api.routes.camera] [79222466] Camera viewer detached from printer-1 (subscribers=0)
+2026-05-30 18:09:52,205 INFO [backend.app.api.routes.camera] [79222466] Chamber image stream cancelled (stream_id=1-fanout)
+2026-05-30 18:09:52,209 INFO [backend.app.api.routes.camera] [79222466] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-05-30 18:09:52,209 INFO [backend.app.api.routes.camera] [20056b1a] Shut down camera fan-out broadcaster for printer 1
+2026-05-30 18:09:52,209 INFO [backend.app.api.routes.camera] [20056b1a] Stopped 0 camera stream(s) for printer 1
+2026-05-30 18:09:52,209 INFO [uvicorn.access] [-] [IP]:59096 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-05-30 18:10:56,666 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 18:11:28,573 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 18:13:33,199 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 18:13:41,430 INFO [uvicorn.access] [-] [IP]:50715 - "POST /api/v1/library/files/1/slice HTTP/1.1" 202
+2026-05-30 18:15:37,395 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 18:15:56,683 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 18:17:41,711 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 18:19:46,853 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 18:20:56,697 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 18:21:51,729 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 18:23:57,304 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 18:24:10,934 INFO [uvicorn.access] [-] [IP]:62074 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-30 18:24:43,713 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-05-30 18:24:43,713 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 18:24:47,384 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 84421 bytes
+2026-05-30 18:24:48,071 INFO [backend.app.services.notification_service] [-] Sent notification via Discord
+2026-05-30 18:24:48,072 INFO [backend.app.main] [-] [HMS] Sent notification for 1 error(s) on printer 1
+2026-05-30 18:25:56,712 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 18:30:56,727 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 18:35:56,739 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 18:40:56,747 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 18:41:18,351 INFO [backend.app.api.routes.camera] [f96ede41] Using chamber image protocol for [PRINTER]
+2026-05-30 18:41:18,352 INFO [backend.app.api.routes.camera] [f96ede41] Camera viewer attached to printer-1 (subscribers=1)
+2026-05-30 18:41:18,352 INFO [backend.app.api.routes.camera] [f96ede41] Starting chamber image stream for [IP] (stream_id=1-fanout, model=[PRINTER])
+2026-05-30 18:41:18,424 INFO [backend.app.api.routes.cloud] [fa463032] get_filament_info called with 3 IDs: ['GFL99', 'GFG99', 'GFU99']
+2026-05-30 18:41:18,429 INFO [uvicorn.access] [-] [IP]:58658 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-30 18:41:19,142 INFO [backend.app.services.camera] [f96ede41] Chamber image: connected to [IP]:6000
+2026-05-30 18:41:27,184 INFO [backend.app.services.bambu_mqtt] [59837a2d] [[SERIAL]] Sent stop print command
+2026-05-30 18:41:27,185 INFO [backend.app.main] [59837a2d] Marked printer 1 as user-stopped from queue
+2026-05-30 18:41:27,186 INFO [uvicorn.access] [-] [IP]:49855 - "POST /api/v1/printers/1/print/stop HTTP/1.1" 200
+2026-05-30 18:41:32,231 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT COMPLETE detected - state: FINISH, status: completed, file: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, subtask: Universal_Clamp_Holder_for_PCB_Circuit_Boards, was_running: True, timelapse_during_print: False
+2026-05-30 18:41:32,232 INFO [backend.app.main] [-] [CALLBACK] on_print_complete started for printer 1
+2026-05-30 18:41:32,233 INFO [backend.app.main] [-] [TIMING] WebSocket send_print_complete: 0.001s elapsed
+2026-05-30 18:41:32,234 INFO [backend.app.main] [-] Print complete - filename: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, subtask: Universal_Clamp_Holder_for_PCB_Circuit_Boards, status: completed
+2026-05-30 18:41:32,234 INFO [backend.app.main] [-] Looking for archive in _active_prints, keys to try: [(1, 'Universal_Clamp_Holder_for_PCB_Circuit_Boards.3mf'), (1, 'Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf'), (1, 'Universal_Clamp_Holder_for_PCB_Circuit_Boards'), (1, 'Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf'), (1, 'Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf')]...
+2026-05-30 18:41:32,235 INFO [backend.app.main] [-] Current _active_prints: [(1, 'Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf')]
+2026-05-30 18:41:32,235 INFO [backend.app.main] [-] Found archive 1 with key (1, 'Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf')
+2026-05-30 18:41:33,107 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 18:41:33,141 WARNING [backend.app.services.bambu_ftp] [-] Failed to delete /Universal_Clamp_Holder_for_PCB_Circuit_Boards.3mf: 550 
+2026-05-30 18:41:35,922 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 18:41:35,933 WARNING [backend.app.services.bambu_ftp] [-] Failed to delete /Universal_Clamp_Holder_for_PCB_Circuit_Boards.3mf: 550 
+2026-05-30 18:41:38,860 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 18:41:38,894 WARNING [backend.app.services.bambu_ftp] [-] Failed to delete /Universal_Clamp_Holder_for_PCB_Circuit_Boards.3mf: 550 
+2026-05-30 18:41:38,924 WARNING [backend.app.main] [-] SD card cleanup failed after 3 attempts for /Universal_Clamp_Holder_for_PCB_Circuit_Boards.3mf (file may linger on SD card)
+2026-05-30 18:41:40,787 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 18:41:40,818 WARNING [backend.app.services.bambu_ftp] [-] Failed to delete /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode: 550 
+2026-05-30 18:41:42,220 INFO [backend.app.api.routes.camera] [f96ede41] Camera viewer detached from printer-1 (subscribers=0)
+2026-05-30 18:41:42,254 INFO [backend.app.api.routes.camera] [f96ede41] Chamber image stream cancelled (stream_id=1-fanout)
+2026-05-30 18:41:43,423 INFO [backend.app.api.routes.camera] [f96ede41] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-05-30 18:41:43,423 INFO [backend.app.api.routes.camera] [bd708ddf] Shut down camera fan-out broadcaster for printer 1
+2026-05-30 18:41:43,424 INFO [backend.app.api.routes.camera] [bd708ddf] Stopped 0 camera stream(s) for printer 1
+2026-05-30 18:41:43,425 INFO [uvicorn.access] [-] [IP]:49670 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-05-30 18:41:43,611 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 18:41:43,625 WARNING [backend.app.services.bambu_ftp] [-] Failed to delete /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode: 550 
+2026-05-30 18:41:45,532 INFO [uvicorn.access] [-] [IP]:57614 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-05-30 18:41:46,445 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 18:41:46,453 WARNING [backend.app.services.bambu_ftp] [-] Failed to delete /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode: 550 
+2026-05-30 18:41:46,465 WARNING [backend.app.main] [-] SD card cleanup failed after 3 attempts for /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode (file may linger on SD card)
+2026-05-30 18:41:46,466 INFO [backend.app.main] [-] [TIMING] SD card cleanup: 14.234s elapsed
+2026-05-30 18:41:46,473 INFO [backend.app.main] [-] [TIMING] Queue item update: 14.241s elapsed
+2026-05-30 18:41:46,486 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] on_print_complete: printer=1, archive=1, session=yes, ams_mapping=None
+2026-05-30 18:41:46,486 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=1, last_loaded_tray=1
+2026-05-30 18:41:46,489 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: archive 1, filament_usage=[{'slot_id': 1, 'used_g': 56.05, 'type': 'PLA', 'color': '#000000'}]
+2026-05-30 18:41:46,491 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_to_tray=None (source: none)
+2026-05-30 18:41:46,491 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: using tray_now_at_start=1 (single-filament fallback)
+2026-05-30 18:41:46,491 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_id=1 -> global_tray=1 -> AMS0-T1 (used_g=56.0, tray_now_override=1)
+2026-05-30 18:41:46,492 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: no spool assignment at printer 1 AMS0-T1
+2026-05-30 18:41:46,492 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] VT254: not in print mapping/tray_change_log — skipping fallback for printer 1
+2026-05-30 18:41:46,493 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] No tracking data for print (printer=1, archive=1)
+2026-05-30 18:41:46,494 INFO [backend.app.main] [-] [TIMING] Spoolman usage report: 14.262s elapsed
+2026-05-30 18:41:46,494 INFO [backend.app.main] [-] [TIMING] Filament usage tracking: 14.262s elapsed
+2026-05-30 18:41:46,494 INFO [backend.app.main] [-] [TIMING] Archive lookup: 14.262s elapsed
+2026-05-30 18:41:46,494 INFO [backend.app.main] [-] [ARCHIVE] Updating archive 1 status...
+2026-05-30 18:41:46,497 INFO [backend.app.main] [-] [ARCHIVE] Archive 1 status updated to completed, failure_reason=None
+2026-05-30 18:41:46,497 INFO [backend.app.main] [-] [ARCHIVE] WebSocket notification sent for archive 1
+2026-05-30 18:41:46,498 INFO [backend.app.main] [-] [TIMING] Archive status update: 14.266s elapsed
+2026-05-30 18:41:46,502 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 1
+2026-05-30 18:41:46,502 INFO [backend.app.main] [-] [TIMING] Print log entry: 14.270s elapsed
+2026-05-30 18:41:46,502 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 14.270s elapsed
+2026-05-30 18:41:46,502 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 14.270s elapsed
+2026-05-30 18:41:46,502 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 1
+2026-05-30 18:41:46,502 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 1
+2026-05-30 18:41:46,503 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 1
+2026-05-30 18:41:46,503 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-05-30 18:41:46,503 INFO [backend.app.main] [-] [MAINT-BG] Starting maintenance check for printer 1
+2026-05-30 18:41:46,503 INFO [backend.app.main] [-] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-05-30 18:41:46,504 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-05-30 18:41:46,505 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 1
+2026-05-30 18:41:46,506 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 18:41:46,510 INFO [backend.app.main] [-] [MAINT-BG] Completed (no items need attention)
+2026-05-30 18:41:48,228 INFO [backend.app.services.camera] [-] Saved camera frame to: /app/data/archive/1/20260530_163135_Universal_Clamp_Holder_for_PCB_Circuit_Boards/photos/finish_20260530_184146_49950687.jpg
+2026-05-30 18:41:48,229 INFO [backend.app.services.camera] [-] Finish photo saved: finish_20260530_184146_49950687.jpg
+2026-05-30 18:41:48,236 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20260530_184146_49950687.jpg
+2026-05-30 18:41:48,237 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20260530_184146_49950687.jpg
+2026-05-30 18:41:48,237 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260530_184146_49950687.jpg
+2026-05-30 18:41:48,246 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 74641 bytes
+2026-05-30 18:41:48,247 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-05-30 18:41:48,252 INFO [backend.app.services.notification_service] [-] Found 1 providers for on_print_complete: ['Discord']
+2026-05-30 18:41:48,740 INFO [backend.app.services.notification_service] [-] Sent notification via Discord
+2026-05-30 18:41:48,740 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-05-30 18:42:56,761 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-30 18:45:56,764 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 18:50:56,778 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 18:55:56,791 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 19:00:56,806 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 19:05:56,814 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 19:10:56,830 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 19:15:56,843 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 19:20:56,859 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 19:25:56,874 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 19:29:02,173 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, subtask: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, is_new: True, is_file_change: False
+2026-05-30 19:29:02,174 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-05-30 19:29:02,180 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1), AMS1-T0(remain=-1), AMS1-T1(remain=-1), AMS1-T2(remain=-1), AMS1-T3(remain=-1)
+2026-05-30 19:29:02,180 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=1, last_loaded_tray=1
+2026-05-30 19:29:02,180 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=F98C36FF, now=?, tar=?), T1(type=PLA, color=161616FF, now=?, tar=?), T2(type=PLA, color=FFF144FF, now=?, tar=?), T3(type=PLA, color=BCBCBCFF, now=?, tar=?)
+2026-05-30 19:29:02,180 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 1: T0(type=PLA, color=2850E0FF, now=?, tar=?), T1(type=PLA, color=F72323FF, now=?, tar=?), T2(type=PLA, color=FFFFFFFF, now=?, tar=?), T3(type=PETG, color=161616FF, now=?, tar=?)
+2026-05-30 19:29:02,184 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-05-30 19:29:02,191 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=True
+2026-05-30 19:29:02,191 INFO [backend.app.main] [-] [PLATE CHECK] ENTERING plate detection code for printer 1
+2026-05-30 19:29:02,191 INFO [backend.app.main] [-] [PLATE CHECK] Running plate detection for printer 1
+2026-05-30 19:29:02,192 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-05-30 19:29:07,046 INFO [backend.app.services.camera] [-] Saved camera frame to: /tmp/tmp810ls_ex.jpg
+2026-05-30 19:29:07,059 WARNING [backend.app.main] [-] [PLATE CHECK] Objects detected on plate for printer 1! Confidence: 100%, Diff: 4.3%
+2026-05-30 19:29:07,060 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sent pause print command
+2026-05-30 19:29:07,060 INFO [backend.app.main] [-] [PLATE CHECK] Print paused for printer 1
+2026-05-30 19:29:07,311 INFO [backend.app.services.notification_service] [-] Sent notification via Discord
+2026-05-30 19:29:07,311 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, subtask: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf
+2026-05-30 19:29:07,315 INFO [backend.app.main] [-] Trying filenames: ['Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.gcode.3mf', 'Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.3mf', 'Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf']
+2026-05-30 19:29:08,393 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:08,540 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.gcode.3mf: 550  (not on printer)
+2026-05-30 19:29:09,657 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:09,842 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /cache/Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.gcode.3mf: 550  (not on printer)
+2026-05-30 19:29:10,850 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:11,025 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /model/Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.gcode.3mf: 550  (not on printer)
+2026-05-30 19:29:12,141 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:12,208 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /data/Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.gcode.3mf: 550  (not on printer)
+2026-05-30 19:29:13,345 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:13,543 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /data/Metadata/Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.gcode.3mf: 550  (not on printer)
+2026-05-30 19:29:14,757 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:15,001 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.3mf: 550  (not on printer)
+2026-05-30 19:29:16,020 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:16,194 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /cache/Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.3mf: 550  (not on printer)
+2026-05-30 19:29:17,408 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:17,606 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /model/Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.3mf: 550  (not on printer)
+2026-05-30 19:29:18,784 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:18,906 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /data/Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.3mf: 550  (not on printer)
+2026-05-30 19:29:20,053 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:29:20,256 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /data/Metadata/Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf.3mf: 550  (not on printer)
+2026-05-30 19:29:21,446 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:30:20,279 WARNING [backend.app.services.bambu_ftp] [-] FTP download timed out after 30.0s (plus 30.0s grace) for /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf
+2026-05-30 19:30:20,279 INFO [backend.app.services.bambu_ftp] [-] Download 3MF from /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf will retry in 2.0s...
+2026-05-30 19:30:20,674 INFO [uvicorn.access] [-] [IP]:53814 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-30 19:30:23,152 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:30:32,563 WARNING [backend.app.services.bambu_ftp] [-] Download 3MF from /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf attempt 2/4 failed: 
+2026-05-30 19:30:32,563 INFO [backend.app.services.bambu_ftp] [-] Download 3MF from /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf will retry in 2.0s...
+2026-05-30 19:30:35,373 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-05-30 19:30:49,880 INFO [backend.app.api.routes.support] [566f0836] Log level changed to DEBUG
+2026-05-30 19:30:49,880 INFO [backend.app.api.routes.bug_report] [566f0836] Bug report: enabled debug logging
+2026-05-30 19:30:49,881 DEBUG [backend.app.services.bambu_mqtt] [566f0836] [[SERIAL]] Requesting status update (pushall)
+2026-05-30 19:30:49,882 INFO [uvicorn.access] [-] [IP]:53674 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200

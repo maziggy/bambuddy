@@ -4969,21 +4969,15 @@ async def poll_storage_sensors():
                         StorageUnit.ha_humidity_entity,
                     ).where(
                         StorageUnit.is_active.is_(True),
-                        (StorageUnit.ha_temp_entity.isnot(None))
-                        | (StorageUnit.ha_humidity_entity.isnot(None)),
+                        (StorageUnit.ha_temp_entity.isnot(None)) | (StorageUnit.ha_humidity_entity.isnot(None)),
                     )
                 )
                 rows = result.all()
 
                 for unit_id, temp_entity, humidity_entity in rows:
                     try:
-                        reading = await homeassistant_service.poll_storage_unit(
-                            unit_id, temp_entity, humidity_entity
-                        )
-                        if reading and (
-                            reading.get("temp") is not None
-                            or reading.get("humidity") is not None
-                        ):
+                        reading = await homeassistant_service.poll_storage_unit(unit_id, temp_entity, humidity_entity)
+                        if reading and (reading.get("temp") is not None or reading.get("humidity") is not None):
                             db.add(
                                 StorageReading(
                                     storage_unit_id=unit_id,

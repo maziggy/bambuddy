@@ -391,10 +391,10 @@ export function FilamentStoragePage() {
         <ConfirmModal
           title={t('storage.deleteUnit')}
           message={t('storage.deleteConfirm', { name: deleteUnit.name })}
-          confirmLabel={t('storage.deleteUnit')}
+          confirmText={t('storage.deleteUnit')}
           onConfirm={() => deleteMutation.mutate(deleteUnit.id)}
           onCancel={() => setDeleteUnit(null)}
-          isDestructive
+          variant="danger"
         />
       )}
 

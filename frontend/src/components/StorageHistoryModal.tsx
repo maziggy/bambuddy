@@ -12,7 +12,6 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { api, type StorageHistoryResponse } from '../api/client';
-import { parseUTCDate } from '../utils/date';
 import { useTheme } from '../contexts/ThemeContext';
 
 type TimeRange = '24h' | '48h' | '7d';
@@ -32,8 +31,8 @@ interface StorageHistoryModalProps {
 
 export function StorageHistoryModal({ isOpen, onClose, unitId, unitName }: StorageHistoryModalProps) {
   const { t } = useTranslation();
-  const { theme } = useTheme();
-  const isDark = theme !== 'light';
+  const { resolvedMode } = useTheme();
+  const isDark = resolvedMode !== 'light';
   const [range, setRange] = useState<TimeRange>('24h');
 
   const hours = TIME_RANGES.find((r) => r.value === range)?.hours ?? 24;
@@ -48,7 +47,7 @@ export function StorageHistoryModal({ isOpen, onClose, unitId, unitName }: Stora
   if (!isOpen) return null;
 
   const chartData = (data?.readings ?? []).map((r) => ({
-    time: parseUTCDate(r.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    time: new Date(r.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     temp: r.temp,
     humidity: r.humidity,
   }));

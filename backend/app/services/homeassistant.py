@@ -362,6 +362,89 @@ class HomeAssistantService:
         """Return the last cached enclosure reading for a printer, or None."""
         return self._enclosure_cache.get(printer_id)
 
+    # ── Storage unit polling ───────────────────────────────────────────────
+
+    def __init_storage_cache(self):
+        if not hasattr(self, "_storage_cache"):
+            self._storage_cache: dict[int, dict] = {}
+
+    async def poll_storage_unit(
+        self, unit_id: int, temp_entity: str | None, humidity_entity: str | None
+    ) -> dict | None:
+        """Fetch temp/humidity from HA for a storage unit and store in cache.
+
+        Returns the reading dict {temp, humidity, temp_unit, humidity_unit}
+        or None if HA is not configured / both entities are absent.
+        """
+        self.__init_storage_cache()
+
+        if not self.base_url or not self.token:
+            return None
+        if not temp_entity and not humidity_entity:
+            return None
+
+        result: dict = {"temp": None, "humidity": None, "temp_unit": "°C", "humidity_unit": "%"}
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
+                if temp_entity:
+                    response = await client.get(
+                        f"{self.base_url}/api/states/{temp_entity}",
+                        headers=self._headers(),
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    state = data.get("state", "")
+                    if state not in ("unknown", "unavailable", ""):
+                        try:
+                            result["temp"] = float(state)
+                            result["temp_unit"] = data.get("attributes", {}).get("unit_of_measurement", "°C")
+                        except (ValueError, TypeError):
+                            logger.warning(
+                                "Storage temp not numeric unit=%s entity=%s state=%r",
+                                unit_id,
+                                temp_entity,
+                                state,
+                            )
+
+                if humidity_entity:
+                    response = await client.get(
+                        f"{self.base_url}/api/states/{humidity_entity}",
+                        headers=self._headers(),
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    state = data.get("state", "")
+                    if state not in ("unknown", "unavailable", ""):
+                        try:
+                            result["humidity"] = float(state)
+                        except (ValueError, TypeError):
+                            logger.warning(
+                                "Storage humidity not numeric unit=%s entity=%s state=%r",
+                                unit_id,
+                                humidity_entity,
+                                state,
+                            )
+
+            self._storage_cache[unit_id] = result
+            return result
+        except Exception as e:
+            logger.warning("Storage sensor poll failed unit=%s: %s", unit_id, e)
+            return None
+
+    def get_cached_storage(self, unit_id: int) -> dict | None:
+        """Return the last cached reading for a storage unit, or None."""
+        self.__init_storage_cache()
+        return self._storage_cache.get(unit_id)
+
+    def invalidate_storage_cache(self, unit_id: int | None = None) -> None:
+        """Clear cached reading(s). Pass unit_id to clear one, None to clear all."""
+        self.__init_storage_cache()
+        if unit_id is None:
+            self._storage_cache.clear()
+        else:
+            self._storage_cache.pop(unit_id, None)
+
     async def poll_fan_state(self, printer_id: int, fan_entity: str) -> bool | None:
         """Fetch fan on/off state from HA, update caches, return current state.
 

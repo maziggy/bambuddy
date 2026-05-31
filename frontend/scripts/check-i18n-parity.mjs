@@ -237,6 +237,8 @@ const IT_COGNATES = [
 // Japanese: very few cognates because of script difference. Almost
 // everything needs translation. Only true loanwords / proper nouns stay.
 const JA_COGNATES = [
+  'sensor.dryer_temperature',  // HA entity ID format — same in all locales
+  'sensor.dryer_humidity',     // HA entity ID format — same in all locales
   'OK', 'Bambu', 'Code',
   'EU (DD/MM/YYYY)', 'US (MM/DD/YYYY)', 'ON, true, 1',
   '({{count}}/8)', 'Custom Headers (JSON)',
@@ -275,6 +277,8 @@ const PT_BR_COGNATES = [
 
 // Chinese (Simplified): very few cognates beyond brand names.
 const ZH_CN_COGNATES = [
+  'sensor.dryer_temperature',  // HA entity ID format — same in all locales
+  'sensor.dryer_humidity',     // HA entity ID format — same in all locales
   'OK', 'Bambu',
   '({{count}}/8)', 'Custom Headers (JSON)',
   'Box label (62 × 29 mm)',
@@ -284,6 +288,8 @@ const ZH_CN_COGNATES = [
 ];
 
 const ZH_TW_COGNATES = [
+  'sensor.dryer_temperature',  // HA entity ID format — same in all locales
+  'sensor.dryer_humidity',     // HA entity ID format — same in all locales
   'OK', 'Bambu',
   '({{count}}/8)', 'Custom Headers (JSON)',
   'Box label (62 × 29 mm)',

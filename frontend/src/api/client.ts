@@ -5926,7 +5926,59 @@ export const api = {
   // ── Enclosure fan run history ─────────────────────────────────────────────
   getEnclosureFanHistory: (printerId: number, hours = 24) =>
     request<EnclosureFanHistoryResponse>(`/enclosure-fan/${printerId}/history?hours=${hours}`),
+
+  // ── Filament storage / dryer monitoring ───────────────────────────────────
+  listStorageUnits: () =>
+    request<StorageUnit[]>('/storage/'),
+  createStorageUnit: (data: StorageUnitCreate) =>
+    request<StorageUnit>('/storage/', { method: 'POST', body: JSON.stringify(data) }),
+  updateStorageUnit: (id: number, data: Partial<StorageUnitCreate & { is_active: boolean }>) =>
+    request<StorageUnit>(`/storage/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteStorageUnit: (id: number) =>
+    request<void>(`/storage/${id}`, { method: 'DELETE' }),
+  getStorageHistory: (id: number, hours = 24) =>
+    request<StorageHistoryResponse>(`/storage/${id}/history?hours=${hours}`),
 };
+
+// Filament storage / dryer monitoring types
+export interface StorageUnit {
+  id: number;
+  name: string;
+  unit_type: 'dryer' | 'storage';
+  ha_temp_entity: string | null;
+  ha_humidity_entity: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  current_temp: number | null;
+  current_humidity: number | null;
+  temp_unit: string;
+  humidity_unit: string;
+}
+
+export interface StorageUnitCreate {
+  name: string;
+  unit_type: 'dryer' | 'storage';
+  ha_temp_entity?: string | null;
+  ha_humidity_entity?: string | null;
+  notes?: string | null;
+}
+
+export interface StorageReadingPoint {
+  recorded_at: string;
+  temp: number | null;
+  humidity: number | null;
+}
+
+export interface StorageHistoryResponse {
+  unit_id: number;
+  readings: StorageReadingPoint[];
+  current_temp: number | null;
+  current_humidity: number | null;
+  temp_unit: string;
+  humidity_unit: string;
+}
 
 // AMS History types
 export interface AMSHistoryPoint {

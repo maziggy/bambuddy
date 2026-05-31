@@ -13,6 +13,9 @@ then re-apply just these sections.
 
 ### `backend/app/main.py`
 - `poll_enclosure_sensors()`, `start_enclosure_polling()`, `stop_enclosure_polling()` functions
+- `poll_storage_sensors()`, `start_storage_polling()`, `stop_storage_polling()` functions
+- `start/stop_storage_polling()` called in lifespan startup/shutdown (after enclosure polling)
+- `storage` router import and `app.include_router(storage.router, ...)`
 - Call `start/stop_enclosure_polling()` in the lifespan startup/shutdown
 - WLED status hook block inside `on_printer_status_change()` (after the dedup check)
 - Three router registrations: `enclosure.router`, `enclosure_fan.router`, `wled.router`
@@ -88,6 +91,24 @@ test time, not at startup.
 `fork-sync-build.yml` triggers on push to `dev` and builds the Docker image.
 The auto-sync job (merging upstream into a feature branch) was removed — do
 upstream syncs manually to avoid merge conflicts.
+
+---
+
+## Filament Storage Monitoring file inventory
+
+| File | Purpose |
+|------|---------|
+| `backend/app/models/storage_unit.py` | `StorageUnit` ORM model (name, type, HA entities, notes) |
+| `backend/app/models/storage_reading.py` | `StorageReading` ORM model (time-series temp/humidity) |
+| `backend/app/api/routes/storage.py` | REST endpoints: CRUD + `/history` |
+| `backend/app/core/database.py` | Migrations: `storage_units` + `storage_readings` tables |
+| `backend/app/services/homeassistant.py` | `poll_storage_unit()`, `get_cached_storage()`, `invalidate_storage_cache()` |
+| `frontend/src/api/client.ts` | `StorageUnit`, `StorageHistoryResponse` types + API methods |
+| `frontend/src/i18n/locales/en.ts` | `nav.storage` + `storage.*` keys (35 keys) |
+| `frontend/src/pages/FilamentStoragePage.tsx` | Main page: unit cards, add/edit/delete, filter tabs |
+| `frontend/src/components/StorageHistoryModal.tsx` | Recharts temp + humidity history charts |
+| `frontend/src/components/Layout.tsx` | `Thermometer` icon import + `storage` nav item |
+| `frontend/src/App.tsx` | `FilamentStoragePage` import + `/storage` route |
 
 ---
 

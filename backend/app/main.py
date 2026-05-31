@@ -59,6 +59,7 @@ from backend.app.api.routes import (
     spoolbuddy,
     spoolman,
     spoolman_inventory,
+    storage,
     support,
     system,
     updates,
@@ -4935,6 +4936,84 @@ def stop_enclosure_polling():
         logging.getLogger(__name__).info("Enclosure sensor polling stopped")
 
 
+# ── Storage unit sensor polling ───────────────────────────────────────────────
+_storage_poll_task: asyncio.Task | None = None
+STORAGE_POLL_INTERVAL = 60  # seconds
+
+
+async def poll_storage_sensors():
+    """Background task: poll HA sensors for all active storage units with entities."""
+    from backend.app.models.storage_reading import StorageReading
+    from backend.app.models.storage_unit import StorageUnit
+
+    logger = logging.getLogger(__name__)
+
+    while True:
+        try:
+            from backend.app.api.routes.settings import get_homeassistant_settings
+
+            async with async_session() as db:
+                ha_settings = await get_homeassistant_settings(db)
+                ha_url = ha_settings.get("ha_url", "")
+                ha_token = ha_settings.get("ha_token", "")
+                if not ha_url or not ha_token:
+                    await asyncio.sleep(STORAGE_POLL_INTERVAL)
+                    continue
+
+                homeassistant_service.configure(ha_url, ha_token)
+
+                result = await db.execute(
+                    select(
+                        StorageUnit.id,
+                        StorageUnit.ha_temp_entity,
+                        StorageUnit.ha_humidity_entity,
+                    ).where(
+                        StorageUnit.is_active.is_(True),
+                        (StorageUnit.ha_temp_entity.isnot(None))
+                        | (StorageUnit.ha_humidity_entity.isnot(None)),
+                    )
+                )
+                rows = result.all()
+
+                for unit_id, temp_entity, humidity_entity in rows:
+                    try:
+                        reading = await homeassistant_service.poll_storage_unit(
+                            unit_id, temp_entity, humidity_entity
+                        )
+                        if reading and (
+                            reading.get("temp") is not None
+                            or reading.get("humidity") is not None
+                        ):
+                            db.add(
+                                StorageReading(
+                                    storage_unit_id=unit_id,
+                                    temp=reading.get("temp"),
+                                    humidity=reading.get("humidity"),
+                                )
+                            )
+                            await db.commit()
+                    except Exception as inner_e:
+                        logger.debug("Storage poll error unit=%s: %s", unit_id, inner_e)
+        except Exception as e:
+            logger.warning("Storage sensor polling error: %s", e)
+        await asyncio.sleep(STORAGE_POLL_INTERVAL)
+
+
+def start_storage_polling():
+    global _storage_poll_task
+    if _storage_poll_task is None:
+        _storage_poll_task = asyncio.create_task(poll_storage_sensors())
+        logging.getLogger(__name__).info("Storage sensor polling started")
+
+
+def stop_storage_polling():
+    global _storage_poll_task
+    if _storage_poll_task:
+        _storage_poll_task.cancel()
+        _storage_poll_task = None
+        logging.getLogger(__name__).info("Storage sensor polling stopped")
+
+
 # Camera stream orphan cleanup
 _camera_cleanup_task: asyncio.Task | None = None
 CAMERA_CLEANUP_INTERVAL = 60
@@ -5394,6 +5473,9 @@ async def lifespan(app: FastAPI):
     # Start HA enclosure sensor polling
     start_enclosure_polling()
 
+    # Start HA storage unit sensor polling
+    start_storage_polling()
+
     # Start camera stream orphan cleanup
     start_camera_cleanup()
 
@@ -5437,6 +5519,7 @@ async def lifespan(app: FastAPI):
     stop_runtime_tracking()
     stop_spoolbuddy_watchdog()
     stop_enclosure_polling()
+    stop_storage_polling()
     stop_camera_cleanup()
     from backend.app.services.loop_watchdog import stop_loop_watchdog
 
@@ -5927,6 +6010,7 @@ app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)
 app.include_router(enclosure.router, prefix=app_settings.api_prefix)
 app.include_router(enclosure_fan.router, prefix=app_settings.api_prefix)
 app.include_router(wled.router, prefix=app_settings.api_prefix)
+app.include_router(storage.router, prefix=app_settings.api_prefix)
 
 
 # Serve static files (React build)

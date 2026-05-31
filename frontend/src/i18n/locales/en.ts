@@ -26,6 +26,7 @@ export default {
     switchToDark: 'Switch to dark mode',
     switchToSystem: 'Switch to system mode',
     smartSwitches: 'Smart Switches',
+    storage: 'Storage',
     logout: 'Logout',
     installApp: 'Install app',
     installAppSuccess: 'Bambuddy was installed',
@@ -1455,6 +1456,47 @@ export default {
     noPermissionEditIntervals: 'You do not have permission to edit intervals',
     // Configure link
     configureSettings: 'Configure maintenance types and intervals',
+  },
+
+  // Filament dryer / spool storage monitoring
+  storage: {
+    title: 'Filament Storage',
+    emptyState: 'No storage units yet. Add a dryer or dry box to start monitoring.',
+    addUnit: 'Add Unit',
+    editUnit: 'Edit Unit',
+    deleteUnit: 'Delete Unit',
+    deleteConfirm: 'Delete "{{name}}"? This will also remove all historical readings.',
+    typeDryer: 'Dryer',
+    typeStorage: 'Dry Box / Storage',
+    filterAll: 'All',
+    filterDryers: 'Dryers',
+    filterStorage: 'Dry Boxes',
+    // Card fields
+    temperature: 'Temperature',
+    humidity: 'Humidity',
+    noReading: 'No reading yet',
+    noEntitiesHint: 'No HA sensor entities configured — add them in Edit to start monitoring.',
+    noDataHint: 'Entities configured but no data yet. HA polling runs every 60 s.',
+    // History chart
+    historyTitle: 'Sensor History',
+    history24h: 'Last 24 h',
+    history48h: 'Last 48 h',
+    history7d: 'Last 7 days',
+    noHistory: 'No readings in selected period.',
+    // Add / Edit modal
+    modalNameLabel: 'Name',
+    modalNamePlaceholder: 'e.g. Sunlu S1 Plus, Dry Box A',
+    modalTypeLabel: 'Type',
+    modalTempEntityLabel: 'HA Temperature Entity',
+    modalTempEntityPlaceholder: 'sensor.dryer_temperature',
+    modalHumidityEntityLabel: 'HA Humidity Entity',
+    modalHumidityEntityPlaceholder: 'sensor.dryer_humidity',
+    modalNotesLabel: 'Notes (optional)',
+    modalNotesPlaceholder: 'e.g. PETG + PA drying at 70 °C',
+    modalSave: 'Save',
+    modalCancel: 'Cancel',
+    savedToast: 'Storage unit saved',
+    deletedToast: 'Storage unit deleted',
   },
 
   // Settings page

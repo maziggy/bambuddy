@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, QrCode, Cpu, MapPin, ArrowLeft, CameraOff } from 'lucide-react';
+import { X, Loader2, QrCode, Cpu, MapPin, ArrowLeft, Camera } from 'lucide-react';
 import jsQR from 'jsqr';
 import { api } from '../api/client';
 import { Button } from './Button';
@@ -25,7 +25,15 @@ type SlotOption = {
   label: string;
 };
 
-type CameraReason = 'denied' | 'insecure' | 'nodevice';
+// BarcodeDetector (platform QR decoder, e.g. Android Chrome) isn't in the TS DOM
+// lib yet — minimal shape for the bit we use.
+interface DetectedBarcode {
+  rawValue: string;
+}
+interface BarcodeDetectorLike {
+  detect(source: CanvasImageSource): Promise<DetectedBarcode[]>;
+}
+type BarcodeDetectorCtor = new (opts?: { formats?: string[] }) => BarcodeDetectorLike;
 
 const TABS = [
   { key: 'ams' as const, Icon: Cpu, labelKey: 'inventory.qrAssign.tabAms' },
@@ -41,19 +49,54 @@ function targetLocationLabel(target: AssignTarget): string {
 }
 
 /**
- * Live camera QR scanner. Runs a requestAnimationFrame loop that decodes the
- * video frame with jsQR and emits the payload (throttled). Callbacks are read
- * through refs so the camera starts exactly once and isn't torn down when the
- * parent re-renders. `paused` halts decoding (e.g. while an assign is in flight)
- * without stopping the stream.
+ * Decode a QR from a captured photo. The photo is taken with the phone's native
+ * camera (file input + capture) — which focuses far better than an in-page
+ * getUserMedia preview — so a small/dense spool QR resolves cleanly. Prefer the
+ * platform BarcodeDetector; fall back to jsQR (downscaling huge stills for speed
+ * — a focused QR survives the downscale).
  */
-function QrScannerView({
+async function decodeImageBlob(blob: Blob): Promise<string | undefined> {
+  const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  try {
+    const BD = (globalThis as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
+    if (BD) {
+      try {
+        const codes = await new BD({ formats: ['qr_code'] }).detect(bitmap);
+        if (codes[0]?.rawValue) return codes[0].rawValue;
+      } catch {
+        /* BarcodeDetector present but unusable — fall through to jsQR */
+      }
+    }
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return undefined;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const img = ctx.getImageData(0, 0, w, h);
+    return jsQR(img.data, w, h, { inversionAttempts: 'attemptBoth' })?.data ?? undefined;
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+/**
+ * Live in-page camera scanner (primary path). Continuously decodes the preview
+ * frame with BarcodeDetector (→ jsQR fallback). Fast for QRs the user can frame
+ * well; the photo-capture fallback covers small/hard ones this can't focus on.
+ * Callbacks go through refs so the camera starts once and survives re-renders.
+ */
+function LiveScanner({
   onDecode,
   onError,
   paused,
 }: {
   onDecode: (text: string) => void;
-  onError: (reason: CameraReason) => void;
+  onError: () => void;
   paused: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -68,63 +111,83 @@ function QrScannerView({
     let cancelled = false;
     let raf = 0;
     let stream: MediaStream | null = null;
+    let busy = false;
+    let lastScan = 0;
+    const INTERVAL_MS = 200;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    let lastScan = 0;
-    // jsQR on a full frame is CPU-heavy; decoding ~7×/sec scans QRs fine and
-    // spares mobile battery vs. running it on every animation frame (~60fps).
-    const SCAN_INTERVAL_MS = 150;
+    const BD = (globalThis as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
+    let detector = BD ? new BD({ formats: ['qr_code'] }) : null;
+
+    const decode = async (video: HTMLVideoElement): Promise<string | undefined> => {
+      if (detector) {
+        try {
+          const codes = await detector.detect(video);
+          return codes[0]?.rawValue;
+        } catch {
+          detector = null; // exists but unusable — fall back to jsQR
+        }
+      }
+      if (!ctx) return undefined;
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (!w || !h) return undefined;
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
+      const img = ctx.getImageData(0, 0, w, h);
+      // 'dontInvert' (cheapest) for the hot loop; the one-shot photo path uses
+      // the thorough 'attemptBoth'.
+      return jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' })?.data ?? undefined;
+    };
 
     const tick = () => {
       if (cancelled) return;
       raf = requestAnimationFrame(tick);
       const video = videoRef.current;
       const now = Date.now();
-      if (!video || pausedRef.current || !ctx || video.readyState < video.HAVE_ENOUGH_DATA) return;
-      if (now - lastScan < SCAN_INTERVAL_MS) return;
+      if (!video || pausedRef.current || busy || video.readyState < video.HAVE_ENOUGH_DATA) return;
+      if (now - lastScan < INTERVAL_MS) return;
       lastScan = now;
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      if (!w || !h) return;
-      canvas.width = w;
-      canvas.height = h;
-      ctx.drawImage(video, 0, 0, w, h);
-      const img = ctx.getImageData(0, 0, w, h);
-      const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-      if (code?.data) onDecodeRef.current(code.data);
+      busy = true;
+      void decode(video).then((value) => {
+        if (value && !cancelled) onDecodeRef.current(value);
+        busy = false;
+      });
     };
 
     const start = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
-        onErrorRef.current('insecure');
+        onErrorRef.current();
         return;
       }
       try {
-        // `ideal` (not exact) so a device with only a front camera falls back
-        // instead of throwing OverconstrainedError.
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
         if (cancelled) {
           stream.getTracks().forEach((tr) => tr.stop());
           return;
         }
+        try {
+          await stream.getVideoTracks()[0]?.applyConstraints({ advanced: [{ focusMode: 'continuous' }] as unknown as MediaTrackConstraintSet[] });
+        } catch {
+          /* unsupported */
+        }
         const video = videoRef.current;
         if (!video) return;
         video.srcObject = stream;
-        // play() can reject on autoplay quirks even though the stream is live;
-        // ignore it — the decode loop reads frames once readyState is high
-        // enough — and don't misreport it as a permission denial.
         await video.play().catch(() => {});
         raf = requestAnimationFrame(tick);
-      } catch (err) {
-        const name = (err as DOMException)?.name;
-        onErrorRef.current(name === 'NotFoundError' || name === 'DevicesNotFoundError' ? 'nodevice' : 'denied');
+      } catch {
+        // Permission denied / no camera / insecure context — hide the live view;
+        // the photo-capture fallback covers all of these.
+        onErrorRef.current();
       }
     };
 
-    start();
+    void start();
     return () => {
       cancelled = true;
       if (raf) cancelAnimationFrame(raf);
@@ -132,14 +195,13 @@ function QrScannerView({
     };
   }, []);
 
-  return (
-    <video
-      ref={videoRef}
-      muted
-      playsInline
-      className="w-full aspect-square rounded-lg bg-black object-cover"
-    />
-  );
+  return <video ref={videoRef} muted playsInline className="w-full aspect-square rounded-lg bg-black object-cover" />;
+}
+
+function externalLabel(t: (k: string) => string, vtCount: number, trayId: number): string {
+  // Match PrintersPage: Ext-L / Ext-R when two external slots, "External" otherwise.
+  if (vtCount > 1) return t(trayId === 0 ? 'printers.extL' : 'printers.extR');
+  return t('printers.external');
 }
 
 export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, storageSuggestions = [] }: QrAssignTargetModalProps) {
@@ -153,23 +215,23 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
   const [selectedSlot, setSelectedSlot] = useState<SlotOption | null>(null);
   const [storage, setStorage] = useState('');
   const [target, setTarget] = useState<AssignTarget | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  // Synchronous in-flight guard: `mutation.isPending` is only observable on the
-  // next render, so two frames decoding before that render could both fire.
-  // This ref blocks the second one immediately (the 700ms scan throttle alone
-  // shouldn't be the only thing preventing a double assignment).
+  const [error, setError] = useState<string | null>(null);
+  const [decoding, setDecoding] = useState(false);
+  const [cameraFailed, setCameraFailed] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Synchronous in-flight guard: mutation.isPending only updates next render.
   const inFlightRef = useRef(false);
 
-  // Reset to a clean target-selection state each time the modal opens.
   useEffect(() => {
     if (isOpen) {
       setStep('target');
       setSelectedSlot(null);
       setStorage('');
       setTarget(null);
-      setScanError(null);
-      setCameraError(null);
+      setError(null);
+      setDecoding(false);
+      setCameraFailed(false);
+      inFlightRef.current = false;
     }
   }, [isOpen]);
 
@@ -202,14 +264,11 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
       }
     }
     // External (vt_tray) slots: backend keys them under ams_id 255 with
-    // tray_id = id - 254 (mirrors PrintersPage). formatSlotLabel collapses every
-    // external to "Ext", so label them like PrintersPage does — Ext-L/Ext-R when
-    // a printer exposes two, "External" otherwise — using the shared i18n keys.
+    // tray_id = id - 254 (mirrors PrintersPage).
     const externals = status.vt_tray ?? [];
     for (const vt of externals) {
       const trayId = (vt.id ?? 254) - 254;
-      const label = externals.length > 1 ? t(trayId === 0 ? 'printers.extL' : 'printers.extR') : t('printers.external');
-      out.push({ amsId: 255, trayId, isHt: false, isExternal: true, label });
+      out.push({ amsId: 255, trayId, isHt: false, isExternal: true, label: externalLabel(t, externals.length, trayId) });
     }
     return out;
   }, [status, t]);
@@ -220,17 +279,15 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
         // Move semantics: a spool lives in one slot at a time. The backend assign
         // route upserts per (printer, ams, tray) and does NOT clear the spool's
         // previous slot (AssignSpoolModal sidesteps this by hiding already-assigned
-        // spools from its picker — a filter the QR flow can't apply). So we strip
+        // spools from its picker — a filter the QR flow can't apply), so we strip
         // the spool's other slot(s) ourselves.
         if (spoolmanMode) {
           // Spoolman unassign is keyed by spool id (clears whatever slot it's in),
-          // so clear first, then assign to the new slot.
+          // so we must clear first, then assign to the new slot.
           await api.unassignSpoolmanSlot(spoolId).catch(() => {});
           await api.assignSpoolmanSlot({ spoolman_spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId });
         } else {
           await api.assignSpool({ spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId });
-          // Remove this spool from any OTHER slot (local unassign is keyed by slot
-          // coordinates, so we look up the stale rows first). Best-effort.
           const existing = await api.getAssignments();
           await Promise.all(
             existing
@@ -245,66 +302,36 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
       }
     },
     onSuccess: (_data, { tg }) => {
-      inFlightRef.current = false;
+      // Intentionally do NOT clear inFlightRef here: the modal closes right
+      // after, and leaving it set blocks any stale in-flight live-scan decode
+      // from firing a second assignment in the brief window before unmount.
+      // It's reset wholesale when the modal next opens (and in onError for retry).
       showToast(
         t(tg.kind === 'ams' ? 'inventory.qrAssign.assignSuccess' : 'inventory.qrAssign.storageSuccess', { location: targetLocationLabel(tg) }),
         'success',
       );
-      // All targets live above this modal (queryClient + toast context), so
-      // closing here is safe even though the mutation outlived the open modal.
       queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
       queryClient.invalidateQueries({ queryKey: spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'] });
       queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments-all'] });
       if (tg.kind === 'ams') {
-        // Parity with AssignSpoolModal (#1414): nudge the printer to republish
-        // its state so the printer card doesn't sit on stale tray data until the
-        // next poll. Best-effort — the assignment itself already succeeded.
+        // #1414 parity: nudge the printer to republish so its card doesn't show
+        // stale tray state until the next poll. Best-effort.
         api.refreshPrinterStatus(tg.printerId).catch(() => {});
         queryClient.invalidateQueries({ queryKey: ['printerStatus', tg.printerId] });
       }
       onClose();
     },
     onError: (error: Error, { tg }) => {
-      // Keep the camera running so the user can rescan and retry.
       inFlightRef.current = false;
       showToast(`${t('inventory.qrAssign.assignFailed', { location: targetLocationLabel(tg) })}: ${error.message}`, 'error');
     },
   });
 
-  const handleDecode = useCallback(
-    (text: string) => {
-      if (inFlightRef.current || assignMutation.isPending || !target) return;
-      const id = parseSpoolIdFromQr(text);
-      if (!id) {
-        setScanError(t('inventory.qrAssign.invalidQr'));
-        return;
-      }
-      setScanError(null);
-      inFlightRef.current = true;
-      assignMutation.mutate({ spoolId: id, tg: target });
-    },
-    [assignMutation, target, t],
-  );
-
-  const handleCameraError = useCallback(
-    (reason: CameraReason) => {
-      setCameraError(
-        t(
-          reason === 'insecure'
-            ? 'inventory.qrAssign.cameraInsecure'
-            : reason === 'nodevice'
-              ? 'inventory.qrAssign.cameraNoDevice'
-              : 'inventory.qrAssign.cameraDenied',
-        ),
-      );
-    },
-    [t],
-  );
-
   if (!isOpen) return null;
 
   const printerName = printers?.find((p) => p.id === effectivePrinterId)?.name ?? '';
   const canStart = tab === 'ams' ? selectedSlot !== null && effectivePrinterId !== null : storage.trim().length > 0;
+  const isBusy = decoding || assignMutation.isPending;
 
   const handleStart = () => {
     let tg: AssignTarget;
@@ -325,9 +352,40 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
       tg = { kind: 'storage', storageLocation: loc };
     }
     setTarget(tg);
-    setScanError(null);
-    setCameraError(null);
+    setError(null);
+    setCameraFailed(false);
     setStep('scan');
+  };
+
+  // Shared by the live scanner and the photo fallback: validate the decoded QR
+  // and fire the assignment (guarded so one scan can't assign twice).
+  const handleDecode = (text: string) => {
+    if (inFlightRef.current || assignMutation.isPending || !target) return;
+    const id = parseSpoolIdFromQr(text);
+    if (!id) {
+      setError(t('inventory.qrAssign.invalidQr'));
+      return;
+    }
+    setError(null);
+    inFlightRef.current = true;
+    assignMutation.mutate({ spoolId: id, tg: target });
+  };
+
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file; the File is GC'd after decode
+    if (!file || !target || inFlightRef.current) return;
+    setError(null);
+    setDecoding(true);
+    try {
+      const text = await decodeImageBlob(file);
+      if (!text) setError(t('inventory.qrAssign.noQrInPhoto'));
+      else handleDecode(text);
+    } catch {
+      setError(t('inventory.qrAssign.noQrInPhoto'));
+    } finally {
+      setDecoding(false);
+    }
   };
 
   return (
@@ -457,19 +515,15 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
                 <p className="text-sm text-bambu-gray">{t('inventory.qrAssign.scanningTarget', { location: targetLocationLabel(target) })}</p>
               )}
 
-              {cameraError ? (
-                <div className="flex flex-col items-center gap-3 py-10 text-center">
-                  <CameraOff className="w-10 h-10 text-bambu-gray" />
-                  <p className="text-sm text-red-400 max-w-xs">{cameraError}</p>
-                </div>
-              ) : (
+              {/* Primary: live camera scan. Hidden once it fails (no camera /
+                  permission denied) — the photo-capture fallback below covers it. */}
+              {!cameraFailed && (
                 <div className="relative">
-                  <QrScannerView onDecode={handleDecode} onError={handleCameraError} paused={assignMutation.isPending} />
-                  {/* Framing guide */}
+                  <LiveScanner onDecode={handleDecode} onError={() => setCameraFailed(true)} paused={isBusy} />
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                     <div className="w-2/3 aspect-square border-2 border-bambu-green/70 rounded-xl" />
                   </div>
-                  {assignMutation.isPending && (
+                  {isBusy && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
                       <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
                     </div>
@@ -477,8 +531,22 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
                 </div>
               )}
 
-              {!cameraError && <p className="text-xs text-bambu-gray text-center">{t('inventory.qrAssign.scanInstruction')}</p>}
-              {scanError && <p className="text-xs text-red-400 text-center">{scanError}</p>}
+              <p className="text-xs text-bambu-gray text-center">{t('inventory.qrAssign.scanInstruction')}</p>
+
+              {/* Fallback: capture a photo with the native camera (better focus). */}
+              <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
+              <button
+                onClick={() => inputRef.current?.click()}
+                disabled={isBusy}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray transition-colors disabled:opacity-50"
+              >
+                {decoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                <span className="text-sm font-medium">
+                  {decoding ? t('inventory.qrAssign.decoding') : t('inventory.qrAssign.takePhoto')}
+                </span>
+              </button>
+
+              {error && <p className="text-xs text-red-400 text-center">{error}</p>}
             </div>
           )}
         </div>
@@ -486,7 +554,7 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
         {/* Footer */}
         <div className="flex justify-between gap-2 p-4 border-t border-bambu-dark-tertiary">
           {step === 'scan' ? (
-            <Button variant="secondary" onClick={() => setStep('target')} disabled={assignMutation.isPending}>
+            <Button variant="secondary" onClick={() => setStep('target')} disabled={isBusy}>
               <ArrowLeft className="w-4 h-4" />
               {t('inventory.qrAssign.back')}
             </Button>

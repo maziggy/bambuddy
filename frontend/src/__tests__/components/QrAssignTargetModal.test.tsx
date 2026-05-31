@@ -1,8 +1,8 @@
 /**
- * Tests for the scan-to-location target picker + in-page scanner (#1574).
- * jsdom exposes no camera (navigator.mediaDevices is undefined), so the scan
- * step deterministically surfaces the "needs HTTPS" camera message — which is
- * exactly what we assert to prove the target → scan transition works.
+ * Tests for the scan-to-location target picker (#1574). The scan step uses a
+ * native-camera photo capture (file input), so here we only assert the target
+ * selection + transition to the photo step; decoding a captured image is a
+ * platform path not exercisable in jsdom.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -26,7 +26,7 @@ describe('QrAssignTargetModal', () => {
     );
   });
 
-  it('gates the scan button until an AMS slot is chosen, then opens the scanner', async () => {
+  it('gates the scan button until an AMS slot is chosen, then opens the photo step', async () => {
     render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} storageSuggestions={[]} />);
 
     // Slots render from the printer status (formatSlotLabel(0,0,..) => "A1").
@@ -40,10 +40,9 @@ describe('QrAssignTargetModal', () => {
 
     fireEvent.click(startBtn);
 
-    // Scan step: header switches and (no camera in jsdom) the HTTPS hint shows.
+    // Photo step: header switches, the Take-photo action and target chip show.
     expect(await screen.findByText('Scan a spool QR')).toBeInTheDocument();
-    expect(await screen.findByText(/secure \(HTTPS\) connection/i)).toBeInTheDocument();
-    // Target chip reflects the chosen slot.
+    expect(screen.getByRole('button', { name: /take photo/i })).toBeInTheDocument();
     expect(screen.getByText(/Target: X1C · A1/)).toBeInTheDocument();
   });
 

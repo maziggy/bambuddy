@@ -1,0 +1,200 @@
+2026-05-30 17:32:33,118 INFO [uvicorn.access] [-] [IP]:55283 - "DELETE /api/v1/local-presets/16 HTTP/1.1" 200
+2026-05-30 17:32:48,402 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-30 17:32:48,694 INFO [uvicorn.access] [-] [IP]:65423 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-30 17:32:48,789 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-30 17:32:48,790 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-30 17:32:48,794 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-30 17:33:27,097 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 17:34:02,299 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:36:07,318 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:38:12,350 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:38:27,110 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 17:40:17,175 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:42:16,585 INFO [uvicorn.access] [-] [IP]:53311 - "DELETE /api/v1/local-presets/19 HTTP/1.1" 200
+2026-05-30 17:42:18,604 INFO [uvicorn.access] [-] [IP]:61704 - "DELETE /api/v1/local-presets/20 HTTP/1.1" 200
+2026-05-30 17:42:21,346 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:42:54,492 INFO [uvicorn.access] [-] [IP]:53209 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-30 17:42:54,625 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-30 17:42:54,625 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-30 17:42:54,627 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-30 17:43:27,124 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 17:44:17,569 INFO [uvicorn.access] [-] [IP]:59366 - "POST /api/v1/cloud/logout HTTP/1.1" 200
+2026-05-30 17:44:23,031 INFO [backend.app.services.bambu_mqtt] [f72d5481] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-05-30 17:44:23,053 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=21, 3 profiles, expected=0.4
+2026-05-30 17:44:23,053 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 3 K-profiles for nozzle=0.4
+2026-05-30 17:44:23,053 INFO [backend.app.services.bambu_mqtt] [f72d5481] [[SERIAL]] Got 3 K-profiles for nozzle=0.4 on attempt 1
+2026-05-30 17:44:23,179 INFO [backend.app.services.bambu_mqtt] [6ea090c0] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-05-30 17:44:23,203 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=22, 3 profiles, expected=0.4
+2026-05-30 17:44:23,204 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 3 K-profiles for nozzle=0.4
+2026-05-30 17:44:23,204 INFO [backend.app.services.bambu_mqtt] [6ea090c0] [[SERIAL]] Got 3 K-profiles for nozzle=0.4 on attempt 1
+2026-05-30 17:44:31,392 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:44:43,722 INFO [backend.app.api.routes.kprofiles] [6803a0d4] [API] delete_kprofile: printer=1, slot_id=102, setting_id=GFSR99_10, filament_id=GFU99
+2026-05-30 17:44:43,722 INFO [backend.app.services.bambu_mqtt] [6803a0d4] [[SERIAL]] Deleting K-profile: cali_idx=102, filament=GFU99, setting_id=GFSR99_10, dual=False
+2026-05-30 17:44:44,225 INFO [uvicorn.access] [-] [IP]:57731 - "DELETE /api/v1/printers/1/kprofiles/ HTTP/1.1" 200
+2026-05-30 17:44:48,262 INFO [backend.app.services.bambu_mqtt] [a5e034b3] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-05-30 17:44:48,286 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=24, 2 profiles, expected=0.4
+2026-05-30 17:44:48,286 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 2 K-profiles for nozzle=0.4
+2026-05-30 17:44:48,287 INFO [backend.app.services.bambu_mqtt] [a5e034b3] [[SERIAL]] Got 2 K-profiles for nozzle=0.4 on attempt 1
+2026-05-30 17:44:58,127 INFO [backend.app.services.bambu_mqtt] [0ab51c8a] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-05-30 17:44:58,151 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=25, 2 profiles, expected=0.4
+2026-05-30 17:44:58,152 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 2 K-profiles for nozzle=0.4
+2026-05-30 17:44:58,153 INFO [backend.app.services.bambu_mqtt] [0ab51c8a] [[SERIAL]] Got 2 K-profiles for nozzle=0.4 on attempt 1
+2026-05-30 17:45:13,702 INFO [backend.app.services.bambu_mqtt] [7f13d6d1] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-05-30 17:45:13,725 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=26, 2 profiles, expected=0.4
+2026-05-30 17:45:13,726 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 2 K-profiles for nozzle=0.4
+2026-05-30 17:45:13,727 INFO [backend.app.services.bambu_mqtt] [7f13d6d1] [[SERIAL]] Got 2 K-profiles for nozzle=0.4 on attempt 1
+2026-05-30 17:46:36,672 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:48:27,138 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 17:48:43,861 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:49:34,252 INFO [uvicorn.access] [-] [IP]:53834 - "POST /api/v1/library/files/2/slice HTTP/1.1" 202
+2026-05-30 17:49:34,256 INFO [backend.app.api.routes.library] [ed77166f] 3MF sanitiser: removed sentinel '-1' for keys ['raft_first_layer_expansion', 'tree_support_wall_count'] — slicer will use --load-settings defaults
+2026-05-30 17:50:42,519 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-05-30 17:50:42,520 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-05-30 17:50:43,558 INFO [backend.app.services.mqtt_relay] [-] MQTT relay connected successfully
+2026-05-30 17:50:44,555 INFO [backend.app.services.mqtt_relay] [-] MQTT relay connected to [IP]:1883
+2026-05-30 17:50:44,561 INFO [backend.app.services.mqtt_smart_plug] [-] MQTT smart plug service connected successfully
+2026-05-30 17:50:45,559 INFO [backend.app.services.mqtt_smart_plug] [-] MQTT smart plug service connected to [IP]:1883
+2026-05-30 17:50:46,579 INFO [backend.app.services.background_dispatch] [-] Background dispatch dispatcher started
+2026-05-30 17:50:46,580 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-05-30 17:50:46,580 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-05-30 17:50:46,585 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-05-30 17:50:46,592 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-05-30 17:50:46,592 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-05-30 17:50:46,592 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-05-30 17:50:46,595 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-05-30 17:50:46,595 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-05-30 17:50:46,595 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-05-30 17:50:46,596 INFO [backend.app.main] [-] AMS history recording started
+2026-05-30 17:50:46,596 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-05-30 17:50:46,596 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-05-30 17:50:46,596 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-05-30 17:50:46,596 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-05-30 17:50:46,596 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-05-30 17:50:46,596 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-05-30 17:50:46,601 INFO [backend.app.services.virtual_printer.manager] [-] [VP [PRINTER] Bamb] Starting server-mode services on [IP]
+2026-05-30 17:50:46,602 INFO [backend.app.services.virtual_printer.certificate] [-] Deleted printer certificate (CA preserved)
+2026-05-30 17:50:46,602 INFO [backend.app.services.virtual_printer.certificate] [-] Generating certificates for virtual printer (serial: [SERIAL])...
+2026-05-30 17:50:46,633 INFO [backend.app.services.virtual_printer.certificate] [-] Using existing CA certificate (expires in 7299 days)
+2026-05-30 17:50:46,692 INFO [backend.app.services.virtual_printer.certificate] [-] Generating printer certificate with CN=[SERIAL], local IP: [IP]
+2026-05-30 17:50:46,692 INFO [backend.app.services.virtual_printer.certificate] [-] Added additional SAN IP: [IP]
+2026-05-30 17:50:46,693 INFO [backend.app.services.virtual_printer.certificate] [-] Generated certificate chain at /app/data/virtual_printer/certs/1
+2026-05-30 17:50:46,693 INFO [backend.app.services.virtual_printer.certificate] [-]   CA: CN=Virtual Printer CA
+2026-05-30 17:50:46,693 INFO [backend.app.services.virtual_printer.certificate] [-]   Printer: CN=[SERIAL]
+2026-05-30 17:50:46,694 INFO [backend.app.services.virtual_printer.mqtt_bridge] [-] [[PRINTER] Bamb] MQTT bridge bound to printer 1 (serial=[SERIAL])
+2026-05-30 17:50:46,694 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] request_status_update: not connected
+2026-05-30 17:50:46,694 INFO [backend.app.services.virtual_printer.manager] [-] [VP [PRINTER] Bamb] Server-mode services started on [IP]
+2026-05-30 17:50:46,694 INFO [backend.app.services.virtual_printer.manager] [-] Started server-mode VP: [PRINTER] Bamb on [IP]
+2026-05-30 17:50:46,694 INFO [root] [-] Virtual printer manager synced from database
+2026-05-30 17:50:46,694 INFO [backend.app.services.virtual_printer.ftp_server] [-] [[PRINTER] Bamb] Starting virtual printer implicit FTPS on [IP]:990
+2026-05-30 17:50:46,695 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP SSL context created with standard settings
+2026-05-30 17:50:46,695 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Starting simple MQTT server on port 8883
+2026-05-30 17:50:46,707 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT SSL cert info: subject=CN=[SERIAL]
+issuer=CN=Virtual Printer CA
+2026-05-30 17:50:46,707 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT SSL context: TLS 1.2+, cert=/app/data/virtual_printer/certs/1/virtual_printer.crt
+2026-05-30 17:50:46,707 INFO [backend.app.services.virtual_printer.tcp_proxy] [-] Starting RTSP TCP proxy: [IP]:322 → [IP]:322
+2026-05-30 17:50:46,708 INFO [backend.app.services.virtual_printer.bind_server] [-] Starting bind server on ports [3000, 3002] (serial=[SERIAL], model=C11, tls=True)
+2026-05-30 17:50:46,708 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Starting virtual printer SSDP server: [PRINTER] Bamb ([SERIAL])
+2026-05-30 17:50:46,708 INFO [backend.app.services.virtual_printer.ssdp_server] [-] SSDP server listening on port 2021, advertising IP: [IP]
+2026-05-30 17:50:46,708 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Virtual printer: [PRINTER] Bamb ([SERIAL]) model=C11
+2026-05-30 17:50:46,708 INFO [backend.app.services.virtual_printer.ssdp_server] [-] SSDP server also listening on [IP]:2021
+2026-05-30 17:50:46,708 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent initial SSDP NOTIFY announcement
+2026-05-30 17:50:46,709 WARNING [backend.app.services.virtual_printer.bind_server] [-] Bind server port 3000 already in use, skipping
+2026-05-30 17:50:46,709 INFO [backend.app.services.virtual_printer.ftp_server] [-] Implicit FTPS server started on port 990
+2026-05-30 17:50:46,709 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP passive data port range: 50000-50100
+2026-05-30 17:50:46,709 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Simple MQTT server listening on port 8883
+2026-05-30 17:50:46,709 INFO [backend.app.services.virtual_printer.tcp_proxy] [-] RTSP TCP proxy listening on port 322
+2026-05-30 17:50:46,711 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Starting periodic status push task
+2026-05-30 17:50:46,711 INFO [backend.app.services.virtual_printer.bind_server] [-] Bind server listening on [IP]:3002 (TLS)
+2026-05-30 17:50:46,735 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-30 17:50:46,735 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-30 17:50:46,735 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-30 17:50:46,834 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-05-30 17:50:46,834 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription. Disabling request topic for this printer.
+2026-05-30 17:50:47,175 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-30 17:50:47,175 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-30 17:50:47,177 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-30 17:50:48,782 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.07.00.00
+2026-05-30 17:50:49,418 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, subtask: Universal_Clamp_Holder_for_PCB_Circuit_Boards, is_new: True, is_file_change: False
+2026-05-30 17:50:49,424 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-05-30 17:50:49,494 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-05-30 17:50:49,497 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1), AMS1-T0(remain=-1), AMS1-T1(remain=-1), AMS1-T2(remain=-1), AMS1-T3(remain=-1)
+2026-05-30 17:50:49,497 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=1, last_loaded_tray=1
+2026-05-30 17:50:49,497 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=F98C36FF, now=?, tar=?), T1(type=PLA, color=161616FF, now=?, tar=?), T2(type=PLA, color=FFF144FF, now=?, tar=?), T3(type=PLA, color=BCBCBCFF, now=?, tar=?)
+2026-05-30 17:50:49,497 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 1: T0(type=PLA, color=2850E0FF, now=?, tar=?), T1(type=PLA, color=F72323FF, now=?, tar=?), T2(type=PLA, color=FFFFFFFF, now=?, tar=?), T3(type=PETG, color=161616FF, now=?, tar=?)
+2026-05-30 17:50:49,499 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-05-30 17:50:49,502 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-05-30 17:50:49,502 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:50:49,505 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=True
+2026-05-30 17:50:49,505 INFO [backend.app.main] [-] [PLATE CHECK] ENTERING plate detection code for printer 1
+2026-05-30 17:50:49,577 INFO [backend.app.main] [-] [PLATE CHECK] Running plate detection for printer 1
+2026-05-30 17:50:49,583 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:50:52,434 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 89926 bytes
+2026-05-30 17:50:52,481 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-30 17:50:52,841 INFO [uvicorn.access] [-] [IP]:61956 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-30 17:50:52,930 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-30 17:50:52,931 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-30 17:50:52,937 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-30 17:50:54,776 INFO [backend.app.services.camera] [-] Saved camera frame to: /tmp/tmp09oqw3jy.jpg
+2026-05-30 17:50:54,795 WARNING [backend.app.main] [-] [PLATE CHECK] Objects detected on plate for printer 1! Confidence: 100%, Diff: 14.6%
+2026-05-30 17:50:54,795 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sent pause print command
+2026-05-30 17:50:54,796 INFO [backend.app.main] [-] [PLATE CHECK] Print paused for printer 1
+2026-05-30 17:50:54,828 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=6)
+2026-05-30 17:50:54,855 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-05-30 17:50:55,054 INFO [backend.app.services.notification_service] [-] Sent notification via Discord
+2026-05-30 17:50:55,054 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, subtask: Universal_Clamp_Holder_for_PCB_Circuit_Boards
+2026-05-30 17:50:55,058 INFO [backend.app.main] [-] Skipping duplicate - already have printing archive 1 for Universal_Clamp_Holder_for_PCB_Circuit_Boards
+2026-05-30 17:50:55,058 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 1)
+2026-05-30 17:50:55,060 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-05-30 17:50:55,060 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:50:56,613 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-05-30 17:50:56,900 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 90794 bytes
+2026-05-30 17:50:56,900 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-05-30 17:50:56,908 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-05-30 17:50:56,920 INFO [backend.app.main] [-] Loaded 4 printable objects for printer 1
+2026-05-30 17:51:07,343 INFO [backend.app.api.routes.camera] [83da3c2b] Using chamber image protocol for P1S
+2026-05-30 17:51:07,343 INFO [backend.app.api.routes.camera] [83da3c2b] Camera viewer attached to printer-1 (subscribers=1)
+2026-05-30 17:51:07,345 INFO [backend.app.api.routes.camera] [83da3c2b] Starting chamber image stream for [IP] (stream_id=1-fanout, model=P1S)
+2026-05-30 17:51:07,431 INFO [backend.app.api.routes.cloud] [dd980881] get_filament_info called with 3 IDs: ['GFL99', 'GFG99', 'GFU99']
+2026-05-30 17:51:07,443 INFO [uvicorn.access] [-] [IP]:62197 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-05-30 17:51:07,468 INFO [backend.app.api.routes.printers] [e3995745] Trying to download cover for 'Universal_Clamp_Holder_for_PCB_Circuit_Boards' from [IP] (trying 8 paths)
+2026-05-30 17:51:08,784 INFO [backend.app.services.camera] [83da3c2b] Chamber image: connected to [IP]:6000
+2026-05-30 17:51:08,858 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-05-30 17:51:10,040 INFO [backend.app.services.bambu_mqtt] [8a5ed09e] [[SERIAL]] Sent resume print command
+2026-05-30 17:51:10,040 INFO [uvicorn.access] [-] [IP]:50957 - "POST /api/v1/printers/1/print/resume HTTP/1.1" 200
+2026-05-30 17:51:12,973 INFO [backend.app.api.routes.camera] [83da3c2b] Camera viewer detached from printer-1 (subscribers=0)
+2026-05-30 17:51:13,003 INFO [backend.app.api.routes.camera] [83da3c2b] Chamber image stream cancelled (stream_id=1-fanout)
+2026-05-30 17:51:13,034 INFO [backend.app.services.camera] [6e7fad58] Found ffmpeg at: /usr/bin/ffmpeg
+2026-05-30 17:51:14,415 INFO [backend.app.api.routes.camera] [83da3c2b] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-05-30 17:51:14,416 INFO [backend.app.api.routes.camera] [0eb8938f] Shut down camera fan-out broadcaster for printer 1
+2026-05-30 17:51:14,416 INFO [backend.app.api.routes.camera] [0eb8938f] Stopped 0 camera stream(s) for printer 1
+2026-05-30 17:51:14,417 INFO [uvicorn.access] [-] [IP]:50957 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-05-30 17:52:16,490 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf to /app/data/archive/temp/cover_1_Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf (6242753 bytes)
+2026-05-30 17:52:16,531 INFO [backend.app.api.routes.printers] [e3995745] Downloaded file size: 6242753 bytes
+2026-05-30 17:52:16,533 INFO [backend.app.api.routes.printers] [e3995745] Cover: detected plate 1 from 3MF contents
+2026-05-30 17:52:46,726 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-05-30 17:52:54,896 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-05-30 17:52:55,192 INFO [uvicorn.access] [-] [IP]:51341 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-05-30 17:52:55,318 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-05-30 17:52:55,318 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-05-30 17:52:55,320 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-05-30 17:53:43,749 INFO [backend.app.api.routes.support] [d2504058] Log level changed to DEBUG
+2026-05-30 17:53:43,749 INFO [backend.app.api.routes.bug_report] [d2504058] Bug report: enabled debug logging
+2026-05-30 17:53:43,749 DEBUG [backend.app.services.bambu_mqtt] [d2504058] [[SERIAL]] Requesting status update (pushall)
+2026-05-30 17:53:43,750 INFO [uvicorn.access] [-] [IP]:63391 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-05-30 17:53:43,852 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, subtask_name: Universal_Clamp_Holder_for_PCB_Circuit_Boards
+2026-05-30 17:53:43,852 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '3', 'tray_exist_bits': 'ff', 'tray_is_bbl_bits': 'ff', 'tray_tar': '1', 'tray_now': '1', 'tray_pre': '1', 'tray_read_done_bits': 'ff', 'tray_reading_bits': '0', 'version': 71, 'insert_flag': True, 'power_on_flag': True}
+2026-05-30 17:53:43,853 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 1
+2026-05-30 17:53:43,853 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-05-30 17:53:43,854 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-05-30 17:53:43,854 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-30 17:53:43,854 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-05-30 17:53:43,854 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-05-30 17:53:43,855 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-05-30 17:53:43,855 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-05-30 17:53:43,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-05-30 17:53:43,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-05-30 17:53:43,857 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-05-30 17:53:43,857 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-05-30 17:53:43,857 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Universal_Clamp_Holder_for_PCB_Circuit_Boards.gcode.3mf, subtask: Universal_Clamp_Holder_for_PCB_Circuit_Boards
+2026-05-30 17:53:45,888 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-05-30 17:53:46,978 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for [PRINTER] Bamb (Location=[IP], USN=[SERIAL], bind=[IP])

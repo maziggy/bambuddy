@@ -1,97 +1,42 @@
-name: Fork - Sync upstream and build image
+name: Fork - Build and push Docker image
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Keeps the enclosure-sensor fork branch in sync with upstream/dev and
-# publishes a Docker image to ghcr.io/soopahfly/bambuddy:latest so a
-# self-hosted server can pull updates without building locally.
+# Builds and publishes a Docker image to ghcr.io/soopahfly/bambuddy:latest
+# whenever the dev branch is updated. A self-hosted Watchtower instance picks
+# up the new image automatically.
 #
-# Two jobs:
-#   sync   - merges maziggy/bambuddy:dev into the feature branch on a schedule
-#            (or on demand). Fails cleanly on conflict so nothing broken ships.
-#   build  - builds and pushes the Docker image whenever the feature branch is
-#            updated (by the sync job pushing, or by a direct push).
+# Upstream sync is handled manually (not automated) to avoid merge conflicts.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  schedule:
-    - cron: '0 4 * * 1'  # every Monday at 04:00 UTC
-  workflow_dispatch:      # manual trigger in the GitHub Actions UI
   push:
     branches:
-      - feature/ha-enclosure-sensors
+      - dev
+  workflow_dispatch:      # manual trigger in the GitHub Actions UI
 
 concurrency:
   group: fork-sync-build
   cancel-in-progress: false  # never cancel a running build mid-push
 
 env:
-  FEATURE_BRANCH: feature/ha-enclosure-sensors
-  UPSTREAM_REPO: https://github.com/maziggy/bambuddy.git
-  UPSTREAM_BRANCH: dev
   IMAGE: ghcr.io/soopahfly/bambuddy
 
 jobs:
 
-  # ── 1. Sync upstream ──────────────────────────────────────────────────────
-  # Runs only on schedule or manual dispatch (not on push — a push already has
-  # the latest commits, and re-syncing would create an infinite loop).
-  sync:
-    name: Merge upstream into feature branch
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout feature branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.FEATURE_BRANCH }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure git identity
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Fetch upstream
-        run: |
-          git remote add upstream ${{ env.UPSTREAM_REPO }}
-          git fetch upstream
-
-      - name: Merge upstream into feature branch
-        run: |
-          if git merge upstream/${{ env.UPSTREAM_BRANCH }} --no-edit; then
-            if git diff --quiet HEAD origin/${{ env.FEATURE_BRANCH }}; then
-              echo "No new commits from upstream - nothing to push."
-            else
-              git push origin ${{ env.FEATURE_BRANCH }}
-              echo "Pushed merged commits - build job will trigger on the new push."
-            fi
-          else
-            echo "::error::Merge conflict - resolve manually then push."
-            git merge --abort
-            exit 1
-          fi
-
-  # ── 2. Build and push Docker image ────────────────────────────────────────
-  # Triggered by any push to the feature branch (including the push the sync
-  # job makes above). Does NOT depend on the sync job so it runs cleanly on
-  # direct pushes without needing always() gymnastics.
+  # ── Build and push Docker image ────────────────────────────────────────────
+  # Triggered by any push to dev (or manual dispatch).
   build:
     name: Build and push Docker image
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: Checkout feature branch
+      - name: Checkout dev branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.FEATURE_BRANCH }}
+          ref: dev
           fetch-depth: 1
 
       - name: Set up Docker Buildx
@@ -122,7 +67,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             FORK_VERSION_SUFFIX=-soopahfly
-          # GHA layer cache - pip install and npm ci layers are reused across
-          # runs as long as requirements.txt / package-lock.json are unchanged.
           cache-from: type=gha,scope=fork-image-v2
           cache-to: type=gha,scope=fork-image-v2,mode=max

@@ -404,6 +404,37 @@ class HomeAssistantService:
         if not hasattr(self, "_storage_cache"):
             self._storage_cache: dict[int, dict] = {}
 
+    @staticmethod
+    def _coerce_float(value) -> float | None:
+        """Return value as a float, or None for missing / sentinel / non-numeric input."""
+        if value is None:
+            return None
+        if isinstance(value, str) and value.strip().lower() in ("", "unknown", "unavailable", "none", "nan"):
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _extract_reading(data: dict, attr_keys: tuple[str, ...]) -> float | None:
+        """Pull a numeric reading from a HA entity payload.
+
+        Tries the top-level ``state`` first (the common case for ``sensor.*``
+        entities), then falls back to the given attribute keys. This lets a
+        ``climate.*`` entity or a device that nests the value under attributes
+        (e.g. ``current_temperature`` / ``current_humidity``) still report.
+        """
+        value = HomeAssistantService._coerce_float(data.get("state"))
+        if value is not None:
+            return value
+        attrs = data.get("attributes") or {}
+        for key in attr_keys:
+            value = HomeAssistantService._coerce_float(attrs.get(key))
+            if value is not None:
+                return value
+        return None
+
     async def poll_storage_unit(
         self, unit_id: int, temp_entity: str | None, humidity_entity: str | None
     ) -> dict | None:
@@ -430,18 +461,17 @@ class HomeAssistantService:
                     )
                     response.raise_for_status()
                     data = response.json()
-                    state = data.get("state", "")
-                    if state not in ("unknown", "unavailable", ""):
-                        try:
-                            result["temp"] = float(state)
-                            result["temp_unit"] = data.get("attributes", {}).get("unit_of_measurement", "°C")
-                        except (ValueError, TypeError):
-                            logger.warning(
-                                "Storage temp not numeric unit=%s entity=%s state=%r",
-                                unit_id,
-                                temp_entity,
-                                state,
-                            )
+                    temp = self._extract_reading(data, ("current_temperature", "temperature", "temp"))
+                    if temp is not None:
+                        result["temp"] = temp
+                        result["temp_unit"] = data.get("attributes", {}).get("unit_of_measurement", "°C")
+                    else:
+                        logger.warning(
+                            "Storage temp: no numeric value unit=%s entity=%s state=%r",
+                            unit_id,
+                            temp_entity,
+                            data.get("state"),
+                        )
 
                 if humidity_entity:
                     response = await client.get(
@@ -450,17 +480,16 @@ class HomeAssistantService:
                     )
                     response.raise_for_status()
                     data = response.json()
-                    state = data.get("state", "")
-                    if state not in ("unknown", "unavailable", ""):
-                        try:
-                            result["humidity"] = float(state)
-                        except (ValueError, TypeError):
-                            logger.warning(
-                                "Storage humidity not numeric unit=%s entity=%s state=%r",
-                                unit_id,
-                                humidity_entity,
-                                state,
-                            )
+                    humidity = self._extract_reading(data, ("current_humidity", "humidity"))
+                    if humidity is not None:
+                        result["humidity"] = humidity
+                    else:
+                        logger.warning(
+                            "Storage humidity: no numeric value unit=%s entity=%s state=%r",
+                            unit_id,
+                            humidity_entity,
+                            data.get("state"),
+                        )
 
             self._storage_cache[unit_id] = result
             return result

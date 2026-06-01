@@ -362,6 +362,42 @@ class HomeAssistantService:
         """Return the last cached enclosure reading for a printer, or None."""
         return self._enclosure_cache.get(printer_id)
 
+    async def get_sensor_value(self, entity_id: str) -> float | None:
+        """Fetch a numeric sensor value from HA using pre-configured credentials.
+
+        Called by the enclosure polling task in main.py. Returns None when HA
+        is not configured, the entity is unavailable, or the value is non-numeric.
+        """
+        if not self.base_url or not self.token:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
+                return await self._get_sensor_value(client, entity_id)
+        except Exception as e:
+            logger.debug("get_sensor_value failed entity=%s: %s", entity_id, e)
+            return None
+
+    async def get_entity_state(self, entity_id: str) -> str | None:
+        """Fetch raw state string from HA using pre-configured credentials.
+
+        Called by the enclosure fan polling task in main.py. Returns None when
+        HA is not configured or the entity is unavailable.
+        """
+        if not self.base_url or not self.token:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
+                response = await client.get(
+                    f"{self.base_url}/api/states/{entity_id}",
+                    headers=self._headers(),
+                )
+                response.raise_for_status()
+                state = response.json().get("state", "")
+                return state if state not in ("unknown", "unavailable", "") else None
+        except Exception as e:
+            logger.debug("get_entity_state failed entity=%s: %s", entity_id, e)
+            return None
+
     # ── Storage unit polling ───────────────────────────────────────────────
 
     def __init_storage_cache(self):

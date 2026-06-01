@@ -4860,9 +4860,19 @@ async def poll_enclosure_sensors():
 
     while True:
         try:
+            from backend.app.api.routes.settings import get_homeassistant_settings
             from backend.app.models.printer import Printer
 
             async with async_session() as db:
+                # Configure HA service with current credentials before polling
+                ha_settings = await get_homeassistant_settings(db)
+                ha_url = ha_settings.get("ha_url", "")
+                ha_token = ha_settings.get("ha_token", "")
+                if not ha_url or not ha_token:
+                    await asyncio.sleep(ENCLOSURE_POLL_INTERVAL)
+                    continue
+                homeassistant_service.configure(ha_url, ha_token)
+
                 result = await db.execute(
                     select(
                         Printer.id,

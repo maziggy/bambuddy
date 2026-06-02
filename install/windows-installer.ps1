@@ -408,7 +408,10 @@ function Move-LegacyRuntimeData {
 
     $legacyMappings = @(
         @{ Source = (Join-Path $BambuddyDir "bambuddy.db"); Destination = (Join-Path $DataDir "bambuddy.db") },
-        @{ Source = (Join-Path $BambuddyDir "archive"); Destination = (Join-Path $DataDir "archive") }
+        @{ Source = (Join-Path $BambuddyDir "archive"); Destination = (Join-Path $DataDir "archive") },
+        # external_links.py resolves user-uploaded icons to base_dir/icons; after
+        # DATA_DIR migration that becomes $DataDir/icons, so move any legacy ones.
+        @{ Source = (Join-Path $BambuddyDir "icons"); Destination = (Join-Path $DataDir "icons") }
     )
 
     foreach ($mapping in $legacyMappings) {
@@ -942,11 +945,15 @@ try {
         if (-not $existingRule) {
             Write-Log "Creating firewall rule: $ruleName" "INFO" Cyan
 
+            # Restrict to trusted profiles. Bambuddy ships with auth disabled by
+            # default; allowing Public would expose an unauthenticated UI on
+            # cafe / hotel / airport networks the moment Windows classifies them.
             New-NetFirewallRule `
                 -DisplayName $ruleName `
                 -Direction Inbound `
                 -Protocol TCP `
                 -LocalPort $port `
+                -Profile Domain,Private `
                 -Action Allow | Out-Null
 
             Write-Log "Firewall rule created." "INFO" Green
@@ -1063,6 +1070,14 @@ try {
             $env:LOG_DIR = $appLogDir
             & $venvPython -m uvicorn backend.app.main:app --host $bindAddress --port $port
         }
+    }
+
+    # When relaunched elevated via Restart-AsAdmin, the new PowerShell window
+    # closes the moment the script returns. Pause so the install summary is
+    # readable. Matches the catch-block gate below.
+    if ((Test-IsAdmin) -and (-not $script:Yes) -and (-not $script:Silent)) {
+        Write-Host ""
+        Read-Host "Press Enter to close"
     }
 }
 catch {

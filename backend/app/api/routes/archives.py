@@ -4045,6 +4045,15 @@ async def reprint_archive(
     if body is None:
         body = ReprintRequest()
 
+    logger.warning(
+        "Deprecated API used: POST /archives/%s/reprint?printer_id=%s; use POST /queue/ instead "
+        "(user_id=%s, username=%s)",
+        archive_id,
+        printer_id,
+        user.id if user else None,
+        user.username if user else None,
+    )
+
     # Get archive
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)

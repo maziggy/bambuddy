@@ -1,6 +1,5 @@
 /**
- * Test that reprint mode does not show the "Print queued for printer" toast.
- * The background dispatch websocket toast handles feedback instead.
+ * Test that legacy reprint mode now goes through the queue-backed print path.
  *
  * Separate file because vi.mock(ToastContext) must be module-scoped
  * and would interfere with the main PrintModal test suite.
@@ -48,13 +47,13 @@ describe('PrintModal dispatch toast', () => {
       http.get('/api/v1/printers/:id/status', () => {
         return HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] });
       }),
-      http.post('/api/v1/archives/:id/reprint', () => {
-        return HttpResponse.json({ status: 'dispatched', dispatch_job_id: 1 });
+      http.post('/api/v1/queue/', () => {
+        return HttpResponse.json({ id: 1, status: 'pending' });
       }),
     );
   });
 
-  it('does not show "queued" toast in reprint mode (dispatch toast handles it)', async () => {
+  it('shows queued toast in legacy reprint mode', async () => {
     const user = userEvent.setup();
     render(
       <PrintModal
@@ -81,8 +80,7 @@ describe('PrintModal dispatch toast', () => {
       expect(mockOnClose).toHaveBeenCalled();
     });
 
-    // showToast should NOT have been called with "Print queued for printer"
     const toastMessages = mockShowToast.mock.calls.map(call => call[0]);
-    expect(toastMessages).not.toContain('Print queued for printer');
+    expect(toastMessages).toContain('Print queued');
   });
 });

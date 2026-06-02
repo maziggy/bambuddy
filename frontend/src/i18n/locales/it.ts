@@ -726,7 +726,6 @@ export default {
     printTime: 'Tempo di stampa',
     filamentUsed: 'Filamento usato',
     cost: 'Costo',
-    reprint: 'Ristampa',
     preview: 'Anteprima',
     deleteArchive: 'Elimina archivio',
     deleteConfirm: 'Sei sicuro di eliminare questo archivio?',
@@ -773,7 +772,6 @@ export default {
     },
     menu: {
       print: 'Stampa',
-      schedule: 'Programma',
       openInBambuStudio: 'Apri nello slicer',
       slice: 'Slice',
       externalLink: 'Link esterno',
@@ -868,9 +866,6 @@ export default {
       noFileForReprint: 'Nessun file 3MF disponibile — il file non è stato scaricato dalla stampante durante la registrazione',
       noPermissionEdit: 'Non hai il permesso di modificare archivi',
       noPermissionDelete: 'Non hai il permesso di eliminare archivi',
-      reprint: 'Ristampa',
-      schedulePrint: 'Programma Stampa',
-      schedule: 'Programma',
       openInBambuStudio: 'Apri nello slicer',
       openInBambuStudioToSlice: 'Apri nello slicer per slicing',
       slice: 'Slice',
@@ -1011,15 +1006,8 @@ export default {
     },
     title: 'Coda di stampa',
     subtitle: 'Programma e gestisci i tuoi lavori di stampa',
-    addToQueue: 'Aggiungi alla coda',
     // Print modal
-    print: 'Stampa',
-    reprint: 'Ristampa',
-    schedulePrint: 'Programma Stampa',
     editQueueItem: 'Modifica elemento coda',
-    printToPrinters: 'Stampa su {{count}} Stampanti',
-    queueToPrinters: 'Metti in coda su {{count}} Stampanti',
-    queueSelectedPlates: 'Metti in coda {{count}} piastre',
     selectAllPlates: 'Seleziona tutte le {{count}} piastre',
     deselectAll: 'Deseleziona tutto',
     printQueued: 'Stampa in coda',
@@ -1165,7 +1153,6 @@ export default {
     // Actions
     actions: {
       stopPrint: 'Ferma Stampa',
-      startPrint: 'Avvia Stampa',
       requeue: 'Rimetti in coda',
     },
     // Bulk edit
@@ -3302,8 +3289,6 @@ export default {
     changeLink: 'Cambia collegamento...',
     linkTo: 'Collega a...',
     linkToProjectOrArchive: 'Collega a progetto o archivio',
-    addToQueue: 'Aggiungi alla coda',
-    schedulePrint: 'Pianifica',
     generateThumbnail: 'Genera miniatura',
     generateThumbnails: 'Genera miniature',
     generateThumbnailsForMissing: 'Genera miniature per STL senza miniatura',
@@ -3606,8 +3591,6 @@ export default {
       fileCount: '{{count}} file',
       empty: 'Nessuna cartella collegata. Vai a Gestore file e collega una cartella a questo progetto.',
       noFiles: 'Nessun file in questa cartella.',
-      print: 'Stampa ora',
-      addToQueue: 'Aggiungi alla coda',
     },
     bom: {
       title: 'Distinta materiali',
@@ -4246,7 +4229,6 @@ export default {
 
   // Print modal
   printModal: {
-    title: 'Avvia stampa',
     selectPrinter: 'Seleziona stampante',
     selectPlate: 'Seleziona piatto',
     filamentMapping: 'Mappatura filamento',
@@ -4258,8 +4240,6 @@ export default {
     vibrationCalibration: 'Calibrazione vibrazioni',
     layerInspection: 'Ispezione primo layer',
     timelapse: 'Timelapse',
-    startPrint: 'Avvia stampa',
-    addToQueue: 'Aggiungi alla coda',
     cancel: 'Annulla',
     noPrintersAvailable: 'Nessuna stampante disponibile',
     printerBusy: 'Stampante occupata',

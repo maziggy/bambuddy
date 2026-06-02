@@ -726,7 +726,6 @@ export default {
     printTime: '打印时间',
     filamentUsed: '耗材用量',
     cost: '成本',
-    reprint: '重新打印',
     preview: '预览',
     deleteArchive: '删除归档',
     deleteConfirm: '确定要删除此归档吗？',
@@ -773,7 +772,6 @@ export default {
     },
     menu: {
       print: '打印',
-      schedule: '排程',
       openInBambuStudio: '在切片软件中打开',
       slice: '切片',
       externalLink: '外部链接',
@@ -868,9 +866,6 @@ export default {
       noFileForReprint: '无可用的 3MF 文件 — 打印记录时无法从打印机下载该文件',
       noPermissionEdit: '您没有编辑归档的权限',
       noPermissionDelete: '您没有删除归档的权限',
-      reprint: '重新打印',
-      schedulePrint: '排程打印',
-      schedule: '排程',
       openInBambuStudio: '在切片软件中打开',
       openInBambuStudioToSlice: '在切片软件中打开进行切片',
       slice: '切片',
@@ -1011,15 +1006,8 @@ export default {
     },
     title: '打印队列',
     subtitle: '排程和管理您的打印任务',
-    addToQueue: '添加到队列',
     // Print modal
-    print: '打印',
-    reprint: '重新打印',
-    schedulePrint: '排程打印',
     editQueueItem: '编辑队列项目',
-    printToPrinters: '打印到 {{count}} 台打印机',
-    queueToPrinters: '排队到 {{count}} 台打印机',
-    queueSelectedPlates: '将 {{count}} 个热床加入队列',
     selectAllPlates: '选择全部 {{count}} 个热床',
     deselectAll: '取消全选',
     printQueued: '已加入打印队列',
@@ -1165,7 +1153,6 @@ export default {
     // Actions
     actions: {
       stopPrint: '停止打印',
-      startPrint: '开始打印',
       requeue: '重新排队',
     },
     // Bulk edit
@@ -3302,8 +3289,6 @@ export default {
     changeLink: '更改链接...',
     linkTo: '链接到...',
     linkToProjectOrArchive: '链接到项目或归档',
-    addToQueue: '添加到队列',
-    schedulePrint: '排程',
     generateThumbnail: '生成缩略图',
     generateThumbnails: '生成缩略图',
     generateThumbnailsForMissing: '为缺少缩略图的 STL 文件生成缩略图',
@@ -3606,8 +3591,6 @@ export default {
       fileCount: '{{count}} 个文件',
       empty: '未链接文件夹。前往文件管理器将文件夹链接到此项目。',
       noFiles: '此文件夹中没有文件。',
-      print: '立即打印',
-      addToQueue: '加入队列',
     },
     bom: {
       title: '材料清单',
@@ -4246,7 +4229,6 @@ export default {
 
   // Print modal
   printModal: {
-    title: '开始打印',
     selectPrinter: '选择打印机',
     selectPlate: '选择板',
     filamentMapping: '耗材映射',
@@ -4258,8 +4240,6 @@ export default {
     vibrationCalibration: '振动校准',
     layerInspection: '首层检查',
     timelapse: '延时摄影',
-    startPrint: '开始打印',
-    addToQueue: '添加到队列',
     cancel: '取消',
     noPrintersAvailable: '无可用打印机',
     printerBusy: '打印机忙碌',

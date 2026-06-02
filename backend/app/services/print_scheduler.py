@@ -2081,6 +2081,7 @@ class PrintScheduler:
         library_file = None
         file_path = None
         filename = None
+        cleanup_disk_paths: list[Path] = []
 
         if item.archive_id:
             # Print from archive
@@ -2129,6 +2130,17 @@ class PrintScheduler:
                 )
                 if archive:
                     item.archive_id = archive.id
+                    if item.cleanup_library_after_dispatch and not library_file.is_external:
+                        item.library_file_id = None
+                        cleanup_disk_paths.append(file_path)
+                        if library_file.thumbnail_path:
+                            thumb_path = Path(library_file.thumbnail_path)
+                            if not thumb_path.is_absolute():
+                                thumb_path = settings.base_dir / library_file.thumbnail_path
+                            cleanup_disk_paths.append(thumb_path)
+                        await db.delete(library_file)
+                        file_path = settings.base_dir / archive.file_path
+                        filename = archive.filename
                     await db.flush()
                     logger.info(
                         "Queue item %s: Created archive %s from library file %s",
@@ -2310,6 +2322,15 @@ class PrintScheduler:
         item.status = "printing"
         item.started_at = datetime.now(timezone.utc)
         await db.commit()
+
+        for cleanup_path in cleanup_disk_paths:
+            try:
+                if cleanup_path.exists():
+                    cleanup_path.unlink()
+            except OSError as cleanup_err:
+                logger.warning(
+                    "Queue item %s: Failed to delete transient library file %s: %s", item.id, cleanup_path, cleanup_err
+                )
 
         # Clear the awaiting-plate-clear flag now that we're starting a new print
         printer_manager.set_awaiting_plate_clear(item.printer_id, False)

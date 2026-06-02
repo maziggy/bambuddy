@@ -726,7 +726,6 @@ export default {
     printTime: 'Druckzeit',
     filamentUsed: 'Verbrauchtes Filament',
     cost: 'Kosten',
-    reprint: 'Drucken',
     preview: 'Vorschau',
     deleteArchive: 'Archiv löschen',
     deleteConfirm: 'Möchten Sie dieses Archiv wirklich löschen?',
@@ -773,7 +772,6 @@ export default {
     },
     menu: {
       print: 'Drucken',
-      schedule: 'Planen',
       openInBambuStudio: 'Im Slicer öffnen',
       slice: 'Slicen',
       externalLink: 'Externer Link',
@@ -868,9 +866,6 @@ export default {
       noFileForReprint: 'Keine 3MF-Datei verfügbar — die Datei konnte beim Aufzeichnen des Drucks nicht vom Drucker heruntergeladen werden',
       noPermissionEdit: 'Sie haben keine Berechtigung, Archive zu bearbeiten',
       noPermissionDelete: 'Sie haben keine Berechtigung, Archive zu löschen',
-      reprint: 'Drucken',
-      schedulePrint: 'Druck planen',
-      schedule: 'Planen',
       openInBambuStudio: 'Im Slicer öffnen',
       openInBambuStudioToSlice: 'Im Slicer öffnen zum Slicen',
       slice: 'Slicen',
@@ -1011,15 +1006,8 @@ export default {
     },
     title: 'Druckwarteschlange',
     subtitle: 'Planen und verwalten Sie Ihre Druckaufträge',
-    addToQueue: 'Zur Warteschlange hinzufügen',
     // Print modal
-    print: 'Drucken',
-    reprint: 'Erneut drucken',
-    schedulePrint: 'Druck planen',
     editQueueItem: 'Warteschlangeneintrag bearbeiten',
-    printToPrinters: 'Auf {{count}} Druckern drucken',
-    queueToPrinters: 'Zu {{count}} Druckern hinzufügen',
-    queueSelectedPlates: '{{count}} Platten in die Warteschlange',
     selectAllPlates: 'Alle {{count}} Platten auswählen',
     deselectAll: 'Alle abwählen',
     printQueued: 'Druck in Warteschlange',
@@ -1165,7 +1153,6 @@ export default {
     // Actions
     actions: {
       stopPrint: 'Druck stoppen',
-      startPrint: 'Druck starten',
       requeue: 'Erneut einreihen',
     },
     // Bulk edit
@@ -3314,8 +3301,6 @@ export default {
     changeLink: 'Verknüpfung ändern...',
     linkTo: 'Verknüpfen mit...',
     linkToProjectOrArchive: 'Mit Projekt oder Archiv verknüpfen',
-    addToQueue: 'Zur Warteschlange',
-    schedulePrint: 'Planen',
     generateThumbnail: 'Vorschaubild generieren',
     generateThumbnails: 'Vorschaubilder generieren',
     generateThumbnailsForMissing: 'Vorschaubilder für STL-Dateien ohne Vorschau generieren',
@@ -3618,8 +3603,6 @@ export default {
       fileCount: '{{count}} Datei(en)',
       empty: 'Keine Ordner verknüpft. Gehen Sie zum Dateimanager und verknüpfen Sie einen Ordner mit diesem Projekt.',
       noFiles: 'Keine Dateien in diesem Ordner.',
-      print: 'Jetzt drucken',
-      addToQueue: 'Zur Warteschlange',
     },
     bom: {
       title: 'Stückliste',
@@ -4258,7 +4241,6 @@ export default {
 
   // Print modal
   printModal: {
-    title: 'Druck starten',
     selectPrinter: 'Drucker auswählen',
     selectPlate: 'Platte auswählen',
     filamentMapping: 'Filamentzuordnung',
@@ -4270,8 +4252,6 @@ export default {
     vibrationCalibration: 'Vibrations-Kalibrierung',
     layerInspection: 'Erste-Schicht-Prüfung',
     timelapse: 'Zeitraffer',
-    startPrint: 'Druck starten',
-    addToQueue: 'Zur Warteschlange hinzufügen',
     cancel: 'Abbrechen',
     noPrintersAvailable: 'Keine Drucker verfügbar',
     printerBusy: 'Drucker ist beschäftigt',

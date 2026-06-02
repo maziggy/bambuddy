@@ -726,7 +726,6 @@ export default {
     printTime: 'Tiempo de impresión',
     filamentUsed: 'Filamento usado',
     cost: 'Coste',
-    reprint: 'Reimprimir',
     preview: 'Vista previa',
     deleteArchive: 'Eliminar archivo',
     deleteConfirm: '¿Está seguro de que desea eliminar este archivo?',
@@ -773,7 +772,6 @@ export default {
     },
     menu: {
       print: 'Imprimir',
-      schedule: 'Programar',
       openInBambuStudio: 'Abrir en el laminador',
       slice: 'Laminar',
       externalLink: 'Enlace externo',
@@ -868,9 +866,6 @@ export default {
       noFileForReprint: 'No hay archivo 3MF disponible — no se pudo descargar el archivo de la impresora cuando se registró la impresión',
       noPermissionEdit: 'No tiene permiso para editar archivos',
       noPermissionDelete: 'No tiene permiso para eliminar archivos',
-      reprint: 'Reimprimir',
-      schedulePrint: 'Programar impresión',
-      schedule: 'Programar',
       openInBambuStudio: 'Abrir en el laminador',
       openInBambuStudioToSlice: 'Abrir en el laminador para laminar',
       slice: 'Laminar',
@@ -1011,15 +1006,8 @@ export default {
     },
     title: 'Cola de impresión',
     subtitle: 'Programe y gestione sus trabajos de impresión',
-    addToQueue: 'Añadir a la cola',
     // Print modal
-    print: 'Imprimir',
-    reprint: 'Reimprimir',
-    schedulePrint: 'Programar impresión',
     editQueueItem: 'Editar elemento de la cola',
-    printToPrinters: 'Imprimir en {{count}} impresoras',
-    queueToPrinters: 'Encolar en {{count}} impresoras',
-    queueSelectedPlates: 'Encolar {{count}} camas',
     selectAllPlates: 'Seleccionar las {{count}} camas',
     deselectAll: 'Deseleccionar todo',
     printQueued: 'Impresión encolada',
@@ -1165,7 +1153,6 @@ export default {
     // Actions
     actions: {
       stopPrint: 'Detener impresión',
-      startPrint: 'Iniciar impresión',
       requeue: 'Volver a encolar',
     },
     // Bulk edit
@@ -3317,8 +3304,6 @@ export default {
     changeLink: 'Cambiar enlace...',
     linkTo: 'Vincular a...',
     linkToProjectOrArchive: 'Vincular a un proyecto o archivo',
-    addToQueue: 'Añadir a la cola',
-    schedulePrint: 'Programar',
     generateThumbnail: 'Generar miniatura',
     generateThumbnails: 'Generar miniaturas',
     generateThumbnailsForMissing: 'Generar miniaturas para los archivos STL que no las tienen',
@@ -3621,8 +3606,6 @@ export default {
       fileCount: '{{count}} archivo(s)',
       empty: 'No hay carpetas vinculadas. Vaya al gestor de archivos y vincule una carpeta a este proyecto.',
       noFiles: 'No hay archivos en esta carpeta.',
-      print: 'Imprimir ahora',
-      addToQueue: 'Añadir a la cola',
     },
     bom: {
       title: 'Lista de materiales',
@@ -4266,7 +4249,6 @@ export default {
 
   // Print modal
   printModal: {
-    title: 'Iniciar impresión',
     selectPrinter: 'Seleccionar impresora',
     selectPlate: 'Seleccionar cama',
     filamentMapping: 'Mapeo de filamentos',
@@ -4278,8 +4260,6 @@ export default {
     vibrationCalibration: 'Calibración de vibración',
     layerInspection: 'Inspección de la primera capa',
     timelapse: 'Time-lapse',
-    startPrint: 'Iniciar impresión',
-    addToQueue: 'Añadir a la cola',
     cancel: 'Cancelar',
     noPrintersAvailable: 'No hay impresoras disponibles',
     printerBusy: 'La impresora está ocupada',

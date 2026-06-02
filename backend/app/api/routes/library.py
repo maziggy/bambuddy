@@ -4136,6 +4136,15 @@ async def print_library_file(
     if body is None:
         body = FilePrintRequest()
 
+    logger.warning(
+        "Deprecated API used: POST /library/files/%s/print?printer_id=%s; use POST /queue/ instead "
+        "(user_id=%s, username=%s)",
+        file_id,
+        printer_id,
+        current_user.id if current_user else None,
+        current_user.username if current_user else None,
+    )
+
     # Get the library file
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     lib_file = result.scalar_one_or_none()

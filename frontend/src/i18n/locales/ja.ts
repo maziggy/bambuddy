@@ -725,7 +725,6 @@ export default {
     printTime: '印刷時間',
     filamentUsed: 'フィラメント使用量',
     cost: 'コスト',
-    reprint: '再印刷',
     preview: 'プレビュー',
     deleteArchive: 'アーカイブを削除',
     deleteConfirm: 'このアーカイブを削除しますか？',
@@ -772,7 +771,6 @@ export default {
     },
     menu: {
       print: '印刷',
-      schedule: 'スケジュール',
       openInBambuStudio: 'スライサーで開く',
       slice: 'スライス',
       externalLink: '外部リンク',
@@ -867,9 +865,6 @@ export default {
       noFileForReprint: '3MFファイルがありません — 印刷記録時にプリンターからファイルをダウンロードできませんでした',
       noPermissionEdit: 'プロファイルを編集する権限がありません',
       noPermissionDelete: 'アーカイブを削除する権限がありません',
-      reprint: '再印刷',
-      schedulePrint: '印刷をスケジュール',
-      schedule: 'スケジュール',
       openInBambuStudio: 'スライサーで開く',
       openInBambuStudioToSlice: 'スライサーでスライス',
       slice: 'スライス',
@@ -1010,15 +1005,8 @@ export default {
     },
     title: '印刷キュー',
     subtitle: '印刷ジョブのスケジュールと管理',
-    addToQueue: 'キューに追加',
     // Print modal
-    print: '印刷',
-    reprint: '再印刷',
-    schedulePrint: '印刷をスケジュール',
     editQueueItem: 'キューアイテムを編集',
-    printToPrinters: '{{count}}台のプリンターで印刷',
-    queueToPrinters: '{{count}}台のプリンターでキュー追加',
-    queueSelectedPlates: '{{count}}プレートをキューに追加',
     selectAllPlates: '全{{count}}プレートを選択',
     deselectAll: '全て解除',
     printQueued: 'キューに追加しました',
@@ -1164,7 +1152,6 @@ export default {
     // Actions
     actions: {
       stopPrint: '印刷を停止',
-      startPrint: '印刷を開始',
       requeue: '再キュー',
     },
     // Bulk edit
@@ -3314,8 +3301,6 @@ export default {
     changeLink: 'リンクを変更...',
     linkTo: 'リンク先...',
     linkToProjectOrArchive: 'プロジェクトまたはアーカイブにリンク',
-    addToQueue: 'キューに追加',
-    schedulePrint: '印刷をスケジュール',
     generateThumbnail: 'サムネイルを生成',
     generateThumbnails: 'サムネイルを生成',
     generateThumbnailsForMissing: 'サムネイルのないSTLファイルのサムネイルを生成',
@@ -3618,8 +3603,6 @@ export default {
       fileCount: '{{count}}ファイル',
       empty: '<空>',
       noFiles: 'このフォルダにファイルはありません。',
-      print: '今すぐ印刷',
-      addToQueue: 'キューに追加',
     },
     bom: {
       title: '部品表',
@@ -4258,7 +4241,6 @@ export default {
 
   // Print modal
   printModal: {
-    title: '印刷を開始',
     selectPrinter: 'プリンターを選択',
     selectPlate: 'プレートを選択',
     filamentMapping: 'フィラメントマッピング',
@@ -4270,8 +4252,6 @@ export default {
     vibrationCalibration: '振動キャリブレーション',
     layerInspection: '第一層検査',
     timelapse: 'タイムラプス',
-    startPrint: '印刷を開始',
-    addToQueue: 'キューに追加',
     cancel: 'キャンセル',
     noPrintersAvailable: '利用可能なプリンターがありません',
     printerBusy: 'プリンターは使用中です',

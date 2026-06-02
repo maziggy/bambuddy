@@ -2,8 +2,8 @@ import type { PrintQueueItem, Printer } from '../../api/client';
 
 /**
  * Mode of operation for the PrintModal.
- * - 'reprint': Immediate print from archive (no schedule options)
- * - 'add-to-queue': Schedule print to queue (includes schedule options)
+ * - 'reprint': Legacy alias for creating a print queue item
+ * - 'add-to-queue': Legacy alias for creating a print queue item
  * - 'edit-queue-item': Edit existing queue item (all options + existing values)
  */
 export type PrintModalMode = 'reprint' | 'add-to-queue' | 'edit-queue-item';

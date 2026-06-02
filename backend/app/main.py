@@ -4820,15 +4820,19 @@ _enclosure_poll_task: asyncio.Task | None = None
 ENCLOSURE_POLL_INTERVAL = 60  # seconds
 
 
-async def poll_enclosure_sensors():
-    """Background task: poll HA enclosure sensors (temp/humidity/fan) for all configured printers."""
-    from backend.app.models.enclosure_fan_run import EnclosureFanRun
-    from backend.app.models.enclosure_reading import EnclosureReading
+async def seed_enclosure_cache_from_db():
+    """Seed the in-memory enclosure cache from the latest DB reading per printer.
 
+    Runs once at startup so the enclosure temp/humidity cards are populated
+    immediately instead of being blank until the first poll cycle (~60s) completes
+    after every restart. The cache uses the ``"temp"`` / ``"humidity"`` keys that
+    ``HomeAssistantService.get_cached_enclosure()`` consumers read, and mirrors the
+    ``EnclosureReading.temp`` / ``.humidity`` model columns.
+    """
     logger = logging.getLogger(__name__)
 
-    # Seed cache from DB on first run
     try:
+        from backend.app.models.enclosure_reading import EnclosureReading
         from backend.app.models.printer import Printer
 
         async with async_session() as db:
@@ -4850,13 +4854,24 @@ async def poll_enclosure_sensors():
                 latest = reading_result.scalar_one_or_none()
                 if latest:
                     cache = homeassistant_service._enclosure_cache.get(pid, {})
-                    if latest.temperature is not None:
-                        cache["temperature"] = latest.temperature
+                    if latest.temp is not None:
+                        cache["temp"] = latest.temp
                     if latest.humidity is not None:
                         cache["humidity"] = latest.humidity
                     homeassistant_service._enclosure_cache[pid] = cache
     except Exception as e:
         logger.warning("Failed to seed enclosure cache from DB: %s", e)
+
+
+async def poll_enclosure_sensors():
+    """Background task: poll HA enclosure sensors (temp/humidity/fan) for all configured printers."""
+    from backend.app.models.enclosure_fan_run import EnclosureFanRun
+    from backend.app.models.enclosure_reading import EnclosureReading
+
+    logger = logging.getLogger(__name__)
+
+    # Seed cache from DB on first run so cards are populated immediately on startup
+    await seed_enclosure_cache_from_db()
 
     while True:
         try:
@@ -4913,14 +4928,14 @@ async def poll_enclosure_sensors():
                         if temp is not None or humidity is not None:
                             reading = EnclosureReading(
                                 printer_id=pid,
-                                temperature=temp,
+                                temp=temp,
                                 humidity=humidity,
                             )
                             db.add(reading)
                             await db.commit()
                             cache = homeassistant_service._enclosure_cache.get(pid, {})
                             if temp is not None:
-                                cache["temperature"] = temp
+                                cache["temp"] = temp
                             if humidity is not None:
                                 cache["humidity"] = humidity
                             homeassistant_service._enclosure_cache[pid] = cache

@@ -22,6 +22,50 @@ BAMBU_API_BASE_CN = "https://api.bambulab.cn"
 # introduce ourselves as official Bambu Studio.
 _USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
 
+# Cloudflare protection on Bambu Lab's edge intermittently returns interstitials /
+# challenges instead of the JSON the API normally produces (issue #1575). The
+# parse error that results is opaque — these helpers detect the CF markers so
+# we can surface an actionable message instead of "Invalid response from Bambu Cloud".
+_CF_INTERSTITIAL_USER_MESSAGE = (
+    "Bambu Cloud is temporarily blocking automated requests from your network. "
+    "This is a Cloudflare protection on Bambu Lab's side, not a Bambuddy issue. "
+    "Please wait a few minutes and try again. If it persists, signing in to "
+    "bambulab.com once from a browser on the same network usually clears the "
+    "challenge."
+)
+
+
+def _detect_cloudflare_challenge(response) -> str | None:
+    """Return a user-actionable message when the response is a Cloudflare
+    challenge / mitigation page instead of the JSON the API normally returns.
+
+    Triggers on any of:
+      - body contains "Just a moment..." (CF interactive challenge title)
+      - body contains "challenges.cloudflare.com" (CF turnstile widget src)
+      - HTTP 403 with a "cf-mitigated" response header (CF blocked)
+      - HTTP 503 with a "cf-ray" response header (CF Under Attack mode)
+
+    Returns None when the response doesn't look like a CF challenge — callers
+    fall through to their existing error path.
+    """
+    try:
+        body = response.text or ""
+    except Exception:
+        body = ""
+    if "Just a moment..." in body or "challenges.cloudflare.com" in body:
+        return _CF_INTERSTITIAL_USER_MESSAGE
+    try:
+        status = int(getattr(response, "status_code", 0) or 0)
+    except (TypeError, ValueError):
+        status = 0
+    headers = getattr(response, "headers", {}) or {}
+    if status == 403 and "cf-mitigated" in headers:
+        return _CF_INTERSTITIAL_USER_MESSAGE
+    if status == 503 and "cf-ray" in headers:
+        return _CF_INTERSTITIAL_USER_MESSAGE
+    return None
+
+
 # The `/v1/iot-service/api/slicer/setting` endpoint requires a `version` query
 # parameter in the XX.YY.ZZ.WW format Bambu Studio releases use (without it the
 # API returns HTTP 400 "field 'version' is not set"; non-matching formats like
@@ -114,7 +158,16 @@ class BambuCloudService:
                 },
             )
 
-            data = response.json()
+            try:
+                data = response.json()
+            except Exception as json_err:
+                logger.error("Failed to parse login response: %s, body: %s", json_err, response.text[:500])
+                cf_message = _detect_cloudflare_challenge(response)
+                return {
+                    "success": False,
+                    "needs_verification": False,
+                    "message": cf_message or "Invalid response from Bambu Cloud",
+                }
             logger.debug(
                 f"Login response: status={response.status_code}, loginType={data.get('loginType')}, hasTfaKey={'tfaKey' in data}"
             )
@@ -170,7 +223,12 @@ class BambuCloudService:
                 },
             )
 
-            data = response.json()
+            try:
+                data = response.json()
+            except Exception as json_err:
+                logger.error("Failed to parse email-verify response: %s, body: %s", json_err, response.text[:500])
+                cf_message = _detect_cloudflare_challenge(response)
+                return {"success": False, "message": cf_message or "Invalid response from Bambu Cloud"}
             logger.debug("Email verify response: status=%s, hasToken=%s", response.status_code, "accessToken" in data)
 
             if response.status_code == 200 and "accessToken" in data:
@@ -230,7 +288,8 @@ class BambuCloudService:
                 data = response.json()
             except Exception as json_err:
                 logger.error("Failed to parse TOTP response: %s, body: %s", json_err, response.text[:500])
-                return {"success": False, "message": "Invalid response from Bambu Cloud"}
+                cf_message = _detect_cloudflare_challenge(response)
+                return {"success": False, "message": cf_message or "Invalid response from Bambu Cloud"}
 
             # Token might be in accessToken, token field, or cookies
             access_token = data.get("accessToken") or data.get("token")

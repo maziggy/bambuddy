@@ -47,7 +47,7 @@ class TestVirtualPrinterInstance:
         return VirtualPrinterInstance(
             vp_id=1,
             name="TestPrinter",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -62,7 +62,7 @@ class TestVirtualPrinterInstance:
         """Verify constructor stores parameters correctly."""
         assert instance.id == 1
         assert instance.name == "TestPrinter"
-        assert instance.mode == "immediate"
+        assert instance.mode == "archive"
         assert instance.model == "C11"
         assert instance.access_code == "12345678"
         assert instance.serial_suffix == "391800001"
@@ -79,7 +79,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=2,
             name="X1C",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800002",
@@ -182,7 +182,7 @@ class TestVirtualPrinterInstance:
         Send-flow slicers don't watch the post-upload state, so this is a
         no-op behavior change for them.
         """
-        instance.mode = "immediate"
+        instance.mode = "archive"
         instance._mqtt = MagicMock()
         instance._mqtt.set_gcode_state = MagicMock()
         file_path = Path("/tmp/test.3mf")  # nosec B108
@@ -196,7 +196,7 @@ class TestVirtualPrinterInstance:
     async def test_on_file_received_non_3mf_does_not_touch_state(self, instance):
         """Non-3MF uploads (e.g., a job's auxiliary files) must not transition
         the visible state — the slicer is only tracking the .3mf upload."""
-        instance.mode = "immediate"
+        instance.mode = "archive"
         instance._mqtt = MagicMock()
         instance._mqtt.set_gcode_state = MagicMock()
         file_path = Path("/tmp/test.gcode")  # nosec B108
@@ -236,7 +236,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=30,
             name="ImmediateBroadcast",
-            mode="immediate",
+            mode="archive",
             model="C12",
             access_code="12345678",
             serial_suffix="391800030",
@@ -289,7 +289,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=10,
             name="DefaultDispatch",
-            mode="print_queue",
+            mode="queue",
             model="C11",
             access_code="12345678",
             serial_suffix="391800010",
@@ -320,7 +320,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=11,
             name="AutoDispatchOn",
-            mode="print_queue",
+            mode="queue",
             model="C11",
             access_code="12345678",
             serial_suffix="391800011",
@@ -374,7 +374,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=31,
             name="QueueBroadcast",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800031",
@@ -440,7 +440,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=12,
             name="AutoDispatchOff",
-            mode="print_queue",
+            mode="queue",
             model="C11",
             access_code="12345678",
             serial_suffix="391800012",
@@ -499,7 +499,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=22,
             name="DefaultsTest",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800022",
@@ -572,7 +572,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=23,
             name="FreshInstallDefaults",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800023",
@@ -636,7 +636,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=24,
             name="SlicerInherits",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800024",
@@ -723,7 +723,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=25,
             name="SlicerIntegers",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800025",
@@ -787,7 +787,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=21,
             name="Reqs",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800021",
@@ -857,7 +857,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=22,
             name="ForceColor",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800022",
@@ -927,7 +927,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=23,
             name="Unparseable",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800023",
@@ -996,7 +996,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=20,
             name="NameSource",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800020",
@@ -1058,7 +1058,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=40,
             name="ArchiveFailCleanup",
-            mode="immediate",
+            mode="archive",
             model="C12",
             access_code="12345678",
             serial_suffix="391800040",
@@ -1140,7 +1140,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=42,
             name="DispatchFailCleanup",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800042",
@@ -1201,7 +1201,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=43,
             name="PositionMaxPlusOne",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800043",
@@ -1265,7 +1265,7 @@ class TestVirtualPrinterManager:
         status = manager.get_status()
         assert status["enabled"] is False
         assert status["running"] is False
-        assert status["mode"] == "immediate"
+        assert status["mode"] == "archive"
 
     def test_manager_is_enabled_with_instance(self, manager, tmp_path):
         """Verify is_enabled is True when instances exist."""
@@ -1274,7 +1274,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="Test",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -1291,7 +1291,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="Test",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -1335,7 +1335,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="Bambuddy",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -1349,7 +1349,7 @@ class TestVirtualPrinterManager:
         status = manager.get_status()
         assert status["enabled"] is True
         assert status["running"] is True
-        assert status["mode"] == "immediate"
+        assert status["mode"] == "archive"
         assert status["name"] == "Bambuddy"
         assert status["serial"] == "01S00A391800001"
         assert status["model"] == "C11"
@@ -1364,7 +1364,7 @@ class TestVirtualPrinterManager:
             inst = VirtualPrinterInstance(
                 vp_id=i,
                 name=f"VP{i}",
-                mode="immediate",
+                mode="archive",
                 model="C11",
                 access_code="12345678",
                 serial_suffix=f"39180000{i}",
@@ -1386,7 +1386,7 @@ class TestVirtualPrinterManager:
             inst = VirtualPrinterInstance(
                 vp_id=i,
                 name=f"VP{i}",
-                mode="immediate",
+                mode="archive",
                 model="C11",
                 access_code="12345678",
                 serial_suffix=f"39180000{i}",
@@ -1408,7 +1408,7 @@ class TestVirtualPrinterManager:
             "id": 1,
             "name": "TestVP",
             "enabled": True,
-            "mode": "immediate",
+            "mode": "archive",
             "model": "C11",
             "access_code": "12345678",
             "serial_suffix": "391800001",
@@ -1447,7 +1447,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -1456,8 +1456,8 @@ class TestVirtualPrinterManager:
         inst.stop_server = AsyncMock()
         manager._instances[1] = inst
 
-        # DB says mode changed to "archive"
-        db_vp = self._make_db_vp(mode="archive")
+        # DB says mode changed to "review"
+        db_vp = self._make_db_vp(mode="review")
         self._setup_sync_mocks(manager, [db_vp], tmp_path)
 
         with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
@@ -1479,7 +1479,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -1509,7 +1509,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -1534,7 +1534,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -1565,7 +1565,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -1600,7 +1600,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -2312,7 +2312,7 @@ class TestVirtualPrinterManagerDirectories:
         VirtualPrinterInstance(
             vp_id=42,
             name="Test",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800042",
@@ -2402,7 +2402,7 @@ class TestVirtualPrinterInstanceIPOverride:
         return VirtualPrinterInstance(
             vp_id=20,
             name="IPTest",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800020",
@@ -2439,7 +2439,7 @@ class TestVirtualPrinterInstanceIPOverride:
         inst = VirtualPrinterInstance(
             vp_id=21,
             name="NoRemote",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800021",
@@ -2465,7 +2465,7 @@ class TestVirtualPrinterInstanceIPOverride:
         inst = VirtualPrinterInstance(
             vp_id=22,
             name="NoIPs",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800022",
@@ -2598,7 +2598,7 @@ class TestBindServer:
         inst = VirtualPrinterInstance(
             vp_id=99,
             name="Bambuddy",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800099",

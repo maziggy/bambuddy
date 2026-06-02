@@ -729,3 +729,149 @@ class TestGcodeHeaderFilamentUsage:
         meta = ThreeMFParser(self._make_3mf("; total layer number: 10\n")).parse()
         assert "filament_used_grams" not in meta
         assert "filament_used_mm" not in meta
+
+
+class TestMultiPlateSliceInfoSum:
+    """Multi-plate ``.gcode.3mf`` exports must produce file-level totals that
+    are the SUM of every plate's prediction + weight, not plate-1 only.
+
+    Pre-fix the parser used ``root.find(".//plate")`` and only read the
+    first plate's metadata, so the archive card and project rollup
+    under-reported by roughly the number of plates (#1593).
+    """
+
+    @staticmethod
+    def _make_3mf_with_slice_info(slice_info_xml: str) -> str:
+        """Write a minimal .3mf with the given slice_info.config payload.
+
+        Bambu Studio's slice_info.config is the file the parser reads for
+        file-level `prediction` / `weight`; the rest of the 3MF members
+        aren't required for this test.
+        """
+        import os
+        import tempfile
+        import zipfile
+
+        fd, path = tempfile.mkstemp(suffix=".3mf")
+        os.close(fd)
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr("Metadata/slice_info.config", slice_info_xml)
+        return path
+
+    def test_three_plate_file_sums_prediction_and_weight(self):
+        """The reporter's case: three plates with distinct prediction +
+        weight values must yield file-level totals that are the sum.
+        """
+        from backend.app.services.archive import ThreeMFParser
+
+        slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1" />
+                <metadata key="prediction" value="7140" />
+                <metadata key="weight" value="19.2" />
+            </plate>
+            <plate>
+                <metadata key="index" value="2" />
+                <metadata key="prediction" value="6000" />
+                <metadata key="weight" value="20.0" />
+            </plate>
+            <plate>
+                <metadata key="index" value="3" />
+                <metadata key="prediction" value="6300" />
+                <metadata key="weight" value="18.8" />
+            </plate>
+        </config>
+        """
+        parser = ThreeMFParser(self._make_3mf_with_slice_info(slice_info_xml))
+        meta = parser.parse()
+        assert meta["print_time_seconds"] == 7140 + 6000 + 6300  # 19440
+        assert meta["filament_used_grams"] == round(19.2 + 20.0 + 18.8, 2)  # 58.0
+        # Multi-plate file: no single plate index should be claimed at the
+        # file level — the archive represents all plates, not a specific one.
+        assert parser.plate_number is None
+
+    def test_single_plate_file_preserves_plate_index_and_objects(self):
+        """The single-plate path must still set ``_plate_index`` and pick
+        up printable objects — these only make sense when the archive
+        represents exactly one plate.
+        """
+        from backend.app.services.archive import ThreeMFParser
+
+        slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="2" />
+                <metadata key="prediction" value="3600" />
+                <metadata key="weight" value="50.5" />
+                <metadata key="curr_bed_type" value="textured_pei" />
+                <object identify_id="1" name="Part_A" skipped="false" />
+                <object identify_id="2" name="Part_B" skipped="true" />
+            </plate>
+        </config>
+        """
+        parser = ThreeMFParser(self._make_3mf_with_slice_info(slice_info_xml))
+        meta = parser.parse()
+        assert meta["print_time_seconds"] == 3600
+        assert meta["filament_used_grams"] == 50.5
+        # Single-plate exports surface the plate index via ``plate_number``
+        # (``_plate_index`` is an internal key cleared at the end of parse).
+        assert parser.plate_number == 2
+        assert meta["bed_type"] == "textured_pei"
+        assert meta["printable_objects"] == {1: "Part_A"}
+
+    def test_multi_plate_ignores_per_plate_objects(self):
+        """Multi-plate exports must NOT carry a single plate's objects at
+        the file level — the ``/plates`` endpoint surfaces them per-plate.
+        Conflating them would attach plate-1's parts to the whole archive.
+        """
+        from backend.app.services.archive import ThreeMFParser
+
+        slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1" />
+                <metadata key="prediction" value="1000" />
+                <metadata key="weight" value="10.0" />
+                <object identify_id="1" name="Part_A" skipped="false" />
+            </plate>
+            <plate>
+                <metadata key="index" value="2" />
+                <metadata key="prediction" value="1500" />
+                <metadata key="weight" value="15.0" />
+                <object identify_id="2" name="Part_B" skipped="false" />
+            </plate>
+        </config>
+        """
+        parser = ThreeMFParser(self._make_3mf_with_slice_info(slice_info_xml))
+        meta = parser.parse()
+        assert meta["print_time_seconds"] == 2500
+        assert meta["filament_used_grams"] == 25.0
+        # No archive-level object list when there's more than one plate.
+        assert "printable_objects" not in meta
+        assert parser.plate_number is None
+
+    def test_missing_or_malformed_values_are_skipped(self):
+        """A plate with a malformed prediction/weight string must skip
+        that field, not poison the sum or raise — defensive parsing was
+        already present per-field; the sum loop must preserve it.
+        """
+        from backend.app.services.archive import ThreeMFParser
+
+        slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="prediction" value="100" />
+                <metadata key="weight" value="not-a-number" />
+            </plate>
+            <plate>
+                <metadata key="prediction" value="200" />
+                <metadata key="weight" value="5.0" />
+            </plate>
+        </config>
+        """
+        meta = ThreeMFParser(self._make_3mf_with_slice_info(slice_info_xml)).parse()
+        assert meta["print_time_seconds"] == 300
+        # Only the second plate's weight contributed.
+        assert meta["filament_used_grams"] == 5.0

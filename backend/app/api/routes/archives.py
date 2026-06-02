@@ -30,6 +30,7 @@ from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
 from backend.app.utils.http import build_content_disposition
+from backend.app.utils.safe_path import safe_join_under
 from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
@@ -947,6 +948,23 @@ async def get_archive_stats(
             *base_conditions,
         )
     )
+    # Accuracy is meaningful only when the estimate roughly describes the
+    # work the run actually performed. Two shapes produce wildly-off ratios
+    # that are pure noise:
+    #   - multi-plate ``.gcode.3mf`` printed plate-by-plate: each run's
+    #     actual is one plate, the archive's estimate is the sum across
+    #     plates (post-#1593 parser fix), so the ratio is roughly N×100%
+    #     for an N-plate file. Pre-fix this shape was also broken, just
+    #     less dramatically — the estimate was plate-1-only so the ratio
+    #     was meaningless rather than N×.
+    #   - manual interventions / purge waste blowing the actual far past
+    #     the estimate.
+    # Clamp to the [50%, 200%] band so the printer-level average reflects
+    # real slicer-vs-reality drift, not multi-plate accounting or one-off
+    # outliers. Single-plate archives — the case the metric is actually
+    # designed for — stay fully included.
+    _ACCURACY_BAND_LO = 50.0
+    _ACCURACY_BAND_HI = 200.0
     average_accuracy = None
     accuracy_by_printer: dict[str, float] = {}
     accuracies: list[float] = []
@@ -959,6 +977,8 @@ async def get_archive_stats(
         if not actual_seconds or not estimate_seconds:
             continue
         accuracy = (estimate_seconds / actual_seconds) * 100
+        if accuracy < _ACCURACY_BAND_LO or accuracy > _ACCURACY_BAND_HI:
+            continue
         accuracies.append(accuracy)
         printer_key = str(run_printer_id) if run_printer_id else "unknown"
         printer_accuracies.setdefault(printer_key, []).append(accuracy)
@@ -2373,7 +2393,7 @@ async def process_timelapse(
                 filename = f"timelapse_{archive_id}_edited"
             if not filename.endswith(".mp4"):
                 filename += ".mp4"
-            output_path = archive_dir / filename
+            output_path = archive_dir / filename  # SEC-PATH-OK: filename alnum-filtered + .. rejected above
 
         success = await processor.process(
             output_path=output_path,
@@ -2444,7 +2464,7 @@ async def upload_photo(
 
     ext = Path(file.filename).suffix.lower()
     photo_filename = f"{uuid.uuid4().hex[:8]}{ext}"
-    photo_path = photos_dir / photo_filename
+    photo_path = photos_dir / photo_filename  # SEC-PATH-OK: photo_filename = uuid.uuid4().hex[:8] + ext
 
     # Save file
     content = await file.read()
@@ -2477,8 +2497,20 @@ async def get_photo(
     if not archive:
         raise HTTPException(404, "Archive not found")
 
+    # Membership check first — UUID-generated names on upload mean any URL
+    # filename that doesn't appear here is by definition not a real photo.
+    # Mirrors the delete handler below; previously this endpoint had no
+    # membership check at all and joined `filename` straight to disk.
+    if not archive.photos or filename not in archive.photos:
+        raise HTTPException(404, "Photo not found")
+
     archive_dir = settings.base_dir / Path(archive.file_path).parent
-    photo_path = archive_dir / "photos" / filename
+    photos_dir = archive_dir / "photos"
+    # Defence-in-depth: even though the membership check above already
+    # constrains `filename` to UUID-generated names from upload, the
+    # resolve + containment check guards against future code paths that
+    # might populate `archive.photos` from a less-trusted source.
+    photo_path = safe_join_under(photos_dir, filename)
 
     if not photo_path.exists():
         raise HTTPException(404, "Photo not found")
@@ -2512,9 +2544,10 @@ async def delete_photo(
     if not archive.photos or filename not in archive.photos:
         raise HTTPException(404, "Photo not found")
 
-    # Delete file
+    # Delete file — same defence-in-depth as get_photo above.
     archive_dir = settings.base_dir / Path(archive.file_path).parent
-    photo_path = archive_dir / "photos" / filename
+    photos_dir = archive_dir / "photos"
+    photo_path = safe_join_under(photos_dir, filename)
     if photo_path.exists():
         photo_path.unlink()
 
@@ -2960,7 +2993,9 @@ async def upload_archive(
 
     # Save uploaded file temporarily — strip directory components to prevent path traversal
     safe_filename = _safe_filename(file.filename)
-    temp_path = settings.archive_dir / "temp" / safe_filename
+    temp_path = (
+        settings.archive_dir / "temp" / safe_filename
+    )  # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
     temp_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -3008,7 +3043,9 @@ async def upload_archives_bulk(
             continue
 
         safe_filename = _safe_filename(file.filename)
-        temp_path = settings.archive_dir / "temp" / safe_filename
+        temp_path = (
+            settings.archive_dir / "temp" / safe_filename
+        )  # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
         temp_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -3639,7 +3676,9 @@ async def slice_archive(
             detail="Archive has no source file to slice",
         )
 
-    src_path = Path(settings.base_dir) / src_relative
+    src_path = (
+        Path(settings.base_dir) / src_relative
+    )  # SEC-PATH-OK: src_relative is archive.source_3mf_path from DB, set by _resolve_source_3mf_path which already does resolve+relative_to containment
     if not src_path.exists():
         raise HTTPException(status_code=404, detail="Archive source file missing on disk")
 
@@ -3947,7 +3986,9 @@ def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Pat
         ) from exc
 
     source_dir.mkdir(parents=True, exist_ok=True)
-    return source_dir / source_filename
+    return (
+        source_dir / source_filename
+    )  # SEC-PATH-OK: callers pass _safe_filename(...) basename-stripped; source_dir resolve+relative_to checked above
 
 
 @router.post("/{archive_id}/source")
@@ -4262,7 +4303,7 @@ async def upload_f3d(
 
     # Save the F3D file - preserve original filename, strip directory components
     f3d_filename = _safe_filename(file.filename)
-    f3d_path = f3d_dir / f3d_filename
+    f3d_path = f3d_dir / f3d_filename  # SEC-PATH-OK: f3d_filename = _safe_filename(...) basename-stripped above
 
     content = await file.read()
     f3d_path.write_bytes(content)

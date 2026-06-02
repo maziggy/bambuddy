@@ -63,6 +63,8 @@ async def create_api_key(
         can_queue=data.can_queue,
         can_control_printer=data.can_control_printer,
         can_read_status=data.can_read_status,
+        can_manage_library=data.can_manage_library,
+        can_manage_inventory=data.can_manage_inventory,
         can_access_cloud=data.can_access_cloud,
         can_update_energy_cost=data.can_update_energy_cost,
         printer_ids=data.printer_ids,
@@ -82,6 +84,8 @@ async def create_api_key(
         can_queue=api_key.can_queue,
         can_control_printer=api_key.can_control_printer,
         can_read_status=api_key.can_read_status,
+        can_manage_library=api_key.can_manage_library,
+        can_manage_inventory=api_key.can_manage_inventory,
         can_access_cloud=api_key.can_access_cloud,
         can_update_energy_cost=api_key.can_update_energy_cost,
         printer_ids=api_key.printer_ids,
@@ -131,6 +135,10 @@ async def update_api_key(
         api_key.can_control_printer = data.can_control_printer
     if data.can_read_status is not None:
         api_key.can_read_status = data.can_read_status
+    if data.can_manage_library is not None:
+        api_key.can_manage_library = data.can_manage_library
+    if data.can_manage_inventory is not None:
+        api_key.can_manage_inventory = data.can_manage_inventory
     if data.can_access_cloud is not None:
         # Same constraint as create — flipping cloud access on a legacy key
         # without an owner would be silently broken; reject at the route layer.

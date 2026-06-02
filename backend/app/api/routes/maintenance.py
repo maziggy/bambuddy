@@ -209,6 +209,7 @@ async def create_maintenance_type(
         default_interval_hours=data.default_interval_hours,
         interval_type=data.interval_type,
         icon=data.icon,
+        wiki_url=data.wiki_url,
         is_system=False,
     )
     db.add(new_type)

@@ -1181,6 +1181,55 @@ class TestPrintFileUploadValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_library_upload_classifies_gcode_3mf_as_compound(self, async_client: AsyncClient, db_session):
+        """#1600 follow-up: upload path used to strip to the trailing
+        extension and store ``file_type='3mf'`` for sliced outputs, while
+        the external-folder scan stored ``file_type='gcode.3mf'``. Now
+        every ingest path goes through ``classify_file_type`` and
+        produces the canonical compound name."""
+        files = {
+            "file": (
+                "sliced.gcode.3mf",
+                self._valid_3mf_bytes(),
+                "application/zip",
+            )
+        }
+        response = await async_client.post("/api/v1/library/files", files=files)
+        assert response.status_code == 200
+        assert response.json()["file_type"] == "gcode.3mf"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_get_gcode_endpoint_accepts_compound_file_type(self, async_client: AsyncClient, db_session):
+        """#1600 follow-up: pre-fix, ``GET /files/{id}/gcode`` only handled
+        ``file_type`` of ``gcode`` or ``3mf`` and 400'd on a row whose
+        ``file_type`` was ``gcode.3mf`` — exactly the rows the external-
+        folder scan was creating. The gate now treats both as 3MF and
+        unzips the embedded gcode the same way."""
+        from backend.app.models.library import LibraryFile
+
+        # Persist a real `.gcode.3mf` zip under file_type='gcode.3mf' so
+        # the endpoint hits the new branch.
+        with tempfile.NamedTemporaryFile(suffix=".gcode.3mf", delete=False) as tmp:
+            tmp.write(self._valid_3mf_bytes(name="Metadata/plate_1.gcode"))
+            tmp_path = tmp.name
+
+        lib_file = LibraryFile(
+            filename="sliced.gcode.3mf",
+            file_path=tmp_path,
+            file_type="gcode.3mf",
+            file_size=Path(tmp_path).stat().st_size,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        response = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode")
+        assert response.status_code == 200
+        assert b"G28" in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_library_still_accepts_non_print_extensions(self, async_client: AsyncClient, db_session):
         """STL / image / other non-print uploads bypass the validator
         entirely — Bambuddy is also a library, not just a print dispatcher."""

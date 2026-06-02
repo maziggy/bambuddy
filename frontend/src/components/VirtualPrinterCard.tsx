@@ -14,14 +14,25 @@ import { VirtualPrinterDiagnosticModal } from './VirtualPrinterDiagnosticModal';
 import { useToast } from '../contexts/ToastContext';
 import { copyTextToClipboard } from '../utils/clipboard';
 
-type LocalMode = 'immediate' | 'review' | 'print_queue' | 'proxy';
+type LocalMode = 'archive' | 'review' | 'queue' | 'proxy';
 
 const MODE_LABELS: Record<string, string> = {
-  immediate: 'archive',
+  archive: 'archive',
   review: 'review',
-  print_queue: 'queue',
+  queue: 'queue',
   proxy: 'proxy',
 };
+
+// Legacy wire values (`immediate` → `archive`, `print_queue` → `queue`) shipped
+// before the UI labels were aligned with the wire format. Backend migration
+// flips existing rows but the function tolerates either form so a stale fetch
+// doesn't show an unselected mode (#1429 follow-up).
+function normalizeMode(value: string | undefined): LocalMode {
+  if (value === 'immediate') return 'archive';
+  if (value === 'print_queue' || value === 'queue') return 'queue';
+  if (value === 'archive' || value === 'review' || value === 'proxy') return value;
+  return 'archive';
+}
 
 interface VirtualPrinterCardProps {
   printer: VirtualPrinterConfig;
@@ -37,9 +48,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [localEnabled, setLocalEnabled] = useState(printer.enabled);
   const [localName, setLocalName] = useState(printer.name);
   const [localAccessCode, setLocalAccessCode] = useState('');
-  const [localMode, setLocalMode] = useState<LocalMode>(
-    (printer.mode === 'queue' ? 'review' : printer.mode) as LocalMode
-  );
+  const [localMode, setLocalMode] = useState<LocalMode>(normalizeMode(printer.mode));
   const [localTargetPrinterId, setLocalTargetPrinterId] = useState<number | null>(printer.target_printer_id);
   const [localBindIp, setLocalBindIp] = useState(printer.bind_ip || '');
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState(printer.remote_interface_ip || '');
@@ -83,7 +92,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   useEffect(() => {
     if (!pendingAction) {
       setLocalEnabled(printer.enabled);
-      setLocalMode((printer.mode === 'queue' ? 'review' : printer.mode) as LocalMode);
+      setLocalMode(normalizeMode(printer.mode));
       setLocalName(printer.name);
       setLocalTargetPrinterId(printer.target_printer_id);
       setLocalBindIp(printer.bind_ip || '');
@@ -118,7 +127,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
     onError: (error: Error) => {
       showToast(error.message || t('virtualPrinter.toast.failedToUpdate'), 'error');
       setLocalEnabled(printer.enabled);
-      setLocalMode((printer.mode === 'queue' ? 'review' : printer.mode) as LocalMode);
+      setLocalMode(normalizeMode(printer.mode));
       setLocalTargetPrinterId(printer.target_printer_id);
       setLocalBindIp(printer.bind_ip || '');
       setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
@@ -321,7 +330,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
             <div>
               <div className="text-white text-sm font-medium mb-2">{t('virtualPrinter.mode.title')}</div>
               <div className="grid grid-cols-2 gap-2">
-                {(['immediate', 'review', 'print_queue', 'proxy'] as const).map((mode) => (
+                {(['archive', 'review', 'queue', 'proxy'] as const).map((mode) => (
                   <button
                     key={mode}
                     onClick={() => handleModeChange(mode)}
@@ -346,8 +355,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
               </div>
             </div>
 
-            {/* Auto-dispatch toggle - only for print_queue mode */}
-            {localMode === 'print_queue' && (
+            {/* Auto-dispatch toggle - only for queue mode */}
+            {localMode === 'queue' && (
               <div className="pt-2 border-t border-bambu-dark-tertiary">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -376,8 +385,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
               </div>
             )}
 
-            {/* Force-color-match toggle - only for print_queue mode (#1188) */}
-            {localMode === 'print_queue' && (
+            {/* Force-color-match toggle - only for queue mode (#1188) */}
+            {localMode === 'queue' && (
               <div className="pt-2 border-t border-bambu-dark-tertiary">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">

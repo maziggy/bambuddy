@@ -16,7 +16,7 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -88,7 +88,9 @@ def _empty_slots() -> dict[str, list[UnifiedPreset]]:
     return {"printer": [], "process": [], "filament": []}
 
 
-async def _fetch_cloud_presets(db: AsyncSession, user: User | None) -> tuple[dict[str, list[UnifiedPreset]], str]:
+async def _fetch_cloud_presets(
+    db: AsyncSession, user: User | None, *, refresh: bool = False
+) -> tuple[dict[str, list[UnifiedPreset]], str]:
     """Return (slots, cloud_status). Slots are empty when cloud_status != 'ok'.
 
     Defence-in-depth: even if a stored cloud_token survived a permission
@@ -96,6 +98,12 @@ async def _fetch_cloud_presets(db: AsyncSession, user: User | None) -> tuple[dic
     treated as not-authenticated for this endpoint — the cloud tier never
     surfaces for them. This keeps the per-tier visibility consistent with the
     /cloud/* endpoint suite that already gates on CLOUD_AUTH.
+
+    ``refresh=True`` skips the in-process cache for this call (used by the
+    SliceModal's manual Refresh button so a user who just deleted a preset
+    in Bambu Studio / Handy can pick up the change without waiting for the
+    5-minute TTL to expire). The fresh result is still written back to the
+    cache so subsequent non-refresh callers benefit.
     """
     if user is not None and not user.has_permission(Permission.CLOUD_AUTH.value):
         return _empty_slots(), "not_authenticated"
@@ -107,9 +115,10 @@ async def _fetch_cloud_presets(db: AsyncSession, user: User | None) -> tuple[dic
     user_key = user.id if user is not None else 0
     cache_key = (user_key, _token_fingerprint(token))
     now = time.monotonic()
-    cached = _cloud_cache.get(cache_key)
-    if cached and now - cached[0] < _CLOUD_TTL_S:
-        return cached[1], "ok"
+    if not refresh:
+        cached = _cloud_cache.get(cache_key)
+        if cached and now - cached[0] < _CLOUD_TTL_S:
+            return cached[1], "ok"
 
     cloud = BambuCloudService(region=region)
     cloud.set_token(token)
@@ -227,11 +236,15 @@ def _first_scalar(value: object) -> str | None:
     return None
 
 
-async def _fetch_bundled_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset]]:
-    """Standard slicer-bundled profiles via the sidecar's /profiles/bundled."""
+async def _fetch_bundled_presets(db: AsyncSession, *, refresh: bool = False) -> dict[str, list[UnifiedPreset]]:
+    """Standard slicer-bundled profiles via the sidecar's /profiles/bundled.
+
+    ``refresh=True`` skips the in-process cache; see _fetch_cloud_presets for
+    the same shape and rationale.
+    """
     global _bundled_cache
     now = time.monotonic()
-    if _bundled_cache and now - _bundled_cache[0] < _BUNDLED_TTL_S:
+    if not refresh and _bundled_cache and now - _bundled_cache[0] < _BUNDLED_TTL_S:
         return _bundled_cache[1]
 
     api_url = await _resolve_slicer_api_url(db)
@@ -383,6 +396,15 @@ async def list_unified_presets(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
+    refresh: bool = Query(
+        False,
+        description=(
+            "Bypass the in-process cloud and bundled-preset caches for this "
+            "request. The SliceModal's Refresh button sets this so users who "
+            "deleted a preset in Bambu Studio or Bambu Handy don't have to "
+            "wait for the 5-minute cloud-cache TTL to expire."
+        ),
+    ),
 ) -> UnifiedPresetsResponse:
     """List slicer presets across cloud / local / standard tiers, deduped by name.
 
@@ -399,9 +421,9 @@ async def list_unified_presets(
     too — matching the slice route (#1182 follow-up).
     """
     cloud_token_user = current_user or api_key_cloud_owner
-    cloud, cloud_status = await _fetch_cloud_presets(db, cloud_token_user)
+    cloud, cloud_status = await _fetch_cloud_presets(db, cloud_token_user, refresh=refresh)
     local = await _fetch_local_presets(db)
-    standard = await _fetch_bundled_presets(db)
+    standard = await _fetch_bundled_presets(db, refresh=refresh)
 
     cloud, local, standard = _dedupe_by_name(cloud, local, standard)
 

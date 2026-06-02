@@ -245,3 +245,70 @@ async def test_soft_delete_keeps_runs_for_stats(
     stats = (await async_client.get("/api/v1/archives/stats")).json()
     assert stats["total_prints"] >= 1
     assert stats["total_filament_grams"] >= 75.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_time_accuracy_excludes_multi_plate_plate_by_plate_outliers(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """Per-run accuracy clamps to a plausible 50%-200% band so multi-plate
+    archives printed plate-by-plate don't poison the printer-level average.
+
+    Pre-#1593 the parser stored plate-1-only time in
+    ``PrintArchive.print_time_seconds``, so a plate-by-plate run produced a
+    near-100% ratio by accident. Post-#1593 the field is the sum across
+    plates, so each plate-by-plate run produces estimate/actual = N×100%
+    for an N-plate file. Without the band filter a single 3-plate file
+    printed plate-by-plate would drag the printer's accuracy reading to
+    ~300%, which is pure noise. The metric is designed for the
+    single-plate-file case and should reflect real slicer drift there.
+    """
+    printer = await printer_factory()
+
+    # Archive 1: single-plate file. Estimate 3600s, actual 3700s
+    # → ratio 97.3% (well within band).
+    single = await archive_factory(
+        printer.id,
+        print_time_seconds=3600,
+        with_run=False,
+    )
+    db_session.add(
+        PrintLogEntry(
+            archive_id=single.id,
+            printer_id=printer.id,
+            status="completed",
+            duration_seconds=3700,
+        )
+    )
+
+    # Archive 2: multi-plate file (3 plates totaling 18000s). Two runs
+    # printed plate-by-plate at ~6000s each — ratio 18000/6000 = 300%.
+    # Both must be filtered out so the printer average stays at the
+    # single-plate file's 97.3% reading.
+    multi = await archive_factory(
+        printer.id,
+        print_time_seconds=18000,
+        with_run=False,
+    )
+    db_session.add(
+        PrintLogEntry(
+            archive_id=multi.id,
+            printer_id=printer.id,
+            status="completed",
+            duration_seconds=6000,
+        )
+    )
+    db_session.add(
+        PrintLogEntry(
+            archive_id=multi.id,
+            printer_id=printer.id,
+            status="completed",
+            duration_seconds=6100,
+        )
+    )
+    await db_session.commit()
+
+    body = (await async_client.get("/api/v1/archives/stats")).json()
+    assert body["average_time_accuracy"] == pytest.approx(97.3, abs=0.1)
+    assert body["time_accuracy_by_printer"][str(printer.id)] == pytest.approx(97.3, abs=0.1)

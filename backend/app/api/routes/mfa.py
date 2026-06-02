@@ -562,6 +562,57 @@ def _resolve_provider_email(provider: OIDCProvider, claims: dict, provider_sub: 
     return raw_email
 
 
+def _resolve_standard_email_for_user_record(provider: OIDCProvider, claims: dict, provider_sub: str) -> str | None:
+    """Resolve the standard 'email' claim for populating a newly-created User.email.
+
+    Issue #1569: when an operator sets email_claim to a non-email identity claim
+    (e.g. preferred_username on Authentik), the primary _resolve_provider_email
+    returns None because the identity value isn't email-shaped. This helper lets
+    the auto-create-users path still capture the user's real email from the
+    standard 'email' claim that the IdP usually sends alongside.
+
+    This is NOT a substitute for _resolve_provider_email and does NOT feed
+    auto_link_existing_accounts — that gate stays on the primary resolver, so
+    the GHSA Fall-B/C security guards remain intact.
+
+    Applies the same Fall A/B shape + email_verified logic as the primary
+    resolver does for the standard 'email' claim.
+    """
+    raw_claim_value = claims.get("email")
+    if raw_claim_value is not None and not isinstance(raw_claim_value, str):
+        logger.warning(
+            "OIDC provider %d: standard 'email' claim has unexpected type %s for sub=%r, ignoring",
+            provider.id,
+            type(raw_claim_value).__name__,
+            provider_sub,
+        )
+        return None
+    raw_email = raw_claim_value.lower().strip() if raw_claim_value else None
+    if not raw_email:
+        return None
+    if not _is_valid_email_shaped(raw_email):
+        logger.warning(
+            "OIDC provider %d: standard 'email' claim failed shape check for sub=%r, ignoring",
+            provider.id,
+            provider_sub,
+        )
+        return None
+    email_verified = claims.get("email_verified")
+    if provider.require_email_verified:
+        if email_verified is True:
+            return raw_email
+        logger.info(
+            "OIDC provider %d: ignoring fallback email for sub=%r because email_verified=%r",
+            provider.id,
+            provider_sub,
+            email_verified,
+        )
+        return None
+    if email_verified is False:
+        return None
+    return raw_email
+
+
 # ---------------------------------------------------------------------------
 # Settings helpers (email 2FA flag)
 # ---------------------------------------------------------------------------
@@ -1905,6 +1956,18 @@ async def oidc_callback(
                             raw = provider_sub[:30]
                     candidate = re.sub(r"[^a-zA-Z0-9._-]", "", raw)[:30] or "oidcuser"
 
+                    # Issue #1569: when email_claim is configured to a non-email
+                    # identity claim (e.g. preferred_username on Authentik), the
+                    # primary resolver returns None for the email field because the
+                    # identity value isn't email-shaped. Fall back to the standard
+                    # 'email' claim for User.email so the operator can split
+                    # username-from-preferred_username and email-from-email.
+                    # The auto-link gate above stays on provider_email, so the
+                    # GHSA Fall-B/C guards remain intact.
+                    user_email_for_storage = provider_email
+                    if user_email_for_storage is None and provider.email_claim != "email":
+                        user_email_for_storage = _resolve_standard_email_for_user_record(provider, claims, provider_sub)
+
                     username = candidate
                     counter = 1
                     while True:
@@ -1932,7 +1995,7 @@ async def oidc_callback(
 
                     new_user = User(
                         username=username,
-                        email=provider_email,
+                        email=user_email_for_storage,
                         # M-1: auth_source="oidc" prevents local password-reset flow
                         # for users who should only authenticate via OIDC.
                         auth_source="oidc",
@@ -1949,7 +2012,7 @@ async def oidc_callback(
                             user_id=new_user.id,
                             provider_id=provider_id,
                             provider_user_id=provider_sub,
-                            provider_email=provider_email,
+                            provider_email=user_email_for_storage,
                         )
                     )
                     await db.commit()

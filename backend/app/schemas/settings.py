@@ -113,8 +113,8 @@ class AppSettings(BaseModel):
     virtual_printer_enabled: bool = Field(default=False, description="Enable virtual printer for slicer uploads")
     virtual_printer_access_code: str = Field(default="", description="Access code for virtual printer authentication")
     virtual_printer_mode: str = Field(
-        default="immediate",
-        description="Mode: 'immediate' (archive now), 'review' (pending review), or 'print_queue' (add to print queue)",
+        default="archive",
+        description="Mode: 'archive' (archive now), 'review' (pending review), 'queue' (add to print queue), or 'proxy' (relay to real printer)",
     )
     virtual_printer_archive_name_source: str = Field(
         default="metadata",

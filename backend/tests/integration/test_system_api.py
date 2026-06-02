@@ -219,10 +219,32 @@ class TestSystemAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_system_info_with_archives(self, async_client: AsyncClient, printer_factory, archive_factory):
-        """Verify database stats include archive counts."""
+        """Verify database stats include archive counts.
+
+        Post-#1593 `total_print_time_seconds` is summed from
+        `PrintLogEntry.duration_seconds` (the *actual* per-run duration),
+        not `PrintArchive.print_time_seconds` (the slicer estimate). The
+        archive_factory derives the run's duration from
+        ``completed_at - started_at`` on the archive, so the test sets
+        those so each run carries a duration the system route can sum.
+        """
+        from datetime import datetime, timezone
+
         printer = await printer_factory()
-        await archive_factory(printer.id, status="completed", print_time_seconds=3600)
-        await archive_factory(printer.id, status="failed", print_time_seconds=1800)
+        await archive_factory(
+            printer.id,
+            status="completed",
+            print_time_seconds=3600,
+            started_at=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 5, 1, 11, 0, tzinfo=timezone.utc),
+        )
+        await archive_factory(
+            printer.id,
+            status="failed",
+            print_time_seconds=1800,
+            started_at=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 5, 2, 10, 30, tzinfo=timezone.utc),
+        )
 
         with (
             patch("backend.app.api.routes.system.psutil") as mock_psutil,

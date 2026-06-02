@@ -24,11 +24,14 @@ function createWrapper() {
     return (
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <ThemeProvider>
-            <ToastProvider>
-              <AuthProvider>{children}</AuthProvider>
-            </ToastProvider>
-          </ThemeProvider>
+          {/* ThemeProvider sits inside AuthProvider (matches App.tsx
+              after the GHSA-r2qv login-page-quiet fix) so its
+              useAuth() call resolves. */}
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>{children}</ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>
     );

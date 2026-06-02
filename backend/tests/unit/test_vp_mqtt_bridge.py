@@ -221,6 +221,95 @@ class TestPushStatusCache:
         await bridge.stop()
 
     @pytest.mark.asyncio
+    async def test_net_info_ip_rewritten_for_unknown_secondary_interface(self):
+        """Regression for #1429: real printers (X1C / H2D Pro) report multiple
+        active interfaces (WiFi + Ethernet) — only ONE matches the IP Bambuddy
+        tracks. The rewrite must catch every non-zero entry, not just the one
+        whose IP equals `_target_ip_uint32_le`, or the slicer's FTP fallback
+        path leaks straight to the real printer."""
+        server = _make_server(bind_address=VP_IP)
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        h2d_le = _ip_to_uint32_le(H2D_IP)
+        # A second IP Bambuddy never saw (e.g. printer's ethernet interface
+        # while Bambuddy talks over wifi).
+        other_le = _ip_to_uint32_le("192.168.99.42")
+        vp_le = _ip_to_uint32_le(VP_IP)
+        payload = json.dumps(
+            {
+                "print": {
+                    "command": "push_status",
+                    "net": {
+                        "info": [
+                            {"ip": h2d_le, "mask": 0xFFFFFF},
+                            {"ip": other_le, "mask": 0xFFFFFF},
+                            {"ip": 0, "mask": 0},
+                        ]
+                    },
+                }
+            }
+        ).encode()
+        bridge._on_printer_raw(f"device/{H2D_SERIAL}/report", payload)
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        assert cached["net"]["info"][0]["ip"] == vp_le
+        assert cached["net"]["info"][1]["ip"] == vp_le  # secondary interface also rewritten
+        assert cached["net"]["info"][2]["ip"] == 0  # placeholder untouched
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_late_arriving_printer_ip_rewrites_existing_cache(self):
+        """Regression for #1429: if the printer's `ip_address` is empty at
+        first bind (DB row stale, or the client object exists before the
+        first SSDP refresh fills it in), the rewrite stays disabled and the
+        first cached push poisons the cache with the real-printer IP.
+        Once `ip_address` becomes valid, the next refresh tick must (a) arm
+        the encoding and (b) sweep the cached `net.info[].ip` so the slicer
+        sees the rewritten value on its next pull. Without the sweep the
+        sticky-key preservation keeps the poisoned value alive across
+        every subsequent incremental push."""
+        server = _make_server(bind_address=VP_IP)
+        # Bind to a client whose ip_address is empty at start — simulates the
+        # late-arrival path.
+        target = _make_paho_client(ip="")
+        bridge = _make_bridge(server, target)
+        await bridge.start()
+        assert bridge._target_ip_uint32_le is None  # not yet armed
+
+        h2d_le = _ip_to_uint32_le(H2D_IP)
+        vp_le = _ip_to_uint32_le(VP_IP)
+        payload = json.dumps(
+            {
+                "print": {
+                    "command": "push_status",
+                    "net": {"info": [{"ip": h2d_le, "mask": 0xFFFFFF}]},
+                }
+            }
+        ).encode()
+        bridge._on_printer_raw(f"device/{H2D_SERIAL}/report", payload)
+        await asyncio.sleep(0.01)
+
+        # First push landed before encoding was armed → cache holds real IP.
+        cached = bridge.get_latest_print_state()
+        assert cached["net"]["info"][0]["ip"] == h2d_le
+
+        # Printer's IP becomes known. Next refresh tick must self-heal.
+        target.ip_address = H2D_IP
+        bridge._resolve_client()
+
+        cached = bridge.get_latest_print_state()
+        assert cached["net"]["info"][0]["ip"] == vp_le, (
+            "cache must be swept once encoding becomes valid; sticky-key "
+            "preservation would otherwise keep the poisoned IP forever"
+        )
+        assert bridge._target_ip_uint32_le == h2d_le
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
     async def test_request_topic_message_is_ignored(self):
         server = _make_server()
         bridge = _make_bridge(server)

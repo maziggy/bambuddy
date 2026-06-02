@@ -5,6 +5,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ThemeProvider, useTheme } from '../../contexts/ThemeContext';
+import { AuthProvider } from '../../contexts/AuthContext';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
 // Helper to create a controllable matchMedia mock for individual tests
@@ -41,7 +43,21 @@ function mockMatchMedia(prefersDark: boolean) {
 }
 
 function wrapper({ children }: { children: ReactNode }) {
-  return <ThemeProvider>{children}</ThemeProvider>;
+  // ThemeProvider now calls useAuth() internally to gate its initial
+  // api.getSettings() fetch (GHSA-r2qv login-page-quiet fix), so we
+  // need AuthProvider in the tree. QueryClientProvider is required by
+  // any AuthProvider descendant that calls useQuery (none here, but
+  // AuthProvider itself uses ``api.request`` via getAuthStatus).
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <ThemeProvider>{children}</ThemeProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
 }
 
 describe('ThemeContext', () => {

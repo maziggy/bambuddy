@@ -282,6 +282,15 @@ class MQTTBridge:
             return
 
         if current is self._target_client:
+            # Same client object — but `ip_address` can fill in *after* the
+            # initial bind (e.g. DB row had a stale/empty value until the
+            # client's first SSDP-driven IP refresh). The original code only
+            # encoded `_target_ip_uint32_le` on client-identity change, so
+            # that late-arriving IP was never picked up, the `net.info[*].ip`
+            # rewrite stayed disabled, and the cache filled with the real
+            # printer IP — #1429. Refresh the encoding every tick so it
+            # self-heals once `ip_address` becomes valid.
+            self._refresh_ip_encoding()
             return
 
         # Client identity changed — unregister from the old, register on the new.
@@ -297,20 +306,7 @@ class MQTTBridge:
 
         self._target_client = current
         self._target_serial = getattr(current, "serial_number", None)
-
-        # Cache printer IP and VP bind IP encoded as little-endian uint32, so we
-        # can rewrite `net.info[*].ip` in cached push_status. BambuStudio reads
-        # that field for the FTP destination IP — without rewriting, the slicer
-        # bypasses the VP and FTPs straight to the real printer.
-        target_ip = getattr(current, "ip_address", None)
-        vp_ip = getattr(self._mqtt_server, "bind_address", None)
-        if target_ip and vp_ip and vp_ip not in ("0.0.0.0", "", None):  # nosec B104
-            try:
-                self._target_ip_uint32_le = _ip_to_uint32_le(target_ip)
-                self._vp_ip_uint32_le = _ip_to_uint32_le(vp_ip)
-            except ValueError:
-                self._target_ip_uint32_le = None
-                self._vp_ip_uint32_le = None
+        self._refresh_ip_encoding()
 
         logger.info(
             "[%s] MQTT bridge bound to printer %s (serial=%s)",
@@ -347,6 +343,94 @@ class MQTTBridge:
         logger.info("[%s] MQTT bridge unbound from printer %s", self.vp_name, self.target_printer_id)
         self._target_client = None
         self._target_serial = None
+
+    def _refresh_ip_encoding(self) -> None:
+        """(Re-)encode `_target_ip_uint32_le` / `_vp_ip_uint32_le` from current values.
+
+        Called on every refresh tick, not just on client-identity change, so
+        a late-arriving printer IP (or a bind-address change) is picked up
+        without restarting the VP. When the encoding becomes valid for the
+        first time *after* the cache already received a push with the real
+        printer IP, also sweep the existing cache so the slicer's next pull
+        sees the rewritten value (#1429). Without this sweep the sticky-key
+        preservation keeps the poisoned `net.info[].ip` alive forever.
+        """
+        client = self._target_client
+        if client is None:
+            return
+
+        target_ip = getattr(client, "ip_address", None)
+        vp_ip = getattr(self._mqtt_server, "bind_address", None)
+        if not target_ip or not vp_ip or vp_ip in ("0.0.0.0", "", None):  # nosec B104
+            return
+
+        try:
+            new_target_le = _ip_to_uint32_le(target_ip)
+            new_vp_le = _ip_to_uint32_le(vp_ip)
+        except ValueError:
+            return
+
+        if new_target_le == self._target_ip_uint32_le and new_vp_le == self._vp_ip_uint32_le:
+            return  # No change — nothing to do.
+
+        # Encoding either became valid for the first time or shifted (DHCP
+        # renewal, bind_ip reconfigured, etc.). Update + sweep the cache.
+        was_armed = self._target_ip_uint32_le is not None and self._vp_ip_uint32_le is not None
+        self._target_ip_uint32_le = new_target_le
+        self._vp_ip_uint32_le = new_vp_le
+        logger.info(
+            "[%s] MQTT bridge IP encoding %s: target=%s vp=%s",
+            self.vp_name,
+            "updated" if was_armed else "armed",
+            target_ip,
+            vp_ip,
+        )
+
+        cached = self._latest_print_state
+        if isinstance(cached, dict):
+            n = self._rewrite_net_info_ips(cached)
+            if n:
+                logger.info(
+                    "[%s] MQTT bridge swept %d net.info[].ip entries in cached push",
+                    self.vp_name,
+                    n,
+                )
+
+    def _rewrite_net_info_ips(self, print_state: dict) -> int:
+        """Rewrite every non-zero `net.info[].ip` in `print_state` to the VP bind IP.
+
+        Returns the number of entries rewritten. Mutates `print_state` in place.
+
+        Strategy: rewrite ALL entries with a non-zero `ip`, not only those
+        matching `_target_ip_uint32_le`. Real printers (X1C, H2D Pro) can
+        report multiple active interfaces (WiFi + Ethernet) with different
+        IPs — only one matches the IP Bambuddy tracks, but the slicer may
+        read any of them. Leaving non-matching entries pointing at real
+        printer interfaces leaks an FTP fallback path that bypasses the VP
+        (the #1429 / #1302 symptom). Entries with `ip == 0` are placeholders
+        for unpopulated interfaces — leave them alone so the slicer's
+        "active interface" detection still recognises them as absent.
+        """
+        if self._vp_ip_uint32_le is None:
+            return 0
+        net = print_state.get("net")
+        if not isinstance(net, dict):
+            return 0
+        info = net.get("info")
+        if not isinstance(info, list):
+            return 0
+        rewritten = 0
+        for entry in info:
+            if not isinstance(entry, dict):
+                continue
+            ip_value = entry.get("ip")
+            if not isinstance(ip_value, int) or ip_value == 0:
+                continue
+            if ip_value == self._vp_ip_uint32_le:
+                continue
+            entry["ip"] = self._vp_ip_uint32_le
+            rewritten += 1
+        return rewritten
 
     def _on_printer_raw(self, topic: str, payload: bytes) -> None:
         """Paho-thread callback — cache the latest push_status for synthetic replay.
@@ -396,14 +480,7 @@ class MQTTBridge:
             # (i.e. configure the VP with the same access code as its target).
             # Rewrite real printer IP → VP bind IP in `net.info[*].ip` so the
             # slicer's FTP destination resolves to the VP, not the real printer.
-            if self._target_ip_uint32_le is not None and self._vp_ip_uint32_le is not None:
-                net = print_data.get("net")
-                if isinstance(net, dict):
-                    info = net.get("info")
-                    if isinstance(info, list):
-                        for entry in info:
-                            if isinstance(entry, dict) and entry.get("ip") == self._target_ip_uint32_le:
-                                entry["ip"] = self._vp_ip_uint32_le
+            self._rewrite_net_info_ips(print_data)
             # Defensive deep copy on store so the cache is fully decoupled from
             # the freshly-parsed tree and from any reader's reference.
             new_state = copy.deepcopy(print_data)

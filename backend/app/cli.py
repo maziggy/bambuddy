@@ -65,6 +65,11 @@ async def kiosk_bootstrap(
             can_queue=False,
             can_control_printer=False,
             can_read_status=True,
+            can_manage_library=False,
+            # SpoolBuddy kiosk writes NFC scans / scale readings / system
+            # commands via the /spoolbuddy/* routes — all gated by
+            # can_manage_inventory now, so the bundled key must opt in.
+            can_manage_inventory=True,
             printer_ids=None,
             enabled=True,
             expires_at=None,

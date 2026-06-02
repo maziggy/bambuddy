@@ -44,15 +44,15 @@ function renderCameraPage(printerId: number, search = '') {
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={i18n}>
         <MemoryRouter initialEntries={[`/cameras/${printerId}${search}`]}>
-          <ThemeProvider>
-            <AuthProvider>
+          <AuthProvider>
+            <ThemeProvider>
               <ToastProvider>
                 <Routes>
                   <Route path="/cameras/:printerId" element={<CameraPage />} />
                 </Routes>
               </ToastProvider>
-            </AuthProvider>
-          </ThemeProvider>
+            </ThemeProvider>
+          </AuthProvider>
         </MemoryRouter>
       </I18nextProvider>
     </QueryClientProvider>

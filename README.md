@@ -192,7 +192,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 
 ### 📁 File Manager (Library)
 - Upload and organize sliced files (3MF, gcode, STL)
-- **External folder mounting** - Mount host directories (NAS, USB, network shares) without copying files
+- **External folder mounting** - Mount host directories (NAS, USB, network shares) without copying files. Operator-controlled via the `BAMBUDDY_EXTERNAL_ROOTS` env var (colon-separated allowlist of host paths users are permitted to register; empty by default to disable the feature). See [Docker → External library folders](https://wiki.bambuddy.cool/getting-started/docker/#external-library-folders-bambuddy_external_roots).
 - **STL thumbnail generation** - Auto-generate previews for STL files on upload or batch generate for existing files
 - ZIP file extraction with folder structure preservation
 - Option to create folder from ZIP filename

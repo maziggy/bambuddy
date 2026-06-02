@@ -1,11 +1,17 @@
 /**
  * Tests for LocalProfilesView component.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import React from 'react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { screen, waitFor, fireEvent, render as rawRender } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { server } from '../mocks/server';
 import { render } from '../utils';
+import { ThemeProvider } from '../../contexts/ThemeContext';
+import { ToastProvider } from '../../contexts/ToastContext';
+import { AuthProvider } from '../../contexts/AuthContext';
 import { LocalProfilesView } from '../../components/LocalProfilesView';
 
 const mockLocalPresets = {
@@ -208,5 +214,63 @@ describe('LocalProfilesView', () => {
     });
 
     expect(screen.getByText(/\.bbscfg/i)).toBeInTheDocument();
+  });
+
+  it('invalidates the slicerPresets query after a delete (#1581)', async () => {
+    // Without this invalidation a preset deleted in Local Profiles still
+    // shows in the SliceModal until the modal's ['slicerPresets'] query
+    // staleTime (60s) expires + a refocus / remount. The bug report:
+    // "Removed local profiles still show on the slice menu even tho they
+    // have been deleted." We mirror the production provider tree but inject
+    // our own QueryClient so we can spy on invalidateQueries.
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    rawRender(
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <LocalProfilesView />
+              </ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Overture PLA Matte @BBL X1C')).toBeInTheDocument();
+    });
+
+    // Open the delete confirmation, then confirm. The card-level delete
+    // icon buttons and the modal's Delete button both expose the accessible
+    // name "Delete"; the modal button is the last one to mount, so it's the
+    // tail of the findAllByRole result.
+    const deleteButtons = screen.getAllByTitle(/delete/i);
+    fireEvent.click(deleteButtons[0]);
+    await screen.findByText(/are you sure/i);
+    const confirmButtons = await screen.findAllByRole('button', { name: /^delete$/i });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(
+        invalidateSpy.mock.calls.some(
+          ([arg]) => arg && (arg as { queryKey: unknown[] }).queryKey?.[0] === 'slicerPresets',
+        ),
+      ).toBe(true);
+    });
+    // Sanity: the local-only invalidation is still there too.
+    expect(
+      invalidateSpy.mock.calls.some(
+        ([arg]) => arg && (arg as { queryKey: unknown[] }).queryKey?.[0] === 'localPresets',
+      ),
+    ).toBe(true);
   });
 });

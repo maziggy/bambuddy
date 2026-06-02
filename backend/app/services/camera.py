@@ -651,7 +651,9 @@ async def capture_finish_photo(
     # Generate filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-    output_path = photos_dir / filename
+    output_path = (
+        photos_dir / filename
+    )  # SEC-PATH-OK: filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg" generated above
 
     success = await capture_camera_frame(
         ip_address=ip_address,

@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from backend.app.core.config import settings as app_settings
+from backend.app.models.virtual_printer import (
+    VP_MODE_ARCHIVE,
+    VP_MODE_QUEUE,
+    normalize_vp_mode,
+)
 from backend.app.services.virtual_printer.bind_server import BindServer
 from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer
@@ -137,7 +142,11 @@ class VirtualPrinterInstance:
     ):
         self.id = vp_id
         self.name = name
-        self.mode = mode
+        # Normalize on construction so the rest of the code only compares
+        # canonical values, even when a legacy DB row hasn't been migrated
+        # yet (e.g. fresh-from-disk during the boot window before the
+        # one-shot migration in `core/database.py` has executed).
+        self.mode = normalize_vp_mode(mode) or VP_MODE_ARCHIVE
         self.model = model
         self.access_code = access_code
         self.serial_suffix = serial_suffix
@@ -234,9 +243,14 @@ class VirtualPrinterInstance:
 
         self._pending_files[file_path.name] = file_path
 
-        if self.mode == "immediate":
+        # Accept both canonical (`archive`/`queue`) and legacy
+        # (`immediate`/`print_queue`) wire values so a stale row that hasn't
+        # been migrated yet still dispatches correctly. Migration in
+        # `core/database.py` rewrites existing rows once at boot.
+        mode = normalize_vp_mode(self.mode)
+        if mode == VP_MODE_ARCHIVE:
             await self._archive_file(file_path, source_ip)
-        elif self.mode == "print_queue":
+        elif mode == VP_MODE_QUEUE:
             await self._add_to_print_queue(file_path, source_ip)
         else:
             await self._queue_file(file_path, source_ip)
@@ -267,13 +281,13 @@ class VirtualPrinterInstance:
         `flow_cali`, `vibration_cali`, `layer_inspect`, `use_ams`) so the
         VP-queue path can inherit them when adding the item to the queue,
         rather than falling back to the global default settings (#1403).
-        Only queue mode consumes the capture; immediate / review / proxy
+        Only queue mode consumes the capture; archive / review / proxy
         modes ignore the print command, so we skip the stash there to keep
         the dict from accumulating one entry per print over the VP's
         uptime.
         """
         logger.info("[VP %s] Print command for: %s", self.name, filename)
-        if self.mode != "print_queue":
+        if normalize_vp_mode(self.mode) != VP_MODE_QUEUE:
             return
         # Drop the oldest stash if the cache is growing — happens when the
         # slicer sends project_file for a filename whose FTP upload was
@@ -1085,8 +1099,12 @@ class VirtualPrinterManager:
                     ):
                         proxy_target_changed = True
 
+            # Normalize the DB value before comparing — a legacy `immediate`
+            # row read before the migration window finishes would otherwise
+            # trip the "changed" branch and bounce every VP at boot.
+            db_mode = normalize_vp_mode(vp.mode)
             changed = (
-                instance.mode != vp.mode
+                instance.mode != db_mode
                 or instance.model != (vp.model or DEFAULT_VIRTUAL_PRINTER_MODEL)
                 or instance.access_code != (vp.access_code or "")
                 or instance.bind_ip != (vp.bind_ip or "")
@@ -1220,7 +1238,7 @@ class VirtualPrinterManager:
         return {
             "enabled": False,
             "running": False,
-            "mode": "immediate",
+            "mode": VP_MODE_ARCHIVE,
             "name": "Bambuddy",
             "serial": "",
             "model": DEFAULT_VIRTUAL_PRINTER_MODEL,
@@ -1232,7 +1250,7 @@ class VirtualPrinterManager:
         self,
         enabled: bool,
         access_code: str = "",
-        mode: str = "immediate",
+        mode: str = VP_MODE_ARCHIVE,
         model: str = "",
         target_printer_ip: str = "",
         target_printer_serial: str = "",

@@ -27,13 +27,13 @@ function createWrapper() {
     return (
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <ThemeProvider>
-            <ToastProvider>
-              <AuthProvider>
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>
                 <ColorCatalogProvider>{children}</ColorCatalogProvider>
-              </AuthProvider>
-            </ToastProvider>
-          </ThemeProvider>
+              </ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>
     );

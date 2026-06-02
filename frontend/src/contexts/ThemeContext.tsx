@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api/client';
+import { useAuth } from './AuthContext';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 type ThemeStyle = 'classic' | 'glow' | 'vibrant';
@@ -32,6 +33,14 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  // Auth-aware: read state from AuthContext so the initial getSettings()
+  // sync waits until we know whether (a) auth is enabled and (b) there
+  // is a logged-in user. Without this the fetch fires on the login page
+  // and returns 401 — harmless (the catch swallows it) but noisy in the
+  // network panel and wasteful. ThemeProvider is mounted inside
+  // AuthProvider in App.tsx specifically so this hook is callable.
+  const { authEnabled, user, loading: authLoading } = useAuth();
+
   // Mode
   const [mode, setModeState] = useState<ThemeMode>(() => {
     const stored = localStorage.getItem('theme-mode') as ThemeMode | null;
@@ -78,8 +87,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return (localStorage.getItem('light-accent') as ThemeAccent) || 'green';
   });
 
-  // Sync from API on mount
+  // Sync from API once auth state is known. Same gate shape as
+  // useStreamTokenSync / ColorCatalogProvider: wait for AuthContext to
+  // settle, then only fetch when we can actually expect a 200 (auth
+  // disabled, or auth enabled with a logged-in user).
   useEffect(() => {
+    if (authLoading) return;
+    if (authEnabled && user === null) return;
     api.getSettings().then((settings) => {
       // Dark settings
       if (settings.dark_style) {
@@ -108,7 +122,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('light-accent', settings.light_accent);
       }
     }).catch(() => {});
-  }, []);
+    // Re-fetch when auth state transitions (e.g. login completes); the
+    // gate above short-circuits subsequent calls once we already have a
+    // valid sync.
+  }, [authLoading, authEnabled, user]);
 
   // Apply theme classes based on current mode
   useEffect(() => {

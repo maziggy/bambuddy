@@ -414,7 +414,9 @@ class FTPSession:
             return
 
         filename = Path(arg).name  # Sanitize filename
-        file_path = self.upload_dir / filename
+        file_path = (
+            self.upload_dir / filename
+        )  # SEC-PATH-OK: filename = Path(arg).name strips every path component above
 
         logger.info("FTP receiving file: %s from %s", filename, self.remote_ip)
 

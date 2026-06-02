@@ -286,6 +286,60 @@ class TestFetchCloudPresets:
         assert first["printer"][0].name == "OldAccountX1C"
         assert second["printer"][0].name == "NewAccountX1C"
 
+    @pytest.mark.asyncio
+    async def test_refresh_bypasses_cloud_cache(self):
+        """``refresh=True`` must skip an otherwise-warm cache entry and hit
+        Bambu Cloud again — wiring for the SliceModal's Refresh button so a
+        user who deletes a cloud preset in Bambu Studio / Handy doesn't have
+        to wait for the 5-minute TTL to expire (#1581)."""
+        sp._cloud_cache.clear()
+        cloud_mock = MagicMock()
+        cloud_mock.set_token = MagicMock()
+        cloud_mock.get_slicer_settings = AsyncMock(
+            return_value={
+                "printer": {"private": [{"setting_id": "id1", "name": "X1C"}], "public": []},
+                "print": {"private": [], "public": []},
+                "filament": {"private": [], "public": []},
+            }
+        )
+        cloud_mock.close = AsyncMock()
+        user = _user_with_cloud_auth(user_id=99)
+        with (
+            patch.object(sp, "get_stored_token", AsyncMock(return_value=("tok", None, None))),
+            patch.object(sp, "BambuCloudService", return_value=cloud_mock),
+        ):
+            await sp._fetch_cloud_presets(MagicMock(), user)
+            # Without refresh, the second call hits cache (covered by
+            # test_cache_hit_skips_cloud_call). With refresh=True it MUST
+            # re-fetch.
+            await sp._fetch_cloud_presets(MagicMock(), user, refresh=True)
+        assert cloud_mock.get_slicer_settings.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_refresh_writes_back_to_cache(self):
+        """A refresh call must still update the cache so a subsequent normal
+        call doesn't re-hit the cloud immediately afterwards."""
+        sp._cloud_cache.clear()
+        cloud_mock = MagicMock()
+        cloud_mock.set_token = MagicMock()
+        cloud_mock.get_slicer_settings = AsyncMock(
+            return_value={
+                "printer": {"private": [{"setting_id": "id1", "name": "X1C"}], "public": []},
+                "print": {"private": [], "public": []},
+                "filament": {"private": [], "public": []},
+            }
+        )
+        cloud_mock.close = AsyncMock()
+        user = _user_with_cloud_auth(user_id=101)
+        with (
+            patch.object(sp, "get_stored_token", AsyncMock(return_value=("tok", None, None))),
+            patch.object(sp, "BambuCloudService", return_value=cloud_mock),
+        ):
+            await sp._fetch_cloud_presets(MagicMock(), user, refresh=True)
+            await sp._fetch_cloud_presets(MagicMock(), user)
+        # Two calls — first refresh, second a normal cache hit.
+        assert cloud_mock.get_slicer_settings.await_count == 1
+
 
 class TestFetchBundledPresets:
     """Standard tier reaches out to the slicer-api sidecar; tolerate the
@@ -355,6 +409,41 @@ class TestFetchBundledPresets:
         with patch.object(sp, "SlicerApiService", side_effect=AssertionError("cache miss!")):
             slots = await sp._fetch_bundled_presets(MagicMock())
         assert slots["printer"][0].name == "Cached"
+
+    @pytest.mark.asyncio
+    async def test_refresh_bypasses_bundled_cache(self):
+        """``refresh=True`` must re-hit the sidecar even when the in-process
+        cache is warm — paired with the cloud-cache refresh, this is what
+        powers the SliceModal's Refresh button (#1581)."""
+        sp._bundled_cache = (
+            time.monotonic(),
+            {
+                "printer": [UnifiedPreset(id="Stale", name="Stale", source="standard")],
+                "process": [],
+                "filament": [],
+            },
+        )
+        svc_mock = MagicMock()
+        svc_mock.list_bundled_profiles = AsyncMock(
+            return_value={
+                "printer": [{"name": "Fresh", "base_id": None}],
+                "process": [],
+                "filament": [],
+            }
+        )
+        svc_mock.__aenter__ = AsyncMock(return_value=svc_mock)
+        svc_mock.__aexit__ = AsyncMock(return_value=False)
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc_mock),
+        ):
+            slots = await sp._fetch_bundled_presets(MagicMock(), refresh=True)
+        svc_mock.list_bundled_profiles.assert_awaited_once()
+        assert [p.name for p in slots["printer"]] == ["Fresh"]
+        # The fresh result must also be written back to the cache so a
+        # subsequent normal (non-refresh) call doesn't re-hit the sidecar.
+        assert sp._bundled_cache is not None
+        assert [p.name for p in sp._bundled_cache[1]["printer"]] == ["Fresh"]
 
 
 class TestResolveSlicerApiUrl:

@@ -196,10 +196,13 @@ async def webhook_stop_print(
     check_printer_access(api_key, printer_id)
 
     status = printer_manager.get_status(printer_id)
-    if not status or not status.get("connected"):
+    # `printer_manager.get_status(...)` returns a ``PrinterState`` dataclass
+    # (see backend/app/services/bambu_mqtt.py), not a dict — `.get(...)` on it
+    # raises AttributeError and surfaces as a generic 500 (#1584).
+    if not status or not status.connected:
         raise HTTPException(status_code=503, detail="Printer not connected")
 
-    if status.get("state") != "RUNNING":
+    if status.state != "RUNNING":
         raise HTTPException(status_code=409, detail="No print in progress")
 
     try:
@@ -224,10 +227,11 @@ async def webhook_cancel_print(
     check_printer_access(api_key, printer_id)
 
     status = printer_manager.get_status(printer_id)
-    if not status or not status.get("connected"):
+    # Same dataclass-not-dict shape as stop_print above (#1584).
+    if not status or not status.connected:
         raise HTTPException(status_code=503, detail="Printer not connected")
 
-    if status.get("state") not in ["RUNNING", "PAUSE"]:
+    if status.state not in ["RUNNING", "PAUSE"]:
         raise HTTPException(status_code=409, detail="No print to cancel")
 
     try:
@@ -260,14 +264,18 @@ async def webhook_get_printer_status(
 
     status = printer_manager.get_status(printer_id)
 
+    # `printer_manager.get_status(...)` returns a ``PrinterState`` dataclass —
+    # attribute access, not dict lookup. The previous `.get(...)` calls raised
+    # AttributeError and surfaced as a generic 500 for any printer that
+    # actually had a status row (#1584).
     return PrinterStatusResponse(
         id=printer.id,
         name=printer.name,
-        connected=status.get("connected", False) if status else False,
-        state=status.get("state") if status else None,
-        current_print=status.get("current_print") if status else None,
-        progress=status.get("progress") if status else None,
-        remaining_time=status.get("remaining_time") if status else None,
+        connected=status.connected if status else False,
+        state=status.state if status else None,
+        current_print=status.current_print if status else None,
+        progress=status.progress if status else None,
+        remaining_time=status.remaining_time if status else None,
     )
 
 

@@ -288,7 +288,7 @@ describe('PrintModal', () => {
       expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
     });
 
-    it('shows Queue Only option', () => {
+    it('shows Queue option', () => {
       render(
         <PrintModal
           mode="add-to-queue"
@@ -298,7 +298,7 @@ describe('PrintModal', () => {
         />
       );
 
-      expect(screen.getByText('Queue Only')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /queue/i })).toBeInTheDocument();
     });
 
     it('shows power off option', () => {
@@ -324,8 +324,23 @@ describe('PrintModal', () => {
         />
       );
 
-      expect(screen.getByText('ASAP')).toBeInTheDocument();
-      expect(screen.getByText('Scheduled')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /asap/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /queue/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /schedule/i })).toBeInTheDocument();
+    });
+
+    it('orders schedule options by time', () => {
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="Test Print"
+          onClose={mockOnClose}
+        />
+      );
+
+      const options = screen.getAllByRole('button', { name: /^(asap|queue|schedule)$/i });
+      expect(options.map(button => button.textContent?.trim())).toEqual(['ASAP', 'Queue', 'Schedule']);
     });
 
     it('calls onClose when cancel is clicked', async () => {
@@ -410,7 +425,7 @@ describe('PrintModal', () => {
       expect(screen.getByText('Print Options')).toBeInTheDocument();
     });
 
-    it('shows Queue Only option', () => {
+    it('shows Queue option', () => {
       const item = createMockQueueItem();
 
       render(
@@ -423,7 +438,7 @@ describe('PrintModal', () => {
         />
       );
 
-      expect(screen.getByText('Queue Only')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /queue/i })).toBeInTheDocument();
     });
 
     it('shows power off option', () => {

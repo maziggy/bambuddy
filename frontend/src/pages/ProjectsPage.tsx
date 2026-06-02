@@ -943,38 +943,45 @@ export function ProjectsPage() {
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
 
-    try {
-      const filename = file.name.toLowerCase();
+    let importedCount = 0;
+    let lastError: Error | null = null;
 
-      if (filename.endsWith('.zip')) {
-        // ZIP file: upload via file endpoint
-        await api.importProjectFile(file);
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
-        showToast(t('projects.toast.imported'), 'success');
-      } else {
-        // JSON file: parse and handle bulk or single import
-        const text = await file.text();
-        const data = JSON.parse(text);
+    for (const file of files) {
+      try {
+        const filename = file.name.toLowerCase();
 
-        // Handle both single project and array of projects
-        const projectsToImport = Array.isArray(data) ? data : [data];
+        if (filename.endsWith('.zip')) {
+          await api.importProjectFile(file);
+          importedCount++;
+        } else {
+          const text = await file.text();
+          const data = JSON.parse(text);
+          const projectsToImport = Array.isArray(data) ? data : [data];
 
-        for (const project of projectsToImport) {
-          await importMutation.mutateAsync(project);
+          for (const project of projectsToImport) {
+            await importMutation.mutateAsync(project);
+          }
+          importedCount += projectsToImport.length;
         }
-
-        if (projectsToImport.length > 1) {
-          showToast(t('projects.toast.multipleImported', { count: projectsToImport.length }), 'success');
-        }
+      } catch (error) {
+        lastError = error as Error;
       }
-    } catch (error) {
-      showToast(`${t('projects.toast.importFailed')}: ${(error as Error).message}`, 'error');
     }
 
-    // Reset file input
+    if (importedCount > 0) {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      if (importedCount > 1) {
+        showToast(t('projects.toast.multipleImported', { count: importedCount }), 'success');
+      } else {
+        showToast(t('projects.toast.imported'), 'success');
+      }
+    } else if (lastError) {
+      showToast(`${t('projects.toast.importFailed')}: ${lastError.message}`, 'error');
+    }
+
     e.target.value = '';
   };
 
@@ -1020,6 +1027,7 @@ export function ProjectsPage() {
         ref={fileInputRef}
         type="file"
         accept=".json,.zip"
+        multiple
         onChange={handleFileChange}
         className="hidden"
       />

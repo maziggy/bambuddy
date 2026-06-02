@@ -979,47 +979,54 @@ export function KProfilesView() {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
+    input.multiple = true;
     input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
+      const files = Array.from((e.target as HTMLInputElement).files ?? []);
+      if (files.length === 0) return;
 
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
+      let totalImported = 0;
+      let totalProfiles = 0;
 
-        if (!data.profiles || !Array.isArray(data.profiles)) {
-          showToast(t('kProfiles.toast.invalidFileFormat'), 'error');
-          return;
-        }
+      for (const file of files) {
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
 
-        // Import profiles one by one
-        let imported = 0;
-        for (const p of data.profiles) {
-          if (!p.name || !p.k_value || !p.filament_id) continue;
-
-          try {
-            await api.setKProfile(selectedPrinter!, {
-              name: p.name,
-              k_value: parseFloat(p.k_value).toFixed(6),
-              filament_id: p.filament_id,
-              nozzle_id: p.nozzle_id || `HH00-${nozzleDiameter}`,
-              nozzle_diameter: p.nozzle_diameter || nozzleDiameter,
-              extruder_id: p.extruder_id ?? 0,
-              slot_id: 0, // Always create new
-            });
-            imported++;
-            // Small delay between imports
-            await new Promise(resolve => setTimeout(resolve, 500));
-          } catch (err) {
-            console.error('Failed to import profile:', p.name, err);
+          if (!data.profiles || !Array.isArray(data.profiles)) {
+            showToast(t('kProfiles.toast.invalidFileFormat'), 'error');
+            continue;
           }
-        }
 
-        showToast(t('kProfiles.toast.importedProfiles', { count: imported, total: data.profiles.length }));
+          totalProfiles += data.profiles.length;
+
+          for (const p of data.profiles) {
+            if (!p.name || !p.k_value || !p.filament_id) continue;
+
+            try {
+              await api.setKProfile(selectedPrinter!, {
+                name: p.name,
+                k_value: parseFloat(p.k_value).toFixed(6),
+                filament_id: p.filament_id,
+                nozzle_id: p.nozzle_id || `HH00-${nozzleDiameter}`,
+                nozzle_diameter: p.nozzle_diameter || nozzleDiameter,
+                extruder_id: p.extruder_id ?? 0,
+                slot_id: 0,
+              });
+              totalImported++;
+              await new Promise(resolve => setTimeout(resolve, 500));
+            } catch (err) {
+              console.error('Failed to import profile:', p.name, err);
+            }
+          }
+        } catch (err) {
+          console.error('Import error:', err);
+          showToast(t('kProfiles.toast.failedToParseImport'), 'error');
+        }
+      }
+
+      if (totalImported > 0) {
+        showToast(t('kProfiles.toast.importedProfiles', { count: totalImported, total: totalProfiles }));
         refetchProfiles();
-      } catch (err) {
-        console.error('Import error:', err);
-        showToast(t('kProfiles.toast.failedToParseImport'), 'error');
       }
     };
     input.click();

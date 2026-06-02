@@ -282,46 +282,56 @@ export function ColorCatalogSettings() {
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text) as Array<{
-        manufacturer: string; color_name: string; hex_color: string; material?: string | null;
-        extra_colors?: string | null; effect_type?: string | null;
-      }>;
-      if (!Array.isArray(data)) throw new Error('Invalid format');
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
 
-      let added = 0;
-      let skipped = 0;
-      for (const item of data) {
-        if (!item.manufacturer || !item.color_name || !item.hex_color) { skipped++; continue; }
-        const exists = catalog.some(c =>
-          c.manufacturer.toLowerCase() === item.manufacturer.toLowerCase() &&
-          c.color_name.toLowerCase() === item.color_name.toLowerCase() &&
-          (c.material || '').toLowerCase() === (item.material || '').toLowerCase()
-        );
-        if (exists) { skipped++; continue; }
-        try {
-          const entry = await api.addColorEntry({
-            manufacturer: item.manufacturer,
-            color_name: item.color_name,
-            hex_color: item.hex_color,
-            material: item.material || null,
-            extra_colors: item.extra_colors || null,
-            effect_type: item.effect_type || null,
-          });
-          setCatalog(prev => [...prev, entry].sort((a, b) =>
-            a.manufacturer.localeCompare(b.manufacturer) ||
-            (a.material || '').localeCompare(b.material || '') ||
-            a.color_name.localeCompare(b.color_name)
-          ));
-          added++;
-        } catch { skipped++; }
+    let totalAdded = 0;
+    let totalSkipped = 0;
+    let hadError = false;
+
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text) as Array<{
+          manufacturer: string; color_name: string; hex_color: string; material?: string | null;
+          extra_colors?: string | null; effect_type?: string | null;
+        }>;
+        if (!Array.isArray(data)) throw new Error('Invalid format');
+
+        for (const item of data) {
+          if (!item.manufacturer || !item.color_name || !item.hex_color) { totalSkipped++; continue; }
+          const exists = catalog.some(c =>
+            c.manufacturer.toLowerCase() === item.manufacturer.toLowerCase() &&
+            c.color_name.toLowerCase() === item.color_name.toLowerCase() &&
+            (c.material || '').toLowerCase() === (item.material || '').toLowerCase()
+          );
+          if (exists) { totalSkipped++; continue; }
+          try {
+            const entry = await api.addColorEntry({
+              manufacturer: item.manufacturer,
+              color_name: item.color_name,
+              hex_color: item.hex_color,
+              material: item.material || null,
+              extra_colors: item.extra_colors || null,
+              effect_type: item.effect_type || null,
+            });
+            setCatalog(prev => [...prev, entry].sort((a, b) =>
+              a.manufacturer.localeCompare(b.manufacturer) ||
+              (a.material || '').localeCompare(b.material || '') ||
+              a.color_name.localeCompare(b.color_name)
+            ));
+            totalAdded++;
+          } catch { totalSkipped++; }
+        }
+      } catch {
+        hadError = true;
       }
-      showToast(t('settings.colorCatalog.imported', { added, skipped }), 'success');
-    } catch {
+    }
+
+    if (hadError && totalAdded === 0) {
       showToast(t('settings.colorCatalog.importFailed'), 'error');
+    } else if (files.length > 0) {
+      showToast(t('settings.colorCatalog.imported', { added: totalAdded, skipped: totalSkipped }), 'success');
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -349,7 +359,7 @@ export function ColorCatalogSettings() {
             <Upload className="w-4 h-4" />
             <span className="hidden sm:inline">{t('common.import')}</span>
           </button>
-          <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+          <input ref={fileInputRef} type="file" accept=".json" multiple className="hidden" onChange={handleImport} />
           <button
             onClick={handleSync}
             disabled={syncing}

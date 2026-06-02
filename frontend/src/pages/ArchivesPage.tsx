@@ -1516,10 +1516,10 @@ function ArchiveCard({
         ref={timelapseInputRef}
         type="file"
         accept=".mp4,.avi,.mkv"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
+          for (const file of Array.from(e.target.files ?? [])) {
             timelapseUploadMutation.mutate(file);
           }
           e.target.value = '';
@@ -2490,10 +2490,10 @@ function ArchiveListRow({
         ref={timelapseInputRef}
         type="file"
         accept=".mp4,.avi,.mkv"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
+          for (const file of Array.from(e.target.files ?? [])) {
             timelapseUploadMutation.mutate(file);
           }
           e.target.value = '';

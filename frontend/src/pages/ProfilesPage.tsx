@@ -1531,28 +1531,41 @@ function CreatePresetModal({
     }
   };
 
-  // Handle file drop
+  // Handle file drop / multi-file import
+  const importPresetJsonFiles = async (files: File[]) => {
+    const jsonFiles = files.filter((f) => f.name.endsWith('.json'));
+    if (jsonFiles.length === 0) return;
+
+    let mergedSettings = settingsObj;
+    let imported = 0;
+    let failed = 0;
+
+    for (const file of jsonFiles) {
+      try {
+        const content = await file.text();
+        const parsed = JSON.parse(content);
+        const settings = parsed.setting || parsed;
+        mergedSettings = { ...mergedSettings, ...settings };
+        imported++;
+      } catch {
+        failed++;
+      }
+    }
+
+    if (imported > 0) {
+      setSettingsObj(mergedSettings);
+      setJsonText(JSON.stringify(mergedSettings, null, 2));
+      showToast(t('profiles.presets.fileImported'));
+    }
+    if (failed > 0 && imported === 0) {
+      showToast(t('profiles.presets.invalidJsonFile'), 'error');
+    }
+  };
+
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.json')) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const content = event.target?.result as string;
-          const parsed = JSON.parse(content);
-          // Handle both full preset format and settings-only format
-          const settings = parsed.setting || parsed;
-          setSettingsObj(prev => ({ ...prev, ...settings }));
-          setJsonText(JSON.stringify({ ...settingsObj, ...settings }, null, 2));
-          showToast(t('profiles.presets.fileImported'));
-        } catch {
-          showToast(t('profiles.presets.invalidJsonFile'), 'error');
-        }
-      };
-      reader.readAsText(file);
-    }
+    void importPresetJsonFiles(Array.from(e.dataTransfer.files));
   };
 
   const createMutation = useMutation({
@@ -1878,23 +1891,11 @@ function CreatePresetModal({
               id="file-import"
               type="file"
               accept=".json"
+              multiple
               className="hidden"
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = (event) => {
-                    try {
-                      const parsed = JSON.parse(event.target?.result as string);
-                      const settings = parsed.setting || parsed;
-                      setSettingsObj(prev => ({ ...prev, ...settings }));
-                      showToast(t('profiles.presets.fileImported'));
-                    } catch {
-                      showToast(t('profiles.presets.invalidJson'), 'error');
-                    }
-                  };
-                  reader.readAsText(file);
-                }
+                void importPresetJsonFiles(Array.from(e.target.files ?? []));
+                e.target.value = '';
               }}
             />
           </div>

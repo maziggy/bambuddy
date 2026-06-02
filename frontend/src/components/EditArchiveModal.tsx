@@ -139,13 +139,17 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
   });
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
 
     setUploadingPhoto(true);
     try {
-      const result = await api.uploadArchivePhoto(archive.id, file);
-      setPhotos(result.photos);
+      let latestPhotos = photos;
+      for (const file of files) {
+        const result = await api.uploadArchivePhoto(archive.id, file);
+        latestPhotos = result.photos;
+      }
+      setPhotos(latestPhotos);
       queryClient.invalidateQueries({ queryKey: ['archives'] });
     } catch (error) {
       console.error('Failed to upload photo:', error);
@@ -460,6 +464,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
                   ref={photoInputRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
+                  multiple
                   onChange={handlePhotoUpload}
                   className="hidden"
                   disabled={uploadingPhoto}

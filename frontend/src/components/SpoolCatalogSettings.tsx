@@ -178,32 +178,42 @@ export function SpoolCatalogSettings() {
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text) as Array<{ name: string; weight: number }>;
-      if (!Array.isArray(data)) throw new Error('Invalid format');
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
 
-      let added = 0;
-      let skipped = 0;
-      for (const item of data) {
-        if (!item.name || typeof item.weight !== 'number') { skipped++; continue; }
-        const exists = catalog.some(c => c.name.toLowerCase() === item.name.toLowerCase());
-        if (exists) { skipped++; continue; }
-        try {
-          const entry = await api.addCatalogEntry({ name: item.name, weight: item.weight });
-          setCatalog(prev => [...prev, entry].sort((a, b) => a.name.localeCompare(b.name)));
-          added++;
-        } catch (err) {
-          console.error('SpoolCatalogSettings import item failed:', err);
-          skipped++;
+    let totalAdded = 0;
+    let totalSkipped = 0;
+    let hadError = false;
+
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text) as Array<{ name: string; weight: number }>;
+        if (!Array.isArray(data)) throw new Error('Invalid format');
+
+        for (const item of data) {
+          if (!item.name || typeof item.weight !== 'number') { totalSkipped++; continue; }
+          const exists = catalog.some(c => c.name.toLowerCase() === item.name.toLowerCase());
+          if (exists) { totalSkipped++; continue; }
+          try {
+            const entry = await api.addCatalogEntry({ name: item.name, weight: item.weight });
+            setCatalog(prev => [...prev, entry].sort((a, b) => a.name.localeCompare(b.name)));
+            totalAdded++;
+          } catch (err) {
+            console.error('SpoolCatalogSettings import item failed:', err);
+            totalSkipped++;
+          }
         }
+      } catch (err) {
+        console.error('SpoolCatalogSettings.handleImport failed:', err);
+        hadError = true;
       }
-      showToast(t('settings.catalog.imported', { added, skipped }), 'success');
-    } catch (err) {
-      console.error('SpoolCatalogSettings.handleImport failed:', err);
+    }
+
+    if (hadError && totalAdded === 0) {
       showToast(t('settings.catalog.importFailed'), 'error');
+    } else if (files.length > 0) {
+      showToast(t('settings.catalog.imported', { added: totalAdded, skipped: totalSkipped }), 'success');
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -236,7 +246,7 @@ export function SpoolCatalogSettings() {
             <Upload className="w-4 h-4" />
             <span className="hidden sm:inline">{t('common.import')}</span>
           </button>
-          <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+          <input ref={fileInputRef} type="file" accept=".json" multiple className="hidden" onChange={handleImport} />
           <button
             onClick={() => setShowResetConfirm(true)}
             className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"

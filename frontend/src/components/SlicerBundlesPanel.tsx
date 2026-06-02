@@ -81,10 +81,16 @@ export function SlicerBundlesPanel() {
     },
   });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    importMutation.mutate(file);
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    for (const file of files) {
+      try {
+        await importMutation.mutateAsync(file);
+      } catch {
+        // Error toast is handled by importMutation.onError
+      }
+    }
   };
 
   return (
@@ -108,6 +114,7 @@ export function SlicerBundlesPanel() {
             ref={fileInputRef}
             type="file"
             accept=".bbscfg,.zip,application/zip"
+            multiple
             onChange={handleFileChange}
             className="hidden"
             disabled={importMutation.isPending}

@@ -301,6 +301,19 @@ const ES_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
 ];
 
+// Turkish cognates — technical UI labels that Turkish speakers use verbatim
+// from English (loanwords + acronyms + format strings). Curated, not a shortcut.
+const TR_COGNATES = [
+  'Filament', 'Firmware', 'Disk', 'Hex', 'Test', 'Port', 'Model', 'Metal',
+  'Min', 'Normal', 'Platform', 'Net', 'Trend', 'Commit', 'Global', 'Proxy',
+  'N/A', 'email',
+  'STARTTLS (Port 587)', 'SSL/TLS (Port 465)',
+  '({{count}}/8)', 'Hex: #{{hex}}', 'MakerWorld: {{designer}}',
+  '{{count}} filament', '{{printer}}: {{error}}', '{{weight}}g',
+  'Filament {{index}} ({{type}})',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+];
+
 const IDENTICAL_TO_EN_ALLOWED = {
   de: new Set(DE_COGNATES),
   fr: new Set(FR_COGNATES),
@@ -310,6 +323,7 @@ const IDENTICAL_TO_EN_ALLOWED = {
   'pt-BR': new Set(PT_BR_COGNATES),
   'zh-CN': new Set(ZH_CN_COGNATES),
   'zh-TW': new Set(ZH_TW_COGNATES),
+  tr: new Set(TR_COGNATES),
 };
 
 // Pure comparison logic, exported so tests can verify each failure mode

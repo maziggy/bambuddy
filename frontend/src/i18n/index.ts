@@ -9,6 +9,7 @@ import es from './locales/es';
 import fr from './locales/fr';
 import ja from './locales/ja';
 import it from './locales/it';
+import ko from './locales/ko';
 import ptBR from './locales/pt-BR';
 import zhCN from './locales/zh-CN';
 import zhTW from './locales/zh-TW';
@@ -20,6 +21,7 @@ const resources = {
   fr: { translation: fr },
   ja: { translation: ja },
   it: { translation: it },
+  ko: { translation: ko },
   'pt-BR': { translation: ptBR },
   'zh-CN': { translation: zhCN },
   'zh-TW': { translation: zhTW },
@@ -31,7 +33,7 @@ i18n
   .init({
     resources,
     fallbackLng: 'en',
-    supportedLngs: ['en', 'de', 'es', 'fr', 'ja', 'it', 'pt-BR', 'zh-CN', 'zh-TW'],
+    supportedLngs: ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'zh-CN', 'zh-TW'],
 
     detection: {
       // Order of detection methods
@@ -61,6 +63,7 @@ export const availableLanguages = [
   { code: 'fr', name: 'French', nativeName: 'Français' },
   { code: 'ja', name: 'Japanese', nativeName: '日本語' },
   { code: 'it', name: 'Italian', nativeName: 'Italiano' },
+  { code: 'ko', name: 'Korean', nativeName: '한국어' },
   { code: 'pt-BR', name: 'Portuguese (Brazil)', nativeName: 'Português (Brasil)' },
   { code: 'zh-CN', name: 'Chinese (Simplified)', nativeName: '简体中文' },
   { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '繁體中文' },

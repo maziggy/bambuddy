@@ -8,7 +8,7 @@ from pathlib import Path
 
 import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -504,21 +504,32 @@ async def add_to_queue(
         await db.flush()  # Get batch.id before creating items
         batch_id = batch.id
 
-    # Get next position for this printer (or for unassigned/model-based items)
+    # Get queue scope for this printer (or for unassigned/model-based items).
     if data.printer_id is not None:
-        result = await db.execute(
-            select(func.max(PrintQueueItem.position))
-            .where(PrintQueueItem.printer_id == data.printer_id)
-            .where(PrintQueueItem.status == "pending")
+        queue_scope = (
+            PrintQueueItem.printer_id == data.printer_id,
+            PrintQueueItem.status == "pending",
         )
     else:
-        # For unassigned/model-based items, get max position across all unassigned
-        result = await db.execute(
-            select(func.max(PrintQueueItem.position))
-            .where(PrintQueueItem.printer_id.is_(None))
-            .where(PrintQueueItem.status == "pending")
+        # For unassigned/model-based items, scope across all unassigned.
+        queue_scope = (
+            PrintQueueItem.printer_id.is_(None),
+            PrintQueueItem.status == "pending",
         )
-    max_pos = result.scalar() or 0
+
+    insert_position = max(1, data.insert_position or 1)
+    if data.insert_at_top or data.insert_position is not None:
+        await db.execute(
+            update(PrintQueueItem)
+            .where(*queue_scope)
+            .where(PrintQueueItem.position >= insert_position)
+            .values(position=PrintQueueItem.position + quantity)
+        )
+        start_position = insert_position
+    else:
+        result = await db.execute(select(func.max(PrintQueueItem.position)).where(*queue_scope))
+        max_pos = result.scalar() or 0
+        start_position = max_pos + 1
 
     # Resolve print_time_seconds for SJF scheduling (cache on item at creation)
     cached_print_time = None
@@ -575,7 +586,7 @@ async def add_to_queue(
             gcode_injection=data.gcode_injection,
             cleanup_library_after_dispatch=data.cleanup_library_after_dispatch,
             project_id=data.project_id,
-            position=max_pos + 1 + i,
+            position=start_position + i,
             status="pending",
             created_by_id=current_user.id if current_user else None,
             batch_id=batch_id,

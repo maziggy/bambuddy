@@ -28,6 +28,8 @@ class PrintQueueItemCreate(BaseModel):
     require_previous_success: bool = False
     auto_off_after: bool = False  # Power off printer after print completes
     manual_start: bool = False  # Requires manual trigger to start (staged)
+    insert_at_top: bool = False  # Insert ahead of other pending items in the same queue scope
+    insert_position: int | None = None  # 1-indexed insertion position for priority queueing
     # Persistent "Print Anyway" acknowledgement (#1698-followup). When set,
     # PrintModal already showed the deficit warning and the user confirmed,
     # so the scheduler does not re-flag this item on the next tick.

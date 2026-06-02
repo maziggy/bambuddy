@@ -1895,6 +1895,39 @@ class TestAbortedStatusNormalisation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_to_queue_insert_position_shifts_existing_items(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Verify priority insertion shifts existing pending items in the same printer queue."""
+        printer = await printer_factory()
+        first = await archive_factory(print_name="First")
+        second = await archive_factory(print_name="Second")
+        priority = await archive_factory(print_name="Priority")
+
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": first.id})
+        ).status_code == 200
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": second.id})
+        ).status_code == 200
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": priority.id,
+                "insert_position": 1,
+            },
+        )
+        assert response.status_code == 200
+
+        list_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}")
+        items = sorted(list_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in items[:3]] == [priority.id, first.id, second.id]
+        assert [item["position"] for item in items[:3]] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_quantity_with_print_options(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):

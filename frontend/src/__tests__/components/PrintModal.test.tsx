@@ -1207,7 +1207,7 @@ describe('PrintModal', () => {
       expect(reprintCalls.length).toBe(0);
     });
 
-    it('injection OFF keeps the immediate first copy and queues the rest', async () => {
+    it('injection OFF queues all copies through the scheduler path', async () => {
       const reprintCalls: unknown[] = [];
       const queueCalls: Record<string, unknown>[] = [];
       server.use(
@@ -1239,12 +1239,13 @@ describe('PrintModal', () => {
       await user.keyboard('3');
       expect(qty.value).toBe('3');
 
-      // Leave injection unticked → first copy prints immediately, rest queue
+      // Leave injection unticked: unified dispatch still queues all copies.
       await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
 
-      await waitFor(() => expect(reprintCalls.length).toBe(1));
+      await waitFor(() => expect(queueCalls.length).toBe(1));
+      expect(reprintCalls.length).toBe(0);
       expect(queueCalls.length).toBe(1);
-      expect(queueCalls[0].quantity).toBe(2);
+      expect(queueCalls[0].quantity).toBe(3);
     });
   });
 
@@ -1347,6 +1348,75 @@ describe('PrintModal', () => {
         expect(capturedBody).not.toBeNull();
         expect(capturedBody?.archive_id).toBe(1);
         expect(capturedBody?.project_id).toBe(42);
+      });
+    });
+
+    it('adds ASAP prints to the top of the queue', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          capturedBody = await request.json() as Record<string, unknown>;
+          return HttpResponse.json({ id: 1, status: 'pending' });
+        })
+      );
+      const user = userEvent.setup();
+
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^print$/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /^print$/i }));
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull();
+        expect(capturedBody?.insert_at_top).toBe(true);
+        expect(capturedBody?.insert_position).toBe(1);
+        expect(capturedBody?.manual_start).toBe(false);
+      });
+    });
+
+    it('adds Queue prints to the back unless manual start is required', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          capturedBody = await request.json() as Record<string, unknown>;
+          return HttpResponse.json({ id: 1, status: 'pending' });
+        })
+      );
+      const user = userEvent.setup();
+
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: /^queue$/i }));
+      expect(screen.getByLabelText(/require manual start/i)).toBeInTheDocument();
+      await user.click(screen.getByLabelText(/require manual start/i));
+      await user.click(screen.getByRole('button', { name: /^print$/i }));
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull();
+        expect(capturedBody?.insert_at_top).toBeUndefined();
+        expect(capturedBody?.insert_position).toBeUndefined();
+        expect(capturedBody?.manual_start).toBe(true);
       });
     });
   });

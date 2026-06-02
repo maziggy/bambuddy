@@ -1982,6 +1982,8 @@ export interface PrintQueueItemCreate {
   require_previous_success?: boolean;
   auto_off_after?: boolean;
   manual_start?: boolean;  // Requires manual trigger to start (staged)
+  insert_at_top?: boolean;  // Insert ahead of other pending items in the same queue scope
+  insert_position?: number | null;  // 1-indexed insertion position for priority queueing
   // PrintModal "Print Anyway" on the deficit warning — persisted so the
   // scheduler doesn't immediately re-flag this item (#1698-followup).
   skip_filament_check?: boolean;

@@ -704,8 +704,21 @@ Contributions welcome! Ways to help:
 2. **Test** — Report issues with your printer model
 3. **Translate** — Add new languages
 4. **Code** — Submit PRs for bugs or features
+5. **🔒 Security review** — *(specifically wanted, see below)*
 
 Not sure where to start? Reach out on [Discord](https://discord.gg/aFS3ZfScHM) or email **martin@bambuddy.cool** — I'll help you find something that fits.
+
+### 🔒 Looking for a security-focused contributor
+
+I'm bringing on a contributor whose specific focus is keeping an eye on Bambuddy's security.
+
+Concretely:
+
+Track the `dev` branch and flag changes touching auth, permissions, token handling, or the CI security backstops. Async post-merge — no gating of in-flight PRs.
+
+What matters more than formal qualifications: fail-closed thinking by default, comfortable reading the auth layer (FastAPI + SQLAlchemy on the backend, a small React surface), willing to push back on `except Exception` shapes in security-sensitive code.
+
+No fixed time commitment. If you're interested — or know someone who fits — email `martin@bambuddy.cool` or DM on Discord.
 
 ```bash
 # Development setup

@@ -90,6 +90,33 @@ def _ip_to_uint32_le(ip_str: str) -> int:
     return parts[0] | (parts[1] << 8) | (parts[2] << 16) | (parts[3] << 24)
 
 
+def _resolve_host_interface_for_target(target_ip: str) -> str | None:
+    """Pick a host-side IPv4 for `net.info[].ip` when the VP has no dedicated bind IP.
+
+    Used when `mqtt_server.bind_address` is empty or 0.0.0.0 — the listener
+    accepts on every interface but we still need ONE concrete IPv4 to write
+    into the rewritten `net.info[].ip` field so the slicer's FTP target
+    resolves to Bambuddy rather than the real printer. Returns the IPv4 of
+    the host interface that shares a subnet with the printer (best fit
+    because the slicer is typically on the same LAN as the printer), or
+    None if no interface matches — in which case the bridge leaves
+    encoding unarmed and the previous (still-leaky) behaviour stands.
+    """
+    try:
+        from backend.app.services.network_utils import find_interface_for_ip
+    except Exception:  # pragma: no cover - import shielding
+        return None
+    try:
+        iface = find_interface_for_ip(target_ip)
+    except Exception:
+        logger.exception("MQTT bridge: find_interface_for_ip(%s) crashed", target_ip)
+        return None
+    if not iface:
+        return None
+    ip = iface.get("ip")
+    return ip if isinstance(ip, str) and ip else None
+
+
 def _merge_ams_dict(prev_ams: dict, new_ams: dict) -> dict:
     """Merge a new ``ams`` blob from an incremental push onto the previous one.
 
@@ -354,15 +381,30 @@ class MQTTBridge:
         printer IP, also sweep the existing cache so the slicer's next pull
         sees the rewritten value (#1429). Without this sweep the sticky-key
         preservation keeps the poisoned `net.info[].ip` alive forever.
+
+        VP bind IP resolution: when `mqtt_server.bind_address` is empty or
+        `0.0.0.0` (the default for VPs that were never assigned a dedicated
+        bind IP), fall back to auto-resolving the host interface in the same
+        subnet as the printer's IP. Without this fallback, the rewrite never
+        arms on a default-config flat-LAN install and `net.info[].ip` leaks
+        the real printer IP — slicer follows it on Send (#1429 residual).
         """
         client = self._target_client
         if client is None:
             return
 
         target_ip = getattr(client, "ip_address", None)
-        vp_ip = getattr(self._mqtt_server, "bind_address", None)
-        if not target_ip or not vp_ip or vp_ip in ("0.0.0.0", "", None):  # nosec B104
+        if not target_ip:
             return
+
+        vp_ip = getattr(self._mqtt_server, "bind_address", None)
+        vp_ip_source = "bind_address"
+        if not vp_ip or vp_ip in ("0.0.0.0", ""):  # nosec B104
+            resolved = _resolve_host_interface_for_target(target_ip)
+            if not resolved:
+                return
+            vp_ip = resolved
+            vp_ip_source = "auto-resolved"
 
         try:
             new_target_le = _ip_to_uint32_le(target_ip)
@@ -379,11 +421,12 @@ class MQTTBridge:
         self._target_ip_uint32_le = new_target_le
         self._vp_ip_uint32_le = new_vp_le
         logger.info(
-            "[%s] MQTT bridge IP encoding %s: target=%s vp=%s",
+            "[%s] MQTT bridge IP encoding %s: target=%s vp=%s (%s)",
             self.vp_name,
             "updated" if was_armed else "armed",
             target_ip,
             vp_ip,
+            vp_ip_source,
         )
 
         cached = self._latest_print_state

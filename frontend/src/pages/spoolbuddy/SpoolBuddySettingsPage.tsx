@@ -6,6 +6,7 @@ import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolB
 import { spoolbuddyApi, type SpoolBuddyDevice } from '../../api/client';
 import { DiagnosticModal } from '../../components/spoolbuddy/DiagnosticModal';
 import { FileText, Wand2, Zap } from 'lucide-react';
+import { parseUTCDate } from '../../utils/date';
 
 
 function formatUptime(seconds: number): string {
@@ -18,13 +19,10 @@ function formatUptime(seconds: number): string {
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return '-';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
-      d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '-';
-  }
+  const d = parseUTCDate(iso);
+  if (!d) return '-';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
+    d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
 const BLANK_OPTIONS = [

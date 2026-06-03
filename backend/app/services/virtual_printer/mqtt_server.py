@@ -276,6 +276,14 @@ class SimpleMQTTServer:
         ssl_context.verify_mode = ssl.CERT_NONE
         # Allow TLS 1.2 for broader compatibility (some slicers may not support 1.3)
         ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+        # Match real Bambu printer cipher behaviour: include the plain-RSA
+        # AES-GCM suites the slicer expects. On hardened distros
+        # (Fedora / RHEL with `update-crypto-policies`, hardened Alpine builds)
+        # OpenSSL's `DEFAULT` list strips these suites, leaving no overlap
+        # with the slicer's MQTT-over-TLS ClientHello — handshake fails
+        # immediately and the slicer reports a connect error before any MQTT
+        # CONNECT can be sent (#1610 audit). Same shape as the #620 fix.
+        ssl_context.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
         # Disable hostname checking
         ssl_context.check_hostname = False
 

@@ -77,6 +77,15 @@ class BindServer:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(str(self.cert_path), str(self.key_path))
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        # Match real Bambu printer cipher behaviour: include the plain-RSA
+        # AES-GCM suites the slicer's bind/connect path expects. On hardened
+        # distros (Fedora / RHEL with `update-crypto-policies`, hardened Alpine
+        # builds) the OpenSSL `DEFAULT` list strips these suites, leaving no
+        # overlap with the slicer's ClientHello and producing `code=-1` on the
+        # slicer side (#1610). Same fix the #620 client-side patch applied to
+        # `tcp_proxy.py::_create_client_ssl_context`; the bind-server / server
+        # side needs it too.
+        ctx.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
 

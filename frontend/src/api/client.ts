@@ -3422,6 +3422,44 @@ export const api = {
       { method: 'POST' }
     ),
 
+  // Temperature control
+  setBedTemperature: (printerId: number, target: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/temperature/bed?target=${target}`,
+      { method: 'POST' }
+    ),
+  setNozzleTemperature: (printerId: number, target: number, nozzle: number = 0) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/temperature/nozzle?target=${target}&nozzle=${nozzle}`,
+      { method: 'POST' }
+    ),
+  setChamberTemperature: (printerId: number, target: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/temperature/chamber?target=${target}`,
+      { method: 'POST' }
+    ),
+
+  // Fan control (fan: 1=part, 2=aux, 3=chamber)
+  setFanSpeed: (printerId: number, fan: 1 | 2 | 3, percent: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/fan?fan=${fan}&percent=${percent}`,
+      { method: 'POST' }
+    ),
+
+  // Axis jog (X/Y/Z); Z uses same sign rules as bed-jog on bed-slingers
+  jogAxis: (printerId: number, axis: 'X' | 'Y' | 'Z', distance: number, force: boolean = false) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/jog?axis=${axis}&distance=${distance}&force=${force}`,
+      { method: 'POST' }
+    ),
+
+  // Manual extrude/retract (blocked while printing)
+  extrudeFilament: (printerId: number, distance: number, speed: number = 300) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/extrude?distance=${distance}&speed=${speed}`,
+      { method: 'POST' }
+    ),
+
   // Chamber Light Control
   setChamberLight: (printerId: number, on: boolean) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/chamber-light?on=${on}`, {

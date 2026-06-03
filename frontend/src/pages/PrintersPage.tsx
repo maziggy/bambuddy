@@ -34,6 +34,7 @@ import {
   Zap,
   Wrench,
   ChevronDown,
+  ChevronRight,
   Filter,
   Pencil,
   ArrowUp,
@@ -1493,6 +1494,7 @@ function PrinterCard({
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteArchives, setDeleteArchives] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -1515,6 +1517,17 @@ function PrinterCard({
   const [showPrinterInfo, setShowPrinterInfo] = useState(false);
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const closePrinterInfo = useCallback(() => setShowPrinterInfo(false), []);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [showMenu]);
   const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
   // AMS drying popover state: which AMS unit has the popover open
   const [dryingPopoverAmsId, setDryingPopoverAmsId] = useState<number | null>(null);
@@ -2473,7 +2486,12 @@ function PrinterCard({
         <div className={getSpacing()}>
           {/* Top row: Image, Name, Menu */}
           <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => navigate(`/printers/${printer.id}`)}
+              className="group flex items-center gap-3 min-w-0 flex-1 text-left rounded-lg border border-transparent hover:border-bambu-green/40 hover:bg-bambu-green/5 transition-all -m-1 p-1.5 cursor-pointer"
+              title={t('printers.openControls')}
+            >
               {/* Printer Model Image */}
               <img
                 src={getPrinterImage(printer.model)}
@@ -2481,8 +2499,14 @@ function PrinterCard({
                 className={`object-contain rounded-lg bg-bambu-dark flex-shrink-0 ${getImageSize()}`}
               />
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className={`font-semibold text-white ${getTitleSize()}`}>{printer.name}</h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className={`font-semibold text-white group-hover:text-bambu-green transition-colors ${getTitleSize()}`}>
+                    {printer.name}
+                  </h3>
+                  <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] text-bambu-gray group-hover:text-bambu-green/90 transition-colors">
+                    {t('printers.openControls')}
+                    <ChevronRight className="w-3 h-3" />
+                  </span>
                   {/* Connection indicator dot for compact mode */}
                   {viewMode === 'compact' && (() => {
                     const hmsErrors = status?.connected && status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
@@ -2524,9 +2548,10 @@ function PrinterCard({
                   )}
                 </p>
               </div>
-            </div>
+              <ChevronRight className="w-5 h-5 text-bambu-gray/50 group-hover:text-bambu-green flex-shrink-0 transition-colors" aria-hidden />
+            </button>
             {/* Menu button */}
-            <div className="relative flex-shrink-0">
+            <div className="relative flex-shrink-0" ref={menuRef}>
               <Button
                 variant="ghost"
                 size="sm"

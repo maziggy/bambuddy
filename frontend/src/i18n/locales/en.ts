@@ -125,6 +125,7 @@ export default {
   // Printers page
   printers: {
     title: 'Printers',
+    openControls: 'Open controls',
     addPrinter: 'Add Printer',
     addPreflight: {
       checking: 'Checking connection...',
@@ -626,6 +627,34 @@ export default {
     dropNotPrintable: 'Only .gcode and .gcode.3mf files can be printed',
     dropToPrint: 'Drop to print',
     cannotPrint: 'Printer busy',
+  },
+
+  printerDetail: {
+    backToPrinters: 'Back to printers',
+    controlPanel: 'Control',
+    temperatures: 'Temperature',
+    fans: 'Fans',
+    motion: 'Motion',
+    motionDisabledWhilePrinting: 'Motion and homing are disabled while a print is active.',
+    extruder: 'Extruder',
+    extrudeStep: 'Extrude step (mm)',
+    tempIncrease: 'Increase target temperature',
+    tempDecrease: 'Decrease target temperature',
+    extrudeColdWarning: 'Heat the nozzle above 170°C before extruding.',
+    misc: 'Speed & environment',
+    lamp: 'Lamp',
+    settings: 'Printer settings',
+    settingsSaved: 'Printer settings saved',
+    cameraSettingsHint: 'External camera and plate detection are configured in',
+    nozzleLeft: 'Nozzle (left)',
+    nozzleInfo: 'Nozzle: {{diameter}}mm {{type}} (from printer)',
+    loadStarted: 'Load filament command sent',
+    unloadStarted: 'Unload filament command sent',
+    streamError: 'Camera stream unavailable',
+    waitingForStatus: 'Connecting to printer…',
+    invalidId: 'Invalid printer.',
+    unknown: 'Unknown',
+    unknownModel: 'Unknown model',
   },
 
   // Archives page

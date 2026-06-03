@@ -41,8 +41,10 @@ from backend.app.services.bambu_ftp import (
     list_files_async,
 )
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
+from backend.app.services.bambu_mqtt import BambuMQTTClient
 from backend.app.services.printer_manager import (
     get_derived_status_name,
+    is_bed_slinger,
     printer_manager,
     resolve_plate_id,
     supports_chamber_temp,
@@ -52,6 +54,25 @@ from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
+
+_MOTION_BLOCKED_STATES = frozenset({"RUNNING", "PAUSE"})
+
+
+def _require_motion_allowed(client: BambuMQTTClient) -> None:
+    """Reject manual motion, homing, and extrusion while a print is active."""
+    if client.state.state in _MOTION_BLOCKED_STATES:
+        raise HTTPException(409, "Motion control is disabled while a print job is active")
+
+
+async def _get_printer_and_client(db: AsyncSession, printer_id: int) -> tuple[Printer, BambuMQTTClient]:
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+    return printer, client
 
 
 @router.get("/", response_model=list[PrinterResponse])
@@ -2784,6 +2805,124 @@ async def set_chamber_light(
     return {"success": True, "message": f"Chamber light {'on' if on else 'off'}"}
 
 
+@router.post("/{printer_id}/temperature/bed")
+async def set_bed_temperature(
+    printer_id: int,
+    target: int = Query(..., ge=0, le=300, description="Target bed temperature in Celsius (0 to turn off)"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the bed target temperature."""
+    _, client = await _get_printer_and_client(db, printer_id)
+    if not client.set_bed_temperature(target):
+        raise HTTPException(500, "Failed to set bed temperature")
+    return {"success": True, "message": f"Bed target set to {target}°C"}
+
+
+@router.post("/{printer_id}/temperature/nozzle")
+async def set_nozzle_temperature(
+    printer_id: int,
+    target: int = Query(..., ge=0, le=350, description="Target nozzle temperature in Celsius (0 to turn off)"),
+    nozzle: int = Query(0, ge=0, le=1, description="Nozzle index (0=right/default, 1=left on dual-nozzle)"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a nozzle target temperature."""
+    _, client = await _get_printer_and_client(db, printer_id)
+    if not client.set_nozzle_temperature(target, nozzle=nozzle):
+        raise HTTPException(500, "Failed to set nozzle temperature")
+    return {"success": True, "message": f"Nozzle {nozzle} target set to {target}°C"}
+
+
+@router.post("/{printer_id}/temperature/chamber")
+async def set_chamber_temperature(
+    printer_id: int,
+    target: int = Query(..., ge=0, le=80, description="Target chamber temperature in Celsius (0 to turn off)"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the chamber target temperature (enclosed printers only)."""
+    printer, client = await _get_printer_and_client(db, printer_id)
+    if not supports_chamber_temp(printer.model):
+        raise HTTPException(400, "This printer model does not support chamber temperature control")
+    if not client.set_chamber_temperature(target):
+        raise HTTPException(500, "Failed to set chamber temperature")
+    return {"success": True, "message": f"Chamber target set to {target}°C"}
+
+
+@router.post("/{printer_id}/fan")
+async def set_fan_speed(
+    printer_id: int,
+    fan: int = Query(..., ge=1, le=3, description="Fan index (1=part, 2=aux, 3=chamber)"),
+    percent: int = Query(..., ge=0, le=100, description="Fan speed percentage"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a fan speed by percentage (0–100)."""
+    _, client = await _get_printer_and_client(db, printer_id)
+    speed = round(percent / 100 * 255)
+    if not client.set_fan_speed(fan, speed):
+        raise HTTPException(500, "Failed to set fan speed")
+    return {"success": True, "message": f"Fan {fan} set to {percent}%"}
+
+
+@router.post("/{printer_id}/jog")
+async def jog_axis(
+    printer_id: int,
+    axis: str = Query(..., description="Axis to move: X, Y, or Z"),
+    distance: float = Query(..., description="Signed distance in mm"),
+    force: bool = Query(False, description="For Z only: bypass soft endstops via M211 when not homed"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Jog X/Y/Z by a relative distance. Blocked while printing."""
+    axis = axis.upper()
+    if axis not in ("X", "Y", "Z"):
+        raise HTTPException(400, "axis must be 'X', 'Y', or 'Z'")
+    if distance == 0 or abs(distance) > 200:
+        raise HTTPException(400, "Distance must be non-zero and ≤ 200 mm")
+
+    printer, client = await _get_printer_and_client(db, printer_id)
+    _require_motion_allowed(client)
+
+    if axis in ("X", "Y"):
+        if not client.move_axis(axis, distance):
+            raise HTTPException(500, f"Failed to jog {axis} axis")
+        return {"success": True, "message": f"Jog {axis}{distance:+.1f} mm sent"}
+
+    gcode_distance = -distance if is_bed_slinger(printer.model) else distance
+    lines = []
+    if force:
+        lines.append("M211 S0")
+    lines += ["G91", f"G1 Z{gcode_distance:.2f} F600", "G90"]
+    if force:
+        lines.append("M211 S1")
+    if not client.send_gcode("\n".join(lines)):
+        raise HTTPException(500, "Failed to jog Z axis")
+    return {"success": True, "message": f"Jog Z{distance:+.1f} mm sent"}
+
+
+@router.post("/{printer_id}/extrude")
+async def extrude_filament(
+    printer_id: int,
+    distance: float = Query(..., description="Signed extrusion distance in mm (positive=extrude, negative=retract)"),
+    speed: int = Query(300, ge=10, le=1200, description="Extrusion speed in mm/min"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extrude or retract filament via relative E move. Blocked while printing."""
+    if distance == 0 or abs(distance) > 200:
+        raise HTTPException(400, "Distance must be non-zero and ≤ 200 mm")
+
+    _, client = await _get_printer_and_client(db, printer_id)
+    _require_motion_allowed(client)
+
+    gcode = f"G91\nG1 E{distance:.2f} F{speed}\nG90"
+    if not client.send_gcode(gcode):
+        raise HTTPException(500, "Failed to send extrude command")
+    return {"success": True, "message": f"Extrude {distance:+.1f} mm sent"}
+
+
 @router.post("/{printer_id}/bed-jog")
 async def bed_jog(
     printer_id: int,
@@ -2819,16 +2958,8 @@ async def bed_jog(
     if distance == 0 or abs(distance) > 200:
         raise HTTPException(400, "Distance must be non-zero and ≤ 200 mm")
 
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
-
-    client = printer_manager.get_client(printer_id)
-    if not client:
-        raise HTTPException(400, "Printer not connected")
-
-    from backend.app.services.printer_manager import is_bed_slinger
+    printer, client = await _get_printer_and_client(db, printer_id)
+    _require_motion_allowed(client)
 
     gcode_distance = -distance if is_bed_slinger(printer.model) else distance
 
@@ -2874,14 +3005,8 @@ async def home_axes(
     if axes not in ("z", "xy", "all"):
         raise HTTPException(400, "axes must be 'z', 'xy', or 'all'")
 
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
-
-    client = printer_manager.get_client(printer_id)
-    if not client:
-        raise HTTPException(400, "Printer not connected")
+    _, client = await _get_printer_and_client(db, printer_id)
+    _require_motion_allowed(client)
 
     if not client.send_gcode("G28"):
         raise HTTPException(500, "Failed to send home command")

@@ -237,18 +237,18 @@ describe('GroupEditPage', () => {
 
       const wrapper = (
         <QueryClientProvider client={queryClient}>
-          <ThemeProvider>
-            <ToastProvider>
-              <AuthProvider>
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>
                 <MemoryRouter initialEntries={['/groups/2/edit']}>
                   <Routes>
                     <Route path="/groups/:id/edit" element={<GroupEditPage />} />
                     <Route path="/settings" element={<div>Settings</div>} />
                   </Routes>
                 </MemoryRouter>
-              </AuthProvider>
-            </ToastProvider>
-          </ThemeProvider>
+              </ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
         </QueryClientProvider>
       );
       rtlRender(wrapper);

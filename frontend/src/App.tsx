@@ -153,10 +153,16 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <ErrorBoundary>
-    <ThemeProvider>
       <ToastProvider>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
+            {/* ThemeProvider sits inside AuthProvider so its initial
+                ``api.getSettings()`` fetch can wait for AuthContext to
+                resolve — otherwise it fires unconditionally on every
+                login page load and returns 401. ErrorBoundary uses
+                inline styles, so a missing theme on a crash screen is
+                not a regression. */}
+            <ThemeProvider>
             <ColorCatalogProvider>
             <SliceJobTrackerProvider>
             <StreamTokenSync />
@@ -213,10 +219,10 @@ function App() {
             </BrowserRouter>
             </SliceJobTrackerProvider>
             </ColorCatalogProvider>
+            </ThemeProvider>
           </AuthProvider>
         </QueryClientProvider>
       </ToastProvider>
-    </ThemeProvider>
     </ErrorBoundary>
   );
 }

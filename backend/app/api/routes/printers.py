@@ -182,14 +182,19 @@ async def get_available_filaments(
                 tray_type = tray.get("tray_type")
                 if not tray_type:
                     continue
-                tray_color = tray.get("tray_color", "")
-                # Normalize color: remove alpha, add hash
-                hex_color = tray_color.replace("#", "")[:6] if tray_color else "808080"
-                color = f"#{hex_color}"
+                tray_color = tray.get("tray_color", "") or "808080"
+                # Preserve the full RRGGBBAA so transparent filament (alpha=00)
+                # reaches the frontend instead of collapsing to #000000 → black
+                # (#1545). Opaque colours still round-trip as #RRGGBB. The
+                # dedup key uses the 6-char RGB so two slots that share an RGB
+                # but differ only in alpha still merge.
+                stripped = tray_color.replace("#", "")
+                rgb = stripped[:6].lower() or "808080"
+                color = f"#{stripped}"
                 tray_info_idx = tray.get("tray_info_idx", "")
                 tray_sub_brands = tray.get("tray_sub_brands", "") or ""
 
-                key = (tray_type.upper(), hex_color.lower(), tray_sub_brands.upper(), extruder_id)
+                key = (tray_type.upper(), rgb, tray_sub_brands.upper(), extruder_id)
                 if key not in seen:
                     seen.add(key)
                     filaments.append(
@@ -207,15 +212,17 @@ async def get_available_filaments(
             vt_type = vt.get("tray_type")
             if not vt_type:
                 continue
-            vt_color = vt.get("tray_color", "")
-            hex_color = vt_color.replace("#", "")[:6] if vt_color else "808080"
-            color = f"#{hex_color}"
+            vt_color = vt.get("tray_color", "") or "808080"
+            # Same alpha-preserving handling as the AMS branch — see #1545.
+            stripped = vt_color.replace("#", "")
+            rgb = stripped[:6].lower() or "808080"
+            color = f"#{stripped}"
             tray_info_idx = vt.get("tray_info_idx", "")
             tray_sub_brands = vt.get("tray_sub_brands", "") or ""
             vt_id = int(vt.get("id", 254))
             extruder_id = (255 - vt_id) if ams_extruder_map else None
 
-            key = (vt_type.upper(), hex_color.lower(), tray_sub_brands.upper(), extruder_id)
+            key = (vt_type.upper(), rgb, tray_sub_brands.upper(), extruder_id)
             if key not in seen:
                 seen.add(key)
                 filaments.append(

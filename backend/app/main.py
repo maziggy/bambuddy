@@ -330,6 +330,14 @@ logging.info("Bambuddy starting - debug=%s, log_level=%s", app_settings.debug, l
 # Track active prints: {(printer_id, filename): archive_id}
 _active_prints: dict[tuple[int, str], int] = {}
 
+# Per-printer "connected" edge tracker. Used by `on_printer_status_change`
+# to fire `reconcile_stale_active_prints` exactly once per (re)connection
+# (#1542 follow-up — power-cycle ghost prints). The value is True after
+# the first connected status update for that connection; transitions back
+# to False whenever we observe `state.connected = False` so the next
+# reconnect re-arms reconciliation. Keyed by printer_id.
+_printer_reconciled_since_connect: dict[int, bool] = {}
+
 # Track expected prints from reprint/scheduled (skip auto-archiving for these)
 # {(printer_id, filename): archive_id}
 _expected_prints: dict[tuple[int, str], int] = {}
@@ -628,6 +636,89 @@ def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | No
     return stored_ams_mapping
 
 
+def _extract_filament_data_from_mqtt(data: dict, ams_mapping: list[int] | None = None) -> dict[str, str]:
+    """Best-effort filament metadata from the MQTT print-start snapshot.
+
+    Used when the 3MF can't be downloaded (P1S/A1/P2S firmwares lock the
+    file during print, see #1533) so the fallback PrintArchive still has
+    enough filament info to support the inventory views and AMS-expansion
+    planning the operator opens it for. Returns a dict with optional
+    ``filament_type`` and ``filament_color`` keys in the same
+    comma-separated format the 3MF extractor produces, so the rest of the
+    codebase treats the fallback archive identically to a normal one.
+
+    ``ams_mapping`` is the slicer's slot-per-print-filament list captured
+    from the MQTT print payload (global tray IDs, possibly -1 for VT-tray
+    entries). When supplied, only the slots actually consumed by this
+    print contribute. Without it the function falls back to every loaded
+    AMS slot — less accurate but still useful.
+
+    Accepts both the raw inner payload (``{"ams": {"ams": [...]}, ...}``)
+    that the unit tests pass directly, AND the on_print_start callback
+    shape (``{"raw_data": {"ams": {"ams": [...]}, ...}, ...}``) the
+    bambu_mqtt service hands to main.py at runtime. The original
+    ``_extract_filament_data_from_mqtt(data)`` shipped in #1533 only
+    handled the inner shape and silently returned ``{}`` for every real
+    print start, leaving fallback archives' filament fields NULL — the
+    exact regression the fix was meant to close. Reported with a log
+    proving the AMS state was right there at
+    ``data["raw_data"]["ams"]["ams"][0]["tray"][0]`` (#1533 follow-up).
+    """
+    result: dict[str, str] = {}
+    # Look at the on_print_start wrapper first, then the inner shape.
+    raw_data = (data or {}).get("raw_data")
+    ams_root = (raw_data or {}).get("ams") if isinstance(raw_data, dict) else None
+    if not isinstance(ams_root, dict):
+        ams_root = (data or {}).get("ams") or {}
+    ams_units = ams_root.get("ams") if isinstance(ams_root, dict) else None
+    if not isinstance(ams_units, list) or not ams_units:
+        return result
+
+    # Map global tray id (unit * 4 + tray) → (type, color).
+    loaded: dict[int, tuple[str, str]] = {}
+    for unit in ams_units:
+        if not isinstance(unit, dict):
+            continue
+        try:
+            unit_id = int(unit.get("id", 0))
+        except (TypeError, ValueError):
+            continue
+        for tray in unit.get("tray") or []:
+            if not isinstance(tray, dict):
+                continue
+            try:
+                tray_id = int(tray.get("id", 0))
+            except (TypeError, ValueError):
+                continue
+            ttype = (tray.get("tray_type") or "").strip()
+            tcolor = (tray.get("tray_color") or "").strip().upper()
+            if not ttype:
+                continue  # Empty / unloaded slot.
+            loaded[unit_id * 4 + tray_id] = (ttype, tcolor)
+
+    if not loaded:
+        return result
+
+    if ams_mapping:
+        used_ids = [int(x) for x in ams_mapping if isinstance(x, (int, float)) and int(x) >= 0]
+        filaments = [loaded[g] for g in used_ids if g in loaded]
+        if not filaments:
+            return result  # Mapping points entirely at slots we have no data for.
+    else:
+        filaments = [loaded[g] for g in sorted(loaded.keys())]
+
+    types_joined = ",".join(f[0] for f in filaments)
+    colors_joined = ",".join(f[1] for f in filaments if f[1])
+
+    # Column limits per backend/app/models/archive.py: filament_type=50,
+    # filament_color=200.
+    if types_joined:
+        result["filament_type"] = types_joined[:50]
+    if colors_joined:
+        result["filament_color"] = colors_joined[:200]
+    return result
+
+
 def _maybe_start_layer_timelapse(printer, printer_id: int, archive_id: int) -> bool:
     """Start a layer-timelapse session for *archive_id* when the printer has
     an external camera configured. Returns True if a session was started.
@@ -715,6 +806,26 @@ _nozzle_count_updated: set[int] = set()
 
 async def on_printer_status_change(printer_id: int, state: PrinterState):
     """Handle printer status changes - broadcast via WebSocket."""
+    # Connected-edge reconciliation (#1542 follow-up). When the printer
+    # transitions disconnected → connected — which covers both Bambuddy
+    # startup (no prior connection) and a mid-session MQTT reconnect — fire
+    # `reconcile_stale_active_prints` exactly once for this connection so
+    # any archive still in `status="printing"` that can't actually be
+    # running anymore (printer IDLE / different subtask / empty subtask)
+    # gets a synthesised PRINT COMPLETE. Without this, a print that
+    # finished during a disconnect window + a smart-plug power cycle
+    # leaves the .3mf on the SD card and the firmware ghost-replays it on
+    # next boot. Reconciliation runs concurrently — it must not block the
+    # WebSocket dedup / broadcast logic below, and the connected edge is
+    # marked True BEFORE the await so concurrent status updates inside
+    # the same connection don't re-trigger reconciliation.
+    if state.connected and not _printer_reconciled_since_connect.get(printer_id, False):
+        _printer_reconciled_since_connect[printer_id] = True
+        asyncio.create_task(reconcile_stale_active_prints(printer_id))
+    elif not state.connected and _printer_reconciled_since_connect.get(printer_id, False):
+        # Re-arm so the next reconnect triggers reconciliation again.
+        _printer_reconciled_since_connect[printer_id] = False
+
     # Only broadcast if something meaningful changed (reduce WebSocket spam)
     # Include rounded temperatures to detect meaningful temp changes (within 1 degree)
     temps = state.temperatures or {}
@@ -2592,6 +2703,14 @@ async def on_print_start(printer_id: int, data: dict):
                     if mc_remaining and isinstance(mc_remaining, (int, float)) and mc_remaining > 0:
                         fallback_print_time = int(mc_remaining * 60)
 
+                # Best-effort filament metadata from MQTT — see
+                # _extract_filament_data_from_mqtt. Without this the fallback
+                # archive's filament fields stayed NULL even though the AMS
+                # state at print start was sitting right there in `data`.
+                # The slicer's ams_mapping (when present) narrows the result
+                # to slots actually used by the print (#1533).
+                mqtt_filament_meta = _extract_filament_data_from_mqtt(data, _get_start_ams_mapping(data, None))
+
                 # Create minimal archive entry
                 fallback_archive = PrintArchive(
                     printer_id=printer_id,
@@ -2603,6 +2722,8 @@ async def on_print_start(printer_id: int, data: dict):
                     status="printing",
                     started_at=datetime.now(timezone.utc),
                     subtask_id=subtask_id,
+                    filament_type=mqtt_filament_meta.get("filament_type"),
+                    filament_color=mqtt_filament_meta.get("filament_color"),
                     extra_data={"no_3mf_available": True, "original_subtask": subtask_name, "_print_data": data},
                 )
 
@@ -3070,6 +3191,136 @@ async def on_print_running_observed(printer_id: int, data: dict):
     await _capture_timelapse_baseline_at_start(printer, printer_id, logger)
 
 
+def _is_active_archive_stale(archive, state) -> tuple[bool, str]:
+    """Return ``(is_stale, reason)`` for an archive in ``status="printing"``
+    against the printer's current MQTT state.
+
+    Reconciliation triggers (#1542 follow-up — recovers from missed PRINT
+    COMPLETE events, typically a print finishing during an MQTT disconnect
+    window followed by a smart-plug power cycle):
+
+      1. Printer state is terminal (IDLE / FINISH / FAILED). The print is
+         provably not running anymore — only branch that should fire under
+         normal disconnect-then-reconnect timing.
+      2. Printer has a different ``subtask_id`` than the archive. Bambu
+         firmware mints a fresh ``subtask_id`` for each print, including the
+         ghost replay it runs after a power cycle from a leftover SD file —
+         so a mismatch unambiguously means the in-DB archive is no longer
+         the print on the printer.
+      3. Printer is running but ``subtask_name`` is empty. The printer
+         doesn't know what it's running; the archive's reference to it is
+         already broken.
+
+    Conservative on purpose: PAUSE / PREPARE / SLICING and any RUNNING state
+    with matching subtask_id+subtask_name is left alone. The cost of a false
+    positive is a single misreported "aborted" status that the next real
+    PRINT COMPLETE would have overwritten with the correct status anyway.
+    The cost of a false negative is the ghost-print loop in #1542.
+    """
+    current_state = (state.state or "").upper()
+    if current_state in ("IDLE", "FINISH", "FAILED"):
+        return True, f"printer state {current_state}"
+    # Below here the printer is in a running / pre-running state (RUNNING /
+    # PAUSE / PREPARE / SLICING / etc.) — decide based on subtask identity.
+    current_subtask_id = (state.subtask_id or "").strip()
+    if archive.subtask_id and current_subtask_id and archive.subtask_id != current_subtask_id:
+        return True, f"subtask_id changed ({archive.subtask_id!r} → {current_subtask_id!r})"
+    current_subtask_name = (state.subtask_name or "").strip()
+    if not current_subtask_name:
+        return True, "printer subtask_name empty"
+    return False, ""
+
+
+async def reconcile_stale_active_prints(printer_id: int) -> int:
+    """Synthesise ``on_print_complete`` for archives whose print can't be
+    running on the printer anymore.
+
+    Called once per MQTT (re)connection (from on_printer_status_change when
+    the connected edge flips False → True) and at Bambuddy startup (from
+    the FastAPI lifespan). Without this, a print that completes during a
+    disconnect window — followed by a smart-plug-driven power cycle — leaves
+    the ``.3mf`` on the SD card, the firmware auto-replays it on next boot,
+    and Bambuddy fires a fresh PRINT START for the ghost rather than the
+    SD cleanup that PRINT COMPLETE was supposed to run. Repeats every
+    power cycle until the operator notices (#1542 follow-up). Reconciliation
+    closes the loop by faking the missed PRINT COMPLETE — the existing
+    cleanup chain handles SD-file deletion, status updates, usage tracking,
+    and notifications.
+
+    Synthesised ``status="aborted"`` is the conservative label: we have no
+    proof the print finished successfully (and no progress evidence to
+    promote to ``"completed"``). The real PRINT COMPLETE callback, if it
+    fires later, overwrites the status with the correct value.
+
+    Returns the number of archives reconciled.
+    """
+    state = printer_manager.get_status(printer_id)
+    if not state:
+        return 0
+    # Don't reconcile while disconnected — we'd be making a decision against
+    # stale cached state. The connected → reconcile edge handles this.
+    if not state.connected:
+        return 0
+
+    from backend.app.models.archive import PrintArchive
+
+    reconciled = 0
+    async with async_session() as db:
+        result = await db.execute(
+            select(PrintArchive).where(
+                PrintArchive.printer_id == printer_id,
+                PrintArchive.status == "printing",
+            )
+        )
+        active = list(result.scalars().all())
+
+    if not active:
+        return 0
+
+    logger = logging.getLogger(__name__)
+    for archive in active:
+        is_stale, reason = _is_active_archive_stale(archive, state)
+        if not is_stale:
+            continue
+        logger.info(
+            "[RECONCILE] Printer %s: synthesising missed PRINT COMPLETE for archive %s (%s) — %s",
+            printer_id,
+            archive.id,
+            archive.filename,
+            reason,
+        )
+        # Synthesised payload: minimal fields the on_print_complete chain
+        # needs. `_reconciled` marker lets downstream code distinguish this
+        # from a real MQTT-driven completion if it ever needs to (e.g. for
+        # metrics / debug logging). raw_data is the live printer state so
+        # the usage tracker can compare end-of-print remain% against the
+        # captured start values.
+        try:
+            await on_print_complete(
+                printer_id,
+                {
+                    "status": "aborted",
+                    "filename": archive.filename,
+                    "subtask_name": archive.print_name or "",
+                    "subtask_id": archive.subtask_id or "",
+                    "raw_data": state.raw_data or {},
+                    "_reconciled": True,
+                },
+            )
+            reconciled += 1
+        except Exception as e:
+            # Catch-all: a reconciliation failure must not block the
+            # printer's normal status flow. The archive stays in
+            # ``status="printing"`` and the next reconnect retries.
+            logger.warning(
+                "[RECONCILE] on_print_complete synthesis failed for archive %s: %s",
+                archive.id,
+                e,
+            )
+
+    return reconciled
+
+
 async def on_print_complete(printer_id: int, data: dict):
     """Handle print completion - update the archive status."""
     import time
@@ -3246,24 +3497,43 @@ async def on_print_complete(printer_id: int, data: dict):
                 if archive:
                     archive_id = archive.id
 
-    # Cleanup: delete uploaded file from printer SD card to prevent phantom prints (Issue #374)
-    # The print scheduler uploads files to the SD card root (/). Some printers (e.g. P1S)
+    # Cleanup: delete uploaded file from printer SD card to prevent phantom prints (Issue #374, #1542)
+    # The print scheduler uploads files to the SD card root (/). Some printers (e.g. P1S, A1)
     # auto-start files found in root on power cycle, causing ghost prints.
     # Must run before the archive_id early-return so it executes even when archiving is disabled.
     try:
         if subtask_name:
+            archive_filename: str | None = None
             async with async_session() as db:
+                from backend.app.models.archive import PrintArchive
                 from backend.app.models.printer import Printer
 
                 result = await db.execute(select(Printer).where(Printer.id == printer_id))
                 printer = result.scalar_one_or_none()
+                if archive_id:
+                    archive_row = await db.execute(select(PrintArchive.filename).where(PrintArchive.id == archive_id))
+                    archive_filename = archive_row.scalar_one_or_none()
 
             if printer:
                 from backend.app.services.bambu_ftp import delete_file_async
+                from backend.app.utils.filename import derive_remote_filename
 
-                # Try both .3mf and .gcode extensions — the printer may have either
+                # Primary candidate: the exact path the dispatcher uploaded to
+                # (derived from archive.filename via the same rule as upload).
+                # Without it, a library row that ended up with a doubled
+                # .gcode.3mf (#1542) leaves the real file behind because the
+                # subtask_name + ext fallbacks below don't match what's on the
+                # SD card. Fallbacks remain for archive-less prints (subtask
+                # never resolved to an archive) and for older naming variants.
+                candidate_paths: list[str] = []
+                if archive_filename:
+                    candidate_paths.append(f"/{derive_remote_filename(archive_filename)}")
                 for ext in (".3mf", ".gcode"):
-                    remote_path = f"/{subtask_name}{ext}"
+                    fallback = f"/{subtask_name}{ext}"
+                    if fallback not in candidate_paths:
+                        candidate_paths.append(fallback)
+
+                for remote_path in candidate_paths:
                     # Retry up to 3 times — the printer may still lock the filesystem briefly after a print ends
                     for attempt in range(1, 4):
                         try:
@@ -4380,7 +4650,13 @@ RUNTIME_TRACKING_INTERVAL = 30  # Update every 30 seconds
 
 
 async def track_printer_runtime():
-    """Background task to track printer active runtime (RUNNING/PAUSE states)."""
+    """Background task to track printer active runtime (RUNNING state only).
+
+    PAUSE is intentionally excluded — the runtime counter feeds hours-based
+    maintenance intervals (rod lubrication, belt checks, nozzle cleaning)
+    which track mechanical wear. Pause time has no motion and no wear, so
+    counting it inflates maintenance warnings (#1521).
+    """
     logger = logging.getLogger(__name__)
 
     # Wait for MQTT connections to establish on startup
@@ -4418,7 +4694,7 @@ async def track_printer_runtime():
                 new_runtime = runtime_secs
                 new_last_update = last_update
 
-                if state.state in ("RUNNING", "PAUSE"):
+                if state.state == "RUNNING":
                     if last_update:
                         lu = last_update if last_update.tzinfo else last_update.replace(tzinfo=timezone.utc)
                         elapsed = (now - lu).total_seconds()

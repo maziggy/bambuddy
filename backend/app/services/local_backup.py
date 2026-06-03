@@ -223,7 +223,9 @@ class LocalBackupService:
         if not filename.startswith("bambuddy-backup-") or not filename.endswith(".zip"):
             return None
         backup_dir = self._resolve_backup_dir(path_setting)
-        target = backup_dir / filename
+        target = (
+            backup_dir / filename
+        )  # SEC-PATH-OK: filename rejected above on /, \\, .., plus startswith "bambuddy-backup-" + endswith ".zip" gate
         if not target.exists():
             return None
         return target
@@ -253,7 +255,9 @@ class LocalBackupService:
             return {"success": False, "message": "Invalid filename"}
 
         backup_dir = self._resolve_backup_dir(path_setting)
-        target = backup_dir / filename
+        target = (
+            backup_dir / filename
+        )  # SEC-PATH-OK: filename rejected above on /, \\, .., plus startswith "bambuddy-backup-" + endswith ".zip" gate below
 
         if not target.exists():
             return {"success": False, "message": "Backup not found"}

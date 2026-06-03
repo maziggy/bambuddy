@@ -212,7 +212,9 @@ async def store_print_data(
         return
 
     # Get 3MF file path
-    full_path = app_settings.base_dir / file_path
+    full_path = (
+        app_settings.base_dir / file_path
+    )  # SEC-PATH-OK: file_path is archive.file_path / library_file.file_path — DB-stored, internally generated
     if not full_path.exists():
         logger.debug("[SPOOLMAN] 3MF file not found: %s", full_path)
         return

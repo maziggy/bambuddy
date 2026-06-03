@@ -287,10 +287,19 @@ class TestProjectPartsTracking:
 
     @pytest.fixture
     async def archive_factory(self, db_session):
-        """Factory to create test archives."""
+        """Factory to create a test archive plus a matching PrintLogEntry.
+
+        Project stats aggregate from ``print_log_entries`` (#1593), so a
+        test that only writes archives wouldn't exercise the production
+        path — production always writes one log entry per run. The
+        factory mirrors that: every archive whose status is anything other
+        than ``"archived"`` (file shelved without printing) gets a log
+        entry whose status matches the archive.
+        """
 
         async def _create_archive(**kwargs):
             from backend.app.models.archive import PrintArchive
+            from backend.app.models.print_log import PrintLogEntry
 
             defaults = {
                 "filename": "test.3mf",
@@ -306,6 +315,16 @@ class TestProjectPartsTracking:
             db_session.add(archive)
             await db_session.commit()
             await db_session.refresh(archive)
+
+            if archive.status != "archived":
+                db_session.add(
+                    PrintLogEntry(
+                        archive_id=archive.id,
+                        print_name=archive.print_name,
+                        status=archive.status,
+                    )
+                )
+                await db_session.commit()
             return archive
 
         return _create_archive
@@ -436,10 +455,12 @@ class TestProjectArchivedStatusNotCounted:
 
     @pytest.fixture
     async def archive_factory(self, db_session):
-        """Factory to create test archives."""
+        """Factory to create a test archive plus a matching PrintLogEntry —
+        see TestProjectPartsTracking.archive_factory for rationale (#1593)."""
 
         async def _create_archive(**kwargs):
             from backend.app.models.archive import PrintArchive
+            from backend.app.models.print_log import PrintLogEntry
 
             defaults = {
                 "filename": "test.3mf",
@@ -455,6 +476,16 @@ class TestProjectArchivedStatusNotCounted:
             db_session.add(archive)
             await db_session.commit()
             await db_session.refresh(archive)
+
+            if archive.status != "archived":
+                db_session.add(
+                    PrintLogEntry(
+                        archive_id=archive.id,
+                        print_name=archive.print_name,
+                        status=archive.status,
+                    )
+                )
+                await db_session.commit()
             return archive
 
         return _create_archive
@@ -499,7 +530,10 @@ class TestProjectArchivedStatusNotCounted:
         our_project = next((p for p in data if p["name"] == "List Archived Test"), None)
         assert our_project is not None
         assert our_project["completed_count"] == 4  # Only completed, not archived
-        assert our_project["archive_count"] == 2  # Both archives exist as plates
+        # Post-#1593: archive_count is "print runs", not "files attached". An
+        # ``archived``-status file (shelved without printing) has no
+        # PrintLogEntry and doesn't count — only the actual printed run does.
+        assert our_project["archive_count"] == 1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -519,9 +553,201 @@ class TestProjectArchivedStatusNotCounted:
         data = response.json()
 
         assert data["stats"]["completed_prints"] == 10  # Only "completed"
-        assert data["stats"]["failed_prints"] == 2  # failed + aborted (count of archives, not sum)
-        assert data["stats"]["total_archives"] == 4  # All archives
-        assert data["stats"]["total_items"] == 20  # Sum of all quantities
+        assert data["stats"]["failed_prints"] == 2  # failed + aborted (count of runs)
+        # Post-#1593: total_archives counts runs from print_log_entries, not
+        # files. The ``archived`` row is a shelved file with no run, so it
+        # contributes 0; the other three (completed, failed, aborted) each
+        # produced a run.
+        assert data["stats"]["total_archives"] == 3
+        # total_items sums quantity per run: 10 (completed) + 3 (failed) + 2 (aborted) = 15
+        assert data["stats"]["total_items"] == 15
+
+
+class TestProjectStatsPerRun:
+    """Project stats aggregate per-run from ``print_log_entries`` so
+    reprints and multi-plate prints count every run (#1593). Pre-fix the
+    stats counted ``print_archives`` (one row per file), so 3 reprints of
+    one file showed as 1 job with plate-1-only filament/time/cost.
+    """
+
+    @pytest.fixture
+    async def project_factory(self, db_session):
+        async def _create_project(**kwargs):
+            from backend.app.models.project import Project
+
+            defaults = {"name": "Per-Run Stats Project", "color": "#FF0000"}
+            defaults.update(kwargs)
+            project = Project(**defaults)
+            db_session.add(project)
+            await db_session.commit()
+            await db_session.refresh(project)
+            return project
+
+        return _create_project
+
+    @pytest.fixture
+    async def archive_with_runs(self, db_session):
+        """Build a single archive + N PrintLogEntry rows.
+
+        Models the reporter's case: one source file (archive) is reprinted
+        N times, each run with its own duration / filament / cost.
+        """
+
+        async def _create(*, project_id: int, runs: list[dict], archive_status: str = "completed", quantity: int = 1):
+            from backend.app.models.archive import PrintArchive
+            from backend.app.models.print_log import PrintLogEntry
+
+            archive = PrintArchive(
+                filename="reprinted.3mf",
+                file_path="test/reprinted.3mf",
+                file_size=1000,
+                print_name="Reprinted Print",
+                status=archive_status,
+                quantity=quantity,
+                project_id=project_id,
+            )
+            db_session.add(archive)
+            await db_session.commit()
+            await db_session.refresh(archive)
+
+            for run in runs:
+                db_session.add(
+                    PrintLogEntry(
+                        archive_id=archive.id,
+                        print_name=archive.print_name,
+                        status=run.get("status", "completed"),
+                        duration_seconds=run.get("duration_seconds"),
+                        filament_used_grams=run.get("filament_used_grams"),
+                        cost=run.get("cost"),
+                        energy_kwh=run.get("energy_kwh"),
+                        energy_cost=run.get("energy_cost"),
+                    )
+                )
+            await db_session.commit()
+            return archive
+
+        return _create
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_three_reprints_count_as_three_jobs_with_summed_totals(
+        self, async_client: AsyncClient, project_factory, archive_with_runs
+    ):
+        """Reporter's case: 3 runs of one multi-plate file should report
+        3 jobs and summed time / filament / cost — pre-fix it reported 1
+        job with plate-1-only totals."""
+        project = await project_factory()
+        await archive_with_runs(
+            project_id=project.id,
+            runs=[
+                {"duration_seconds": 7140, "filament_used_grams": 19.2, "cost": 0.40},
+                {"duration_seconds": 6000, "filament_used_grams": 20.0, "cost": 0.40},
+                {"duration_seconds": 6300, "filament_used_grams": 18.8, "cost": 0.40},
+            ],
+        )
+
+        response = await async_client.get(f"/api/v1/projects/{project.id}")
+        assert response.status_code == 200
+        stats = response.json()["stats"]
+
+        assert stats["total_archives"] == 3, "3 runs must show as 3 jobs"
+        assert stats["completed_prints"] == 3, "Each run with quantity=1 contributes 1 part"
+        assert stats["total_filament_grams"] == round(19.2 + 20.0 + 18.8, 2)
+        assert stats["total_print_time_hours"] == round((7140 + 6000 + 6300) / 3600, 2)
+        # Cost rounds at 2 decimals — 3 * 0.40 = 1.20
+        assert stats["estimated_cost"] == 1.20
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_orphan_log_entries_do_not_bleed_into_projects(
+        self, async_client: AsyncClient, project_factory, db_session
+    ):
+        """Log rows whose ``archive_id`` is NULL (archive deleted via
+        ON DELETE SET NULL) must not leak into any project — the inner
+        join filters them out by construction."""
+        from backend.app.models.print_log import PrintLogEntry
+
+        project = await project_factory()
+
+        # Orphan log entries — no archive_id.
+        for _ in range(5):
+            db_session.add(
+                PrintLogEntry(
+                    archive_id=None,
+                    print_name="Orphan Run",
+                    status="completed",
+                    duration_seconds=3600,
+                    filament_used_grams=20.0,
+                    cost=0.5,
+                )
+            )
+        await db_session.commit()
+
+        response = await async_client.get(f"/api/v1/projects/{project.id}")
+        assert response.status_code == 200
+        stats = response.json()["stats"]
+
+        # None of the orphan rows are attributable to this project.
+        assert stats["total_archives"] == 0
+        assert stats["completed_prints"] == 0
+        assert stats["total_filament_grams"] == 0
+        assert stats["total_print_time_hours"] == 0
+        assert stats["estimated_cost"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_mixed_run_outcomes_split_completed_and_failed(
+        self, async_client: AsyncClient, project_factory, archive_with_runs
+    ):
+        """A multi-run archive with mixed outcomes splits cleanly between
+        completed_prints (per-quantity) and failed_prints (per-run)."""
+        project = await project_factory()
+        await archive_with_runs(
+            project_id=project.id,
+            quantity=2,
+            runs=[
+                {"status": "completed", "filament_used_grams": 30.0},
+                {"status": "completed", "filament_used_grams": 30.0},
+                {"status": "failed", "filament_used_grams": 5.0},
+                {"status": "aborted", "filament_used_grams": 2.0},
+            ],
+        )
+
+        response = await async_client.get(f"/api/v1/projects/{project.id}")
+        stats = response.json()["stats"]
+
+        assert stats["total_archives"] == 4
+        # 2 completed runs × quantity=2 each = 4 parts
+        assert stats["completed_prints"] == 4
+        # 2 failure runs (failed + aborted) count as 2, not 2*quantity
+        assert stats["failed_prints"] == 2
+        # All 4 runs contribute filament: 30 + 30 + 5 + 2 = 67
+        assert stats["total_filament_grams"] == 67.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_quick_stats_in_list_view_agree_with_per_project_stats(
+        self, async_client: AsyncClient, project_factory, archive_with_runs
+    ):
+        """The /projects list view's quick stats must agree with
+        /projects/{id}'s detailed stats — both come from the same per-run
+        aggregation."""
+        project = await project_factory(name="Quick-Stats Alignment")
+        await archive_with_runs(
+            project_id=project.id,
+            quantity=1,
+            runs=[
+                {"status": "completed"},
+                {"status": "completed"},
+                {"status": "failed"},
+            ],
+        )
+
+        list_resp = await async_client.get("/api/v1/projects/")
+        ours = next(p for p in list_resp.json() if p["name"] == "Quick-Stats Alignment")
+        assert ours["archive_count"] == 3
+        assert ours["completed_count"] == 2
+        assert ours["failed_count"] == 1
 
 
 class TestProjectArchivesAPI:
@@ -953,3 +1179,122 @@ class TestProjectExportImport:
         response = await async_client.post("/api/v1/projects/import/file", files=files)
         assert response.status_code == 400
         assert "Invalid JSON" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_import_rejects_absolute_path_in_folder_name(self, async_client: AsyncClient, tmp_path):
+        """Absolute paths in `linked_folders[*].name` must not escape library_dir.
+
+        Verbatim shape from the upstream advisory: attacker sets folder name to
+        an absolute path, expecting Python's ``Path("/lib") / "/anywhere"`` to
+        collapse to ``Path("/anywhere")`` and let the next file write land
+        outside the library directory.
+        """
+        import io
+        import json
+        import zipfile
+
+        target_outside = tmp_path / "outside" / "owned"
+        # Build a ZIP whose folder name points outside library_dir entirely.
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(
+                "project.json",
+                json.dumps(
+                    {
+                        "name": "innocent",
+                        "linked_folders": [{"name": str(target_outside)}],
+                    }
+                ),
+            )
+            zf.writestr(f"files/{target_outside}/evil.pth", b"import os; os.system('echo pwned > /tmp/owned')\n")
+
+        zip_buffer.seek(0)
+        files = {"file": ("evil.zip", zip_buffer, "application/zip")}
+        response = await async_client.post("/api/v1/projects/import/file", files=files)
+        assert response.status_code == 400, response.text
+        assert not target_outside.exists(), "Attacker payload landed outside library_dir"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_import_rejects_dotdot_in_folder_name(self, async_client: AsyncClient):
+        """`..` segments in folder name must be rejected."""
+        import io
+        import json
+        import zipfile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(
+                "project.json",
+                json.dumps(
+                    {
+                        "name": "innocent",
+                        "linked_folders": [{"name": "../../../etc"}],
+                    }
+                ),
+            )
+            zf.writestr("files/../../../etc/x.txt", b"x")
+
+        zip_buffer.seek(0)
+        files = {"file": ("evil.zip", zip_buffer, "application/zip")}
+        response = await async_client.post("/api/v1/projects/import/file", files=files)
+        assert response.status_code == 400, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_import_rejects_dotdot_in_relative_path(self, async_client: AsyncClient):
+        """`..` segments in the per-entry path (Vector B in the advisory) must
+        be rejected even when the folder name itself is fine."""
+        import io
+        import json
+        import zipfile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(
+                "project.json",
+                json.dumps(
+                    {
+                        "name": "innocent",
+                        "linked_folders": [{"name": "ok"}],
+                    }
+                ),
+            )
+            # Folder name is benign, but the file path inside attempts to
+            # escape via ``..``.
+            zf.writestr("files/ok/../../../etc/x.txt", b"x")
+
+        zip_buffer.seek(0)
+        files = {"file": ("evil.zip", zip_buffer, "application/zip")}
+        response = await async_client.post("/api/v1/projects/import/file", files=files)
+        assert response.status_code == 400, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_import_legit_nested_zip_still_works(self, async_client: AsyncClient):
+        """A legitimate ZIP with a nested file path inside the folder must
+        continue to import cleanly. Guards against the fix being over-strict."""
+        import io
+        import json
+        import zipfile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(
+                "project.json",
+                json.dumps(
+                    {
+                        "name": "nested-ok",
+                        "linked_folders": [{"name": "OkFolder"}],
+                    }
+                ),
+            )
+            zf.writestr("files/OkFolder/sub/dir/inside.txt", b"hello")
+
+        zip_buffer.seek(0)
+        files = {"file": ("nested.zip", zip_buffer, "application/zip")}
+        response = await async_client.post("/api/v1/projects/import/file", files=files)
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["name"] == "nested-ok"

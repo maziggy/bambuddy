@@ -32,6 +32,7 @@ from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager, supports_drying
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.utils.filename import derive_remote_filename
 from backend.app.utils.printer_models import normalize_printer_model
 
 logger = logging.getLogger(__name__)
@@ -2013,18 +2014,9 @@ class PrintScheduler:
             except Exception as e:
                 logger.warning("Queue item %s: G-code injection failed, using original: %s", item.id, e)
 
-        # Upload file to printer via FTP
-        # Use a clean filename to avoid issues with double extensions like .gcode.3mf
-        base_name = filename
-        if base_name.endswith(".gcode.3mf"):
-            base_name = base_name[:-10]  # Remove .gcode.3mf
-        elif base_name.endswith(".3mf"):
-            base_name = base_name[:-4]  # Remove .3mf
-        remote_filename = f"{base_name}.3mf"
-        # Sanitize: firmware parses ftp://{filename} as a URL, spaces break it
-        remote_filename = remote_filename.replace(" ", "_")
         # Upload to root directory (not /cache/) - the start_print command references
         # files by name only (ftp://{filename}), so they must be in the root
+        remote_filename = derive_remote_filename(filename)
         remote_path = f"/{remote_filename}"
 
         # Get FTP retry settings

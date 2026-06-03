@@ -285,6 +285,24 @@ const ZH_TW_COGNATES = [
   'EC984C,#6CD4BC,A66EB9,D87694',
 ];
 
+// Korean: script difference means almost nothing is identical.
+// Allow loanwords/acronyms, format strings, and proper nouns that stay verbatim.
+const KO_COGNATES = [
+  'OK', 'Bambu', 'N/A',
+  '({{count}}/8)', '(25%, 50%, 75%)',
+  'Custom Headers (JSON)',
+  'Box label (62 × 29 mm)',
+  'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+  '{{weight}}g',                                      // unit suffix format string
+  'MakerWorld: {{designer}}',                         // brand + placeholder
+  'email',                                            // OIDC claim name placeholder
+  '{{printer}}: {{error}}',                           // pure placeholders
+  '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}', // pure placeholders
+  'Obico ML API URL',                                 // product name (Obico)
+];
+
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
   'Error', 'Firmware', 'General', 'Control', 'Total', 'total', 'Material',
@@ -301,15 +319,30 @@ const ES_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
 ];
 
+// Turkish cognates — technical UI labels that Turkish speakers use verbatim
+// from English (loanwords + acronyms + format strings). Curated, not a shortcut.
+const TR_COGNATES = [
+  'Filament', 'Firmware', 'Disk', 'Hex', 'Test', 'Port', 'Model', 'Metal',
+  'Min', 'Normal', 'Platform', 'Net', 'Trend', 'Commit', 'Global', 'Proxy',
+  'N/A', 'email',
+  'STARTTLS (Port 587)', 'SSL/TLS (Port 465)',
+  '({{count}}/8)', 'Hex: #{{hex}}', 'MakerWorld: {{designer}}',
+  '{{count}} filament', '{{printer}}: {{error}}', '{{weight}}g',
+  'Filament {{index}} ({{type}})',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+];
+
 const IDENTICAL_TO_EN_ALLOWED = {
   de: new Set(DE_COGNATES),
   fr: new Set(FR_COGNATES),
   it: new Set(IT_COGNATES),
   ja: new Set(JA_COGNATES),
+  ko: new Set(KO_COGNATES),
   es: new Set(ES_COGNATES),
   'pt-BR': new Set(PT_BR_COGNATES),
   'zh-CN': new Set(ZH_CN_COGNATES),
   'zh-TW': new Set(ZH_TW_COGNATES),
+  tr: new Set(TR_COGNATES),
 };
 
 // Pure comparison logic, exported so tests can verify each failure mode

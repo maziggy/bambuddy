@@ -3,6 +3,8 @@
 Tests the full request/response cycle for /api/v1/archives/ endpoints.
 """
 
+from pathlib import Path
+
 import pytest
 from httpx import AsyncClient
 
@@ -1157,3 +1159,143 @@ class TestArchiveF3DEndpoints:
         response = await async_client.delete("/api/v1/archives/tags/nonexistent-tag")
         assert response.status_code == 200
         assert response.json()["affected"] == 0
+
+
+class TestUploadSourceThreeMF:
+    """Regression for #1531: source-3MF upload on fallback archives."""
+
+    @staticmethod
+    def _minimal_3mf_bytes() -> bytes:
+        """Smallest valid .3mf — the upload path enforces a zip header check."""
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("[Content_Types].xml", "<types/>")
+        return buf.getvalue()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_fallback_archive_source_upload_lands_under_base_dir(
+        self, async_client: AsyncClient, archive_factory, printer_factory, monkeypatch, tmp_path
+    ):
+        """Fallback archive (file_path='') must accept a source upload and store it inside base_dir.
+
+        Pre-fix, ``Path(base_dir) / ''`` collapsed to ``base_dir`` and the
+        ``.parent`` walked out of the data volume, sending the file to
+        ``/app/source/...`` and crashing on ``relative_to``.
+        """
+        from backend.app.core.config import settings as app_settings
+
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Cloud Print",
+            file_path="",  # fallback archive — no source 3MF was archived
+            filename="Cloud Print.3mf",
+        )
+
+        files = {"file": ("cloud_print.3mf", self._minimal_3mf_bytes(), "application/octet-stream")}
+        response = await async_client.post(f"/api/v1/archives/{archive.id}/source", files=files)
+
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        rel = payload["source_3mf_path"]
+        # Stored as a relative path inside base_dir.
+        assert not rel.startswith("/"), f"source_3mf_path should be relative, got {rel!r}"
+        # File physically landed under base_dir (NOT escaped to /app/source/).
+        assert (tmp_path / rel).is_file()
+        # Deterministic fallback location keyed off archive id.
+        assert rel == f"archive/no_source/{archive.id}/cloud_print.3mf"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_normal_archive_source_upload_unchanged(
+        self, async_client: AsyncClient, archive_factory, printer_factory, monkeypatch, tmp_path
+    ):
+        """Normal archive (file_path set) still nests the source under <archive>/source/."""
+        from backend.app.core.config import settings as app_settings
+
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+
+        printer = await printer_factory()
+        # archive_factory's default file_path is "archives/test/test_print.gcode.3mf".
+        archive = await archive_factory(printer.id, print_name="Real Print")
+
+        files = {"file": ("real_print.3mf", self._minimal_3mf_bytes(), "application/octet-stream")}
+        response = await async_client.post(f"/api/v1/archives/{archive.id}/source", files=files)
+
+        assert response.status_code == 200, response.text
+        rel = response.json()["source_3mf_path"]
+        assert rel == "archives/test/source/real_print.3mf"
+        assert (tmp_path / rel).is_file()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_symlinked_data_dir_upload_succeeds(
+        self, async_client: AsyncClient, archive_factory, printer_factory, monkeypatch, tmp_path
+    ):
+        """Regression: DATA_DIR that's a symlink to the real storage must not break the upload.
+
+        Common on TrueNAS / Synology / QNAP storage pools, and any
+        ``-v /symlinked/host/path:/app/data`` mount. The helper resolves
+        only for the containment check and returns literal paths so the
+        caller's ``relative_to(settings.base_dir)`` doesn't trip over a
+        canonical-vs-symlink mismatch.
+        """
+        from backend.app.core.config import settings as app_settings
+
+        real_dir = tmp_path / "real_storage"
+        real_dir.mkdir()
+        symlink_dir = tmp_path / "data_via_symlink"
+        symlink_dir.symlink_to(real_dir)
+        monkeypatch.setattr(app_settings, "base_dir", symlink_dir)
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Symlinked Print",
+            file_path="archives/X1C/print.gcode.3mf",
+            filename="print.gcode.3mf",
+        )
+
+        files = {"file": ("print.3mf", self._minimal_3mf_bytes(), "application/octet-stream")}
+        response = await async_client.post(f"/api/v1/archives/{archive.id}/source", files=files)
+
+        assert response.status_code == 200, response.text
+        rel = response.json()["source_3mf_path"]
+        assert rel == "archives/X1C/source/print.3mf"
+        # Reachable via both the symlink and the canonical path.
+        assert (symlink_dir / rel).is_file()
+        assert (real_dir / rel).is_file()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_absolute_file_path_rejected_with_clear_500(
+        self, async_client: AsyncClient, archive_factory, printer_factory, monkeypatch, tmp_path
+    ):
+        """A row whose file_path is absolute (corrupted by old import / manual edit)
+        must fail with the explicit "outside the data directory" message, not silently
+        write outside base_dir."""
+        from backend.app.core.config import settings as app_settings
+
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Corrupt Path",
+            file_path="/tmp/totally_outside.gcode.3mf",  # nosec B108
+            filename="totally_outside.gcode.3mf",
+        )
+
+        files = {"file": ("totally_outside.3mf", self._minimal_3mf_bytes(), "application/octet-stream")}
+        response = await async_client.post(f"/api/v1/archives/{archive.id}/source", files=files)
+
+        assert response.status_code == 500
+        assert "outside the data directory" in response.json()["detail"]
+        # Did not write anything under the bogus /tmp/source/ either.
+        assert not (Path("/tmp") / "source").exists() or not (Path("/tmp") / "source" / "totally_outside.3mf").exists()  # nosec B108

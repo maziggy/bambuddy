@@ -26,6 +26,20 @@ describe('hexToColorName', () => {
   it('classifies white hex as White', () => {
     expect(hexToColorName('FFFFFF')).toBe('White');
   });
+
+  // #1545: transparent filament is reported as `00000000` (alpha=00).
+  // Without the alpha-aware short-circuit it would fall through to the HSL
+  // bucketing and resolve to "Black" because the RGB happens to be 000000.
+  it('classifies any alpha=00 rgba as Clear', () => {
+    expect(hexToColorName('00000000')).toBe('Clear');
+    expect(hexToColorName('FF000000')).toBe('Clear');
+    expect(hexToColorName('#abcdef00')).toBe('Clear');
+  });
+
+  it('still classifies fully opaque colors via HSL even when alpha is FF', () => {
+    expect(hexToColorName('000000FF')).toBe('Black');
+    expect(hexToColorName('FFFFFFFF')).toBe('White');
+  });
 });
 
 describe('getColorName', () => {
@@ -65,6 +79,14 @@ describe('getColorName', () => {
     setColorCatalog({ 'f5b6cd': 'Cherry Pink' });
     expect(getColorName('F5B6CDFF')).toBe('Cherry Pink');
   });
+
+  // #1545: alpha=00 must short-circuit catalog lookup too — otherwise a
+  // catalog entry on the underlying RGB would mislabel transparent filament.
+  it('returns Clear for transparent rgba regardless of catalog entry', () => {
+    setColorCatalog({ '000000': 'Inky Night' });
+    expect(getColorName('00000000')).toBe('Clear');
+    expect(getColorName('000000FF')).toBe('Inky Night');
+  });
 });
 
 describe('resolveSpoolColorName', () => {
@@ -82,6 +104,12 @@ describe('resolveSpoolColorName', () => {
   });
 
   it('returns null when color_name is a code and hex is unknown', () => {
-    expect(resolveSpoolColorName('A99-Z9', '12345600')).toBeNull();
+    // Opaque, not in catalog — must not be misread as transparent (#1545).
+    expect(resolveSpoolColorName('A99-Z9', '123456FF')).toBeNull();
+  });
+
+  // #1545
+  it('returns Clear for transparent rgba even when color_name is a code', () => {
+    expect(resolveSpoolColorName('A99-Z9', '00000000')).toBe('Clear');
   });
 });

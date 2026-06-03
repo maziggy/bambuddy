@@ -63,7 +63,8 @@ from backend.app.schemas.library import (
 )
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
-from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
+from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
 from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
@@ -88,6 +89,26 @@ def get_library_files_dir() -> Path:
     files_dir = get_library_dir() / "files"
     files_dir.mkdir(parents=True, exist_ok=True)
     return files_dir
+
+
+def classify_file_type(filename: str) -> str:
+    """Return the canonical ``LibraryFile.file_type`` for *filename*.
+
+    Compound extensions are preserved — a `.gcode.3mf` file (a sliced
+    output, still a 3MF zip on disk) is classified ``gcode.3mf`` rather
+    than ``3mf``. Pre-#1600 this was only done in the external-scan
+    path; the upload / ZIP-extract / in-process paths all stripped to
+    the trailing extension and stored ``3mf``, so the FE had to accept
+    both. Unified here so every ingest path stores the same value and
+    downstream gates (gcode download, file-type filter, thumbnail
+    extraction) only need to handle one canonical name per file family.
+    Files with no extension classify as ``unknown``.
+    """
+    lower = filename.lower()
+    if lower.endswith(".gcode.3mf"):
+        return "gcode.3mf"
+    ext = os.path.splitext(lower)[1]
+    return ext[1:] if ext else "unknown"
 
 
 def get_library_thumbnails_dir() -> Path:
@@ -218,7 +239,7 @@ def _resolve_upload_destination(target_folder: LibraryFolder | None, filename: s
             )
         # Guard against path-traversal via a pathological filename — join then
         # verify the resolved destination is still inside the external dir.
-        dest = (ext_dir / filename).resolve()
+        dest = (ext_dir / filename).resolve()  # SEC-PATH-OK: resolve + relative_to containment check on next line
         try:
             dest.relative_to(ext_dir.resolve())
         except ValueError:
@@ -301,7 +322,7 @@ def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> 
             raise _MoveSkip("target_inaccessible", f"target path not accessible: {ext_dir}")
         if not os.access(ext_dir, os.W_OK):
             raise _MoveSkip("target_unwritable", f"target path not writable: {ext_dir}")
-        dest = (ext_dir / file.filename).resolve()
+        dest = (ext_dir / file.filename).resolve()  # SEC-PATH-OK: resolve + relative_to containment check on next line
         try:
             dest.relative_to(ext_dir.resolve())
         except ValueError:
@@ -432,7 +453,9 @@ async def save_3mf_bytes_to_library(
     # extension so downstream logic (ThreeMFParser, thumbnail viewer) works.
     ext = os.path.splitext(filename)[1].lower() or ".3mf"
     unique_filename = f"{uuid.uuid4().hex}{ext}"
-    file_path = get_library_files_dir() / unique_filename
+    file_path = (
+        get_library_files_dir() / unique_filename
+    )  # SEC-PATH-OK: unique_filename = uuid.uuid4().hex + ext, generated on the previous line
     with open(file_path, "wb") as fh:
         fh.write(file_bytes)
 
@@ -450,7 +473,7 @@ async def save_3mf_bytes_to_library(
             if thumb_data:
                 thumbs_dir = get_library_thumbnails_dir()
                 thumb_filename = f"{uuid.uuid4().hex}{thumb_ext}"
-                thumb_path = thumbs_dir / thumb_filename
+                thumb_path = thumbs_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumb_ext
                 with open(thumb_path, "wb") as fh:
                     fh.write(thumb_data)
                 thumbnail_path = str(thumb_path)
@@ -465,7 +488,7 @@ async def save_3mf_bytes_to_library(
         folder_id=folder_id,
         filename=filename,
         file_path=to_relative_path(file_path),
-        file_type=ext[1:] if ext else "unknown",
+        file_type=classify_file_type(filename),
         file_size=len(file_bytes),
         file_hash=file_hash,
         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
@@ -553,7 +576,7 @@ def create_image_thumbnail(file_path: Path, thumbnails_dir: Path, max_size: int 
         from PIL import Image
 
         thumb_filename = f"{uuid.uuid4().hex}.png"
-        thumb_path = thumbnails_dir / thumb_filename
+        thumb_path = thumbnails_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
 
         with Image.open(file_path) as img:
             # Convert to RGB if necessary (for PNG with transparency, etc.)
@@ -581,7 +604,9 @@ def create_image_thumbnail(file_path: Path, thumbnails_dir: Path, max_size: int 
             file_size = file_path.stat().st_size
             if file_size < 500000:  # Less than 500KB
                 thumb_filename = f"{uuid.uuid4().hex}{file_path.suffix}"
-                thumb_path = thumbnails_dir / thumb_filename
+                thumb_path = (
+                    thumbnails_dir / thumb_filename
+                )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + file_path.suffix
                 shutil.copy2(file_path, thumb_path)
                 return str(thumb_path)
         except OSError:
@@ -634,6 +659,14 @@ async def _backfill_external_stl_thumbnails(folder_ids: list[int]) -> None:
         for stl_file in stl_files:
             abs_path = to_absolute_path(stl_file.file_path)
             if not abs_path or not abs_path.exists():
+                continue
+            # Pre-skip files too small to contain even a single triangle.
+            # Bulk-uploaded ZIPs of stub STLs would otherwise trigger one
+            # trimesh.load() call + one debug log line per stub.
+            try:
+                if abs_path.stat().st_size < MIN_USABLE_STL_BYTES:
+                    continue
+            except OSError:
                 continue
             try:
                 thumb_path = generate_stl_thumbnail(abs_path, thumbnails_dir)
@@ -1073,20 +1106,73 @@ async def delete_folder(
 
 # ============ External Folder Endpoints ============
 
-# Blocked system directories that cannot be mounted
-_BLOCKED_PREFIXES = (
-    "/proc",
-    "/sys",
-    "/dev",
-    "/run",
-    "/boot",
-    "/sbin",
-    "/bin",
-    "/usr/sbin",
-    "/usr/bin",
-    "/lib",
-    "/etc",
-)
+# GHSA-r2qv follow-up (audit finding I1): external-folder mount path uses an
+# allowlist of operator-opted-in roots rather than the original denylist of
+# system directories. The denylist shape was fail-open-on-growth — anything
+# not enumerated (``/data`` containing other users' archives, ``/root``,
+# arbitrary NFS/SMB mounts, the Bambuddy ``LOG_DIR``) could be mounted by any
+# user with ``LIBRARY_UPLOAD``. The allowlist defaults to empty and is
+# extended via the ``BAMBUDDY_EXTERNAL_ROOTS`` env var (colon-separated
+# absolute paths). The route is additionally gated on ``SETTINGS_UPDATE``
+# (admin scope) rather than ``LIBRARY_UPLOAD`` because mounting host paths
+# is an operator-level capability that crosses user boundaries.
+
+
+# Bambuddy-owned data directories. Hardcode-rejected even if the operator
+# tries to add them to ``BAMBUDDY_EXTERNAL_ROOTS`` — mounting these would
+# allow reading other users' archives, log files, or the static assets path.
+def _bambuddy_reserved_roots() -> tuple[Path, ...]:
+    """Resolved Bambuddy-owned directories that may NEVER be mounted as an
+    external folder regardless of the operator's allowlist.
+
+    Resolved at call time because tests patch ``settings.base_dir`` /
+    ``settings.log_dir`` to a temp dir; resolving lazily picks up the
+    patched values rather than module-import-time values.
+    """
+    from backend.app.core.config import settings as app_settings
+
+    reserved = [app_settings.base_dir, app_settings.log_dir, app_settings.static_dir, app_settings.archive_dir]
+    return tuple(Path(p).resolve() for p in reserved if p is not None)
+
+
+def _allowed_external_roots() -> tuple[Path, ...]:
+    """Parse ``BAMBUDDY_EXTERNAL_ROOTS`` into resolved allowed roots.
+
+    Empty env var (the default) means external folders are disabled.
+    Operators opt in explicitly: ``BAMBUDDY_EXTERNAL_ROOTS=/mnt/library:/srv/3d``
+    Returns a tuple of resolved ``Path`` objects; entries that don't
+    resolve to absolute paths are silently dropped (operator error, not
+    a security boundary). Resolved lazily so tests can monkeypatch.
+    """
+    raw = os.environ.get("BAMBUDDY_EXTERNAL_ROOTS", "")
+    roots: list[Path] = []
+    for entry in raw.split(":"):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            resolved = Path(entry).resolve()
+        except (OSError, RuntimeError):  # noqa: BLE001 — operator config error, not a security boundary
+            continue
+        if resolved.is_absolute():
+            roots.append(resolved)
+    return tuple(roots)
+
+
+def _path_within(child: Path, parent: Path) -> bool:
+    """Return True if ``child`` is ``parent`` or any descendant.
+
+    Uses ``Path.relative_to`` semantics (raises ``ValueError`` on miss)
+    instead of string ``startswith``, which would falsely match
+    ``/data-other`` against ``/data``. ``Path.is_relative_to`` is the
+    sanctioned form on Python 3.9+; both are available here.
+    """
+    try:
+        child.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
 
 # Supported file extensions for external folder scanning
 _SCANNABLE_EXTENSIONS = {
@@ -1107,15 +1193,53 @@ _SCANNABLE_EXTENSIONS = {
 
 
 def _validate_external_path(path_str: str) -> Path:
-    """Validate an external path is safe to mount."""
+    """Validate an external path is safe to mount.
+
+    Allowlist semantics:
+    1. Path must be absolute and resolve cleanly (symlink-escape rejected
+       implicitly by the resolved-startswith check below).
+    2. Path must fall under one of the roots enumerated in
+       ``BAMBUDDY_EXTERNAL_ROOTS``; empty allowlist (the default)
+       means external folders are not available on this deployment.
+    3. Path must NOT fall under any Bambuddy-owned directory (``base_dir``,
+       ``log_dir``, ``static_dir``, ``archive_dir``) — the reserved set
+       takes precedence over the allowlist, so an operator who accidentally
+       sets ``BAMBUDDY_EXTERNAL_ROOTS=/`` does not expose ``/data``.
+    4. Existence + directory-type + readability gates remain.
+    """
     path = Path(path_str).resolve()
 
     if not path.is_absolute():
         raise HTTPException(status_code=400, detail="Path must be absolute")
 
-    for prefix in _BLOCKED_PREFIXES:
-        if str(path).startswith(prefix):
-            raise HTTPException(status_code=400, detail=f"Cannot mount system directory: {prefix}")
+    allowed_roots = _allowed_external_roots()
+    if not allowed_roots:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "External folders are not enabled on this deployment. Ask the "
+                "operator to set BAMBUDDY_EXTERNAL_ROOTS=<colon-separated paths>."
+            ),
+        )
+
+    # Reserved (Bambuddy-owned) paths are rejected before the allowlist check
+    # so an over-broad allowlist (e.g. operator set "/" for testing) cannot
+    # expose Bambuddy's own data dir or log dir.
+    for reserved in _bambuddy_reserved_roots():
+        if _path_within(path, reserved):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot mount Bambuddy-managed directory: {reserved}",
+            )
+
+    if not any(_path_within(path, root) for root in allowed_roots):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Path '{path}' is not within an allowed external root. "
+                f"Allowed roots: {', '.join(str(r) for r in allowed_roots)}"
+            ),
+        )
 
     if not path.exists():
         raise HTTPException(status_code=400, detail=f"Path does not exist: {path}")
@@ -1134,7 +1258,14 @@ def _validate_external_path(path_str: str) -> Path:
 async def create_external_folder(
     data: ExternalFolderCreate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
+    # GHSA-r2qv follow-up (I1): elevated from LIBRARY_UPLOAD to SETTINGS_UPDATE.
+    # Registering a host filesystem path as a Bambuddy library folder is an
+    # operator-level capability that crosses user boundaries (one user's
+    # registered external folder is visible to every other user via
+    # /api/v1/library/folders). LIBRARY_UPLOAD was always the wrong scope —
+    # SETTINGS_UPDATE is the admin-class gate that already protects every
+    # other host-affecting setting (SMTP, LDAP, cloud, smart plugs).
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.SETTINGS_UPDATE)),
 ):
     """Create an external folder that points to a host directory."""
     resolved = _validate_external_path(data.external_path)
@@ -1294,7 +1425,9 @@ async def scan_external_folder(
                             name=part,
                             parent_id=current_parent,
                             is_external=True,
-                            external_path=str(ext_path / current_path),
+                            external_path=str(
+                                ext_path / current_path
+                            ),  # SEC-PATH-OK: current_path built from Path(rel_dir).parts of an os.walk descent under ext_path
                             external_readonly=folder.external_readonly,
                             external_show_hidden=folder.external_show_hidden,
                         )
@@ -1310,7 +1443,9 @@ async def scan_external_folder(
             if not folder.external_show_hidden and filename.startswith("."):
                 continue
 
-            filepath = Path(dirpath) / filename
+            filepath = (
+                Path(dirpath) / filename
+            )  # SEC-PATH-OK: dirpath + filename from os.walk(ext_path); filesystem-discovered, not user input
             ext = filepath.suffix.lower()
 
             # Check for compound extensions like .gcode.3mf
@@ -1339,17 +1474,16 @@ async def scan_external_folder(
             except OSError:
                 continue
 
-            file_type = ext[1:] if ext else "unknown"
-            # For compound extensions, use the meaningful part
-            if file_type in ("3mf",) and len(filepath.suffixes) >= 2:
-                inner = filepath.suffixes[-2].lower()
-                if inner == ".gcode":
-                    file_type = "gcode.3mf"
+            file_type = classify_file_type(filename)
 
-            # Extract thumbnail for 3mf files
+            # Extract thumbnail for 3mf files (including .gcode.3mf sliced
+            # outputs — those are 3MF zips on disk and carry the same
+            # thumbnail Metadata/plate_1.png the parser reads). Pre-#1600
+            # the gate was `file_type == "3mf"` alone, so .gcode.3mf files
+            # in external folders silently got no thumbnail.
             thumbnail_path = None
             file_metadata = None
-            if file_type == "3mf":
+            if file_type in ("3mf", "gcode.3mf"):
                 try:
                     parser = ThreeMFParser(str(filepath))
                     raw_metadata = parser.parse()
@@ -1360,7 +1494,9 @@ async def scan_external_folder(
                         if thumb_data:
                             thumb_dir = get_library_thumbnails_dir()
                             thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
-                            thumb_full = thumb_dir / thumb_filename
+                            thumb_full = (
+                                thumb_dir / thumb_filename
+                            )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
                             thumb_full.write_bytes(thumb_data)
                             thumbnail_path = to_relative_path(thumb_full)
 
@@ -1393,7 +1529,7 @@ async def scan_external_folder(
                 if thumb_data:
                     thumb_dir = get_library_thumbnails_dir()
                     thumb_filename = f"{uuid.uuid4().hex}.png"
-                    thumb_full = thumb_dir / thumb_filename
+                    thumb_full = thumb_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
                     thumb_full.write_bytes(thumb_data)
                     thumbnail_path = to_relative_path(thumb_full)
 
@@ -1577,9 +1713,17 @@ async def upload_file(
             raise HTTPException(status_code=400, detail="Filename is required")
 
         filename = file.filename
+        # Reject FAT32/exFAT-incompatible filenames up front (#1540).
+        try:
+            validate_print_filename(filename)
+        except InvalidFilenameError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
         ext = os.path.splitext(filename)[1].lower()
-        # Handle files without extension
-        file_type = ext[1:] if ext else "unknown"
+        # `file_type` is compound-aware (`gcode.3mf` for sliced outputs).
+        # `ext` stays the trailing extension because the on-disk filename
+        # uses it directly and the 3MF-parse branch below still gates on
+        # `ext == ".3mf"`, which is correct for both `.3mf` and `.gcode.3mf`.
+        file_type = classify_file_type(filename)
 
         # Verify folder exists if specified
         target_folder = None
@@ -1633,7 +1777,9 @@ async def upload_file(
                 # Save thumbnail if extracted
                 if thumbnail_data:
                     thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
-                    thumb_path = thumbnails_dir / thumb_filename
+                    thumb_path = (
+                        thumbnails_dir / thumb_filename
+                    )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
                     with open(thumb_path, "wb") as f:
                         f.write(thumbnail_data)
                     thumbnail_path = str(thumb_path)
@@ -1662,7 +1808,9 @@ async def upload_file(
                 thumbnail_data = extract_gcode_thumbnail(file_path)
                 if thumbnail_data:
                     thumb_filename = f"{uuid.uuid4().hex}.png"
-                    thumb_path = thumbnails_dir / thumb_filename
+                    thumb_path = (
+                        thumbnails_dir / thumb_filename
+                    )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
                     with open(thumb_path, "wb") as f:
                         f.write(thumbnail_data)
                     thumbnail_path = str(thumb_path)
@@ -1674,9 +1822,16 @@ async def upload_file(
             thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
 
         elif ext == ".stl":
-            # Generate STL thumbnail if enabled
+            # Generate STL thumbnail if enabled. Same MIN_USABLE_STL_BYTES
+            # pre-skip as extract_zip_file — stubs / placeholders below this
+            # size can't contain a triangle so trimesh would return an empty
+            # mesh anyway.
             if generate_stl_thumbnails:
-                thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+                try:
+                    if file_path.stat().st_size >= MIN_USABLE_STL_BYTES:
+                        thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+                except OSError:
+                    pass
 
         # Create database entry (managed files store relative paths for portability;
         # external files store the absolute mount path — same shape as scan produces)
@@ -1862,11 +2017,13 @@ async def extract_zip_file(
                     # Extract file
                     filename = os.path.basename(zip_path)
                     ext = os.path.splitext(filename)[1].lower()
-                    file_type = ext[1:] if ext else "unknown"
+                    file_type = classify_file_type(filename)
 
                     # Generate unique filename for storage
                     unique_filename = f"{uuid.uuid4().hex}{ext}"
-                    file_path = get_library_files_dir() / unique_filename
+                    file_path = (
+                        get_library_files_dir() / unique_filename
+                    )  # SEC-PATH-OK: unique_filename = uuid.uuid4().hex + ext
 
                     # Extract and save file
                     file_content = zf.read(zip_path)
@@ -1891,7 +2048,9 @@ async def extract_zip_file(
 
                             if thumbnail_data:
                                 thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
-                                thumb_path = thumbnails_dir / thumb_filename
+                                thumb_path = (
+                                    thumbnails_dir / thumb_filename
+                                )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
                                 with open(thumb_path, "wb") as f:
                                     f.write(thumbnail_data)
                                 thumbnail_path = str(thumb_path)
@@ -1918,7 +2077,9 @@ async def extract_zip_file(
                             thumbnail_data = extract_gcode_thumbnail(file_path)
                             if thumbnail_data:
                                 thumb_filename = f"{uuid.uuid4().hex}.png"
-                                thumb_path = thumbnails_dir / thumb_filename
+                                thumb_path = (
+                                    thumbnails_dir / thumb_filename
+                                )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
                                 with open(thumb_path, "wb") as f:
                                     f.write(thumbnail_data)
                                 thumbnail_path = str(thumb_path)
@@ -1929,8 +2090,12 @@ async def extract_zip_file(
                         thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
 
                     elif ext == ".stl":
-                        # Generate STL thumbnail if enabled
-                        if generate_stl_thumbnails:
+                        # Generate STL thumbnail if enabled. Pre-skip files
+                        # below MIN_USABLE_STL_BYTES — they can't contain
+                        # even a single triangle, and bulk-uploaded ZIPs of
+                        # stub STLs would otherwise log one debug line per
+                        # file via the empty-mesh branch in trimesh.load.
+                        if generate_stl_thumbnails and len(file_content) >= MIN_USABLE_STL_BYTES:
                             thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
 
                     # Create database entry (store relative paths for portability)
@@ -3436,7 +3601,7 @@ async def slice_and_persist(
     base_name = model_filename.rsplit(".", 1)[0]
     out_filename = f"{base_name}.gcode.3mf"
     unique_name = f"{uuid.uuid4().hex}.gcode.3mf"
-    out_path = get_library_files_dir() / unique_name
+    out_path = get_library_files_dir() / unique_name  # SEC-PATH-OK: unique_name = uuid.uuid4().hex + ".gcode.3mf"
     out_path.write_bytes(result.content)
 
     # Extract thumbnail from the produced 3MF so the library card shows a
@@ -3553,9 +3718,13 @@ async def slice_and_persist_as_archive(
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     printer_folder = str(source_archive.printer_id) if source_archive.printer_id is not None else "unassigned"
     archive_subdir = f"{timestamp}_{base_name}_sliced"
-    archive_dir = app_settings.archive_dir / printer_folder / archive_subdir
+    archive_dir = (
+        app_settings.archive_dir / printer_folder / archive_subdir
+    )  # SEC-PATH-OK: printer_folder = str(int|None), archive_subdir = f"{timestamp}_{base_name}_sliced" where base_name went through _safe_filename
     archive_dir.mkdir(parents=True, exist_ok=True)
-    out_path = archive_dir / out_filename
+    out_path = (
+        archive_dir / out_filename
+    )  # SEC-PATH-OK: out_filename = f"{base_name}.gcode.3mf" where base_name went through _safe_filename
     out_path.write_bytes(result.content)
 
     # Extract a thumbnail for the new archive card. Priority order:
@@ -3830,6 +3999,15 @@ async def print_library_file(
             detail="Not a sliced file. Only .gcode or .gcode.3mf files can be printed.",
         )
 
+    # Filenames containing FAT32/exFAT-illegal characters would 553 at
+    # FTP upload time (#1540). Older rows may pre-date the rename-time
+    # validation, so reject the print attempt with an actionable message
+    # rather than silently renaming user data.
+    try:
+        validate_print_filename(lib_file.filename)
+    except InvalidFilenameError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     # Get the full file path
     file_path = Path(app_settings.base_dir) / lib_file.file_path
 
@@ -4007,9 +4185,13 @@ async def update_file(
             raise HTTPException(status_code=403, detail="You can only update your own files")
 
     if data.filename is not None:
-        # Validate filename doesn't contain path separators
-        if "/" in data.filename or "\\" in data.filename:
-            raise HTTPException(status_code=400, detail="Filename cannot contain path separators")
+        # Bambu printer SD cards are FAT32/exFAT; reject the same set Bambu
+        # Studio refuses on save so we fail here with a clear message
+        # instead of an obscure FTP 553 at print time (#1540).
+        try:
+            validate_print_filename(data.filename)
+        except InvalidFilenameError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
         file.filename = data.filename
         # No print_name to keep in sync — library files display by filename,
         # and _without_print_name strips the embedded 3MF Title on import (#1489).
@@ -4227,8 +4409,10 @@ async def get_gcode(
 
     if file.file_type == "gcode":
         return FastAPIFileResponse(str(abs_path), media_type="text/plain")
-    elif file.file_type == "3mf":
-        # Extract gcode from 3mf
+    elif file.file_type in ("3mf", "gcode.3mf"):
+        # Extract gcode from 3mf zip container. `.gcode.3mf` sliced outputs
+        # carry the same `Metadata/plate_*.gcode` entries as a `.3mf`, so
+        # the unzip path is identical — just had to expand the gate.
         try:
             with zipfile.ZipFile(str(abs_path), "r") as zf:
                 # Find gcode file

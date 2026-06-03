@@ -5,6 +5,7 @@ import { Check, AlertTriangle, RefreshCw, Unlink } from 'lucide-react';
 import type { InventorySpool } from '../../api/client';
 import { spoolbuddyApi, api } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
+import { spoolColorString } from '../../utils/colors';
 
 const DEFAULT_CORE_WEIGHT_KEY = 'spoolbuddy-default-core-weight';
 
@@ -61,7 +62,7 @@ export function InventorySpoolInfoCard({
   // Use fetched k_profiles if available, otherwise use the ones from the spool object
   const kProfiles = (spool.k_profiles && spool.k_profiles.length > 0) ? spool.k_profiles : fetchedKProfiles;
 
-  const colorHex = spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#808080';
+  const colorHex = spoolColorString(spool.rgba);
 
   const coreWeight = (spool.core_weight && spool.core_weight > 0)
     ? spool.core_weight

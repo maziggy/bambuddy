@@ -14,7 +14,7 @@ import type { VPDiagnosticResult } from '../../api/client';
 const problemResult: VPDiagnosticResult = {
   vp_id: 3,
   vp_name: 'Garage VP',
-  mode: 'immediate',
+  mode: 'archive',
   overall: 'problems',
   checks: [
     { id: 'enabled', status: 'pass', params: {} },

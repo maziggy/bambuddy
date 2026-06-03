@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import type { InventorySpool } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
+import { spoolColorString } from '../../utils/colors';
 
 interface LinkSpoolModalProps {
   isOpen: boolean;
@@ -100,7 +101,7 @@ export function LinkSpoolModal({
                   }`}
                 >
                   <SpoolIcon
-                    color={spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#808080'}
+                    color={spoolColorString(spool.rgba)}
                     isEmpty={false}
                     size={40}
                   />

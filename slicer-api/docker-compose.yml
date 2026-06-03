@@ -50,8 +50,8 @@ services:
       context: https://github.com/maziggy/orca-slicer-api.git#bambuddy/profile-resolver
       dockerfile: Dockerfile.bambu-studio
       args:
-        BAMBU_VERSION: "${BAMBU_VERSION:-02.06.00.51}"
-    image: bambuddy-bambu-studio-api:bambu${BAMBU_VERSION:-02.06.00.51}
+        BAMBU_VERSION: "${BAMBU_VERSION:-02.07.01.57}"
+    image: bambuddy-bambu-studio-api:bambu${BAMBU_VERSION:-02.07.01.57}
     container_name: bambu-studio-api
     restart: unless-stopped
     ports:

@@ -1,7 +1,7 @@
-import { Cloud, CloudOff, Cog, Loader2, Package, X } from 'lucide-react';
+import { Cloud, CloudOff, Cog, Loader2, Package, RefreshCw, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api,
   type PresetRef,
@@ -312,6 +312,7 @@ function formatElapsed(seconds: number): string {
 export function SliceModal({ source, onClose }: SliceModalProps) {
   const { t } = useTranslation();
   const { trackJob } = useSliceJobTracker();
+  const queryClient = useQueryClient();
 
   const [printerPreset, setPrinterPreset] = useState<PresetRef | null>(null);
   const [processPreset, setProcessPreset] = useState<PresetRef | null>(null);
@@ -430,6 +431,28 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     // round-trip if the user cancels out of the plate step.
     enabled: !platesQuery.isLoading && !needsPlatePicker,
   });
+
+  // Manual refresh — bypasses the backend's 5-minute cloud cache and 1-hour
+  // bundled cache for one call so users who deleted a preset in Bambu
+  // Studio / Bambu Handy see the change immediately (#1581). The cache write
+  // inside _fetch_cloud_presets / _fetch_bundled_presets refills with the
+  // fresh result so subsequent normal callers still get cached responses.
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefreshPresets = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      const fresh = await api.getSlicerPresets({ refresh: true });
+      queryClient.setQueryData(['slicerPresets'], fresh);
+    } catch {
+      // Fall through to invalidate so React Query retries via its normal
+      // path on the next render — surfacing the failure through the existing
+      // presetsQuery.isError banner instead of duplicating error UI here.
+      queryClient.invalidateQueries({ queryKey: ['slicerPresets'] });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Imported Printer Preset Bundles (.bbscfg). Empty list when no sidecar
   // configured / no bundles imported yet; the bundle picker hides itself
@@ -723,7 +746,26 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
 
           {presetsQuery.data && (
             <>
-              <CloudStatusBanner status={presetsQuery.data.cloud_status} />
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1">
+                  <CloudStatusBanner status={presetsQuery.data.cloud_status} />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRefreshPresets}
+                  disabled={isRefreshing || isEnqueuing}
+                  className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={t('slice.refreshPresetsTitle')}
+                  aria-label={t('slice.refreshPresets')}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  {t('slice.refreshPresets')}
+                </button>
+              </div>
+              {/* CloudStatusBanner above is hidden via flex-1 wrapper when
+                  status === 'ok' (returns null in that case), but the Refresh
+                  button stays visible regardless so users can pick up cloud /
+                  bundled changes even when sign-in is healthy. */}
               {/* Bundle picker — only renders when at least one .bbscfg has
                   been imported via Settings → Slicer Bundles. Lets the user
                   trade the cloud/local/standard tier for a single curated

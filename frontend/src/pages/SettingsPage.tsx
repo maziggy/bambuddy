@@ -158,9 +158,10 @@ export function SettingsPage() {
   const { showToast } = useToast();
   const { authEnabled, user, isAdmin, refreshAuth, hasPermission } = useAuth();
   const {
-    mode,
+    mode, resolvedMode,
     darkStyle, darkBackground, darkAccent,
     lightStyle, lightBackground, lightAccent,
+    setMode,
     setDarkStyle, setDarkBackground, setDarkAccent,
     setLightStyle, setLightBackground, setLightAccent,
   } = useTheme();
@@ -201,6 +202,8 @@ export function SettingsPage() {
     can_queue: true,
     can_control_printer: false,
     can_read_status: true,
+    can_manage_library: true,
+    can_manage_inventory: true,
     can_access_cloud: false,
     can_update_energy_cost: false,
   });
@@ -395,7 +398,7 @@ export function SettingsPage() {
   });
 
   const createAPIKeyMutation = useMutation({
-    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean; can_access_cloud: boolean }) =>
+    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean; can_manage_library: boolean; can_manage_inventory: boolean; can_access_cloud: boolean }) =>
       api.createAPIKey(data),
     onSuccess: (data) => {
       setCreatedAPIKey(data.key || null);
@@ -1638,11 +1641,31 @@ export function SettingsPage() {
               </h2>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Theme Mode Selector */}
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-sm text-bambu-gray">{t('settings.theme')}:</label>
+                <div className="flex gap-1">
+                  {([
+                    { id: 'dark', label: t('settings.themeDark') },
+                    { id: 'light', label: t('settings.themeLight') },
+                    { id: 'system', label: t('settings.themeSystem') },
+                  ] as const).map(({ id, label }) => (
+                    <button
+                      key={id}
+                      onClick={() => { setMode(id); showToast(t('settings.toast.settingsSaved'), 'success'); }}
+                      className={`px-3 py-1 text-xs rounded-lg border transition-colors ${mode === id ? 'border-bambu-green bg-bambu-green/10 text-bambu-green' : 'border-gray-300 dark:border-bambu-dark-tertiary text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white cursor-pointer'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Dark Mode Settings */}
-              <div className={`space-y-3 p-4 rounded-lg border ${mode === 'dark' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
+              <div className={`space-y-3 p-4 rounded-lg border ${resolvedMode === 'dark' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
                 <h3 className="text-sm font-medium text-white flex items-center gap-2">
                   {t('settings.darkMode')}
-                  {mode === 'dark' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
+                  {resolvedMode === 'dark' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
                 </h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
@@ -1691,10 +1714,10 @@ export function SettingsPage() {
               </div>
 
               {/* Light Mode Settings */}
-              <div className={`space-y-3 p-4 rounded-lg border ${mode === 'light' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
+              <div className={`space-y-3 p-4 rounded-lg border ${resolvedMode === 'light' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
                 <h3 className="text-sm font-medium text-white flex items-center gap-2">
                   {t('settings.lightMode')}
-                  {mode === 'light' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
+                  {resolvedMode === 'light' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
                 </h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
@@ -3753,6 +3776,30 @@ export function SettingsPage() {
                       <label className="flex items-center gap-3 cursor-pointer">
                         <input
                           type="checkbox"
+                          checked={newAPIKeyPermissions.can_manage_library}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_manage_library: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">{t('settings.manageLibrary')}</span>
+                          <p className="text-xs text-bambu-gray">{t('settings.manageLibraryDescription')}</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAPIKeyPermissions.can_manage_inventory}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_manage_inventory: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">{t('settings.manageInventory')}</span>
+                          <p className="text-xs text-bambu-gray">{t('settings.manageInventoryDescription')}</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
                           checked={newAPIKeyPermissions.can_access_cloud}
                           onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_access_cloud: e.target.checked }))}
                           className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
@@ -3830,6 +3877,12 @@ export function SettingsPage() {
                             )}
                             {key.can_control_printer && (
                               <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded">{t('settings.control')}</span>
+                            )}
+                            {key.can_manage_library && (
+                              <span className="px-1.5 py-0.5 bg-cyan-500/20 text-cyan-400 rounded">{t('settings.libraryBadge')}</span>
+                            )}
+                            {key.can_manage_inventory && (
+                              <span className="px-1.5 py-0.5 bg-pink-500/20 text-pink-400 rounded">{t('settings.inventoryBadge')}</span>
                             )}
                             {key.can_access_cloud && (
                               <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">{t('settings.cloudBadge', 'Cloud')}</span>

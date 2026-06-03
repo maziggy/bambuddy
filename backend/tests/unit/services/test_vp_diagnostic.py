@@ -19,7 +19,7 @@ def _vp(**overrides):
     base = {
         "id": 1,
         "name": "Test VP",
-        "mode": "immediate",
+        "mode": "archive",
         "enabled": True,
         "bind_ip": "192.168.1.50",
         "access_code": "12345678",

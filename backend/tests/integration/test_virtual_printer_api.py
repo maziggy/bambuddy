@@ -61,33 +61,46 @@ class TestVirtualPrinterSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_mode_to_print_queue(self, async_client: AsyncClient):
-        """Verify mode can be set to print_queue."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=print_queue")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["mode"] == "print_queue"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_update_mode_legacy_queue_maps_to_review(self, async_client: AsyncClient):
-        """Verify legacy 'queue' mode is normalized to 'review'."""
+    async def test_update_mode_to_queue(self, async_client: AsyncClient):
+        """Verify mode can be set to the canonical 'queue' value."""
         response = await async_client.put("/api/v1/settings/virtual-printer?mode=queue")
 
         assert response.status_code == 200
         result = response.json()
-        assert result["mode"] == "review"  # Legacy queue maps to review
+        assert result["mode"] == "queue"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_mode_to_immediate(self, async_client: AsyncClient):
-        """Verify mode can be set to immediate."""
+    async def test_update_mode_legacy_print_queue_normalises_to_queue(self, async_client: AsyncClient):
+        """Legacy `print_queue` is accepted on input and translated to `queue` on
+        storage so the UI button label and the support-bundle field agree
+        (#1429 mode-label discrepancy)."""
+        response = await async_client.put("/api/v1/settings/virtual-printer?mode=print_queue")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["mode"] == "queue"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_mode_legacy_immediate_normalises_to_archive(self, async_client: AsyncClient):
+        """Legacy `immediate` is accepted on input and translated to `archive`
+        on storage (#1429 mode-label discrepancy)."""
         response = await async_client.put("/api/v1/settings/virtual-printer?mode=immediate")
 
         assert response.status_code == 200
         result = response.json()
-        assert result["mode"] == "immediate"
+        assert result["mode"] == "archive"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_mode_to_archive(self, async_client: AsyncClient):
+        """Verify mode can be set to the canonical 'archive' value."""
+        response = await async_client.put("/api/v1/settings/virtual-printer?mode=archive")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["mode"] == "archive"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -136,7 +149,7 @@ class TestVirtualPrinterSettingsAPI:
                 return_value={
                     "enabled": True,
                     "running": True,
-                    "mode": "immediate",
+                    "mode": "archive",
                     "name": "Bambuddy",
                     "serial": "00M09A391800001",
                     "pending_files": 0,
@@ -157,7 +170,7 @@ class TestVirtualPrinterSettingsAPI:
                 return_value={
                     "enabled": False,
                     "running": False,
-                    "mode": "immediate",
+                    "mode": "archive",
                     "name": "Bambuddy",
                     "serial": "00M09A391800001",
                     "pending_files": 0,
@@ -283,7 +296,7 @@ class TestVirtualPrinterAutoDispatchAPI:
             "/api/v1/virtual-printers",
             json={
                 "name": "TestDefaultDispatch",
-                "mode": "print_queue",
+                "mode": "queue",
                 "access_code": "12345678",
             },
         )
@@ -300,7 +313,7 @@ class TestVirtualPrinterAutoDispatchAPI:
             "/api/v1/virtual-printers",
             json={
                 "name": "TestManualDispatch",
-                "mode": "print_queue",
+                "mode": "queue",
                 "access_code": "12345678",
                 "auto_dispatch": False,
             },
@@ -319,7 +332,7 @@ class TestVirtualPrinterAutoDispatchAPI:
             "/api/v1/virtual-printers",
             json={
                 "name": "TestToggleDispatch",
-                "mode": "print_queue",
+                "mode": "queue",
                 "access_code": "12345678",
             },
         )
@@ -359,7 +372,7 @@ class TestVirtualPrinterTailscaleToggleAPI:
             "/api/v1/virtual-printers",
             json={
                 "name": "TestTailscaleToggle",
-                "mode": "immediate",
+                "mode": "archive",
                 "access_code": "12345678",
             },
         )
@@ -426,7 +439,7 @@ class TestVirtualPrinterDiagnosticAPI:
         """A freshly created (disabled) VP fails the 'enabled' check."""
         create_resp = await async_client.post(
             "/api/v1/virtual-printers",
-            json={"name": "TestDiagVP", "mode": "immediate", "access_code": "12345678"},
+            json={"name": "TestDiagVP", "mode": "archive", "access_code": "12345678"},
         )
         assert create_resp.status_code == 200
         vp_id = create_resp.json()["id"]

@@ -46,7 +46,7 @@ const createMockPrinter = (overrides: Partial<VirtualPrinterConfig> = {}): Virtu
   id: 1,
   name: 'Test VP',
   enabled: false,
-  mode: 'immediate',
+  mode: 'archive',
   model: 'BL-P001',
   model_name: 'X1C',
   access_code_set: false,
@@ -68,7 +68,7 @@ describe('VirtualPrinterCard - auto-dispatch toggle', () => {
   });
 
   it('renders auto-dispatch toggle when mode is print_queue', async () => {
-    const printer = createMockPrinter({ mode: 'print_queue' });
+    const printer = createMockPrinter({ mode: 'queue' });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
     await waitFor(() => {
@@ -77,7 +77,7 @@ describe('VirtualPrinterCard - auto-dispatch toggle', () => {
   });
 
   it('does not render auto-dispatch toggle when mode is immediate', async () => {
-    const printer = createMockPrinter({ mode: 'immediate' });
+    const printer = createMockPrinter({ mode: 'archive' });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
     // Wait for the card to render fully (check for something that should be there)
@@ -100,7 +100,7 @@ describe('VirtualPrinterCard - auto-dispatch toggle', () => {
   });
 
   it('auto-dispatch toggle defaults to on', async () => {
-    const printer = createMockPrinter({ mode: 'print_queue', auto_dispatch: true });
+    const printer = createMockPrinter({ mode: 'queue', auto_dispatch: true });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
     await waitFor(() => {
@@ -118,9 +118,9 @@ describe('VirtualPrinterCard - auto-dispatch toggle', () => {
 
   it('clicking auto-dispatch toggle calls update API', async () => {
     const user = userEvent.setup();
-    const printer = createMockPrinter({ mode: 'print_queue', auto_dispatch: true });
+    const printer = createMockPrinter({ mode: 'queue', auto_dispatch: true });
     vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(
-      createMockPrinter({ mode: 'print_queue', auto_dispatch: false })
+      createMockPrinter({ mode: 'queue', auto_dispatch: false })
     );
 
     render(<VirtualPrinterCard printer={printer} models={models} />);
@@ -156,7 +156,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
   });
 
   it('renders force-color-match toggle when mode is print_queue', async () => {
-    const printer = createMockPrinter({ mode: 'print_queue' });
+    const printer = createMockPrinter({ mode: 'queue' });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
     await waitFor(() => {
@@ -165,7 +165,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
   });
 
   it('does not render force-color-match toggle when mode is immediate', async () => {
-    const printer = createMockPrinter({ mode: 'immediate' });
+    const printer = createMockPrinter({ mode: 'archive' });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
     await waitFor(() => {
@@ -185,7 +185,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
   });
 
   it('force-color-match toggle defaults off (not green) — preserves pre-fix behaviour', async () => {
-    const printer = createMockPrinter({ mode: 'print_queue', queue_force_color_match: false });
+    const printer = createMockPrinter({ mode: 'queue', queue_force_color_match: false });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
     await waitFor(() => {
@@ -201,7 +201,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
   });
 
   it('force-color-match toggle renders enabled (green) when queue_force_color_match is true', async () => {
-    const printer = createMockPrinter({ mode: 'print_queue', queue_force_color_match: true });
+    const printer = createMockPrinter({ mode: 'queue', queue_force_color_match: true });
     render(<VirtualPrinterCard printer={printer} models={models} />);
 
     await waitFor(() => {
@@ -216,9 +216,9 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
 
   it('clicking force-color-match toggle posts queue_force_color_match in update body', async () => {
     const user = userEvent.setup();
-    const printer = createMockPrinter({ mode: 'print_queue', queue_force_color_match: false });
+    const printer = createMockPrinter({ mode: 'queue', queue_force_color_match: false });
     vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(
-      createMockPrinter({ mode: 'print_queue', queue_force_color_match: true })
+      createMockPrinter({ mode: 'queue', queue_force_color_match: true })
     );
 
     render(<VirtualPrinterCard printer={printer} models={models} />);

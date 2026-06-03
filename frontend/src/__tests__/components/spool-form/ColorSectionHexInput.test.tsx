@@ -15,16 +15,17 @@
  * branch then truncated away. Every keystroke past the first was lost.
  *
  * Current contract:
- *   - The hex input has its own draft state (0–6 chars) decoupled from
+ *   - The hex input has its own draft state (0–8 chars) decoupled from
  *     `formData.rgba`. Typing one char at a time works naturally.
- *   - `updateField('rgba', ...)` is only called once the draft reaches a full
- *     6-char hex — at which point we append "FF" alpha for an 8-char result.
- *   - On blur, a partial draft (1–5 chars) is right-padded with '0' and
- *     committed. Preserves the #1055 invariant: anything the backend ever
- *     sees is exactly 8 hex chars.
- *   - Paste of 7/8-char strings (rare alpha-channel case) truncates to the
- *     leading 6-char RGB on input. Bambu filaments are opaque, so an alpha
- *     affordance was never exposed in the UI.
+ *   - `updateField('rgba', ...)` is called when the draft reaches a full
+ *     6-char RGB (alpha defaults to "FF") or a full 8-char RRGGBBAA.
+ *   - On blur, a 1–5 char partial draft is right-padded with '0' to RGB then
+ *     committed with "FF" alpha; a 7-char draft pads the alpha nibble to '0'.
+ *     Preserves the #1055 invariant: anything the backend ever sees is
+ *     exactly 8 hex chars.
+ *   - Pastes longer than 8 chars truncate to the leading 8. 8-char pastes
+ *     pass through verbatim — alpha=00 is what makes the "Clear" preset
+ *     work end-to-end (#1545).
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -152,17 +153,29 @@ describe('ColorSection hex input — backend invariant (#1055)', () => {
     }
   });
 
-  it('truncates paste of 7–8 chars to the leading RGB triplet', () => {
-    // Pre-fix, an 8-char paste passed through and a 7-char paste dropped the
-    // last char. Both are rare alpha-channel cases; Bambu filaments are
-    // opaque and the UI exposes no alpha affordance, so we truncate to the
-    // leading 6-char RGB and force FF alpha. Loses the (undocumented) 8-char
-    // paste-with-alpha case, gains uniform commit-at-6 semantics.
+  it('accepts an 8-char paste verbatim (alpha byte preserved)', () => {
+    // #1545: the input now supports an alpha byte so users can paste e.g.
+    // `00000000` (Clear) or a translucent value from elsewhere. Anything
+    // longer than 8 hex chars is truncated to the leading 8.
     const { hexInput, updateField } = renderColorSection();
 
     fireEvent.change(hexInput, { target: { value: '0011223344' } });
-    expect(hexInput.value).toBe('001122');
-    expect(lastRgba(updateField)).toBe('001122FF');
+    expect(hexInput.value).toBe('00112233');
+    expect(lastRgba(updateField)).toBe('00112233');
+  });
+
+  it('pads a 7-char draft to 8 chars on blur (alpha nibble → 0)', () => {
+    // 7 chars is RGB + a single alpha nibble. Treat it as a partial alpha
+    // value the user was still typing and pad with `0` on blur so the
+    // committed rgba is the 8-char canonical form (#1055 invariant).
+    const { hexInput, updateField } = renderColorSection();
+
+    fireEvent.change(hexInput, { target: { value: '0011223' } });
+    fireEvent.blur(hexInput);
+
+    const rgba = lastRgba(updateField);
+    expect(rgba).toBe('00112230');
+    expect(rgba).toMatch(/^[0-9A-F]{8}$/);
   });
 
   it('strips non-hex characters', () => {

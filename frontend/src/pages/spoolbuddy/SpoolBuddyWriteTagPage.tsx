@@ -14,6 +14,7 @@ import {
   type SpoolCatalogEntry,
 } from '../../api/client';
 import { getCurrencySymbol } from '../../utils/currency';
+import { getSwatchStyle } from '../../utils/colors';
 import { FilamentSection } from '../../components/spool-form/FilamentSection';
 import { ColorSection } from '../../components/spool-form/ColorSection';
 import { AdditionalSection } from '../../components/spool-form/AdditionalSection';
@@ -362,7 +363,6 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
   showTag: boolean;
   onClick: () => void;
 }) {
-  const color = spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#666';
   const remaining = Math.max(0, spool.label_weight - spool.weight_used);
   const pct = spool.label_weight > 0 ? Math.round((remaining / spool.label_weight) * 100) : 0;
 
@@ -375,10 +375,11 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
           : 'bg-bambu-dark-secondary hover:bg-bambu-dark-tertiary border border-transparent'
       }`}
     >
-      {/* Color dot */}
+      {/* Color dot — uses getSwatchStyle so transparent (Clear) spools render
+          a checkerboard instead of collapsing to solid black (#1545). */}
       <div
         className="w-8 h-8 rounded-full shrink-0 border border-white/10"
-        style={{ backgroundColor: color }}
+        style={spool.rgba ? getSwatchStyle(spool.rgba) : { backgroundColor: '#666' }}
       />
 
       {/* Info */}
@@ -769,7 +770,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
           <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
             <div
               className="w-12 h-12 rounded-full mb-4 border border-white/10"
-              style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
+              style={selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' }}
             />
             <p className="text-white font-medium">
               {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
@@ -957,7 +958,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
         <div className="flex flex-col items-center justify-center p-4 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
           <div
             className="w-12 h-12 rounded-full mb-4 border border-white/10"
-            style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
+            style={selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' }}
           />
           <p className="text-white font-medium">
             {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
@@ -1072,8 +1073,10 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
     );
   }
 
-  // Spool selected — show summary + write button
-  const spoolColor = selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666';
+  // Spool selected — show summary + write button. Use getSwatchStyle so
+  // transparent (Clear) spools render a checkerboard rather than collapsing
+  // to solid black (#1545).
+  const spoolColorStyle = selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' };
 
   return (
     <div className="flex flex-col items-center text-center space-y-4 w-full">
@@ -1108,7 +1111,7 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
       {/* Selected spool summary */}
       <div className="w-full bg-bambu-dark-secondary rounded-lg p-3 space-y-2">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full border border-white/10 shrink-0" style={{ backgroundColor: spoolColor }} />
+          <div className="w-8 h-8 rounded-full border border-white/10 shrink-0" style={spoolColorStyle} />
           <div className="text-left min-w-0">
             <p className="text-white text-sm font-medium truncate">
               {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}

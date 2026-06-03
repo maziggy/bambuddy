@@ -24,13 +24,120 @@ from backend.app.models.user import User
 
 logger = logging.getLogger(__name__)
 
-# SETTINGS_READ is intentionally not denied — the SpoolBuddy kiosk reads settings
-# via API key (e.g. to sync the UI language).
+# GHSA-r2qv-8222-hqg3 (CVSS 9.9) — API key permission enforcement is allowlist-based.
+#
+# Until 0.2.4.x, ``_check_apikey_permissions`` only consulted the admin denylist
+# below. The three documented scope flags on ``APIKey``
+# (``can_read_status`` / ``can_queue`` / ``can_control_printer`` / ``can_manage_library``)
+# were enforced only by ``check_permission()`` inside ``routes/webhook.py``;
+# every other route used ``require_permission_if_auth_enabled`` which fell
+# through to the denylist-only path, so an API key with all flags unchecked
+# could still stop prints, edit queue items, and read every endpoint not in
+# this set. ``require_any_permission_if_auth_enabled`` and
+# ``require_ownership_permission`` did not call this helper at all, so admin
+# "any-of" routes and ownership-modify routes were entirely ungated for API keys.
+#
+# Fix: ``_check_apikey_permissions`` now requires every requested permission to
+# be present in ``_APIKEY_SCOPE_BY_PERMISSION`` (allowlist), and gates on the
+# corresponding scope flag on the API key. Unmapped permissions = 403. This
+# means a Permission added to ``core/permissions.py`` without a matching entry
+# in ``_APIKEY_SCOPE_BY_PERMISSION`` is automatically denied for API keys —
+# the previous denylist shape allowed every new Permission to silently widen
+# the API-key surface.
+#
+# The denylist is retained for documentation / drift-detection only — its
+# entries also satisfy "not in the allowlist", so they fail closed regardless.
+#
+# Mapping rationale (see wiki/features/api-keys.md):
+#   can_read_status     → every ``*_READ`` + camera + stats + system + websocket
+#   can_queue           → queue write ops + archive reprint
+#   can_control_printer → physical printer + smart-plug control
+#   can_manage_library  → library upload/own + MakerWorld import (separate
+#                         trust level from queue management, hence its own flag)
+#   admin-only          → unmapped (default-deny); covers all create/update/
+#                         delete of admin resources, settings writes, user/
+#                         group/api-key/backup admin ops, discovery scan,
+#                         cloud auth, library ALL-ownership perms, purges
+_APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
+    # can_read_status — read-only access to status, history, and configuration
+    Permission.PRINTERS_READ: "can_read_status",
+    Permission.ARCHIVES_READ: "can_read_status",
+    Permission.QUEUE_READ: "can_read_status",
+    Permission.LIBRARY_READ: "can_read_status",
+    Permission.PROJECTS_READ: "can_read_status",
+    Permission.FILAMENTS_READ: "can_read_status",
+    Permission.INVENTORY_READ: "can_read_status",
+    Permission.INVENTORY_VIEW_ASSIGNMENTS: "can_read_status",
+    Permission.INVENTORY_FORECAST_READ: "can_read_status",
+    Permission.SMART_PLUGS_READ: "can_read_status",
+    Permission.CAMERA_VIEW: "can_read_status",
+    Permission.MAINTENANCE_READ: "can_read_status",
+    Permission.KPROFILES_READ: "can_read_status",
+    Permission.NOTIFICATIONS_READ: "can_read_status",
+    Permission.NOTIFICATION_TEMPLATES_READ: "can_read_status",
+    Permission.EXTERNAL_LINKS_READ: "can_read_status",
+    Permission.FIRMWARE_READ: "can_read_status",
+    Permission.AMS_HISTORY_READ: "can_read_status",
+    Permission.STATS_READ: "can_read_status",
+    Permission.STATS_FILTER_BY_USER: "can_read_status",
+    Permission.SYSTEM_READ: "can_read_status",
+    # SETTINGS_READ stays allowed via read-status so SpoolBuddy kiosks keep
+    # working (they need the UI-language setting via API key).
+    Permission.SETTINGS_READ: "can_read_status",
+    Permission.MAKERWORLD_VIEW: "can_read_status",
+    Permission.WEBSOCKET_CONNECT: "can_read_status",
+    # can_queue — queue write ops + reprint (which enqueues an existing archive)
+    Permission.QUEUE_CREATE: "can_queue",
+    Permission.QUEUE_UPDATE_OWN: "can_queue",
+    Permission.QUEUE_UPDATE_ALL: "can_queue",
+    Permission.QUEUE_DELETE_OWN: "can_queue",
+    Permission.QUEUE_DELETE_ALL: "can_queue",
+    Permission.QUEUE_REORDER: "can_queue",
+    Permission.ARCHIVES_REPRINT_OWN: "can_queue",
+    Permission.ARCHIVES_REPRINT_ALL: "can_queue",
+    # can_control_printer — physical-world side effects on hardware
+    Permission.PRINTERS_CONTROL: "can_control_printer",
+    Permission.PRINTERS_FILES: "can_control_printer",
+    Permission.PRINTERS_AMS_RFID: "can_control_printer",
+    Permission.PRINTERS_CLEAR_PLATE: "can_control_printer",
+    Permission.SMART_PLUGS_CONTROL: "can_control_printer",
+    # can_manage_library — file-manager scope (upload/rename/delete OWN library
+    # entries + MakerWorld import which downloads files into the library).
+    # Bulk/ALL-ownership library ops (UPDATE_ALL / DELETE_ALL / PURGE) stay
+    # admin-only because they cross the user boundary.
+    Permission.LIBRARY_UPLOAD: "can_manage_library",
+    Permission.LIBRARY_UPDATE_OWN: "can_manage_library",
+    Permission.LIBRARY_DELETE_OWN: "can_manage_library",
+    Permission.MAKERWORLD_IMPORT: "can_manage_library",
+    # can_manage_inventory — inventory write scope. Covers the documented
+    # spool/catalog/forecast write surface AND the SpoolBuddy kiosk endpoints
+    # (NFC scan, scale reading, system command/update) which used
+    # INVENTORY_UPDATE as a stand-in for "kiosk write" under the prior
+    # denylist model. Read-only inventory (INVENTORY_READ etc.) stays under
+    # can_read_status.
+    Permission.INVENTORY_CREATE: "can_manage_inventory",
+    Permission.INVENTORY_UPDATE: "can_manage_inventory",
+    Permission.INVENTORY_DELETE: "can_manage_inventory",
+    Permission.INVENTORY_FORECAST_WRITE: "can_manage_inventory",
+    # can_access_cloud — narrow opt-in scope, gated by the router-level
+    # ``_cloud_api_key_gate`` and additionally enforced here so the route-
+    # level ``cloud_caller(Permission.CLOUD_AUTH)`` dep also fails closed
+    # when the flag is off (defence-in-depth).
+    Permission.CLOUD_AUTH: "can_access_cloud",
+}
+
+# Retained for documentation, drift-detection, and the prior "administrative
+# operations" error string. Entries here are also absent from
+# ``_APIKEY_SCOPE_BY_PERMISSION``, so they fail closed via the allowlist; the
+# denylist is a redundant explicit "these are admin" marker, not the load-
+# bearing security check.
 _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
     {
+        # Settings administration (cred storage; rewriting these reaches SMTP/LDAP/MQTT).
         Permission.SETTINGS_UPDATE,
         Permission.SETTINGS_BACKUP,
         Permission.SETTINGS_RESTORE,
+        # User / group / API-key administration.
         Permission.USERS_READ,
         Permission.USERS_CREATE,
         Permission.USERS_UPDATE,
@@ -43,21 +150,111 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.API_KEYS_UPDATE,
         Permission.API_KEYS_DELETE,
         Permission.API_KEYS_READ,
+        # GitHub backup admin + firmware OTA.
         Permission.GITHUB_BACKUP,
         Permission.GITHUB_RESTORE,
         Permission.FIRMWARE_UPDATE,
+        # Resource administration (printer/project/filament/maintenance/k-profile/etc CRUD).
+        # API keys with the operational scopes can read these resources via
+        # *_READ permissions but cannot mutate the catalog/registry itself.
+        Permission.PRINTERS_CREATE,
+        Permission.PRINTERS_UPDATE,
+        Permission.PRINTERS_DELETE,
+        Permission.ARCHIVES_CREATE,
+        Permission.ARCHIVES_UPDATE_OWN,
+        Permission.ARCHIVES_UPDATE_ALL,
+        Permission.ARCHIVES_DELETE_OWN,
+        Permission.ARCHIVES_DELETE_ALL,
+        Permission.ARCHIVES_PURGE,
+        Permission.LIBRARY_UPDATE_ALL,
+        Permission.LIBRARY_DELETE_ALL,
+        Permission.LIBRARY_PURGE,
+        Permission.PROJECTS_CREATE,
+        Permission.PROJECTS_UPDATE,
+        Permission.PROJECTS_DELETE,
+        Permission.FILAMENTS_CREATE,
+        Permission.FILAMENTS_UPDATE,
+        Permission.FILAMENTS_DELETE,
+        Permission.MAINTENANCE_CREATE,
+        Permission.MAINTENANCE_UPDATE,
+        Permission.MAINTENANCE_DELETE,
+        Permission.KPROFILES_CREATE,
+        Permission.KPROFILES_UPDATE,
+        Permission.KPROFILES_DELETE,
+        Permission.NOTIFICATIONS_CREATE,
+        Permission.NOTIFICATIONS_UPDATE,
+        Permission.NOTIFICATIONS_DELETE,
+        Permission.NOTIFICATIONS_USER_EMAIL,
+        Permission.NOTIFICATION_TEMPLATES_UPDATE,
+        Permission.EXTERNAL_LINKS_CREATE,
+        Permission.EXTERNAL_LINKS_UPDATE,
+        Permission.EXTERNAL_LINKS_DELETE,
+        Permission.SMART_PLUGS_CREATE,
+        Permission.SMART_PLUGS_UPDATE,
+        Permission.SMART_PLUGS_DELETE,
+        # Network scanning — operator only (no API-key scope for this).
+        Permission.DISCOVERY_SCAN,
     }
 )
 
 
-def _check_apikey_permissions(perm_strings: list[str]) -> None:
-    """Raise 403 if any required permission is admin-only (not accessible via API key)."""
-    denied = _APIKEY_DENIED_PERMISSIONS.intersection(perm_strings)
-    if denied:
+def _resolve_apikey_scope(perm_string: str) -> str | None:
+    """Return the scope-flag attribute name gating ``perm_string`` for API keys.
+
+    None when the permission is unmapped (= admin-only / not API-key-usable).
+    """
+    try:
+        perm = Permission(perm_string)
+    except ValueError:
+        return None
+    return _APIKEY_SCOPE_BY_PERMISSION.get(perm)
+
+
+def _check_apikey_permissions(api_key: APIKey, perm_strings: list[str], *, require_any: bool = False) -> None:
+    """Raise 403 unless ``api_key`` is allowed to use ``perm_strings``.
+
+    Allowlist semantics: every requested permission MUST be present in
+    ``_APIKEY_SCOPE_BY_PERMISSION`` AND its scope flag must be True on
+    ``api_key``. Unmapped permissions = administrative = 403.
+
+    By default ALL requested permissions must pass (mirrors
+    ``require_permission`` / ``require_permission_if_auth_enabled``).
+    When ``require_any=True``, only one needs to pass (mirrors
+    ``require_any_permission_if_auth_enabled``).
+    """
+    if not perm_strings:
+        # Defensive: empty perm list means the dep is auth-only, not perm-gated.
+        # Routes never call us with [] today, but if they did, returning here
+        # would silently allow — instead, fail closed.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="API keys cannot be used for administrative operations",
+            detail="API keys cannot be used for unspecified permissions",
         )
+
+    last_failure: HTTPException | None = None
+    for perm_str in perm_strings:
+        scope_attr = _resolve_apikey_scope(perm_str)
+        if scope_attr is None:
+            failure = HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API keys cannot be used for administrative operations",
+            )
+        elif not getattr(api_key, scope_attr, False):
+            failure = HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"API key does not have '{scope_attr}' permission",
+            )
+        else:
+            failure = None
+
+        if failure is None and require_any:
+            return  # at least one passed
+        if failure is not None and not require_any:
+            raise failure
+        last_failure = failure
+
+    if require_any and last_failure is not None:
+        raise last_failure
 
 
 def require_energy_cost_update():
@@ -307,6 +504,72 @@ async def create_camera_stream_token() -> str:
     return token
 
 
+WEBSOCKET_TOKEN_EXPIRE_MINUTES = 60
+
+
+async def create_websocket_token(username: str | None) -> str:
+    """Create a short-lived token for ``/api/v1/ws`` connections.
+
+    Mirrors the camera-stream-token pattern: opaque random string stored
+    in ``auth_ephemeral_tokens`` with type ``"websocket"`` so the WS
+    endpoint can verify it *before* calling ``websocket.accept()``.
+
+    Records the issuing principal in the ``username`` field — for JWT
+    callers this is the actual username, for API-keyed callers this is
+    the empty string (handled in the route layer; we accept None at this
+    interface so the auth-disabled path doesn't have to fabricate one).
+
+    The 60-minute expiry matches camera tokens: long enough to survive
+    page reloads / brief disconnects, short enough that a leaked token
+    is not a credential.
+    """
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=WEBSOCKET_TOKEN_EXPIRE_MINUTES)
+    token = secrets.token_urlsafe(24)
+    async with async_session() as db:
+        # Prune expired tokens opportunistically (same shape as camera).
+        await db.execute(
+            delete(AuthEphemeralToken).where(
+                AuthEphemeralToken.token_type == "websocket",
+                AuthEphemeralToken.expires_at < now,
+            )
+        )
+        db.add(
+            AuthEphemeralToken(
+                token=token,
+                token_type="websocket",
+                username=username or "",
+                expires_at=expires_at,
+            )
+        )
+        await db.commit()
+    return token
+
+
+async def verify_websocket_token(token: str) -> str | None:
+    """Verify a WebSocket connect token.
+
+    Returns the recorded ``username`` (possibly ``""`` for API-key
+    callers, never ``None`` on success) when the token is valid, or
+    ``None`` when it is missing / expired / unknown. The token is
+    NOT consumed — a single page reload should not need a new round
+    trip to mint a replacement.
+    """
+    now = datetime.now(timezone.utc)
+    async with async_session() as db:
+        result = await db.execute(
+            select(AuthEphemeralToken).where(
+                AuthEphemeralToken.token == token,
+                AuthEphemeralToken.token_type == "websocket",
+                AuthEphemeralToken.expires_at > now,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        return row.username or ""
+
+
 async def verify_camera_stream_token(token: str) -> bool:
     """Verify a camera stream token is valid (reusable — does not consume it).
 
@@ -551,7 +814,7 @@ async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | No
                 api_key.last_used = datetime.now(timezone.utc)
                 await db.commit()
                 return api_key
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: validation failure returns None; every caller treats None as "invalid key" → 401 (fail-closed)
         logger.warning("API key validation error: %s", e)
     return None
 
@@ -742,19 +1005,92 @@ def require_role(required_role: str):
 
 
 def require_admin_if_auth_enabled():
-    """Dependency factory that requires admin role if auth is enabled."""
+    """Dependency factory that requires admin role if auth is enabled.
+
+    GHSA-r2qv follow-up (audit pattern P3): explicitly fail-closed for API
+    keys. The previous implementation chained on ``require_auth_if_enabled``
+    which returns ``None`` for *both* "auth disabled" *and* "valid API
+    key" — the inner ``admin_checker`` then treated ``None`` as auth-
+    disabled and admitted the caller. If any route had ever adopted this
+    dep, any API key with no scope flags set would have satisfied an
+    admin requirement.
+
+    Today no route uses this dep, but rather than leave the footgun
+    armed, the dep is rewritten to distinguish the two cases by
+    consulting ``is_auth_enabled`` directly and rejecting API-keyed
+    requests with 403. "Admin" requires a user-identity role, which API
+    keys do not carry.
+    """
 
     async def admin_checker(
-        current_user: Annotated[User | None, Depends(require_auth_if_enabled)] = None,
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
     ) -> User | None:
-        if current_user is None:
-            return None  # Auth not enabled, allow access
-        if current_user.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Requires admin role",
-            )
-        return current_user
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return None  # Auth disabled — no role to check.
+
+            # Reject API-keyed requests up front: admin is a user-role
+            # concept, not a key-scope concept. The right path for
+            # admin-equivalent API-key access is a specific Permission
+            # (e.g. SETTINGS_UPDATE) gated by the allowlist, not the
+            # admin role.
+            if x_api_key or (credentials and credentials.credentials.startswith("bb_")):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Admin operations require a user role; API keys cannot be admins",
+                )
+
+            # Standard JWT path: validate and require admin role.
+            if credentials is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            try:
+                payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+                username: str = payload.get("sub")
+                if username is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                jti: str | None = payload.get("jti")
+                if not jti or await is_jti_revoked(jti):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                iat: int | float | None = payload.get("iat")
+            except JWTError:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            user = await get_user_by_username(db, username)
+            if user is None or not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if not _is_token_fresh(iat, user):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if user.role != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Requires admin role",
+                )
+            return user
 
     return admin_checker
 
@@ -930,7 +1266,7 @@ def require_permission(*permissions: str | Permission):
             if x_api_key:
                 api_key = await _validate_api_key(db, x_api_key)
                 if api_key:
-                    _check_apikey_permissions(perm_strings)
+                    _check_apikey_permissions(api_key, perm_strings)
                     return None  # API key valid, allow access
 
             credentials_exception = HTTPException(
@@ -947,7 +1283,7 @@ def require_permission(*permissions: str | Permission):
             if token.startswith("bb_"):
                 api_key = await _validate_api_key(db, token)
                 if api_key:
-                    _check_apikey_permissions(perm_strings)
+                    _check_apikey_permissions(api_key, perm_strings)
                     return None  # API key valid, allow access
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1020,7 +1356,7 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
             if x_api_key:
                 api_key = await _validate_api_key(db, x_api_key)
                 if api_key:
-                    _check_apikey_permissions(perm_strings)
+                    _check_apikey_permissions(api_key, perm_strings)
                     return None  # API key valid, allow access
 
             # Check for Bearer token (could be JWT or API key)
@@ -1030,7 +1366,7 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
                 if token.startswith("bb_"):
                     api_key = await _validate_api_key(db, token)
                     if api_key:
-                        _check_apikey_permissions(perm_strings)
+                        _check_apikey_permissions(api_key, perm_strings)
                         return None  # API key valid, allow access
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1120,6 +1456,10 @@ def require_any_permission_if_auth_enabled(*permissions: str | Permission):
             if x_api_key:
                 api_key = await _validate_api_key(db, x_api_key)
                 if api_key:
+                    # GHSA-r2qv-8222-hqg3: previously returned None unconditionally,
+                    # letting any valid API key satisfy admin "any-of" route
+                    # dependencies. require_any → at-least-one must pass the scope check.
+                    _check_apikey_permissions(api_key, perm_strings, require_any=True)
                     return None
 
             if credentials is not None:
@@ -1127,6 +1467,7 @@ def require_any_permission_if_auth_enabled(*permissions: str | Permission):
                 if token.startswith("bb_"):
                     api_key = await _validate_api_key(db, token)
                     if api_key:
+                        _check_apikey_permissions(api_key, perm_strings, require_any=True)
                         return None
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1223,10 +1564,17 @@ def require_ownership_permission(
 ):
     """Dependency factory for ownership-based permission checks.
 
-    - User with `all_permission` can modify any item
-    - User with `own_permission` can only modify items where created_by_id == user.id
-    - Ownerless items (created_by_id = null) require `all_permission`
-    - API keys (via X-API-Key header or Bearer bb_xxx) get full access (can_modify_all=True)
+    - User with ``all_permission`` can modify any item
+    - User with ``own_permission`` can only modify items where created_by_id == user.id
+    - Ownerless items (created_by_id = null) require ``all_permission``
+    - API keys (via X-API-Key header or Bearer bb_xxx) must satisfy the
+      ``all_permission``'s API-key scope flag (e.g. ``can_queue`` for
+      ``QUEUE_UPDATE_ALL``) and then receive ``can_modify_all=True``.
+      OWN/ALL ownership pairs map to the same scope flag in
+      ``_APIKEY_SCOPE_BY_PERMISSION`` so checking ``all_permission`` is the
+      correct gate; API keys have no per-row ownership identity. Pre-
+      GHSA-r2qv-8222-hqg3 fix this returned ``(None, True)`` for any valid
+      key with no scope check — see ``core/auth.py`` allowlist commentary.
 
     Returns:
         A dependency function that returns (user, can_modify_all).
@@ -1250,11 +1598,20 @@ def require_ownership_permission(
             if not auth_enabled:
                 return None, True  # Auth disabled, allow all
 
-            # Check for API key first (X-API-Key header)
+            # GHSA-r2qv-8222-hqg3: previously API keys received (None, True)
+            # unconditionally on ownership-modify routes — a "queue-only" key
+            # could delete any user's archives, library files, queue items.
+            # OWN and ALL ownership perms both map to the same scope flag
+            # (e.g. both QUEUE_UPDATE_OWN and QUEUE_UPDATE_ALL → can_queue),
+            # so checking ``all_perm`` against the api_key's scope is the
+            # correct gate. API keys don't have per-row ownership identity, so
+            # on pass we keep can_modify_all=True (preserves prior intent,
+            # narrows access to keys with the right scope flag).
             if x_api_key:
                 api_key = await _validate_api_key(db, x_api_key)
                 if api_key:
-                    return None, True  # API key valid, allow all
+                    _check_apikey_permissions(api_key, [all_perm])
+                    return None, True
 
             # Check for Bearer token (could be JWT or API key)
             if credentials is not None:
@@ -1263,7 +1620,8 @@ def require_ownership_permission(
                 if token.startswith("bb_"):
                     api_key = await _validate_api_key(db, token)
                     if api_key:
-                        return None, True  # API key valid, allow all
+                        _check_apikey_permissions(api_key, [all_perm])
+                        return None, True
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Invalid API key",

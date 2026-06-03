@@ -19,6 +19,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
+from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.smart_plug import SmartPlug
@@ -416,18 +417,22 @@ async def get_system_info(
     failed_count = await db.scalar(select(func.count(PrintArchive.id)).where(PrintArchive.status == "failed"))
     printing_count = await db.scalar(select(func.count(PrintArchive.id)).where(PrintArchive.status == "printing"))
 
-    # Total print time
+    # System-wide totals aggregate per-run from ``print_log_entries`` so
+    # reprints contribute each run and multi-plate sums are pulled from the
+    # measured per-run actuals — same source the per-archive stats and the
+    # project rollup use (#1593). Pre-fix this summed ``PrintArchive`` directly,
+    # which under-reported the same way the project page did (3 reprints of
+    # one file showed as one file's worth of filament/time).
     total_print_time = (
         await db.scalar(
-            select(func.sum(PrintArchive.print_time_seconds)).where(PrintArchive.print_time_seconds.isnot(None))
+            select(func.sum(PrintLogEntry.duration_seconds)).where(PrintLogEntry.duration_seconds.isnot(None))
         )
         or 0
     )
 
-    # Total filament used
     total_filament = (
         await db.scalar(
-            select(func.sum(PrintArchive.filament_used_grams)).where(PrintArchive.filament_used_grams.isnot(None))
+            select(func.sum(PrintLogEntry.filament_used_grams)).where(PrintLogEntry.filament_used_grams.isnot(None))
         )
         or 0
     )

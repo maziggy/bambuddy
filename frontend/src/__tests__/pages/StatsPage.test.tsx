@@ -14,6 +14,7 @@ const mockStats = {
   total_prints: 150,
   successful_prints: 140,
   failed_prints: 10,
+  cancelled_prints: 0,
   total_print_time_hours: 500.5,
   total_filament_grams: 5500,
   total_cost: 125.50,
@@ -215,11 +216,14 @@ describe('StatsPage', () => {
       });
     });
 
-    it('uses total_prints as denominator so cancelled/stopped events count (#1390)', async () => {
-      // 40 successful out of 100 total — with 20 failed and 40 cancelled/stopped
-      // mixed in. Old formula (successful / (successful + failed)) would have
-      // shown 40 / (40 + 20) = 67%. New formula shows 40 / 100 = 40%, which
-      // matches the "Total Prints: 100" the user reads right above the gauge.
+    it('excludes cancelled prints from the rate denominator and surfaces them in the breakdown (#1390)', async () => {
+      // 40 completed, 20 failed (printer-detected), 40 user-cancelled out of
+      // 100 total. The earlier fix divided by total_prints and reported 40%,
+      // which conflated user intent with print quality — cancelling a roll
+      // because you changed your mind shouldn't be counted against the
+      // printer's success rate. New behaviour: gauge = 40 / (40 + 20) = 67%;
+      // cancelled count still visible in the row breakdown so the missing
+      // 40 prints don't silently disappear.
       server.use(
         http.get('/api/v1/archives/stats', () =>
           HttpResponse.json({
@@ -227,6 +231,7 @@ describe('StatsPage', () => {
             total_prints: 100,
             successful_prints: 40,
             failed_prints: 20,
+            cancelled_prints: 35,
           }),
         ),
       );
@@ -234,7 +239,13 @@ describe('StatsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Success Rate')).toBeInTheDocument();
-        expect(screen.getByText('40%')).toBeInTheDocument();
+        expect(screen.getByText('67%')).toBeInTheDocument();
+        // Cancelled count surfaces in the breakdown so the missing prints
+        // aren't silently swallowed (was the original bug in #1390). Pick a
+        // value distinct from successful_prints/failed_prints to keep the
+        // getByText query unambiguous.
+        expect(screen.getByText('Cancelled:')).toBeInTheDocument();
+        expect(screen.getByText('35')).toBeInTheDocument();
       });
     });
   });

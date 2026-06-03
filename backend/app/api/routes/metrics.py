@@ -1,6 +1,7 @@
 """Prometheus metrics endpoint for external monitoring."""
 
 import platform
+import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import func, select
@@ -75,7 +76,9 @@ async def get_metrics(
         if not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Bearer token required")
         provided_token = authorization[7:]  # Remove "Bearer " prefix
-        if provided_token != token:
+        # Constant-time comparison closes the byte-by-byte timing oracle that
+        # plain ``!=`` opens on a LAN-attached attacker (audit finding I2).
+        if not secrets.compare_digest(provided_token.encode("utf-8"), token.encode("utf-8")):
             raise HTTPException(status_code=401, detail="Invalid token")
 
     lines: list[str] = []

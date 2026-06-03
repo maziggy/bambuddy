@@ -69,8 +69,15 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
 
     if (isLibrary) {
       const normalizedType = (fileType || '').toLowerCase();
-      const hasModel = normalizedType === '3mf' || normalizedType === 'stl';
-      const hasGcode = normalizedType === 'gcode' || normalizedType === '3mf';
+      // A `.gcode.3mf` file is the slicer's sliced output — it carries
+      // both the per-plate model (in `3D/3dmodel.model`) and the g-code
+      // for the active plate (in `Metadata/plate_*.gcode`). The backend
+      // library scan path (library.py) tags it `gcode.3mf` while the
+      // upload path tags it `3mf`, so we accept both shapes here for
+      // the 3D-tab + g-code-tab gating (#1543).
+      const isThreeMfFamily = normalizedType === '3mf' || normalizedType === 'gcode.3mf';
+      const hasModel = isThreeMfFamily || normalizedType === 'stl';
+      const hasGcode = isThreeMfFamily || normalizedType === 'gcode';
       setCapabilities({
         has_model: hasModel,
         has_gcode: hasGcode,
@@ -116,7 +123,10 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
 
     if (isLibrary) {
       const normalizedType = (fileType || '').toLowerCase();
-      if (!libraryFileId || normalizedType !== '3mf') {
+      // Same 3mf-family gate as the capabilities branch above — sliced
+      // `.gcode.3mf` files have plate metadata too (#1543).
+      const isThreeMfFamily = normalizedType === '3mf' || normalizedType === 'gcode.3mf';
+      if (!libraryFileId || !isThreeMfFamily) {
         setPlatesData(null);
         setPlatesLoading(false);
         return;

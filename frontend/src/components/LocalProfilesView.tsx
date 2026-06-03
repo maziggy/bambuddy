@@ -245,6 +245,11 @@ export function LocalProfilesView() {
     },
     onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['localPresets'] });
+      // The SliceModal reads from a separate `slicerPresets` query that lists
+      // cloud + local + standard in one shot. Without this second invalidation
+      // freshly-imported profiles wouldn't appear in the SliceModal dropdown
+      // until that query's staleTime elapsed plus a refocus / remount (#1581).
+      queryClient.invalidateQueries({ queryKey: ['slicerPresets'] });
       let totalImported = 0;
       let totalSkipped = 0;
       let totalErrors = 0;
@@ -273,6 +278,11 @@ export function LocalProfilesView() {
     mutationFn: (id: number) => api.deleteLocalPreset(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['localPresets'] });
+      // Match the import path: the SliceModal's `slicerPresets` query needs
+      // to be invalidated too, otherwise the deleted preset keeps appearing
+      // in the slice dropdown until its 60s staleTime expires plus a
+      // refocus / remount (#1581).
+      queryClient.invalidateQueries({ queryKey: ['slicerPresets'] });
       setDeleteConfirm(null);
       showToast(t('profiles.localProfiles.toast.deleted'));
     },

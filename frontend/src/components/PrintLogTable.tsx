@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { api } from '../api/client';
+import { parseUTCDate } from '../utils/date';
 
 interface PrintLogTableProps {
   archiveId: number;
@@ -17,8 +18,8 @@ function formatDuration(seconds: number | null): string {
 
 function formatDate(isoString: string | null): string {
   if (!isoString) return '—';
-  const d = new Date(isoString);
-  return d.toLocaleString();
+  const d = parseUTCDate(isoString);
+  return d ? d.toLocaleString() : '—';
 }
 
 export function PrintLogTable({ archiveId }: PrintLogTableProps) {

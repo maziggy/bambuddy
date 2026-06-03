@@ -10,6 +10,8 @@ class APIKeyCreate(BaseModel):
     can_queue: bool = True
     can_control_printer: bool = False
     can_read_status: bool = True
+    can_manage_library: bool = True  # Upload / rename / delete own library files + MakerWorld import
+    can_manage_inventory: bool = True  # Inventory writes — SpoolBuddy NFC/scale/system, manual stock edits via API
     can_access_cloud: bool = False  # Read /cloud/* on the creator's behalf — default off (#1182)
     can_update_energy_cost: bool = False  # POST /settings/electricity-price only (#1356)
     printer_ids: list[int] | None = None  # null = all printers
@@ -23,6 +25,8 @@ class APIKeyUpdate(BaseModel):
     can_queue: bool | None = None
     can_control_printer: bool | None = None
     can_read_status: bool | None = None
+    can_manage_library: bool | None = None
+    can_manage_inventory: bool | None = None
     can_access_cloud: bool | None = None
     can_update_energy_cost: bool | None = None
     printer_ids: list[int] | None = None
@@ -40,6 +44,8 @@ class APIKeyResponse(BaseModel):
     can_queue: bool
     can_control_printer: bool
     can_read_status: bool
+    can_manage_library: bool
+    can_manage_inventory: bool
     can_access_cloud: bool
     can_update_energy_cost: bool
     printer_ids: list[int] | None

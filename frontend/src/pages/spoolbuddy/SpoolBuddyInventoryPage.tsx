@@ -5,7 +5,7 @@ import { useOutletContext } from 'react-router-dom';
 import { Search, X, Package } from 'lucide-react';
 import { api } from '../../api/client';
 import type { InventorySpool } from '../../api/client';
-import { resolveSpoolColorName } from '../../utils/colors';
+import { resolveSpoolColorName, getSwatchStyle, spoolColorString } from '../../utils/colors';
 import { formatSlotLabel } from '../../utils/amsHelpers';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
@@ -17,8 +17,7 @@ type SlotInfo = { ams_id: number; tray_id: number; printer_name?: string | null 
 type FilterMode = 'all' | 'in_ams' | string; // string = material name
 
 function spoolColor(spool: InventorySpool): string {
-  if (spool.rgba) return `#${spool.rgba.substring(0, 6)}`;
-  return '#808080';
+  return spoolColorString(spool.rgba);
 }
 
 function spoolRemaining(spool: InventorySpool): number {
@@ -334,7 +333,7 @@ function CatalogCard({ spool, assignment, onClick }: {
       <div className="flex items-center gap-1 min-w-0 max-w-full">
         <span
           className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/10"
-          style={{ backgroundColor: color }}
+          style={getSwatchStyle(spool.rgba)}
         />
         <span className="text-[11px] text-white/50 truncate">
           {colorName || '-'}

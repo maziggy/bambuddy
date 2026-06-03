@@ -149,7 +149,7 @@ def _apply_run_user_filter(conditions: list, created_by_id: int | None):
             conditions.append(PrintLogEntry.created_by_id == created_by_id)
 
 
-def compute_time_accuracy(archive: PrintArchive) -> dict:
+def compute_time_accuracy(archive: PrintArchive, run_aggregate: dict | None = None) -> dict:
     """Compute actual print time and accuracy for an archive.
 
     Returns dict with actual_time_seconds and time_accuracy.
@@ -157,8 +157,26 @@ def compute_time_accuracy(archive: PrintArchive) -> dict:
     - 100% = perfect estimate
     - >100% = print was faster than estimated
     - <100% = print took longer than estimated
+
+    When ``run_aggregate`` indicates the archive has more than one logged
+    run (multi-plate file printed plate-by-plate, or reprints), both
+    fields are suppressed: ``archive.started_at / completed_at`` reflect
+    the LATEST run only, while ``archive.print_time_seconds`` is the
+    whole-file estimate (post-#1593 the parser sums across plates), so
+    comparing the two describes different scopes. The card-rendering
+    frontend falls through to ``archive.print_time_seconds`` for the
+    time display and hides the badge when ``time_accuracy`` is null —
+    that's the desired "show estimate, no badge" presentation for
+    multi-run archives (#1608). Single-run archives keep the original
+    badge behaviour verbatim.
     """
-    result = {"actual_time_seconds": None, "time_accuracy": None}
+    result: dict[str, int | float | None] = {"actual_time_seconds": None, "time_accuracy": None}
+
+    # Multi-run archives: the per-run actual (started_at..completed_at on
+    # the archive row) is incommensurable with the whole-file estimate.
+    # Both fields are cleared so the card shows estimate + no badge.
+    if run_aggregate and (run_aggregate.get("run_count") or 0) > 1:
+        return result
 
     if archive.started_at and archive.completed_at and archive.status == "completed":
         actual_seconds = int((archive.completed_at - archive.started_at).total_seconds())
@@ -271,8 +289,11 @@ def archive_to_response(
         "created_by_username": archive.created_by.username if archive.created_by else None,
     }
 
-    # Add computed time accuracy fields
-    accuracy_data = compute_time_accuracy(archive)
+    # Add computed time accuracy fields. ``run_aggregate`` lets
+    # ``compute_time_accuracy`` suppress the badge for multi-run archives
+    # where the per-run actual / whole-file estimate scopes don't match
+    # (#1608).
+    accuracy_data = compute_time_accuracy(archive, run_aggregate)
     data.update(accuracy_data)
 
     if run_aggregate:
@@ -580,7 +601,10 @@ async def search_archives(
         query = query.limit(limit).offset(offset)
         result = await db.execute(query)
         archives = result.scalars().all()
-        return [archive_to_response(a) for a in archives]
+        # Load run aggregates so multi-run archives' time/accuracy badge is
+        # suppressed consistently with the main list endpoint (#1608).
+        run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
+        return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id)) for a in archives]
 
     if not matched_ids:
         return []
@@ -607,7 +631,10 @@ async def search_archives(
     ordered_archives = [archives_dict[id] for id in matched_ids if id in archives_dict]
     paginated = ordered_archives[offset : offset + limit]
 
-    return [archive_to_response(a) for a in paginated]
+    # Load run aggregates so multi-run archives' time/accuracy badge is
+    # suppressed consistently with the main list endpoint (#1608).
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in paginated])
+    return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id)) for a in paginated]
 
 
 @router.post("/search/rebuild-index")
@@ -1416,7 +1443,11 @@ async def update_archive(
     )
     archive = result.scalar_one_or_none()
 
-    return archive_to_response(archive)
+    # Load run aggregate so the time/accuracy badge stays consistent with
+    # the list / detail endpoints when the frontend re-renders the card
+    # after a PATCH (#1608).
+    run_aggregates = await _load_run_aggregates(db, [archive.id]) if archive else {}
+    return archive_to_response(archive, run_aggregate=run_aggregates.get(archive.id) if archive else None)
 
 
 @router.post("/{archive_id}/favorite", response_model=ArchiveResponse)

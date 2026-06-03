@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge, _ip_to_uint32_le
+from backend.app.services.virtual_printer.mqtt_bridge import (
+    MQTTBridge,
+    _ip_to_uint32_le,
+    _resolve_host_interface_for_target,
+)
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 
 H2D_SERIAL = "0948BB540200427"
@@ -1081,3 +1085,102 @@ class TestIpEncoding:
     def test_invalid_ip_raises(self):
         with pytest.raises(ValueError):
             _ip_to_uint32_le("not.an.ip.actually")
+
+
+# ---------------------------------------------------------------------------
+# Auto-resolve fallback for default-config (bind_address = "0.0.0.0")
+# ---------------------------------------------------------------------------
+
+
+class TestBindAddressAutoResolve:
+    """#1429 residual: VPs created without a dedicated bind IP run on
+    `bind_address=0.0.0.0`. The original fix's `_refresh_ip_encoding`
+    early-returned on 0.0.0.0, so the rewrite never armed and `net.info[].ip`
+    kept leaking the real printer IP. Now the bridge auto-resolves a host
+    interface in the printer's subnet and uses that as the VP IP."""
+
+    @pytest.mark.asyncio
+    async def test_rewrite_arms_via_auto_resolved_host_ip(self):
+        """When bind_address is 0.0.0.0, fall back to the host interface in
+        the target printer's subnet and rewrite to that IP."""
+        server = _make_server(bind_address="0.0.0.0")
+        bridge = _make_bridge(server)
+        with patch(
+            "backend.app.services.virtual_printer.mqtt_bridge._resolve_host_interface_for_target",
+            return_value=VP_IP,
+        ):
+            await bridge.start()
+
+            h2d_le = _ip_to_uint32_le(H2D_IP)
+            vp_le = _ip_to_uint32_le(VP_IP)
+            payload = json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "net": {"info": [{"ip": h2d_le, "mask": 0xFFFFFF}]},
+                    }
+                }
+            ).encode()
+            bridge._on_printer_raw(f"device/{H2D_SERIAL}/report", payload)
+            await asyncio.sleep(0.01)
+
+            cached = bridge.get_latest_print_state()
+            assert cached["net"]["info"][0]["ip"] == vp_le
+            assert bridge._vp_ip_uint32_le == vp_le
+
+            await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_rewrite_disabled_when_no_matching_host_interface(self):
+        """If no host interface shares a subnet with the printer, the bridge
+        cannot pick a sensible VP IP — leave encoding unarmed and let the
+        push through unrewritten (no crash, no wrong rewrite)."""
+        server = _make_server(bind_address="")
+        bridge = _make_bridge(server)
+        with patch(
+            "backend.app.services.virtual_printer.mqtt_bridge._resolve_host_interface_for_target",
+            return_value=None,
+        ):
+            await bridge.start()
+
+            h2d_le = _ip_to_uint32_le(H2D_IP)
+            payload = json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "net": {"info": [{"ip": h2d_le, "mask": 0xFFFFFF}]},
+                    }
+                }
+            ).encode()
+            bridge._on_printer_raw(f"device/{H2D_SERIAL}/report", payload)
+            await asyncio.sleep(0.01)
+
+            assert bridge._vp_ip_uint32_le is None
+            assert bridge._target_ip_uint32_le is None
+
+            await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_explicit_bind_ip_takes_precedence_over_auto_resolve(self):
+        """Auto-resolve only kicks in when bind_address is empty/0.0.0.0; an
+        explicitly-set bind IP must be used verbatim even if there's also a
+        same-subnet host interface."""
+        server = _make_server(bind_address=VP_IP)
+        bridge = _make_bridge(server)
+        # Auto-resolver would have returned a DIFFERENT IP — we must not use it.
+        with patch(
+            "backend.app.services.virtual_printer.mqtt_bridge._resolve_host_interface_for_target",
+            return_value="10.99.99.99",
+        ):
+            await bridge.start()
+            assert bridge._vp_ip_uint32_le == _ip_to_uint32_le(VP_IP)
+            await bridge.stop()
+
+    def test_resolve_helper_returns_none_for_unreachable_target(self):
+        """The helper itself must be defensive — if `find_interface_for_ip`
+        raises or returns None, we get None (no crash)."""
+        with patch(
+            "backend.app.services.network_utils.find_interface_for_ip",
+            return_value=None,
+        ):
+            assert _resolve_host_interface_for_target("203.0.113.1") is None

@@ -41,7 +41,7 @@ SPOOLBUDDY_SERVICE_USER="spoolbuddy"
 BAMBUDDY_SERVICE_USER="bambuddy"
 
 # Packages needed for SpoolBuddy hardware (NFC reader + scale)
-SYSTEM_PACKAGES="python3 python3-pip python3-venv python3-dev python3-spidev python3-libgpiod gpiod libgpiod-dev i2c-tools git"
+SYSTEM_PACKAGES="python3 python3-pip python3-venv python3-dev python3-spidev python3-libgpiod gpiod libgpiod-dev i2c-tools git plymouth-themes"
 
 # Python packages for SpoolBuddy daemon
 SPOOLBUDDY_PIP_PACKAGES="spidev gpiod smbus2 httpx"

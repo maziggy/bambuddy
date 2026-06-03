@@ -642,8 +642,20 @@ class VirtualPrinterFTPServer:
         self._ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
         self._ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
 
-        # Use standard TLS settings for compatibility
-        self._ssl_context.set_ciphers("HIGH:!aNULL:!MD5:!RC4")
+        # Keep the historical `HIGH:!aNULL:!MD5:!RC4` baseline so the cipher
+        # set stays a strict superset of what shipped before (the previous
+        # set offered ~58 extra suites — CCM, ARIA, CAMELLIA, DSS variants —
+        # that no Bambu slicer is known to pick, but the
+        # [[feedback_dont_remove_compat_pinning]] HARD RULE says don't
+        # narrow a compat surface without proof). The two explicit additions
+        # cover the #1610 case on hardened distros (Fedora / RHEL with
+        # `update-crypto-policies`, hardened Alpine builds) where the system
+        # policy strips the plain-RSA `AES256-GCM-SHA384` / `AES128-GCM-SHA256`
+        # suites from `HIGH` — without them present the slicer's FTPS
+        # ClientHello (which mimics the cipher set real Bambu printers offer)
+        # finds no overlap and the handshake aborts. Listing them explicitly
+        # survives any system policy that strips them from `HIGH`.
+        self._ssl_context.set_ciphers("HIGH:AES256-GCM-SHA384:AES128-GCM-SHA256:!aNULL:!MD5:!RC4")
 
         logger.info("FTP SSL context created with standard settings")
 

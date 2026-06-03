@@ -701,9 +701,13 @@ async def list_project_archives(
     archives = result.scalars().all()
 
     # Import the response converter from archives module
-    from backend.app.api.routes.archives import archive_to_response
+    from backend.app.api.routes.archives import _load_run_aggregates, archive_to_response
 
-    return [archive_to_response(a) for a in archives]
+    # Load run aggregates so multi-run archives' time/accuracy badge is
+    # suppressed consistently with the main archives list endpoint (#1608).
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
+
+    return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id)) for a in archives]
 
 
 @router.get("/{project_id}/queue")

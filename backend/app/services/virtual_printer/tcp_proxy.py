@@ -194,6 +194,13 @@ class TLSProxy:
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         # Don't require client certificates
         ctx.verify_mode = ssl.CERT_NONE
+        # Match real Bambu printer cipher behaviour on the slicer-facing side
+        # as well (the #620 fix only patched the printer-facing client context
+        # below). On hardened distros where OpenSSL `DEFAULT` strips the
+        # plain-RSA AES-GCM suites, the slicer's ClientHello has no overlap
+        # with our server's offered suites and the handshake fails before any
+        # data flows (#1610 audit).
+        ctx.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
         return ctx
 
     def _create_client_ssl_context(self) -> ssl.SSLContext:

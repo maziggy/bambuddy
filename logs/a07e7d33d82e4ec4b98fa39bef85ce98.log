@@ -1,0 +1,200 @@
+2026-06-03 11:51:55,679 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-06-03 11:51:56,015 INFO [uvicorn.access] [-] [IP]:38646 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-03 11:51:56,123 INFO [uvicorn.access] [-] [IP]:38670 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-03 11:51:56,154 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-06-03 11:51:56,154 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-03 11:51:56,154 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-03 11:53:01,346 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-06-03 11:53:01,644 INFO [uvicorn.access] [-] [IP]:41492 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-03 11:53:01,762 INFO [uvicorn.access] [-] [IP]:41434 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-03 11:53:01,799 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-06-03 11:53:01,799 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-03 11:53:01,799 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-03 11:53:04,371 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-06-03 11:53:04,371 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-06-03 11:53:05,794 INFO [backend.app.services.printer_manager] [-] Loaded 1 printer(s) awaiting plate-clear acknowledgment: [1]
+2026-06-03 11:53:05,798 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-06-03 11:53:06,634 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-06-03 11:53:06,634 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription. Disabling request topic for this printer.
+2026-06-03 11:53:06,813 INFO [backend.app.services.background_dispatch] [-] Background dispatch dispatcher started
+2026-06-03 11:53:06,813 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-06-03 11:53:06,813 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-06-03 11:53:06,817 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-06-03 11:53:06,820 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-06-03 11:53:06,820 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-06-03 11:53:06,821 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-06-03 11:53:06,824 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-06-03 11:53:06,824 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-06-03 11:53:06,824 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-06-03 11:53:06,824 INFO [backend.app.main] [-] AMS history recording started
+2026-06-03 11:53:06,824 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-06-03 11:53:06,824 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-06-03 11:53:06,824 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-06-03 11:53:06,825 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-06-03 11:53:06,825 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-06-03 11:53:06,825 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-06-03 11:53:06,836 INFO [root] [-] Virtual printer manager synced from database
+2026-06-03 11:53:08,545 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.08.00.00
+2026-06-03 11:53:09,159 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] State is FINISH but completion NOT triggered: prev=unknown, was_running=False, already_triggered=False, has_callback=True
+2026-06-03 11:53:09,161 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-06-03 11:53:09,170 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-03 11:53:09,170 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1 Mini)
+2026-06-03 11:53:11,812 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 177261 bytes
+2026-06-03 11:53:15,319 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=5)
+2026-06-03 11:53:15,331 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='')
+2026-06-03 11:53:16,088 INFO [uvicorn.access] [-] [IP]:39850 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-03 11:53:16,132 INFO [backend.app.services.camera] [0ea6653c] Found ffmpeg at: /usr/bin/ffmpeg
+2026-06-03 11:53:16,255 INFO [uvicorn.access] [-] [IP]:39866 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-03 11:53:16,273 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-06-03 11:53:16,273 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-03 11:53:16,274 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-03 11:53:17,891 INFO [backend.app.api.routes.cloud] [ccf46c4e] get_filament_info called with 1 IDs: ['GFG99']
+2026-06-03 11:53:18,150 INFO [uvicorn.access] [-] [IP]:39878 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-06-03 11:53:22,547 INFO [backend.app.services.bambu_mqtt] [c4a623b5] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:53:22,553 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=6, 0 profiles, expected=0.4
+2026-06-03 11:53:22,553 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:53:22,554 INFO [backend.app.services.bambu_mqtt] [c4a623b5] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:53:22,695 INFO [backend.app.services.bambu_mqtt] [261a1df2] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:53:22,704 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=7, 0 profiles, expected=0.4
+2026-06-03 11:53:22,704 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:53:22,705 INFO [backend.app.services.bambu_mqtt] [261a1df2] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:53:24,716 INFO [backend.app.services.bambu_mqtt] [1a948563] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:53:24,726 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=8, 0 profiles, expected=0.4
+2026-06-03 11:53:24,726 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:53:24,726 INFO [backend.app.services.bambu_mqtt] [1a948563] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:53:42,416 INFO [backend.app.services.bambu_mqtt] [e211ada4] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:53:42,423 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=9, 0 profiles, expected=0.4
+2026-06-03 11:53:42,423 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:53:42,424 INFO [backend.app.services.bambu_mqtt] [e211ada4] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:53:42,567 INFO [backend.app.services.bambu_mqtt] [a757fc09] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:53:42,576 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=10, 0 profiles, expected=0.4
+2026-06-03 11:53:42,576 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:53:42,576 INFO [backend.app.services.bambu_mqtt] [a757fc09] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:53:49,979 INFO [backend.app.services.bambu_mqtt] [d37ee829] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:53:49,988 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=11, 0 profiles, expected=0.4
+2026-06-03 11:53:49,988 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:53:49,988 INFO [backend.app.services.bambu_mqtt] [d37ee829] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:54:01,973 INFO [backend.app.services.virtual_printer.certificate] [4535a073] Using existing CA certificate (expires in 7298 days)
+2026-06-03 11:54:52,097 INFO [backend.app.services.bambu_mqtt] [fc93f374] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:54:52,105 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=12, 0 profiles, expected=0.4
+2026-06-03 11:54:52,105 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:54:52,105 INFO [backend.app.services.bambu_mqtt] [fc93f374] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:54:52,245 INFO [backend.app.services.bambu_mqtt] [39273dd1] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:54:52,255 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=13, 0 profiles, expected=0.4
+2026-06-03 11:54:52,255 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:54:52,256 INFO [backend.app.services.bambu_mqtt] [39273dd1] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:55:59,693 INFO [backend.app.api.routes.support] [fffed60e] Log level changed to DEBUG
+2026-06-03 11:55:59,694 INFO [backend.app.api.routes.bug_report] [fffed60e] Bug report: enabled debug logging
+2026-06-03 11:55:59,694 DEBUG [backend.app.services.bambu_mqtt] [fffed60e] [[SERIAL]] Requesting status update (pushall)
+2026-06-03 11:55:59,694 INFO [uvicorn.access] [-] [IP]:59862 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-06-03 11:56:00,315 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-06-03 11:56:00,315 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-06-03 11:56:00,315 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: auto_filament_cali.gcode
+2026-06-03 11:56:00,315 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '254', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 2, 'insert_flag': True, 'power_on_flag': False}
+2026-06-03 11:56:00,315 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 254
+2026-06-03 11:56:00,316 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-06-03 11:56:00,316 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-06-03 11:56:00,316 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:00,316 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-06-03 11:56:00,316 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-06-03 11:56:00,316 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-06-03 11:56:00,316 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-06-03 11:56:00,316 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887360, 'code': 65543, 'action': 0, 'timestamp': 1780497492}]
+2026-06-03 11:56:00,316 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-06-03 11:56:00,317 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -29dBm
+2026-06-03 11:56:00,317 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-06-03 11:56:00,317 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: auto_filament_cali.gcode
+2026-06-03 11:56:02,378 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:06,486 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:06,486 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-06-03 11:56:09,484 INFO [backend.app.services.bambu_mqtt] [ae1ef2a6] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:56:09,485 DEBUG [backend.app.services.bambu_mqtt] [ae1ef2a6] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.4", "sequence_id": "14"}}
+2026-06-03 11:56:09,493 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:09,493 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=14, 0 profiles, expected=0.4
+2026-06-03 11:56:09,494 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:56:09,494 INFO [backend.app.services.bambu_mqtt] [ae1ef2a6] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:56:12,519 INFO [backend.app.services.bambu_mqtt] [49b0185e] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:56:12,519 DEBUG [backend.app.services.bambu_mqtt] [49b0185e] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.4", "sequence_id": "15"}}
+2026-06-03 11:56:12,527 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:12,527 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=15, 0 profiles, expected=0.4
+2026-06-03 11:56:12,527 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:56:12,527 INFO [backend.app.services.bambu_mqtt] [49b0185e] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:56:12,619 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:12,619 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -28dBm
+2026-06-03 11:56:12,864 INFO [backend.app.services.bambu_mqtt] [d98f456b] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:56:12,864 DEBUG [backend.app.services.bambu_mqtt] [d98f456b] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.4", "sequence_id": "16"}}
+2026-06-03 11:56:12,872 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:12,872 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=16, 0 profiles, expected=0.4
+2026-06-03 11:56:12,872 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:56:12,872 INFO [backend.app.services.bambu_mqtt] [d98f456b] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:56:14,670 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:14,670 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-06-03 11:56:15,770 INFO [backend.app.services.bambu_mqtt] [2de3f15f] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.2 (attempt 1/3)
+2026-06-03 11:56:15,771 DEBUG [backend.app.services.bambu_mqtt] [2de3f15f] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.2", "sequence_id": "17"}}
+2026-06-03 11:56:15,779 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:15,779 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.2, seq_id=17, 0 profiles, expected=0.2
+2026-06-03 11:56:15,779 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.2
+2026-06-03 11:56:15,780 INFO [backend.app.services.bambu_mqtt] [2de3f15f] [[SERIAL]] Got 0 K-profiles for nozzle=0.2 on attempt 1
+2026-06-03 11:56:15,921 INFO [backend.app.services.bambu_mqtt] [fc024796] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.2 (attempt 1/3)
+2026-06-03 11:56:15,921 DEBUG [backend.app.services.bambu_mqtt] [fc024796] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.2", "sequence_id": "18"}}
+2026-06-03 11:56:15,929 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:15,929 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.2, seq_id=18, 0 profiles, expected=0.2
+2026-06-03 11:56:15,929 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.2
+2026-06-03 11:56:15,929 INFO [backend.app.services.bambu_mqtt] [fc024796] [[SERIAL]] Got 0 K-profiles for nozzle=0.2 on attempt 1
+2026-06-03 11:56:16,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:16,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -29dBm
+2026-06-03 11:56:16,973 INFO [backend.app.services.bambu_mqtt] [07e6471b] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:56:16,973 DEBUG [backend.app.services.bambu_mqtt] [07e6471b] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.4", "sequence_id": "19"}}
+2026-06-03 11:56:16,982 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:16,982 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=19, 0 profiles, expected=0.4
+2026-06-03 11:56:16,982 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:56:16,982 INFO [backend.app.services.bambu_mqtt] [07e6471b] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:56:17,123 INFO [backend.app.services.bambu_mqtt] [0940b0c1] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:56:17,123 DEBUG [backend.app.services.bambu_mqtt] [0940b0c1] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.4", "sequence_id": "20"}}
+2026-06-03 11:56:17,131 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:17,131 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=20, 0 profiles, expected=0.4
+2026-06-03 11:56:17,131 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:56:17,131 INFO [backend.app.services.bambu_mqtt] [0940b0c1] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:56:18,765 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:18,766 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-06-03 11:56:18,936 INFO [backend.app.services.bambu_mqtt] [afeb606f] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.6 (attempt 1/3)
+2026-06-03 11:56:18,936 DEBUG [backend.app.services.bambu_mqtt] [afeb606f] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.6", "sequence_id": "21"}}
+2026-06-03 11:56:18,944 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:18,944 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.6, seq_id=21, 0 profiles, expected=0.6
+2026-06-03 11:56:18,944 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.6
+2026-06-03 11:56:18,945 INFO [backend.app.services.bambu_mqtt] [afeb606f] [[SERIAL]] Got 0 K-profiles for nozzle=0.6 on attempt 1
+2026-06-03 11:56:19,087 INFO [backend.app.services.bambu_mqtt] [4711f3a3] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.6 (attempt 1/3)
+2026-06-03 11:56:19,087 DEBUG [backend.app.services.bambu_mqtt] [4711f3a3] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.6", "sequence_id": "22"}}
+2026-06-03 11:56:19,097 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:19,097 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.6, seq_id=22, 0 profiles, expected=0.6
+2026-06-03 11:56:19,097 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.6
+2026-06-03 11:56:19,097 INFO [backend.app.services.bambu_mqtt] [4711f3a3] [[SERIAL]] Got 0 K-profiles for nozzle=0.6 on attempt 1
+2026-06-03 11:56:19,900 INFO [backend.app.services.bambu_mqtt] [445c7f27] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.8 (attempt 1/3)
+2026-06-03 11:56:19,900 DEBUG [backend.app.services.bambu_mqtt] [445c7f27] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.8", "sequence_id": "23"}}
+2026-06-03 11:56:19,910 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:19,910 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.8, seq_id=23, 0 profiles, expected=0.8
+2026-06-03 11:56:19,910 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.8
+2026-06-03 11:56:19,910 INFO [backend.app.services.bambu_mqtt] [445c7f27] [[SERIAL]] Got 0 K-profiles for nozzle=0.8 on attempt 1
+2026-06-03 11:56:20,050 INFO [backend.app.services.bambu_mqtt] [581e16c8] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.8 (attempt 1/3)
+2026-06-03 11:56:20,050 DEBUG [backend.app.services.bambu_mqtt] [581e16c8] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.8", "sequence_id": "24"}}
+2026-06-03 11:56:20,068 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:20,068 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.8, seq_id=24, 0 profiles, expected=0.8
+2026-06-03 11:56:20,068 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.8
+2026-06-03 11:56:20,069 INFO [backend.app.services.bambu_mqtt] [581e16c8] [[SERIAL]] Got 0 K-profiles for nozzle=0.8 on attempt 1
+2026-06-03 11:56:22,123 INFO [backend.app.services.bambu_mqtt] [d9df50ba] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:56:22,123 DEBUG [backend.app.services.bambu_mqtt] [d9df50ba] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.4", "sequence_id": "25"}}
+2026-06-03 11:56:22,142 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:22,142 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=25, 0 profiles, expected=0.4
+2026-06-03 11:56:22,142 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:56:22,143 INFO [backend.app.services.bambu_mqtt] [d9df50ba] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:56:22,273 INFO [backend.app.services.bambu_mqtt] [16f01ff8] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-03 11:56:22,273 DEBUG [backend.app.services.bambu_mqtt] [16f01ff8] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.4", "sequence_id": "26"}}
+2026-06-03 11:56:22,282 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-06-03 11:56:22,282 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=26, 0 profiles, expected=0.4
+2026-06-03 11:56:22,282 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-03 11:56:22,282 INFO [backend.app.services.bambu_mqtt] [16f01ff8] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-03 11:56:22,852 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:24,905 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:26,950 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:31,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-03 11:56:31,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -29dBm

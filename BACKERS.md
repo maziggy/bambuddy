@@ -32,6 +32,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@sixfootseven](https://github.com/sixfootseven)
 - [@MethodicalMartian](https://github.com/MethodicalMartian)
 - [@jmclaren7](https://github.com/jmclaren7)
+- [@brianharwell](https://github.com/brianharwell)
 
 ## Backers ($5/mo+)
 
@@ -45,6 +46,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@agntcoopersea](https://github.com/agntcoopersea)
 - [@PJMCL1618033](https://github.com/PJMCL1618033
 - [@mgf99](https://github.com/mgf99)
+- [@Geoff-S](https://github.com/Geoff-S)
 
 ---
 

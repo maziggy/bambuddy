@@ -2,13 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut } from 'lucide-react';
+import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut, Stethoscope } from 'lucide-react';
 import { api, getAuthToken, getStreamToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useStreamTokenSync } from '../hooks/useCameraStreamToken';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
+import { CameraDiagnoseModal } from '../components/CameraDiagnoseModal';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const INITIAL_RECONNECT_DELAY = 2000; // 2 seconds
@@ -40,6 +41,7 @@ export function CameraPage() {
 
   const [streamMode, setStreamMode] = useState<'stream' | 'snapshot'>('stream');
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
+  const [showDiagnoseModal, setShowDiagnoseModal] = useState(false);
   const [streamError, setStreamError] = useState(false);
   const [streamLoading, setStreamLoading] = useState(true);
   const [imageKey, setImageKey] = useState(Date.now());
@@ -680,6 +682,13 @@ export function CameraPage() {
             <RefreshCw className={`w-4 h-4 text-bambu-gray ${isDisabled ? 'animate-spin' : ''}`} />
           </button>
           <button
+            onClick={() => setShowDiagnoseModal(true)}
+            className="p-1.5 hover:bg-bambu-dark-tertiary rounded"
+            title={t('camera.diagnose.button')}
+          >
+            <Stethoscope className="w-4 h-4 text-bambu-gray" />
+          </button>
+          <button
             onClick={toggleFullscreen}
             className="p-1.5 hover:bg-bambu-dark-tertiary rounded"
             title={isFullscreen ? t('camera.exitFullscreen') : t('camera.fullscreen')}
@@ -741,12 +750,20 @@ export function CameraPage() {
                 <p className="text-xs text-bambu-gray mb-4 max-w-md">
                   {t('camera.cameraUnavailableDesc')}
                 </p>
-                <button
-                  onClick={refresh}
-                  className="px-4 py-2 bg-bambu-green text-white rounded hover:bg-bambu-green/80 transition-colors"
-                >
-                  {t('camera.retry')}
-                </button>
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={refresh}
+                    className="px-4 py-2 bg-bambu-green text-white rounded hover:bg-bambu-green/80 transition-colors"
+                  >
+                    {t('camera.retry')}
+                  </button>
+                  <button
+                    onClick={() => setShowDiagnoseModal(true)}
+                    className="px-4 py-2 bg-bambu-dark border border-bambu-dark-tertiary text-bambu-gray hover:text-white rounded transition-colors"
+                  >
+                    {t('camera.diagnose.button')}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -802,6 +819,14 @@ export function CameraPage() {
         isOpen={showSkipObjectsModal}
         onClose={() => setShowSkipObjectsModal(false)}
       />
+      {/* Camera diagnostic modal — stethoscope icon + error-state Diagnose button (#1395) */}
+      {showDiagnoseModal && (
+        <CameraDiagnoseModal
+          printerId={id}
+          printerName={printer?.name || null}
+          onClose={() => setShowDiagnoseModal(false)}
+        />
+      )}
     </div>
   );
 }

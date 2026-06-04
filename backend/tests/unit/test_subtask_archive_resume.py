@@ -10,7 +10,12 @@ for a print that actually ran 13h08m.
 The fix stores `subtask_id` (MQTT-provided job identifier) on the archive row.
 On print-start detection, the handler first tries to match an existing
 archive by subtask_id regardless of age — same id ⇒ same print ⇒ resume.
-Only unmatched prints fall through to the legacy 4h staleness heuristic.
+Only unmatched prints fall through to the name-based fallback.
+
+#1485 follow-up: the name-based fallback no longer cancels on a blind 4h
+age cutoff (which duplicated the archive of any genuinely long print on
+every restart). It now decides resume-vs-stale from the printer's current
+progress — see TestStaleVsResume.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -183,3 +188,48 @@ class TestSubtaskIdResume:
         )
         found = result.scalar_one_or_none()
         assert found is None
+
+
+def _looks_stale(live_progress: float | None, archive_age_seconds: float) -> bool:
+    """Mirrors the name-fallback stale decision in main.on_print_start (#1485).
+
+    A name-matched 'printing' archive is treated as a stale leftover ONLY when
+    the printer clearly shows a different, freshly-started print: near-0%
+    progress on an archive far too old to still be at 0%. Real progress, or
+    unknown progress (printer not connected), always resumes — the old blind
+    4h age cutoff cancelled the live archive of every long print on restart.
+    """
+    return live_progress is not None and live_progress < 1.0 and archive_age_seconds > 2 * 60 * 60
+
+
+class TestStaleVsResume:
+    """The progress-aware replacement for the 4h staleness heuristic (#1485)."""
+
+    def test_long_print_in_progress_resumes_not_stale(self):
+        """The reporter's case: a ~10h print, backend restarts, printer is
+        mid-print at 60%. The old 4h cutoff cancelled + duplicated it; it
+        must now resume regardless of age."""
+        assert _looks_stale(60.0, archive_age_seconds=10 * 3600) is False
+
+    def test_barely_started_long_print_resumes(self):
+        """A genuine print a few percent in is still the same print."""
+        assert _looks_stale(3.0, archive_age_seconds=5 * 3600) is False
+
+    def test_fresh_print_with_old_archive_is_stale(self):
+        """Printer reports a just-started print (~0%) but the matched archive
+        is hours old — that archive is a dead leftover from a previous run."""
+        assert _looks_stale(0.0, archive_age_seconds=9 * 3600) is True
+
+    def test_fresh_print_with_young_archive_resumes(self):
+        """~0% progress on a young archive is just the same print still
+        heating / leveling — not stale."""
+        assert _looks_stale(0.0, archive_age_seconds=20 * 60) is False
+
+    def test_unknown_progress_never_cancels(self):
+        """Printer not connected / progress unknown: resuming is the safe
+        default — never cancel + duplicate when we can't tell."""
+        assert _looks_stale(None, archive_age_seconds=10 * 3600) is False
+
+    def test_sub_one_percent_old_archive_is_stale(self):
+        """The boundary: just under 1% past the 2h mark counts as stale."""
+        assert _looks_stale(0.5, archive_age_seconds=3 * 3600) is True

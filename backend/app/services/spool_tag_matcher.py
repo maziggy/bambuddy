@@ -100,7 +100,15 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     rgba = tray_color if tray_color else None
     color_name = None
 
-    if rgba and len(rgba) >= 6:
+    # Transparent filament (#1545): the AMS reports alpha=00 for clear spools.
+    # Skip the catalog lookup — the catalog only stores RGB so 000000 would
+    # resolve to "Black" (or whatever else lives at that RGB), which is exactly
+    # the bug the cream rewrite in parse_ams_tray used to paper over. Store
+    # "Clear" directly and let the frontend's resolveSpoolColorName +
+    # hexToColorName render the swatch as a checkerboard.
+    if rgba and len(rgba) == 8 and rgba[6:8].lower() == "00":
+        color_name = "Clear"
+    elif rgba and len(rgba) >= 6:
         hex_prefix = f"#{rgba[:6].upper()}"
         cat_query = (
             select(ColorCatalogEntry)

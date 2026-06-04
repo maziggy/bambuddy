@@ -218,9 +218,27 @@ class TestModuleImports:
         """Verify all Python modules can be imported without errors.
 
         This catches syntax errors and missing dependencies.
+
+        IMPORTANT: We must NOT ``del sys.modules[name]`` to force a fresh
+        import here. ``backend.app.main`` is a stateful module — re-importing
+        it builds NEW module-level dicts (_timelapse_baselines,
+        _expected_prints, _active_prints, …) and re-runs ``root_logger.
+        addHandler(console_handler)``. Any test that already bound those
+        names via ``from backend.app.main import _timelapse_baselines`` now
+        holds a stale reference, while production code resolves the symbol
+        through the new module instance — they're two different dicts. CI
+        under -n 2 puts test_code_quality.py on the same worker as
+        test_print_start_assigns_printer_id_to_vp_archive.py and
+        test_timelapse_baseline_restart_recovery.py, and those tests see
+        their mock_archive un-mutated / their baseline dict empty even
+        though production logged the mutations went through. Local -n 30
+        spreads the tests across workers and the collision never happens.
+
+        ``importlib.import_module`` already covers the "is this importable"
+        check — it returns the cached module if cached, or runs the import
+        machinery if not. Either way, an import-time error surfaces here.
         """
         import importlib
-        import sys
 
         # Modules to test importing
         modules = [
@@ -235,9 +253,6 @@ class TestModuleImports:
         errors = []
         for module_name in modules:
             try:
-                # Remove from cache first to ensure fresh import
-                if module_name in sys.modules:
-                    del sys.modules[module_name]
                 importlib.import_module(module_name)
             except Exception as e:
                 errors.append(f"{module_name}: {type(e).__name__}: {e}")

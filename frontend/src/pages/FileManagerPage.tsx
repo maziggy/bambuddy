@@ -220,6 +220,18 @@ function ExternalFolderModal({ onClose, onSave, isLoading, t }: ExternalFolderMo
   );
 }
 
+// FAT32/exFAT-illegal chars rejected by Bambu Studio (#1540). Mirrors the
+// backend validator in backend/app/utils/filename.py — keep in sync.
+const INVALID_FILENAME_CHARS = '<>:"/\\|?*';
+
+function findInvalidFilenameChar(name: string): string | null {
+  for (const ch of name) {
+    if (INVALID_FILENAME_CHARS.includes(ch)) return ch;
+    if (ch.charCodeAt(0) < 0x20) return ch;
+  }
+  return null;
+}
+
 // Rename Modal
 interface RenameModalProps {
   type: 'file' | 'folder';
@@ -237,8 +249,14 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
   const baseName = type === 'file' && fileExtension ? currentName.slice(0, -fileExtension.length) : currentName;
   const [name, setName] = useState(baseName);
 
+  const invalidChar = type === 'file' ? findInvalidFilenameChar(name) : null;
+  const filenameError = invalidChar
+    ? t('fileManager.invalidFilenameChar', { char: invalidChar })
+    : null;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (filenameError) return;
     const fullName = type === 'file' ? name.trim() + fileExtension : name.trim();
     if (name.trim() && fullName !== currentName) {
       onSave(fullName);
@@ -256,7 +274,7 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
             <label className="block text-sm font-medium text-white mb-1">
               {t('common.name')}
             </label>
-            <div className="flex items-center bg-bambu-dark border border-bambu-dark-tertiary rounded focus-within:border-bambu-green">
+            <div className={`flex items-center bg-bambu-dark border rounded focus-within:border-bambu-green ${filenameError ? 'border-red-500' : 'border-bambu-dark-tertiary'}`}>
               <input
                 type="text"
                 value={name}
@@ -269,12 +287,15 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
                 <span className="pr-3 text-bambu-gray text-sm select-none whitespace-nowrap">{fileExtension}</span>
               )}
             </div>
+            {filenameError && (
+              <p className="mt-1 text-xs text-red-400">{filenameError}</p>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={!name.trim() || name.trim() === baseName || isLoading}>
+            <Button type="submit" disabled={!name.trim() || name.trim() === baseName || !!filenameError || isLoading}>
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.rename')}
             </Button>
           </div>
@@ -742,7 +763,9 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
         {/* File type badge */}
         <div className={`absolute top-2 right-2 text-xs px-1.5 py-0.5 rounded font-medium ${
           file.file_type === '3mf' ? 'bg-bambu-green/90 text-white'
-          : file.file_type === 'gcode' ? 'bg-blue-500/90 text-white'
+          // Sliced output — share the gcode blue so users see at a glance
+          // that the file is already sliced and ready to print (#1543).
+          : file.file_type === 'gcode' || file.file_type === 'gcode.3mf' ? 'bg-blue-500/90 text-white'
           : file.file_type === 'stl' ? 'bg-purple-500/90 text-white'
           : 'bg-bambu-gray/90 text-white'
         }`}>
@@ -834,7 +857,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('slice.action')}
                 </button>
               )}
-              {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
+              {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl' || file.file_type === 'gcode.3mf') && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
                     hasPermission('library:read') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
@@ -1049,7 +1072,10 @@ export function FileManagerPage() {
 
   const { data: files, isLoading: filesLoading } = useQuery({
     queryKey: ['library-files', selectedFolderId],
-    queryFn: () => api.getLibraryFiles(selectedFolderId, selectedFolderId === null),
+    // "All Files" (selectedFolderId === null) lists every file across folders,
+    // so include_root must be false — true would scope the result to files at
+    // the library root only and hide everything nested in subfolders (#1499).
+    queryFn: () => api.getLibraryFiles(selectedFolderId, false),
   });
 
   const { data: stats } = useQuery({
@@ -1998,9 +2024,16 @@ export function FileManagerPage() {
             </div>
           ) : (
             <div className="flex-1 lg:overflow-y-auto">
-              <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-hidden">
-                {/* List header - hidden on mobile, show simplified on small screens */}
-                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
+              {/* The wrapper has overflow-x-auto so a narrow viewport scrolls
+                  horizontally instead of clipping the actions column off the
+                  right edge. The previous `overflow-hidden` was there for the
+                  rounded corners but also swallowed any content the actions
+                  column couldn't fit (#1325 follow-up reported in chat). */}
+              <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-x-auto">
+                {/* List header - hidden on mobile, show simplified on small screens.
+                    The trailing column is `min-content` so it sizes to the widest
+                    action-icon strip across all rows (sliced 3MF = 7 icons ~220px). */}
+                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_min-content]' : 'grid-cols-[auto_1fr_100px_100px_100px_min-content]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
                   {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
@@ -2013,7 +2046,7 @@ export function FileManagerPage() {
                 {filteredAndSortedFiles.map((file) => (
                   <div
                     key={file.id}
-                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_min-content]' : 'grid-cols-[auto_1fr_100px_100px_100px_min-content]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}
@@ -2352,6 +2385,17 @@ export function FileManagerPage() {
           title={viewerFile.print_name || viewerFile.filename}
           fileType={viewerFile.file_type}
           onClose={() => setViewerFile(null)}
+          onSliceWithBambuddy={
+            // Only offer in-app slicing on files the SliceModal can actually
+            // handle (matches the file-row Cog visibility check at :2127).
+            isSliceableFilename(viewerFile.filename) && hasPermission('library:upload')
+              ? () => {
+                  const f = viewerFile;
+                  setViewerFile(null);
+                  setSliceFile(f);
+                }
+              : undefined
+          }
         />
       )}
 

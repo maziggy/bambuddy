@@ -125,6 +125,47 @@ describe('Layout', () => {
         expect(buttons.length).toBeGreaterThan(0);
       });
     });
+
+    it('cycles through dark → light → system → dark', async () => {
+      localStorage.setItem('theme-mode', 'dark');
+      render(<Layout />);
+
+      await waitFor(() => {
+        // In dark mode, title should say "Switch to light mode"
+        const btn = document.querySelector('button[title="Switch to light mode"]');
+        expect(btn).toBeInTheDocument();
+      });
+
+      // Click to go from dark → light
+      const lightBtn = document.querySelector('button[title="Switch to light mode"]')!;
+      lightBtn.click();
+
+      await waitFor(() => {
+        // In light mode, title should say "Switch to system mode"
+        const btn = document.querySelector('button[title="Switch to system mode"]');
+        expect(btn).toBeInTheDocument();
+      });
+
+      // Click to go from light → system
+      const systemBtn = document.querySelector('button[title="Switch to system mode"]')!;
+      systemBtn.click();
+
+      await waitFor(() => {
+        // In system mode, title should say "Switch to dark mode"
+        const btn = document.querySelector('button[title="Switch to dark mode"]');
+        expect(btn).toBeInTheDocument();
+      });
+
+      // Click to go from system → dark
+      const darkBtn = document.querySelector('button[title="Switch to dark mode"]')!;
+      darkBtn.click();
+
+      await waitFor(() => {
+        // Back to dark mode
+        const btn = document.querySelector('button[title="Switch to light mode"]');
+        expect(btn).toBeInTheDocument();
+      });
+    });
   });
 
   describe('plate detection alert modal', () => {

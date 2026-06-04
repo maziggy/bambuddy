@@ -117,9 +117,9 @@ async def set_kprofile(
     # device.extruder.info beats serial-prefix heuristics — H2S shares prefix
     # "094" with H2D but is single-nozzle (#1386). Model name is the fallback
     # for the brief window after connect before push data arrives.
-    is_dual_nozzle = client._is_dual_nozzle or (
-        printer.model and printer.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "X2D")
-    )
+    from backend.app.utils.printer_models import is_dual_nozzle_model
+
+    is_dual_nozzle = client._is_dual_nozzle or is_dual_nozzle_model(printer.model)
 
     if is_edit and is_dual_nozzle:
         # Dual-nozzle in-place edit: use cali_idx with slot_id=0 and empty setting_id

@@ -683,6 +683,8 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
         logger.error("ffmpeg not found - required for RTSP streaming")
         return
 
+    from backend.app.services.camera import rtsp_socket_timeout_flag
+
     # If the URL uses rtsps://, set up a TLS proxy so ffmpeg uses plain rtsp://
     proxy_server = None
     effective_url = url
@@ -715,7 +717,9 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
         "tcp",
         "-rtsp_flags",
         "prefer_tcp",
-        "-timeout",
+        # Socket I/O timeout name varies by ffmpeg version (#1504); see
+        # `rtsp_socket_timeout_flag()` in services.camera.
+        f"-{rtsp_socket_timeout_flag()}",
         "30000000",
         "-buffer_size",
         "1024000",

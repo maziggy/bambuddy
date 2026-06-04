@@ -31,6 +31,15 @@ class UnifiedPreset(BaseModel):
     the multi-color flow by matching against the source 3MF's per-slot type
     and color. Populated when the underlying preset JSON exposes them; left
     as ``None`` on bundled profiles where colour is a runtime spool attribute.
+
+    ``compatible_printers`` is the slicer's own list of printer-preset names a
+    process / filament preset declares itself valid for. Populated for the
+    local tier (stored at import time); left ``None`` for cloud (no per-preset
+    detail is fetched — rate limits) and standard (the sidecar's bundled
+    listing doesn't expose it). The SliceModal uses it to filter the
+    process / filament dropdowns by the selected printer (#1325); when it is
+    ``None`` the modal falls back to the user's uploaded Slicer Bundles, which
+    map each printer to the presets it ships.
     """
 
     id: str
@@ -38,6 +47,7 @@ class UnifiedPreset(BaseModel):
     source: Literal["cloud", "local", "standard"]
     filament_type: str | None = None
     filament_colour: str | None = None
+    compatible_printers: list[str] | None = None
 
 
 class UnifiedPresetsBySlot(BaseModel):

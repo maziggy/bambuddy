@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Loader2,
   Trash2,
+  Activity,
   Cpu,
   HardDrive,
   Thermometer,
@@ -215,6 +216,20 @@ function DeviceCard({ device, onUnregister, isDeleting }: DeviceCardProps) {
                   <div>
                     <div className="text-bambu-gray">{t('settings.spoolbuddy.cpuTemp')}</div>
                     <div className="text-white">{stats.cpu_temp_c.toFixed(1)}°C</div>
+                  </div>
+                </div>
+              )}
+              {stats.load_avg && stats.load_avg.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-bambu-gray" />
+                  <div>
+                    <div className="text-bambu-gray">{t('settings.spoolbuddy.cpuLoad')}</div>
+                    <div className="text-white">
+                      {stats.load_avg[0].toFixed(2)}
+                      {stats.cpu_count
+                        ? ` / ${stats.cpu_count} (${Math.round((stats.load_avg[0] / stats.cpu_count) * 100)}%)`
+                        : ''}
+                    </div>
                   </div>
                 </div>
               )}

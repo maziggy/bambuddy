@@ -8,6 +8,7 @@ from backend.app.utils.printer_models import (
     STEEL_ROD_MODELS,
     get_rod_type,
     has_ethernet,
+    is_dual_nozzle_model,
     normalize_printer_model,
     normalize_printer_model_id,
 )
@@ -104,3 +105,28 @@ class TestX2DModel:
         assert "N6" not in CARBON_ROD_MODELS
         assert "X2D" in STEEL_ROD_MODELS
         assert "N6" in STEEL_ROD_MODELS
+
+
+class TestDualNozzleModel:
+    """is_dual_nozzle_model — the single source of truth for nozzle class,
+    consumed by start_print, the K-profile routes, and the re-slice guard."""
+
+    def test_h2d_and_pro_are_dual(self):
+        # Takes a normalized model code (like has_ethernet) — "H2D Pro" with a
+        # space is accepted; full "Bambu Lab …" names are normalized by callers.
+        assert is_dual_nozzle_model("H2D") is True
+        assert is_dual_nozzle_model("H2D Pro") is True
+        assert is_dual_nozzle_model("H2DPRO") is True
+
+    def test_internal_codes_are_dual(self):
+        assert is_dual_nozzle_model("O1D") is True  # H2D
+        assert is_dual_nozzle_model("O1E") is True  # H2D Pro
+
+    def test_single_nozzle_models_are_not_dual(self):
+        # H2S is in the H2 family but single-nozzle (#1386) — must be False.
+        for model in ("X1C", "X1E", "P1S", "P1P", "A1", "A1 Mini", "P2S", "H2S"):
+            assert is_dual_nozzle_model(model) is False, model
+
+    def test_none_and_empty_are_not_dual(self):
+        assert is_dual_nozzle_model(None) is False
+        assert is_dual_nozzle_model("") is False

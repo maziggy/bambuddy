@@ -4,6 +4,7 @@ import { Check, RefreshCw, AlertTriangle, X } from 'lucide-react';
 import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
 import { spoolbuddyApi } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
+import { spoolColorString } from '../../utils/colors';
 
 // Storage key for default core weight (shared with SpoolInfoCard)
 const DEFAULT_CORE_WEIGHT_KEY = 'spoolbuddy-default-core-weight';
@@ -134,7 +135,7 @@ interface KnownSpoolViewProps {
 
 function KnownSpoolView({ spool, scaleWeight, weightStable, syncing, synced, onSyncWeight, onAssignToAms, onClose }: KnownSpoolViewProps) {
   const { t } = useTranslation();
-  const colorHex = spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#808080';
+  const colorHex = spoolColorString(spool.rgba);
 
   const coreWeight = (spool.core_weight && spool.core_weight > 0)
     ? spool.core_weight
@@ -187,9 +188,12 @@ function KnownSpoolView({ spool, scaleWeight, weightStable, syncing, synced, onS
         </div>
 
         <div className="flex-1 min-w-0 pt-1">
-          <h3 className="text-lg font-semibold text-zinc-100">
-            {spool.color_name || 'Unknown color'}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-zinc-100">
+              {spool.color_name || 'Unknown color'}
+            </h3>
+            <span className="text-xs font-mono text-zinc-500 shrink-0">#{spool.id}</span>
+          </div>
           <p className="text-sm text-zinc-400">
             {spool.brand} &bull; {spool.material}
             {spool.subtype && ` ${spool.subtype}`}

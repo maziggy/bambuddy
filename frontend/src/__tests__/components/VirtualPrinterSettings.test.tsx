@@ -42,14 +42,14 @@ import { virtualPrinterApi } from '../../api/client';
 const createMockSettings = (overrides = {}) => ({
   enabled: false,
   access_code_set: false,
-  mode: 'immediate' as const,
+  mode: 'archive' as const,
   model: 'BL-P001',
   target_printer_id: null as number | null,
   remote_interface_ip: null as string | null,
   status: {
     enabled: false,
     running: false,
-    mode: 'immediate',
+    mode: 'archive',
     name: 'Bambuddy',
     serial: '00M00A391800001',
     model: 'BL-P001',
@@ -155,7 +155,7 @@ describe('VirtualPrinterSettings', () => {
           status: {
             enabled: true,
             running: true,
-            mode: 'immediate',
+            mode: 'archive',
             name: 'Bambuddy',
             serial: '00M00A391800001',
             model: 'BL-P001',
@@ -304,16 +304,33 @@ describe('VirtualPrinterSettings', () => {
       });
     });
 
-    it('highlights current mode (legacy queue maps to review)', async () => {
+    it('highlights current mode (legacy immediate maps to archive button)', async () => {
+      // Pre-#1429 the wire value was `immediate` but the UI button was
+      // labeled "Archive". Backend migration rewrites stored rows, but a
+      // stale-cached settings payload may still carry the legacy value —
+      // the component normalises it client-side so the right button lights up.
       vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
-        createMockSettings({ mode: 'queue' })
+        createMockSettings({ mode: 'immediate' })
       );
 
       render(<VirtualPrinterSettings />);
 
       await waitFor(() => {
-        const reviewButton = screen.getByText('Review').closest('button');
-        expect(reviewButton?.className).toContain('border-bambu-green');
+        const archiveButton = screen.getByText('Archive').closest('button');
+        expect(archiveButton?.className).toContain('border-bambu-green');
+      });
+    });
+
+    it('highlights current mode (legacy print_queue maps to queue button)', async () => {
+      vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
+        createMockSettings({ mode: 'print_queue' })
+      );
+
+      render(<VirtualPrinterSettings />);
+
+      await waitFor(() => {
+        const queueButton = screen.getByText('Queue').closest('button');
+        expect(queueButton?.className).toContain('border-bambu-green');
       });
     });
 
@@ -339,10 +356,10 @@ describe('VirtualPrinterSettings', () => {
       });
     });
 
-    it('changes mode to print_queue on click', async () => {
+    it('changes mode to queue on click', async () => {
       const user = userEvent.setup();
       vi.mocked(virtualPrinterApi.updateSettings).mockResolvedValue(
-        createMockSettings({ mode: 'print_queue' })
+        createMockSettings({ mode: 'queue' })
       );
 
       render(<VirtualPrinterSettings />);
@@ -357,7 +374,7 @@ describe('VirtualPrinterSettings', () => {
       }
 
       await waitFor(() => {
-        expect(virtualPrinterApi.updateSettings).toHaveBeenCalledWith({ mode: 'print_queue' });
+        expect(virtualPrinterApi.updateSettings).toHaveBeenCalledWith({ mode: 'queue' });
       });
     });
   });
@@ -576,7 +593,7 @@ describe('VirtualPrinterSettings', () => {
   describe('network interface override', () => {
     it('shows interface dropdown when enabled in immediate mode', async () => {
       vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
-        createMockSettings({ enabled: true, mode: 'immediate' })
+        createMockSettings({ enabled: true, mode: 'archive' })
       );
 
       render(<VirtualPrinterSettings />);
@@ -600,7 +617,7 @@ describe('VirtualPrinterSettings', () => {
 
     it('shows interface dropdown when enabled in print_queue mode', async () => {
       vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
-        createMockSettings({ enabled: true, mode: 'print_queue' })
+        createMockSettings({ enabled: true, mode: 'queue' })
       );
 
       render(<VirtualPrinterSettings />);
@@ -624,7 +641,7 @@ describe('VirtualPrinterSettings', () => {
 
     it('hides interface dropdown when disabled', async () => {
       vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
-        createMockSettings({ enabled: false, mode: 'immediate' })
+        createMockSettings({ enabled: false, mode: 'archive' })
       );
 
       render(<VirtualPrinterSettings />);
@@ -638,7 +655,7 @@ describe('VirtualPrinterSettings', () => {
 
     it('shows configured status when interface is set', async () => {
       vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
-        createMockSettings({ enabled: true, mode: 'immediate', remote_interface_ip: '10.0.0.50' })
+        createMockSettings({ enabled: true, mode: 'archive', remote_interface_ip: '10.0.0.50' })
       );
 
       render(<VirtualPrinterSettings />);
@@ -650,7 +667,7 @@ describe('VirtualPrinterSettings', () => {
 
     it('shows optional hint when no interface is set', async () => {
       vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
-        createMockSettings({ enabled: true, mode: 'immediate', remote_interface_ip: '' })
+        createMockSettings({ enabled: true, mode: 'archive', remote_interface_ip: '' })
       );
 
       render(<VirtualPrinterSettings />);

@@ -32,6 +32,7 @@ from backend.app.schemas.print_queue import (
     PrintQueueItemUpdate,
     PrintQueueReorder,
 )
+from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
 from backend.app.utils.threemf_tools import extract_filament_usage_from_3mf
@@ -196,6 +197,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "require_previous_success": item.require_previous_success,
         "auto_off_after": item.auto_off_after,
         "manual_start": item.manual_start,
+        "filament_short": bool(item.filament_short),
         "ams_mapping": ams_mapping_parsed,
         "plate_id": item.plate_id,
         "bed_levelling": item.bed_levelling,
@@ -399,6 +401,15 @@ async def add_to_queue(
         library_file = result.scalar_one_or_none()
         if not library_file:
             raise HTTPException(400, "Library file not found")
+        # Bambu SD card is FAT32/exFAT — illegal filename chars would 553 at
+        # FTP upload time (#1540). Reject at queue time so the user gets the
+        # actionable error before waiting in queue.
+        from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
+
+        try:
+            validate_print_filename(library_file.filename)
+        except InvalidFilenameError as e:
+            raise HTTPException(400, str(e)) from e
 
     # Extract filament types for model-based assignment (used by scheduler for validation)
     required_filament_types = None
@@ -1028,19 +1039,25 @@ async def stop_queue_item(
 @router.post("/{item_id}/start")
 async def start_queue_item(
     item_id: int,
+    skip_filament_check: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
 ):
     """Manually start a staged (manual_start) queue item.
 
-    This clears the manual_start flag so the scheduler will pick it up,
-    or starts immediately if the printer is ready.
+    Clears the manual_start flag so the scheduler picks it up. When
+    ``skip_filament_check`` is false (the default) the live filament
+    deficit (#1496) is checked first — if the assigned spool can't satisfy
+    a slot's required grams, the route returns ``409`` with the deficit
+    payload so the caller can show a confirm dialog and retry with
+    ``skip_filament_check=true``.
     """
     result = await db.execute(
         select(PrintQueueItem)
         .options(
             selectinload(PrintQueueItem.archive),
             selectinload(PrintQueueItem.printer),
+            selectinload(PrintQueueItem.library_file),
             selectinload(PrintQueueItem.batch),
         )
         .where(PrintQueueItem.id == item_id)
@@ -1052,10 +1069,29 @@ async def start_queue_item(
     if item.status != "pending":
         raise HTTPException(400, f"Can only start pending items, current status: '{item.status}'")
 
-    # Clear manual_start flag so scheduler picks it up
+    # Live deficit check — re-evaluated against current spool state, so a
+    # spool swap between scheduler flagging and the user clicking ▶ clears
+    # the block automatically.
+    if not skip_filament_check:
+        deficit = await compute_deficit_for_queue_item(db, item)
+        if deficit:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "insufficient_filament",
+                    "deficit": [d.to_dict() for d in deficit],
+                },
+            )
+
+    # Print Anyway / no deficit: clear the flags and let the scheduler dispatch.
     item.manual_start = False
+    item.filament_short = False
     await db.commit()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 
-    logger.info("Manually started queue item %s (cleared manual_start flag)", item_id)
+    logger.info(
+        "Manually started queue item %s (cleared manual_start; skip_filament_check=%s)",
+        item_id,
+        skip_filament_check,
+    )
     return _enrich_response(item)

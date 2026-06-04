@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
+import { api } from '../api/client';
 
 interface WebSocketMessage {
   type: string;
@@ -64,13 +65,34 @@ export function useWebSocket() {
     processNext();
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
 
+    // GHSA-r2qv follow-up: when auth is enabled, /ws now requires a token
+    // minted by POST /api/v1/auth/ws-token. We use the shared ``api.request``
+    // helper (via ``api.getWebSocketToken``) so the JWT Authorization header
+    // is attached — a raw ``fetch()`` with ``credentials: 'include'`` would
+    // miss it (Bambuddy uses Bearer tokens, not cookies, for JWT auth).
+    // Auth-disabled deployments accept connections without a token, so we
+    // treat a missing/failed token mint as non-fatal here and let the
+    // WebSocket close with code 4401 if the server actually rejects us.
+    let token: string | undefined;
+    try {
+      const resp = await api.getWebSocketToken();
+      token = resp.token;
+    } catch {
+      // Token mint failed — most likely auth is disabled (no JWT to attach,
+      // 401 response) or the user isn't authenticated yet. Fall through and
+      // try the WebSocket anyway. Auth-disabled deployments succeed;
+      // auth-enabled deployments close with 4401 and the reconnect loop
+      // kicks in once the user logs in.
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws`;
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws${tokenParam}`;
 
     const ws = new WebSocket(wsUrl);
 
@@ -356,7 +378,10 @@ export function useWebSocket() {
   }, [handleMessage]);
 
   useEffect(() => {
-    connect();
+    // connect() is async after the GHSA-r2qv fix (mints a ws-token first).
+    // Fire-and-forget at mount; the inner reconnect loop also calls
+    // connect() in the ws.onclose handler.
+    void connect();
 
     return () => {
       if (reconnectTimeoutRef.current) {

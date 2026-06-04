@@ -5,6 +5,7 @@ import type { ColorSectionProps, CatalogDisplayColor } from './types';
 import { QUICK_COLORS, ALL_COLORS } from './constants';
 import { FilamentSwatch } from '../FilamentSwatch';
 import { buildFilamentBackground, FILAMENT_EFFECT_OPTIONS } from '../filamentSwatchHelpers';
+import { getSwatchStyle } from '../../utils/colors';
 
 /** Parse user paste from 3dfilamentprofiles.com etc.: split on commas/whitespace,
  *  drop the leading `#`, accept 6/8-char hex, lowercase. Returns null when no
@@ -37,25 +38,39 @@ export function ColorSection({
   const [showAllColors, setShowAllColors] = useState(false);
   const [colorSearch, setColorSearch] = useState('');
 
-  // Current hex without # prefix
-  const currentHex = formData.rgba.replace('#', '').substring(0, 6);
+  // Current rgba in canonical 8-char uppercase form (RRGGBBAA). Used both for
+  // preset selection matching and to derive the 6-char hex shown in the
+  // native picker / draft input. #1545: alpha is tracked end-to-end so the
+  // `Clear` preset (00000000) stays distinct from black (000000FF).
+  const currentRgba = (formData.rgba.replace('#', '') + 'FF').substring(0, 8).toUpperCase();
+  const currentHex = currentRgba.substring(0, 6);
+  const currentAlpha = currentRgba.substring(6, 8);
+  const isTransparent = currentAlpha === '00';
 
   // Draft state for the manual hex input. Decoupled from `formData.rgba` so
-  // mid-typing values (1–5 chars) don't trigger the immediate auto-pad-to-6
+  // mid-typing values (1–7 chars) don't trigger the immediate auto-pad
   // that used to drop every keystroke past the first (#1407). The draft is
-  // committed to `formData.rgba` once it reaches 6 chars, or on blur (where
-  // shorter drafts are padded with `0` so the backend never sees a malformed
-  // rgba — preserves the #1055 invariant). The useEffect re-syncs the draft
-  // whenever an external action (color picker, swatch click, edit-mode load)
-  // changes `currentHex`.
-  const [hexDraft, setHexDraft] = useState(currentHex);
+  // committed to `formData.rgba` once it reaches 6 or 8 chars, or on blur
+  // (where shorter drafts are padded with `0` so the backend never sees a
+  // malformed rgba — preserves the #1055 invariant). The useEffect re-syncs
+  // the draft whenever an external action (color picker, swatch click,
+  // edit-mode load) changes the rgba.
+  const [hexDraft, setHexDraft] = useState(isTransparent ? currentRgba : currentHex);
   useEffect(() => {
-    setHexDraft(currentHex);
-  }, [currentHex]);
+    setHexDraft(isTransparent ? currentRgba : currentHex);
+  }, [currentHex, currentRgba, isTransparent]);
 
+  // Match presets on the full rgba so 'Clear' (00000000) doesn't collide with
+  // 'Black' (000000FF). A 6-char preset hex is treated as alpha=FF.
   const isSelected = (hex: string) => {
-    return currentHex.toUpperCase() === hex.toUpperCase();
+    const presetRgba = (hex.replace('#', '') + 'FF').substring(0, 8).toUpperCase();
+    return currentRgba === presetRgba;
   };
+
+  // Visual style for a swatch button — delegates to the shared helper so the
+  // `Clear` preset (alpha=00) renders as a checkerboard everywhere the same
+  // way instead of vanishing under a transparent backgroundColor (#1545).
+  const swatchStyle = (hex: string) => getSwatchStyle(hex);
 
   const selectColor = (
     hex: string,
@@ -69,8 +84,12 @@ export function ColorSection({
     extraColors?: string | null,
     effectType?: string | null,
   ) => {
-    // Store as RRGGBBAA (with FF alpha)
-    updateField('rgba', hex.toUpperCase() + 'FF');
+    // Store as RRGGBBAA. 6-char presets get alpha=FF appended; 8-char presets
+    // (e.g. the `Clear` swatch, 00000000) are preserved as-is so the
+    // transparency reaches the backend (#1545).
+    const cleaned = hex.replace('#', '').toUpperCase();
+    const rgba = cleaned.length === 8 ? cleaned : cleaned + 'FF';
+    updateField('rgba', rgba);
     updateField('color_name', name);
     if (extraColors !== undefined) {
       const next = extraColors ?? '';
@@ -279,7 +298,7 @@ export function ColorSection({
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'
                     : 'border-bambu-dark-tertiary'
                 }`}
-                style={{ backgroundColor: `#${color.hex}` }}
+                style={swatchStyle(color.hex)}
                 title={color.name}
               />
             ))}
@@ -317,7 +336,7 @@ export function ColorSection({
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'
                     : 'border-bambu-dark-tertiary'
                 }`}
-                style={{ backgroundColor: `#${color.hex}` }}
+                style={swatchStyle(color.hex)}
                 title={
                   color.manufacturer && color.material
                     ? `${color.name} (${color.manufacturer} — ${color.material})`
@@ -370,7 +389,7 @@ export function ColorSection({
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'
                     : 'border-bambu-dark-tertiary'
                 }`}
-                style={{ backgroundColor: `#${color.hex}` }}
+                style={swatchStyle(color.hex)}
                 title={color.name}
               >
                 <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg text-white">
@@ -408,30 +427,37 @@ export function ColorSection({
                 placeholder="RRGGBB"
                 value={hexDraft.toUpperCase()}
                 onChange={(e) => {
-                  // Sanitize: drop `#`, non-hex chars, uppercase. 7/8-char
-                  // pastes (with an alpha byte) truncate to the leading RGB —
-                  // Bambu filaments are opaque, so we never expose an alpha
-                  // affordance and discarding pasted alpha is fine. The draft
-                  // can hold 0–6 chars freely while the user types; we only
-                  // commit to `formData.rgba` (and through to the backend)
-                  // once the value is a complete 6-char hex, which keeps the
-                  // #1055 invariant intact without re-introducing the
-                  // mid-keystroke truncation that broke typing in #1407.
+                  // Sanitize: drop `#`, non-hex chars, uppercase. Accept up to
+                  // 8 chars so power users can type an alpha byte (e.g.
+                  // `00000000` for transparent / `00FF00FF` for opaque) —
+                  // #1545. The Clear preset button covers the common case; the
+                  // input handles arbitrary alphas. Draft holds 0–8 chars; we
+                  // commit when the value is a complete 6-char (alpha defaults
+                  // to FF) or 8-char hex, preserving the #1055/#1407
+                  // invariants.
                   const sanitized = e.target.value
                     .replace('#', '')
                     .replace(/[^0-9A-Fa-f]/g, '')
                     .toUpperCase();
-                  const next = sanitized.length > 6 ? sanitized.substring(0, 6) : sanitized;
+                  const next = sanitized.length > 8 ? sanitized.substring(0, 8) : sanitized;
                   setHexDraft(next);
                   if (next.length === 6) {
                     updateField('rgba', next + 'FF');
+                  } else if (next.length === 8) {
+                    updateField('rgba', next);
                   }
                 }}
                 onBlur={() => {
-                  // User left the field with a partial value — pad to 6 chars
-                  // and commit so the form state always carries a valid rgba
-                  // when submitted.
-                  if (hexDraft.length > 0 && hexDraft.length < 6) {
+                  // User left the field with a partial value — pad RGB to 6
+                  // chars (alpha defaults to FF) and commit so the form state
+                  // always carries a valid rgba when submitted. 7-char drafts
+                  // (RGB + 1 alpha digit) pad the alpha nibble to 0 to reach
+                  // a complete 8-char hex.
+                  if (hexDraft.length === 7) {
+                    const padded = hexDraft + '0';
+                    setHexDraft(padded);
+                    updateField('rgba', padded);
+                  } else if (hexDraft.length > 0 && hexDraft.length < 6) {
                     const padded = hexDraft.padEnd(6, '0');
                     setHexDraft(padded);
                     updateField('rgba', padded + 'FF');

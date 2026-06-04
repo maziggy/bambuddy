@@ -24,8 +24,11 @@ export default {
     keyboardShortcuts: 'Tastaturkürzel (?)',
     switchToLight: 'Zum hellen Modus wechseln',
     switchToDark: 'Zum dunklen Modus wechseln',
+    switchToSystem: 'Zum Systemmodus wechseln',
     smartSwitches: 'Smart Switches',
     logout: 'Abmelden',
+    installApp: 'App installieren',
+    installAppSuccess: 'Bambuddy wurde installiert',
   },
 
   // Common
@@ -122,6 +125,12 @@ export default {
 
   // Printers page
   printers: {
+    addPreflight: {
+      checking: 'Verbindung wird geprüft...',
+      warning: 'Einige Verbindungsprüfungen sind fehlgeschlagen. Dieser Drucker wird möglicherweise als offline angezeigt. Prüfe die Punkte unten, behebe was möglich ist, oder speichere trotzdem.',
+      back: 'Zurück',
+      saveAnyway: 'Trotzdem speichern',
+    },
     title: 'Drucker',
     addPrinter: 'Drucker hinzufügen',
     editPrinter: 'Drucker bearbeiten',
@@ -919,6 +928,15 @@ export default {
 
   // Queue page
   queue: {
+    filamentShort: {
+      rowBadge: 'Filament fuer die zugewiesene Spule reicht nicht',
+      rowTooltip: 'Der Dispatcher hat diese Position markiert. Klicke auf Play, um den Pro-Slot-Fehlbestand zu sehen und zu entscheiden, ob trotzdem gedruckt werden soll.',
+      confirmTitle: 'Filament reicht nicht',
+      confirmIntro: 'Die zugewiesene Spule kann mindestens einen Slot nicht versorgen. Trotzdem drucken?',
+      lineItem: 'Slot {{slot}}: benoetigt {{required}} g, {{remaining}} g verbleibend',
+      unknown: 'unbekannt',
+      printAnyway: 'Trotzdem drucken',
+    },
     title: 'Druckwarteschlange',
     subtitle: 'Planen und verwalten Sie Ihre Druckaufträge',
     addToQueue: 'Zur Warteschlange hinzufügen',
@@ -1200,6 +1218,7 @@ export default {
     timeAccuracy: 'Zeitgenauigkeit',
     successful: 'Erfolgreich:',
     failed: 'Fehlgeschlagen:',
+    cancelled: 'Abgebrochen:',
     perfectEstimate: '100% = perfekte Schätzung',
     noTimeAccuracyData: 'Noch keine Zeitgenauigkeitsdaten',
     noFilamentData: 'Keine Filamentdaten verfügbar',
@@ -1435,6 +1454,7 @@ export default {
       nfc: 'NFC',
       scale: 'Waage',
       cpuTemp: 'CPU-Temp.',
+      cpuLoad: 'CPU-Last',
       memory: 'Speicher',
       disk: 'Festplatte',
       update: 'Aktualisieren',
@@ -1760,6 +1780,12 @@ export default {
     manageQueueDescription: 'Elemente zur Druckwarteschlange hinzufügen und entfernen',
     controlPrinter: 'Drucker steuern',
     controlPrinterDescription: 'Drucke pausieren, fortsetzen und stoppen',
+    manageLibrary: 'Bibliothek verwalten',
+    manageLibraryDescription: 'Bibliotheksdateien hochladen, umbenennen und löschen; Modelle aus MakerWorld importieren',
+    manageInventory: 'Bestand verwalten',
+    manageInventoryDescription: 'Spulen und Bestandseinträge anlegen, ändern und löschen. Erforderlich für SpoolBuddy-Kioske (NFC-Scan, Waagenmessungen, Kiosk-Systembefehle).',
+    libraryBadge: 'Bibliothek',
+    inventoryBadge: 'Bestand',
     cloudAccess: 'Cloud-Zugriff erlauben',
     cloudAccessDescription: 'Liest Bambu-Cloud-Presets und -Filamente in Ihrem Namen. Erfordert eine Anmeldung in Bambu Cloud.',
     cloudBadge: 'Cloud',
@@ -2122,7 +2148,7 @@ export default {
     styleClassic: 'Klassisch',
     styleGlow: 'Leuchtend',
     styleVibrant: 'Lebendig',
-    themeToggleHint: 'Zwischen Hell- und Dunkelmodus mit dem Sonnen-/Mondsymbol in der Seitenleiste wechseln.',
+    themeToggleHint: 'Zwischen Dunkel-, Hell- und Systemmodus mit dem Symbol in der Seitenleiste wechseln.',
     // Archive
     autoArchivePrints: 'Drucke automatisch archivieren',
     autoArchiveDescription: '3MF-Dateien automatisch speichern, wenn Drucke abgeschlossen sind',
@@ -2834,6 +2860,7 @@ export default {
       importing: 'Importiere...',
       search: 'Lokale Voreinstellungen durchsuchen...',
       noPresets: 'Noch keine lokalen Voreinstellungen',
+      noSearchResults: 'Keine Voreinstellungen entsprechen deiner Suche',
       badge: 'Lokal',
       edit: 'Bearbeiten',
       delete: 'Löschen',
@@ -3035,6 +3062,11 @@ export default {
     collectItem10: 'Python-Paketversionen',
     collectItem11: 'Datenbankzustandsprüfungen',
     collectItem12: 'Docker-Umgebungsdetails',
+    bundleGenerating: 'Bundle wird erstellt...',
+    bundleStepConnection: 'Drucker-Verbindungsprüfungen werden ausgeführt',
+    bundleStepVirtualPrinters: 'Setup-Prüfungen für virtuelle Drucker werden ausgeführt',
+    bundleStepLogScan: 'Aktuelle Protokolle werden auf bekannte Probleme überprüft',
+    bundleStepBuild: 'Support-Bundle-ZIP wird erstellt',
   },
 
   // File manager
@@ -3047,6 +3079,7 @@ export default {
     folderNamePlaceholder: 'z.B. Funktionsteile',
     renameFile: 'Datei umbenennen',
     renameFolder: 'Ordner umbenennen',
+    invalidFilenameChar: 'Das Zeichen "{{char}}" ist in Druck-Dateinamen nicht erlaubt. Die SD-Karte des Druckers lehnt folgende Zeichen ab: < > : " / \\ | ? *',
     moveFiles: '{{count}} Datei(en) verschieben',
     rootNoFolder: 'Stammverzeichnis (Kein Ordner)',
     current: 'aktuell',
@@ -3430,6 +3463,9 @@ export default {
   slice: {
     title: 'Modell slicen',
     action: 'Slicen',
+    actionAll: 'Alle {{count}} Plates slicen',
+    actionAllTitle: 'Alle Plates in eine einzelne Multi-Plate-Ausgabe slicen (ein Archiv). Die Filamentauswahl gilt für jeden Slot des Projekts.',
+    allPlatesToggle: 'Alle {{count}} Plates slicen',
     slicing: 'Slicen…',
     printer: 'Drucker-Profil',
     process: 'Prozess-Profil',
@@ -3442,10 +3478,15 @@ export default {
     previewToast: '{{name}} wird analysiert — {{elapsed}}',
     previewWithProgress: '{{name}} wird analysiert — {{stage}} ({{percent}}%) — {{elapsed}}',
     notUsedByPlate: '— wird von dieser Platte nicht verwendet',
-    printerMismatch: 'Dieses 3MF wurde für {{source}} gesliced, du hast aber {{target}} ausgewählt. Der Slicer-CLI kann ein 3MF nicht für einen anderen Drucker neu slicen — öffne die Quelle in Bambu Studio, ändere den Drucker und exportiere neu.',
     noPresetsForSlot: 'Keine Profile verfügbar',
+    otherPrinters: 'Andere Drucker',
     presetsLoadFailed: 'Profile konnten nicht geladen werden. Importiere sie zuerst unter Einstellungen → Profile.',
+    refreshPresets: 'Aktualisieren',
+    refreshPresetsTitle: 'Profile neu laden — die aktuellen Cloud- und Bundle-Listen abrufen (nach dem Löschen eines Profils in Bambu Studio oder Bambu Handy verwenden)',
     allPresetsRequired: 'Alle Profile müssen ausgewählt sein',
+    bundle: 'Slicer-Bundle',
+    bundleNone: '— Keines (Profile einzeln auswählen) —',
+    bundleAllRequired: 'Bundle-Prozess und jeder Filament-Slot müssen ausgewählt sein',
     enqueuing: 'Slice-Auftrag wird übermittelt…',
     queued: 'In Warteschlange…',
     failed: 'Slicen fehlgeschlagen. Logs des Slicer-Sidecars prüfen.',
@@ -3453,7 +3494,9 @@ export default {
     queuedToast: 'Warteschlange: {{name}} — {{elapsed}}',
     runningToast: '{{name}} wird gesliced — {{elapsed}}',
     runningWithProgress: '{{name}} – {{stage}} ({{percent}} %) – {{elapsed}}',
+    runningWithProgressMultiPlate: 'Plate {{plateIndex}} von {{plateCount}} • {{name}} – {{stage}} ({{percent}} %) – {{elapsed}}',
     completedToast: '{{name}} wurde gesliced',
+    failedTitle: 'Slicen fehlgeschlagen',
     failedToast: 'Slicen von {{name}} fehlgeschlagen: {{detail}}',
     tier: {
       local: 'Importiert',
@@ -3796,6 +3839,7 @@ export default {
     assignMismatchConfirm: 'Trotzdem zuweisen',
     assignPartialMismatchMessage: 'Das Spulenmaterial "{{spoolMaterial}}" ist ähnlich, stimmt aber nicht genau mit "{{trayMaterial}}" in {{location}} überein. Möchten Sie fortfahren?',
     assignProfileMismatchMessage: 'Das Spulenprofil "{{spoolProfile}}" stimmt nicht mit dem Fachprofil "{{trayProfile}}" in {{location}} überein. Möchten Sie fortfahren?',
+    assignReconfigureNote: 'Der AMS-Slot wird mit dem Profil der Spule neu konfiguriert.',
     // Spoolman filament catalog picker
     spoolmanFilamentCatalog: 'Spoolman-Filamentkatalog',
     pickFromSpoolmanCatalog: 'Aus Spoolman-Katalog wählen…',
@@ -4356,6 +4400,14 @@ export default {
       description: 'Lege fest, wie neue Archive benannt werden, wenn Dateien über den virtuellen Drucker eintreffen. "Metadaten" verwendet den im 3MF eingebetteten Titel des Slicers (Standard). "Dateiname" nutzt den Dateinamen, den Bambu Studio per FTP gesendet hat — praktisch, wenn der Job im Dialog "Zum Drucker senden" umbenannt wurde.',
       metadata: 'Metadaten',
       filename: 'Dateiname',
+    },
+    caCert: {
+      title: 'Slicer-Zertifikat',
+      description: 'Virtuelle Drucker verwenden ein TLS-Zertifikat, das von der Bambuddy-CA signiert ist. Importieren Sie dieses CA-Zertifikat einmalig in den Vertrauensspeicher Ihres Slicers, damit er die Verbindung akzeptiert — kein Abrufen über die Kommandozeile mehr nötig.',
+      copy: 'Kopieren',
+      copied: 'Kopiert',
+      download: 'Herunterladen',
+      fingerprint: 'SHA-256',
     },
     howItWorks: {
       title: 'So funktioniert es',
@@ -5388,6 +5440,8 @@ export default {
       calibrateNow: 'Kalibrieren',
       calibrated: 'Kalibriert',
       tareSet: 'Tara-Befehl gesendet. Warte auf Gerät...',
+      tareComplete: 'Tara abgeschlossen!',
+      tareTimedOut: 'Tara-Zeitüberschreitung — läuft der SpoolBuddy-Daemon?',
       tareFailed: 'Tara-Befehl fehlgeschlagen',
       zeroSet: 'Nullpunkt gesetzt. Bekanntes Gewicht auf die Waage legen.',
       calibrationDone: 'Kalibrierung abgeschlossen!',
@@ -5462,7 +5516,167 @@ export default {
     },
   },
 
+  diagnostic: {
+    modalTitle: 'Verbindungsdiagnose — {{name}}',
+    running: 'Diagnose läuft...',
+    runFailed: 'Diagnose konnte nicht ausgeführt werden: {{error}}',
+    retry: 'Erneut ausführen',
+    runButton: 'Diagnose ausführen',
+    sectionTitle: 'Verbindungsdiagnose',
+    sectionDescription: 'Prüfen, warum ein Drucker keine Verbindung herstellt oder nicht druckt — Port-Erreichbarkeit, LAN-Entwicklermodus, Docker-Netzwerkmodus und Zugangsdaten.',
+    noPrinters: 'Keine Drucker konfiguriert.',
+    overall: {
+      ok: 'Keine Probleme gefunden — die Druckerverbindung sieht gut aus.',
+      warnings: 'Der Drucker sollte funktionieren, aber einige Punkte erfordern Aufmerksamkeit.',
+      problems: 'Probleme gefunden, die erklären, warum der Drucker keine Verbindung herstellt oder nicht druckt.',
+    },
+    check: {
+      port_mqtt: {
+        title: 'Steuerungsport (MQTT 8883)',
+        pass: 'Erreichbar — der Drucker akzeptiert Steuerungsverbindungen.',
+        fail: 'Port 8883 ist nicht erreichbar. Der Drucker ist ausgeschaltet, hat eine andere IP-Adresse oder eine Firewall blockiert ihn. Überprüfen Sie die Drucker-IP und dass nichts Port 8883 blockiert.',
+      },
+      port_ftps: {
+        title: 'Dateiübertragungsport (FTPS 990)',
+        pass: 'Erreichbar — das Senden von Druckdateien funktioniert.',
+        warn: 'Port 990 ist nicht erreichbar. Die Überwachung funktioniert möglicherweise weiterhin, aber das Senden von Drucken an den Drucker schlägt fehl. Stellen Sie sicher, dass Port 990 nicht blockiert ist.',
+      },
+      port_rtsps: {
+        title: 'Kameraport (RTSPS 322)',
+        pass: 'Erreichbar — der Kamerastream funktioniert.',
+        warn: 'Port 322 ist nicht erreichbar. Die Live-Kameraansicht funktioniert nicht. Dies betrifft das Drucken nicht.',
+      },
+      network_mode: {
+        title: 'Docker-Netzwerkmodus',
+        pass: 'Läuft im Host-Netzwerkmodus.',
+        warn: 'Bambuddy läuft im Docker-Bridge-Netzwerkmodus. Die Druckererkennung und der virtuelle Drucker benötigen den Host-Netzwerkmodus — erstellen Sie den Container mit "network_mode: host" neu.',
+        skip: 'Läuft nicht in Docker — nicht zutreffend.',
+      },
+      subnet: {
+        title: 'Netzwerk-Subnetz',
+        pass: 'Drucker und Bambuddy befinden sich im selben Subnetz.',
+        warn: 'Der Drucker ({{printer_ip}}) und Bambuddy ({{host_ip}}) befinden sich in unterschiedlichen Subnetzen. Sie können sich möglicherweise nicht erreichen, sofern kein Routing zwischen den Subnetzen konfiguriert ist.',
+        skip: 'Subnetz konnte nicht ermittelt werden — übersprungen.',
+      },
+      mqtt_auth: {
+        title: 'Drucker-Zugangsdaten',
+        pass: 'Der Drucker hat die Verbindung akzeptiert.',
+        fail: 'Der Drucker ist erreichbar, hat die Verbindung aber abgelehnt. Der Zugangscode oder die Seriennummer ist höchstwahrscheinlich falsch. Der Zugangscode ändert sich bei jedem Umschalten des Entwicklermodus — kopieren Sie ihn erneut vom Druckerbildschirm.',
+        skip: 'Nicht geprüft — der Drucker konnte nicht erreicht werden.',
+      },
+      developer_mode: {
+        title: 'LAN-Entwicklermodus',
+        pass: 'Der Entwicklermodus ist aktiviert.',
+        fail: 'Der Entwicklermodus ist am Drucker AUS. Aktivieren Sie ihn in den LAN-Einstellungen des Druckers — und bestätigen Sie mit OK. Ohne ihn starten Drucke nicht.',
+        skip: 'Konnte nicht geprüft werden — erfordert eine aktive Verbindung zum Drucker.',
+      },
+    },
+  },
+
+  systemHealth: {
+    sectionTitle: 'Systemzustand',
+    sectionDescription: 'Durchsucht aktuelle Logs nach bekannten Problemen, die du meist selbst beheben kannst, bevor daraus ein Support-Ticket wird.',
+    rescan: 'Erneut prüfen',
+    clean: 'Keine bekannten Probleme in den letzten {{times}} Log-Einträgen gefunden.',
+    logUnavailable: 'Die Protokollierung in Dateien ist deaktiviert, daher können keine Logs durchsucht werden. Aktiviere die Datei-Protokollierung, um diese Prüfung zu nutzen.',
+    learnMore: 'Lösung anzeigen',
+    fixLabel: 'Lösung:',
+    occurrences: '{{times}}× aufgetreten — zuletzt um {{lastSeen}}',
+    category: {
+      layer8: 'Das kannst du beheben',
+      environment: 'Umgebung',
+      bug: 'Bitte melden',
+    },
+    signature: {
+      'ftp-auth-rejected': {
+        name: 'Drucker hat den Zugriffscode abgelehnt',
+        cause: 'Der Drucker hat die Anmeldung für die Dateiübertragung abgelehnt. Der Zugriffscode ist falsch oder hat sich nach dem Umschalten des Entwicklermodus geändert.',
+        fix: 'Kopiere den Zugriffscode erneut vom Druckerbildschirm (LAN-Einstellungen) und aktualisiere ihn in den Druckereinstellungen in Bambuddy.',
+      },
+      'ftp-connection-timeout': {
+        name: 'Zeitüberschreitung bei der Dateiübertragung',
+        cause: 'Bambuddy konnte den Dateiübertragungs-Port des Druckers (FTPS 990) nicht erreichen. Der Port ist blockiert, oder der Drucker ist aus oder in einem anderen Subnetz.',
+        fix: 'Stelle sicher, dass Port 990 zwischen Bambuddy und dem Drucker nicht blockiert wird und beide im selben Netzwerk sind.',
+      },
+      'ftp-ssl-error': {
+        name: 'Sicherer Dateiübertragungs-Handshake fehlgeschlagen',
+        cause: 'Der TLS-Handshake mit dem Dateiübertragungs-Server des Druckers ist fehlgeschlagen. Häufig liegt das an einer Firewall oder veralteter Drucker-Firmware.',
+        fix: 'Aktualisiere die Drucker-Firmware und prüfe, dass keine Firewall oder Proxy die Verbindung auf Port 990 abfängt.',
+      },
+      'mqtt-connection-flapping': {
+        name: 'Druckerverbindung bricht ständig ab',
+        cause: 'Die Steuerverbindung (MQTT 8883) trennt und verbindet sich wiederholt — meist wegen einer schwachen Netzwerkverbindung oder eines teilweise blockierten Ports.',
+        fix: 'Prüfe das WLAN-Signal am Drucker, bevorzuge eine Kabelverbindung und stelle sicher, dass Port 8883 zuverlässig erreichbar ist.',
+      },
+      'camera-connection-refused': {
+        name: 'Kamera-Stream nicht erreichbar',
+        cause: 'Die Live-Kamera war auf Port RTSPS 322 nicht erreichbar. Der Port ist blockiert, oder die Kamera bzw. die LAN-Liveansicht ist am Drucker deaktiviert.',
+        fix: 'Aktiviere Kamera und LAN-Liveansicht am Drucker und stelle sicher, dass Port 322 nicht blockiert ist. Das Drucken ist davon nicht betroffen.',
+      },
+      'database-locked': {
+        name: 'Datenbank-Schreibkonflikte',
+        cause: 'Die SQLite-Datenbank meldet unter Last "database is locked"-Fehler — häufig beim Betrieb mehrerer Drucker gleichzeitig.',
+        fix: 'Stelle Bambuddy auf eine externe PostgreSQL-Datenbank um. Siehe die PostgreSQL-Anleitung in der Dokumentation.',
+      },
+    },
+  },
+
+  vpDiagnostic: {
+    title: 'Einrichtungsprüfung — {{name}}',
+    runButton: 'Einrichtungsprüfung ausführen',
+    running: 'Einrichtungsprüfung läuft...',
+    runFailed: 'Einrichtungsprüfung konnte nicht ausgeführt werden: {{error}}',
+    retry: 'Erneut prüfen',
+    overall: {
+      ok: 'Alle Prüfungen bestanden — dieser virtuelle Drucker ist korrekt eingerichtet.',
+      warnings: 'Der virtuelle Drucker sollte funktionieren, aber einige Punkte brauchen Aufmerksamkeit.',
+      problems: 'Es wurden Probleme gefunden, die erklären, warum der Slicer diesen virtuellen Drucker nicht sehen oder nutzen kann.',
+    },
+    check: {
+      enabled: {
+        title: 'Virtueller Drucker aktiviert',
+        fail: 'Dieser virtuelle Drucker ist ausgeschaltet. Schalten Sie ihn ein, damit er erkennbar wird.',
+      },
+      running: {
+        title: 'Dienste laufen',
+        fail: 'Der virtuelle Drucker ist aktiviert, aber seine Dienste laufen nicht. Prüfen Sie das Bambuddy-Protokoll — meist stoppt sie ein Bind-IP-Konflikt oder ein Berechtigungsfehler.',
+      },
+      bind_interface: {
+        title: 'Bind-Netzwerkschnittstelle',
+        fail: 'Die Bind-Schnittstelle ist nicht gesetzt oder existiert auf diesem Host nicht mehr. Wählen Sie im Dropdown "Bind-Schnittstelle" eine aktuelle Schnittstelle.',
+      },
+      access_code: {
+        title: 'Zugangscode gesetzt',
+        fail: 'Es ist kein Zugangscode gesetzt. Dem Slicer muss derselbe 8-stellige Zugangscode angegeben werden, den Sie hier festlegen.',
+      },
+      target_printer: {
+        title: 'Zieldrucker',
+        fail: 'Es ist kein Zieldrucker ausgewählt. Der Proxy-Modus benötigt einen echten Drucker zum Weiterleiten.',
+        warn: 'Der Zieldrucker ist gerade offline — die Weiterleitung wird fortgesetzt, sobald er sich wieder verbindet.',
+      },
+      port_ftps: {
+        title: 'Datei-Upload-Dienst (Port {{port}})',
+        fail: 'Auf Port {{port}} der Bind-IP lauscht nichts, daher kann der Slicer keine Dateien hochladen. Ursache ist meist ein Port-Konflikt auf dieser Schnittstelle.',
+      },
+      port_mqtt: {
+        title: 'Steuerungsdienst (Port {{port}})',
+        fail: 'Auf Port {{port}} der Bind-IP lauscht nichts, daher kann der Slicer sich nicht verbinden oder den Status anzeigen.',
+      },
+      port_bind: {
+        title: 'Erkennungsdienst (Port {{port}})',
+        fail: 'Auf Port {{port}} der Bind-IP lauscht nichts, daher schlägt der Erkennungs-Handshake des Slicers fehl.',
+      },
+      certificate: {
+        title: 'TLS-Zertifikat',
+        pass: 'Zertifikat bereit. Stellen Sie sicher, dass das Bambuddy-CA-Zertifikat (oben) in den Vertrauensspeicher Ihres Slicers importiert ist.',
+        fail: 'Das TLS-Zertifikat für diesen virtuellen Drucker fehlt. Prüfen Sie, ob das Bambuddy-Datenverzeichnis beschreibbar ist.',
+      },
+    },
+  },
+
   bugReport: {
+    logHealthSummary: 'Bekannte Probleme in deinen Logs gefunden',
+    logHealthIntro: 'Aktuelle Logs entsprechen bekannten Problemen. Sieh dir die Lösungen unten an — sie zu beheben könnte dein Problem ohne Fehlerbericht lösen. Du kannst unten trotzdem einen Bericht senden.',
     title: 'Fehler melden',
     description: 'Beschreibung',
     descriptionPlaceholder: 'Was ist schiefgelaufen? Bitte beschreiben Sie das Problem...',
@@ -5485,8 +5699,16 @@ export default {
     maxDuration: 'Stoppt automatisch nach {{minutes}} Min.',
     stoppingLogs: 'Protokolle sammeln & senden...',
     submitting: 'Fehlerbericht wird gesendet...',
+    submittingStepConnection: 'Drucker-Verbindungsprüfungen werden ausgeführt',
+    submittingStepVirtualPrinters: 'Setup-Prüfungen für virtuelle Drucker werden ausgeführt',
+    submittingStepLogScan: 'Aktuelle Protokolle werden auf bekannte Probleme überprüft',
+    submittingStepSubmit: 'Bericht wird an GitHub gesendet',
     submitSuccess: 'Fehlerbericht erfolgreich gesendet!',
     submitFailed: 'Fehlerbericht konnte nicht gesendet werden',
+    diagnosticChecking: 'Druckerverbindungen werden geprüft...',
+    diagnosticHealthy: 'Verbindungsprüfung bestanden — keine Probleme an Ihren Druckern gefunden.',
+    diagnosticSummary: '{{problems}} von {{total}} Druckern haben Verbindungsprobleme',
+    diagnosticIntro: 'Einer oder mehrere Drucker haben ein Verbindungsproblem, das die Ursache Ihres Problems sein könnte. Klappen Sie einen Drucker unten auf, um die Lösung zu sehen — sie zu beheben könnte das Problem ohne Fehlerbericht lösen. Sie können unten dennoch einen Bericht senden.',
     thankYou: 'Vielen Dank!',
     submitted: 'Ihr Fehlerbericht wurde eingereicht.',
     viewIssue: 'Issue ansehen',

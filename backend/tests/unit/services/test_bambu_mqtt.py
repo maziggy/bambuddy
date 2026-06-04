@@ -3730,13 +3730,13 @@ class TestStartPrintAmsMapping:
             {"ams_id": 255, "slot_id": 0},
         ]
 
-    def test_x2d_uses_integer_format_for_calibration_fields(self, mqtt_client):
-        """X2D must use H2D-style integer (0/1) format for calibration fields (#988).
+    def test_x2d_uses_boolean_format_for_calibration_fields(self, mqtt_client):
+        """X2D sends calibration fields as JSON booleans, like every model (#1478).
 
-        The reporter's support bundle showed X2D running firmware in the same
-        family as H2D. Booleans in these fields are interpreted as nozzle
-        indexes by H2D firmware; X2D is treated identically until proven
-        otherwise.
+        An earlier revision integer-encoded these for the H2 family on the
+        belief that H2 firmware required 0/1. A BambuStudio request-topic
+        capture from a real H2D disproved it — BambuStudio sends plain
+        booleans — so X2D follows the same boolean format.
         """
         mqtt_client.model = "X2D"
         mqtt_client.start_print(
@@ -3749,24 +3749,24 @@ class TestStartPrintAmsMapping:
         )
 
         cmd = self._get_published_command(mqtt_client)
-        assert cmd["timelapse"] == 1
-        assert cmd["bed_leveling"] == 0
-        assert cmd["flow_cali"] == 1
-        assert cmd["vibration_cali"] == 0
-        assert cmd["layer_inspect"] == 1
+        assert cmd["timelapse"] is True
+        assert cmd["bed_leveling"] is False
+        assert cmd["flow_cali"] is True
+        assert cmd["vibration_cali"] is False
+        assert cmd["layer_inspect"] is True
+        # flow_cali on → extrude_cali_flag must request the calibration pass.
+        assert cmd["extrude_cali_flag"] == 1
 
-    def test_p2s_still_uses_boolean_format(self, mqtt_client):
-        """Regression guard: P2S is NOT in the H-family firmware gate — must still use booleans.
-
-        Adding X2D to the H-family set must not accidentally affect P2S, which
-        is single-nozzle and uses boolean format like X1C/A1/P1.
-        """
+    def test_p2s_uses_boolean_format(self, mqtt_client):
+        """P2S sends calibration fields as JSON booleans (single-nozzle, like X1C/A1/P1)."""
         mqtt_client.model = "P2S"
         mqtt_client.start_print("test.3mf", timelapse=True, flow_cali=False)
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["timelapse"] is True
         assert cmd["flow_cali"] is False
+        # flow_cali off → extrude_cali_flag=2 (skip, reuse stored PA value).
+        assert cmd["extrude_cali_flag"] == 2
 
     def test_h2s_single_external_spool_uses_main_id(self, mqtt_client):
         """H2S is single-nozzle (#1386): external spool (254) → ams_id=255.
@@ -3797,11 +3797,14 @@ class TestStartPrintAmsMapping:
         cmd = self._get_published_command(mqtt_client)
         assert cmd["use_ams"] is False
 
-    def test_h2s_keeps_integer_format_for_calibration_fields(self, mqtt_client):
-        """H2S shares the H-family firmware (int 0/1 for calibration fields)
-        even though it's single-nozzle. Verified empirically against H2S
-        bundles: the print command structure was always accepted, only the
-        AMS routing failed (#1386).
+    def test_h2s_uses_boolean_format_for_calibration_fields(self, mqtt_client):
+        """H2S sends calibration fields as JSON booleans (#1478).
+
+        The H2S was previously integer-encoded as part of the H2 family. That
+        made it accept the print command but silently skip flow-dynamics
+        calibration — the reporter saw poor corner quality from a stale K
+        value. BambuStudio sends booleans for these fields and pairs flow_cali
+        with extrude_cali_flag=1 to actually run the calibration pass.
         """
         mqtt_client.model = "H2S"
         mqtt_client.start_print(
@@ -3814,11 +3817,14 @@ class TestStartPrintAmsMapping:
         )
 
         cmd = self._get_published_command(mqtt_client)
-        assert cmd["timelapse"] == 1
-        assert cmd["bed_leveling"] == 0
-        assert cmd["flow_cali"] == 1
-        assert cmd["vibration_cali"] == 0
-        assert cmd["layer_inspect"] == 1
+        assert cmd["timelapse"] is True
+        assert cmd["bed_leveling"] is False
+        assert cmd["flow_cali"] is True
+        assert cmd["vibration_cali"] is False
+        assert cmd["layer_inspect"] is True
+        # flow_cali on → extrude_cali_flag=1 so the printer runs the
+        # flow-dynamics calibration instead of reusing the stored PA value.
+        assert cmd["extrude_cali_flag"] == 1
 
 
 class TestStartPrintUniqueIdentityFields:
@@ -3899,6 +3905,24 @@ class TestStartPrintUniqueIdentityFields:
         assert cmd["task_id"].isdigit()
         assert int(cmd["task_id"]) > 0
         assert len(cmd["task_id"]) <= 64
+
+    def test_last_dispatch_subtask_id_records_the_minted_id(self, mqtt_client):
+        """#1485: start_print records the minted id on the client so
+        on_print_start can persist it on the archive before the printer
+        echoes subtask_id back — letting a later restart resume by id."""
+        assert mqtt_client.last_dispatch_subtask_id is None
+        mqtt_client.start_print("test.3mf")
+        cmd = self._get_published_command(mqtt_client)
+        assert mqtt_client.last_dispatch_subtask_id == cmd["subtask_id"]
+
+    def test_last_dispatch_subtask_id_updates_per_submission(self, mqtt_client):
+        """Each dispatch overwrites the recorded id with the new submission's."""
+        mqtt_client.start_print("test.3mf")
+        first = mqtt_client.last_dispatch_subtask_id
+        time.sleep(0.002)
+        mqtt_client.start_print("test.3mf")
+        assert mqtt_client.last_dispatch_subtask_id != first
+        assert mqtt_client.last_dispatch_subtask_id == self._get_published_command(mqtt_client)["subtask_id"]
 
     def test_submission_id_fits_signed_int32(self, mqtt_client):
         """Regression for #1042: P1S firmware clamps oversized task identity
@@ -4083,6 +4107,47 @@ class TestStaleReconnect:
         assert result is True
         assert mqtt_client.state.connected is True
         assert mqtt_client._stale_reconnecting is False
+
+    def test_check_staleness_logs_serial_hint_when_no_reports(self, mqtt_client, caplog):
+        """#1465 — a stale connection that never received a status report logs
+        an actionable serial-number hint, exactly once."""
+        import logging
+        import time
+
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 120
+        mqtt_client._report_messages_since_connect = 0
+
+        with caplog.at_level(logging.WARNING):
+            mqtt_client.check_staleness()
+
+        assert mqtt_client._zero_report_hint_logged is True
+        assert any("zero status reports" in r.getMessage() for r in caplog.records)
+
+        # Re-arm staleness — the hint must not log a second time.
+        caplog.clear()
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 120
+        mqtt_client._last_stale_reconnect = 0.0  # bypass the reconnect cooldown
+        with caplog.at_level(logging.WARNING):
+            mqtt_client.check_staleness()
+        assert not any("zero status reports" in r.getMessage() for r in caplog.records)
+
+    def test_check_staleness_no_serial_hint_when_reports_received(self, mqtt_client, caplog):
+        """A stale connection that DID receive reports (a normal mid-session
+        quiet gap) must not log the serial-number hint."""
+        import logging
+        import time
+
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 120
+        mqtt_client._report_messages_since_connect = 5
+
+        with caplog.at_level(logging.WARNING):
+            mqtt_client.check_staleness()
+
+        assert mqtt_client._zero_report_hint_logged is False
+        assert not any("zero status reports" in r.getMessage() for r in caplog.records)
 
     def test_on_disconnect_skipped_during_stale_reconnect(self, mqtt_client):
         """_on_disconnect should not broadcast state when _stale_reconnecting is set."""
@@ -5132,3 +5197,214 @@ class TestDryingCompleteCallback:
         # And finishes.
         mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
         assert mqtt_client._drying_events == [0, 0]
+
+    def test_tray_only_partial_does_not_fake_completion(self, mqtt_client):
+        """#1462 — a tray-bearing partial update that omits dry_time must not
+        be read as dry_time=0. The pre-fix merge dropped dry_time on such
+        partials, so the falling-edge detector saw a 60→0 edge and fired a
+        false 'drying complete' seconds after drying started — which armed
+        smart-plug auto-off and killed the printer mid-cycle."""
+        # Drying active, 60 minutes remaining.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 60, "tray": []}]})
+        assert mqtt_client._drying_events == []
+
+        # Printer sends a tray-bearing partial carrying NO dry_time field.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "tray": []}]})
+        assert mqtt_client._drying_events == []
+        # dry_time survived the partial in the merged AMS state.
+        assert mqtt_client.state.raw_data["ams"][0]["dry_time"] == 60
+
+        # Drying genuinely finishes → the real edge still fires exactly once.
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert mqtt_client._drying_events == [0]
+
+
+class TestPrintRunningObservedCallback:
+    """#1485 follow-up: on_print_running_observed fires the FIRST time we
+    see ``state == RUNNING`` for a printer whose print started before
+    Bambuddy came up. It lets main.py capture a timelapse baseline at
+    restart-recovery time — when on_print_start was suppressed by the
+    #1304 first-push guard. Must NOT fire when on_print_start handles the
+    transition (avoids double-capture), and must NOT fire again after
+    the first observation in the same session.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    def test_fires_on_first_running_push_after_startup(self, mqtt_client):
+        """First push the client sees has _previous_gcode_state=None, so the
+        #1304 guard suppresses on_print_start. on_print_running_observed
+        must fire instead so the consumer can recover."""
+        start_calls: list[dict] = []
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_start = lambda data: start_calls.append(data)
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        # Pristine state — exactly what we have right after BambuMQTTClient
+        # construction following a Bambuddy restart.
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test_print.gcode",
+                    "subtask_name": "Test_Print",
+                }
+            }
+        )
+
+        assert start_calls == [], "on_print_start must be suppressed by the #1304 guard"
+        assert len(running_observed_calls) == 1
+        assert running_observed_calls[0]["filename"] == "/data/Metadata/test_print.gcode"
+        assert running_observed_calls[0]["subtask_name"] == "Test_Print"
+
+    def test_does_not_fire_when_print_start_fires(self, mqtt_client):
+        """Normal print start (a real state transition from non-RUNNING to
+        RUNNING) goes through on_print_start; on_print_running_observed
+        must stay quiet so the consumer doesn't capture the baseline twice."""
+        start_calls: list[dict] = []
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_start = lambda data: start_calls.append(data)
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = "IDLE"  # Not None — past the #1304 guard
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test_print.gcode",
+                    "subtask_name": "Test_Print",
+                }
+            }
+        )
+
+        assert len(start_calls) == 1, "on_print_start should fire on a real start transition"
+        assert running_observed_calls == [], "on_print_running_observed must not double up with on_print_start"
+
+    def test_fires_only_once_per_session(self, mqtt_client):
+        """Subsequent RUNNING pushes in the same session must not re-fire the
+        callback — the baseline only needs to be captured once, the consumer
+        treats repeat calls as a hint to skip via the in-memory dict guard."""
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        msg = {
+            "print": {
+                "gcode_state": "RUNNING",
+                "gcode_file": "/data/Metadata/test_print.gcode",
+                "subtask_name": "Test_Print",
+            }
+        }
+        mqtt_client._process_message(msg)
+        mqtt_client._process_message(msg)
+        mqtt_client._process_message(msg)
+
+        assert len(running_observed_calls) == 1
+
+    def test_does_not_fire_when_not_running(self, mqtt_client):
+        """An IDLE / PREPARE / FINISH first-push must not trigger the
+        restart-recovery path — there's no print to baseline."""
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "IDLE",
+                    "gcode_file": "",
+                    "subtask_name": "",
+                }
+            }
+        )
+
+        assert running_observed_calls == []
+
+    def test_does_not_fire_without_current_file(self, mqtt_client):
+        """RUNNING with no file is ill-formed (firmware glitch / transient).
+        We need ``current_file`` to find the right archive, so skip the
+        callback rather than fire it with a meaningless payload."""
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "",
+                    "subtask_name": "",
+                }
+            }
+        )
+
+        assert running_observed_calls == []
+
+    def test_safe_when_callback_not_set(self, mqtt_client):
+        """No callback configured → silently skip; no AttributeError on the
+        firing branch."""
+        mqtt_client.on_print_running_observed = None
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        # Should not raise.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test_print.gcode",
+                    "subtask_name": "Test_Print",
+                }
+            }
+        )
+
+        assert mqtt_client._was_running is True
+
+    def test_payload_shape_matches_print_start(self, mqtt_client):
+        """The payload shape must mirror on_print_start so main.py's
+        consumer can reuse the same dict fields (filename / subtask_name /
+        remaining_time / raw_data / ams_mapping). Test pins the keys."""
+        running_observed_calls: list[dict] = []
+        mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
+        mqtt_client._was_running = False
+        mqtt_client._previous_gcode_state = None
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test_print.gcode",
+                    "subtask_name": "Test_Print",
+                    "mc_remaining_time": 42,
+                }
+            }
+        )
+
+        assert len(running_observed_calls) == 1
+        payload = running_observed_calls[0]
+        assert set(payload.keys()) == {
+            "filename",
+            "subtask_name",
+            "remaining_time",
+            "raw_data",
+            "ams_mapping",
+        }

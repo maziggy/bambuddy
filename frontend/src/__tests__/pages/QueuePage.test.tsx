@@ -442,4 +442,83 @@ describe('QueuePage', () => {
       expect(screen.queryByText('G-code')).not.toBeInTheDocument();
     });
   });
+
+  describe('filament-short ▶ flow (#1496)', () => {
+    /**
+     * The dispatch pre-flight flags a queue item as filament_short. The user
+     * clicks ▶, the backend re-checks live and either dispatches (no deficit
+     * anymore — clear flag) or returns 409 with the per-slot deficit so the
+     * frontend can render the "Print Anyway" confirm modal.
+     */
+    const shortItem = {
+      ...mockQueueItems[0],
+      manual_start: true,
+      filament_short: true,
+    };
+
+    it('renders the filament-short badge on a flagged pending row', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([shortItem])),
+      );
+
+      render(<QueuePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Insufficient filament for the assigned spool/i)).toBeInTheDocument();
+      });
+    });
+
+    it('opens the Print Anyway modal when ▶ returns 409 and retries with skip_filament_check', async () => {
+      let secondCallSkippedCheck: boolean | null = null;
+      let attempts = 0;
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([shortItem])),
+        http.post('/api/v1/queue/:id/start', ({ request }) => {
+          attempts += 1;
+          const url = new URL(request.url);
+          const skip = url.searchParams.get('skip_filament_check') === 'true';
+          if (attempts === 1) {
+            return HttpResponse.json(
+              {
+                detail: {
+                  code: 'insufficient_filament',
+                  deficit: [
+                    {
+                      slot_id: 1,
+                      ams_id: 0,
+                      tray_id: 0,
+                      filament_type: 'PLA',
+                      required_grams: 270,
+                      remaining_grams: 200,
+                    },
+                  ],
+                },
+              },
+              { status: 409 },
+            );
+          }
+          secondCallSkippedCheck = skip;
+          return HttpResponse.json({ ...shortItem, manual_start: false, filament_short: false });
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const playButton = await screen.findByTitle(/Start Print|do not have permission to start prints/i);
+      await userEvent.click(playButton);
+
+      // Wait for the start endpoint to be hit (the 409 path returns to onError).
+      await waitFor(() => expect(attempts).toBe(1));
+      // Modal shows the deficit detail
+      await screen.findByRole('button', { name: /Print Anyway/i });
+      expect(
+        screen.getByText(/Slot 1: needs 270 g, 200 g remaining/i),
+      ).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: /Print Anyway/i }));
+
+      await waitFor(() => expect(secondCallSkippedCheck).toBe(true));
+      expect(attempts).toBe(2);
+    });
+  });
 });

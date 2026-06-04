@@ -16,7 +16,7 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +45,7 @@ from backend.app.services.slicer_api import (
     SlicerApiUnavailableError,
     SlicerInputError,
 )
+from backend.app.utils.printer_models import PRINTER_MODEL_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,9 @@ def _empty_slots() -> dict[str, list[UnifiedPreset]]:
     return {"printer": [], "process": [], "filament": []}
 
 
-async def _fetch_cloud_presets(db: AsyncSession, user: User | None) -> tuple[dict[str, list[UnifiedPreset]], str]:
+async def _fetch_cloud_presets(
+    db: AsyncSession, user: User | None, *, refresh: bool = False
+) -> tuple[dict[str, list[UnifiedPreset]], str]:
     """Return (slots, cloud_status). Slots are empty when cloud_status != 'ok'.
 
     Defence-in-depth: even if a stored cloud_token survived a permission
@@ -95,6 +98,12 @@ async def _fetch_cloud_presets(db: AsyncSession, user: User | None) -> tuple[dic
     treated as not-authenticated for this endpoint — the cloud tier never
     surfaces for them. This keeps the per-tier visibility consistent with the
     /cloud/* endpoint suite that already gates on CLOUD_AUTH.
+
+    ``refresh=True`` skips the in-process cache for this call (used by the
+    SliceModal's manual Refresh button so a user who just deleted a preset
+    in Bambu Studio / Handy can pick up the change without waiting for the
+    5-minute TTL to expire). The fresh result is still written back to the
+    cache so subsequent non-refresh callers benefit.
     """
     if user is not None and not user.has_permission(Permission.CLOUD_AUTH.value):
         return _empty_slots(), "not_authenticated"
@@ -106,9 +115,10 @@ async def _fetch_cloud_presets(db: AsyncSession, user: User | None) -> tuple[dic
     user_key = user.id if user is not None else 0
     cache_key = (user_key, _token_fingerprint(token))
     now = time.monotonic()
-    cached = _cloud_cache.get(cache_key)
-    if cached and now - cached[0] < _CLOUD_TTL_S:
-        return cached[1], "ok"
+    if not refresh:
+        cached = _cloud_cache.get(cache_key)
+        if cached and now - cached[0] < _CLOUD_TTL_S:
+            return cached[1], "ok"
 
     cloud = BambuCloudService(region=region)
     cloud.set_token(token)
@@ -172,13 +182,33 @@ async def _fetch_local_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset
         slot = type_to_slot.get(p.preset_type)
         if slot is None:
             continue
-        extra: dict[str, str | None] = {}
+        preset = UnifiedPreset(id=str(p.id), name=p.name, source="local")
         if slot == "filament":
-            extra["filament_type"], extra["filament_colour"] = _parse_filament_metadata(p.setting)
-        slots[slot].append(
-            UnifiedPreset(id=str(p.id), name=p.name, source="local", **extra),
-        )
+            preset.filament_type, preset.filament_colour = _parse_filament_metadata(p.setting)
+        if slot in ("process", "filament"):
+            # Precise compatibility link — the slicer's own compatible_printers
+            # list, captured at import time. Lets the SliceModal filter the
+            # process / filament dropdowns by the selected printer without
+            # falling back to the uploaded-bundle index.
+            preset.compatible_printers = _parse_compatible_printers(p.compatible_printers)
+        slots[slot].append(preset)
     return slots
+
+
+def _parse_compatible_printers(raw: str | None) -> list[str] | None:
+    """``LocalPreset.compatible_printers`` stores a JSON array of printer-preset
+    names. Return the parsed list, or ``None`` on missing / malformed data so
+    the SliceModal falls back to the uploaded-bundle index for that preset."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, list):
+        return None
+    names = [s for s in data if isinstance(s, str) and s.strip()]
+    return names or None
 
 
 def _parse_filament_metadata(setting_json: str | None) -> tuple[str | None, str | None]:
@@ -206,11 +236,15 @@ def _first_scalar(value: object) -> str | None:
     return None
 
 
-async def _fetch_bundled_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset]]:
-    """Standard slicer-bundled profiles via the sidecar's /profiles/bundled."""
+async def _fetch_bundled_presets(db: AsyncSession, *, refresh: bool = False) -> dict[str, list[UnifiedPreset]]:
+    """Standard slicer-bundled profiles via the sidecar's /profiles/bundled.
+
+    ``refresh=True`` skips the in-process cache; see _fetch_cloud_presets for
+    the same shape and rationale.
+    """
     global _bundled_cache
     now = time.monotonic()
-    if _bundled_cache and now - _bundled_cache[0] < _BUNDLED_TTL_S:
+    if not refresh and _bundled_cache and now - _bundled_cache[0] < _BUNDLED_TTL_S:
         return _bundled_cache[1]
 
     api_url = await _resolve_slicer_api_url(db)
@@ -340,11 +374,37 @@ def _dedupe_by_name(
     return cloud, deduped_local, deduped_standard
 
 
+@router.get("/printer-models")
+def list_printer_models() -> dict[str, str]:
+    """Canonical Bambu printer-model registry, surfaced for the SliceModal.
+
+    Returns the backend's ``PRINTER_MODEL_MAP`` unmodified: keys are the long
+    "Bambu Lab <model>" form that appears in 3MF metadata and in slicer
+    printer-preset names, values are the normalized short codes used in
+    BambuStudio's `@BBL <code>` cloud-preset filenames. The frontend uses this
+    mapping to classify cloud / standard presets against the selected printer
+    when no slicer bundle has been uploaded that covers the preset (#1325
+    follow-up) - avoiding a second, manually-maintained model table on the
+    frontend. No auth gate: this is a static reference dictionary, not
+    user data.
+    """
+    return dict(PRINTER_MODEL_MAP)
+
+
 @router.get("/presets", response_model=UnifiedPresetsResponse)
 async def list_unified_presets(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
+    refresh: bool = Query(
+        False,
+        description=(
+            "Bypass the in-process cloud and bundled-preset caches for this "
+            "request. The SliceModal's Refresh button sets this so users who "
+            "deleted a preset in Bambu Studio or Bambu Handy don't have to "
+            "wait for the 5-minute cloud-cache TTL to expire."
+        ),
+    ),
 ) -> UnifiedPresetsResponse:
     """List slicer presets across cloud / local / standard tiers, deduped by name.
 
@@ -361,9 +421,9 @@ async def list_unified_presets(
     too — matching the slice route (#1182 follow-up).
     """
     cloud_token_user = current_user or api_key_cloud_owner
-    cloud, cloud_status = await _fetch_cloud_presets(db, cloud_token_user)
+    cloud, cloud_status = await _fetch_cloud_presets(db, cloud_token_user, refresh=refresh)
     local = await _fetch_local_presets(db)
-    standard = await _fetch_bundled_presets(db)
+    standard = await _fetch_bundled_presets(db, refresh=refresh)
 
     cloud, local, standard = _dedupe_by_name(cloud, local, standard)
 

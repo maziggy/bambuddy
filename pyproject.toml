@@ -83,5 +83,5 @@ markers = [
 [dependency-groups]
 dev = [
     "cryptography>=46.0.7",
-    "pyjwt>=2.12.1",
+    "pyjwt>=2.13.0",
 ]

@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
+import { AuthProvider } from '../../contexts/AuthContext';
 
 const mockPrinter = {
   id: 1,
@@ -60,13 +61,15 @@ function renderOverlayPage(printerId: number, queryParams = '') {
   return rtlRender(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/overlay/${printerId}${queryParams}`]}>
-        <ThemeProvider>
-          <ToastProvider>
-            <Routes>
-              <Route path="/overlay/:printerId" element={<StreamOverlayPage />} />
-            </Routes>
-          </ToastProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <Routes>
+                <Route path="/overlay/:printerId" element={<StreamOverlayPage />} />
+              </Routes>
+            </ToastProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -76,12 +79,17 @@ describe('StreamOverlayPage', () => {
   const originalTitle = document.title;
 
   beforeEach(() => {
-    // Mock WebSocket
-    vi.stubGlobal('WebSocket', vi.fn().mockImplementation(() => ({
-      close: vi.fn(),
-      onmessage: null,
-      onerror: null,
-    })));
+    // Mock WebSocket. vitest 4 dropped support for arrow-function constructor
+    // mocks (`new (() => ...)` throws "is not a constructor"); use a plain
+    // function so `new WebSocket(...)` resolves correctly.
+    vi.stubGlobal(
+      'WebSocket',
+      vi.fn().mockImplementation(function (this: { close: () => void; onmessage: null; onerror: null }) {
+        this.close = vi.fn();
+        this.onmessage = null;
+        this.onerror = null;
+      }),
+    );
 
     server.use(
       http.get('/api/v1/printers/:id', () => {

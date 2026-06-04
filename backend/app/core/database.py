@@ -405,6 +405,26 @@ async def _safe_execute(conn, sql):
             raise
 
 
+async def _api_keys_column_exists(conn, column_name: str) -> bool:
+    """Return True if the named column exists on ``api_keys``.
+
+    Used to gate one-shot data backfills that must run only on the migration
+    that adds a column — without this, repeating the UPDATE on every startup
+    would silently overwrite values the user later edited in the UI.
+    Dialect-specific because SQLite has no information_schema.
+    """
+    from sqlalchemy import text
+
+    if is_sqlite():
+        result = await conn.execute(text("PRAGMA table_info(api_keys)"))
+        return any(row[1] == column_name for row in result)
+    result = await conn.execute(
+        text("SELECT 1 FROM information_schema.columns WHERE table_name = 'api_keys' AND column_name = :col"),
+        {"col": column_name},
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def _migrate_normalize_printer_ids(conn) -> None:
     from sqlalchemy import text
 
@@ -413,6 +433,39 @@ async def _migrate_normalize_printer_ids(conn) -> None:
             await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'"))
         else:
             await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids::text = '[]'"))
+
+
+async def _migrate_drop_library_print_name(conn) -> None:
+    """Strip the embedded 3MF Title (``print_name``) from library file metadata (#1489).
+
+    Library files stored the 3MF's ``<metadata name="Title">`` as
+    ``file_metadata.print_name`` — generic ("Exported 3D Model") for Bambu
+    Studio exports, a marketing title for MakerWorld downloads — and the
+    FileManager wrongly preferred it over the filename for the card label,
+    search and sort. New imports no longer store it; this clears it from rows
+    imported before the fix so existing libraries don't need a rename
+    round-trip. Idempotent — rows without the key are untouched.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        if is_sqlite():
+            await conn.execute(
+                text(
+                    "UPDATE library_files SET file_metadata = json_remove(file_metadata, '$.print_name') "
+                    "WHERE json_extract(file_metadata, '$.print_name') IS NOT NULL"
+                )
+            )
+        else:
+            # file_metadata is a JSON (not JSONB) column — cast to jsonb for the
+            # key-exists test (jsonb_exists, avoiding the `?` operator which
+            # clashes with driver parameter syntax) and the `- key` removal.
+            await conn.execute(
+                text(
+                    "UPDATE library_files SET file_metadata = (file_metadata::jsonb - 'print_name')::json "
+                    "WHERE jsonb_exists(file_metadata::jsonb, 'print_name')"
+                )
+            )
 
 
 async def _migrate_update_auto_link_constraint(conn) -> None:
@@ -872,6 +925,15 @@ async def run_migrations(conn):
 
     # Migration: Add ams_mapping column to print_queue for storing filament slot assignments
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN ams_mapping TEXT")
+
+    # Migration: filament_short flag on print_queue (#1496). Set by the
+    # dispatch scheduler when the assigned spool can't satisfy the print's
+    # per-slot weight; surfaced as a "filament short" badge on the queue row.
+    # Postgres rejects `DEFAULT 0` for BOOLEAN — branch on dialect.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN filament_short BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN filament_short BOOLEAN DEFAULT false")
 
     # Migration: Add queue_force_color_match column to virtual_printers (#1188).
     # Opt-in flag: when true, VP queue-mode uploads pin the per-slot type+color
@@ -1597,9 +1659,18 @@ async def run_migrations(conn):
 
                     result = await conn.execute(text("SELECT value FROM settings WHERE key = 'virtual_printer_mode'"))
                     row = result.fetchone()
-                    old_mode = row[0] if row else "immediate"
+                    old_mode = row[0] if row else "archive"
+                    # Translate to canonical wire values (#1429 mode-label
+                    # discrepancy): legacy `immediate` → `archive`, legacy
+                    # `print_queue` → `queue`. The historical `queue` alias
+                    # for `review` predates the canonical rename and is
+                    # preserved (existing user intent was "pending review").
                     if old_mode == "queue":
                         old_mode = "review"
+                    elif old_mode == "immediate":
+                        old_mode = "archive"
+                    elif old_mode == "print_queue":
+                        old_mode = "queue"
 
                     result = await conn.execute(text("SELECT value FROM settings WHERE key = 'virtual_printer_model'"))
                     row = result.fetchone()
@@ -1629,7 +1700,7 @@ async def run_migrations(conn):
                         {
                             "name": "Bambuddy",
                             "enabled": old_enabled,
-                            "mode": old_mode or "immediate",
+                            "mode": old_mode or "archive",
                             "model": old_model,
                             "access_code": old_access_code,
                             "target_id": old_target_id,
@@ -1743,6 +1814,41 @@ async def run_migrations(conn):
             text("UPDATE settings SET value = :new WHERE key = 'virtual_printer_model' AND value = :old"),
             {"old": old_val, "new": new_val},
         )
+
+    # Migration: Rename VP mode wire values to match the user-facing labels
+    # (#1429 follow-up). The UI button "Archive" had always saved `immediate`
+    # and "Queue" had always saved `print_queue` — a mismatch that showed up
+    # confusingly in every support bundle. The button labels stay; the wire
+    # value is what changes. Idempotent: re-running the UPDATE on canonical
+    # values is a no-op. SQLite and Postgres both accept this statement
+    # unchanged (string literal comparison, no driver-specific syntax).
+    vp_mode_renames = [("immediate", "archive"), ("print_queue", "queue")]
+    for old_val, new_val in vp_mode_renames:
+        await conn.execute(
+            text("UPDATE virtual_printers SET mode = :new WHERE mode = :old"),
+            {"old": old_val, "new": new_val},
+        )
+        await conn.execute(
+            text("UPDATE settings SET value = :new WHERE key = 'virtual_printer_mode' AND value = :old"),
+            {"old": old_val, "new": new_val},
+        )
+
+    # Migration: Unify `LibraryFile.file_type` across ingest paths (#1600).
+    # Pre-#1600, only the external-folder scan path stored `gcode.3mf` for
+    # sliced outputs — the upload, ZIP-extract, and in-process paths all
+    # stripped to the trailing `.3mf` and stored `3mf`, so the same file
+    # family was split between two values depending on how it was ingested.
+    # Going forward `classify_file_type()` is canonical; this backfill flips
+    # existing legacy `3mf` rows whose filename ends in `.gcode.3mf` to the
+    # canonical compound name. Idempotent (post-update rows no longer match
+    # `file_type = '3mf'`) and dialect-neutral (`LOWER` + `LIKE` work the
+    # same under SQLite and Postgres).
+    await conn.execute(
+        text(
+            "UPDATE library_files SET file_type = 'gcode.3mf' "
+            "WHERE file_type = '3mf' AND LOWER(filename) LIKE '%.gcode.3mf'"
+        )
+    )
 
     # Migration: Add per-user Bambu Cloud credential columns
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token VARCHAR(500)")
@@ -2143,6 +2249,40 @@ async def run_migrations(conn):
         conn,
         "ALTER TABLE api_keys ADD COLUMN can_update_energy_cost BOOLEAN DEFAULT FALSE",
     )
+
+    # GHSA-r2qv-8222-hqg3 (CVE-2026-pending, CVSS 9.9): split file-management out
+    # of the implicit "any API key" grant into an explicit scope flag. The
+    # allowlist-based ``_check_apikey_permissions`` (see ``core/auth.py``) routes
+    # LIBRARY_UPLOAD / LIBRARY_UPDATE_OWN / LIBRARY_DELETE_OWN / MAKERWORLD_IMPORT
+    # through this flag. DEFAULT TRUE matches the existing "queue + read" trust
+    # baseline; backfill mirrors can_queue so a key the user previously created as
+    # "queue-only" retains the file-upload step its queue workflow already used,
+    # while a hardened "read-only" key (can_queue=False) does not silently gain a
+    # new write capability on upgrade. Backfill is gated on column non-existence
+    # so user-edited values are never overwritten on subsequent startup.
+    column_existed = await _api_keys_column_exists(conn, "can_manage_library")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_manage_library BOOLEAN DEFAULT TRUE",
+    )
+    if not column_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE api_keys SET can_manage_library = can_queue"))
+
+    # Same shape: SpoolBuddy NFC/scale/system endpoints plus manual inventory
+    # writes split out of the implicit "any API key" grant. Backfill mirrors
+    # ``can_queue`` so the bundled SpoolBuddy kiosk key (created via the CLI
+    # with can_queue=False) does NOT silently gain inventory writes — but
+    # the CLI override sets the new flag True explicitly, since the kiosk
+    # itself is the legitimate writer (see ``cli.py``).
+    column_existed = await _api_keys_column_exists(conn, "can_manage_inventory")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_manage_inventory BOOLEAN DEFAULT TRUE",
+    )
+    if not column_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE api_keys SET can_manage_inventory = can_queue"))
 
     # Migration: Soft-delete column for trash bin (Issue #1008). Indexed so the
     # sweeper's "SELECT ... WHERE deleted_at < cutoff" and the trash list's
@@ -2614,6 +2754,10 @@ async def run_migrations(conn):
             conn,
             "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS off_delay_after_drying_minutes INTEGER DEFAULT 10",
         )
+
+    # Data migration: drop the embedded 3MF Title (`print_name`) from library
+    # file metadata so the FileManager displays the filename, not the title (#1489).
+    await _migrate_drop_library_print_name(conn)
 
 
 async def seed_notification_templates():

@@ -1,5 +1,16 @@
 # Web Framework
-fastapi>=0.109.0
+# fastapi 0.136.x ships an undocumented `fastar` dep in its [standard]
+# extras group (MAL-2026-4750, surfaced by Amazon Inspector). `fastar`
+# is a Rust-tar binding package — no plausible reason for a web
+# framework to depend on it. Even if `fastar` is benign today, the
+# advisory's framing as a namespace-abuse / supply-chain vector is
+# valid: anyone controlling the `fastar` PyPI namespace gains code
+# execution at install time across every fastapi[standard] install.
+# Bambuddy doesn't request [standard], so we don't pull `fastar` in
+# practice, but pip-audit flags the package itself and breaks CI.
+# Hold to 0.135.x (which has all features we use, including SSE)
+# until upstream removes the dep or explains the rationale.
+fastapi>=0.109.0,<0.136.0
 uvicorn[standard]>=0.27.0
 
 # Database
@@ -55,7 +66,7 @@ fast-simplification>=0.1.0
 psutil>=6.0.0
 
 # Authentication
-PyJWT>=2.12.0
+PyJWT>=2.13.0
 passlib[bcrypt]>=1.7.4
 ldap3>=2.9.0
 pyotp>=2.9.0
@@ -73,6 +84,11 @@ httpx>=0.26.0
 # top-level deps require >=2.7.0 yet, so without this the resolver
 # would silently keep installing the vulnerable 2.6.x line.
 urllib3>=2.7.0
+
+# Transitive of fastapi. starlette 1.0.0 has PYSEC-2026-161; 1.0.1 is the
+# fixed release. fastapi's range still admits 1.0.0 so we pin the floor
+# directly to stop the resolver from picking the vulnerable build.
+starlette>=1.0.1
 
 # Plate Detection (optional - enables build plate empty detection)
 opencv-python-headless>=4.8.0

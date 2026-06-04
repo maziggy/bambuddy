@@ -147,6 +147,10 @@ class ArchiveStats(BaseModel):
     total_prints: int
     successful_prints: int
     failed_prints: int
+    # User/system-stopped prints (PrintLogEntry.status in stopped/cancelled/
+    # skipped). Defaulted so older clients that don't send this field still
+    # validate against historical fixtures.
+    cancelled_prints: int = 0
     total_print_time_hours: float
     total_filament_grams: float
     total_cost: float

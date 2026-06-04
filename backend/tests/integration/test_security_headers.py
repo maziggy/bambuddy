@@ -193,3 +193,78 @@ async def test_other_security_headers_unchanged(async_client: AsyncClient, monke
         resp = await async_client.get("/api/v1/auth/status")
         assert resp.headers.get("X-Content-Type-Options") == "nosniff"
         assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+
+# ─── #1460: nonce-based script-src so Cloudflare-injected scripts pass ────
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spa_csp_includes_per_request_script_nonce(async_client: AsyncClient):
+    """SPA CSP must stamp a fresh `'nonce-…'` token into script-src (#1460).
+
+    Cloudflare's bot-detection inline script is injected after our response
+    leaves the app, with a per-load hash that defeats hash allowlisting. When
+    a nonce is present in the CSP header, Cloudflare clones it onto its
+    injected `<script>` and the CSP passes without `'unsafe-inline'`.
+    """
+    import re
+
+    resp = await async_client.get("/api/v1/auth/status")
+    csp = resp.headers.get("Content-Security-Policy", "")
+    # Pull out the script-src directive (split on ';' so neighbours don't confuse us).
+    script_src = next(
+        (d.strip() for d in csp.split(";") if d.strip().startswith("script-src")),
+        "",
+    )
+    assert script_src, f"script-src directive missing: {csp!r}"
+    assert "'self'" in script_src, f"script-src must still allow 'self': {script_src!r}"
+    # Nonce token is `'nonce-<base64url>'` where the inner value is
+    # secrets.token_urlsafe(16) — about 22 url-safe chars.
+    assert re.search(r"'nonce-[A-Za-z0-9_-]{16,}'", script_src), (
+        f"script-src must include a 'nonce-…' token: {script_src!r}"
+    )
+    # We deliberately did NOT add 'unsafe-inline' alongside the nonce — that
+    # would defeat the purpose of using a nonce in the first place.
+    assert "'unsafe-inline'" not in script_src, (
+        f"script-src must not relax to 'unsafe-inline' on the SPA route: {script_src!r}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spa_csp_nonce_changes_per_request(async_client: AsyncClient):
+    """A nonce is only useful if it's fresh per request (#1460)."""
+    import re
+
+    nonce_re = re.compile(r"'nonce-([A-Za-z0-9_-]+)'")
+
+    nonces = set()
+    for _ in range(5):
+        resp = await async_client.get("/api/v1/auth/status")
+        csp = resp.headers.get("Content-Security-Policy", "")
+        m = nonce_re.search(csp)
+        assert m, f"no nonce in CSP: {csp!r}"
+        nonces.add(m.group(1))
+    # 5 random 16-byte tokens collide with probability ~0 — anything less
+    # than all-5-distinct means we're handing out a stale/global nonce.
+    assert len(nonces) == 5, f"nonces should be per-request, got {nonces!r}"
+
+
+# ─── #1460: HEAD on PWA bootstrap routes (manifest / sw / sw-register) ───
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("path", ["/manifest.json", "/sw.js", "/sw-register.js"])
+async def test_pwa_bootstrap_routes_accept_head(async_client: AsyncClient, path: str):
+    """Scanners and `curl -I` HEAD-probe these — must not 405 (#1460).
+
+    Previously these were `@app.get` only, so HEAD returned 405 Method Not
+    Allowed and looked like a manifest/SW server-side bug when debugging
+    Cloudflare-fronted deployments.
+    """
+    resp = await async_client.head(path)
+    # 200 if static asset is present in the test environment, 404 if it's
+    # not packaged in this checkout — but never 405.
+    assert resp.status_code != 405, f"HEAD {path} returned 405 — route must accept HEAD as well as GET"

@@ -34,7 +34,7 @@ services:
     #  - "6000:6000"                  # Virtual printer file transfer tunnel
     #  - "322:322"                    # Virtual printer RTSP camera (X1/H2/P2; proxy mode + non-proxy modes with a target printer)
     #  - "2024-2026:2024-2026"        # Virtual printer proprietary ports (A1/P1S)
-    #  - "50000-50100:50000-50100"    # Virtual printer FTP passive data
+    #  - "50000-51000:50000-51000"    # Virtual printer FTP passive data (widened from 50000-50100 for multi-VP headroom)
     volumes:
       - bambuddy_data:/app/data
       - bambuddy_logs:/app/logs
@@ -69,6 +69,14 @@ services:
       # Enable the system trust store with the USE_SYSTEM_TRUST_STORE env var to
       # have Bambuddy trust the certificate.
       # - /path/to/certs:/usr/local/share/ca-certificates
+      #
+      # External library folders. Mount the host paths the operator wants
+      # users to be able to register as external folders. The in-container
+      # paths chosen here MUST appear in BAMBUDDY_EXTERNAL_ROOTS below.
+      # Read-only (:ro) is recommended unless you want users uploading
+      # files back to the host share.
+      #- /mnt/nas/3d-prints:/external/nas:ro
+      #- /srv/library:/external/projects:ro
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # User/group the container drops to after the entrypoint normalises
@@ -100,6 +108,16 @@ services:
       # DATA_DIR/.mfa_encryption_key on first startup if unset. Override here
       # to manage the key out-of-band (e.g. via a secret manager).
       #- MFA_ENCRYPTION_KEY=
+      #
+      # External library folders (GHSA-r2qv follow-up). Empty default
+      # disables the "Add external folder" feature; set to one or more
+      # colon-separated absolute paths INSIDE THE CONTAINER to opt in.
+      # The paths must also be bind-mounted from the host — uncomment
+      # the matching volume snippet below.
+      # Example for a single NAS mount:
+      #- BAMBUDDY_EXTERNAL_ROOTS=/external/nas
+      # Example for two roots:
+      #- BAMBUDDY_EXTERNAL_ROOTS=/external/nas:/external/projects
       #
       # Enable System Trust Store for certificate validation (e.g. for local Home Assistant)
       # You also need to mount your certificates to the container (see volumes section above).

@@ -29,6 +29,7 @@ from backend.app.services.camera import (
     get_ffmpeg_path,
     is_chamber_image_model,
     read_next_chamber_frame,
+    rtsp_socket_timeout_flag,
     test_camera_connection,
 )
 from backend.app.services.camera_fanout import (
@@ -276,20 +277,35 @@ def _summarize_ffmpeg_stderr(text: str | None) -> str:
 
 
 async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None:
-    """Read ffmpeg stderr for diagnostics (best-effort, non-blocking).
+    """Read whatever ffmpeg has written to stderr so far (best-effort).
 
-    Returns the stderr content with ffmpeg's boilerplate banner stripped,
-    so log output stays focused on the actual error.
+    ffmpeg's stderr must be drained *incrementally*. A stalled-but-still-alive
+    ffmpeg — the typical P2S RTSP failure, where it connects but never produces
+    a frame — never closes stderr, so a plain ``stderr.read()`` (read-to-EOF)
+    blocks until the wait_for timeout and returns nothing, discarding the
+    banner + stream-analysis lines ffmpeg already printed. Reading in bounded
+    chunks returns the buffered output promptly whether or not ffmpeg has
+    exited. Returns the content with ffmpeg's boilerplate banner stripped.
     """
     if not process or not process.stderr:
         return None
+    chunks: list[bytes] = []
+    total = 0
+    cap = 65536
     try:
-        data = await asyncio.wait_for(process.stderr.read(), timeout=2.0)
-        if not data:
-            return None
-        return _summarize_ffmpeg_stderr(data.decode(errors="replace")) or None
-    except (TimeoutError, Exception):
+        while total < cap:
+            chunk = await asyncio.wait_for(process.stderr.read(8192), timeout=2.0)
+            if not chunk:
+                break  # EOF — ffmpeg has exited
+            chunks.append(chunk)
+            total += len(chunk)
+    except Exception:
+        # Timed out waiting for more data — ffmpeg is alive but quiet now.
+        # Fall through and return whatever it already printed.
+        pass
+    if not chunks:
         return None
+    return _summarize_ffmpeg_stderr(b"".join(chunks).decode(errors="replace")) or None
 
 
 async def generate_rtsp_mjpeg_stream(
@@ -333,8 +349,11 @@ async def generate_rtsp_mjpeg_stream(
         "tcp",
         "-rtsp_flags",
         "prefer_tcp",
-        "-timeout",
-        "30000000",  # 30 seconds in microseconds
+        # Socket I/O timeout name varies by ffmpeg version (#1504); see
+        # rtsp_socket_timeout_flag(). The 30s value is microseconds for
+        # both names.
+        f"-{rtsp_socket_timeout_flag()}",
+        "30000000",
         "-buffer_size",
         "1024000",  # 1MB buffer
         "-max_delay",
@@ -365,9 +384,19 @@ async def generate_rtsp_mjpeg_stream(
         _disconnect_events[stream_id] = disconnect_event
 
     logger.info(
-        "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s)", ip_address, stream_id, model, fps
+        "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s, probesize=%s, analyzeduration=%s)",
+        ip_address,
+        stream_id,
+        model,
+        fps,
+        profile.probesize,
+        profile.analyzeduration,
     )
-    logger.debug("ffmpeg command: %s ... (url hidden)", ffmpeg)
+    # Log the full argv so a support bundle shows the actual ffmpeg flags
+    # (probesize, analyzeduration, transport, ...). Only camera_url carries a
+    # secret (the access code), so redact just that one element.
+    _redacted_cmd = ["rtsp://<redacted>/streaming/live/1" if a == camera_url else a for a in cmd]
+    logger.debug("ffmpeg command: %s", " ".join(_redacted_cmd))
 
     # On Windows, spawn ffmpeg in its own process group so that
     # terminate() doesn't broadcast CTRL_C_EVENT to uvicorn (#605).

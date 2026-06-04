@@ -22,7 +22,7 @@ class TestSupportLogsAPI:
     @pytest.mark.integration
     async def test_get_logs_empty_file(self, async_client: AsyncClient):
         """Verify get logs returns empty list when log file doesn't exist."""
-        with patch("backend.app.api.routes.support.settings") as mock_settings:
+        with patch("backend.app.services.log_reader.settings") as mock_settings:
             mock_settings.log_dir = Path("/nonexistent/path")
 
             response = await async_client.get("/api/v1/support/logs")
@@ -46,7 +46,7 @@ class TestSupportLogsAPI:
             log_file = Path(tmpdir) / "bambuddy.log"
             log_file.write_text(log_content)
 
-            with patch("backend.app.api.routes.support.settings") as mock_settings:
+            with patch("backend.app.services.log_reader.settings") as mock_settings:
                 mock_settings.log_dir = Path(tmpdir)
 
                 response = await async_client.get("/api/v1/support/logs")
@@ -76,7 +76,7 @@ class TestSupportLogsAPI:
             log_file = Path(tmpdir) / "bambuddy.log"
             log_file.write_text(log_content)
 
-            with patch("backend.app.api.routes.support.settings") as mock_settings:
+            with patch("backend.app.services.log_reader.settings") as mock_settings:
                 mock_settings.log_dir = Path(tmpdir)
 
                 response = await async_client.get("/api/v1/support/logs?level=ERROR")
@@ -100,7 +100,7 @@ class TestSupportLogsAPI:
             log_file = Path(tmpdir) / "bambuddy.log"
             log_file.write_text(log_content)
 
-            with patch("backend.app.api.routes.support.settings") as mock_settings:
+            with patch("backend.app.services.log_reader.settings") as mock_settings:
                 mock_settings.log_dir = Path(tmpdir)
 
                 response = await async_client.get("/api/v1/support/logs?search=printer")
@@ -124,7 +124,7 @@ class TestSupportLogsAPI:
             log_file = Path(tmpdir) / "bambuddy.log"
             log_file.write_text(log_content)
 
-            with patch("backend.app.api.routes.support.settings") as mock_settings:
+            with patch("backend.app.services.log_reader.settings") as mock_settings:
                 mock_settings.log_dir = Path(tmpdir)
 
                 response = await async_client.get("/api/v1/support/logs?limit=2")
@@ -153,7 +153,7 @@ ValueError: test error
             log_file = Path(tmpdir) / "bambuddy.log"
             log_file.write_text(log_content)
 
-            with patch("backend.app.api.routes.support.settings") as mock_settings:
+            with patch("backend.app.services.log_reader.settings") as mock_settings:
                 mock_settings.log_dir = Path(tmpdir)
 
                 response = await async_client.get("/api/v1/support/logs")
@@ -214,7 +214,7 @@ class TestLogParsingHelpers:
 
     def test_parse_log_line_valid(self):
         """Verify _parse_log_line handles valid log lines."""
-        from backend.app.api.routes.support import _parse_log_line
+        from backend.app.services.log_reader import parse_log_line as _parse_log_line
 
         line = "2024-01-15 10:30:45,123 INFO [backend.app.main] Server started"
         entry = _parse_log_line(line)
@@ -227,7 +227,7 @@ class TestLogParsingHelpers:
 
     def test_parse_log_line_invalid(self):
         """Verify _parse_log_line returns None for invalid lines."""
-        from backend.app.api.routes.support import _parse_log_line
+        from backend.app.services.log_reader import parse_log_line as _parse_log_line
 
         line = "This is not a valid log line"
         entry = _parse_log_line(line)
@@ -236,7 +236,7 @@ class TestLogParsingHelpers:
 
     def test_parse_log_line_with_brackets_in_message(self):
         """Verify _parse_log_line handles messages with brackets."""
-        from backend.app.api.routes.support import _parse_log_line
+        from backend.app.services.log_reader import parse_log_line as _parse_log_line
 
         line = "2024-01-15 10:30:45,123 INFO [backend.app.main] Processing [item 1] and [item 2]"
         entry = _parse_log_line(line)
@@ -246,7 +246,7 @@ class TestLogParsingHelpers:
 
     def test_parse_log_line_all_levels(self):
         """Verify _parse_log_line handles all log levels."""
-        from backend.app.api.routes.support import _parse_log_line
+        from backend.app.services.log_reader import parse_log_line as _parse_log_line
 
         levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         for level in levels:

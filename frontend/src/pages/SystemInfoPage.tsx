@@ -21,10 +21,14 @@ import {
   Download,
   Headphones,
   FolderOpen,
+  Stethoscope,
+  HeartPulse,
 } from 'lucide-react';
-import { api, supportApi } from '../api/client';
+import { api, supportApi, type Printer as PrinterModel } from '../api/client';
 import { Card } from '../components/Card';
 import { LogViewer } from '../components/LogViewer';
+import { ConnectionDiagnosticModal } from '../components/ConnectionDiagnostic';
+import { SystemHealthPanel } from '../components/SystemHealthPanel';
 import { formatDateTime, type TimeFormat } from '../utils/date';
 
 function formatBytes(bytes: number): string {
@@ -98,6 +102,7 @@ export function SystemInfoPage() {
   const [bundleError, setBundleError] = useState<string | null>(null);
   const [bundleDownloading, setBundleDownloading] = useState(false);
   const [debugToggling, setDebugToggling] = useState(false);
+  const [diagnosticPrinter, setDiagnosticPrinter] = useState<PrinterModel | null>(null);
 
   const { data: systemInfo, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['systemInfo'],
@@ -120,6 +125,21 @@ export function SystemInfoPage() {
   const { data: libraryStats } = useQuery({
     queryKey: ['library-stats'],
     queryFn: api.getLibraryStats,
+  });
+
+  const { data: allPrinters } = useQuery({
+    queryKey: ['printers'],
+    queryFn: api.getPrinters,
+  });
+
+  const {
+    data: systemHealth,
+    refetch: refetchHealth,
+    isFetching: healthFetching,
+  } = useQuery({
+    queryKey: ['systemHealth'],
+    queryFn: api.getSystemHealth,
+    staleTime: 60 * 1000,
   });
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
@@ -283,9 +303,30 @@ export function SystemInfoPage() {
               title={!debugLoggingState?.enabled ? t('support.enableDebugFirst', 'Enable debug logging first') : undefined}
             >
               {bundleDownloading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {t('common.download', 'Download')}
+              {bundleDownloading
+                ? t('support.bundleGenerating', 'Generating...')
+                : t('common.download', 'Download')}
             </button>
           </div>
+
+          {/* Progress indicator — bundle generation now runs connection +
+              virtual-printer diagnostics and the log-health scan before
+              writing the ZIP (#1506 follow-up), so the wait is longer than
+              a pure file-export. List what's running so it's not opaque. */}
+          {bundleDownloading && (
+            <div className="p-3 bg-bambu-dark-tertiary/40 rounded-lg space-y-1">
+              <p className="text-sm font-medium text-white flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-bambu-green" />
+                {t('support.bundleGenerating', 'Generating...')}
+              </p>
+              <ul className="text-xs text-bambu-gray list-disc list-inside space-y-0.5 pl-1">
+                <li>{t('support.bundleStepConnection', 'Running printer connectivity checks')}</li>
+                <li>{t('support.bundleStepVirtualPrinters', 'Running virtual-printer setup checks')}</li>
+                <li>{t('support.bundleStepLogScan', 'Scanning recent logs for known issues')}</li>
+                <li>{t('support.bundleStepBuild', 'Building the support bundle ZIP')}</li>
+              </ul>
+            </div>
+          )}
 
           {/* Error message */}
           {bundleError && (
@@ -353,6 +394,60 @@ export function SystemInfoPage() {
           {/* Log Viewer */}
           <LogViewer />
         </div>
+      </Section>
+
+      {/* Connection Diagnostic */}
+      <Section title={t('diagnostic.sectionTitle', 'Connection Diagnostic')} icon={Stethoscope}>
+        <p className="text-sm text-bambu-gray mb-4">
+          {t(
+            'diagnostic.sectionDescription',
+            "Check why a printer won't connect or won't print — port reachability, LAN developer mode, Docker network mode, and credentials.",
+          )}
+        </p>
+        {allPrinters && allPrinters.length > 0 ? (
+          <div className="space-y-2">
+            {allPrinters.map((printer) => (
+              <div
+                key={printer.id}
+                className="flex items-center justify-between p-3 bg-bambu-dark rounded-lg"
+              >
+                <div className="min-w-0">
+                  <span className="font-medium text-white">{printer.name}</span>
+                  <span className="text-sm text-bambu-gray ml-2">{printer.ip_address}</span>
+                </div>
+                <button
+                  onClick={() => setDiagnosticPrinter(printer)}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-bambu-dark-secondary hover:bg-bambu-dark-tertiary text-white rounded-lg transition-colors flex-shrink-0"
+                >
+                  <Stethoscope className="w-4 h-4" />
+                  {t('diagnostic.runButton', 'Run diagnostic')}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-bambu-gray">{t('diagnostic.noPrinters', 'No printers configured.')}</p>
+        )}
+      </Section>
+
+      {/* System Health */}
+      <Section title={t('systemHealth.sectionTitle')} icon={HeartPulse}>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <p className="text-sm text-bambu-gray">{t('systemHealth.sectionDescription')}</p>
+          <button
+            onClick={() => refetchHealth()}
+            disabled={healthFetching}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-bambu-dark-secondary hover:bg-bambu-dark-tertiary text-white rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${healthFetching ? 'animate-spin' : ''}`} />
+            {t('systemHealth.rescan')}
+          </button>
+        </div>
+        {systemHealth ? (
+          <SystemHealthPanel result={systemHealth} />
+        ) : (
+          <p className="text-sm text-bambu-gray">{t('common.loading')}</p>
+        )}
       </Section>
 
       {/* Database Stats */}
@@ -581,6 +676,14 @@ export function SystemInfoPage() {
           />
         </div>
       </Section>
+
+      {diagnosticPrinter && (
+        <ConnectionDiagnosticModal
+          printerId={diagnosticPrinter.id}
+          printerName={diagnosticPrinter.name}
+          onClose={() => setDiagnosticPrinter(null)}
+        />
+      )}
     </div>
   );
 }

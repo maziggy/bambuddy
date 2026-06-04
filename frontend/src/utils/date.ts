@@ -443,3 +443,23 @@ export function formatDurationFromHours(hours: number): string {
   const m = Math.round((hours - h) * 60);
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
+
+/**
+ * Build a YYYY-MM-DD key for a date, evaluated in the user's local timezone.
+ *
+ * The naive `iso.split('T')[0]` shortcut gives the UTC date, which buckets
+ * an evening print in a negative-UTC-offset region (e.g. CDT) onto the
+ * following day. Stats / heatmap bucketing is a presentation concern and
+ * the browser knows the user's tz, so we format with the local getters
+ * here. Use `toLocaleDateString` for *displaying* a date — this helper is
+ * for *keying* buckets, where the value needs to be a stable comparable
+ * string regardless of locale conventions.
+ */
+export function localDateKey(input: string | Date): string {
+  const date = typeof input === 'string' ? parseUTCDate(input) : input;
+  if (!date) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}

@@ -70,6 +70,10 @@ def mock_client():
     client.base_url = "http://localhost:7912"
     client.health_check = AsyncMock(return_value=True)
     client.get_spool = AsyncMock(return_value=SAMPLE_SPOOL)
+    # #1457: assign route enumerates spools to clear stale fallback-tag links.
+    # Default to empty so the cleanup is a no-op for tests that don't exercise it.
+    client.get_spools = AsyncMock(return_value=[])
+    client.merge_spool_extra = AsyncMock(return_value={"id": 0, "extra": {}})
 
     with patch(
         "backend.app.api.routes.spoolman_inventory._get_client",
@@ -573,3 +577,33 @@ class TestCascadeDeletePrinter:
             select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == test_printer.id)
         )
         assert post.scalars().all() == []
+
+
+class TestModeSwitchClearsAssignments:
+    """#1473 follow-up — the Spoolman mode toggle clears the other mode's
+    slot-assignment table so stale rows can't bleed across a mode switch."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_switch_to_internal_mode_clears_spoolman_slot_assignments(
+        self, async_client: AsyncClient, db_session, test_printer
+    ):
+        """Switching Spoolman OFF deletes spoolman_slot_assignments rows — the
+        symmetric counterpart of clearing legacy spool_assignment rows when
+        switching ON. Stale rows would otherwise wrongly count as 'assigned'
+        in mode-agnostic checks (e.g. the missing-spool-assignment notification,
+        which unions both tables)."""
+        from backend.app.models.settings import Settings
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(SpoolmanSlotAssignment(printer_id=test_printer.id, ams_id=0, tray_id=0, spoolman_spool_id=1))
+        await db_session.commit()
+
+        resp = await async_client.put("/api/v1/settings/spoolman", json={"spoolman_enabled": "false"})
+        assert resp.status_code == 200
+
+        rows = await db_session.execute(
+            select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == test_printer.id)
+        )
+        assert rows.scalars().all() == []

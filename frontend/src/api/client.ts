@@ -8,11 +8,21 @@ export class ApiError extends Error {
    *  Frontend uses this to look up an i18n key instead of showing the raw
    *  English fallback. Null when the backend returned a plain-string detail. */
   code: string | null;
-  constructor(message: string, status: number, code: string | null = null) {
+  /** Full structured detail object when the backend returned `{code, ...}`
+   *  with additional fields (e.g. the deficit list for 409s on queue
+   *  start, #1496). Null for plain-string or array-shaped details. */
+  detail: Record<string, unknown> | null;
+  constructor(
+    message: string,
+    status: number,
+    code: string | null = null,
+    detail: Record<string, unknown> | null = null,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -129,13 +139,17 @@ async function request<T>(
         .join('; ');
       message = joined || JSON.stringify(detail) || `HTTP ${response.status}`;
     } else if (detail && typeof detail === 'object') {
-      // Structured detail `{code, message}` — frontend uses the code to
-      // pick an i18n key, message is the English fallback.
+      // Structured detail `{code, message, ...}` — frontend uses the code
+      // to pick an i18n key, message is the English fallback, any extra
+      // fields land on ApiError.detail (e.g. `deficit` for #1496).
       code = typeof detail.code === 'string' ? detail.code : null;
       message = typeof detail.message === 'string' ? detail.message : `HTTP ${response.status}`;
     } else {
       message = `HTTP ${response.status}`;
     }
+    const structuredDetail = detail && typeof detail === 'object' && !Array.isArray(detail)
+      ? (detail as Record<string, unknown>)
+      : null;
 
     // Handle 401 Unauthorized - only clear token if it's actually invalid
     // Don't clear on "Authentication required" which might be a timing issue
@@ -152,7 +166,7 @@ async function request<T>(
       }
     }
 
-    throw new ApiError(message, response.status, code);
+    throw new ApiError(message, response.status, code, structuredDetail);
   }
 
   // Handle empty responses (204 No Content, etc.)
@@ -186,6 +200,60 @@ export interface CameraDiagnoseResult {
   stages: CameraDiagnoseStage[];
   // i18n key under `camera.diagnose.summary.*`.
   summary_code: string;
+}
+
+// Connection diagnostic (GET /printers/{id}/diagnostic and
+// POST /printers/diagnostic). Each check's `id` + `status` resolve a
+// localized title/fix under `diagnostic.check.*`; `params` interpolate it.
+export type DiagnosticStatus = 'pass' | 'fail' | 'warn' | 'skip';
+
+export interface DiagnosticCheck {
+  id:
+    | 'port_mqtt'
+    | 'port_ftps'
+    | 'port_rtsps'
+    | 'network_mode'
+    | 'subnet'
+    | 'mqtt_auth'
+    | 'developer_mode';
+  status: DiagnosticStatus;
+  params: Record<string, string | number>;
+}
+
+export interface PrinterDiagnosticResult {
+  printer_id: number | null;
+  ip_address: string;
+  overall: 'ok' | 'warnings' | 'problems';
+  checks: DiagnosticCheck[];
+}
+
+// --- Log-health scan: self-service triage on the System page + bug reporter.
+// The backend matches recent logs against a curated known-issue catalog;
+// human-readable cause/fix text is rendered from i18n keys keyed by signature_id.
+export type LogFindingSeverity = 'error' | 'warning';
+export type LogFindingCategory = 'layer8' | 'environment' | 'bug';
+
+export interface LogFinding {
+  signature_id: string;
+  severity: LogFindingSeverity;
+  category: LogFindingCategory;
+  wiki_anchor: string;
+  count: number;
+  first_seen: string;
+  last_seen: string;
+  sample: string;
+}
+
+export interface SystemHealthResult {
+  findings: LogFinding[];
+  scanned_entries: number;
+  log_available: boolean;
+  summary: {
+    total: number;
+    layer8: number;
+    environment: number;
+    bug: number;
+  };
 }
 
 // Long-lived camera-stream tokens (#1108). The `token` field is populated
@@ -583,6 +651,7 @@ export interface ArchiveStats {
   total_prints: number;
   successful_prints: number;
   failed_prints: number;
+  cancelled_prints: number;
   total_print_time_hours: number;
   total_filament_grams: number;
   total_cost: number;
@@ -919,6 +988,8 @@ export interface APIKey {
   can_queue: boolean;
   can_control_printer: boolean;
   can_read_status: boolean;
+  can_manage_library: boolean;
+  can_manage_inventory: boolean;
   can_access_cloud: boolean;
   can_update_energy_cost: boolean;
   printer_ids: number[] | null;
@@ -933,6 +1004,8 @@ export interface APIKeyCreate {
   can_queue?: boolean;
   can_control_printer?: boolean;
   can_read_status?: boolean;
+  can_manage_library?: boolean;
+  can_manage_inventory?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
@@ -948,6 +1021,8 @@ export interface APIKeyUpdate {
   can_queue?: boolean;
   can_control_printer?: boolean;
   can_read_status?: boolean;
+  can_manage_library?: boolean;
+  can_manage_inventory?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
@@ -1296,6 +1371,12 @@ export interface UnifiedPreset {
   // responses pre-date these fields entirely.
   filament_type?: string | null;
   filament_colour?: string | null;
+  // Printer-preset names a process / filament preset declares itself
+  // compatible with. Populated for the local tier (the slicer's own
+  // `compatible_printers`); null for cloud / standard. The SliceModal filters
+  // the process / filament dropdowns by the selected printer using this when
+  // present, and otherwise by the user's uploaded Slicer Bundles (#1325).
+  compatible_printers?: string[] | null;
 }
 export interface UnifiedPresetsBySlot {
   printer: UnifiedPreset[];
@@ -1346,6 +1427,12 @@ export interface SliceJobProgress {
   plate_index: number;
   plate_count: number;
   updated_at: number;
+  /** When the backend is in the cross-class slice-all loop (#1493), each
+   *  per-plate sub-slice's progress is augmented with the loop position
+   *  so the toast can show "Plate 2 of 5 — Generating G-code 47%". The
+   *  fields are absent on a single-plate slice. */
+  multi_plate_index?: number;
+  multi_plate_count?: number;
 }
 
 export interface SliceJobState {
@@ -1723,6 +1810,10 @@ export interface PrintQueueItem {
   require_previous_success: boolean;
   auto_off_after: boolean;
   manual_start: boolean;  // Requires manual trigger to start (staged)
+  // Set by the dispatch scheduler when the assigned spool can't satisfy
+  // any required slot's grams (#1496). Surfaced on the queue row as a
+  // "filament short" badge; cleared on a successful ▶ click (live recheck).
+  filament_short: boolean;
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
   filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
@@ -4398,8 +4489,16 @@ export const api = {
     request<{ message: string }>(`/queue/${id}/cancel`, { method: 'POST' }),
   stopQueueItem: (id: number) =>
     request<{ message: string }>(`/queue/${id}/stop`, { method: 'POST' }),
-  startQueueItem: (id: number) =>
-    request<PrintQueueItem>(`/queue/${id}/start`, { method: 'POST' }),
+  /**
+   * Start a staged queue item. The backend re-checks live filament deficit
+   * for the assigned spool and, when short, returns 409 with a structured
+   * payload so the caller can confirm and retry. Pass `skipFilamentCheck`
+   * after the user confirms "Print Anyway" (#1496).
+   */
+  startQueueItem: (id: number, opts?: { skipFilamentCheck?: boolean }) => {
+    const qs = opts?.skipFilamentCheck ? '?skip_filament_check=true' : '';
+    return request<PrintQueueItem>(`/queue/${id}/start${qs}`, { method: 'POST' });
+  },
   bulkUpdateQueue: (data: PrintQueueBulkUpdate) =>
     request<PrintQueueBulkUpdateResponse>('/queue/bulk', {
       method: 'PATCH',
@@ -4989,6 +5088,12 @@ export const api = {
   getCameraStreamToken: () =>
     request<{ token: string }>('/printers/camera/stream-token', { method: 'POST' }),
 
+  // WebSocket auth (GHSA-r2qv follow-up) — mint a short-lived token for
+  // the /ws connection. Browsers can't attach Authorization headers to a
+  // WebSocket handshake, so the token rides in the ?token= query param.
+  getWebSocketToken: () =>
+    request<{ token: string }>('/auth/ws-token', { method: 'POST' }),
+
   // Long-lived camera-stream tokens (#1108)
   createLongLivedCameraToken: (payload: { name: string; expires_in_days: number }) =>
     request<LongLivedCameraToken>('/auth/tokens', {
@@ -5013,6 +5118,17 @@ export const api = {
     request<{ active: boolean; stalled: boolean }>(`/printers/${printerId}/camera/status`),
   diagnoseCamera: (printerId: number) =>
     request<CameraDiagnoseResult>(`/printers/${printerId}/camera/diagnose`, { method: 'POST' }),
+  diagnosePrinter: (printerId: number) =>
+    request<PrinterDiagnosticResult>(`/printers/${printerId}/diagnostic`),
+  diagnoseConnection: (body: {
+    ip_address: string;
+    serial_number?: string;
+    access_code?: string;
+  }) =>
+    request<PrinterDiagnosticResult>('/printers/diagnostic', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   // Plate Detection - Multi-reference calibration (stores up to 5 references per printer)
   checkPlateEmpty: (printerId: number, options?: { useExternal?: boolean; includeDebugImage?: boolean }) => {
@@ -5309,6 +5425,7 @@ export const api = {
 
   // System Info
   getSystemInfo: () => request<SystemInfo>('/system/info'),
+  getSystemHealth: () => request<SystemHealthResult>('/system/health'),
   getStorageUsage: (options?: { refresh?: boolean }) => {
     const params = new URLSearchParams();
     if (options?.refresh) {
@@ -5679,8 +5796,20 @@ export const api = {
   // Unified slicer-preset listing — cloud + local + standard, deduped by name.
   // Used by the SliceModal; see UnifiedPresetsResponse for the shape and
   // backend/app/api/routes/slicer_presets.py for the priority rules.
-  getSlicerPresets: () =>
-    request<UnifiedPresetsResponse>('/slicer/presets'),
+  // `refresh` bypasses the in-process cloud and bundled-preset caches on the
+  // backend; the SliceModal's Refresh button passes true so a preset deleted
+  // in Bambu Studio or Bambu Handy shows up without the 5-min TTL wait.
+  getSlicerPresets: (options?: { refresh?: boolean }) =>
+    request<UnifiedPresetsResponse>(
+      options?.refresh ? '/slicer/presets?refresh=true' : '/slicer/presets',
+    ),
+
+  // Canonical Bambu printer-model registry — "Bambu Lab <model>" → short code.
+  // Single source of truth shared with backend (PRINTER_MODEL_MAP); the
+  // SliceModal uses this to classify cloud / standard presets by their
+  // `@BBL <code>` suffix against the selected printer-preset name (#1325).
+  getSlicerPrinterModels: () =>
+    request<Record<string, string>>('/slicer/printer-models'),
 
   // Slicer Bundles (.bbscfg) — Printer Preset Bundles imported from BambuStudio.
   // Settings → Slicer Bundles uploads/lists/deletes; the SliceModal picks
@@ -6170,7 +6299,11 @@ export const discoveryApi = {
 };
 
 // Virtual Printer types
-export type VirtualPrinterMode = 'immediate' | 'queue' | 'review' | 'print_queue' | 'proxy';  // 'queue' is legacy, normalized to 'review'
+// Canonical wire values: `archive`, `review`, `queue`, `proxy`. The legacy
+// `immediate` (→ archive) and `print_queue` (→ queue) names are still
+// accepted by the backend so older API clients keep working, but new code
+// should send the canonical names.
+export type VirtualPrinterMode = 'archive' | 'review' | 'queue' | 'proxy' | 'immediate' | 'print_queue';
 
 export interface VirtualPrinterProxyStatus {
   running: boolean;
@@ -6246,7 +6379,7 @@ export const virtualPrinterApi = {
   updateSettings: (data: {
     enabled?: boolean;
     access_code?: string;
-    mode?: 'immediate' | 'review' | 'print_queue' | 'proxy';
+    mode?: 'archive' | 'review' | 'queue' | 'proxy';
     model?: string;
     target_printer_id?: number;
     remote_interface_ip?: string;
@@ -6341,7 +6474,46 @@ export const multiVirtualPrinterApi = {
 
   getTailscaleStatus: () =>
     request<TailscaleStatusResponse>('/virtual-printers/tailscale-status'),
+
+  getCaCertificate: () =>
+    request<VPCaCertificate>('/virtual-printers/ca-certificate'),
+
+  diagnose: (id: number) =>
+    request<VPDiagnosticResult>(`/virtual-printers/${id}/diagnostic`),
 };
+
+/** The shared CA certificate every virtual printer presents — imported once
+ *  into the slicer's trust store. Only the public certificate is returned. */
+export interface VPCaCertificate {
+  pem: string;
+  fingerprint_sha256: string;
+  not_valid_after: string;
+}
+
+export type VPDiagnosticStatus = 'pass' | 'fail' | 'warn' | 'skip';
+
+export interface VPDiagnosticCheck {
+  id:
+    | 'enabled'
+    | 'running'
+    | 'bind_interface'
+    | 'access_code'
+    | 'target_printer'
+    | 'port_ftps'
+    | 'port_mqtt'
+    | 'port_bind'
+    | 'certificate';
+  status: VPDiagnosticStatus;
+  params: Record<string, string | number>;
+}
+
+export interface VPDiagnosticResult {
+  vp_id: number;
+  vp_name: string;
+  mode: string;
+  overall: 'ok' | 'warnings' | 'problems';
+  checks: VPDiagnosticCheck[];
+}
 
 export interface TailscaleStatusResponse {
   available: boolean;

@@ -50,6 +50,24 @@ class TestGetCameraProfile:
         assert profile.probesize >= 1_000_000
         assert profile.analyzeduration >= 500_000
 
+    def test_p2s_regenerates_timestamps_from_wallclock(self):
+        """P2S firmware 01.02.00.00 sends non-advancing RTP timestamps;
+        ffmpeg's default CFR conversion (`-r 15`) then freezes the output
+        clock after frame 1 and drops everything else (#1395). The profile
+        must splice `-use_wallclock_as_timestamps 1` into the input args so
+        ffmpeg rebuilds PTS from arrival time. Order matters — the flag and
+        its value must be adjacent so they reach ffmpeg as a pair."""
+        args = get_camera_profile("P2S").extra_ffmpeg_input_args
+        assert "-use_wallclock_as_timestamps" in args
+        idx = args.index("-use_wallclock_as_timestamps")
+        assert args[idx + 1] == "1"
+
+    def test_default_profile_has_no_timestamp_override(self):
+        """X1/H2 send correct, advancing RTP timestamps — they must NOT get
+        the wallclock override, which would needlessly re-stamp a healthy
+        stream. Guards against the P2S fix leaking into the default."""
+        assert DEFAULT_PROFILE.extra_ffmpeg_input_args == ()
+
     def test_p2s_internal_code_resolves_to_p2s_profile(self):
         """SSDP internal codes (e.g. `N7` for P2S) must resolve to the
         same profile as their display name. Otherwise printers freshly

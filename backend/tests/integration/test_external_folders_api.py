@@ -8,6 +8,21 @@ import pytest
 from httpx import AsyncClient
 
 
+@pytest.fixture(autouse=True)
+def _enable_external_roots(monkeypatch, tmp_path):
+    """Permit pytest's ``tmp_path`` tree as a valid external root.
+
+    After the GHSA-r2qv I1 fix, external folders are opt-in via the
+    ``BAMBUDDY_EXTERNAL_ROOTS`` env var (empty by default → feature
+    disabled). The test suite's external dirs live under pytest's
+    per-session ``tmp_path`` root, which is a subtree of the OS tmp
+    dir, so allowlisting the parent of ``tmp_path`` lets every test
+    folder fixture pass the new validator. Autouse so individual tests
+    don't have to know the env var exists.
+    """
+    monkeypatch.setenv("BAMBUDDY_EXTERNAL_ROOTS", str(tmp_path.parent))
+
+
 class TestExternalFolderCreation:
     """Tests for POST /library/folders/external."""
 
@@ -53,11 +68,18 @@ class TestExternalFolderCreation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_create_external_folder_nonexistent_path(self, async_client: AsyncClient, db_session):
-        """Verify 400 for non-existent path."""
+    async def test_create_external_folder_nonexistent_path(self, async_client: AsyncClient, db_session, tmp_path):
+        """Verify 400 for non-existent path within an allowed root.
+
+        After GHSA-r2qv I1 the allowlist check runs before the existence
+        check, so the test path must be inside ``BAMBUDDY_EXTERNAL_ROOTS``
+        (= ``tmp_path.parent`` per ``_enable_external_roots``) to actually
+        exercise the existence branch rather than the allowlist branch.
+        """
+        bad_path = tmp_path / "nonexistent" / "subdir"
         data = {
             "name": "Bad Path",
-            "external_path": "/nonexistent/path/that/does/not/exist",
+            "external_path": str(bad_path),
         }
         response = await async_client.post("/api/v1/library/folders/external", json=data)
         assert response.status_code == 400
@@ -65,15 +87,24 @@ class TestExternalFolderCreation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_create_external_folder_system_dir_blocked(self, async_client: AsyncClient, db_session):
-        """Verify system directories are blocked."""
+    async def test_create_external_folder_outside_allowlist_blocked(self, async_client: AsyncClient, db_session):
+        """Paths outside ``BAMBUDDY_EXTERNAL_ROOTS`` are rejected (GHSA-r2qv I1).
+
+        Prior behaviour was a denylist (``/proc``, ``/sys``, ``/dev``, etc);
+        anything not enumerated passed, including ``/data`` containing
+        other users' archives. The allowlist replacement defaults to the
+        empty set; this test confirms that a path outside the (tmp-path)
+        allowlist set up by ``_enable_external_roots`` is rejected.
+        ``/proc`` is the canonical example of a system directory that
+        any operator allowlist would never legitimately include.
+        """
         data = {
             "name": "System",
             "external_path": "/proc",
         }
         response = await async_client.post("/api/v1/library/folders/external", json=data)
         assert response.status_code == 400
-        assert "system directory" in response.json()["detail"].lower()
+        assert "not within an allowed external root" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
     @pytest.mark.integration

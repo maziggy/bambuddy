@@ -5,8 +5,10 @@ import { api } from '../api/client';
 import type { SpoolUsageRecord } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { parseUTCDate } from '../utils/date';
 function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = parseUTCDate(dateStr);
+  if (!date) return '';
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }) +
     ' ' + date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }

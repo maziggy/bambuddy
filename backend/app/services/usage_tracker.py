@@ -63,6 +63,60 @@ def _decode_mqtt_mapping(mapping_raw: list | None) -> list[int] | None:
     return result
 
 
+def _spool_color_to_hex(rgba: str | None) -> str | None:
+    """Normalise a ``Spool.rgba`` value (``RRGGBBAA`` hex, no ``#``) to the
+    ``#RRGGBB`` form archives store in ``filament_color``.
+
+    Alpha is dropped — the archive colour list and the Color Distribution
+    graph treat filament colour as opaque. Returns ``None`` for a missing or
+    too-short value so the caller can fall back to the 3MF colour.
+    """
+    if not rgba:
+        return None
+    h = rgba.strip().lstrip("#")
+    if len(h) < 6:
+        return None
+    return "#" + h[:6].upper()
+
+
+def _archive_colors_from_spools(filament_usage: list[dict], results: list[dict]) -> list[str] | None:
+    """Slot-ordered, de-duplicated hex colours for an archive's ``filament_color``,
+    taken from the inventory spools that actually fed the print (#1494).
+
+    The slicer's 3MF carries its own ``filament_colour`` per slot — a value
+    picked independently of the colour the user curates on the matched
+    inventory spool. So an archive printed from a ``#000000`` inventory spool
+    would otherwise show the slicer's near-black ``#161616``. Once usage
+    tracking has resolved the used slots to spools, the spool colours are the
+    authoritative source and replace the 3MF values.
+
+    Returns ``None`` — leave the 3MF colour untouched — unless *every* slot
+    with non-zero usage was matched to a spool that carries a colour. A
+    partial rewrite would silently drop the unmatched slots' colours from the
+    archive (and the Color Distribution graph), so it is all-or-nothing.
+    """
+    used_slots = {u["slot_id"] for u in filament_usage if u.get("used_g", 0) > 0 and u.get("slot_id") is not None}
+    if not used_slots:
+        return None
+
+    slot_color: dict[int, str] = {}
+    for r in results:
+        slot_id = r.get("slot_id")
+        color = r.get("color")
+        if slot_id is not None and color:
+            slot_color.setdefault(slot_id, color)
+
+    if not used_slots.issubset(slot_color):
+        return None
+
+    ordered: list[str] = []
+    for slot_id in sorted(used_slots):
+        color = slot_color[slot_id]
+        if color not in ordered:
+            ordered.append(color)
+    return ordered
+
+
 def _match_slots_by_color(
     filament_usage: list[dict],
     ams_raw: dict | list | None,
@@ -589,6 +643,10 @@ async def on_print_complete(
                         "tray_id": assign_tray_id,
                         "material": spool.material,
                         "cost": cost,
+                        # AMS remain%-delta fallback has no 3MF slot — slot_id
+                        # stays None so it is excluded from the colour rewrite.
+                        "slot_id": None,
+                        "color": _spool_color_to_hex(spool.rgba),
                     }
                 )
 
@@ -823,6 +881,7 @@ async def _track_from_3mf(
     from backend.app.utils.threemf_tools import extract_filament_usage_from_3mf
 
     file_path: Path | None = threemf_path
+    archive: PrintArchive | None = None
 
     if file_path is None and archive_id:
         result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -1134,6 +1193,8 @@ async def _track_from_3mf(
                         "tray_id": seg_tray_id,
                         "material": spool.material,
                         "cost": cost,
+                        "slot_id": slot_id,
+                        "color": _spool_color_to_hex(spool.rgba),
                     }
                 )
 
@@ -1162,14 +1223,26 @@ async def _track_from_3mf(
                 if isinstance(mapped, int) and mapped >= 0:
                     global_tray_id = mapped
             # Position-based default: sort available tray IDs so external spools (254/255)
-            # naturally follow standard AMS trays, matching slicer slot numbering
+            # naturally follow standard AMS trays, matching slicer slot numbering.
+            #
+            # Filter out AMS slots that have no spool loaded (empty `tray_type`) —
+            # BambuStudio/OrcaSlicer compact the slot list when assigning filaments
+            # and don't expose empty AMS slots to the user, so the slicer's 3MF
+            # slot N maps to the Nth *loaded* tray, not the Nth physical position.
+            # Without this filter a "3 AMS slots loaded + 1 empty + external"
+            # layout routes the slicer's 4th filament to the empty AMS slot
+            # instead of the external (#1607), and the external's spool usage
+            # never gets recorded. vt_tray entries are already filtered the
+            # same way inside `build_ams_tray_lookup` (line 174 checks
+            # `tray_type`), so this just mirrors that for the AMS side.
             if global_tray_id is None:
                 _state = printer_manager.get_status(printer_id)
                 _raw = getattr(_state, "raw_data", None) if _state else None
                 if _raw:
                     from backend.app.services.spoolman_tracking import build_ams_tray_lookup
 
-                    available_trays = sorted(build_ams_tray_lookup(_raw).keys())
+                    _lookup = build_ams_tray_lookup(_raw)
+                    available_trays = sorted(gid for gid, info in _lookup.items() if info.get("tray_type"))
                     if slot_id <= len(available_trays):
                         global_tray_id = available_trays[slot_id - 1]
             # Final fallback: slot_id - 1 (legacy, works for pure AMS without external spools)
@@ -1263,6 +1336,8 @@ async def _track_from_3mf(
                 "tray_id": tray_id,
                 "material": spool.material,
                 "cost": cost,
+                "slot_id": slot_id,
+                "color": _spool_color_to_hex(spool.rgba),
             }
         )
 
@@ -1284,5 +1359,23 @@ async def _track_from_3mf(
             tray_id,
             status,
         )
+
+    # --- Adopt the matched inventory spools' colours for the archive (#1494) ---
+    # The archive's filament_color was set from the slicer's 3MF at creation
+    # time; now that every used slot has been resolved to an inventory spool,
+    # the curated spool colour is authoritative. Committed by the caller's
+    # `if results: await db.commit()`.
+    if archive is not None:
+        spool_colors = _archive_colors_from_spools(filament_usage, results)
+        if spool_colors:
+            joined = ",".join(spool_colors)
+            if joined != archive.filament_color:
+                logger.info(
+                    "[UsageTracker] 3MF: archive %s filament_color %r -> %r (from inventory spools)",
+                    archive_id,
+                    archive.filament_color,
+                    joined,
+                )
+                archive.filament_color = joined
 
     return results

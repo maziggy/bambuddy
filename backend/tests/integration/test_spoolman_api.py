@@ -205,13 +205,18 @@ class TestSpoolmanAPI:
     async def test_get_unlinked_spools_success(
         self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
     ):
-        """Verify get unlinked spools returns spools without tags."""
-        # Mock spool without extra.tag (unlinked)
+        """A spool with no slot assignment is assignable even when extra.tag is set.
+
+        #1122 — extra.tag is only an RFID/NFC matching key (OpenSpoolman writes
+        its own NFC tag value there too); it must NOT gate assignability. A spool
+        with a non-empty extra.tag but no spoolman_slot_assignments row still
+        appears in the picker.
+        """
         mock_spool = {
             "id": 1,
             "remaining_weight": 800,
             "used_weight": 200,
-            "extra": {},  # No tag = unlinked
+            "extra": {"tag": '"04A1B2C3D4E5F6"'},  # OpenSpoolman-style NFC tag value
             "filament": {
                 "id": 1,
                 "name": "PLA Basic",
@@ -232,35 +237,40 @@ class TestSpoolmanAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_unlinked_spools_excludes_linked(
-        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    async def test_get_unlinked_spools_excludes_slot_assigned(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client, printer_factory, db_session
     ):
-        """Verify linked spools (with tag) are excluded."""
-        # Mock spool with extra.tag (linked)
-        mock_spool_linked = {
+        """Verify spools that currently occupy an AMS slot are excluded."""
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        printer = await printer_factory()
+
+        # Spool 1 occupies a slot; spool 2 has an extra.tag but no slot row.
+        db_session.add(SpoolmanSlotAssignment(printer_id=printer.id, ams_id=0, tray_id=1, spoolman_spool_id=1))
+        await db_session.commit()
+
+        mock_spool_assigned = {
             "id": 1,
             "remaining_weight": 800,
             "used_weight": 200,
-            "extra": {"tag": '"ABC123"'},  # Has tag = linked
+            "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'},
             "filament": {"id": 1, "name": "PLA Red", "material": "PLA", "color_hex": "FF0000"},
         }
-
-        # Mock spool without tag (unlinked)
-        mock_spool_unlinked = {
+        mock_spool_unassigned = {
             "id": 2,
             "remaining_weight": 900,
             "used_weight": 100,
-            "extra": {},  # No tag = unlinked
+            "extra": {"tag": '"04DEADBEEF1122"'},  # tagged but not slot-assigned
             "filament": {"id": 2, "name": "PLA Blue", "material": "PLA", "color_hex": "0000FF"},
         }
 
-        mock_spoolman_client.get_spools = AsyncMock(return_value=[mock_spool_linked, mock_spool_unlinked])
+        mock_spoolman_client.get_spools = AsyncMock(return_value=[mock_spool_assigned, mock_spool_unassigned])
 
         response = await async_client.get("/api/v1/spoolman/spools/unlinked")
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
-        assert data[0]["id"] == 2  # Only unlinked spool
+        assert data[0]["id"] == 2  # Only the spool not occupying a slot
 
     # =========================================================================
     # Linked Spools Tests
@@ -1159,6 +1169,8 @@ class TestLinkSpoolMqttConfigure:
         mock_client.merge_spool_extra = AsyncMock(
             return_value={"id": 5, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
         )
+        # #1457 stale-tag cleanup enumerates spools; default to empty so it's a no-op.
+        mock_client.get_spools = AsyncMock(return_value=[])
         mock_client.get_spool = AsyncMock(
             return_value={
                 "id": 5,

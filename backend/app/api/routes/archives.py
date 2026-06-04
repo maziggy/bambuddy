@@ -30,10 +30,11 @@ from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
 from backend.app.utils.http import build_content_disposition
+from backend.app.utils.safe_path import safe_join_under
 from backend.app.utils.threemf_tools import (
+    extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
-    extract_source_printer_model_from_3mf,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,7 +149,7 @@ def _apply_run_user_filter(conditions: list, created_by_id: int | None):
             conditions.append(PrintLogEntry.created_by_id == created_by_id)
 
 
-def compute_time_accuracy(archive: PrintArchive) -> dict:
+def compute_time_accuracy(archive: PrintArchive, run_aggregate: dict | None = None) -> dict:
     """Compute actual print time and accuracy for an archive.
 
     Returns dict with actual_time_seconds and time_accuracy.
@@ -156,8 +157,26 @@ def compute_time_accuracy(archive: PrintArchive) -> dict:
     - 100% = perfect estimate
     - >100% = print was faster than estimated
     - <100% = print took longer than estimated
+
+    When ``run_aggregate`` indicates the archive has more than one logged
+    run (multi-plate file printed plate-by-plate, or reprints), both
+    fields are suppressed: ``archive.started_at / completed_at`` reflect
+    the LATEST run only, while ``archive.print_time_seconds`` is the
+    whole-file estimate (post-#1593 the parser sums across plates), so
+    comparing the two describes different scopes. The card-rendering
+    frontend falls through to ``archive.print_time_seconds`` for the
+    time display and hides the badge when ``time_accuracy`` is null —
+    that's the desired "show estimate, no badge" presentation for
+    multi-run archives (#1608). Single-run archives keep the original
+    badge behaviour verbatim.
     """
-    result = {"actual_time_seconds": None, "time_accuracy": None}
+    result: dict[str, int | float | None] = {"actual_time_seconds": None, "time_accuracy": None}
+
+    # Multi-run archives: the per-run actual (started_at..completed_at on
+    # the archive row) is incommensurable with the whole-file estimate.
+    # Both fields are cleared so the card shows estimate + no badge.
+    if run_aggregate and (run_aggregate.get("run_count") or 0) > 1:
+        return result
 
     if archive.started_at and archive.completed_at and archive.status == "completed":
         actual_seconds = int((archive.completed_at - archive.started_at).total_seconds())
@@ -270,8 +289,11 @@ def archive_to_response(
         "created_by_username": archive.created_by.username if archive.created_by else None,
     }
 
-    # Add computed time accuracy fields
-    accuracy_data = compute_time_accuracy(archive)
+    # Add computed time accuracy fields. ``run_aggregate`` lets
+    # ``compute_time_accuracy`` suppress the badge for multi-run archives
+    # where the per-run actual / whole-file estimate scopes don't match
+    # (#1608).
+    accuracy_data = compute_time_accuracy(archive, run_aggregate)
     data.update(accuracy_data)
 
     if run_aggregate:
@@ -579,7 +601,10 @@ async def search_archives(
         query = query.limit(limit).offset(offset)
         result = await db.execute(query)
         archives = result.scalars().all()
-        return [archive_to_response(a) for a in archives]
+        # Load run aggregates so multi-run archives' time/accuracy badge is
+        # suppressed consistently with the main list endpoint (#1608).
+        run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
+        return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id)) for a in archives]
 
     if not matched_ids:
         return []
@@ -606,7 +631,10 @@ async def search_archives(
     ordered_archives = [archives_dict[id] for id in matched_ids if id in archives_dict]
     paginated = ordered_archives[offset : offset + limit]
 
-    return [archive_to_response(a) for a in paginated]
+    # Load run aggregates so multi-run archives' time/accuracy badge is
+    # suppressed consistently with the main list endpoint (#1608).
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in paginated])
+    return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id)) for a in paginated]
 
 
 @router.post("/search/rebuild-index")
@@ -865,9 +893,22 @@ async def get_archive_stats(
     successful_prints = successful_result.scalar() or 0
 
     failed_result = await db.execute(
-        select(func.count(PrintLogEntry.id)).where(PrintLogEntry.status == "failed", *base_conditions)
+        select(func.count(PrintLogEntry.id)).where(PrintLogEntry.status.in_(("failed", "aborted")), *base_conditions)
     )
     failed_prints = failed_result.scalar() or 0
+
+    # User/system-stopped prints — stopped/cancelled/skipped are distinct from
+    # quality failures: the user (or the queue) interrupted them, the printer
+    # didn't detect a fault. Bucketed separately so the Success Rate gauge
+    # divides by completed + failed only (a cancelled print shouldn't drag
+    # the gauge down), while still being visible in the breakdown so they
+    # don't silently vanish from Total Prints (#1390).
+    cancelled_result = await db.execute(
+        select(func.count(PrintLogEntry.id)).where(
+            PrintLogEntry.status.in_(("stopped", "cancelled", "skipped")), *base_conditions
+        )
+    )
+    cancelled_prints = cancelled_result.scalar() or 0
 
     # Total elapsed time — PrintLogEntry stores duration_seconds directly so we
     # can sum it server-side. Rows missing duration fall back to the slicer
@@ -934,6 +975,23 @@ async def get_archive_stats(
             *base_conditions,
         )
     )
+    # Accuracy is meaningful only when the estimate roughly describes the
+    # work the run actually performed. Two shapes produce wildly-off ratios
+    # that are pure noise:
+    #   - multi-plate ``.gcode.3mf`` printed plate-by-plate: each run's
+    #     actual is one plate, the archive's estimate is the sum across
+    #     plates (post-#1593 parser fix), so the ratio is roughly N×100%
+    #     for an N-plate file. Pre-fix this shape was also broken, just
+    #     less dramatically — the estimate was plate-1-only so the ratio
+    #     was meaningless rather than N×.
+    #   - manual interventions / purge waste blowing the actual far past
+    #     the estimate.
+    # Clamp to the [50%, 200%] band so the printer-level average reflects
+    # real slicer-vs-reality drift, not multi-plate accounting or one-off
+    # outliers. Single-plate archives — the case the metric is actually
+    # designed for — stay fully included.
+    _ACCURACY_BAND_LO = 50.0
+    _ACCURACY_BAND_HI = 200.0
     average_accuracy = None
     accuracy_by_printer: dict[str, float] = {}
     accuracies: list[float] = []
@@ -946,6 +1004,8 @@ async def get_archive_stats(
         if not actual_seconds or not estimate_seconds:
             continue
         accuracy = (estimate_seconds / actual_seconds) * 100
+        if accuracy < _ACCURACY_BAND_LO or accuracy > _ACCURACY_BAND_HI:
+            continue
         accuracies.append(accuracy)
         printer_key = str(run_printer_id) if run_printer_id else "unknown"
         printer_accuracies.setdefault(printer_key, []).append(accuracy)
@@ -990,6 +1050,7 @@ async def get_archive_stats(
         total_prints=total_prints,
         successful_prints=successful_prints,
         failed_prints=failed_prints,
+        cancelled_prints=cancelled_prints,
         total_print_time_hours=round(total_time, 1),
         total_filament_grams=round(total_filament, 1),
         total_cost=round(total_cost, 2),
@@ -1343,8 +1404,34 @@ async def update_archive(
         if archive.created_by_id != user.id:
             raise HTTPException(403, "You can only update your own archives")
 
-    for field, value in update_data.model_dump(exclude_unset=True).items():
+    update_payload = update_data.model_dump(exclude_unset=True)
+    for field, value in update_payload.items():
         setattr(archive, field, value)
+
+    # #1444: Mirror per-run classification fields to the most recent
+    # PrintLogEntry for this archive. PrintLogEntry.failure_reason is captured
+    # once at print-completion time from archive.failure_reason — which is
+    # NULL until the user classifies the failure via the Edit Archive modal.
+    # Without this mirror the Failure Analysis widget (which groups by
+    # print_log_entries.failure_reason) keeps showing "Unknown" forever.
+    # Same desync hits status: flipping it in the modal wouldn't update the
+    # entry either. Only the latest entry is touched because that's the run
+    # the modal is implicitly showing (archive.failure_reason / status are
+    # overwritten on each reprint to reflect the latest run's outcome).
+    mirror_fields = {"failure_reason", "status"}
+    to_mirror = {k: v for k, v in update_payload.items() if k in mirror_fields}
+    if to_mirror:
+        from backend.app.models.print_log import PrintLogEntry
+
+        latest_entry = await db.scalar(
+            select(PrintLogEntry)
+            .where(PrintLogEntry.archive_id == archive_id)
+            .order_by(PrintLogEntry.id.desc())
+            .limit(1)
+        )
+        if latest_entry is not None:
+            for field, value in to_mirror.items():
+                setattr(latest_entry, field, value)
 
     await db.commit()
 
@@ -1356,7 +1443,11 @@ async def update_archive(
     )
     archive = result.scalar_one_or_none()
 
-    return archive_to_response(archive)
+    # Load run aggregate so the time/accuracy badge stays consistent with
+    # the list / detail endpoints when the frontend re-renders the card
+    # after a PATCH (#1608).
+    run_aggregates = await _load_run_aggregates(db, [archive.id]) if archive else {}
+    return archive_to_response(archive, run_aggregate=run_aggregates.get(archive.id) if archive else None)
 
 
 @router.post("/{archive_id}/favorite", response_model=ArchiveResponse)
@@ -2333,7 +2424,7 @@ async def process_timelapse(
                 filename = f"timelapse_{archive_id}_edited"
             if not filename.endswith(".mp4"):
                 filename += ".mp4"
-            output_path = archive_dir / filename
+            output_path = archive_dir / filename  # SEC-PATH-OK: filename alnum-filtered + .. rejected above
 
         success = await processor.process(
             output_path=output_path,
@@ -2404,7 +2495,7 @@ async def upload_photo(
 
     ext = Path(file.filename).suffix.lower()
     photo_filename = f"{uuid.uuid4().hex[:8]}{ext}"
-    photo_path = photos_dir / photo_filename
+    photo_path = photos_dir / photo_filename  # SEC-PATH-OK: photo_filename = uuid.uuid4().hex[:8] + ext
 
     # Save file
     content = await file.read()
@@ -2437,8 +2528,20 @@ async def get_photo(
     if not archive:
         raise HTTPException(404, "Archive not found")
 
+    # Membership check first — UUID-generated names on upload mean any URL
+    # filename that doesn't appear here is by definition not a real photo.
+    # Mirrors the delete handler below; previously this endpoint had no
+    # membership check at all and joined `filename` straight to disk.
+    if not archive.photos or filename not in archive.photos:
+        raise HTTPException(404, "Photo not found")
+
     archive_dir = settings.base_dir / Path(archive.file_path).parent
-    photo_path = archive_dir / "photos" / filename
+    photos_dir = archive_dir / "photos"
+    # Defence-in-depth: even though the membership check above already
+    # constrains `filename` to UUID-generated names from upload, the
+    # resolve + containment check guards against future code paths that
+    # might populate `archive.photos` from a less-trusted source.
+    photo_path = safe_join_under(photos_dir, filename)
 
     if not photo_path.exists():
         raise HTTPException(404, "Photo not found")
@@ -2472,9 +2575,10 @@ async def delete_photo(
     if not archive.photos or filename not in archive.photos:
         raise HTTPException(404, "Photo not found")
 
-    # Delete file
+    # Delete file — same defence-in-depth as get_photo above.
     archive_dir = settings.base_dir / Path(archive.file_path).parent
-    photo_path = archive_dir / "photos" / filename
+    photos_dir = archive_dir / "photos"
+    photo_path = safe_join_under(photos_dir, filename)
     if photo_path.exists():
         photo_path.unlink()
 
@@ -2920,7 +3024,9 @@ async def upload_archive(
 
     # Save uploaded file temporarily — strip directory components to prevent path traversal
     safe_filename = _safe_filename(file.filename)
-    temp_path = settings.archive_dir / "temp" / safe_filename
+    temp_path = (
+        settings.archive_dir / "temp" / safe_filename
+    )  # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
     temp_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -2968,7 +3074,9 @@ async def upload_archives_bulk(
             continue
 
         safe_filename = _safe_filename(file.filename)
-        temp_path = settings.archive_dir / "temp" / safe_filename
+        temp_path = (
+            settings.archive_dir / "temp" / safe_filename
+        )  # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
         temp_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -3045,10 +3153,14 @@ async def get_archive_plates(
     # never raises NameError when the archive isn't a valid zip (e.g. plain
     # .gcode file from a sliced-archive flow that didn't request 3MF output).
     gcode_files: list[str] = []
+    # Printer / process preset names the 3MF was prepared with — used by the
+    # SliceModal to default its dropdowns (#1325).
+    embedded_presets: dict[str, str | None] = {"printer": None, "process": None}
 
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
             namelist = zf.namelist()
+            embedded_presets = extract_embedded_presets_from_3mf(zf)
 
             # Find all plate gcode files to determine available plates
             gcode_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".gcode")]
@@ -3290,20 +3402,14 @@ async def get_archive_plates(
     # to preview gcode — the viewer, skip-objects — can gate on this instead of
     # 404-ing on every plate request.
     has_gcode = bool(gcode_files)
-    # SliceModal pre-check signal — see library.py for rationale.
-    source_printer_model: str | None = None
-    try:
-        with zipfile.ZipFile(file_path, "r") as zf:
-            source_printer_model = extract_source_printer_model_from_3mf(zf)
-    except (zipfile.BadZipFile, OSError):
-        pass
     return {
         "archive_id": archive_id,
         "filename": archive.filename,
         "plates": plates,
         "is_multi_plate": len(plates) > 1,
         "has_gcode": has_gcode,
-        "source_printer_model": source_printer_model,
+        "embedded_printer": embedded_presets["printer"],
+        "embedded_process": embedded_presets["process"],
     }
 
 
@@ -3583,7 +3689,7 @@ async def slice_archive(
     user originally sent to slice) → ``file_path`` (the sliced 3MF/gcode that
     actually printed).
     """
-    from backend.app.api.routes.library import slice_and_persist_as_archive
+    from backend.app.api.routes.library import guard_nozzle_class_reslice, slice_and_persist_as_archive
     from backend.app.core.database import async_session
     from backend.app.services.slice_dispatch import (
         http_exception_to_job_error,
@@ -3601,7 +3707,9 @@ async def slice_archive(
             detail="Archive has no source file to slice",
         )
 
-    src_path = Path(settings.base_dir) / src_relative
+    src_path = (
+        Path(settings.base_dir) / src_relative
+    )  # SEC-PATH-OK: src_relative is archive.source_3mf_path from DB, set by _resolve_source_3mf_path which already does resolve+relative_to containment
     if not src_path.exists():
         raise HTTPException(status_code=404, detail="Archive source file missing on disk")
 
@@ -3629,6 +3737,11 @@ async def slice_archive(
     model_bytes = src_path.read_bytes()
     archive_id_local = archive.id
     user_id = current_user.id if current_user else None
+
+    # Block a cross-nozzle-class re-slice (single-nozzle <-> H2D) up front —
+    # BambuStudio's multi-extruder validator would otherwise reject it with a
+    # cryptic error. No-op for same-class or un-sliced sources.
+    await guard_nozzle_class_reslice(db, current_user, request, archive.sliced_for_model)
 
     async def _run(job_id: int):
         async with async_session() as task_db:
@@ -3862,6 +3975,53 @@ async def get_project_image(
 # =============================================================================
 
 
+def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Path:
+    """Resolve where to write a source 3MF for ``archive``.
+
+    Normal archives nest the source under ``<archive_file_dir>/source/``.
+    "Fallback" archives (created in main.py when MQTT reports a print start
+    but Bambuddy never saw the source 3MF — cloud / Handy / pre-existing
+    SD-card prints) carry ``file_path=""``. Joining that with ``base_dir``
+    via the ``/`` operator silently yields ``base_dir`` itself, whose parent
+    is ``base_dir.parent`` — which sent the upload to ``/app/source/`` and
+    raised a 500 on the final ``relative_to`` (#1531). Fallback archives
+    now land under ``<base_dir>/archive/no_source/<archive_id>/`` instead,
+    which stays inside the data volume and remains addressable by every
+    read site that does ``base_dir / archive.source_3mf_path``.
+
+    The resolved directory is asserted to be inside ``base_dir`` even when
+    ``archive.file_path`` is populated, so a row corrupted by an old import
+    or manual SQL edit fails with a clear 500 instead of writing outside
+    the data volume.
+    """
+    if archive.file_path:
+        archive_file = settings.base_dir / archive.file_path
+        source_dir = archive_file.parent / "source"
+    else:
+        source_dir = settings.base_dir / "archive" / "no_source" / str(archive.id)
+
+    # Containment check via resolve() — catches absolute file_path, `..`
+    # traversal, and any other shape that escapes the data volume — but we
+    # return the *literal* source_dir below. Resolving the returned path
+    # would canonicalise away a symlinked DATA_DIR (legitimate on TrueNAS /
+    # QNAP / Synology storage pools, and any `-v /symlink:/app/data`
+    # mount), which would then make the caller's
+    # ``source_path.relative_to(settings.base_dir)`` raise because the
+    # left side is canonical and the right is the symlink path.
+    try:
+        source_dir.resolve().relative_to(settings.base_dir.resolve())
+    except ValueError as exc:
+        raise HTTPException(
+            500,
+            f"Archive {archive.id} resolves to a path outside the data directory; cannot attach source.",
+        ) from exc
+
+    source_dir.mkdir(parents=True, exist_ok=True)
+    return (
+        source_dir / source_filename
+    )  # SEC-PATH-OK: callers pass _safe_filename(...) basename-stripped; source_dir resolve+relative_to checked above
+
+
 @router.post("/{archive_id}/source")
 async def upload_source_3mf(
     archive_id: int,
@@ -3878,21 +4038,15 @@ async def upload_source_3mf(
     if not file.filename or not file.filename.endswith(".3mf"):
         raise HTTPException(400, "File must be a .3mf file")
 
-    # Get archive directory and create source subdirectory
-    file_path = settings.base_dir / archive.file_path
-    archive_dir = file_path.parent
-    source_dir = archive_dir / "source"
-    source_dir.mkdir(exist_ok=True)
+    # Save the source 3MF file - preserve original filename, strip directory components
+    source_filename = _safe_filename(file.filename)
+    source_path = _resolve_source_3mf_path(archive, source_filename)
 
     # Delete old source file if exists
     if archive.source_3mf_path:
         old_source_path = settings.base_dir / archive.source_3mf_path
         if old_source_path.exists():
             old_source_path.unlink()
-
-    # Save the source 3MF file - preserve original filename, strip directory components
-    source_filename = _safe_filename(file.filename)
-    source_path = source_dir / source_filename
 
     content = await file.read()
     # #1401: validate zip header on source 3MF uploads too — source files
@@ -4085,21 +4239,15 @@ async def upload_source_3mf_by_name(
     if not archive:
         raise HTTPException(404, f"No archive found matching '{print_name}'")
 
-    # Get archive directory and create source subdirectory
-    file_path = settings.base_dir / archive.file_path
-    archive_dir = file_path.parent
-    source_dir = archive_dir / "source"
-    source_dir.mkdir(exist_ok=True)
+    # Save the source 3MF file - preserve original filename, strip directory components
+    source_filename = safe_filename
+    source_path = _resolve_source_3mf_path(archive, source_filename)
 
     # Delete old source file if exists
     if archive.source_3mf_path:
         old_source_path = settings.base_dir / archive.source_3mf_path
         if old_source_path.exists():
             old_source_path.unlink()
-
-    # Save the source 3MF file - preserve original filename, strip directory components
-    source_filename = safe_filename
-    source_path = source_dir / source_filename
 
     content = await file.read()
     # #1401: same zip-header check as the other upload routes — the
@@ -4186,7 +4334,7 @@ async def upload_f3d(
 
     # Save the F3D file - preserve original filename, strip directory components
     f3d_filename = _safe_filename(file.filename)
-    f3d_path = f3d_dir / f3d_filename
+    f3d_path = f3d_dir / f3d_filename  # SEC-PATH-OK: f3d_filename = _safe_filename(...) basename-stripped above
 
     content = await file.read()
     f3d_path.write_bytes(content)

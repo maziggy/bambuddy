@@ -16,6 +16,7 @@ from backend.app.core.config import settings
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
 from backend.app.models.printer import Printer
+from backend.app.utils.safe_path import PathTraversalError, safe_join_under
 
 logger = logging.getLogger(__name__)
 
@@ -187,49 +188,78 @@ class ThreeMFParser:
                             self.metadata["sliced_for_model"] = normalized
                         break
 
-                # Find the plate element (single-plate exports only have one plate)
-                plate = root.find(".//plate")
+                # Loop every <plate> so multi-plate exports get summed file-level
+                # totals. Pre-fix, this used `root.find(".//plate")` which
+                # returned only the first plate — file-level `print_time_seconds`
+                # / `filament_used_grams` reflected plate 1 alone, and the
+                # archive card / project rollup under-reported by the number
+                # of plates (#1593). Per-plate breakdown is still served by
+                # the dedicated `/plates` endpoint.
+                plates = root.findall(".//plate")
+                summed_time = 0
+                summed_grams = 0.0
+                any_time_seen = False
+                any_grams_seen = False
 
-                if plate is not None:
-                    # Extract metadata from plate element
+                for plate in plates:
+                    # Plate-level fields that only make sense at the file
+                    # level when there's exactly one plate. ``plate_number``
+                    # / ``_plate_index`` describe which plate the export
+                    # represents — meaningless for an all-plates 3MF, so we
+                    # only record them in the single-plate case. ``bed_type``
+                    # is also single-valued; we take the first plate's value
+                    # as a best-effort default for the archive metadata.
+                    plate_index_value: int | None = None
                     for meta in plate.findall("metadata"):
                         key = meta.get("key")
                         value = meta.get("value")
                         if key == "index" and value:
-                            # Extract plate index - this tells us which plate was exported
                             try:
-                                extracted_index = int(value)
-                                # Set plate_number if not already set from filename
-                                if not self.plate_number:
-                                    self.plate_number = extracted_index
-                                # Store in metadata for print_name generation
-                                self.metadata["_plate_index"] = extracted_index
+                                plate_index_value = int(value)
                             except ValueError:
                                 pass  # Skip non-numeric plate index
                         elif key == "prediction" and value:
-                            self.metadata["print_time_seconds"] = int(value)
+                            try:
+                                summed_time += int(value)
+                                any_time_seen = True
+                            except ValueError:
+                                pass
                         elif key == "weight" and value:
-                            self.metadata["filament_used_grams"] = float(value)
-                        elif key == "curr_bed_type" and value:
+                            try:
+                                summed_grams += float(value)
+                                any_grams_seen = True
+                            except ValueError:
+                                pass
+                        elif key == "curr_bed_type" and value and "bed_type" not in self.metadata:
                             self.metadata["bed_type"] = value
 
-                    # Extract printable objects for skip object functionality
-                    # Objects are stored as <object identify_id="123" name="Part1" skipped="false" />
-                    printable_objects = {}
-                    for obj in plate.findall("object"):
-                        identify_id = obj.get("identify_id")
-                        name = obj.get("name")
-                        skipped = obj.get("skipped", "false")
+                    # Per-plate object lists are only kept at the file level
+                    # when there's one plate — the skip-object affordance
+                    # operates on the plate being printed, which is the
+                    # `/plates` endpoint's job for multi-plate exports.
+                    if len(plates) == 1:
+                        if plate_index_value is not None:
+                            if not self.plate_number:
+                                self.plate_number = plate_index_value
+                            self.metadata["_plate_index"] = plate_index_value
 
-                        # Only include objects that are not pre-skipped
-                        if identify_id and name and skipped.lower() != "true":
-                            try:
-                                printable_objects[int(identify_id)] = name
-                            except ValueError:
-                                pass  # Skip objects with non-numeric identify_id
+                        printable_objects: dict[int, str] = {}
+                        for obj in plate.findall("object"):
+                            identify_id = obj.get("identify_id")
+                            name = obj.get("name")
+                            skipped = obj.get("skipped", "false")
+                            if identify_id and name and skipped.lower() != "true":
+                                try:
+                                    printable_objects[int(identify_id)] = name
+                                except ValueError:
+                                    pass  # Skip objects with non-numeric identify_id
+                        if printable_objects:
+                            self.metadata["printable_objects"] = printable_objects
 
-                    if printable_objects:
-                        self.metadata["printable_objects"] = printable_objects
+                if any_time_seen:
+                    self.metadata["print_time_seconds"] = summed_time
+                if any_grams_seen:
+                    self.metadata["filament_used_grams"] = round(summed_grams, 2)
 
                 # Get filament info from filaments ACTUALLY USED in the print
                 # slice_info has <filament id="1" type="PLA" color="#FFFFFF" used_g="100" />
@@ -315,6 +345,20 @@ class ThreeMFParser:
             match = re.search(r";\s*total\s+layer\s+number[:\s]+(\d+)", header, re.IGNORECASE)
             if match:
                 self.metadata["total_layers"] = int(match.group(1))
+
+            # Total filament usage. The slicer writes the print's totals into
+            # the G-code header ("; total filament weight [g] : 126.26"). Only
+            # a fallback — slice_info.config is more authoritative when present
+            # — but it covers sliced outputs whose slice_info lacks per-filament
+            # used_g, and it's the slicer's own figure regardless.
+            if "filament_used_grams" not in self.metadata:
+                match = re.search(r";\s*total\s+filament\s+weight\s*\[g\]\s*:\s*([\d.]+)", header, re.IGNORECASE)
+                if match:
+                    self.metadata["filament_used_grams"] = float(match.group(1))
+            if "filament_used_mm" not in self.metadata:
+                match = re.search(r";\s*total\s+filament\s+length\s*\[mm\]\s*:\s*([\d.]+)", header, re.IGNORECASE)
+                if match:
+                    self.metadata["filament_used_mm"] = float(match.group(1))
 
             # Look for printer_model in gcode header (fallback if not found in slice_info)
             # Format: "; printer_model = Bambu Lab X1 Carbon" or "; printer_model = X1C"
@@ -509,6 +553,18 @@ class ThreeMFParser:
                 "Metadata/plate_1.png",
                 "Metadata/thumbnail.png",
                 "Metadata/model_thumbnail.png",
+                # Project-wide thumbnail BambuStudio embeds at upload time. We
+                # only reach this when BS hasn't written a per-plate
+                # ``Metadata/plate_N.png`` — most notably the #1493 cross-class
+                # re-slice path where ``--arrange`` rearranges objects but the
+                # CLI then doesn't emit a fresh per-plate preview. The
+                # ``_middle`` size is the editor-quality variant (~500 KB);
+                # ``_small`` and ``_3mf`` are smaller alternates if it's not
+                # present. Without this fallback the re-sliced archive cards
+                # render without a cover image.
+                "Auxiliaries/.thumbnails/thumbnail_middle.png",
+                "Auxiliaries/.thumbnails/thumbnail_small.png",
+                "Auxiliaries/.thumbnails/thumbnail_3mf.png",
             ]
         )
 
@@ -1058,7 +1114,9 @@ class ArchiveService:
         archive_name = f"{timestamp}_{display_stem}"
         # Use "unassigned" folder for archives without a printer
         printer_folder = str(printer_id) if printer_id is not None else "unassigned"
-        archive_dir = settings.archive_dir / printer_folder / archive_name
+        archive_dir = (
+            settings.archive_dir / printer_folder / archive_name
+        )  # SEC-PATH-OK: printer_folder = str(int|None) → digits or "unassigned"; archive_name = f"{timestamp}_{display_stem}" where resolve_display_stem strips path components via Path(filename).name
         archive_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy 3MF file with an explicit fsync'd loop (avoids a sendfile
@@ -1422,12 +1480,29 @@ class ArchiveService:
             return False
 
         # Get archive directory
-        file_path = settings.base_dir / archive.file_path
+        file_path = (
+            settings.base_dir / archive.file_path
+        )  # SEC-PATH-OK: archive.file_path is DB-stored, set by archive_print() under settings.archive_dir
         archive_dir = file_path.parent
 
         # Save timelapse - use thread pool to avoid blocking event loop
-        # (timelapse files can be 100MB+, sync write blocks for seconds)
-        timelapse_file = archive_dir / filename
+        # (timelapse files can be 100MB+, sync write blocks for seconds).
+        # `filename` ultimately comes from a printer's FTP listing (compromised-
+        # printer threat model) or a query param on /archives/{id}/timelapse/select;
+        # the safe-join helper rejects ``..`` segments and absolute paths so a
+        # crafted name can't escape the archive directory. Use http=False so a
+        # service-layer reject surfaces as a return False (matching the existing
+        # not-found contract) rather than a 400 raised from inside a background
+        # task.
+        try:
+            timelapse_file = safe_join_under(archive_dir, filename, http=False)
+        except PathTraversalError:
+            logger.warning(
+                "Refusing to attach timelapse with unsafe filename %r to archive %s",
+                filename,
+                archive_id,
+            )
+            return False
         await asyncio.to_thread(timelapse_file.write_bytes, timelapse_data)
 
         # Update archive record

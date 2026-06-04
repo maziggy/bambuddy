@@ -202,10 +202,13 @@ class TestBambuCloudTOTPVerification:
 
     @pytest.mark.asyncio
     async def test_verify_totp_cloudflare_blocked(self, cloud_service):
-        """When Cloudflare blocks request, should handle gracefully."""
+        """When Cloudflare returns a 'Just a moment...' interstitial instead of
+        JSON, surface the actionable CF-specific message (issue #1575) rather
+        than the opaque "Invalid response from Bambu Cloud" parse error."""
         mock_response = MagicMock()
         mock_response.status_code = 403
         mock_response.text = "<!DOCTYPE html><html><head><title>Just a moment...</title>"
+        mock_response.headers = {}
         # json() raises an error when response is HTML
         mock_response.json.side_effect = ValueError("No JSON")
 
@@ -215,7 +218,8 @@ class TestBambuCloudTOTPVerification:
             result = await cloud_service.verify_totp("test-tfa-key", "123456")
 
             assert result["success"] is False
-            assert "Invalid response" in result["message"]
+            assert "Cloudflare" in result["message"]
+            assert "bambulab.com" in result["message"]
 
     @pytest.mark.asyncio
     async def test_verify_totp_uses_honest_bambuddy_user_agent(self, cloud_service):
@@ -305,3 +309,131 @@ class TestBambuCloudRegion:
             url = mock_post.call_args[0][0]
             assert "bambulab.cn/api/sign-in/tfa" in url
             assert "bambulab.com" not in url
+
+
+# ===========================================================================
+# Issue #1575: Cloudflare interstitial → actionable error message
+# ===========================================================================
+
+
+class TestCloudflareChallengeDetection:
+    """The _detect_cloudflare_challenge helper inspects a response and returns
+    the user-actionable message when CF returned a challenge / mitigation page
+    instead of JSON. None otherwise."""
+
+    # The actual interstitial fragment captured from issue #1575's log — keeping
+    # this verbatim so future regressions in detection are checked against the
+    # exact body shape the user hit, not a stylised copy.
+    _REPORTER_INTERSTITIAL = (
+        '<!DOCTYPE html><html lang="en-US"><head><title>Just a moment...'
+        '</title><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
+        '<meta http-equiv="X-UA-Compatible" content="IE=Edge">'
+        '<meta name="robots" content="noindex,nofollow">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    )
+
+    def test_just_a_moment_title_in_body(self):
+        from backend.app.services.bambu_cloud import _detect_cloudflare_challenge
+
+        response = MagicMock()
+        response.text = self._REPORTER_INTERSTITIAL
+        response.status_code = 200
+        response.headers = {}
+        assert _detect_cloudflare_challenge(response) is not None
+
+    def test_challenges_cloudflare_com_in_body(self):
+        from backend.app.services.bambu_cloud import _detect_cloudflare_challenge
+
+        response = MagicMock()
+        response.text = (
+            '<html><body><script src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script></body></html>'
+        )
+        response.status_code = 200
+        response.headers = {}
+        assert _detect_cloudflare_challenge(response) is not None
+
+    def test_cf_mitigated_403(self):
+        from backend.app.services.bambu_cloud import _detect_cloudflare_challenge
+
+        response = MagicMock()
+        response.text = ""
+        response.status_code = 403
+        response.headers = {"cf-mitigated": "challenge"}
+        assert _detect_cloudflare_challenge(response) is not None
+
+    def test_cf_ray_503(self):
+        from backend.app.services.bambu_cloud import _detect_cloudflare_challenge
+
+        response = MagicMock()
+        response.text = "<html>Under attack</html>"
+        response.status_code = 503
+        response.headers = {"cf-ray": "abc-DEF"}
+        assert _detect_cloudflare_challenge(response) is not None
+
+    def test_real_json_400_is_not_a_challenge(self):
+        """Application-level 400 with the real "Login failed" JSON the API
+        normally returns must NOT be misclassified as a CF challenge — that
+        would suppress the actionable upstream error."""
+        from backend.app.services.bambu_cloud import _detect_cloudflare_challenge
+
+        response = MagicMock()
+        response.text = '{"code":5,"error":"Login failed"}'
+        response.status_code = 400
+        response.headers = {"cf-ray": "abc-DEF", "server": "cloudflare"}
+        assert _detect_cloudflare_challenge(response) is None
+
+    def test_message_mentions_bambu_lab_and_cloudflare(self):
+        """The message must clearly attribute the block to Bambu Lab's
+        Cloudflare protection — not to Bambuddy — so users know what to do."""
+        from backend.app.services.bambu_cloud import _detect_cloudflare_challenge
+
+        response = MagicMock()
+        response.text = "<title>Just a moment...</title>"
+        response.status_code = 200
+        response.headers = {}
+        msg = _detect_cloudflare_challenge(response)
+        assert msg is not None
+        assert "Cloudflare" in msg
+        assert "bambulab.com" in msg
+
+    @pytest.mark.asyncio
+    async def test_verify_code_surfaces_cf_message_on_interstitial(self):
+        """verify_code (email-code path) must surface the CF message when the
+        endpoint returns an HTML interstitial — same shape as verify_totp."""
+        cloud = BambuCloudService()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.text = self._REPORTER_INTERSTITIAL
+        mock_response.headers = {}
+        mock_response.json.side_effect = ValueError("No JSON")
+
+        with patch.object(cloud._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            result = await cloud.verify_code("test@example.com", "123456")
+
+            assert result["success"] is False
+            assert "Cloudflare" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_login_request_surfaces_cf_message_on_interstitial(self):
+        """login_request must surface the CF message when the endpoint returns
+        an HTML interstitial. Previously the parse error bubbled to
+        BambuCloudAuthError with an opaque "Expecting value..." detail."""
+        cloud = BambuCloudService()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.text = self._REPORTER_INTERSTITIAL
+        mock_response.headers = {}
+        mock_response.json.side_effect = ValueError("No JSON")
+
+        with patch.object(cloud._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            result = await cloud.login_request("test@example.com", "password")
+
+            assert result["success"] is False
+            assert result["needs_verification"] is False
+            assert "Cloudflare" in result["message"]

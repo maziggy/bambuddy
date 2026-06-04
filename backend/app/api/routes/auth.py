@@ -25,6 +25,7 @@ from backend.app.core.auth import (
     authenticate_user,
     authenticate_user_by_email,
     create_access_token,
+    create_websocket_token,
     get_current_active_user,
     get_password_hash,
     get_user_by_email,
@@ -273,7 +274,7 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
                     db.add(admin_user)
                     logger.info("Admin user added to session: %s", request.admin_username)
                     admin_created = True
-                except Exception as e:
+                except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); no user is created on error
                     await db.rollback()
                     logger.error("Failed to create admin user: %s", e, exc_info=True)
                     raise HTTPException(
@@ -294,7 +295,7 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
         return SetupResponse(auth_enabled=request.auth_enabled, admin_created=admin_created)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); setup state stays unchanged
         logger.error("Setup error: %s", e, exc_info=True)
         await db.rollback()
         raise HTTPException(
@@ -339,7 +340,7 @@ async def disable_auth(
         await db.commit()
         logger.info("Authentication disabled by admin user: %s", user.username)
         return {"message": "Authentication disabled successfully", "auth_enabled": False}
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); auth_enabled stays at its prior value
         await db.rollback()
         logger.error("Failed to disable authentication: %s", e, exc_info=True)
         raise HTTPException(
@@ -408,7 +409,7 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
                     if user and ldap_user:
                         # Update email and group mappings on each login
                         await _sync_ldap_user(db, user, ldap_user, ldap_config)
-        except Exception as e:
+        except Exception as e:  # SEC-AUTH-EXC: LDAP failure sets ldap_user=None, downstream local-auth path runs with its own credential check (no implicit grant)
             import logging
 
             logging.getLogger(__name__).warning("LDAP authentication error, falling back to local: %s", e)
@@ -503,6 +504,29 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
         token_type="bearer",
         user=_user_to_response(user),
     )
+
+
+@router.post("/ws-token")
+async def mint_websocket_token(
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.WEBSOCKET_CONNECT),
+):
+    """Mint a short-lived token for ``/api/v1/ws`` connections (GHSA-r2qv follow-up).
+
+    The WebSocket endpoint cannot read ``Authorization`` headers from
+    browsers (the WebSocket handshake does not let JS attach custom
+    headers), so we use the same opaque-token-in-query-param pattern
+    as ``/camera/stream`` — the token is minted here behind the standard
+    permission gate, then appended as ``?token=<value>`` on the
+    ``ws://...`` URL. The WebSocket endpoint validates it *before*
+    calling ``websocket.accept()``.
+
+    Returns ``{"token": <opaque string>}``. The token is valid for 60
+    minutes; the SPA refreshes it on reconnect if expired. API keys can
+    mint tokens too — their scope flags decide whether ``WEBSOCKET_CONNECT``
+    passes via the standard allowlist (``can_read_status`` covers it).
+    """
+    username = current_user.username if current_user is not None else None
+    return {"token": await create_websocket_token(username)}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -619,7 +643,7 @@ async def logout(
                 expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
                 try:
                     await revoke_jti(jti, expires_at, username)
-                except Exception as exc:
+                except Exception as exc:  # SEC-AUTH-EXC: JTI-revoke failure on logout is logged only; logout removes access, never grants it (token stays valid until natural expiry — degraded but never escalation)
                     _logger.error("Failed to revoke JTI on logout for user %s: %s", username, exc)
         except PyJWTError:
             client_ip = _get_client_ip(raw_request)
@@ -664,7 +688,7 @@ async def test_smtp_connection(
 
         logger.info(f"Test email sent successfully to {test_request.test_recipient}")
         return TestSMTPResponse(success=True, message="Test email sent successfully")
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: SMTP test diagnostic returns success=False; no auth-relevant outcome (route is admin-gated by SETTINGS_UPDATE upstream)
         logger.error("Failed to send test email: %s", e)
         return TestSMTPResponse(success=False, message="Failed to send test email")
 
@@ -698,7 +722,7 @@ async def save_smtp_config(
         await db.commit()
         logger.info(f"SMTP settings updated by admin user: {current_user.username if current_user else 'anonymous'}")
         return {"message": "SMTP settings saved successfully"}
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); SMTP settings unchanged on error
         await db.rollback()
         logger.error("Failed to save SMTP settings: %s", e)
         raise HTTPException(
@@ -743,7 +767,7 @@ async def enable_advanced_auth(
         await db.commit()
         logger.info(f"Advanced authentication enabled by admin user: {user.username}")
         return {"message": "Advanced authentication enabled successfully", "advanced_auth_enabled": True}
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); advanced-auth setting unchanged on error
         await db.rollback()
         logger.error("Failed to enable advanced authentication: %s", e)
         raise HTTPException(
@@ -777,7 +801,7 @@ async def disable_advanced_auth(
         await db.commit()
         logger.info(f"Advanced authentication disabled by admin user: {user.username}")
         return {"message": "Advanced authentication disabled successfully", "advanced_auth_enabled": False}
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); advanced-auth setting unchanged on error
         await db.rollback()
         logger.error("Failed to disable advanced authentication: %s", e)
         raise HTTPException(
@@ -826,7 +850,7 @@ async def _send_reset_email_or_delete_token(
     try:
         send_email(smtp_settings, to_email, subject, text_body, html_body)
         _logger.info("Password reset email sent (%s) to %s", log_label, to_email)
-    except Exception as exc:
+    except Exception as exc:  # SEC-AUTH-EXC: email-send failure → defensive token cleanup so a stuck token doesn't block re-request; no access granted, just frees future workflow
         _logger.error(
             "Password reset email failed (%s) to %s — deleting token to unblock re-request: %s",
             log_label,
@@ -842,7 +866,7 @@ async def _send_reset_email_or_delete_token(
                     )
                 )
                 await db.commit()
-        except Exception as db_exc:
+        except Exception as db_exc:  # SEC-AUTH-EXC: nested cleanup failure logged only; no access decision made in this branch (already handling a prior failure)
             _logger.error("Failed to delete reset token after send failure: %s", db_exc)
 
 
@@ -967,7 +991,7 @@ async def forgot_password(
                 "forgot_password",
             )
             _logger.info("Password reset email queued for %s", user.email)
-        except Exception as e:
+        except Exception as e:  # SEC-AUTH-EXC: forgot-password response is intentionally generic regardless of outcome (user-enumeration defence); email failure does not grant access
             _logger.error("Failed to send password reset email: %s", e)
             # Don't reveal error to caller for security
 
@@ -1114,7 +1138,7 @@ async def reset_user_password(
 
         _logger.info("Admin password reset link queued for user '%s' by admin '%s'", user.username, admin_user.username)
         return ResetPasswordResponse(message=f"Password reset link sent to {user.email}")
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); reset token state unchanged on error
         await db.rollback()
         _logger.error("Failed to send admin password reset for user '%s': %s", user.username, e)
         raise HTTPException(
@@ -1354,7 +1378,7 @@ async def search_ldap_directory(
 
     try:
         results = search_ldap_users(config, query, limit=25)
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: raise 503 (fail-closed); route gated upstream by USERS_CREATE permission so detail leak is admin-only
         _logger.exception("LDAP directory search failed")
         # Admin-only endpoint — surface the underlying reason so the operator
         # can fix it (auth_middleware already restricted access to USERS_CREATE).
@@ -1430,7 +1454,7 @@ async def provision_ldap_user(
     # "username doesn't exist in the directory" in the UI.
     try:
         ldap_user = lookup_ldap_user(config, username)
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: raise 503 (fail-closed); LDAP provision never succeeds on lookup failure
         _logger.exception("LDAP lookup failed during provision")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

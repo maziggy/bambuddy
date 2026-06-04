@@ -1,6 +1,15 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { compareFwVersions } from '../utils/firmwareVersion';
 import { formatPrintName } from '../utils/printName';
+import { computePopoverPosition } from '../utils/popoverPosition';
+
+// AMS drying popover dimensions — w-[240px] on the popover, estimated height
+// covers header + filament select + temp slider + duration + rotate-tray
+// toggle + buttons. Over-estimating is fine (flip-above kicks in slightly
+// earlier); under-estimating leaves the popover clipped off the bottom (the
+// original bug at #1447).
+const DRYING_POPOVER_WIDTH = 240;
+const DRYING_POPOVER_ESTIMATED_HEIGHT = 320;
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -60,12 +69,13 @@ import {
   LogOut,
   MoreHorizontal,
   SlidersHorizontal,
+  Stethoscope,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -91,6 +101,7 @@ import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoo
 import { getPrinterImage, getWifiStrength, filterCompatibleQueueItems } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
+import { ConnectionDiagnosticModal, DiagnosticChecklist } from '../components/ConnectionDiagnostic';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
 export interface SpoolmanSlotAssignmentRow {
@@ -1502,6 +1513,7 @@ function PrinterCard({
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [showUploadForPrint, setShowUploadForPrint] = useState(false);
   const [showPrinterInfo, setShowPrinterInfo] = useState(false);
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
   const closePrinterInfo = useCallback(() => setShowPrinterInfo(false), []);
   const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
   // AMS drying popover state: which AMS unit has the popover open
@@ -2582,6 +2594,16 @@ function PrinterCard({
                     {t('printers.mqttDebug')}
                   </button>
                   <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      setShowDiagnostic(true);
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Stethoscope className="w-4 h-4" />
+                    {t('diagnostic.runButton')}
+                  </button>
+                  <button
                     className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
                       hasPermission('printers:delete')
                         ? 'text-red-400 hover:bg-bambu-dark-tertiary'
@@ -2620,6 +2642,17 @@ function PrinterCard({
                 )}
                 {status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
               </span>
+              {/* Run connection diagnostic — offered when the printer is offline */}
+              {!status?.connected && (
+                <button
+                  onClick={() => setShowDiagnostic(true)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"
+                  title={t('diagnostic.runButton')}
+                >
+                  <Stethoscope className="w-3 h-3" />
+                  {t('diagnostic.runButton')}
+                </button>
+              )}
               {/* Network connection indicator */}
               {status?.connected && status?.wired_network && (
                 <span
@@ -3486,7 +3519,7 @@ function PrinterCard({
                                           setDryingPopoverModuleType(ams.module_type);
                                           setDryingPopoverAmsId(ams.id);
                                           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                          setDryingPopoverPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 240) });
+                                          setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT }));
                                         }
                                       }}
                                       className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
@@ -3724,8 +3757,11 @@ function PrinterCard({
                                         data={filamentData}
                                         spoolman={{
                                           enabled: spoolmanEnabled,
-                                          linkedSpoolId: (trayTag ? linkedSpools?.[trayTag]?.id : undefined)
-                                            ?? slotAssignmentForFill?.spoolman_spool_id,
+                                          // #1457: slot assignment is the user's most explicit action — it must
+                                          // outrank the tag-link, which can be stale when a non-RFID slot's
+                                          // fallback tag is still attached to a previous spool in Spoolman.
+                                          linkedSpoolId: slotAssignmentForFill?.spoolman_spool_id
+                                            ?? (trayTag ? linkedSpools?.[trayTag]?.id : undefined),
                                           spoolmanUrl,
                                           syncMode: spoolmanSyncMode,
                                           // Suppress Link button when slot is already occupied by ANY assignment
@@ -3999,7 +4035,7 @@ function PrinterCard({
                                         setDryingPopoverModuleType(ams.module_type);
                                         setDryingPopoverAmsId(ams.id);
                                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                        setDryingPopoverPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 240) });
+                                        setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT }));
                                       }
                                     }}
                                     className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
@@ -4125,8 +4161,9 @@ function PrinterCard({
                                     data={filamentData}
                                     spoolman={{
                                       enabled: spoolmanEnabled,
-                                      linkedSpoolId: (htTrayTag ? linkedSpools?.[htTrayTag]?.id : undefined)
-                                        ?? htSlotAssignmentForFill?.spoolman_spool_id,
+                                      // #1457: slot assignment outranks tag-link (see top-level slot block).
+                                      linkedSpoolId: htSlotAssignmentForFill?.spoolman_spool_id
+                                        ?? (htTrayTag ? linkedSpools?.[htTrayTag]?.id : undefined),
                                       spoolmanUrl,
                                       syncMode: spoolmanSyncMode,
                                       // Suppress Link button when slot is occupied by ANY assignment (Phase 13 P13-6d)
@@ -4440,8 +4477,9 @@ function PrinterCard({
                                       data={extFilamentData}
                                       spoolman={{
                                         enabled: spoolmanEnabled,
-                                        linkedSpoolId: (extTrayTag ? linkedSpools?.[extTrayTag]?.id : undefined)
-                                          ?? extSlotAssignmentForFill?.spoolman_spool_id,
+                                        // #1457: slot assignment outranks tag-link (see top-level slot block).
+                                        linkedSpoolId: extSlotAssignmentForFill?.spoolman_spool_id
+                                          ?? (extTrayTag ? linkedSpools?.[extTrayTag]?.id : undefined),
                                         spoolmanUrl,
                                         syncMode: spoolmanSyncMode,
                                         // Suppress Link button when slot is occupied by ANY assignment (Phase 13 P13-6d)
@@ -4850,6 +4888,14 @@ function PrinterCard({
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowMQTTDebug(false)}
+        />
+      )}
+
+      {showDiagnostic && (
+        <ConnectionDiagnosticModal
+          printerId={printer.id}
+          printerName={printer.name}
+          onClose={() => setShowDiagnostic(false)}
         />
       )}
 
@@ -5384,17 +5430,27 @@ function PrinterCard({
             <div className="fixed inset-0 z-[100]" onClick={() => setDryingPopoverAmsId(null)} />
             {/* Popover */}
             <div
-              className="fixed z-[101] w-[240px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl overflow-hidden"
-              style={{ top: dryingPopoverPos.top, left: dryingPopoverPos.left }}
+              className="fixed z-[101] flex flex-col w-[240px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl overflow-hidden"
+              style={{
+                top: dryingPopoverPos.top,
+                left: dryingPopoverPos.left,
+                // Cap to the space between the popover's top and the bottom
+                // viewport margin (8px, matching computePopoverPosition's
+                // margin). When the popover is taller than that space — short
+                // viewport, landscape phone, zoomed-in — the body scrolls and
+                // the footer stays pinned, so the Start button is always
+                // reachable (#1458 / #1447 follow-up).
+                maxHeight: `calc(100vh - ${dryingPopoverPos.top}px - 8px)`,
+              }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary">
+              <div className="shrink-0 flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary">
                 <Flame className="w-3.5 h-3.5 text-amber-400" />
                 <span className="text-xs text-white font-medium">{t('printers.drying.start')}</span>
               </div>
               {/* Body */}
-              <div className="px-3 py-2.5 space-y-2.5">
+              <div className="px-3 py-2.5 space-y-2.5 overflow-y-auto min-h-0">
                 {/* Filament type select */}
                 <div>
                   <label className="text-[10px] text-bambu-gray mb-1 block">{t('printers.filaments')}</label>
@@ -5487,7 +5543,7 @@ function PrinterCard({
                 </label>
               </div>
               {/* Footer */}
-              <div className="px-3 pb-3">
+              <div className="shrink-0 px-3 pt-2.5 pb-3">
                 <button
                   onClick={() => {
                     if (dryingPopoverAmsId !== null) {
@@ -5537,6 +5593,14 @@ function AddPrinterModal({
   const [detectedSubnets, setDetectedSubnets] = useState<string[]>([]);
   const [subnet, setSubnet] = useState('');
   const [scanProgress, setScanProgress] = useState({ scanned: 0, total: 0 });
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
+
+  // Setup-time pre-flight: run the connection diagnostic on save and warn
+  // (not block) when checks fail, so the user doesn't add a printer that
+  // immediately shows offline. checkingSave = probe in flight; saveWarning =
+  // failed result awaiting an explicit "save anyway".
+  const [checkingSave, setCheckingSave] = useState(false);
+  const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
 
   // Fetch discovery info on mount
   useEffect(() => {
@@ -5553,6 +5617,27 @@ function AddPrinterModal({
 
   // Filter out already-added printers
   const newPrinters = discovered.filter(p => !existingSerials.includes(p.serial));
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCheckingSave(true);
+    try {
+      const result = await api.diagnoseConnection({
+        ip_address: form.ip_address.trim(),
+        serial_number: form.serial_number.trim() || undefined,
+        access_code: form.access_code || undefined,
+      });
+      if (result.checks.some((c) => c.status === 'fail')) {
+        setSaveWarning(result);
+        return;
+      }
+    } catch {
+      // Diagnostic infrastructure failed — never block the save on it.
+    } finally {
+      setCheckingSave(false);
+    }
+    onAdd(form);
+  };
 
   const startDiscovery = async () => {
     setDiscoveryError('');
@@ -5659,6 +5744,7 @@ function AddPrinterModal({
   }, [onClose]);
 
   return (
+    <>
     <div
       className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
       onClick={onClose}
@@ -5770,13 +5856,7 @@ function AddPrinterModal({
               </p>
             )}
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onAdd(form);
-            }}
-            className="space-y-4"
-          >
+          <form onSubmit={handleAddSubmit} className="space-y-4">
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('printers.name')}</label>
               <input
@@ -5878,18 +5958,62 @@ function AddPrinterModal({
                 {t('printers.modal.autoArchiveLabel')}
               </label>
             </div>
-            <div className="flex gap-3 pt-4">
-              <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" className="flex-1">
-                {t('printers.addPrinter')}
-              </Button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowDiagnostic(true)}
+              disabled={!form.ip_address.trim()}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-bambu-gray hover:text-white disabled:opacity-40 disabled:cursor-not-allowed border border-bambu-dark-tertiary rounded-lg transition-colors"
+            >
+              <Stethoscope className="w-4 h-4" />
+              {t('diagnostic.runButton')}
+            </button>
+            {saveWarning ? (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
+                  <p className="text-sm text-amber-300">{t('printers.addPreflight.warning')}</p>
+                </div>
+                <DiagnosticChecklist result={saveWarning} />
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setSaveWarning(null)}
+                    className="flex-1"
+                  >
+                    {t('printers.addPreflight.back')}
+                  </Button>
+                  <Button type="button" onClick={() => onAdd(form)} className="flex-1">
+                    {t('printers.addPreflight.saveAnyway')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-3 pt-2">
+                <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={checkingSave} className="flex-1">
+                  {checkingSave ? t('printers.addPreflight.checking') : t('printers.addPrinter')}
+                </Button>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>
     </div>
+    {showDiagnostic && (
+      <ConnectionDiagnosticModal
+        connection={{
+          ip_address: form.ip_address.trim(),
+          serial_number: form.serial_number.trim() || undefined,
+          access_code: form.access_code || undefined,
+        }}
+        printerName={form.name || null}
+        onClose={() => setShowDiagnostic(false)}
+      />
+    )}
+    </>
   );
 }
 
@@ -6192,6 +6316,11 @@ function EditPrinterModal({
     auto_archive: printer.auto_archive,
   });
 
+  // Setup-time pre-flight — same warn-on-save as the Add-Printer dialog, so an
+  // edit that breaks connectivity (e.g. a mistyped IP) is caught before save.
+  const [checkingSave, setCheckingSave] = useState(false);
+  const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
+
   const updateMutation = useMutation({
     mutationFn: (data: Partial<PrinterCreate>) => api.updatePrinter(printer.id, data),
     onSuccess: () => {
@@ -6211,8 +6340,7 @@ function EditPrinterModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const doSave = () => {
     const data: Partial<PrinterCreate> = {
       name: form.name,
       ip_address: form.ip_address,
@@ -6225,6 +6353,27 @@ function EditPrinterModal({
       data.access_code = form.access_code;
     }
     updateMutation.mutate(data);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCheckingSave(true);
+    try {
+      const result = await api.diagnoseConnection({
+        ip_address: form.ip_address.trim(),
+        serial_number: printer.serial_number,
+        access_code: form.access_code || undefined,
+      });
+      if (result.checks.some((c) => c.status === 'fail')) {
+        setSaveWarning(result);
+        return;
+      }
+    } catch {
+      // Diagnostic infrastructure failed — never block the save on it.
+    } finally {
+      setCheckingSave(false);
+    }
+    doSave();
   };
 
   return (
@@ -6335,14 +6484,50 @@ function EditPrinterModal({
                 {t('printers.modal.autoArchiveLabel')}
               </label>
             </div>
-            <div className="flex gap-3 pt-4">
-              <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" className="flex-1" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? t('common.saving') : t('printers.modal.saveChanges')}
-              </Button>
-            </div>
+            {saveWarning ? (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
+                  <p className="text-sm text-amber-300">{t('printers.addPreflight.warning')}</p>
+                </div>
+                <DiagnosticChecklist result={saveWarning} />
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setSaveWarning(null)}
+                    className="flex-1"
+                  >
+                    {t('printers.addPreflight.back')}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={doSave}
+                    className="flex-1"
+                    disabled={updateMutation.isPending}
+                  >
+                    {t('printers.addPreflight.saveAnyway')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-3 pt-4">
+                <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  disabled={updateMutation.isPending || checkingSave}
+                >
+                  {checkingSave
+                    ? t('printers.addPreflight.checking')
+                    : updateMutation.isPending
+                      ? t('common.saving')
+                      : t('printers.modal.saveChanges')}
+                </Button>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>

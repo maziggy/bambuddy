@@ -10,10 +10,10 @@ import math
 import zipfile
 
 from backend.app.utils.threemf_tools import (
+    extract_embedded_presets_from_3mf,
     extract_filament_usage_from_3mf,
     extract_plate_extruder_set_from_3mf,
     extract_project_filaments_from_3mf,
-    extract_source_printer_model_from_3mf,
     get_cumulative_usage_at_layer,
     mm_to_grams,
     parse_gcode_layer_filament_usage,
@@ -648,41 +648,55 @@ class TestExtractPlateExtruderSetFrom3mf:
             assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {2}
 
 
-# ---------------------------------------------------------------------------
-# Tests for extract_source_printer_model_from_3mf — feeds the SliceModal's
-# pre-slice mismatch warning. The CLI cannot re-slice a 3MF for a different
-# printer, so warning the user up-front avoids producing wrong-printer output.
-# ---------------------------------------------------------------------------
+class TestExtractEmbeddedPresetsFrom3mf:
+    """Printer / process preset names read from project_settings.config so the
+    SliceModal can default its dropdowns to the file's own config (#1325)."""
 
+    def test_extracts_printer_and_process(self):
+        config = json.dumps(
+            {
+                "printer_settings_id": "Bambu Lab X1 Carbon 0.4 nozzle",
+                "print_settings_id": "0.20mm Standard @BBL X1C",
+                "filament_settings_id": ["Bambu PLA Basic @BBL X1C"],
+            }
+        )
+        with _make_3mf_with({"Metadata/project_settings.config": config}) as zf:
+            assert extract_embedded_presets_from_3mf(zf) == {
+                "printer": "Bambu Lab X1 Carbon 0.4 nozzle",
+                "process": "0.20mm Standard @BBL X1C",
+            }
 
-class TestExtractSourcePrinterModelFrom3mf:
-    def test_returns_none_when_project_settings_missing(self):
-        with _make_3mf_with({"placeholder.txt": "hi"}) as zf:
-            assert extract_source_printer_model_from_3mf(zf) is None
+    def test_settings_id_as_list_takes_first(self):
+        # Some exports write *_settings_id as a per-extruder list.
+        config = json.dumps(
+            {
+                "printer_settings_id": ["Bambu Lab A1 0.4 nozzle"],
+                "print_settings_id": ["0.16mm Optimal @BBL A1", "0.20mm @BBL A1"],
+            }
+        )
+        with _make_3mf_with({"Metadata/project_settings.config": config}) as zf:
+            result = extract_embedded_presets_from_3mf(zf)
+            assert result["printer"] == "Bambu Lab A1 0.4 nozzle"
+            assert result["process"] == "0.16mm Optimal @BBL A1"
 
-    def test_reads_printer_model_directly(self):
-        proj = {"printer_model": "Bambu Lab H2D"}
-        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
-            assert extract_source_printer_model_from_3mf(zf) == "Bambu Lab H2D"
+    def test_missing_config_returns_none_values(self):
+        with _make_3mf_with({"3D/3dmodel.model": "<model/>"}) as zf:
+            assert extract_embedded_presets_from_3mf(zf) == {
+                "printer": None,
+                "process": None,
+            }
 
-    def test_falls_back_to_printer_settings_id_with_nozzle_strip(self):
-        # Older Bambu Studio exports stored the printer under
-        # printer_settings_id, often with a "0.4 nozzle" suffix the helper
-        # must strip to match the canonical model name.
-        proj = {"printer_settings_id": "Bambu Lab A1 0.4 nozzle"}
-        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
-            assert extract_source_printer_model_from_3mf(zf) == "Bambu Lab A1"
+    def test_malformed_json_returns_none_values(self):
+        with _make_3mf_with({"Metadata/project_settings.config": "not json"}) as zf:
+            assert extract_embedded_presets_from_3mf(zf) == {
+                "printer": None,
+                "process": None,
+            }
 
-    def test_settings_id_without_nozzle_suffix_returned_as_is(self):
-        proj = {"printer_settings_id": "Bambu Lab P1S"}
-        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
-            assert extract_source_printer_model_from_3mf(zf) == "Bambu Lab P1S"
-
-    def test_corrupt_json_returns_none_no_exception(self):
-        with _make_3mf_with({"Metadata/project_settings.config": b"{broken"}) as zf:
-            assert extract_source_printer_model_from_3mf(zf) is None
-
-    def test_empty_string_treated_as_missing(self):
-        proj = {"printer_model": "", "printer_settings_id": ""}
-        with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
-            assert extract_source_printer_model_from_3mf(zf) is None
+    def test_blank_and_absent_keys_yield_none(self):
+        config = json.dumps({"printer_settings_id": "  ", "other": "x"})
+        with _make_3mf_with({"Metadata/project_settings.config": config}) as zf:
+            assert extract_embedded_presets_from_3mf(zf) == {
+                "printer": None,
+                "process": None,
+            }

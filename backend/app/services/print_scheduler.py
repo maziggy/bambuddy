@@ -9,6 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.app.core.config import settings
 from backend.app.core.database import async_session, run_with_retry
@@ -18,6 +19,8 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
+from backend.app.models.spool_assignment import SpoolAssignment
+from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.bambu_ftp import (
     cache_3mf_download,
     delete_file_async,
@@ -25,9 +28,11 @@ from backend.app.services.bambu_ftp import (
     upload_file_async,
     with_ftp_retry,
 )
+from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager, supports_drying
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.utils.filename import derive_remote_filename
 from backend.app.utils.printer_models import normalize_printer_model
 
 logger = logging.getLogger(__name__)
@@ -300,6 +305,13 @@ class PrintScheduler:
                             )
                             await db.commit()
 
+                    # Filament-deficit pre-dispatch check (#1496). If the
+                    # assigned spool can't satisfy any required slot grams,
+                    # promote the item to manual_start so the user must
+                    # acknowledge via the ▶ button (which re-checks live).
+                    if await self._block_on_filament_deficit(db, item):
+                        continue
+
                     # Start the print
                     await self._start_print(db, item)
                     busy_printers.add(item.printer_id)
@@ -422,6 +434,10 @@ class PrintScheduler:
                                     f"Queue item {item.id}: Computed AMS mapping for printer {printer_id}: {computed_mapping}"
                                 )
                                 await db.commit()
+
+                        # Filament-deficit pre-dispatch check (#1496).
+                        if await self._block_on_filament_deficit(db, item):
+                            continue
 
                         await self._start_print(db, item)
                         busy_printers.add(printer_id)
@@ -792,6 +808,22 @@ class PrintScheduler:
         # Get filament requirements from source file
         filament_reqs = await self._get_filament_requirements(db, item)
         if not filament_reqs:
+            # When the 3MF can't be read but force-color overrides are present, build a
+            # direct mapping from the overrides so the printer uses the correct AMS slot.
+            if item.filament_overrides:
+                try:
+                    overrides = json.loads(item.filament_overrides)
+                    force_overrides = [o for o in overrides if o.get("force_color_match")]
+                    if force_overrides:
+                        logger.info(
+                            "Queue item %s: No filament reqs from 3MF; building AMS mapping from %d "
+                            "force-color override(s)",
+                            item.id,
+                            len(force_overrides),
+                        )
+                        return self._build_override_direct_mapping(force_overrides, status)
+                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                    logger.warning("Queue item %s: Force-color fallback mapping failed: %s", item.id, e)
             logger.debug("No filament requirements found for queue item %s", item.id)
             return None
 
@@ -827,8 +859,46 @@ class PrintScheduler:
         # Check if user prefers lowest remaining filament when multiple spools match
         prefer_lowest = await self._get_bool_setting(db, "prefer_lowest_filament")
 
+        # When the preference is on, surface Bambuddy's inventory-side
+        # remaining for each slot that's bound to a tracked spool, so the
+        # sort beats the MQTT-only blind spot (#1508). Skip the lookup
+        # entirely when the preference is off — no behaviour change for
+        # users who haven't opted in.
+        inventory_remain_overrides: dict[int, float] | None = None
+        if prefer_lowest:
+            inventory_remain_overrides = await self._build_inventory_remain_overrides(db, printer_id, loaded_filaments)
+
         # Compute mapping: match required filaments to available slots
-        return self._match_filaments_to_slots(filament_reqs, loaded_filaments, prefer_lowest)
+        return self._match_filaments_to_slots(
+            filament_reqs, loaded_filaments, prefer_lowest, inventory_remain_overrides
+        )
+
+    def _build_override_direct_mapping(self, force_overrides: list[dict], status) -> list[int] | None:
+        """Build an AMS mapping directly from force-color overrides without a 3MF.
+
+        Used when ``_get_filament_requirements`` returns nothing (e.g. the 3MF's
+        slice_info is missing or unreadable) but ``force_color_match`` overrides
+        are present. Each override's ``slot_id``, ``type``, and ``color`` are
+        treated as the filament requirement for that slot and matched against the
+        current AMS state of the printer.
+
+        Returns the same format as ``_match_filaments_to_slots``, or None when
+        the AMS has no loaded filaments.
+        """
+        loaded = self._build_loaded_filaments(status)
+        if not loaded:
+            return None
+
+        reqs = [
+            {
+                "slot_id": o["slot_id"],
+                "type": o.get("type", ""),
+                "color": o.get("color", ""),
+                "tray_info_idx": "",
+            }
+            for o in force_overrides
+        ]
+        return self._match_filaments_to_slots(reqs, loaded)
 
     async def _get_filament_requirements(self, db: AsyncSession, item: PrintQueueItem) -> list[dict] | None:
         """Resolve the queue item's source 3MF and parse the per-slot
@@ -960,8 +1030,156 @@ class PrintScheduler:
         except ValueError:
             return False
 
+    async def _build_inventory_remain_overrides(
+        self, db: AsyncSession, printer_id: int, loaded: list[dict]
+    ) -> dict[int, float]:
+        """Return ``{global_tray_id: remaining_grams}`` for AMS slots the user
+        has bound to an inventory spool — Bambuddy-side or Spoolman-side.
+
+        The MQTT ``remain`` field on a tray is the printer firmware's
+        RFID-decremented value, which has two limitations the "Prefer Lowest
+        Remaining Filament" feature has been ignoring (#1508):
+
+        - it's only meaningful for Bambu RFID spools; everything else reports
+          ``-1`` (then clamped to a sentinel), so multiple non-RFID trays
+          compare equal and the sort collapses to AMS-slot order — the user
+          who's curating inventory weights gets the lower-slot pick instead
+          of the lower-remaining pick;
+        - even when set, it's the *printer's* counter, not Bambuddy's
+          ``label_weight - weight_used`` (internal mode) or Spoolman's
+          ``remaining_weight`` (Spoolman mode) — the two diverge any time the
+          user re-spools, swaps cardboard, or runs a print outside Bambuddy.
+
+        When the user has bound a spool to a slot, their own inventory
+        tracking is authoritative; this helper surfaces that value so the
+        sort can prefer it. Slots without a binding are absent from the
+        returned map — the caller then falls back to MQTT ``remain`` for
+        those, preserving the pre-#1508 behaviour for un-tracked spools.
+
+        Returns an empty map on any failure (no inventory bindings, DB
+        error, Spoolman unreachable). A best-effort lookup; "Prefer Lowest"
+        is a preference, not a guarantee.
+        """
+        if not loaded:
+            return {}
+        # External / virtual-tray slots are tracked separately from AMS — skip
+        # them so a VT-loaded spool doesn't accidentally inherit a tracked
+        # AMS binding (the tables use ams_id 254/255 for VT, but the cross
+        # match is fiddly and out of scope for this fix).
+        tracked_slots = [(f["ams_id"], f["tray_id"], f["global_tray_id"]) for f in loaded if not f.get("is_external")]
+        if not tracked_slots:
+            return {}
+
+        is_spoolman = await self._is_spoolman_mode(db)
+        overrides: dict[int, float] = {}
+
+        if is_spoolman:
+            result = await db.execute(
+                select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id)
+            )
+            assignments = list(result.scalars().all())
+            by_slot = {(a.ams_id, a.tray_id): a.spoolman_spool_id for a in assignments}
+            from backend.app.services.filament_deficit import _spoolman_remaining_grams
+
+            for ams_id, tray_id, gtid in tracked_slots:
+                spoolman_id = by_slot.get((ams_id, tray_id))
+                if spoolman_id is None:
+                    continue
+                grams = await _spoolman_remaining_grams(spoolman_id)
+                if grams is not None:
+                    overrides[gtid] = grams
+            return overrides
+
+        # Internal inventory mode (default). selectinload matches the pattern
+        # used elsewhere (inventory.py, spoolman.py routes) — a single query
+        # plus an eager-loaded relationship rather than an explicit join, so
+        # the row-attribute shape is exactly what those routes already rely on.
+        result = await db.execute(
+            select(SpoolAssignment)
+            .options(selectinload(SpoolAssignment.spool))
+            .where(SpoolAssignment.printer_id == printer_id)
+        )
+        assignments = list(result.scalars().all())
+        by_slot = {(a.ams_id, a.tray_id): a.spool for a in assignments}
+        for ams_id, tray_id, gtid in tracked_slots:
+            spool = by_slot.get((ams_id, tray_id))
+            if spool is None:
+                continue
+            label = float(spool.label_weight or 0)
+            used = float(spool.weight_used or 0)
+            overrides[gtid] = max(0.0, label - used)
+        return overrides
+
+    @staticmethod
+    async def _is_spoolman_mode(db: AsyncSession) -> bool:
+        """Mirror of ``filament_deficit._is_spoolman_mode`` — kept private
+        here to avoid making this module import-dependent on that private
+        helper's signature."""
+        try:
+            from backend.app.api.routes.settings import get_setting
+
+            v = await get_setting(db, "spoolman_enabled")
+            return bool(v) and v.lower() == "true"
+        except Exception:
+            return False
+
+    @staticmethod
+    def _slot_priority(ams_id: int | None, tray_id: int | None) -> int:
+        """Deterministic slot-position tie-breaker for the prefer-lowest sort.
+
+        Three bands, matched to the emission order in ``_build_loaded_filaments``
+        so a tied sort produces the same physical-position order the pre-#1508
+        stable sort did (preserves the regression-free baseline):
+
+        - Regular AMS (``ams_id`` 0..7): ``ams_id * 4 + tray_id`` → 0..31
+        - AMS-HT (``ams_id`` >= 128, single tray): ``1000 + (ams_id - 128) * 4``
+        - External / VT (``ams_id`` < 0, or ``None``): ``10_000``
+
+        Banding ensures regular AMS < AMS-HT < external on ties, regardless of
+        what the raw ``ams_id`` happens to be (in particular, ``ams_id = -1``
+        for VT must NOT sort to a negative number or it would beat AMS slot 0).
+        """
+        if ams_id is None or ams_id < 0:
+            return 10_000
+        if ams_id >= 128:
+            return 1_000 + (ams_id - 128) * 4 + (tray_id or 0)
+        return ams_id * 4 + (tray_id or 0)
+
+    @staticmethod
+    def _prefer_lowest_sort_key(f: dict, overrides: dict[int, float] | None) -> tuple[int, float, int]:
+        """Sort key for the "Prefer Lowest Remaining Filament" preference.
+
+        Two-tier ordering: inventory-tracked spools always sort BEFORE
+        non-tracked spools (the user has told us they care about these
+        specifically), then ascending by remaining within each tier, then
+        ascending by AMS slot position as the deterministic tie-breaker.
+
+        Tiers are flagged by the first tuple element (0 = inventory-tracked,
+        1 = MQTT-only / unknown). Cross-tier value comparisons never run
+        because the tier flag dominates — which is what lets us mix grams
+        (inventory) and percent (MQTT) without a unit conversion.
+
+        Within the MQTT tier ``remain = -1`` (unknown) is mapped to 101 so
+        spools the printer DOES know something about sort ahead of those
+        it knows nothing about — preserves pre-#1508 behaviour for the
+        no-inventory-binding case.
+
+        Slot tie-breaker via ``_slot_priority`` so regular AMS < AMS-HT <
+        external on ties, matching the legacy emission-order stable sort.
+        """
+        gtid = f.get("global_tray_id")
+        slot_order = PrintScheduler._slot_priority(f.get("ams_id"), f.get("tray_id"))
+        if overrides and gtid in overrides:
+            return (0, overrides[gtid], slot_order)
+        remain = f.get("remain", -1)
+        return (1, float(remain) if remain is not None and remain >= 0 else 101.0, slot_order)
+
     def _match_filaments_to_slots(
-        self, required: list[dict], loaded: list[dict], prefer_lowest: bool = False
+        self,
+        required: list[dict],
+        loaded: list[dict],
+        prefer_lowest: bool = False,
+        inventory_remain_overrides: dict[int, float] | None = None,
     ) -> list[int] | None:
         """Match required filaments to loaded filaments and build AMS mapping.
 
@@ -1008,9 +1226,11 @@ class PrintScheduler:
             if req_nozzle_id is not None:
                 available = [f for f in available if f.get("extruder_id") == req_nozzle_id]
 
-            # Sort by remaining filament (ascending) so lowest-remain spool wins .find()
+            # Sort by remaining filament (ascending) so lowest-remain spool wins .find().
+            # Inventory-tracked spools sort before MQTT-only ones (#1508); see
+            # _prefer_lowest_sort_key for the full rationale.
             if prefer_lowest:
-                available.sort(key=lambda f: f.get("remain", -1) if f.get("remain", -1) >= 0 else 101)
+                available.sort(key=lambda f: self._prefer_lowest_sort_key(f, inventory_remain_overrides))
 
             # Check if tray_info_idx is unique among available trays
             if req_tray_info_idx:
@@ -1029,7 +1249,7 @@ class PrintScheduler:
                         f"using color matching among trays: {[f['global_tray_id'] for f in idx_matches]}"
                     )
                     if prefer_lowest:
-                        idx_matches.sort(key=lambda f: f.get("remain", -1) if f.get("remain", -1) >= 0 else 101)
+                        idx_matches.sort(key=lambda f: self._prefer_lowest_sort_key(f, inventory_remain_overrides))
                     # Use color matching within this subset
                     for f in idx_matches:
                         f_color = f.get("color", "")
@@ -1605,6 +1825,55 @@ class PrintScheduler:
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         return result.scalar_one_or_none()
 
+    async def _block_on_filament_deficit(
+        self,
+        db: AsyncSession,
+        item: PrintQueueItem,
+    ) -> bool:
+        """Promote the item to manual_start when the assigned spool is short (#1496).
+
+        Returns True when this dispatch attempt was blocked, False when the
+        item is clear to start. A previously-flagged item whose spool has
+        since been swapped to one with enough material clears the flag here
+        so the next scheduler tick dispatches it.
+        """
+        try:
+            deficit = await compute_deficit_for_queue_item(db, item)
+        except Exception as e:
+            # Never let a flaky deficit check wedge the queue — log and let
+            # dispatch proceed. The PrintModal-side check still runs on the
+            # manual paths.
+            logger.warning("Filament deficit check failed for item %s: %s", item.id, e)
+            return False
+
+        if deficit:
+            item.filament_short = True
+            item.manual_start = True
+            await db.commit()
+            job_name = await self._get_job_name(db, item)
+            printer = await self._get_printer(db, item.printer_id) if item.printer_id else None
+            logger.info(
+                "Queue item %s blocked on filament deficit (%d slot(s)) — promoted to manual_start",
+                item.id,
+                len(deficit),
+            )
+            try:
+                await notification_service.on_queue_job_waiting(
+                    job_name=job_name,
+                    target_model=(printer.model if printer else "") or "",
+                    waiting_reason="filament_short",
+                    db=db,
+                )
+            except Exception as e:
+                logger.debug("filament_short notification failed for item %s: %s", item.id, e)
+            return True
+
+        # No deficit — clear any stale flag from a previous tick.
+        if item.filament_short:
+            item.filament_short = False
+            await db.commit()
+        return False
+
     async def _start_print(self, db: AsyncSession, item: PrintQueueItem):
         """Upload file and start print for a queue item.
 
@@ -1745,18 +2014,9 @@ class PrintScheduler:
             except Exception as e:
                 logger.warning("Queue item %s: G-code injection failed, using original: %s", item.id, e)
 
-        # Upload file to printer via FTP
-        # Use a clean filename to avoid issues with double extensions like .gcode.3mf
-        base_name = filename
-        if base_name.endswith(".gcode.3mf"):
-            base_name = base_name[:-10]  # Remove .gcode.3mf
-        elif base_name.endswith(".3mf"):
-            base_name = base_name[:-4]  # Remove .3mf
-        remote_filename = f"{base_name}.3mf"
-        # Sanitize: firmware parses ftp://{filename} as a URL, spaces break it
-        remote_filename = remote_filename.replace(" ", "_")
         # Upload to root directory (not /cache/) - the start_print command references
         # files by name only (ftp://{filename}), so they must be in the root
+        remote_filename = derive_remote_filename(filename)
         remote_path = f"/{remote_filename}"
 
         # Get FTP retry settings

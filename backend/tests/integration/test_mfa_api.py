@@ -4242,6 +4242,217 @@ class TestOIDCEmailResolutionExtra:
 
 
 # ===========================================================================
+# Issue #1569: standard 'email' claim fallback for User.email during
+# auto-provisioning when email_claim is a non-email identity claim.
+# ===========================================================================
+
+
+class TestOIDCStandardEmailFallback:
+    """Issue #1569: when email_claim is set to a non-email identity claim
+    (e.g. preferred_username on Authentik) and the IdP token also carries a
+    standard 'email' claim, auto-created users get User.email from the
+    standard claim — without affecting the auto-link gate."""
+
+    async def _get_user_and_link(self, db_session: AsyncSession, provider_id: int, sub: str):
+        from sqlalchemy import select
+
+        from backend.app.models.oidc_provider import UserOIDCLink
+        from backend.app.models.user import User as UserModel
+
+        link_result = await db_session.execute(
+            select(UserOIDCLink)
+            .where(UserOIDCLink.provider_id == provider_id)
+            .where(UserOIDCLink.provider_user_id == sub)
+        )
+        link = link_result.scalar_one_or_none()
+        if link is None:
+            return None, None
+        user_result = await db_session.execute(select(UserModel).where(UserModel.id == link.user_id))
+        return user_result.scalar_one_or_none(), link
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_claim_preferred_username_falls_back_to_standard_email(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+    ):
+        """email_claim=preferred_username + both claims → username from preferred_username,
+        email populated from the standard 'email' claim."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://issue1569-both.example"
+        client_id = "issue1569-both-client"
+
+        admin_token = await _setup_and_login(async_client, "i1569b_adm", "I1569b123!")
+        provider_id = await _create_provider_via_api(
+            async_client,
+            admin_token,
+            issuer,
+            client_id,
+            email_claim="preferred_username",
+            require_email_verified=False,
+            suffix="i1569both",
+        )
+
+        sub = f"sub-i1569-both-{secrets.token_hex(6)}"
+        await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={
+                "sub": sub,
+                "preferred_username": "jdoe",
+                "email": "jdoe@example.com",
+                "email_verified": True,
+            },
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        db_session.expire_all()
+        user, link = await self._get_user_and_link(db_session, provider_id, sub)
+        assert user is not None and link is not None
+        assert user.username == "jdoe"
+        assert user.email == "jdoe@example.com"
+        assert link.provider_email == "jdoe@example.com"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_email_claim_preferred_username_no_standard_email_keeps_email_none(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+    ):
+        """email_claim=preferred_username + no standard 'email' claim → behaviour unchanged:
+        username derived from preferred_username, User.email stays None."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://issue1569-noemail.example"
+        client_id = "issue1569-noemail-client"
+
+        admin_token = await _setup_and_login(async_client, "i1569n_adm", "I1569n123!")
+        provider_id = await _create_provider_via_api(
+            async_client,
+            admin_token,
+            issuer,
+            client_id,
+            email_claim="preferred_username",
+            require_email_verified=False,
+            suffix="i1569none",
+        )
+
+        sub = f"sub-i1569-none-{secrets.token_hex(6)}"
+        await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": sub, "preferred_username": "jdoe2"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        db_session.expire_all()
+        user, link = await self._get_user_and_link(db_session, provider_id, sub)
+        assert user is not None and link is not None
+        assert user.username == "jdoe2"
+        assert user.email is None
+        assert link.provider_email is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_fallback_respects_email_verified_false(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+    ):
+        """email_claim=preferred_username + standard 'email' claim with email_verified=False
+        → fallback drops the email (User.email None) — matches Fall B semantics."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://issue1569-evfalse.example"
+        client_id = "issue1569-evfalse-client"
+
+        admin_token = await _setup_and_login(async_client, "i1569f_adm", "I1569f123!")
+        provider_id = await _create_provider_via_api(
+            async_client,
+            admin_token,
+            issuer,
+            client_id,
+            email_claim="preferred_username",
+            require_email_verified=False,
+            suffix="i1569evfalse",
+        )
+
+        sub = f"sub-i1569-evfalse-{secrets.token_hex(6)}"
+        await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={
+                "sub": sub,
+                "preferred_username": "jdoe3",
+                "email": "jdoe3@example.com",
+                "email_verified": False,
+            },
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        db_session.expire_all()
+        user, link = await self._get_user_and_link(db_session, provider_id, sub)
+        assert user is not None and link is not None
+        assert user.username == "jdoe3"
+        assert user.email is None
+        assert link.provider_email is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_fallback_skipped_when_email_claim_is_email(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+    ):
+        """email_claim='email' (default) — fallback path must NOT fire. Primary
+        resolver result is authoritative; this guards against the fallback
+        accidentally widening Fall-A/B semantics."""
+        private_pem, jwks_data = _make_test_rsa_key()
+        issuer = "https://issue1569-default.example"
+        client_id = "issue1569-default-client"
+
+        admin_token = await _setup_and_login(async_client, "i1569d_adm", "I1569d123!")
+        provider_id = await _create_provider_via_api(
+            async_client,
+            admin_token,
+            issuer,
+            client_id,
+            email_claim="email",
+            require_email_verified=True,
+            suffix="i1569default",
+        )
+
+        sub = f"sub-i1569-default-{secrets.token_hex(6)}"
+        # email_verified absent → Fall A drops it. Fallback must NOT
+        # re-instate the email since email_claim='email' is already the
+        # primary path.
+        await _run_oidc_callback(
+            async_client,
+            db_session,
+            provider_id=provider_id,
+            claims={"sub": sub, "email": "jdoe4@example.com"},
+            private_pem=private_pem,
+            jwks_data=jwks_data,
+            issuer=issuer,
+            client_id=client_id,
+        )
+        db_session.expire_all()
+        user, link = await self._get_user_and_link(db_session, provider_id, sub)
+        assert user is not None and link is not None
+        assert user.email is None
+        assert link.provider_email is None
+
+
+# ===========================================================================
 # E2E: Fall C (custom email claim) auto-link actually links existing user
 # ===========================================================================
 

@@ -1,0 +1,94 @@
+# Auto-apply area:* label from the "Area" dropdown in bug_report.yml.
+#
+# The bug-report issue form renders dropdown values into the issue body as a
+# section like:
+#
+#   ### Area
+#
+#   Printer connection / setup
+#
+# This workflow parses that section after issue creation/edit and adds the
+# matching area:* label. Frees the maintainer from typing the same label on
+# every new bug.
+#
+# Labels referenced here must already exist in the repo — see the
+# `gh label create` commands in CHANGELOG for [0.2.5b1].
+name: Auto-label Issue Area
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  apply-area-label:
+    runs-on: ubuntu-latest
+    if: github.event.issue.pull_request == null
+    steps:
+      - name: Apply area:* label from Area dropdown
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+
+            // Map of Area dropdown value (lowercased, trimmed) → area:* label.
+            // Keep in lockstep with .github/ISSUE_TEMPLATE/bug_report.yml.
+            const areaMap = {
+              'printer connection / setup':                    'area:connection',
+              'print start / dispatch':                        'area:print-dispatch',
+              'filament / ams / spoolman':                     'area:filament',
+              'slicer integration (bambu studio / orcaslicer)': 'area:slicer',
+              'virtual printer (vp)':                          'area:vp',
+              'camera / live view / timelapse':                'area:camera',
+              'archives / library / files':                    'area:archives',
+              'statistics':                                    'area:stats',
+              'print queue / scheduling':                      'area:queue',
+              'notifications':                                 'area:notifications',
+              'authentication / users / permissions':          'area:auth',
+              'updates / firmware check':                      'area:updates',
+              'ui / display / theme / i18n':                   'area:ui',
+              'api / integrations (home assistant, mqtt export, obico, ...)': 'area:integrations',
+              'spoolbuddy kiosk / display':                    'area:spoolbuddy',
+              'other / not sure':                              'area:unsorted',
+            };
+
+            // GitHub issue forms render dropdown answers under a level-3 heading
+            // matching the field label. Capture the first non-blank line of the
+            // section. Tolerant of trailing whitespace and CRLF endings.
+            const match = body.match(/###\s+Area\s*\r?\n\s*\r?\n\s*([^\r\n]+)/i);
+            if (!match) {
+              core.info('No "Area" section found in issue body — skipping.');
+              return;
+            }
+            const picked = match[1].trim().toLowerCase();
+
+            // Strip any markdown bold the form might add (rare) and tolerate
+            // a "_No response_" placeholder some renderers insert for required-
+            // but-empty fields (shouldn't happen, the field is required).
+            if (picked === '_no response_' || picked === '') {
+              core.info('Area field empty — skipping.');
+              return;
+            }
+
+            const label = areaMap[picked];
+            if (!label) {
+              core.warning(`Unrecognised Area value: "${picked}". Update areaMap in auto-label-area.yml.`);
+              return;
+            }
+
+            // Don't re-add if already present (issue edit path).
+            const existing = (context.payload.issue.labels || []).map(l => l.name);
+            if (existing.includes(label)) {
+              core.info(`Label "${label}" already present — nothing to do.`);
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: [label],
+            });
+            core.info(`Applied label "${label}" to issue #${context.payload.issue.number}.`);

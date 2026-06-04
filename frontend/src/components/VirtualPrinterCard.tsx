@@ -3,23 +3,36 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
   Loader2, Check, AlertTriangle, Eye, EyeOff, Info,
-  ChevronDown, ChevronRight, ArrowRightLeft, Trash2, ShieldCheck, Copy,
+  ChevronDown, ChevronRight, ArrowRightLeft, Trash2, ShieldCheck, Copy, Stethoscope,
 } from 'lucide-react';
 import { api, multiVirtualPrinterApi } from '../api/client';
 import type { VirtualPrinterConfig } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
+import { VirtualPrinterDiagnosticModal } from './VirtualPrinterDiagnosticModal';
 import { useToast } from '../contexts/ToastContext';
+import { copyTextToClipboard } from '../utils/clipboard';
 
-type LocalMode = 'immediate' | 'review' | 'print_queue' | 'proxy';
+type LocalMode = 'archive' | 'review' | 'queue' | 'proxy';
 
 const MODE_LABELS: Record<string, string> = {
-  immediate: 'archive',
+  archive: 'archive',
   review: 'review',
-  print_queue: 'queue',
+  queue: 'queue',
   proxy: 'proxy',
 };
+
+// Legacy wire values (`immediate` → `archive`, `print_queue` → `queue`) shipped
+// before the UI labels were aligned with the wire format. Backend migration
+// flips existing rows but the function tolerates either form so a stale fetch
+// doesn't show an unselected mode (#1429 follow-up).
+function normalizeMode(value: string | undefined): LocalMode {
+  if (value === 'immediate') return 'archive';
+  if (value === 'print_queue' || value === 'queue') return 'queue';
+  if (value === 'archive' || value === 'review' || value === 'proxy') return value;
+  return 'archive';
+}
 
 interface VirtualPrinterCardProps {
   printer: VirtualPrinterConfig;
@@ -35,9 +48,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [localEnabled, setLocalEnabled] = useState(printer.enabled);
   const [localName, setLocalName] = useState(printer.name);
   const [localAccessCode, setLocalAccessCode] = useState('');
-  const [localMode, setLocalMode] = useState<LocalMode>(
-    (printer.mode === 'queue' ? 'review' : printer.mode) as LocalMode
-  );
+  const [localMode, setLocalMode] = useState<LocalMode>(normalizeMode(printer.mode));
   const [localTargetPrinterId, setLocalTargetPrinterId] = useState<number | null>(printer.target_printer_id);
   const [localBindIp, setLocalBindIp] = useState(printer.bind_ip || '');
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState(printer.remote_interface_ip || '');
@@ -48,6 +59,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
   const [fqdnCopied, setFqdnCopied] = useState(false);
 
   // Host-level Tailscale identity (same for every VP) — shown inline on the card when
@@ -66,32 +78,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
     e.stopPropagation();
     const fqdn = tailscaleFqdn;
     if (!fqdn) return;
-    let ok = false;
-    // Modern API — only works in secure contexts (HTTPS / localhost).
-    if (navigator.clipboard && window.isSecureContext) {
-      try {
-        await navigator.clipboard.writeText(fqdn);
-        ok = true;
-      } catch {
-        // fall through to legacy
-      }
-    }
-    // Legacy fallback for HTTP (common when Bambuddy is reached over LAN / tailnet IP).
-    if (!ok) {
-      const ta = document.createElement('textarea');
-      ta.value = fqdn;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      try {
-        ta.select();
-        ok = document.execCommand('copy');
-      } catch {
-        ok = false;
-      } finally {
-        if (ta.parentNode) ta.parentNode.removeChild(ta);
-      }
-    }
+    const ok = await copyTextToClipboard(fqdn);
     if (ok) {
       setFqdnCopied(true);
       showToast(t('printers.copied'));
@@ -105,7 +92,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   useEffect(() => {
     if (!pendingAction) {
       setLocalEnabled(printer.enabled);
-      setLocalMode((printer.mode === 'queue' ? 'review' : printer.mode) as LocalMode);
+      setLocalMode(normalizeMode(printer.mode));
       setLocalName(printer.name);
       setLocalTargetPrinterId(printer.target_printer_id);
       setLocalBindIp(printer.bind_ip || '');
@@ -140,7 +127,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
     onError: (error: Error) => {
       showToast(error.message || t('virtualPrinter.toast.failedToUpdate'), 'error');
       setLocalEnabled(printer.enabled);
-      setLocalMode((printer.mode === 'queue' ? 'review' : printer.mode) as LocalMode);
+      setLocalMode(normalizeMode(printer.mode));
       setLocalTargetPrinterId(printer.target_printer_id);
       setLocalBindIp(printer.bind_ip || '');
       setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
@@ -299,6 +286,13 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 className="flex-1 text-sm text-white bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-1.5 focus:border-bambu-green focus:outline-none"
               />
               <button
+                onClick={() => setShowDiagnostic(true)}
+                className="p-1.5 text-bambu-gray hover:text-bambu-green transition-colors flex-shrink-0"
+                title={t('vpDiagnostic.runButton')}
+              >
+                <Stethoscope className="w-4 h-4" />
+              </button>
+              <button
                 onClick={() => setShowDeleteConfirm(true)}
                 className="p-1.5 text-bambu-gray hover:text-red-400 transition-colors flex-shrink-0"
                 title={t('common.delete')}
@@ -336,7 +330,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
             <div>
               <div className="text-white text-sm font-medium mb-2">{t('virtualPrinter.mode.title')}</div>
               <div className="grid grid-cols-2 gap-2">
-                {(['immediate', 'review', 'print_queue', 'proxy'] as const).map((mode) => (
+                {(['archive', 'review', 'queue', 'proxy'] as const).map((mode) => (
                   <button
                     key={mode}
                     onClick={() => handleModeChange(mode)}
@@ -361,8 +355,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
               </div>
             </div>
 
-            {/* Auto-dispatch toggle - only for print_queue mode */}
-            {localMode === 'print_queue' && (
+            {/* Auto-dispatch toggle - only for queue mode */}
+            {localMode === 'queue' && (
               <div className="pt-2 border-t border-bambu-dark-tertiary">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -391,8 +385,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
               </div>
             )}
 
-            {/* Force-color-match toggle - only for print_queue mode (#1188) */}
-            {localMode === 'print_queue' && (
+            {/* Force-color-match toggle - only for queue mode (#1188) */}
+            {localMode === 'queue' && (
               <div className="pt-2 border-t border-bambu-dark-tertiary">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -622,6 +616,14 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
           isLoading={deleteMutation.isPending}
           onConfirm={() => deleteMutation.mutate()}
           onCancel={() => setShowDeleteConfirm(false)}
+        />
+      )}
+
+      {showDiagnostic && (
+        <VirtualPrinterDiagnosticModal
+          vpId={printer.id}
+          vpName={printer.name}
+          onClose={() => setShowDiagnostic(false)}
         />
       )}
 

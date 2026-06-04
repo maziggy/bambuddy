@@ -496,6 +496,93 @@ class TestQueueStartEndpoint:
         response = await async_client.post(f"/api/v1/queue/{item.id}/start")
         assert response.status_code == 400
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_returns_409_on_filament_deficit(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+        monkeypatch,
+    ):
+        """Filament deficit must surface as 409 + structured payload (#1496)."""
+        from backend.app.services import filament_deficit as fd_module
+
+        item = await queue_item_factory(manual_start=True)
+
+        async def _fake_deficit(_db, _item):
+            return [
+                fd_module.FilamentDeficit(
+                    slot_id=1,
+                    ams_id=0,
+                    tray_id=0,
+                    filament_type="PLA",
+                    required_grams=270.0,
+                    remaining_grams=200.0,
+                ),
+            ]
+
+        monkeypatch.setattr(
+            "backend.app.api.routes.print_queue.compute_deficit_for_queue_item",
+            _fake_deficit,
+        )
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start")
+        assert response.status_code == 409
+        body = response.json()
+        assert body["detail"]["code"] == "insufficient_filament"
+        assert len(body["detail"]["deficit"]) == 1
+        assert body["detail"]["deficit"][0]["slot_id"] == 1
+        assert body["detail"]["deficit"][0]["required_grams"] == 270.0
+        assert body["detail"]["deficit"][0]["remaining_grams"] == 200.0
+
+        # Item still pending, manual_start unchanged.
+        await db_session.refresh(item)
+        assert item.status == "pending"
+        assert item.manual_start is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_with_skip_flag_bypasses_deficit_check(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+        monkeypatch,
+    ):
+        """With skip_filament_check=true the route dispatches even when short (#1496)."""
+        from backend.app.services import filament_deficit as fd_module
+
+        item = await queue_item_factory(manual_start=True, filament_short=True)
+        called_with = {}
+
+        async def _fake_deficit(_db, _item):
+            called_with["called"] = True
+            return [
+                fd_module.FilamentDeficit(
+                    slot_id=1,
+                    ams_id=0,
+                    tray_id=0,
+                    filament_type="PLA",
+                    required_grams=270.0,
+                    remaining_grams=200.0,
+                ),
+            ]
+
+        monkeypatch.setattr(
+            "backend.app.api.routes.print_queue.compute_deficit_for_queue_item",
+            _fake_deficit,
+        )
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start?skip_filament_check=true")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["manual_start"] is False
+        assert body["filament_short"] is False
+        # Helper not called on the bypass path — we trust the operator's
+        # decision to print anyway.
+        assert called_with == {}
+
 
 class TestQueueCancelEndpoint:
     """Tests for the /queue/{item_id}/cancel endpoint."""

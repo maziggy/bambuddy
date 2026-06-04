@@ -51,6 +51,7 @@ from backend.app.services.spoolman import (
     get_spoolman_client,
     init_spoolman_client,
 )
+from backend.app.services.spoolman_tracking import get_fallback_spool_tag_for_slot
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
     MATERIAL_TEMPS,
@@ -71,6 +72,89 @@ _HEALTH_CHECK_TTL = 30.0  # seconds
 def _tag_cleared(val: str | None) -> bool:
     """Return True when a PATCH field explicitly removes a tag (null)."""
     return val is None
+
+
+async def _clear_stale_tag_links(
+    client: SpoolmanClient,
+    *,
+    tag: str,
+    keep_spool_id: int,
+    log_context: str,
+) -> int:
+    """Clear extra.tag on OTHER spools still claiming the given tag (#1457).
+
+    A given AMS slot tag — whether a real RFID (tray_uuid/tag_uid) or the
+    deterministic fallback derived from (printer_serial, ams_id, tray_id) for
+    non-RFID slots — uniquely identifies one physical slot. When a spool is
+    (re)bound to that slot via Assign or Link, any other Spoolman spool whose
+    extra.tag still holds the same value is stale and would resurface in the
+    hover card / fill-level lookup.
+
+    Best-effort: per-spool patch failures are logged and skipped, never raised.
+    Returns the number of spools cleared.
+    """
+    if not tag:
+        return 0
+    tag_upper = tag.upper()
+
+    try:
+        spools = await client.get_spools()
+    except (SpoolmanClientError, SpoolmanUnavailableError) as exc:
+        logger.warning("Could not enumerate spools for stale-tag cleanup: %s", exc)
+        return 0
+
+    cleared = 0
+    for spool in spools:
+        spool_id = spool.get("id")
+        if not spool_id or spool_id == keep_spool_id:
+            continue
+        extra = spool.get("extra") or {}
+        raw_tag = extra.get("tag", "")
+        if not raw_tag:
+            continue
+        clean_tag = raw_tag.strip('"').upper()
+        if clean_tag != tag_upper:
+            continue
+        try:
+            await client.merge_spool_extra(spool_id, {"tag": json.dumps("")})
+            cleared += 1
+            logger.info(
+                "Cleared stale tag '%s' from Spoolman spool %s (%s; reassigned to spool %s)",
+                tag_upper[:16],
+                spool_id,
+                log_context,
+                keep_spool_id,
+            )
+        except (SpoolmanClientError, SpoolmanUnavailableError, SpoolmanNotFoundError) as exc:
+            logger.warning(
+                "Failed to clear stale tag on Spoolman spool %s: %s",
+                spool_id,
+                exc,
+            )
+    return cleared
+
+
+async def _clear_stale_slot_fallback_tag_links(
+    client: SpoolmanClient,
+    *,
+    printer_serial: str,
+    ams_id: int,
+    tray_id: int,
+    keep_spool_id: int,
+) -> int:
+    """Convenience wrapper: compute the slot's fallback tag and clear it from
+    other spools. Used by the assign route, which identifies the slot by
+    (printer, ams, tray) rather than by an explicit tag value.
+    """
+    fallback_tag = get_fallback_spool_tag_for_slot(printer_serial, ams_id, tray_id)
+    if not fallback_tag:
+        return 0
+    return await _clear_stale_tag_links(
+        client,
+        tag=fallback_tag,
+        keep_spool_id=keep_spool_id,
+        log_context=f"printer={printer_serial} ams={ams_id} tray={tray_id}",
+    )
 
 
 async def _get_client(db: AsyncSession) -> SpoolmanClient:
@@ -1169,6 +1253,19 @@ async def assign_spoolman_slot(
         await db.rollback()
         logger.error("Failed to persist slot assignment: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to save slot assignment") from exc
+
+    # #1457: clear stale fallback-tag links on OTHER spools still bound to this
+    # slot. Without this, a non-RFID slot's deterministic fallback tag stays
+    # attached to the previous spool in Spoolman's extra.tag and re-surfaces in
+    # the hover card whenever the local slot assignment is removed.
+    if printer.serial_number:
+        await _clear_stale_slot_fallback_tag_links(
+            client,
+            printer_serial=printer.serial_number,
+            ams_id=body.ams_id,
+            tray_id=body.tray_id,
+            keep_spool_id=body.spoolman_spool_id,
+        )
 
     mapped = _map_spoolman_spool(spool)
 

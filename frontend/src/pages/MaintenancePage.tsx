@@ -1128,7 +1128,11 @@ export function MaintenancePage() {
   // directly in onAddType callback
 
   const updateTypeMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; default_interval_hours: number; interval_type: 'hours' | 'days'; icon: string }> }) =>
+    // `wiki_url` is part of `MaintenanceTypeCreate` and reaches the API
+    // correctly at runtime (the api helper takes `Partial<MaintenanceTypeCreate>`),
+    // but the inline shape on this mutation used to omit it — making the
+    // type lie about what the payload carries (#1596 nit).
+    mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; default_interval_hours: number; interval_type: 'hours' | 'days'; icon: string; wiki_url: string | null }> }) =>
       api.updateMaintenanceType(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenanceTypes'] });

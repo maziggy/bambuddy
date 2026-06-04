@@ -286,6 +286,60 @@ class TestFetchCloudPresets:
         assert first["printer"][0].name == "OldAccountX1C"
         assert second["printer"][0].name == "NewAccountX1C"
 
+    @pytest.mark.asyncio
+    async def test_refresh_bypasses_cloud_cache(self):
+        """``refresh=True`` must skip an otherwise-warm cache entry and hit
+        Bambu Cloud again — wiring for the SliceModal's Refresh button so a
+        user who deletes a cloud preset in Bambu Studio / Handy doesn't have
+        to wait for the 5-minute TTL to expire (#1581)."""
+        sp._cloud_cache.clear()
+        cloud_mock = MagicMock()
+        cloud_mock.set_token = MagicMock()
+        cloud_mock.get_slicer_settings = AsyncMock(
+            return_value={
+                "printer": {"private": [{"setting_id": "id1", "name": "X1C"}], "public": []},
+                "print": {"private": [], "public": []},
+                "filament": {"private": [], "public": []},
+            }
+        )
+        cloud_mock.close = AsyncMock()
+        user = _user_with_cloud_auth(user_id=99)
+        with (
+            patch.object(sp, "get_stored_token", AsyncMock(return_value=("tok", None, None))),
+            patch.object(sp, "BambuCloudService", return_value=cloud_mock),
+        ):
+            await sp._fetch_cloud_presets(MagicMock(), user)
+            # Without refresh, the second call hits cache (covered by
+            # test_cache_hit_skips_cloud_call). With refresh=True it MUST
+            # re-fetch.
+            await sp._fetch_cloud_presets(MagicMock(), user, refresh=True)
+        assert cloud_mock.get_slicer_settings.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_refresh_writes_back_to_cache(self):
+        """A refresh call must still update the cache so a subsequent normal
+        call doesn't re-hit the cloud immediately afterwards."""
+        sp._cloud_cache.clear()
+        cloud_mock = MagicMock()
+        cloud_mock.set_token = MagicMock()
+        cloud_mock.get_slicer_settings = AsyncMock(
+            return_value={
+                "printer": {"private": [{"setting_id": "id1", "name": "X1C"}], "public": []},
+                "print": {"private": [], "public": []},
+                "filament": {"private": [], "public": []},
+            }
+        )
+        cloud_mock.close = AsyncMock()
+        user = _user_with_cloud_auth(user_id=101)
+        with (
+            patch.object(sp, "get_stored_token", AsyncMock(return_value=("tok", None, None))),
+            patch.object(sp, "BambuCloudService", return_value=cloud_mock),
+        ):
+            await sp._fetch_cloud_presets(MagicMock(), user, refresh=True)
+            await sp._fetch_cloud_presets(MagicMock(), user)
+        # Two calls — first refresh, second a normal cache hit.
+        assert cloud_mock.get_slicer_settings.await_count == 1
+
 
 class TestFetchBundledPresets:
     """Standard tier reaches out to the slicer-api sidecar; tolerate the
@@ -355,6 +409,41 @@ class TestFetchBundledPresets:
         with patch.object(sp, "SlicerApiService", side_effect=AssertionError("cache miss!")):
             slots = await sp._fetch_bundled_presets(MagicMock())
         assert slots["printer"][0].name == "Cached"
+
+    @pytest.mark.asyncio
+    async def test_refresh_bypasses_bundled_cache(self):
+        """``refresh=True`` must re-hit the sidecar even when the in-process
+        cache is warm — paired with the cloud-cache refresh, this is what
+        powers the SliceModal's Refresh button (#1581)."""
+        sp._bundled_cache = (
+            time.monotonic(),
+            {
+                "printer": [UnifiedPreset(id="Stale", name="Stale", source="standard")],
+                "process": [],
+                "filament": [],
+            },
+        )
+        svc_mock = MagicMock()
+        svc_mock.list_bundled_profiles = AsyncMock(
+            return_value={
+                "printer": [{"name": "Fresh", "base_id": None}],
+                "process": [],
+                "filament": [],
+            }
+        )
+        svc_mock.__aenter__ = AsyncMock(return_value=svc_mock)
+        svc_mock.__aexit__ = AsyncMock(return_value=False)
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc_mock),
+        ):
+            slots = await sp._fetch_bundled_presets(MagicMock(), refresh=True)
+        svc_mock.list_bundled_profiles.assert_awaited_once()
+        assert [p.name for p in slots["printer"]] == ["Fresh"]
+        # The fresh result must also be written back to the cache so a
+        # subsequent normal (non-refresh) call doesn't re-hit the sidecar.
+        assert sp._bundled_cache is not None
+        assert [p.name for p in sp._bundled_cache[1]["printer"]] == ["Fresh"]
 
 
 class TestResolveSlicerApiUrl:
@@ -642,3 +731,58 @@ class TestBundleRoutes:
         ):
             await sp.delete_slicer_bundle("missing", db=MagicMock(), _=None)
         assert exc.value.status_code == 404
+
+
+class TestParseCompatiblePrinters:
+    """``compatible_printers`` exposed for local process / filament presets so
+    the SliceModal can filter the dropdowns by the selected printer (#1325)."""
+
+    def test_parses_json_array(self):
+        raw = '["Bambu Lab X1 Carbon 0.4 nozzle", "Bambu Lab X1 0.4 nozzle"]'
+        assert sp._parse_compatible_printers(raw) == [
+            "Bambu Lab X1 Carbon 0.4 nozzle",
+            "Bambu Lab X1 0.4 nozzle",
+        ]
+
+    def test_none_and_empty_return_none(self):
+        assert sp._parse_compatible_printers(None) is None
+        assert sp._parse_compatible_printers("") is None
+        assert sp._parse_compatible_printers("[]") is None
+
+    def test_malformed_json_returns_none(self):
+        assert sp._parse_compatible_printers("not json") is None
+        # A JSON value that isn't an array is treated as absent, not an error.
+        assert sp._parse_compatible_printers('"a string"') is None
+
+    def test_drops_non_string_and_blank_entries(self):
+        assert sp._parse_compatible_printers('["X1C", 5, "", "  ", "A1"]') == [
+            "X1C",
+            "A1",
+        ]
+
+
+class TestListPrinterModels:
+    """``GET /slicer/printer-models`` exposes ``PRINTER_MODEL_MAP`` so the
+    frontend doesn't duplicate the Bambu model registry (#1325 follow-up)."""
+
+    def test_returns_canonical_printer_model_map(self):
+        from backend.app.utils.printer_models import PRINTER_MODEL_MAP
+
+        result = sp.list_printer_models()
+        # Same shape - mapping from "Bambu Lab <model>" to short code.
+        assert result == PRINTER_MODEL_MAP
+        # Spot-check a few entries: the SliceModal name-fallback (#1325)
+        # specifically depends on these resolving.
+        assert result["Bambu Lab X1 Carbon"] == "X1C"
+        assert result["Bambu Lab P2S"] == "P2S"
+        assert result["Bambu Lab A1 mini"] == "A1 Mini"
+        assert result["Bambu Lab H2D Pro"] == "H2D Pro"
+
+    def test_returns_a_copy_not_the_module_dict(self):
+        # A response handler must never hand out the live module-level dict —
+        # accidental mutation by middleware / serialisers would silently
+        # corrupt the registry for every subsequent request.
+        from backend.app.utils.printer_models import PRINTER_MODEL_MAP
+
+        result = sp.list_printer_models()
+        assert result is not PRINTER_MODEL_MAP

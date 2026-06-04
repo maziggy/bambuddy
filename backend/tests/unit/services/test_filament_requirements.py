@@ -109,6 +109,54 @@ class TestExtractFilamentRequirements:
         assert len(out) == 1
         assert out[0]["type"] == "PLA"
 
+    def test_no_plate_id_collects_from_all_plates(self, tmp_path: Path):
+        """Modern BambuStudio wraps filaments inside <plate> elements.  When
+        plate_id=None, every plate's filaments must be returned (deduplicated)."""
+        f = tmp_path / "multi.3mf"
+        _make_3mf(
+            f,
+            plates=[
+                (1, [{"id": "1", "type": "PLA", "color": "#FFFFFF", "used_g": "5"}]),
+                (2, [{"id": "2", "type": "PETG", "color": "#000000", "used_g": "3"}]),
+            ],
+        )
+        out = extract_filament_requirements(f, plate_id=None)
+        assert len(out) == 2
+        slot_ids = [r["slot_id"] for r in out]
+        assert 1 in slot_ids
+        assert 2 in slot_ids
+
+    def test_no_plate_id_deduplicates_shared_slots(self, tmp_path: Path):
+        """Same slot_id on multiple plates keeps only the entry with the
+        highest used_grams (the plate that actually consumes more)."""
+        f = tmp_path / "shared.3mf"
+        _make_3mf(
+            f,
+            plates=[
+                (1, [{"id": "1", "type": "PLA", "color": "#FFFFFF", "used_g": "5"}]),
+                (2, [{"id": "1", "type": "PLA", "color": "#FFFFFF", "used_g": "8"}]),
+            ],
+        )
+        out = extract_filament_requirements(f, plate_id=None)
+        assert len(out) == 1
+        assert out[0]["slot_id"] == 1
+        assert out[0]["used_grams"] == 8.0
+
+    def test_no_plate_id_single_plate_modern_format(self, tmp_path: Path):
+        """Single-plate 3MF using modern <plate> wrapping is parsed correctly
+        when plate_id=None — this is the common queue scenario where no specific
+        plate is targeted."""
+        f = tmp_path / "single.3mf"
+        _make_3mf(
+            f,
+            plates=[(1, [{"id": "1", "type": "PLA", "color": "#CBC6B8", "used_g": "0.12"}])],
+        )
+        out = extract_filament_requirements(f, plate_id=None)
+        assert len(out) == 1
+        assert out[0]["slot_id"] == 1
+        assert out[0]["type"] == "PLA"
+        assert out[0]["color"] == "#CBC6B8"
+
     def test_returns_empty_list_for_unparseable_file(self, tmp_path: Path):
         f = tmp_path / "bad.3mf"
         f.write_bytes(b"not a zip")

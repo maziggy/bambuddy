@@ -7,7 +7,18 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 
-type LocalMode = 'immediate' | 'review' | 'print_queue' | 'proxy';
+type LocalMode = 'archive' | 'review' | 'queue' | 'proxy';
+
+// Legacy wire values shipped before the UI labels were aligned with the wire
+// format. The backend normalizes these on read but a freshly-loaded settings
+// payload can still carry an old value if it pre-dates the migration. Map
+// to canonical so the button highlight matches the saved mode (#1429).
+function normalizeMode(value: string | undefined): LocalMode {
+  if (value === 'immediate') return 'archive';
+  if (value === 'print_queue') return 'queue';
+  if (value === 'queue' || value === 'archive' || value === 'review' || value === 'proxy') return value;
+  return 'archive';
+}
 
 export function VirtualPrinterSettings() {
   const { t } = useTranslation();
@@ -16,7 +27,7 @@ export function VirtualPrinterSettings() {
 
   const [localEnabled, setLocalEnabled] = useState(false);
   const [localAccessCode, setLocalAccessCode] = useState('');
-  const [localMode, setLocalMode] = useState<LocalMode>('immediate');
+  const [localMode, setLocalMode] = useState<LocalMode>('archive');
   const [localModel, setLocalModel] = useState('BL-P001');
   const [localTargetPrinterId, setLocalTargetPrinterId] = useState<number | null>(null);
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState('');
@@ -53,12 +64,7 @@ export function VirtualPrinterSettings() {
   useEffect(() => {
     if (settings) {
       setLocalEnabled(settings.enabled);
-      // Map legacy 'queue' mode to 'review'
-      let mode: LocalMode = settings.mode === 'queue' ? 'review' : settings.mode as LocalMode;
-      if (mode !== 'immediate' && mode !== 'review' && mode !== 'print_queue' && mode !== 'proxy') {
-        mode = 'immediate'; // fallback
-      }
-      setLocalMode(mode);
+      setLocalMode(normalizeMode(settings.mode));
       setLocalModel(settings.model);
       setLocalTargetPrinterId(settings.target_printer_id);
       setLocalRemoteInterfaceIp(settings.remote_interface_ip || '');
@@ -79,9 +85,7 @@ export function VirtualPrinterSettings() {
       // Revert local state on error
       if (settings) {
         setLocalEnabled(settings.enabled);
-        // Map legacy 'queue' mode to 'review'
-        const mode = settings.mode === 'queue' ? 'review' : settings.mode;
-        setLocalMode(['immediate', 'review', 'print_queue', 'proxy'].includes(mode) ? mode as LocalMode : 'immediate');
+        setLocalMode(normalizeMode(settings.mode));
         setLocalModel(settings.model);
         setLocalTargetPrinterId(settings.target_printer_id);
       }
@@ -409,10 +413,10 @@ export function VirtualPrinterSettings() {
             <div className="text-white font-medium mb-2">{t('virtualPrinter.mode.title')}</div>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => handleModeChange('immediate')}
+                onClick={() => handleModeChange('archive')}
                 disabled={pendingAction === 'mode'}
                 className={`p-3 rounded-lg border text-left transition-colors ${
-                  localMode === 'immediate'
+                  localMode === 'archive'
                     ? 'border-bambu-green bg-bambu-green/10'
                     : 'border-bambu-dark-tertiary hover:border-bambu-gray'
                 }`}
@@ -433,10 +437,10 @@ export function VirtualPrinterSettings() {
                 <div className="text-xs text-bambu-gray">{t('virtualPrinter.mode.reviewDesc')}</div>
               </button>
               <button
-                onClick={() => handleModeChange('print_queue')}
+                onClick={() => handleModeChange('queue')}
                 disabled={pendingAction === 'mode'}
                 className={`p-3 rounded-lg border text-left transition-colors ${
-                  localMode === 'print_queue'
+                  localMode === 'queue'
                     ? 'border-bambu-green bg-bambu-green/10'
                     : 'border-bambu-dark-tertiary hover:border-bambu-gray'
                 }`}

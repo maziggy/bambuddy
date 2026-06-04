@@ -932,4 +932,55 @@ describe('FileManagerPage', () => {
       expect(setItemMock).toHaveBeenCalledWith('library-collapse-folders', 'false');
     });
   });
+
+  describe('"All Files" view (#1499)', () => {
+    it('requests every file (include_root=false) so subfolder contents are visible', async () => {
+      const rootFile = {
+        id: 10,
+        filename: 'root-file.3mf',
+        file_path: '/library/root-file.3mf',
+        file_size: 1024,
+        file_type: '3mf',
+        folder_id: null,
+        thumbnail_path: null,
+        print_name: 'Root File',
+        print_time_seconds: 0,
+        print_count: 0,
+        duplicate_count: 0,
+        created_at: '2024-01-01T00:00:00Z',
+      };
+      const nestedFile = {
+        ...rootFile,
+        id: 11,
+        filename: 'nested-file.3mf',
+        file_path: '/library/Functional Parts/nested-file.3mf',
+        folder_id: 1,
+        print_name: 'Nested File',
+      };
+
+      const includeRootValues: string[] = [];
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) => {
+          const url = new URL(request.url);
+          const includeRoot = url.searchParams.get('include_root');
+          includeRootValues.push(includeRoot ?? '');
+          // Mirror the backend: include_root=false returns everything; true
+          // returns only files with folder_id IS NULL.
+          if (includeRoot === 'false') {
+            return HttpResponse.json([rootFile, nestedFile]);
+          }
+          return HttpResponse.json([rootFile]);
+        }),
+      );
+
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Root File')).toBeInTheDocument();
+        expect(screen.getByText('Nested File')).toBeInTheDocument();
+      });
+      // Sanity-check: the buggy call would have sent include_root=true here.
+      expect(includeRootValues).toContain('false');
+    });
+  });
 });

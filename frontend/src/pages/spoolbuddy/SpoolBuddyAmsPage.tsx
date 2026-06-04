@@ -7,6 +7,7 @@ import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolB
 import { api } from '../../api/client';
 import type { PrinterStatus, AMSTray, SpoolAssignment } from '../../api/client';
 import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isBambuLabSpool } from '../../utils/amsHelpers';
+import { getSwatchStyle } from '../../utils/colors';
 import { AmsUnitCard, HumidityIndicator, TemperatureIndicator, NozzleBadge } from '../../components/spoolbuddy/AmsUnitCard';
 import type { AmsThresholds } from '../../components/spoolbuddy/AmsUnitCard';
 import { ConfigureAmsSlotModal } from '../../components/ConfigureAmsSlotModal';
@@ -136,16 +137,11 @@ export function SpoolBuddyAmsPage() {
   // Look up Spoolman fill level for a given tray
   const printerSerial = printer?.serial_number ?? '';
   const getSpoolmanFillForSlot = useCallback((amsId: number, trayId: number, tray: AMSTray | null): number | null => {
-    // Stage 1: tag-linked spool (linkedSpools map keyed by tag/UUID).
-    if (linkedSpools && printerSerial) {
-      const tag = (tray?.tray_uuid || tray?.tag_uid || getFallbackSpoolTag(printerSerial, amsId, trayId))?.toUpperCase();
-      const linkedSpool = tag ? linkedSpools[tag] : undefined;
-      const tagFill = getSpoolmanFillLevel(linkedSpool);
-      if (tagFill !== null) return tagFill;
-    }
-    // Stage 2: slot-assigned-only Spoolman spool (no tag link). Bug #6 in
-    // maintainer screenshot: spool was assigned to slot via AssignToAmsModal
-    // but never tag-linked, so the fill bar stayed empty.
+    // Stage 1: slot-assigned Spoolman spool. The user's explicit, recent
+    // action — must outrank the tag-link to avoid #1457, where a non-RFID
+    // slot's deterministic fallback tag stayed bound to the previous spool
+    // in Spoolman's extra.tag and the fill bar reported the old (stale)
+    // spool's remaining weight instead of the freshly assigned one.
     if (selectedPrinterId !== null && spoolmanSlotAssignmentsAll.length && spoolmanInventorySpoolsCache.length) {
       const slotAssign = spoolmanSlotAssignmentsAll.find(a =>
         a.printer_id === selectedPrinterId &&
@@ -158,6 +154,13 @@ export function SpoolBuddyAmsPage() {
           return Math.round(Math.max(0, spool.label_weight - spool.weight_used) / spool.label_weight * 100);
         }
       }
+    }
+    // Stage 2: tag-linked spool (linkedSpools map keyed by tag/UUID).
+    if (linkedSpools && printerSerial) {
+      const tag = (tray?.tray_uuid || tray?.tag_uid || getFallbackSpoolTag(printerSerial, amsId, trayId))?.toUpperCase();
+      const linkedSpool = tag ? linkedSpools[tag] : undefined;
+      const tagFill = getSpoolmanFillLevel(linkedSpool);
+      if (tagFill !== null) return tagFill;
     }
     return null;
   }, [linkedSpools, printerSerial, selectedPrinterId, spoolmanSlotAssignmentsAll, spoolmanInventorySpoolsCache]);
@@ -746,17 +749,22 @@ export function SpoolBuddyAmsPage() {
                       {assignment.spool.rgba && (
                         <span
                           className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
-                          style={{ backgroundColor: `#${assignment.spool.rgba.substring(0, 6)}` }}
+                          style={getSwatchStyle(assignment.spool.rgba)}
                         />
                       )}
                       <span className="text-sm text-white">
                         {assignment.spool.brand ? `${assignment.spool.brand} ` : ''}{assignment.spool.material}
                         {assignment.spool.color_name ? ` - ${assignment.spool.color_name}` : ''}
                       </span>
+                      <span className="text-[10px] font-mono text-zinc-500 shrink-0 ml-auto">#{assignment.spool.id}</span>
                     </div>
                   </div>
                 )}
-                {spoolmanEnabled && linked && (
+                {/* #1457: Assigned-spool block is rendered FIRST when a slot
+                    assignment exists, regardless of whether a (possibly stale)
+                    tag-link also exists. The tag-link block is the fallback
+                    for slots that have only a tag-link. */}
+                {spoolmanEnabled && linked && !spoolmanAssignedSpool && (
                   <div className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary mb-3">
                     <p className="text-xs text-bambu-gray mb-1">{t('spoolman.linkedSpool', 'Linked spool')}</p>
                     <div className="flex items-center gap-2">
@@ -767,14 +775,14 @@ export function SpoolBuddyAmsPage() {
                     </div>
                   </div>
                 )}
-                {spoolmanEnabled && !linked && spoolmanAssignedSpool && (
+                {spoolmanEnabled && spoolmanAssignedSpool && (
                   <div className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary mb-3">
                     <p className="text-xs text-bambu-gray mb-1">{t('inventory.assignedSpool', 'Assigned spool')}</p>
                     <div className="flex items-center gap-2">
                       {spoolmanAssignedSpool.rgba && (
                         <span
                           className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
-                          style={{ backgroundColor: `#${spoolmanAssignedSpool.rgba.substring(0, 6)}` }}
+                          style={getSwatchStyle(spoolmanAssignedSpool.rgba)}
                         />
                       )}
                       <span className="text-sm text-white">

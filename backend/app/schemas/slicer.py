@@ -102,8 +102,14 @@ class SliceRequest(BaseModel):
 
     plate: int | None = Field(
         default=None,
-        ge=1,
-        description="Plate number to slice (1-indexed). Defaults to plate 1 on the sidecar.",
+        ge=0,
+        description=(
+            "Plate number to slice. ``None`` defaults to plate 1 on the sidecar "
+            "(matches the pre-multi-plate behaviour). ``0`` is the sidecar's "
+            "'all plates' sentinel — produces a single multi-plate 3MF whose "
+            "``Metadata/plate_N.gcode`` entries cover every plate in the "
+            "source. ``>= 1`` slices that one plate."
+        ),
     )
     export_3mf: bool = Field(
         default=False,

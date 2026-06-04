@@ -64,6 +64,11 @@ class BindServer:
 
         self._servers: list[asyncio.Server] = []
         self._running = False
+        # Set after at least one bind port is listening — see ftp_server.py
+        # for rationale. Bind server is best-effort across BIND_PORTS, so
+        # "ready" means "at least one port bound", matching the existing
+        # serve_forever path.
+        self.ready = asyncio.Event()
 
     def _create_tls_context(self) -> ssl.SSLContext | None:
         """Create SSL context for the TLS bind port (3002)."""
@@ -72,6 +77,15 @@ class BindServer:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(str(self.cert_path), str(self.key_path))
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        # Match real Bambu printer cipher behaviour: include the plain-RSA
+        # AES-GCM suites the slicer's bind/connect path expects. On hardened
+        # distros (Fedora / RHEL with `update-crypto-policies`, hardened Alpine
+        # builds) the OpenSSL `DEFAULT` list strips these suites, leaving no
+        # overlap with the slicer's ClientHello and producing `code=-1` on the
+        # slicer side (#1610). Same fix the #620 client-side patch applied to
+        # `tcp_proxy.py::_create_client_ssl_context`; the bind-server / server
+        # side needs it too.
+        ctx.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
 
@@ -122,6 +136,7 @@ class BindServer:
             if not self._servers:
                 logger.error("Bind server: could not bind to any port")
                 return
+            self.ready.set()
 
             # Serve all successfully bound ports
             await asyncio.gather(*(s.serve_forever() for s in self._servers))
@@ -137,6 +152,7 @@ class BindServer:
         """Stop the bind server."""
         logger.info("Stopping bind server")
         self._running = False
+        self.ready.clear()
 
         for server in self._servers:
             try:
@@ -176,7 +192,14 @@ class BindServer:
                 logger.warning("Bind server: unexpected command from %s: %s", client_id, request)
                 return
 
-            # Build response
+            # Build response. `sequence_id` is an INTEGER counter chosen by
+            # the printer side (not an echo of the slicer's string seq_id).
+            # The protocol docstring at the top of this file documents the
+            # asymmetry: slicer sends `"20000"` (string), printer replies
+            # with an int. The hardcoded 3021 mirrors real-firmware-captured
+            # value; an earlier audit suggesting we echo the slicer's seq_id
+            # was wrong and would have broken slicers that validate the
+            # type (int vs string).
             response = {
                 "login": {
                     "bind": "free",

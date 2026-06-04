@@ -55,7 +55,7 @@ import {
   Code,
   Snail,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission } from '../api/client';
 import { Card } from '../components/Card';
@@ -612,6 +612,17 @@ function SortableQueueItem({
             </p>
           )}
 
+          {/* Filament-short flag from the dispatch pre-flight (#1496). */}
+          {item.filament_short && item.status === 'pending' && (
+            <p
+              className="text-[10px] sm:text-xs text-yellow-400 mt-1.5 sm:mt-2 flex items-start gap-1"
+              title={t('queue.filamentShort.rowTooltip')}
+            >
+              <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>{t('queue.filamentShort.rowBadge')}</span>
+            </p>
+          )}
+
           {/* Error message */}
           {item.error_message && (
             <p className="text-[10px] sm:text-xs text-red-400 mt-1.5 sm:mt-2 flex items-center gap-1">
@@ -827,13 +838,41 @@ export function QueuePage() {
     onError: () => showToast(t('queue.toast.stopFailed'), 'error'),
   });
 
+  // Filament-deficit confirmation state (#1496). When the backend returns
+  // 409 with `code=insufficient_filament` we stash the deficit + item id
+  // here; the modal at the bottom of the page reads it and the "Print
+  // Anyway" path re-issues the start with `skipFilamentCheck=true`.
+  const [filamentShortConfirm, setFilamentShortConfirm] = useState<{
+    itemId: number;
+    deficit: Array<{
+      slot_id: number;
+      required_grams: number;
+      remaining_grams: number | null;
+      filament_type?: string | null;
+    }>;
+  } | null>(null);
+
   const startMutation = useMutation({
-    mutationFn: (id: number) => api.startQueueItem(id),
+    mutationFn: ({ id, skipFilamentCheck }: { id: number; skipFilamentCheck?: boolean }) =>
+      api.startQueueItem(id, { skipFilamentCheck }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       showToast(t('queue.toast.released'));
+      setFilamentShortConfirm(null);
     },
-    onError: () => showToast(t('queue.toast.startFailed'), 'error'),
+    onError: (error: unknown, variables) => {
+      if (error instanceof ApiError && error.status === 409 && error.code === 'insufficient_filament') {
+        const deficitRaw = (error.detail?.deficit ?? []) as Array<{
+          slot_id: number;
+          required_grams: number;
+          remaining_grams: number | null;
+          filament_type?: string | null;
+        }>;
+        setFilamentShortConfirm({ itemId: variables.id, deficit: deficitRaw });
+        return;
+      }
+      showToast(t('queue.toast.startFailed'), 'error');
+    },
   });
 
   const reorderMutation = useMutation({
@@ -1367,7 +1406,7 @@ export function QueuePage() {
                         onRemove={() => {}}
                         onStop={() => {}}
                         onRequeue={() => {}}
-                        onStart={() => startMutation.mutate(item.id)}
+                        onStart={() => startMutation.mutate({ id: item.id })}
                         timeFormat={timeFormat}
                         isSelected={selectedItems.includes(item.id)}
                         onToggleSelect={() => handleToggleSelect(item.id)}
@@ -1464,6 +1503,33 @@ export function QueuePage() {
       )}
 
       {/* Confirm Action Modal */}
+      {filamentShortConfirm && (
+        <ConfirmModal
+          title={t('queue.filamentShort.confirmTitle')}
+          message={
+            t('queue.filamentShort.confirmIntro') + '\n\n' +
+            filamentShortConfirm.deficit
+              .map((d) =>
+                t('queue.filamentShort.lineItem', {
+                  slot: d.slot_id,
+                  required: Math.round(d.required_grams),
+                  remaining:
+                    d.remaining_grams == null
+                      ? t('queue.filamentShort.unknown')
+                      : Math.round(d.remaining_grams),
+                }),
+              )
+              .join('\n')
+          }
+          confirmText={t('queue.filamentShort.printAnyway')}
+          variant="warning"
+          onConfirm={() => {
+            startMutation.mutate({ id: filamentShortConfirm.itemId, skipFilamentCheck: true });
+          }}
+          onCancel={() => setFilamentShortConfirm(null)}
+        />
+      )}
+
       {confirmAction && (
         <ConfirmModal
           title={

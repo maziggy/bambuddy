@@ -267,6 +267,45 @@ def extract_filament_properties_from_3mf(file_path: Path) -> dict[int, dict]:
     return properties
 
 
+def _first_settings_id(value: object) -> str | None:
+    """A ``*_settings_id`` value is usually a string, occasionally a list (one
+    entry per extruder). Return the first non-empty string, else None."""
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+    return None
+
+
+def extract_embedded_presets_from_3mf(zf: zipfile.ZipFile) -> dict[str, str | None]:
+    """Read the printer / process preset names a 3MF project was prepared with.
+
+    BambuStudio / OrcaSlicer write the chosen preset names into
+    ``Metadata/project_settings.config`` (``printer_settings_id`` and
+    ``print_settings_id``). The SliceModal uses them to default its printer
+    and process dropdowns to what the file was sliced for (#1325) instead of
+    blindly taking the first listed preset.
+
+    Returns ``{"printer": <name|None>, "process": <name|None>}``. Every failure
+    mode (missing config, malformed JSON, unexpected shape) yields ``None``
+    values so the modal falls back to its own defaults.
+    """
+    result: dict[str, str | None] = {"printer": None, "process": None}
+    try:
+        if "Metadata/project_settings.config" not in zf.namelist():
+            return result
+        data = json.loads(zf.read("Metadata/project_settings.config").decode())
+    except (KeyError, ValueError, OSError):
+        return result
+    if not isinstance(data, dict):
+        return result
+    result["printer"] = _first_settings_id(data.get("printer_settings_id"))
+    result["process"] = _first_settings_id(data.get("print_settings_id"))
+    return result
+
+
 def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | None:
     """Extract per-slot nozzle/extruder mapping from a 3MF file.
 
@@ -607,38 +646,6 @@ def inject_gcode_into_3mf(
         if "tmp_path" in locals() and tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
         return None
-
-
-def extract_source_printer_model_from_3mf(zf: zipfile.ZipFile) -> str | None:
-    """Source 3MF's bound printer model from ``Metadata/project_settings.config``.
-
-    Returns e.g. ``"Bambu Lab A1"`` when the project was built for an A1, or
-    ``None`` when the file lacks the metadata or the field is absent. The
-    SliceModal uses this to warn the user before slicing if the chosen
-    printer profile targets a different model — the slicer CLI rejects
-    cross-printer slicing with rc=-16 and the result, when the strip + load
-    fallback masks it, is a misleadingly-tagged archive.
-    """
-    if "Metadata/project_settings.config" not in zf.namelist():
-        return None
-    try:
-        proj = json.loads(zf.read("Metadata/project_settings.config").decode())
-    except (ValueError, OSError):
-        return None
-    if not isinstance(proj, dict):
-        return None
-    model = proj.get("printer_model")
-    if isinstance(model, str) and model.strip():
-        return model.strip()
-    # Some older Bambu Studio exports stored the model under
-    # ``printer_settings_id`` (e.g. "Bambu Lab A1 0.4 nozzle"); strip the
-    # nozzle suffix to get the canonical model name. Best-effort — if the
-    # field doesn't follow the convention we leave it as-is.
-    settings_id = proj.get("printer_settings_id")
-    if isinstance(settings_id, str) and settings_id.strip():
-        # Drop trailing " 0.4 nozzle" / " 0.2 nozzle" / etc.
-        return re.sub(r"\s+0\.\d+\s+nozzle$", "", settings_id.strip())
-    return None
 
 
 def extract_project_filaments_from_3mf(zf: zipfile.ZipFile) -> list[dict]:

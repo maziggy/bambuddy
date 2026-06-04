@@ -22,14 +22,17 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 ## Patrons ($35/mo+)
 
 - [@VREmma](https://github.com/VREmma)
+- [@pwostran](https://github.com/pwostran)
+- [@Praxeis](https://github.com/Praxeis)
 
 ## Supporters ($15/mo+)
 
 - [@rewart01](https://github.com/rewart01)
 - [@rstocks](https://github.com/rstocks)
 - [@sixfootseven](https://github.com/sixfootseven)
-- [@pwostran](https://github.com/pwostran)
 - [@MethodicalMartian](https://github.com/MethodicalMartian)
+- [@jmclaren7](https://github.com/jmclaren7)
+- [@brianharwell](https://github.com/brianharwell)
 
 ## Backers ($5/mo+)
 
@@ -38,6 +41,13 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@grizz0blaw](https://github.com/grizz0blaw)
 - [@NoahTingey](https://github.com/NoahTingey)
 - [@sentinel-center](https://github.com/sentinel-center)
+- [@brianehlert](https://github.com/brianehlert)
+- [@siiruup](https://github.com/siiruup)
+- [@agntcoopersea](https://github.com/agntcoopersea)
+- [@PJMCL1618033](https://github.com/PJMCL1618033
+- [@mgf99](https://github.com/mgf99)
+- [@Geoff-S](https://github.com/Geoff-S)
+
 ---
 
 ## One-time and historical supporters

@@ -219,10 +219,32 @@ class TestSystemAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_system_info_with_archives(self, async_client: AsyncClient, printer_factory, archive_factory):
-        """Verify database stats include archive counts."""
+        """Verify database stats include archive counts.
+
+        Post-#1593 `total_print_time_seconds` is summed from
+        `PrintLogEntry.duration_seconds` (the *actual* per-run duration),
+        not `PrintArchive.print_time_seconds` (the slicer estimate). The
+        archive_factory derives the run's duration from
+        ``completed_at - started_at`` on the archive, so the test sets
+        those so each run carries a duration the system route can sum.
+        """
+        from datetime import datetime, timezone
+
         printer = await printer_factory()
-        await archive_factory(printer.id, status="completed", print_time_seconds=3600)
-        await archive_factory(printer.id, status="failed", print_time_seconds=1800)
+        await archive_factory(
+            printer.id,
+            status="completed",
+            print_time_seconds=3600,
+            started_at=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 5, 1, 11, 0, tzinfo=timezone.utc),
+        )
+        await archive_factory(
+            printer.id,
+            status="failed",
+            print_time_seconds=1800,
+            started_at=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 5, 2, 10, 30, tzinfo=timezone.utc),
+        )
 
         with (
             patch("backend.app.api.routes.system.psutil") as mock_psutil,
@@ -308,3 +330,48 @@ class TestSystemHelperFunctions:
 
         result = format_uptime(30)  # 30 seconds
         assert result == "< 1m"
+
+
+class TestSystemHealthAPI:
+    """Integration tests for GET /api/v1/system/health (log-health scan)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_health_clean_log(self, async_client: AsyncClient, tmp_path, monkeypatch):
+        """A log with no known issues returns an empty, healthy result."""
+        from backend.app.core.config import settings
+
+        (tmp_path / "bambuddy.log").write_text(
+            "2026-05-22 10:00:00,000 INFO [backend.app.main] Application startup complete\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(settings, "log_dir", tmp_path)
+
+        response = await async_client.get("/api/v1/system/health")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["log_available"] is True
+        assert result["findings"] == []
+        assert result["summary"]["total"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_health_detects_known_issue(self, async_client: AsyncClient, tmp_path, monkeypatch):
+        """A known signature in the log surfaces as a finding."""
+        from backend.app.core.config import settings
+
+        (tmp_path / "bambuddy.log").write_text(
+            "2026-05-22 10:00:00,000 WARNING [backend.app.services.bambu_ftp] "
+            "FTP connection permission error to 10.0.0.9: 530\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(settings, "log_dir", tmp_path)
+
+        response = await async_client.get("/api/v1/system/health")
+
+        assert response.status_code == 200
+        result = response.json()
+        ids = [f["signature_id"] for f in result["findings"]]
+        assert "ftp-auth-rejected" in ids
+        assert result["summary"]["layer8"] >= 1

@@ -4,6 +4,7 @@ import { X, Loader2, Printer, CheckSquare, Square, Search } from 'lucide-react';
 import { api, type SpoolLabelTemplate, type InventorySpool } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { getSwatchStyle } from '../utils/colors';
 
 /** Subset of InventorySpool the modal needs for checkbox rendering. */
 type SpoolForLabel = Pick<
@@ -84,10 +85,12 @@ function openBlobInNewTab(blob: Blob): void {
   setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
 }
 
+// Thin wrapper over `getSwatchStyle` from utils/colors so the modal's render
+// sites keep their existing call shape. Transparent (alpha=00) spools now
+// render as a checkerboard pattern instead of collapsing to solid black
+// (#1545).
 function swatchStyle(rgba: string | null | undefined): React.CSSProperties {
-  if (!rgba) return { backgroundColor: '#808080' };
-  const cleaned = rgba.replace(/^#/, '').slice(0, 6);
-  return cleaned.length === 6 ? { backgroundColor: `#${cleaned}` } : { backgroundColor: '#808080' };
+  return getSwatchStyle(rgba);
 }
 
 function spoolDisplayName(s: SpoolForLabel): string {

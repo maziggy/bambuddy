@@ -5,6 +5,8 @@ authenticates with the configured access code, and logs print commands.
 """
 
 import asyncio
+import copy
+import hmac
 import json
 import logging
 import ssl
@@ -19,6 +21,22 @@ logger = logging.getLogger(__name__)
 
 # Default MQTT port for Bambu printers (MQTT over TLS)
 MQTT_PORT = 8883
+
+# Per-IP MQTT auth rate-limit. 5 failures within 60 s blocks further attempts
+# for the remainder of the window. Bambu printers themselves don't rate-limit,
+# but they're not exposed past the LAN edge; Bambuddy's VPs sometimes are
+# (Tailscale, port-forwarded), so an 8-char access code without any
+# brute-force friction is too weak. The window auto-recovers — no manual
+# unblock — so a legitimate user who fat-fingered their access code 5 times
+# only waits up to 60 s.
+_AUTH_RATE_LIMIT_MAX_ATTEMPTS = 5
+_AUTH_RATE_LIMIT_WINDOW_SECONDS = 60.0
+
+# Pending-request map bound. Each entry maps a slicer command's
+# sequence_id to its originating client_id so the bridge response can be
+# routed back to just that client. Bounded so a slicer that issues
+# commands without ever consuming responses can't leak memory.
+_PENDING_REQUEST_MAX_ENTRIES = 256
 
 # Model code → product_name for version response (must match what slicer expects)
 MODEL_PRODUCT_NAMES = {
@@ -206,6 +224,8 @@ class SimpleMQTTServer:
         self.vp_name = vp_name
         self._log_prefix = f"[{vp_name}] " if vp_name else ""
         self._running = False
+        # Set after the socket is bound — see ftp_server.py for rationale.
+        self.ready = asyncio.Event()
         self._server = None
         self._clients: dict[str, asyncio.StreamWriter] = {}
         # Per-client "effective serial" — the serial the slicer actually uses in
@@ -230,6 +250,20 @@ class SimpleMQTTServer:
         # synthetic fallback resumes automatically.
         self._bridge: MQTTBridge | None = None
 
+        # Per-source-IP failed-auth tracker for rate-limiting / lockout.
+        # Maps IP → list[monotonic timestamp] of recent failures within the
+        # window. Pruned on every check so it doesn't grow unbounded.
+        self._auth_failures: dict[str, list[float]] = {}
+
+        # Maps sequence_id → originating client_id for slicer-initiated
+        # commands forwarded to the real printer. Used in
+        # ``push_raw_to_clients`` to route the printer's response only
+        # back to the requesting slicer instead of fanning out to all
+        # connected clients (which leaks slicer A's responses to slicer
+        # B in multi-slicer setups). FIFO-bounded; if a response never
+        # arrives the entry ages out instead of leaking.
+        self._pending_requests: dict[str, str] = {}
+
     async def start(self) -> None:
         """Start the MQTT server."""
         if self._running:
@@ -244,6 +278,14 @@ class SimpleMQTTServer:
         ssl_context.verify_mode = ssl.CERT_NONE
         # Allow TLS 1.2 for broader compatibility (some slicers may not support 1.3)
         ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+        # Match real Bambu printer cipher behaviour: include the plain-RSA
+        # AES-GCM suites the slicer expects. On hardened distros
+        # (Fedora / RHEL with `update-crypto-policies`, hardened Alpine builds)
+        # OpenSSL's `DEFAULT` list strips these suites, leaving no overlap
+        # with the slicer's MQTT-over-TLS ClientHello — handshake fails
+        # immediately and the slicer reports a connect error before any MQTT
+        # CONNECT can be sent (#1610 audit). Same shape as the #620 fix.
+        ssl_context.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
         # Disable hostname checking
         ssl_context.check_hostname = False
 
@@ -289,6 +331,7 @@ class SimpleMQTTServer:
                 self.port,
                 ssl=ssl_context,
             )
+            self.ready.set()
 
             logger.info("Simple MQTT server listening on port %s", self.port)
 
@@ -314,6 +357,7 @@ class SimpleMQTTServer:
         """Stop the MQTT server."""
         logger.info("Stopping simple MQTT server")
         self._running = False
+        self.ready.clear()
 
         # Stop periodic status push
         if self._status_push_task:
@@ -365,9 +409,19 @@ class SimpleMQTTServer:
     async def _periodic_status_push(self) -> None:
         """Send periodic status updates to all connected clients (1 Hz, exact pre-bridge behaviour)."""
         logger.info("Starting periodic status push task")
+        # Per-client push counters reset every 60 ticks. Lets us confirm from
+        # logs whether the 1Hz push is actually reaching a specific slicer
+        # connection (#1548 keepalive follow-up: keepalive parser shipped but
+        # OrcaSlicer still disconnects on idle, and the periodic push is
+        # otherwise silent at INFO level so it can't be observed in the
+        # support bundle). One log line per minute per active connection —
+        # nothing when no slicer is attached.
+        push_counts: dict[str, int] = {}
+        ticks_since_summary = 0
         while self._running:
             try:
                 await asyncio.sleep(1)  # Push every 1 second like real printers
+                ticks_since_summary += 1
 
                 disconnected = []
                 for client_id, writer in list(self._clients.items()):
@@ -377,6 +431,7 @@ class SimpleMQTTServer:
                             continue
                         serial = self._client_serials.get(client_id, self.serial)
                         await self._send_status_report(writer, serial=serial)
+                        push_counts[client_id] = push_counts.get(client_id, 0) + 1
                     except OSError as e:
                         logger.debug("Failed to push status to %s: %s", client_id, e)
                         disconnected.append(client_id)
@@ -385,6 +440,18 @@ class SimpleMQTTServer:
                 for client_id in disconnected:
                     self._clients.pop(client_id, None)
                     self._client_serials.pop(client_id, None)
+                    push_counts.pop(client_id, None)
+
+                if ticks_since_summary >= 60:
+                    for cid, count in push_counts.items():
+                        logger.info(
+                            "%s1Hz status push: %d pushes/min to %s",
+                            self._log_prefix,
+                            count,
+                            cid,
+                        )
+                    push_counts.clear()
+                    ticks_since_summary = 0
 
             except asyncio.CancelledError:
                 break
@@ -394,10 +461,17 @@ class SimpleMQTTServer:
         logger.info("Periodic status push task stopped")
 
     async def push_raw_to_clients(self, topic: str, payload: bytes) -> None:
-        """Publish a pre-serialized MQTT payload on `topic` to every connected slicer.
+        """Publish a pre-serialized MQTT payload on `topic` to connected slicers.
 
         Called by MQTTBridge from the asyncio loop (scheduled via
         run_coroutine_threadsafe from paho's network thread).
+
+        Routes the response only back to the originating slicer if the
+        payload's sequence_id was previously recorded via
+        ``_record_pending_request``. Falls back to fan-out for
+        printer-initiated pushes (push_status etc.) and for sequence_ids
+        we never saw (covers a slicer that subscribes mid-flight to a
+        topic for which an earlier request is still in flight).
         """
         topic_bytes = topic.encode("utf-8")
         # MQTT remaining-length: 2-byte topic length prefix + topic + message body.
@@ -416,8 +490,12 @@ class SimpleMQTTServer:
         packet.extend(payload)
         frame = bytes(packet)
 
+        target_client_id = self._lookup_pending_request_client(payload)
+
         disconnected = []
         for client_id, writer in list(self._clients.items()):
+            if target_client_id is not None and client_id != target_client_id:
+                continue
             try:
                 if writer.is_closing():
                     disconnected.append(client_id)
@@ -442,12 +520,18 @@ class SimpleMQTTServer:
         logger.info("%sMQTT client connected: %s", self._log_prefix, client_id)
 
         authenticated = False
+        # Per-packet read timeout. Before CONNECT we default to 60 s so a
+        # client that opens TCP but never sends anything still gets reaped;
+        # after CONNECT the value is updated to 1.5× the keepalive the
+        # client negotiated (MQTT spec §4.4). ``None`` means no timeout,
+        # which is what spec §3.1.2.10 mandates for keep_alive == 0.
+        read_timeout: float | None = 60.0
 
         try:
             while self._running:
                 # Read MQTT fixed header
                 try:
-                    header = await asyncio.wait_for(reader.read(1), timeout=60)
+                    header = await asyncio.wait_for(reader.read(1), timeout=read_timeout)
                 except TimeoutError:
                     break
 
@@ -466,9 +550,30 @@ class SimpleMQTTServer:
 
                 # Handle packet types
                 if packet_type == 1:  # CONNECT
-                    authenticated = await self._handle_connect(payload, writer)
-                    if not authenticated:
+                    source_ip = addr[0] if addr else "unknown"
+                    if self._is_auth_rate_limited(source_ip):
+                        logger.warning(
+                            "%sMQTT auth rate-limited from %s (>=%d failures in %ds)",
+                            self._log_prefix,
+                            source_ip,
+                            _AUTH_RATE_LIMIT_MAX_ATTEMPTS,
+                            int(_AUTH_RATE_LIMIT_WINDOW_SECONDS),
+                        )
+                        writer.write(bytes([0x20, 0x02, 0x00, 0x05]))  # Not authorized
+                        await writer.drain()
                         break
+                    authenticated, keep_alive = await self._handle_connect(payload, writer)
+                    if not authenticated:
+                        self._record_auth_failure(source_ip)
+                        break
+                    self._clear_auth_failures(source_ip)
+                    # Honour the client's negotiated keepalive (#1548). Before
+                    # this fix, the hardcoded 60 s above would close
+                    # OrcaSlicer's idle connection at the keepalive boundary
+                    # instead of waiting 1.5× as the spec requires — Orca
+                    # sends PINGREQ within its own keepalive interval but
+                    # we'd already have closed the socket.
+                    read_timeout = keep_alive * 1.5 if keep_alive > 0 else None
                     # Register client for periodic status pushes; start with
                     # self.serial as the fallback until we learn the slicer's
                     # preferred serial from the first SUBSCRIBE/PUBLISH.
@@ -490,7 +595,11 @@ class SimpleMQTTServer:
         except asyncio.CancelledError:
             pass  # Expected when server is shutting down and cancels client tasks
         except Exception as e:
-            logger.debug("MQTT client error: %s", e)
+            # Outer handler — inner handlers already absorb expected parser
+            # / IO failures at debug. Anything reaching here is unexpected
+            # and would otherwise silently drop the slicer connection with
+            # no actionable signal in production logs (defaults are INFO+).
+            logger.warning("%sMQTT client session error from %s: %s", self._log_prefix, client_id, e)
         finally:
             logger.debug("MQTT client disconnected: %s", client_id)
             self._clients.pop(client_id, None)
@@ -521,10 +630,86 @@ class SimpleMQTTServer:
 
         return None
 
-    async def _handle_connect(self, payload: bytes, writer: asyncio.StreamWriter) -> bool:
+    def _record_pending_request(self, data: dict, client_id: str) -> None:
+        """Stash sequence_id → client_id for any nested block with a sequence_id.
+
+        Slicer commands typically wrap their seq id in ``{"print": {...}}`` or
+        ``{"info": {...}}`` / ``{"system": {...}}`` etc. Walks top-level dict
+        values once to find the seq id; if absent (some commands omit it) we
+        skip — the response will fall through to broadcast which is fine for
+        unsolicited pushes.
+        """
+        for block in data.values():
+            if isinstance(block, dict):
+                seq = block.get("sequence_id")
+                if seq is not None:
+                    key = str(seq)
+                    # Evict oldest entry when over the cap. Python dicts
+                    # preserve insertion order so iter(self._pending_requests)
+                    # yields the oldest key first.
+                    while len(self._pending_requests) >= _PENDING_REQUEST_MAX_ENTRIES:
+                        oldest = next(iter(self._pending_requests))
+                        self._pending_requests.pop(oldest, None)
+                    self._pending_requests[key] = client_id
+                    return
+
+    def _lookup_pending_request_client(self, payload: bytes) -> str | None:
+        """Parse a bridge-forwarded MQTT payload and return the originating
+        client_id if its sequence_id was recorded.
+
+        Returns ``None`` for printer-initiated pushes (no recorded seq id) so
+        push_raw_to_clients falls back to broadcast — required for push_status
+        and the other unsolicited pushes that every connected slicer expects.
+        """
+        try:
+            parsed = json.loads(payload)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        for block in parsed.values():
+            if isinstance(block, dict):
+                seq = block.get("sequence_id")
+                if seq is not None:
+                    return self._pending_requests.pop(str(seq), None)
+        return None
+
+    def _is_auth_rate_limited(self, source_ip: str) -> bool:
+        """Return True if ``source_ip`` has hit the per-IP failure cap.
+
+        Prunes timestamps older than the window so the dict doesn't grow
+        unbounded. Uses ``time.monotonic()`` for a wall-clock-jump-immune
+        clock that's safe to call from any context (sync or async).
+        """
+        import time as _time
+
+        now = _time.monotonic()
+        window_start = now - _AUTH_RATE_LIMIT_WINDOW_SECONDS
+        recent = [t for t in self._auth_failures.get(source_ip, []) if t >= window_start]
+        if recent:
+            self._auth_failures[source_ip] = recent
+        else:
+            self._auth_failures.pop(source_ip, None)
+        return len(recent) >= _AUTH_RATE_LIMIT_MAX_ATTEMPTS
+
+    def _record_auth_failure(self, source_ip: str) -> None:
+        """Append a timestamp for ``source_ip``'s failed auth attempt."""
+        import time as _time
+
+        now = _time.monotonic()
+        self._auth_failures.setdefault(source_ip, []).append(now)
+
+    def _clear_auth_failures(self, source_ip: str) -> None:
+        """Reset ``source_ip``'s failure history after a successful auth."""
+        self._auth_failures.pop(source_ip, None)
+
+    async def _handle_connect(self, payload: bytes, writer: asyncio.StreamWriter) -> tuple[bool, int]:
         """Handle MQTT CONNECT packet.
 
-        Returns True if authentication successful.
+        Returns ``(authenticated, keep_alive_seconds)`` — the second element
+        is the value the client advertised in CONNECT, so the caller's
+        read-loop can honour it instead of the hardcoded default. ``0``
+        means the client opted out of keepalive (#1548).
         """
         try:
             # Parse CONNECT packet
@@ -537,7 +722,12 @@ class SimpleMQTTServer:
             # connect_flags = payload[idx + 1]
             idx += 2
 
-            # Skip keepalive
+            # Keepalive (2-byte big-endian, seconds). Honoured by the read
+            # loop in `_handle_client` per MQTT spec §3.1.2.10 / §4.4 —
+            # before #1548 we ignored this and used a hardcoded 60 s, which
+            # closed OrcaSlicer's idle connection at exactly the negotiated
+            # keepalive boundary instead of the spec-mandated 1.5×.
+            keep_alive = (payload[idx] << 8) | payload[idx + 1]
             idx += 2
 
             # Read client ID
@@ -557,8 +747,11 @@ class SimpleMQTTServer:
             idx += 2
             password = payload[idx : idx + password_len].decode("utf-8")
 
-            # Authenticate
-            if username == "bblp" and password == self.access_code:
+            # Authenticate. ``hmac.compare_digest`` is constant-time to keep
+            # the auth check from leaking the access code via response timing
+            # under network jitter — LAN-only threat is marginal, but it's
+            # the standard fix and costs nothing.
+            if username == "bblp" and hmac.compare_digest(password, self.access_code):
                 # Send CONNACK with success
                 writer.write(bytes([0x20, 0x02, 0x00, 0x00]))
                 await writer.drain()
@@ -566,20 +759,20 @@ class SimpleMQTTServer:
 
                 # Send immediate status report after auth - slicer expects this
                 await self._send_status_report(writer)
-                return True
+                return True, keep_alive
             else:
                 # Send CONNACK with auth failure
                 writer.write(bytes([0x20, 0x02, 0x00, 0x05]))  # Not authorized
                 await writer.drain()
                 logger.warning("%sMQTT auth failed for user '%s' (access code mismatch)", self._log_prefix, username)
-                return False
+                return False, 0
 
         except (IndexError, ValueError) as e:
             logger.debug("MQTT CONNECT parse error: %s", e)
             # Send CONNACK with error
             writer.write(bytes([0x20, 0x02, 0x00, 0x02]))  # Protocol error
             await writer.drain()
-            return False
+            return False, 0
 
     async def _handle_subscribe(self, payload: bytes, writer: asyncio.StreamWriter, client_id: str) -> None:
         """Handle MQTT SUBSCRIBE packet."""
@@ -649,7 +842,13 @@ class SimpleMQTTServer:
             if isinstance(cached, dict):
                 # Real-printer-shaped response. Copy the cache, then replace the
                 # protocol / upload-state fields with values under our control.
-                print_block = dict(cached)
+                # Deep copy — current mutations are top-level only, but a future
+                # override that writes into a nested dict (e.g. ``online``,
+                # ``upgrade_state``, ``ipcam``) would otherwise corrupt the
+                # bridge cache and be read by every subsequent subscriber until
+                # the next real-printer push lands. Cost is one allocation per
+                # status report; the cached dict is already short-lived.
+                print_block = copy.deepcopy(cached)
                 print_block["sequence_id"] = str(self._sequence_id)
                 print_block["command"] = "push_status"
                 print_block["msg"] = 0
@@ -675,6 +874,23 @@ class SimpleMQTTServer:
                 print_block["home_flag"] = print_block.get("home_flag", 0) | 0x100  # bit 8 = HAS_SDCARD_NORMAL
                 print_block["sdcard"] = True
                 print_block.setdefault("storage", {"free": 1_000_000_000, "total": 32_000_000_000})
+                # Live-progress fields the slicer's Send pre-flight reads
+                # (#1558). When the real target printer is mid-print, the
+                # cached push_status carries the real values for these
+                # fields and the slicer reads the VP as "busy" — refusing
+                # Send — even though gcode_state above is forced to IDLE.
+                # For VP usage the VP isn't actually running the print
+                # the printer is, so these need to mirror the synthetic
+                # stub's idle values. Same shape as #1228 (storage) — the
+                # cached-branch override set just needed extending.
+                print_block["mc_print_stage"] = ""
+                print_block["mc_percent"] = 0
+                print_block["mc_remaining_time"] = 0
+                print_block["stg"] = []
+                print_block["stg_cur"] = 0
+                print_block["layer_num"] = 0
+                print_block["total_layer_num"] = 0
+                print_block["print_error"] = 0
                 status = {"print": print_block}
                 await self._publish_to_report(writer, status, serial or self.serial)
                 return
@@ -1028,6 +1244,10 @@ class SimpleMQTTServer:
             # Forward anything the synthetic flow didn't handle to the real
             # printer. AMS load / dry / xcam / system / extrusion_cali_get etc.
             if not handled_locally and self._bridge is not None and self._bridge.is_active:
+                # Remember which client originated this command so the
+                # printer's response goes back only to them (not fanned
+                # out to every connected slicer).
+                self._record_pending_request(data, client_id)
                 self._bridge.forward_to_printer(data)
 
         except (IndexError, ValueError, OSError) as e:

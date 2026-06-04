@@ -86,6 +86,11 @@ class PrintQueueItemResponse(BaseModel):
     require_previous_success: bool
     auto_off_after: bool
     manual_start: bool
+    # True when the dispatch scheduler last evaluated this item and the
+    # assigned spool could not satisfy at least one slot's required grams
+    # (#1496). Display-only — the ▶ click recomputes deficit against live
+    # spool state.
+    filament_short: bool = False
     ams_mapping: list[int] | None = None
     plate_id: int | None = None  # Plate ID for multi-plate 3MF files
     # Print options

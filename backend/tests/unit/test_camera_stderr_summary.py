@@ -7,7 +7,9 @@ single click produced 555 lines across 30 retries. The helper strips the
 banner so logs stay focused on the real error.
 """
 
-from backend.app.api.routes.camera import _summarize_ffmpeg_stderr
+import asyncio
+
+from backend.app.api.routes.camera import _read_ffmpeg_stderr, _summarize_ffmpeg_stderr
 
 _FAKE_BANNER = """ffmpeg version 7.1.3-0+deb13u1 Copyright (c) 2000-2025 the FFmpeg developers
   built with gcc 14 (Debian 14.2.0-19)
@@ -66,3 +68,55 @@ def test_drops_blank_lines():
 def test_banner_only_returns_empty():
     """If ffmpeg prints only the banner (no errors), the summary should be empty."""
     assert _summarize_ffmpeg_stderr(_FAKE_BANNER) == ""
+
+
+# --- _read_ffmpeg_stderr (#1395) -------------------------------------------
+# A stalled-but-alive ffmpeg (the P2S RTSP failure) never closes stderr, so a
+# read-to-EOF discarded everything it had already printed. _read_ffmpeg_stderr
+# now drains incrementally and must return that buffered output.
+
+
+class _FakeProcess:
+    """Minimal stand-in for asyncio.subprocess.Process — only .stderr is read."""
+
+    def __init__(self, stderr):
+        self.stderr = stderr
+
+
+def _reader_with(data: bytes, *, eof: bool) -> asyncio.StreamReader:
+    reader = asyncio.StreamReader()
+    if data:
+        reader.feed_data(data)
+    if eof:
+        reader.feed_eof()
+    return reader
+
+
+async def test_read_stderr_captures_output_from_a_running_ffmpeg():
+    """The #1395 regression: ffmpeg is alive and has NOT closed stderr (no EOF).
+    The output it already printed must still be returned, not discarded while
+    waiting for an EOF that never arrives."""
+    stderr = _FAKE_BANNER + "[rtsp @ 0x5] Could not find codec parameters\n"
+    proc = _FakeProcess(_reader_with(stderr.encode(), eof=False))
+    result = await _read_ffmpeg_stderr(proc)
+    assert result is not None
+    assert "Could not find codec parameters" in result
+    assert "ffmpeg version" not in result  # banner still stripped
+
+
+async def test_read_stderr_captures_output_from_an_exited_ffmpeg():
+    stderr = _FAKE_BANNER + "Error opening input: Connection refused\n"
+    proc = _FakeProcess(_reader_with(stderr.encode(), eof=True))
+    result = await _read_ffmpeg_stderr(proc)
+    assert result is not None
+    assert "Connection refused" in result
+
+
+async def test_read_stderr_returns_none_when_no_stderr_pipe():
+    assert await _read_ffmpeg_stderr(_FakeProcess(None)) is None
+
+
+async def test_read_stderr_returns_none_for_banner_only_output():
+    """Banner with no actionable lines summarizes to empty -> None."""
+    proc = _FakeProcess(_reader_with(_FAKE_BANNER.encode(), eof=True))
+    assert await _read_ffmpeg_stderr(proc) is None

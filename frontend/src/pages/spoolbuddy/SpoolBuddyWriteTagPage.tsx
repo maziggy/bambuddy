@@ -14,6 +14,7 @@ import {
   type SpoolCatalogEntry,
 } from '../../api/client';
 import { getCurrencySymbol } from '../../utils/currency';
+import { getSwatchStyle } from '../../utils/colors';
 import { FilamentSection } from '../../components/spool-form/FilamentSection';
 import { ColorSection } from '../../components/spool-form/ColorSection';
 import { AdditionalSection } from '../../components/spool-form/AdditionalSection';
@@ -48,11 +49,30 @@ export function SpoolBuddyWriteTagPage() {
   const [tagOnReader, setTagOnReader] = useState(false);
   const [tagUid, setTagUid] = useState<string | null>(null);
 
+  // Detect Spoolman mode — when the user has Spoolman as their inventory
+  // backend, every read/write on this page must go to /spoolman/inventory/*
+  // routes instead of /inventory/*. Without this branching, the picker
+  // shows internal spools (which the user never created in Spoolman mode)
+  // and the write-tag write path lands at the wrong backend (#1439).
+  const { data: spoolmanSettings } = useQuery({
+    queryKey: ['spoolman-settings'],
+    queryFn: api.getSpoolmanSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const spoolmanModeReady = spoolmanSettings !== undefined;
+  const spoolmanMode =
+    spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
 
   const { data: spools = [], refetch: refetchSpools } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(false),
+    queryKey: [spoolmanMode ? 'spoolman-inventory-spools' : 'inventory-spools', 'write-tag'],
+    queryFn: () =>
+      spoolmanMode ? api.getSpoolmanInventorySpools(false) : api.getSpools(false),
     refetchInterval: 10000,
+    // Wait until we know which backend to talk to — otherwise the first
+    // render fires getSpools (default spoolmanMode=false) and getSpoolman*
+    // (after settings resolve), wasting one request and briefly showing
+    // the wrong inventory.
+    enabled: spoolmanModeReady,
   });
 
   const { data: devices = [] } = useQuery({
@@ -193,11 +213,19 @@ export function SpoolBuddyWriteTagPage() {
     setWriteStatus('idle');
     setWriteMessage('');
     try {
-      await api.linkTagToSpool(selectedSpool.id, {
-        tag_uid: '',
-        tray_uuid: '',
-        data_origin: 'manual',
-      });
+      if (spoolmanMode) {
+        // Spoolman variant doesn't accept data_origin (managed Spoolman-side).
+        await api.linkTagToSpoolmanSpool(selectedSpool.id, {
+          tag_uid: '',
+          tray_uuid: '',
+        });
+      } else {
+        await api.linkTagToSpool(selectedSpool.id, {
+          tag_uid: '',
+          tray_uuid: '',
+          data_origin: 'manual',
+        });
+      }
       await refetchSpools();
       setSelectedSpool(null);
       setWriteStatus('success');
@@ -255,6 +283,7 @@ export function SpoolBuddyWriteTagPage() {
               currencySymbol={currencySymbol}
               onCreated={handleSpoolCreated}
               selectedSpool={selectedSpool}
+              spoolmanMode={spoolmanMode}
               t={t}
             />
           ) : (
@@ -334,7 +363,6 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
   showTag: boolean;
   onClick: () => void;
 }) {
-  const color = spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#666';
   const remaining = Math.max(0, spool.label_weight - spool.weight_used);
   const pct = spool.label_weight > 0 ? Math.round((remaining / spool.label_weight) * 100) : 0;
 
@@ -347,10 +375,11 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
           : 'bg-bambu-dark-secondary hover:bg-bambu-dark-tertiary border border-transparent'
       }`}
     >
-      {/* Color dot */}
+      {/* Color dot — uses getSwatchStyle so transparent (Clear) spools render
+          a checkerboard instead of collapsing to solid black (#1545). */}
       <div
         className="w-8 h-8 rounded-full shrink-0 border border-white/10"
-        style={{ backgroundColor: color }}
+        style={spool.rgba ? getSwatchStyle(spool.rgba) : { backgroundColor: '#666' }}
       />
 
       {/* Info */}
@@ -359,6 +388,7 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
           <span className="text-sm font-medium text-white truncate">
             {spool.brand ? `${spool.brand} ` : ''}{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
           </span>
+          <span className="text-[10px] font-mono text-zinc-500 shrink-0">#{spool.id}</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           {spool.color_name && <span>{spool.color_name}</span>}
@@ -383,17 +413,20 @@ type NewSpoolSubTab = 'filament' | 'pa-profile';
 type NewSpoolViewMode = 'simple' | 'full';
 
 // --- New spool touch form (mirrors Add Spool fields/options in kiosk-friendly layout) ---
-function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
+function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanMode, t }: {
   currencySymbol: string;
   onCreated: (spool: InventorySpool) => void;
   selectedSpool: InventorySpool | null;
+  spoolmanMode: boolean;
   t: (key: string, fallback: string) => string;
 }) {
   // Read inventory + settings from the shared react-query cache to drive the
   // category autocomplete and low-stock-threshold placeholder. #729
+  // Spoolman-mode branched: see comment on the parent page's spools query.
   const { data: allSpoolsForForm = [] } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(true),
+    queryKey: [spoolmanMode ? 'spoolman-inventory-spools' : 'inventory-spools', 'write-tag-form'],
+    queryFn: () =>
+      spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
   });
   const { data: settingsForForm } = useQuery({
     queryKey: ['settings'],
@@ -593,9 +626,10 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
   };
 
   const saveKProfiles = async (spoolId: number) => {
+    const save = spoolmanMode ? api.saveSpoolmanKProfiles : api.saveSpoolKProfiles;
     if (selectedProfiles.size === 0) {
       try {
-        await api.saveSpoolKProfiles(spoolId, []);
+        await save(spoolId, []);
       } catch {
         // ignore
       }
@@ -627,7 +661,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
     }
 
     if (profiles.length > 0) {
-      await api.saveSpoolKProfiles(spoolId, profiles);
+      await save(spoolId, profiles);
     }
   };
 
@@ -675,13 +709,24 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
     setCreating(true);
     try {
       if (quantity > 1) {
-        const created = await api.bulkCreateSpools(payload, quantity);
+        // Spoolman bulk returns SpoolmanBulkCreateResult (207-style envelope);
+        // internal bulk returns InventorySpool[]. Mirrors SpoolFormModal's
+        // duck-typed handling so partial failures surface as a warning toast.
+        const raw = spoolmanMode
+          ? await api.bulkCreateSpoolmanInventorySpools(payload, quantity)
+          : await api.bulkCreateSpools(payload, quantity);
+        const created: InventorySpool[] =
+          spoolmanMode && raw && typeof raw === 'object' && 'created' in raw
+            ? (raw as { created: InventorySpool[] }).created
+            : (raw as InventorySpool[]);
         for (const spool of created) {
           await saveKProfiles(spool.id);
         }
         if (created.length > 0) onCreated(created[0]);
       } else {
-        const created = await api.createSpool(payload);
+        const created = spoolmanMode
+          ? await api.createSpoolmanInventorySpool(payload)
+          : await api.createSpool(payload);
         await saveKProfiles(created.id);
         onCreated(created);
       }
@@ -725,7 +770,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
           <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
             <div
               className="w-12 h-12 rounded-full mb-4 border border-white/10"
-              style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
+              style={selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' }}
             />
             <p className="text-white font-medium">
               {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
@@ -913,7 +958,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
         <div className="flex flex-col items-center justify-center p-4 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
           <div
             className="w-12 h-12 rounded-full mb-4 border border-white/10"
-            style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
+            style={selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' }}
           />
           <p className="text-white font-medium">
             {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
@@ -1028,8 +1073,10 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
     );
   }
 
-  // Spool selected — show summary + write button
-  const spoolColor = selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666';
+  // Spool selected — show summary + write button. Use getSwatchStyle so
+  // transparent (Clear) spools render a checkerboard rather than collapsing
+  // to solid black (#1545).
+  const spoolColorStyle = selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' };
 
   return (
     <div className="flex flex-col items-center text-center space-y-4 w-full">
@@ -1064,7 +1111,7 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
       {/* Selected spool summary */}
       <div className="w-full bg-bambu-dark-secondary rounded-lg p-3 space-y-2">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full border border-white/10 shrink-0" style={{ backgroundColor: spoolColor }} />
+          <div className="w-8 h-8 rounded-full border border-white/10 shrink-0" style={spoolColorStyle} />
           <div className="text-left min-w-0">
             <p className="text-white text-sm font-medium truncate">
               {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}

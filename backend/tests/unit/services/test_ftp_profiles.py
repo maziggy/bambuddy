@@ -82,8 +82,10 @@ def test_cap_tls_v1_2_actually_applied_to_ssl_context():
     assert capped.ssl_context.maximum_version == ssl.TLSVersion.TLSv1_2
 
     uncapped = ImplicitFTP_TLS(cap_tls_v1_2=False)
-    # MAXIMUM_SUPPORTED is the "no cap applied" sentinel for SSLContext.
-    assert uncapped.ssl_context.maximum_version == ssl.TLSVersion.MAXIMUM_SUPPORTED
+    # Uncapped uses create_default_context() as-is. On Python 3.12+ that
+    # surfaces as TLSv1_3, not TLSVersion.MAXIMUM_SUPPORTED (-1).
+    assert uncapped.ssl_context.maximum_version == ssl.create_default_context().maximum_version
+    assert uncapped.ssl_context.maximum_version != ssl.TLSVersion.TLSv1_2
 
 
 def test_ftp_profile_dataclass_default_constructible():

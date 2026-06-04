@@ -305,6 +305,8 @@ async def discard_pending_upload(
 
     if not pending:
         raise HTTPException(status_code=404, detail="Upload not found")
+    if pending.status != "pending":
+        raise HTTPException(status_code=400, detail="Upload already processed")
 
     # Delete file from disk
     file_path = Path(pending.file_path)

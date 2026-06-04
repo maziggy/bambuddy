@@ -85,6 +85,53 @@ async def test_delete_vp_marks_orphan_pending_uploads_discarded(tmp_path):
     # The unrelated row was never returned from the query — left alone.
     assert other_pending.status == "pending"
 
+
+@pytest.mark.asyncio
+async def test_delete_vp_leaves_archived_pending_uploads_untouched(tmp_path):
+    """Already-archived VP uploads must not be overwritten to discarded."""
+    vp_id = 77
+    upload_dir = tmp_path / "uploads" / str(vp_id)
+    upload_dir.mkdir(parents=True)
+
+    archived = MagicMock()
+    archived.file_path = str(upload_dir / "done.3mf")
+    archived.status = "archived"
+
+    vp_row = MagicMock()
+    vp_row.id = vp_id
+    vp_row.name = "DeleteMe"
+
+    select_calls = {"i": 0}
+
+    async def fake_execute(query):  # noqa: ARG001
+        select_calls["i"] += 1
+        result = MagicMock()
+        if select_calls["i"] == 1:
+            result.scalar_one_or_none = MagicMock(return_value=vp_row)
+        elif select_calls["i"] == 2:
+            scalars = MagicMock()
+            scalars.all = MagicMock(return_value=[])
+            result.scalars = MagicMock(return_value=scalars)
+        return result
+
+    db = AsyncMock()
+    db.execute = fake_execute
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+
+    fake_manager = MagicMock()
+    fake_manager.remove_instance = AsyncMock()
+    fake_manager.sync_from_db = AsyncMock()
+    fake_manager._base_dir = tmp_path
+
+    with patch(
+        "backend.app.services.virtual_printer.virtual_printer_manager",
+        fake_manager,
+    ):
+        await delete_virtual_printer(vp_id=vp_id, db=db, _=None)
+
+    assert archived.status == "archived"
+
     # The on-disk upload_dir is gone.
     assert not upload_dir.exists()
 

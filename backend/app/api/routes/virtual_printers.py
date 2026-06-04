@@ -513,7 +513,12 @@ async def delete_virtual_printer(
     try:
         from backend.app.models.pending_upload import PendingUpload
 
-        stale = await db.execute(select(PendingUpload).where(PendingUpload.file_path.startswith(upload_prefix)))
+        stale = await db.execute(
+            select(PendingUpload).where(
+                PendingUpload.file_path.startswith(upload_prefix),
+                PendingUpload.status == "pending",
+            )
+        )
         for pending in stale.scalars().all():
             pending.status = "discarded"
         await db.flush()

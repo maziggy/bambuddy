@@ -24,7 +24,7 @@ class SmartPlugMQTTData:
     power: float | None = None  # Current power in watts
     energy: float | None = None  # Energy in kWh (today)
     state: str | None = None  # "ON" or "OFF"
-    last_seen: datetime = field(default_factory=datetime.utcnow)
+    last_seen: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -473,7 +473,10 @@ class MQTTSmartPlugService:
             return False
 
         timeout = timedelta(minutes=self.REACHABLE_TIMEOUT_MINUTES)
-        return datetime.now(timezone.utc) - data.last_seen < timeout
+        last_seen = data.last_seen
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - last_seen < timeout
 
     async def disconnect(self, timeout: float = 0):
         """Disconnect from MQTT broker."""

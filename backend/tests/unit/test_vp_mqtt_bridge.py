@@ -200,7 +200,8 @@ class TestPushStatusCache:
 
     @pytest.mark.asyncio
     async def test_net_info_ip_rewritten_to_vp_ip(self):
-        """BambuStudio reads `net.info[].ip` (LE uint32) for the FTP destination."""
+        """BambuStudio reads `net.info[].ip` (LE uint32) for the FTP destination —
+        must be rewritten to the VP's bind IP or the slicer bypasses the VP."""
         server = _make_server(bind_address=VP_IP)
         bridge = _make_bridge(server)
         await bridge.start()
@@ -286,7 +287,7 @@ class TestPushStatusCache:
 
         cached = bridge.get_latest_print_state()
         assert cached["net"]["info"][0]["ip"] == vp_le
-        assert cached["net"]["info"][1]["ip"] == vp_le # secondary interface also rewritten
+        assert cached["net"]["info"][1]["ip"] == vp_le  # secondary interface also rewritten
         assert cached["net"]["info"][2]["ip"] == 0  # placeholder untouched
 
         await bridge.stop()
